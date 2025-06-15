@@ -108,10 +108,13 @@ func SetCommitteeConfig(db ethdb.Database, keyblockchain KeyBlockChainInterface,
 	}
 	log.Info("SetCommitteeConfig", "len", m_config.commiteeLen)
 }
-
 func SetServerInfo(address, pubKey string) {
-	m_config.serverInfo.address = address
-	m_config.serverInfo.pubKey = pubKey
+        m_config.serverInfo.address = address
+        m_config.serverInfo.pubKey = pubKey
+}
+
+func SetServerCoinBase(addr common.Address) {
+       m_config.serverInfo.coinbase = addr
 }
 
 func GetServerCommitteeLen() int {
