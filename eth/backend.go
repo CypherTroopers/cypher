@@ -60,10 +60,7 @@ import (
 	p2pnat "github.com/cypherium/cypher/p2p/nat"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig"
-<<<<<<< HEAD
 	"github.com/cypherium/cypher/reconfig/bftview"
-=======
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
 )
@@ -175,12 +172,7 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		consensusServicePendingLogsFeed: new(event.Feed),
 		extIP:                           extIP,
 	}
-<<<<<<< HEAD
-        bftview.SetServerCoinBase(config.Miner.Etherbase) 
-	
-=======
-
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
+	bftview.SetServerCoinBase(config.Miner.Etherbase)
 	bcVersion := rawdb.ReadDatabaseVersion(chainDb)
 	var dbVer = "<nil>"
 	if bcVersion != nil {
@@ -392,60 +384,63 @@ func (s *Ethereum) Etherbase() (eb common.Address, err error) {
 	return common.Address{}, fmt.Errorf("etherbase must be explicitly specified")
 }
 
-/*??
+/*
+??
 // isLocalBlock checks whether the specified block is mined
 // by local miner accounts.
 //
 // We regard two types of accounts as local miner account: etherbase
 // and accounts specified via `txpool.locals` flag.
-func (s *Ethereum) isLocalBlock(block *types.Block) bool {
-	author, err := s.engine.Author(block.Header())
-	if err != nil {
-		log.Warn("Failed to retrieve block author", "number", block.NumberU64(), "hash", block.Hash(), "err", err)
-		return false
-	}
-	// Check whether the given address is etherbase.
-	s.lock.RLock()
-	etherbase := s.etherbase
-	s.lock.RUnlock()
-	if author == etherbase {
-		return true
-	}
-	// Check whether the given address is specified by `txpool.local`
-	// CLI flag.
-	for _, account := range s.config.TxPool.Locals {
-		if account == author {
+
+	func (s *Ethereum) isLocalBlock(block *types.Block) bool {
+		author, err := s.engine.Author(block.Header())
+		if err != nil {
+			log.Warn("Failed to retrieve block author", "number", block.NumberU64(), "hash", block.Hash(), "err", err)
+			return false
+		}
+		// Check whether the given address is etherbase.
+		s.lock.RLock()
+		etherbase := s.etherbase
+		s.lock.RUnlock()
+		if author == etherbase {
 			return true
 		}
+		// Check whether the given address is specified by `txpool.local`
+		// CLI flag.
+		for _, account := range s.config.TxPool.Locals {
+			if account == author {
+				return true
+			}
+		}
+		return false
 	}
-	return false
-}
 
 // shouldPreserve checks whether we should preserve the given block
 // during the chain reorg depending on whether the author of block
 // is a local account.
-func (s *Ethereum) shouldPreserve(block *types.Block) bool {
-	// The reason we need to disable the self-reorg preserving for clique
-	// is it can be probable to introduce a deadlock.
-	//
-	// e.g. If there are 7 available signers
-	//
-	// r1   A
-	// r2     B
-	// r3       C
-	// r4         D
-	// r5   A      [X] F G
-	// r6    [X]
-	//
-	// In the round5, the inturn signer E is offline, so the worst case
-	// is A, F and G sign the block of round5 and reject the block of opponents
-	// and in the round6, the last available signer B is offline, the whole
-	// network is stuck.
-	if _, ok := s.engine.(*clique.Clique); ok {
-		return false
+
+	func (s *Ethereum) shouldPreserve(block *types.Block) bool {
+		// The reason we need to disable the self-reorg preserving for clique
+		// is it can be probable to introduce a deadlock.
+		//
+		// e.g. If there are 7 available signers
+		//
+		// r1   A
+		// r2     B
+		// r3       C
+		// r4         D
+		// r5   A      [X] F G
+		// r6    [X]
+		//
+		// In the round5, the inturn signer E is offline, so the worst case
+		// is A, F and G sign the block of round5 and reject the block of opponents
+		// and in the round6, the last available signer B is offline, the whole
+		// network is stuck.
+		if _, ok := s.engine.(*clique.Clique); ok {
+			return false
+		}
+		return s.isLocalBlock(block)
 	}
-	return s.isLocalBlock(block)
-}
 */
 func (s *Ethereum) shouldPreserve(block *types.Block) bool {
 	return false
@@ -458,83 +453,72 @@ func (s *Ethereum) SetEtherbase(etherbase common.Address) {
 	s.lock.Unlock()
 
 	s.miner.SetCoinbase(etherbase)
-<<<<<<< HEAD
 	bftview.SetServerCoinBase(etherbase)
-=======
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 }
 
 /*
 // StartMining starts the miner with the given number of CPU threads. If mining
 // is already running, this method adjust the number of threads allowed to use
 // and updates the minimum price required by the transaction pool.
-func (s *Ethereum) StartMining(threads int) error {
-	// Update the thread count within the consensus engine
-	type threaded interface {
-		SetThreads(threads int)
-	}
-	if th, ok := s.engine.(threaded); ok {
-		log.Info("Updated mining threads", "threads", threads)
-		if threads == 0 {
-			threads = -1 // Disable the miner from within
-		}
-		th.SetThreads(threads)
-	}
-	// If the miner was not running, initialize it
-	if !s.IsMining() {
-		// Propagate the initial price point to the transaction pool
-		s.lock.RLock()
-		price := s.gasPrice
-		s.lock.RUnlock()
-		s.txPool.SetGasPrice(price)
 
-<<<<<<< HEAD
-               // Configure the local mining address
-               eb, err := s.Etherbase()
-               if err != nil {
-                       log.Error("Cannot start mining without etherbase", "err", err)
-                       return fmt.Errorf("etherbase missing: %v", err)
-               }
-               bftview.SetServerCoinBase(eb)
-               if clique, ok := s.engine.(*clique.Clique); ok {
-=======
-		// Configure the local mining address
-		eb, err := s.Etherbase()
-		if err != nil {
-			log.Error("Cannot start mining without etherbase", "err", err)
-			return fmt.Errorf("etherbase missing: %v", err)
+	func (s *Ethereum) StartMining(threads int) error {
+		// Update the thread count within the consensus engine
+		type threaded interface {
+			SetThreads(threads int)
 		}
-		if clique, ok := s.engine.(*clique.Clique); ok {
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
-			wallet, err := s.accountManager.Find(accounts.Account{Address: eb})
-			if wallet == nil || err != nil {
-				log.Error("Etherbase account unavailable locally", "err", err)
-				return fmt.Errorf("signer missing: %v", err)
+		if th, ok := s.engine.(threaded); ok {
+			log.Info("Updated mining threads", "threads", threads)
+			if threads == 0 {
+				threads = -1 // Disable the miner from within
 			}
-			clique.Authorize(eb, wallet.SignData)
+			th.SetThreads(threads)
 		}
-		// If mining is started, we can disable the transaction rejection mechanism
-		// introduced to speed sync times.
-		atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
+		// If the miner was not running, initialize it
+		if !s.IsMining() {
+			// Propagate the initial price point to the transaction pool
+			s.lock.RLock()
+			price := s.gasPrice
+			s.lock.RUnlock()
+			s.txPool.SetGasPrice(price)
 
-		go s.miner.Start(eb)
+	               // Configure the local mining address
+	               eb, err := s.Etherbase()
+	               if err != nil {
+	                       log.Error("Cannot start mining without etherbase", "err", err)
+	                       return fmt.Errorf("etherbase missing: %v", err)
+	               }
+	               bftview.SetServerCoinBase(eb)
+	               if clique, ok := s.engine.(*clique.Clique); ok {
+	                       wallet, err := s.accountManager.Find(accounts.Account{Address: eb})
+	                       if wallet == nil || err != nil {
+	                               log.Error("Etherbase account unavailable locally", "err", err)
+	                               return fmt.Errorf("signer missing: %v", err)
+	                       }
+	                       clique.Authorize(eb, wallet.SignData)
+	               }
+			// If mining is started, we can disable the transaction rejection mechanism
+			// introduced to speed sync times.
+			atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
+
+			go s.miner.Start(eb)
+		}
+		return nil
 	}
-	return nil
-}
 
 // StopMining terminates the miner, both at the consensus engine level as well as
 // at the block creation level.
-func (s *Ethereum) StopMining() {
-	// Update the thread count within the consensus engine
-	type threaded interface {
-		SetThreads(threads int)
+
+	func (s *Ethereum) StopMining() {
+		// Update the thread count within the consensus engine
+		type threaded interface {
+			SetThreads(threads int)
+		}
+		if th, ok := s.engine.(threaded); ok {
+			th.SetThreads(-1)
+		}
+		// Stop the block creating itself
+		s.miner.Stop()
 	}
-	if th, ok := s.engine.(threaded); ok {
-		th.SetThreads(-1)
-	}
-	// Stop the block creating itself
-	s.miner.Stop()
-}
 */
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
 func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey ed25519.PublicKey) error {
@@ -542,18 +526,11 @@ func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey ed25519.Pub
 	if !s.IsMining() {
 		s.lock.RLock()
 		price := s.gasPrice
-<<<<<<< HEAD
-               s.lock.RUnlock()
-               s.txPool.SetGasPrice(price)
-               bftview.SetServerCoinBase(eb)
-               atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
-               go s.miner.Start(pubKey, eb)
-=======
 		s.lock.RUnlock()
 		s.txPool.SetGasPrice(price)
+		bftview.SetServerCoinBase(eb)
 		atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
 		go s.miner.Start(pubKey, eb)
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 	}
 	return nil
 }

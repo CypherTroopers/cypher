@@ -321,14 +321,11 @@ type Cnode struct {
 }
 
 type NodeConfig struct {
-	Public  string
-	Private string
-	Ip      string
-	Port    string
-<<<<<<< HEAD
+	Public   string
+	Private  string
+	Ip       string
+	Port     string
 	Coinbase string
-=======
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 }
 
 const hexDigit = "0123456789abcdef"
@@ -341,7 +338,7 @@ func HexString(b []byte) string {
 	return string(s)
 }
 
-/////////// Ed25519 public key
+// ///////// Ed25519 public key
 const PublicKey25519Length = 64
 
 type PublicKey25519 [PublicKey25519Length]byte
@@ -366,7 +363,7 @@ func (a *PublicKey25519) SetBytes(b []byte) {
 	copy(a[PublicKey25519Length-len(b):], b)
 }
 
-/////////// Address
+// ///////// Address
 // Address represents the 20 byte address of an Ethereum account.
 type Address [AddressLength]byte
 

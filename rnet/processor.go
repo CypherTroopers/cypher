@@ -5,13 +5,9 @@ import (
 	"net/http"
 	"reflect"
 
-<<<<<<< HEAD
-	"go.dedis.ch/protobuf"
-=======
-	"github.com/dedis/protobuf"
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/rnet/network"
+	"go.dedis.ch/protobuf"
 )
 
 // ServiceProcessor allows for an easy integration of external messages

@@ -82,7 +82,7 @@ func (msg *networkMsg) GetCommittee() *bftview.Committee {
 	return mb
 }
 
-//Service work for protcol
+// Service work for protcol
 type Service struct {
 	netService *netService
 	bc         *core.BlockChain
@@ -137,7 +137,7 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	return s
 }
 
-//OnNewView --------------------------------------------------------------------------
+// OnNewView --------------------------------------------------------------------------
 func (s *Service) OnNewView(data []byte, extraes [][]byte) error { //buf is snapshot, //verify repla' block before newview
 	view := bftview.DecodeToView(data)
 	log.Info("OnNewView..", "txNumber", view.TxNumber, "keyNumber", view.KeyNumber)
@@ -169,7 +169,7 @@ func (s *Service) CurrentN() uint64 {
 	return curView.TxNumber + 1
 }
 
-//CurrentState call by hotstuff
+// CurrentState call by hotstuff
 func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 	curView := s.GetCurrentView()
 	leaderID := ""
@@ -189,7 +189,7 @@ func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 	return curView.EncodeToBytes(), leaderID, curView.TxNumber + 1
 }
 
-//GetExtra call by hotstuff
+// GetExtra call by hotstuff
 func (s *Service) GetExtra() []byte {
 	best := s.keyService.getBestCandidate(true)
 	if best == nil {
@@ -198,7 +198,7 @@ func (s *Service) GetExtra() []byte {
 	return best.EncodeToBytes()
 }
 
-//GetPublicKey call by hotstuff
+// GetPublicKey call by hotstuff
 func (s *Service) GetPublicKey() []*bls.PublicKey {
 	keyblock := s.kbc.CurrentBlock()
 	keyNumber := keyblock.NumberU64()
@@ -209,12 +209,12 @@ func (s *Service) GetPublicKey() []*bls.PublicKey {
 	return c.ToBlsPublicKeys(keyblock.Hash())
 }
 
-//Self call by hotstuff
+// Self call by hotstuff
 func (s *Service) Self() string {
 	return s.netService.serverID
 }
 
-//CheckView call by hotstuff
+// CheckView call by hotstuff
 func (s *Service) CheckView(data []byte) error {
 	if !s.isRunning() {
 		return types.ErrNotRunning
@@ -237,7 +237,7 @@ func (s *Service) CheckView(data []byte) error {
 	return nil
 }
 
-//OnPropose call by hotstuff
+// OnPropose call by hotstuff
 func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new block
 	log.Debug("OnPropose..")
 	if !s.isRunning() {
@@ -275,7 +275,7 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new blo
 	return nil
 }
 
-//Propose call by hotstuff
+// Propose call by hotstuff
 func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
 	log.Debug("Propose..", "number", s.currentView.TxNumber)
 
@@ -343,7 +343,7 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	return nil, nil, data, nil
 }
 
-//OnViewDone call by hotstuff
+// OnViewDone call by hotstuff
 func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
 	if !s.isRunning() {
 		return types.ErrNotRunning
@@ -361,7 +361,7 @@ func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
 	return nil
 }
 
-//Write call by hotstuff------------------------------------------------------------------------------------------------
+// Write call by hotstuff------------------------------------------------------------------------------------------------
 func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
 	log.Info("Write", "to id", id, "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
 
@@ -385,7 +385,7 @@ func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
 	return nil
 }
 
-//Broadcast call by hotstuff
+// Broadcast call by hotstuff
 func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
 	log.Debug("Broadcast", "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
 	s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, hMsg: data})
@@ -453,7 +453,7 @@ func (s *Service) handleHotStuffMsg() {
 	}
 }
 
-//-------------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------------------------------
 func (s *Service) syncCommittee(mb *bftview.Committee, keyblock *types.KeyBlock) {
 	if !keyblock.HasNewNode() {
 		return
@@ -757,20 +757,13 @@ func (s *Service) procBlockDone(block *types.Block) {
 
 // call by miner.start
 func (s *Service) start(config *common.NodeConfig) {
-<<<<<<< HEAD
-        if !s.isRunning() {
-                s.protocolMng.UpdateKeyPair(bftview.StrToBlsPrivKey(config.Private))
-                bftview.SetServerInfo(s.netService.serverAddress, config.Public)
-               if config.Coinbase != "" {
-                       bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
-               }
-                s.netService.StartStop(true)
-=======
 	if !s.isRunning() {
 		s.protocolMng.UpdateKeyPair(bftview.StrToBlsPrivKey(config.Private))
 		bftview.SetServerInfo(s.netService.serverAddress, config.Public)
+		if config.Coinbase != "" {
+			bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
+		}
 		s.netService.StartStop(true)
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 		if bftview.IamMember() >= 0 {
 			s.updateCommittee(nil)
 			s.pacetMakerTimer.start()

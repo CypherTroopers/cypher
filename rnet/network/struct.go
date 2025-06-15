@@ -6,11 +6,7 @@ import (
 	"sync"
 	"time"
 
-<<<<<<< HEAD
 	"go.dedis.ch/protobuf"
-=======
-	"github.com/dedis/protobuf"
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 	uuid "gopkg.in/satori/go.uuid.v1"
 )
 

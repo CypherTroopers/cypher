@@ -50,7 +50,7 @@ type ServiceInterface interface {
 	Committee_Request(kNumber uint64, hash common.Hash)
 }
 
-//type Committee []*common.Cnode
+// type Committee []*common.Cnode
 type Committee struct {
 	List []*common.Cnode
 }
@@ -110,17 +110,12 @@ func SetCommitteeConfig(db ethdb.Database, keyblockchain KeyBlockChainInterface,
 }
 
 func SetServerInfo(address, pubKey string) {
-<<<<<<< HEAD
-        m_config.serverInfo.address = address
-        m_config.serverInfo.pubKey = pubKey
+	m_config.serverInfo.address = address
+	m_config.serverInfo.pubKey = pubKey
 }
 
 func SetServerCoinBase(addr common.Address) {
-       m_config.serverInfo.coinbase = addr
-=======
-	m_config.serverInfo.address = address
-	m_config.serverInfo.pubKey = pubKey
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
+	m_config.serverInfo.coinbase = addr
 }
 
 func GetServerCommitteeLen() int {
@@ -452,7 +447,7 @@ func (committee *Committee) HasIP() bool {
 	return true
 }
 
-//------Tools---------------------------------------------------------------------------------------------------------
+// ------Tools---------------------------------------------------------------------------------------------------------
 func ToBlsPublicKeys(hash common.Hash) []*bls.PublicKey {
 	m_config.muCommitteeCache.Lock()
 	c, ok := m_config.cacheCommittee[hash]
