@@ -195,10 +195,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	log.Warn("exip", "ip", api.e.ExtIP(), "port", api.e.config.RnetPort)
 	server.Ip = api.e.ExtIP().String()
 	server.Port = api.e.config.RnetPort
-<<<<<<< HEAD
 	server.Coinbase = eb.Hex()
-=======
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 	api.e.reconfig.MinerStart(server)
 	// Start the miner and return
 	// Set the number of threads if the seal engine supports it

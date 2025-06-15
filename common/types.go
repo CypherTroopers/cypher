@@ -325,10 +325,7 @@ type NodeConfig struct {
 	Private string
 	Ip      string
 	Port    string
-<<<<<<< HEAD
 	Coinbase string
-=======
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 }
 
 const hexDigit = "0123456789abcdef"

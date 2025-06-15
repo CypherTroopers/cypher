@@ -137,7 +137,6 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	return s
 }
 
-//OnNewView --------------------------------------------------------------------------
 func (s *Service) OnNewView(data []byte, extraes [][]byte) error { //buf is snapshot, //verify repla' block before newview
 	view := bftview.DecodeToView(data)
 	log.Info("OnNewView..", "txNumber", view.TxNumber, "keyNumber", view.KeyNumber)
@@ -757,7 +756,6 @@ func (s *Service) procBlockDone(block *types.Block) {
 
 // call by miner.start
 func (s *Service) start(config *common.NodeConfig) {
-<<<<<<< HEAD
         if !s.isRunning() {
                 s.protocolMng.UpdateKeyPair(bftview.StrToBlsPrivKey(config.Private))
                 bftview.SetServerInfo(s.netService.serverAddress, config.Public)
@@ -765,12 +763,6 @@ func (s *Service) start(config *common.NodeConfig) {
                        bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
                }
                 s.netService.StartStop(true)
-=======
-	if !s.isRunning() {
-		s.protocolMng.UpdateKeyPair(bftview.StrToBlsPrivKey(config.Private))
-		bftview.SetServerInfo(s.netService.serverAddress, config.Public)
-		s.netService.StartStop(true)
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 		if bftview.IamMember() >= 0 {
 			s.updateCommittee(nil)
 			s.pacetMakerTimer.start()

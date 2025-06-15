@@ -60,10 +60,7 @@ import (
 	p2pnat "github.com/cypherium/cypher/p2p/nat"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig"
-<<<<<<< HEAD
 	"github.com/cypherium/cypher/reconfig/bftview"
-=======
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
 )
@@ -175,12 +172,8 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		consensusServicePendingLogsFeed: new(event.Feed),
 		extIP:                           extIP,
 	}
-<<<<<<< HEAD
-        bftview.SetServerCoinBase(config.Miner.Etherbase) 
-	
-=======
+        bftview.SetServerCoinBase(config.Miner.Etherbase)
 
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 	bcVersion := rawdb.ReadDatabaseVersion(chainDb)
 	var dbVer = "<nil>"
 	if bcVersion != nil {
@@ -458,10 +451,7 @@ func (s *Ethereum) SetEtherbase(etherbase common.Address) {
 	s.lock.Unlock()
 
 	s.miner.SetCoinbase(etherbase)
-<<<<<<< HEAD
 	bftview.SetServerCoinBase(etherbase)
-=======
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 }
 
 /*
@@ -542,18 +532,15 @@ func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey ed25519.Pub
 	if !s.IsMining() {
 		s.lock.RLock()
 		price := s.gasPrice
-<<<<<<< HEAD
                s.lock.RUnlock()
                s.txPool.SetGasPrice(price)
                bftview.SetServerCoinBase(eb)
                atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
                go s.miner.Start(pubKey, eb)
-=======
 		s.lock.RUnlock()
 		s.txPool.SetGasPrice(price)
 		atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
 		go s.miner.Start(pubKey, eb)
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 	}
 	return nil
 }
