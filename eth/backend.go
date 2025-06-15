@@ -487,15 +487,6 @@ func (s *Ethereum) StartMining(threads int) error {
                }
                bftview.SetServerCoinBase(eb)
                if clique, ok := s.engine.(*clique.Clique); ok {
-=======
-		// Configure the local mining address
-		eb, err := s.Etherbase()
-		if err != nil {
-			log.Error("Cannot start mining without etherbase", "err", err)
-			return fmt.Errorf("etherbase missing: %v", err)
-		}
-		if clique, ok := s.engine.(*clique.Clique); ok {
->>>>>>> 577e7bd8513e598998e4a4070c86ff612c342eff
 			wallet, err := s.accountManager.Find(accounts.Account{Address: eb})
 			if wallet == nil || err != nil {
 				log.Error("Etherbase account unavailable locally", "err", err)
@@ -528,21 +519,18 @@ func (s *Ethereum) StopMining() {
 */
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
 func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey ed25519.PublicKey) error {
-	// If the miner was not running, initialize it
-	if !s.IsMining() {
-		s.lock.RLock()
-		price := s.gasPrice
-               s.lock.RUnlock()
-               s.txPool.SetGasPrice(price)
-               bftview.SetServerCoinBase(eb)
-               atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
-               go s.miner.Start(pubKey, eb)
-		s.lock.RUnlock()
-		s.txPool.SetGasPrice(price)
-		atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
-		go s.miner.Start(pubKey, eb)
-	}
-	return nil
+    // If the miner was not running, initialize it
+    if !s.IsMining() {
+        s.lock.RLock()
+        price := s.gasPrice
+        s.lock.RUnlock()
+
+        s.txPool.SetGasPrice(price)
+        bftview.SetServerCoinBase(eb)
+        atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
+        go s.miner.Start(pubKey, eb)
+    }
+    return nil
 }
 
 func (s *Ethereum) StopMining() {
