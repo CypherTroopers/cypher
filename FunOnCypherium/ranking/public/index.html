@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CypherTroopers Ranking</title>
+  <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet" />
+<link rel="icon" type="image/png" sizes="32x32" href="https://raw.githubusercontent.com/CypherTroopers/logo/main/CypherTrooper-favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="96x96" href="https://raw.githubusercontent.com/CypherTroopers/logo/main/CypherTrooper-favicon-96x96.png">
+<link rel="apple-touch-icon" sizes="192x192" href="https://raw.githubusercontent.com/CypherTroopers/logo/main/CypherTrooper-apple-touch-icon-transparent.png">
+<link rel="apple-touch-icon" sizes="192x192" href="https://raw.githubusercontent.com/CypherTroopers/logo/main/CypherTrooper-apple-touch-icon.png">
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/bignumber.js/9.1.1/bignumber.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/shared/menu.css">
+  <link rel="stylesheet" href="styles.css">
+  
+</head>
+<body>
+  <div class="background-spinner" aria-hidden="true"></div>
+  <div class="grid-overlay" aria-hidden="true"></div>
+  <div class="metallic-sheen" aria-hidden="true"></div>
+  <div class="corner-glow glow-top" aria-hidden="true"></div>
+  <div class="corner-glow glow-bottom" aria-hidden="true"></div>
+
+  <main class="main-layout">
+  <div class="widget-row">
+  <div
+    id="coingecko-marquee"
+    class="widget-placeholder holo-card"
+    data-widget-type="marquee"
+    data-coin-ids="bitcoin,ethereum"
+    data-currency="usd"
+    data-background="#000000"
+    data-locale="en"
+  >Loading market data…</div>
+</div>
+    <header class="page-header">
+      <h1 class="text-center">🚀 CypherTroopers HODLer Ranking</h1>
+      <p class="page-subtitle">Immersive leaderboard for the most dedicated troopers.</p>
+    </header>
+
+    <div class="content-grid">
+      <section class="section info">
+        <h2>Blockchain Info</h2>
+        <p>Total Supply: <span id="total-supply">Loading...</span></p>
+        <p>Latest Block: <span id="latest-block">Loading...</span></p>
+        <p>Total Wallets: <span id="total-wallets">Loading...</span></p>
+      </section>
+
+      <section class="section search">
+        <h2>Search Wallet</h2>
+        <input type="text" class="form-control mb-2" id="search-address" placeholder="Enter wallet address" />
+        <button class="btn btn-success" onclick="searchWallet()">Search</button>
+        <p id="search-result" class="mt-2"></p>
+      </section>
+
+      <section class="section converter">
+        <h2>Convert CPH</h2>
+        <div
+          id="coingecko-converter"
+          data-widget-type="converter"
+          data-coin-id="cypherium"
+          data-locale="en"
+          data-initial-currency="usd"
+        >Loading converter…</div>
+      </section>
+
+      <section class="section section-wide flows">
+        <h2>MEXC Exchange Wallet Flows</h2>
+        <p class="mb-3">Address: <code id="flow-address"></code></p>
+        <p class="text-muted mb-3">Updated hourly • Last refreshed: <span id="flow-updated">Loading...</span></p>
+        <div class="table-shell">
+          <table class="table table-dark table-striped">
+            <thead><tr><th>Interval</th><th>Inflow (CPH)</th><th>Outflow (CPH)</th></tr></thead>
+            <tbody id="flow-body"><tr><td colspan="3">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section section-wide rankings">
+        <h2>Ranking</h2>
+        <div class="table-shell">
+          <table class="table table-dark table-striped">
+            <thead><tr><th>Rank</th><th>Address</th><th>Balance</th></tr></thead>
+            <tbody id="ranking-body"></tbody>
+          </table>
+        </div>
+        <div id="pagination" class="pagination text-center"></div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const BASE_PATH = "/ranking";
+    const TARGET_FLOW_ADDRESS = '0x559b817584e2e6d3be422e4e2478565eb467d99e';
+    const FLOW_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
+    async function fetchJSON(url) {
+      const res = await fetch(BASE_PATH + url);
+      if (!res.ok) {
+        throw new Error(`Request failed with status ${res.status}`);
+      }
+      return await res.json();
+    }
+
+    async function loadInfo() {
+      const [totalSupply, latestBlock, totalWallets] = await Promise.all([
+        fetch(BASE_PATH + '/api/total-supply').then(r => r.text()),
+        fetch(BASE_PATH + '/api/latest-block').then(r => r.text()),
+        fetch(BASE_PATH + '/api/total-wallets').then(r => r.text())
+      ]);
+
+      document.getElementById("total-supply").innerText = totalSupply;
+      document.getElementById("latest-block").innerText = latestBlock;
+      document.getElementById("total-wallets").innerText = totalWallets;
+    }
+
+    async function loadRanking(page = 1, limit = 50) {
+      const res = await fetchJSON(`/api/ranking?page=${page}&limit=${limit}`);
+      const tbody = document.getElementById("ranking-body");
+      const fragment = document.createDocumentFragment();
+      res.wallets.forEach((w, i) => {
+        const wei = new BigNumber(w.balance);
+        const eth = wei.dividedBy('1e18').toFixed(8);
+        const tr = document.createElement('tr');
+
+        const rankTd = document.createElement('td');
+        rankTd.textContent = (page - 1) * limit + i + 1;
+        const addressTd = document.createElement('td');
+        addressTd.textContent = w.address;
+        const balanceTd = document.createElement('td');
+        balanceTd.textContent = `${eth} CPH`;
+
+        tr.append(rankTd, addressTd, balanceTd);
+        fragment.appendChild(tr);
+      });
+      tbody.replaceChildren(fragment);
+
+      renderPaginationControls(page, res.totalPages, limit);
+    }
+
+    function renderPaginationControls(currentPage, totalPages, limit) {
+      const pagination = document.getElementById("pagination");
+      const fragment = document.createDocumentFragment();
+
+      if (!totalPages || totalPages === 0) {
+        pagination.replaceChildren();
+        return;
+      }
+
+      const createButton = (label, page, disabled = false) => {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        btn.disabled = disabled;
+        if (!disabled) {
+          btn.addEventListener('click', () => loadRanking(page, limit));
+        }
+        fragment.appendChild(btn);
+      };
+
+      const addEllipsis = () => {
+        const span = document.createElement('span');
+        span.textContent = '…';
+        fragment.appendChild(span);
+      };
+
+      createButton('Prev', currentPage - 1, currentPage === 1);
+
+      const windowSize = 2;
+      const startPage = Math.max(1, currentPage - windowSize);
+      const endPage = Math.min(totalPages, currentPage + windowSize);
+
+      if (startPage > 1) {
+        createButton('1', 1, currentPage === 1);
+        if (startPage > 2) addEllipsis();
+      }
+
+      for (let page = startPage; page <= endPage; page++) {
+        createButton(String(page), page, page === currentPage);
+      }
+
+      if (endPage < totalPages) {
+        if (endPage < totalPages - 1) addEllipsis();
+        createButton(String(totalPages), totalPages, currentPage === totalPages);
+      }
+
+      createButton('Next', currentPage + 1, currentPage === totalPages);
+
+      pagination.replaceChildren(fragment);
+    }
+
+    function formatWeiToCPH(value) {
+      const wei = new BigNumber(value || '0');
+      return wei.dividedBy('1e18');
+    }
+
+    function formatFlowDisplay(value, showSign = false) {
+      const formatted = value.toFixed(4);
+      if (!showSign || value.isZero()) return formatted;
+      return `${value.isGreaterThan(0) ? '+' : ''}${formatted}`;
+    }
+
+    function displayFlowValue(flow, key, options = {}) {
+      const { showSign = false } = options;
+      const cphKey = `${key}Cph`;
+      const weiKey = `${key}Wei`;
+      let value;
+
+      if (flow && flow[cphKey] !== undefined) {
+        value = new BigNumber(flow[cphKey] || '0');
+      } else {
+        const rawWei = flow?.[weiKey] ?? flow?.[key] ?? '0';
+        value = formatWeiToCPH(rawWei);
+      }
+
+      return formatFlowDisplay(value, showSign);
+    }
+
+    async function loadFlows() {
+      document.getElementById('flow-address').innerText = TARGET_FLOW_ADDRESS;
+      const tbody = document.getElementById('flow-body');
+      const updatedEl = document.getElementById('flow-updated');
+      tbody.innerHTML = '<tr><td colspan="3">Loading...</td></tr>';
+      updatedEl.textContent = 'Loading...';
+      try {
+        const res = await fetchJSON(`/api/wallet/${TARGET_FLOW_ADDRESS}/flows`);
+        if (res.generatedAt) {
+          const formatted = new Date(res.generatedAt).toLocaleString();
+          updatedEl.textContent = formatted;
+        } else {
+          updatedEl.textContent = '—';
+        }
+        const intervals = [
+          { key: 'last7d', label: 'Last 7 Days' },
+          { key: 'last24h', label: 'Last 24 Hours' },
+        ];
+
+        const fragment = document.createDocumentFragment();
+        intervals.forEach(({ key, label }) => {
+          const data = res.flows?.[key] || {};
+          const inflow = displayFlowValue(data, 'inflow');
+          const outflow = displayFlowValue(data, 'outflow');
+
+          const tr = document.createElement('tr');
+          const intervalTd = document.createElement('td');
+          intervalTd.textContent = label;
+          const inflowTd = document.createElement('td');
+          inflowTd.textContent = `${inflow} CPH`;
+          const outflowTd = document.createElement('td');
+          outflowTd.textContent = `${outflow} CPH`;
+
+          tr.append(intervalTd, inflowTd, outflowTd);
+          fragment.appendChild(tr);
+        });
+        tbody.replaceChildren(fragment);
+      } catch (error) {
+        console.error('Failed to load flow data', error);
+        tbody.innerHTML = '<tr><td colspan="3">Unable to load flow data.</td></tr>';
+        updatedEl.textContent = 'Unavailable';
+      }
+    }
+    async function searchWallet() {
+      const addr = document.getElementById("search-address").value.trim().toLowerCase();
+      const result = document.getElementById("search-result");
+      if (!addr) return (result.innerText = "Address is required.");
+      result.innerText = 'Searching...';
+      try {
+        const res = await fetchJSON(`/api/wallet/${addr}`);
+        const wei = new BigNumber(res.balance);
+        const eth = wei.dividedBy('1e18').toFixed(8);
+        result.innerText = `Balance: ${eth} CPH`;
+      } catch {
+        result.innerText = 'Wallet not found';
+      }
+    }
+
+    function setupWidgetLazyLoad() {
+      const widgetConfigs = {
+        marquee: {
+          src: 'https://widgets.coingecko.com/coingecko-coin-price-marquee-widget.js',
+          render: (container) => {
+            const widget = document.createElement('coingecko-coin-price-marquee-widget');
+            widget.setAttribute('coin-ids', container.dataset.coinIds || '');
+            widget.setAttribute('currency', container.dataset.currency || 'usd');
+            widget.setAttribute('background-color', container.dataset.background || '#000000');
+            widget.setAttribute('locale', container.dataset.locale || 'en');
+            container.replaceChildren(widget);
+          }
+        },
+        converter: {
+          src: 'https://widgets.coingecko.com/gecko-coin-converter-widget.js',
+          render: (container) => {
+            const widget = document.createElement('gecko-coin-converter-widget');
+            widget.setAttribute('locale', container.dataset.locale || 'en');
+            widget.setAttribute('dark-mode', 'true');
+            widget.setAttribute('transparent-background', 'true');
+            widget.setAttribute('coin-id', container.dataset.coinId || 'cypherium');
+            widget.setAttribute('initial-currency', container.dataset.initialCurrency || 'usd');
+            container.replaceChildren(widget);
+          }
+        }
+      };
+
+      const loadedScripts = new Set();
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const container = entry.target;
+          const widgetType = container.dataset.widgetType;
+          const config = widgetConfigs[widgetType];
+          if (!config) return;
+
+          observer.unobserve(container);
+
+          const loadWidget = () => {
+            config.render(container);
+            container.classList.add('widget-loaded');
+          };
+
+          if (loadedScripts.has(config.src)) {
+            loadWidget();
+            return;
+          }
+
+          const script = document.createElement('script');
+          script.src = config.src;
+          script.async = true;
+          script.onload = () => {
+            loadedScripts.add(config.src);
+            loadWidget();
+          };
+          document.head.appendChild(script);
+        });
+      }, { rootMargin: '200px 0px' });
+
+      document.querySelectorAll('[data-widget-type]').forEach((el) => observer.observe(el));
+    }
+
+    window.addEventListener('load', async () => {
+      setupWidgetLazyLoad();
+      await Promise.all([loadInfo(), loadRanking(), loadFlows()]);
+      setInterval(loadFlows, FLOW_REFRESH_INTERVAL_MS);
+    });
+  </script>
+  <script>
+    window.MENU_ACTIVE_PATH = '/ranking';
+  </script>
+  <script defer src="/shared/menu.js"></script>
+</body>
+</html>

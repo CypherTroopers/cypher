@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Add Cypherium RPC</title>
+</head>
+<body style="background:#111; color:white; font-family:sans-serif; text-align:center; padding:40px;">
+  <h2>Connect to Cypherium Mainnet</h2>
+  <button onclick="addCypheriumRPC()" style="padding:10px 20px; font-size:16px; cursor:pointer;">
+    Add Community RPC
+  </button>
+
+  <script>
+    async function addCypheriumRPC() {
+      if (typeof window.ethereum !== 'undefined') {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0x3F26', // 16166 (decimal) = 0x3F26 (hex)
+              chainName: 'Cypherium Mainnet',
+              nativeCurrency: {
+                name: 'CPH',
+                symbol: 'CPH',
+                decimals: 18
+              },
+              rpcUrls: ['https://make-cph-great-again.community'],
+              blockExplorerUrls: ['https://cypherium.tryethernal.com/overview']
+            }]
+          });
+          alert('Cypherium Mainnet RPC has been added to your wallet!');
+        } catch (error) {
+          console.error('Error adding Cypherium network:', error);
+          alert('Failed to add network. See the console for more details.');
+        }
+      } else {
+        alert('Web3 wallet (like MetaMask) not detected. Please install it first.');
+      }
+    }
+  </script>
+</body>
+</html>

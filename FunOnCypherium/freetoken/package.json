@@ -1,0 +1,9 @@
+{
+  "name": "freetoken",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Go-based freetoken server placeholder",
+  "scripts": {
+    "start": "go run ./cmd/server"
+  }
+}

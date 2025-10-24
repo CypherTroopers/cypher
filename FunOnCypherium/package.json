@@ -1,0 +1,15 @@
+{
+  "name": "fun-on-cypherium",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "freetoken"
+  ],
+  "scripts": {
+    "install:all": "npm install --workspaces",
+    "start:freetoken": "go run ./freetoken/cmd/server",
+    "start:ranking": "go run ./ranking",
+    "start:secret-wallet": "go run ./secret-wallet",
+    "start:all": "node scripts/start-all.js"
+  }
+}

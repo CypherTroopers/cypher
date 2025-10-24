@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="./android-chrome-192x192.png">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CPH Web Wallet (Stateless)</title>
+  <!-- Load external CSS -->
+  <link rel="stylesheet" href="/shared/menu.css">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="background-spinner"></div>
+  <div class="metallic-sheen"></div>
+  <div class="grid-overlay"></div>
+
+  <main class="main-content">
+    <section class="panel wallet-panel">
+      <h1>Cypherium Web Wallet (Stateless)</h1>
+      <p class="panel-intro">Securely derive keys, inspect balances, and send transactions from a refined metallic interface that keeps
+        your credentials ephemeral.</p>
+
+      <section class="wallet-section">
+        <h2 class="section-title">Key Generation (Not Saved)</h2>
+
+        <div id="terminalText" class="terminal-display"></div>
+
+        <label class="input-label">Passphrase
+          <input id="passphrase" type="password" autocomplete="off" />
+        </label>
+
+        <label class="input-label">Salt
+          <input id="salt" type="password" autocomplete="off" />
+        </label>
+
+        <div class="button-group">
+          <button id="derive" class="primary-button">Derive Key</button>
+          <button id="forget" class="ghost-button">Forget (Clear Memory)</button>
+        </div>
+        <pre id="whoami" class="code-output"></pre>
+      </section>
+
+      <section class="wallet-section">
+        <h2 class="section-title">Check Balance</h2>
+        <button id="refresh" class="primary-button">Get CPH Balance</button>
+        <pre id="balance" class="code-output"></pre>
+      </section>
+
+      <section class="wallet-section">
+        <h2 class="section-title">Send (CPH)</h2>
+        <label class="input-label">Recipient Address (0x...)
+          <input id="to" type="text" size="60" />
+        </label>
+        <label class="input-label">Amount (CPH)
+          <input id="amount" type="text" />
+        </label>
+        <button id="send" class="primary-button">Send Transaction</button>
+        <pre id="txout" class="code-output"></pre>
+      </section>
+    </section>
+  </main>
+
+  <!-- External libraries & scripts -->
+  <script src="./vendor/ethers.umd.min.js"></script>
+  <script src="./wallet.js"></script>
+  <script src="./typewriter.js"></script>
+  <script>
+    window.MENU_ACTIVE_PATH = '/wallet';
+  </script>
+  <script defer src="/shared/menu.js"></script>
+
+  <footer class="site-footer">
+    <a href="https://github.com/CypherTroopers/Noprivatekeywallet" target="_blank" class="footer-link">
+      GitHub Repository
+    </a>
+    <img src="./logo-512.png" alt="CypherTroopers Logo" class="footer-logo">
+  </footer>
+</body>
+</html>
