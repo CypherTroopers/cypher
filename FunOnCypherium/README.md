@@ -155,6 +155,3 @@ All endpoints are served under `/api` (or `${BASE_PATH}/api` when mounted beneat
 * **Ports** – Adjust via `PORT` env vars. The secret wallet server automatically retries the next four ports if one is busy.
 * **Shared navigation** – Override `window.MENU_SERVICE_BASES`, `window.MENU_SERVICE_PATHS`, or `window.MENU_CONFIG` in your HTML to point the menu to custom domains/labels. Use `window.MENU_ACTIVE_PATH` to highlight the active entry.
 * **Flow cache** – The ranking service caches wallet flow summaries for 1 hour. Append `?nocache=1` to invalidate a single address before recalculation.
-* **Security** – `/admin/backfill/7d` is powerful. Restrict it behind Basic Auth, VPN, or private networking before exposing publicly.
-
----
