@@ -1,4 +1,4 @@
-# Fun on Cypherium monorepo
+# Fun on Cypherium 
 
 Fun on Cypherium brings together three lightweight Go services and a bundle of shared frontend assets that showcase the Cypherium blockchain:
 
@@ -59,9 +59,6 @@ FunOnCypherium/
 ```bash
 # Install Node.js dependencies (only freetoken has a package.json workspace)
 npm install --workspaces
-
-# (Optional) vendor the cypher RPC dependency if you initialise your own module
-go get github.com/cypherium/cypher/rpc
 ```
 
 The Go services do not require additional compilation – `go run` is enough for development.
@@ -69,13 +66,6 @@ The Go services do not require additional compilation – `go run` is enough for
 ---
 
 ## Running the services
-
-### One command for everything
-
-```bash
-node scripts/start-all.js
-```
-
 The helper spawns:
 
 * `go run ./freetoken/cmd/server` (listens on `PORT` or 4200)
@@ -84,23 +74,13 @@ The helper spawns:
 
 Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to stop all children cleanly.
 
-### Individual services
-
-```bash
-npm run start:freetoken      # http://localhost:4200
-npm run start:ranking        # http://localhost:4300 (requires IPC access)
-npm run start:secret-wallet  # http://localhost:4400
-```
-
-Each server reads its own environment variables:
-
 | Service | Key variables |
 | --- | --- |
 | freetoken | `PORT` overrides the default 4200. |
 | ranking | `PORT`, `CYPHER_IPC_PATH`, `BASE_PATH`, `ACCOUNT_SCAN_PAGE_SIZE`, `ACCOUNT_SCAN_PAGES_PER_TICK`, `RPC_RETRY_ATTEMPTS`, `RPC_RETRY_BACKOFF`, `WATCHLIST_ADDRESSES`, `TRACKED_ADDRESSES`. |
 | secret-wallet | `PORT` (auto-increments on conflicts). Frontend behaviour can also be tuned through `SECRET_WALLET_OPTIONS`, `SECRET_WALLET_RPC_URL`, `SECRET_WALLET_PBKDF2`, `SECRET_WALLET_AUTOLOCK_MS`. |
 
-### pm2 example
+### pm2 
 
 `ecosystem.config.js` shows how to supervise the three binaries once they are built (`go build`) and copied to a GOPATH-style layout. Adjust the `cwd` entries to match your deployment paths before running:
 
@@ -178,19 +158,3 @@ All endpoints are served under `/api` (or `${BASE_PATH}/api` when mounted beneat
 * **Security** – `/admin/backfill/7d` is powerful. Restrict it behind Basic Auth, VPN, or private networking before exposing publicly.
 
 ---
-
-## Troubleshooting
-
-| Symptom | Suggested checks |
-| --- | --- |
-| `go run ./ranking` fails to resolve imports | Initialise a Go module in `ranking/` or run within a GOPATH that already contains `github.com/cypherium/cypher`. |
-| Token Generator cannot deploy | Ensure MetaMask is installed, connected to Cypherium mainnet (`chainId` 16166), and that `build/CRC20.{abi,bin}` are present. |
-| Ranking dashboard shows zeros | Verify the node IPC path and that `debug_accountRange` is enabled. Watch the logs for `[SCAN]` or `[CRON]` messages. |
-| Wallet flows stale | Call `/wallet/:address/flows?nocache=1` or restart the service to rebuild the cache. |
-| Secret wallet send fails | Confirm the derived address has sufficient CPH, the RPC URL is reachable, and increase `SECRET_WALLET_AUTOLOCK_MS` if sessions expire too quickly. |
-
----
-
-## License
-
-No explicit license is included. Contact the maintainers before using the code in commercial projects.
