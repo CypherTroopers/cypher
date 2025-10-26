@@ -41,7 +41,6 @@
 
   const defaultLinks = [
     { label: 'Token Generator', href: buildServiceUrl('freetoken'), match: '/' },
-    { label: 'Bridge', href: 'https://funoncypherium.org/bridge', target: '_blank', rel: 'noreferrer noopener' },
     { label: 'Wallet Rank', href: buildServiceUrl('ranking'), target: '_blank', rel: 'noreferrer noopener', match: '/ranking' },
     { label: 'PupSwap🐶', href: 'https://pupswap.org/', target: '_blank', rel: 'noreferrer noopener' },
     { label: 'SecretWallet(TEST)', href: buildServiceUrl('secretWallet'), target: '_blank', rel: 'noreferrer noopener', match: '/wallet' },
