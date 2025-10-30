@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<title>CypherTrooper 3D Circle</title>
+<style>
+  html,body{
+    margin:0; padding:0; height:100%;
+    display:flex; justify-content:center; align-items:center;
+    background:#fff;
+    touch-action:none;
+  }
+  .stage{
+    width:90vw; max-width:512px;
+    perspective:800px;
+  }
+  .disc{
+    width:100%;
+    aspect-ratio:1/1;
+    border-radius:50%;
+    overflow:hidden;
+    box-shadow:0 8px 24px rgba(0,0,0,.12);
+    transform-style:preserve-3d;
+    transition:transform .05s linear;
+    will-change:transform;
+    user-select:none;
+    pointer-events:none;
+  }
+  .disc img{
+    width:100%; height:100%; object-fit:cover;
+  }
+</style>
+
+<body>
+  <div class="stage" id="stage">
+    <div class="disc" id="trooper">
+      <img src="CypherTrooper-logo-512.png" alt="">
+    </div>
+  </div>
+
+<script>
+const stage=document.getElementById('stage');
+const trooper=document.getElementById('trooper');
+
+let target={x:0,y:0}, state={x:0,y:0};
+
+function setTarget(x,y){
+  const r=stage.getBoundingClientRect();
+  const cx=r.left+r.width/2, cy=r.top+r.height/2;
+  target.x=(x-cx)/(r.width/2);
+  target.y=(y-cy)/(r.height/2);
+}
+
+stage.addEventListener('mousemove',e=>setTarget(e.clientX,e.clientY));
+stage.addEventListener('mouseleave',()=>target={x:0,y:0});
+stage.addEventListener('touchmove',e=>{
+  const t=e.touches[0]; setTarget(t.clientX,t.clientY);
+},{passive:true});
+stage.addEventListener('touchend',()=>target={x:0,y:0});
+
+function loop(){
+  state.x+=(target.x-state.x)*0.08;
+  state.y+=(target.y-state.y)*0.08;
+
+  const rx=state.y*-15;
+  const ry=state.x*20;
+  const tz=state.y*-10;
+  const tx=state.x*5;
+  const ty=state.y*5;
+
+  trooper.style.transform=
+    `rotateX(${rx}deg) rotateY(${ry}deg) translate3d(${tx}px,${ty}px,${tz}px)`;
+
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
