@@ -1,29 +1,258 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Cypherium ChainChat</title>
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    #log { white-space: pre-wrap; border: 1px solid #ddd; padding: 10px; min-height: 240px; }
-    input, button { padding: 8px; }
-    .row { margin: 8px 0; }
+    :root {
+      color-scheme: dark;
+      --bg-dark: #0c0c0f;
+      --bg-panel: linear-gradient(150deg, rgba(255,255,255,0.18), rgba(8,8,10,0.85));
+      --border: rgba(255, 255, 255, 0.18);
+      --text-primary: #f6f7fb;
+      --text-muted: #cfd2db;
+      --accent: #d9dbe3;
+      --glow: rgba(255, 255, 255, 0.65);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', 'Helvetica Neue', sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 20% 25%, rgba(255,255,255,0.25), rgba(0,0,0,0.1) 40%),
+        linear-gradient(140deg, #0b0b0e 0%, #16161a 45%, #f4f5f7 130%);
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(24px, 5vw, 64px);
+      overflow: hidden;
+    }
+
+    .grid-overlay {
+      position: fixed;
+      inset: 0;
+      background-image: linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+      background-size: 70px 70px;
+      pointer-events: none;
+      z-index: -1;
+      opacity: 0.55;
+    }
+
+    .glass {
+      width: min(980px, 100%);
+      background: var(--bg-panel);
+      border-radius: 28px;
+      padding: clamp(24px, 6vw, 48px);
+      border: 1px solid var(--border);
+      box-shadow: 0 28px 70px rgba(0,0,0,0.65), inset 0 0 28px rgba(255,255,255,0.08);
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+    }
+
+    .glass::before {
+      content: '';
+      position: absolute;
+      inset: 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: inset 0 18px 30px rgba(255,255,255,0.08);
+      pointer-events: none;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(26px, 3.8vw, 36px);
+      text-align: center;
+      text-shadow: 0 16px 36px rgba(0,0,0,0.8), 0 0 24px rgba(255,255,255,0.4);
+    }
+
+    .intro {
+      margin: 14px auto 30px;
+      max-width: 720px;
+      text-align: center;
+      color: var(--text-muted);
+      line-height: 1.6;
+      text-shadow: 0 6px 16px rgba(0,0,0,0.6);
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      margin-bottom: 14px;
+      position: relative;
+      z-index: 1;
+    }
+
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #f4f5f7;
+      text-shadow: 0 6px 12px rgba(0,0,0,0.7);
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 16px;
+      color: #0e1014;
+      background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(186,188,195,0.82));
+      border: 1px solid rgba(255, 255, 255, 0.42);
+      border-radius: 14px;
+      box-shadow: inset 0 3px 9px rgba(255,255,255,0.68), inset 0 -6px 14px rgba(0,0,0,0.28);
+      outline: none;
+      transition: box-shadow 0.2s ease, transform 0.2s ease;
+      resize: vertical;
+    }
+
+    input:focus, textarea:focus {
+      box-shadow: inset 0 3px 10px rgba(255,255,255,0.78), 0 0 18px rgba(170,180,255,0.85);
+      transform: translateY(-1px);
+    }
+
+    textarea {
+      min-height: 74px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin: 12px 0 6px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 14px 18px;
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f1216;
+      background: linear-gradient(145deg, #ffffff, #b5bac3 55%, #35373c 100%);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      border-radius: 16px;
+      cursor: pointer;
+      box-shadow: inset 0 4px 10px rgba(255,255,255,0.7), inset 0 -6px 18px rgba(0,0,0,0.4), 0 25px 45px rgba(0,0,0,0.6);
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    }
+
+    button:hover, button:focus {
+      transform: translateY(-2px);
+      box-shadow: inset 0 6px 12px rgba(255,255,255,0.75), inset 0 -8px 22px rgba(0,0,0,0.45), 0 35px 55px rgba(0,0,0,0.72);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: inset 0 2px 6px rgba(255,255,255,0.45), inset 0 -4px 10px rgba(0,0,0,0.3), 0 10px 25px rgba(0,0,0,0.45);
+    }
+
+    .status {
+      margin-top: 8px;
+      min-height: 28px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      text-shadow: 0 4px 12px rgba(0,0,0,0.6);
+      transition: opacity 0.2s ease;
+    }
+
+    .status--progress { animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+    .status--success { color: #d3ffe7; }
+    .status--error { color: #ffb8b8; }
+
+    .log-panel {
+      background: rgba(0,0,0,0.35);
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.1);
+      padding: 18px 16px;
+      margin-top: 20px;
+      box-shadow: inset 0 10px 25px rgba(255,255,255,0.05);
+      max-height: 320px;
+      overflow: auto;
+    }
+
+    .log-panel h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #e5e8f0;
+    }
+
+    .log-entry { margin-bottom: 12px; display: grid; grid-template-columns: 120px 1fr; gap: 10px; align-items: start; }
+    .log-entry:last-child { margin-bottom: 0; }
+
+    .log-label {
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding-top: 6px;
+    }
+
+    .bubble {
+      background: linear-gradient(140deg, rgba(255,255,255,0.9), rgba(180,182,190,0.9));
+      color: #0f1116;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.55);
+      box-shadow: inset 0 4px 8px rgba(255,255,255,0.6), inset 0 -6px 14px rgba(0,0,0,0.25), 0 16px 30px rgba(0,0,0,0.55);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .bubble.assistant { background: linear-gradient(140deg, rgba(245,246,250,0.92), rgba(134,140,152,0.92)); }
+    .bubble.epoch { background: linear-gradient(140deg, rgba(222,235,255,0.92), rgba(116,132,175,0.9)); }
   </style>
 </head>
 <body>
-  <h2>Cypherium ChainChat</h2>
-  <div class="row">
-    <label>User ID: <input id="userId" value="jin"></label>
-    <label>Session ID: <input id="sessionId" value="s1"></label>
-    <label>Lang: <input id="lang" value="ja"></label>
-  </div>
-  <div class="row">
-    <input id="msg" style="width:70%" placeholder="Question">
-    <button onclick="send()">Send</button>
-    <button onclick="epoch()">summary</button>
-  </div>
-  <div id="log"></div>
+  <div class="grid-overlay"></div>
+  <main class="glass">
+    <h1>Cypherium ChainChat</h1>
+    <p class="intro">Chat with Cypher node</p>
+
+    <div class="form-grid">
+      <label> User ID
+        <input id="userId" value="jin" autocomplete="username">
+      </label>
+      <label> Session ID
+        <input id="sessionId" value="s1" autocomplete="off">
+      </label>
+      <label> Language
+        <input id="lang" value="ja" autocomplete="off">
+      </label>
+    </div>
+
+    <label> Prompt
+      <textarea id="msg" placeholder="Ask a question or provide instructions..."></textarea>
+    </label>
+
+    <div class="actions">
+      <button id="sendBtn" onclick="send()">Send Message</button>
+      <button id="epochBtn" onclick="epoch()">Fetch Summary</button>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
+
+    <section class="log-panel" aria-live="polite">
+      <h2>Conversation</h2>
+      <div id="log"></div>
+    </section>
+  </main>
   <script src="/static/app.js"></script>
 </body>
 </html>
