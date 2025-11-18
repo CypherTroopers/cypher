@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+llama-index
+llama-index-vector-stores-chroma
+llama-index-llms-ollama
+llama-index-embeddings-ollama
+chromadb
+watchfiles
+pydantic-settings
+sqlalchemy
+cryptography
