@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cypherium ChainChat</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    #log { white-space: pre-wrap; border: 1px solid #ddd; padding: 10px; min-height: 240px; }
+    input, button { padding: 8px; }
+    .row { margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <h2>Cypherium ChainChat</h2>
+  <div class="row">
+    <label>User ID: <input id="userId" value="jin"></label>
+    <label>Session ID: <input id="sessionId" value="s1"></label>
+    <label>Lang: <input id="lang" value="ja"></label>
+  </div>
+  <div class="row">
+    <input id="msg" style="width:70%" placeholder="Question">
+    <button onclick="send()">Send</button>
+    <button onclick="epoch()">summary</button>
+  </div>
+  <div id="log"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
