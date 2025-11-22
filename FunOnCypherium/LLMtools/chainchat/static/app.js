@@ -50,7 +50,8 @@ async function send() {
 
   try {
     appendLog('User', message);
-    const res = await fetch('/chat', {
+
+    const res = await fetch('/chainchat/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -75,7 +76,7 @@ async function epoch() {
   setStatus('Fetching epoch summary...', 'progress');
 
   try {
-    const res = await fetch('/epoch', {
+    const res = await fetch('/chainchat/epoch', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
