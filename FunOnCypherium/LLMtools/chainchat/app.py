@@ -15,8 +15,10 @@ STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(title="Cypherium ChainChat (Local RAG)")
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# 静的ファイルは /chainchat/static にマウント
+app.mount("/chainchat/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+# RAG index load
 if not os.path.exists(PERSIST_DIR):
     os.makedirs(PERSIST_DIR, exist_ok=True)
 
@@ -27,23 +29,20 @@ except Exception:
 
 chat_engine = index.as_chat_engine(chat_mode="context", similarity_top_k=6)
 
-
+# ---- API ----
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
 
-
-@app.post("/chat")
+@app.post("/chainchat/chat")
 async def chat(req: ChatRequest):
-    """Local LLM on cypher Node"""
     try:
         resp = chat_engine.chat(req.message)
         return {"answer": str(resp)}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-
-@app.post("/reindex")
+@app.post("/chainchat/reindex")
 async def reindex():
     global index, chat_engine
     try:
@@ -53,7 +52,7 @@ async def reindex():
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-
-@app.get("/")
+# ---- Frontend index.html ----
+@app.get("/chainchat")
 async def root():
     return FileResponse(STATIC_DIR / "index.html")
