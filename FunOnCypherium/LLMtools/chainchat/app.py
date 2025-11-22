@@ -4,21 +4,18 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from dotenv import load_dotenv
 from rag_builder import build_index, load_index
 
-load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent
-PERSIST_DIR = "storage"
 STATIC_DIR = BASE_DIR / "static"
+PERSIST_DIR = "storage"
 
-app = FastAPI(title="Cypherium ChainChat (Local RAG)")
+app = FastAPI(title="Cypherium ChainChat")
 
-# 静的ファイルは /chainchat/static にマウント
+# /chainchat/static 配下に静的ファイルを置く
 app.mount("/chainchat/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# RAG index load
+# RAG index
 if not os.path.exists(PERSIST_DIR):
     os.makedirs(PERSIST_DIR, exist_ok=True)
 
@@ -29,10 +26,12 @@ except Exception:
 
 chat_engine = index.as_chat_engine(chat_mode="context", similarity_top_k=6)
 
-# ---- API ----
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
+
+
+# === API ===
 
 @app.post("/chainchat/chat")
 async def chat(req: ChatRequest):
@@ -41,6 +40,15 @@ async def chat(req: ChatRequest):
         return {"answer": str(resp)}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/chainchat/epoch")
+async def epoch(req: ChatRequest):
+    try:
+        return {"epoch_block": {"block_hash": "0x00"}}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 
 @app.post("/chainchat/reindex")
 async def reindex():
@@ -52,7 +60,9 @@ async def reindex():
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-# ---- Frontend index.html ----
+
+# === HTML ===
+@app.get("/chainchat/")
 @app.get("/chainchat")
 async def root():
     return FileResponse(STATIC_DIR / "index.html")
