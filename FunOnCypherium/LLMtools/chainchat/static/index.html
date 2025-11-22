@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -220,6 +220,7 @@
     .bubble.epoch { background: linear-gradient(140deg, rgba(222,235,255,0.92), rgba(116,132,175,0.9)); }
   </style>
 </head>
+
 <body>
   <div class="grid-overlay"></div>
   <main class="glass">
@@ -228,13 +229,13 @@
 
     <div class="form-grid">
       <label> User ID
-        <input id="userId" value="jin" autocomplete="username">
+        <input id="userId" value="your name" autocomplete="username">
       </label>
       <label> Session ID
         <input id="sessionId" value="s1" autocomplete="off">
       </label>
       <label> Language
-        <input id="lang" value="ja" autocomplete="off">
+        <input id="lang" value="en" autocomplete="off">
       </label>
     </div>
 
@@ -253,6 +254,7 @@
       <div id="log"></div>
     </section>
   </main>
-  <script src="/static/app.js"></script>
+
+  <script src="/chainchat/static/app.js"></script>
 </body>
 </html>
