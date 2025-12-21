@@ -24,6 +24,16 @@ if (typeof win.SECRET_WALLET_AUTOLOCK_MS === "number" && win.SECRET_WALLET_AUTOL
 }
 
 const provider = new ethers.JsonRpcProvider(runtimeOptions.rpcUrl);
+// ethers v6 does not expose getGasPrice; add a compatibility shim so any
+// lingering callers (including cached bundles) can fall back to RPC fee data.
+if (typeof provider.getGasPrice !== "function") {
+  provider.getGasPrice = async () => {
+    const fee = await provider.getFeeData();
+    if (fee.gasPrice != null) return fee.gasPrice;
+    if (fee.maxFeePerGas != null) return fee.maxFeePerGas;
+    throw new Error("Gas price unavailable from RPC node");
+  };
+}
 
 let current = {
   privKeyHex: null,
