@@ -23,7 +23,7 @@ if (typeof win.SECRET_WALLET_AUTOLOCK_MS === "number" && win.SECRET_WALLET_AUTOL
   runtimeOptions.autoLockMs = Math.floor(win.SECRET_WALLET_AUTOLOCK_MS);
 }
 
-const provider = new ethers.providers.JsonRpcProvider(runtimeOptions.rpcUrl);
+const provider = new ethers.JsonRpcProvider(runtimeOptions.rpcUrl);
 
 let current = {
   privKeyHex: null,
@@ -234,10 +234,9 @@ document.getElementById("send").addEventListener("click", async () => {
     }
     scheduleAutoLock();
     const nonce = await provider.getTransactionCount(current.wallet.address);
-    const gasPrice = await provider.getGasPrice();
     const value = ethers.parseUnits(amount, 18);
-    const gasLimit = ethers.BigNumber.from("21000");
-    const tx = { to, value, gasLimit, gasPrice, nonce, chainId: current.chainId };
+    const gasLimit = 21000n;
+    const tx = { to, value, gasLimit, nonce, chainId: Number(current.chainId) };
     const sent = await current.wallet.sendTransaction(tx);
     out.textContent = `sending... TxHash: ${sent.hash}`;
   } catch (e) {
