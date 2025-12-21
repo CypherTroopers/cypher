@@ -324,4 +324,24 @@ input:focus-visible {
   .panel-intro {
     font-size: 0.95rem;
   }
+
+  .button-group {
+    gap: 8px;
+  }
+
+  .primary-button,
+  .ghost-button {
+    padding: 8px 10px;
+    font-size: 0.8rem;
+    letter-spacing: 0.10em;
+    border-radius: 10px;
+  }
+}
+
+@media (max-width: 400px) {
+  .primary-button,
+  .ghost-button {
+    padding: 6px 8px;
+    font-size: 0.75rem;
+  }
 }
