@@ -10,3 +10,5 @@ watchfiles
 pydantic-settings
 sqlalchemy
 cryptography
+pypdf
+beautifulsoup4
