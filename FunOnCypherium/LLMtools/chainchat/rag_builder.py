@@ -84,7 +84,9 @@ def build_index(persist_dir="storage"):
     docs = _load_docs(paths)
 
     storage_ctx, _ = _storage_and_vs(persist_dir)
+    
     index = VectorStoreIndex([], storage_context=storage_ctx)
+    
     nodes = _nodes_from_docs(splitter, docs)
 
     def insert_batch(batch):
@@ -105,6 +107,7 @@ def build_index(persist_dir="storage"):
     return index
 
 def load_index(persist_dir="storage"):
+    
     _make_services()
 
     client = chromadb.PersistentClient(path=os.path.join(persist_dir, "chroma"))
