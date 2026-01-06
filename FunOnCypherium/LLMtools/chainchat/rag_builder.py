@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from pathlib import Path
@@ -21,6 +22,9 @@ import chromadb
 from file_filters import wanted
 
 load_dotenv()
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 SRC_DIR = os.getenv("SRC_DIR")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
@@ -58,8 +62,20 @@ def _list_source_files() -> list[str]:
     return paths
 
 def _load_docs(paths: list[str]):
-    loader = SimpleDirectoryReader(input_files=paths, filename_as_id=True, errors="ignore")
-    return loader.load_data()
+    docs = []
+    for path in paths:
+        try:
+            loader = SimpleDirectoryReader(
+                input_files=[path],
+                filename_as_id=True,
+                errors="raise",
+            )
+            docs.extend(loader.load_data())
+        except Exception:
+            logger.exception("Failed to load source file: %s", path)
+    if not docs:
+        logger.warning("No documents loaded from SRC_DIR=%s", SRC_DIR)
+    return docs
 
 def _nodes_from_docs(splitter: NodeParser, docs) -> List[TextNode]:
     nodes = splitter.get_nodes_from_documents(docs)
