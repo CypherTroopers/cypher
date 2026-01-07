@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from rag_builder import build_index, load_index
+from rag_builder import TOP_K, build_index, load_index
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -24,7 +24,7 @@ try:
 except Exception:
     index = build_index(PERSIST_DIR)
 
-chat_engine = index.as_chat_engine(chat_mode="context", similarity_top_k=6)
+chat_engine = index.as_chat_engine(chat_mode="context", similarity_top_k=TOP_K)
 
 class ChatRequest(BaseModel):
     message: str
@@ -55,7 +55,7 @@ async def reindex():
     global index, chat_engine
     try:
         index = build_index(PERSIST_DIR)
-        chat_engine = index.as_chat_engine(chat_mode="context", similarity_top_k=6)
+        chat_engine = index.as_chat_engine(chat_mode="context", similarity_top_k=TOP_K)
         return {"status": "ok", "message": "reindexed"}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
