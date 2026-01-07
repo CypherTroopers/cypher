@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "200"))
     DB_PATH: str = os.getenv("DB_PATH", "./storage/chainchat.db")
     ENCRYPTION_KEY: str | None = os.getenv("ENCRYPTION_KEY") or None
-    TOP_K: int = int(os.getenv("TOP_K", "6"))
+    TOP_K: int = int(os.getenv("TOP_K", "20"))
     HOST: str = os.getenv("HOST", "127.0.0.1")
     PORT: int = int(os.getenv("PORT", "8808"))
 
