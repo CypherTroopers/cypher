@@ -36,6 +36,7 @@ REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "600"))
 BATCH_NODES = int(os.getenv("BATCH_NODES", "200"))
 RETRY_PER_BATCH = int(os.getenv("RETRY_PER_BATCH", "3"))
 RETRY_SLEEP = int(os.getenv("RETRY_SLEEP", "5"))
+TOP_K = int(os.getenv("TOP_K", "6"))
 
 def _make_services():
     splitter = SentenceSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
