@@ -12,7 +12,6 @@ PERSIST_DIR = "storage"
 
 app = FastAPI(title="Cypherium ChainChat")
 
-# /chainchat/static
 app.mount("/chainchat/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # RAG index
