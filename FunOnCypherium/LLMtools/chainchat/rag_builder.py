@@ -272,7 +272,10 @@ def load_index(persist_dir: str | None = None):
         collection = client.get_collection(collection_name)
     except Exception as exc:
         raise RuntimeError(
-            f"Chroma collection not found: {collection_name} ({exc})"
+            "Chroma collection not found: "
+            f"{collection_name} ({exc}). "
+            "Confirm your settings (e.g., CHROMA_COLLECTION, EMBED_MODEL, "
+            "CHUNK_SIZE/OVERLAP) have not changed since the index was built."
         )
 
     vs = ChromaVectorStore(chroma_collection=collection)
