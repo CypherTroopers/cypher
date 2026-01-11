@@ -12,3 +12,4 @@ sqlalchemy
 cryptography
 pypdf
 beautifulsoup4
+web3
