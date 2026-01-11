@@ -15,5 +15,8 @@ class Settings(BaseSettings):
     TOP_K: int = int(os.getenv("TOP_K", "20"))
     HOST: str = os.getenv("HOST", "127.0.0.1")
     PORT: int = int(os.getenv("PORT", "8808"))
-
+    RPC_URL: str = os.getenv("RPC_URL", "https://localhost:8000")
+    RPC_TIMEOUT: int = int(os.getenv("RPC_TIMEOUT", "10"))
+    RPC_VERIFY_SSL: bool = os.getenv("RPC_VERIFY_SSL", "true").lower() == "true"
+    
 settings = Settings()
