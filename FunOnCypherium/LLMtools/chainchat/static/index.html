@@ -5,26 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Cypherium ChainChat</title>
 
-    <link rel="apple-touch-icon" href="CypherTrooper-apple-touch-icon.png" />
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="192x192"
-      href="android-chrome-192x192.png"
-    />
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="512x512"
-      href="CypherTrooper-android-chrome-512x512.png"
-    />
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="512x512"
-      href="CypherTrooper-logo-512.png"
-    />
+    <!-- Icons (use absolute paths so /chainchat/ pages resolve correctly) -->
+    <link rel="apple-touch-icon" href="/chainchat/static/CypherTrooper-apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/chainchat/static/android-chrome-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/chainchat/static/CypherTrooper-android-chrome-512x512.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/chainchat/static/CypherTrooper-logo-512.png" />
 
+    <!-- Shared Menu CSS -->
     <link rel="stylesheet" href="/shared/menu.css" />
 
     <style>
@@ -51,18 +38,21 @@
         font-family: "Segoe UI", "Helvetica Neue", sans-serif;
         margin: 0;
         min-height: 100vh;
-        background: radial-gradient(
+        background:
+          radial-gradient(
             circle at 20% 25%,
             rgba(255, 255, 255, 0.25),
             rgba(0, 0, 0, 0.1) 40%
           ),
           linear-gradient(140deg, #0b0b0e 0%, #16161a 45%, #f4f5f7 130%);
         color: var(--text-primary);
+
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 26px;
+
         padding: clamp(24px, 5vw, 64px);
         overflow-x: hidden;
         overflow-y: auto;
@@ -71,7 +61,8 @@
       .grid-overlay {
         position: fixed;
         inset: 0;
-        background-image: linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
           linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
         background-size: 70px 70px;
         pointer-events: none;
@@ -85,7 +76,9 @@
         border-radius: 28px;
         padding: clamp(24px, 6vw, 48px);
         border: 1px solid var(--border);
-        box-shadow: 0 28px 70px rgba(0, 0, 0, 0.65), inset 0 0 28px rgba(255, 255, 255, 0.08);
+        box-shadow:
+          0 28px 70px rgba(0, 0, 0, 0.65),
+          inset 0 0 28px rgba(255, 255, 255, 0.08);
         position: relative;
         overflow: hidden;
         backdrop-filter: blur(8px);
@@ -105,7 +98,9 @@
         margin: 0;
         font-size: clamp(26px, 3.8vw, 36px);
         text-align: center;
-        text-shadow: 0 16px 36px rgba(0, 0, 0, 0.8), 0 0 24px rgba(255, 255, 255, 0.4);
+        text-shadow:
+          0 16px 36px rgba(0, 0, 0, 0.8),
+          0 0 24px rgba(255, 255, 255, 0.4);
       }
 
       .intro {
@@ -157,18 +152,28 @@
         padding: 14px 16px;
         font-size: 16px;
         color: #0e1014;
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(186, 188, 195, 0.82));
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.95),
+          rgba(186, 188, 195, 0.82)
+        );
         border: 1px solid rgba(255, 255, 255, 0.42);
         border-radius: 14px;
-        box-shadow: inset 0 3px 9px rgba(255, 255, 255, 0.68), inset 0 -6px 14px rgba(0, 0, 0, 0.28);
+        box-shadow:
+          inset 0 3px 9px rgba(255, 255, 255, 0.68),
+          inset 0 -6px 14px rgba(0, 0, 0, 0.28);
         outline: none;
-        transition: box-shadow 0.2s ease, transform 0.2s ease;
+        transition:
+          box-shadow 0.2s ease,
+          transform 0.2s ease;
         resize: vertical;
       }
 
       input:focus,
       textarea:focus {
-        box-shadow: inset 0 3px 10px rgba(255, 255, 255, 0.78), 0 0 18px rgba(170, 180, 255, 0.85);
+        box-shadow:
+          inset 0 3px 10px rgba(255, 255, 255, 0.78),
+          0 0 18px rgba(170, 180, 255, 0.85);
         transform: translateY(-1px);
       }
 
@@ -192,17 +197,24 @@
         border: 1px solid rgba(255, 255, 255, 0.5);
         border-radius: 16px;
         cursor: pointer;
-        box-shadow: inset 0 4px 10px rgba(255, 255, 255, 0.7), inset 0 -6px 18px rgba(0, 0, 0, 0.4),
+        box-shadow:
+          inset 0 4px 10px rgba(255, 255, 255, 0.7),
+          inset 0 -6px 18px rgba(0, 0, 0, 0.4),
           0 25px 45px rgba(0, 0, 0, 0.6);
         letter-spacing: 0.16em;
         text-transform: uppercase;
-        transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease,
+          opacity 0.2s ease;
       }
 
       button:hover,
       button:focus {
         transform: translateY(-2px);
-        box-shadow: inset 0 6px 12px rgba(255, 255, 255, 0.75), inset 0 -8px 22px rgba(0, 0, 0, 0.45),
+        box-shadow:
+          inset 0 6px 12px rgba(255, 255, 255, 0.75),
+          inset 0 -8px 22px rgba(0, 0, 0, 0.45),
           0 35px 55px rgba(0, 0, 0, 0.72);
       }
 
@@ -210,7 +222,9 @@
         opacity: 0.55;
         cursor: not-allowed;
         transform: none;
-        box-shadow: inset 0 2px 6px rgba(255, 255, 255, 0.45), inset 0 -4px 10px rgba(0, 0, 0, 0.3),
+        box-shadow:
+          inset 0 2px 6px rgba(255, 255, 255, 0.45),
+          inset 0 -4px 10px rgba(0, 0, 0, 0.3),
           0 10px 25px rgba(0, 0, 0, 0.45);
       }
 
@@ -287,35 +301,61 @@
       }
 
       .bubble {
-        background: linear-gradient(140deg, rgba(255, 255, 255, 0.9), rgba(180, 182, 190, 0.9));
+        background: linear-gradient(
+          140deg,
+          rgba(255, 255, 255, 0.9),
+          rgba(180, 182, 190, 0.9)
+        );
         color: #0f1116;
         padding: 12px 14px;
         border-radius: 14px;
         border: 1px solid rgba(255, 255, 255, 0.55);
-        box-shadow: inset 0 4px 8px rgba(255, 255, 255, 0.6), inset 0 -6px 14px rgba(0, 0, 0, 0.25),
+        box-shadow:
+          inset 0 4px 8px rgba(255, 255, 255, 0.6),
+          inset 0 -6px 14px rgba(0, 0, 0, 0.25),
           0 16px 30px rgba(0, 0, 0, 0.55);
         white-space: pre-wrap;
         word-break: break-word;
       }
 
       .bubble.assistant {
-        background: linear-gradient(140deg, rgba(245, 246, 250, 0.92), rgba(134, 140, 152, 0.92));
+        background: linear-gradient(
+          140deg,
+          rgba(245, 246, 250, 0.92),
+          rgba(134, 140, 152, 0.92)
+        );
       }
 
       .bubble.epoch {
-        background: linear-gradient(140deg, rgba(222, 235, 255, 0.92), rgba(116, 132, 175, 0.9));
+        background: linear-gradient(
+          140deg,
+          rgba(222, 235, 255, 0.92),
+          rgba(116, 132, 175, 0.9)
+        );
       }
 
       .bubble.latest {
-        background: linear-gradient(140deg, rgba(228, 244, 255, 0.92), rgba(140, 168, 202, 0.9));
+        background: linear-gradient(
+          140deg,
+          rgba(228, 244, 255, 0.92),
+          rgba(140, 168, 202, 0.9)
+        );
       }
 
       .bubble.transaction {
-        background: linear-gradient(140deg, rgba(255, 242, 221, 0.92), rgba(205, 165, 108, 0.9));
+        background: linear-gradient(
+          140deg,
+          rgba(255, 242, 221, 0.92),
+          rgba(205, 165, 108, 0.9)
+        );
       }
 
       .bubble.address {
-        background: linear-gradient(140deg, rgba(224, 255, 235, 0.92), rgba(120, 175, 146, 0.9));
+        background: linear-gradient(
+          140deg,
+          rgba(224, 255, 235, 0.92),
+          rgba(120, 175, 146, 0.9)
+        );
       }
 
       .query-panel {
@@ -353,13 +393,19 @@
       .site-footer {
         text-align: center;
         padding: 28px 16px 16px;
-        background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(0, 0, 0, 0.55));
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.08),
+          rgba(0, 0, 0, 0.55)
+        );
         border-top: 1px solid rgba(255, 255, 255, 0.12);
         box-shadow: 0 -16px 30px rgba(0, 0, 0, 0.45);
+
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 14px;
+
         width: min(980px, 100%);
         border-radius: 22px;
       }
@@ -370,19 +416,36 @@
         font-weight: 700;
         letter-spacing: 0.14em;
         text-transform: uppercase;
+
         padding: 12px 24px;
         border-radius: 999px;
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), rgba(10, 10, 12, 0.8));
+
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.18),
+          rgba(10, 10, 12, 0.8)
+        );
         border: 1px solid rgba(255, 255, 255, 0.18);
-        box-shadow: inset 0 3px 12px rgba(255, 255, 255, 0.16), 0 12px 22px rgba(0, 0, 0, 0.55);
-        transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        box-shadow:
+          inset 0 3px 12px rgba(255, 255, 255, 0.16),
+          0 12px 22px rgba(0, 0, 0, 0.55);
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease,
+          background 0.2s ease;
       }
 
       .footer-link:hover,
       .footer-link:focus {
         transform: translateY(-1px);
-        background: linear-gradient(135deg, rgba(255, 255, 255, 0.32), rgba(10, 10, 12, 0.9));
-        box-shadow: inset 0 4px 14px rgba(255, 255, 255, 0.22), 0 16px 26px rgba(0, 0, 0, 0.65);
+        background: linear-gradient(
+          135deg,
+          rgba(255, 255, 255, 0.32),
+          rgba(10, 10, 12, 0.9)
+        );
+        box-shadow:
+          inset 0 4px 14px rgba(255, 255, 255, 0.22),
+          0 16px 26px rgba(0, 0, 0, 0.65);
       }
 
       .footer-logos {
@@ -415,8 +478,14 @@
       <h1>Cypherium ChainChat</h1>
 
       <div class="logo-strip" aria-hidden="true">
-        <img src="CypherTrooper-apple-touch-icon.png" alt="Cypherium crest small" />
-        <img src="CypherTrooper-logo-512.png" alt="Cypherium crest large" />
+        <img
+          src="/chainchat/static/CypherTrooper-apple-touch-icon.png"
+          alt="Cypherium crest small"
+        />
+        <img
+          src="/chainchat/static/CypherTrooper-logo-512.png"
+          alt="Cypherium crest large"
+        />
       </div>
 
       <p class="intro">Chat with Cypher node</p>
@@ -486,14 +555,22 @@
         href="https://github.com/CypherTroopers/cypher/tree/FunOnCypherium/FunOnCypherium/LLMtools/chainchat"
         target="_blank"
         class="footer-link"
-        rel="noreferrer noopener"
+        rel="noopener noreferrer"
       >
         GitHub Repository
       </a>
 
       <div class="footer-logos">
-        <img src="CypherTrooper-apple-touch-icon.png" alt="Cypherium logo" class="footer-logo" />
-        <img src="CypherTrooper-logo-512.png" alt="Cypherium crest" class="footer-logo" />
+        <img
+          src="/chainchat/static/CypherTrooper-apple-touch-icon.png"
+          alt="Cypherium logo"
+          class="footer-logo"
+        />
+        <img
+          src="/chainchat/static/CypherTrooper-logo-512.png"
+          alt="Cypherium crest"
+          class="footer-logo"
+        />
       </div>
 
       <div class="footer-note">Powered by Fun on Cypherium</div>
