@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from web3 import Web3
 
-from rag_builder import TOP_K, build_index, load_index
+from rag_builder import PERSIST_DIR, TOP_K, build_index, load_index
 from settings import settings
 
 
