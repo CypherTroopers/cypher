@@ -56,7 +56,7 @@ class Settings(BaseSettings):
         return v
 
     RPC_URL: str = Field(
-        default="https://localhost:8000",
+        default="http://localhost:8000",
         description="JSON-RPC endpoint for the local node (e.g. https://localhost:8000).",
     )
     RPC_TIMEOUT: int = Field(
