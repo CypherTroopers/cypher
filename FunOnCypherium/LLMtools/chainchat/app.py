@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -15,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(title="Cypherium ChainChat")
+logger = logging.getLogger(__name__)
 
 # /chainchat/static
 app.mount(
@@ -29,7 +31,8 @@ if not os.path.exists(PERSIST_DIR):
 
 try:
     index = load_index(PERSIST_DIR)
-except Exception:
+except Exception as exc:
+    logger.exception("Failed to load index from %s; rebuilding.", PERSIST_DIR, exc_info=exc)
     index = build_index(PERSIST_DIR)
 
 chat_engine = index.as_chat_engine(
