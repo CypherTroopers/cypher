@@ -13,7 +13,6 @@ from settings import settings
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
-PERSIST_DIR = "storage"
 
 app = FastAPI(title="Cypherium ChainChat")
 
