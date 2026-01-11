@@ -116,7 +116,7 @@ def _make_services() -> SentenceSplitter:
         request_timeout=REQUEST_TIMEOUT,
     )
     LlamaSettings.embed_model = OllamaEmbedding(
-        model=settings.EMBED_MODEL,
+        model_name=settings.EMBED_MODEL,
         base_url=OLLAMA_BASE_URL,
         request_timeout=REQUEST_TIMEOUT,
     )
