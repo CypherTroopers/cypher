@@ -1,5 +1,4 @@
 import logging
-import os
 import shutil
 import time
 from pathlib import Path
@@ -24,26 +23,26 @@ from settings import settings
 
 
 # ------------------------------------------------------------------------------
-# Environment / Config
+# Config (ALL via settings/.env)
 # ------------------------------------------------------------------------------
 
-PERSIST_DIR = os.getenv("PERSIST_DIR", "storage")
-CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION")  # optional
-RESET_INDEX = os.getenv("RESET_INDEX", "0") == "1"
+PERSIST_DIR = settings.PERSIST_DIR
+CHROMA_COLLECTION = settings.CHROMA_COLLECTION or ""  # optional
+RESET_INDEX = bool(settings.RESET_INDEX)
 
-BATCH_NODES = int(os.getenv("BATCH_NODES", "200"))
-RETRY_PER_BATCH = int(os.getenv("RETRY_PER_BATCH", "3"))
-RETRY_SLEEP = int(os.getenv("RETRY_SLEEP", "5"))
+BATCH_NODES = int(settings.BATCH_NODES)
+RETRY_PER_BATCH = int(settings.RETRY_PER_BATCH)
+RETRY_SLEEP = int(settings.RETRY_SLEEP)
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
-REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "600"))
+OLLAMA_BASE_URL = settings.OLLAMA_BASE_URL
+REQUEST_TIMEOUT = int(settings.REQUEST_TIMEOUT)
 
-TOP_K = int(os.getenv("TOP_K", str(settings.TOP_K)))
+TOP_K = int(settings.TOP_K)
 
-FAILED_FILES_LOG = os.getenv("FAILED_FILES_LOG", "failed_files.txt")
-FAILED_FILES_MAX = int(os.getenv("FAILED_FILES_MAX", "5000"))
+FAILED_FILES_LOG = settings.FAILED_FILES_LOG
+FAILED_FILES_MAX = int(settings.FAILED_FILES_MAX)
 
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOG_LEVEL = (settings.LOG_LEVEL or "INFO").upper()
 
 
 # ------------------------------------------------------------------------------
