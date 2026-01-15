@@ -1,4 +1,3 @@
-import logging
 import os
 from pathlib import Path
 
@@ -8,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from web3 import Web3
 
-from rag_builder import PERSIST_DIR, TOP_K, build_index, load_index
+from rag_builder import build_index, load_index
 from settings import settings
 
 
@@ -16,7 +15,6 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(title="Cypherium ChainChat")
-logger = logging.getLogger(__name__)
 
 # /chainchat/static
 app.mount(
@@ -25,14 +23,24 @@ app.mount(
     name="static",
 )
 
+SHARED_DIR = BASE_DIR / "shared"
+if SHARED_DIR.exists():
+    app.mount(
+        "/shared",
+        StaticFiles(directory=SHARED_DIR),
+        name="shared",
+    )
+
 # === RAG index ===
+PERSIST_DIR = settings.PERSIST_DIR
+TOP_K = settings.TOP_K
+
 if not os.path.exists(PERSIST_DIR):
     os.makedirs(PERSIST_DIR, exist_ok=True)
 
 try:
     index = load_index(PERSIST_DIR)
-except Exception as exc:
-    logger.exception("Failed to load index from %s; rebuilding.", PERSIST_DIR, exc_info=exc)
+except Exception:
     index = build_index(PERSIST_DIR)
 
 chat_engine = index.as_chat_engine(
