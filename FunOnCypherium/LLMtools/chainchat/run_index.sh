@@ -1,10 +1,19 @@
-#!/bin/bash
-cd /root/go/src/github.com/cypherium/cypher/tools/chainchat
-source .venv/bin/activate
+set -euo pipefail
 
-export OLLAMA_NUM_PARALLEL=1
-export OLLAMA_KEEP_ALIVE=5m
-export TOKENIZERS_PARALLELISM=false
-export PYTHONUNBUFFERED=1
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+if [[ -f ".env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source ".env"
+  set +a
+fi
+
+if [[ -f ".venv/bin/activate" ]]; then
+  # shellcheck source=/dev/null
+  source ".venv/bin/activate"
+fi
 
 python3 index_build.py
