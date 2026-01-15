@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     # --- Other ---
     DB_PATH: str = Field(default="./storage/chainchat.db")
 
-    # P2 指摘対応: SecretStrのままでも consumer 側で get_secret_value() すればOK
     ENCRYPTION_KEY: Optional[SecretStr] = Field(default=None)
 
     # Retrieval
