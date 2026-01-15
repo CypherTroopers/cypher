@@ -23,7 +23,7 @@ app.mount(
     name="static",
 )
 
-SHARED_DIR = BASE_DIR / "shared"
+SHARED_DIR = (BASE_DIR / ".." / ".." / "shared").resolve()
 if SHARED_DIR.exists():
     app.mount(
         "/shared",
