@@ -141,4 +141,29 @@ def run_epoch_summary(user_id: str, session_id: str, llm_summarize_fn) -> Dict[s
         {"summary": summary, "covered": len(msgs)}
     )
 
-def verify_chain(user_id: str, session_id: str) -> bo_
+def verify_chain(user_id: str, session_id: str) -> bool:
+    with engine.begin() as conn:
+        rows = conn.execute(text("""
+        SELECT seq, ts, role, content, content_hash, prev_hash, block_hash
+        FROM blocks WHERE user_id=:u AND session_id=:s ORDER BY seq ASC
+        """), {"u": user_id, "s": session_id}).mappings().all()
+        prev_hash = None
+        for row in rows:
+            content_str = _dec(row["content"])
+            if _calc_hash(content_str) != row["content_hash"]:
+                return False
+            payload = {
+                "user_id": user_id,
+                "session_id": session_id,
+                "seq": row["seq"],
+                "ts": row["ts"],
+                "role": row["role"],
+                "content_hash": row["content_hash"],
+                "prev_hash": row["prev_hash"],
+            }
+            if _make_block_hash(payload) != row["block_hash"]:
+                return False
+            if row["prev_hash"] != prev_hash:
+                return False
+            prev_hash = row["block_hash"]
+    return True
