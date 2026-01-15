@@ -1,4 +1,4 @@
-import os, json, time, hashlib, base64
+import os, json, time, hashlib
 from typing import Optional, Dict, Any, List
 from sqlalchemy import create_engine, text
 from cryptography.fernet import Fernet
@@ -9,7 +9,14 @@ engine = create_engine(f"sqlite:///{settings.DB_PATH}", future=True)
 
 FERNET: Optional[Fernet] = None
 if settings.ENCRYPTION_KEY:
-    key = settings.ENCRYPTION_KEY.strip()
+    key_obj = settings.ENCRYPTION_KEY
+    key = (
+        key_obj.get_secret_value()
+        if hasattr(key_obj, "get_secret_value")
+        else str(key_obj)
+    )
+    key = key.strip()
+
     if len(key) != 44:  # Fernet key length check (base64 32 bytes -> 44 chars)
         raise ValueError("ENCRYPTION_KEY must be urlsafe base64 32-byte string")
     FERNET = Fernet(key)
@@ -134,23 +141,4 @@ def run_epoch_summary(user_id: str, session_id: str, llm_summarize_fn) -> Dict[s
         {"summary": summary, "covered": len(msgs)}
     )
 
-def verify_chain(user_id: str, session_id: str) -> bool:
-    chain = get_session_chain(user_id, session_id)
-    prev = None
-    for b in chain:
-        content_str = json.dumps(b["content"], ensure_ascii=False)
-        if _calc_hash(content_str) != b["content_hash"]:
-            return False
-        payload = {
-            "user_id": user_id,
-            "session_id": session_id,
-            "seq": b["seq"],
-            "ts": b["ts"],
-            "role": b["role"],
-            "content_hash": b["content_hash"],
-            "prev_hash": prev
-        }
-        if _make_block_hash(payload) != b["block_hash"]:
-            return False
-        prev = b["block_hash"]
-    return True
+def verify_chain(user_id: str, session_id: str) -> bo_
