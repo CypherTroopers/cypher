@@ -69,7 +69,7 @@ async function send() {
   try {
     appendLog('User', message);
 
-    const res = await fetch('/chainchat/chat', {
+    const res = await fetch('/chainchat/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -79,10 +79,52 @@ async function send() {
       throw new Error(`Request failed (${res.status})`);
     }
 
-    const j = await res.json();
-    appendLog('Assistant', j.answer);
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error('Streaming response not supported by the browser.');
+    }
 
-    setStatus('Response received', 'success');
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split('\n\n');
+      buffer = chunks.pop() || '';
+
+      for (const chunk of chunks) {
+        const lines = chunk.split('\n');
+        let event = 'message';
+        let data = '';
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            event = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            data += line.slice(5).trim();
+          }
+        }
+
+        if (!data) {
+          continue;
+        }
+
+        const payload = JSON.parse(data);
+        if (event === 'message') {
+          appendLog('Assistant', payload.answer);
+          setStatus('Response received', 'success');
+          return;
+        }
+        if (event === 'error') {
+          throw new Error(payload.error || 'Unable to send message');
+        }
+      }
+    }
+
+    throw new Error('No response received from the server.');
   } catch (err) {
     console.error(err);
     setStatus(err.message || 'Unable to send message', 'error');
