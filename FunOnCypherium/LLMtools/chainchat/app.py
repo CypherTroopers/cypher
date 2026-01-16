@@ -1,8 +1,10 @@
+import asyncio
+import json
 import os
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from web3 import Web3
@@ -147,6 +149,37 @@ async def chat(req: ChatRequest):
         return {"answer": str(resp)}
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.post("/chainchat/chat/stream")
+async def chat_stream(req: ChatRequest):
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[tuple[str, str]] = asyncio.Queue()
+
+    async def run_chat():
+        try:
+            resp = await loop.run_in_executor(None, chat_engine.chat, req.message)
+            await queue.put(("message", str(resp)))
+        except Exception as exc:
+            await queue.put(("error", str(exc)))
+
+    task = asyncio.create_task(run_chat())
+
+    async def event_generator():
+        try:
+            while True:
+                try:
+                    event, payload = await asyncio.wait_for(queue.get(), timeout=10)
+                    data = json.dumps({"answer": payload} if event == "message" else {"error": payload})
+                    yield f"event: {event}\ndata: {data}\n\n"
+                    break
+                except asyncio.TimeoutError:
+                    yield "event: heartbeat\ndata: {}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/chainchat/epoch")
