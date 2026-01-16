@@ -69,6 +69,23 @@ async function send() {
   try {
     appendLog('User', message);
 
+    const fallbackToNonStreaming = async () => {
+      setStatus('Streaming timed out. Retrying without streaming...', 'progress');
+      const fallbackRes = await fetch('/chainchat/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!fallbackRes.ok) {
+        throw new Error(`Request failed (${fallbackRes.status})`);
+      }
+
+      const data = await fallbackRes.json();
+      appendLog('Assistant', data.answer);
+      setStatus('Response received', 'success');
+    };
+
     const res = await fetch('/chainchat/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -76,12 +93,17 @@ async function send() {
     });
 
     if (!res.ok) {
+        if (res.status === 524) {
+        await fallbackToNonStreaming();
+        return;
+      }
       throw new Error(`Request failed (${res.status})`);
     }
 
     const reader = res.body?.getReader();
     if (!reader) {
-      throw new Error('Streaming response not supported by the browser.');
+      await fallbackToNonStreaming();
+      return;
     }
 
     const decoder = new TextDecoder();
