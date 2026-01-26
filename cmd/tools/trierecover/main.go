@@ -615,11 +615,9 @@ func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *type
 		misc.ApplyDAOHardFork(statedb)
 	}
 
-	author := header.Coinbase
-
 	for i, tx := range block.Transactions() {
 		statedb.Prepare(tx.Hash(), block.Hash(), i)
-		receipt, err := core.ApplyTransaction(config, ctx, &author, gp, statedb, header, tx, usedGas, vm.Config{})
+		receipt, err := core.ApplyTransaction(config, ctx, nil, gp, statedb, header, tx, usedGas, vm.Config{})
 		if err != nil {
 			return err
 		}
