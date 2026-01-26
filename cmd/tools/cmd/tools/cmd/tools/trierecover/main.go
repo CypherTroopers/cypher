@@ -50,6 +50,7 @@ type config struct {
 	timeDivisorFrom uint64
 	ignoreMismatch  bool
 	ignoreFrom      uint64
+	timeDivisorAuto bool
 }
 
 func main() {
@@ -128,6 +129,7 @@ func parseConfig() (*config, error) {
 	// If you want to divide (e.g. ms->s), do it explicitly with -timestamp-divisor 1000.
 	flag.Uint64Var(&cfg.timeDivisor, "timestamp-divisor", 1, "Divide header time by this value during reexec (1 means no change)")
 	flag.Uint64Var(&cfg.timeDivisorFrom, "timestamp-divisor-from", 0, "Start block number to apply -timestamp-divisor (0 means from genesis)")
+	flag.BoolVar(&cfg.timeDivisorAuto, "timestamp-divisor-auto", false, "Automatically apply -timestamp-divisor when header time looks like milliseconds")
 	flag.BoolVar(&cfg.committeeFee, "committee-reward", false, "Distribute cypherBFT committee rewards via ethash.RewardCommites during reexec")
 	flag.Uint64Var(&cfg.committeeFrom, "committee-reward-from", 0, "Start block number to apply committee rewards (0 means from genesis when -committee-reward is set)")
 	flag.BoolVar(&cfg.committeeNew, "committee-reward-newver", false, "Use new committee reward rules when applying ethash.RewardCommites")
@@ -156,8 +158,8 @@ func parseConfig() (*config, error) {
 	if cfg.timeDivisor == 0 {
 		return nil, errors.New("-timestamp-divisor must be >= 1")
 	}
-	if cfg.timeDivisorFrom > 0 && cfg.timeDivisor <= 1 {
-		return nil, errors.New("-timestamp-divisor-from requires -timestamp-divisor > 1")
+	if (cfg.timeDivisorFrom > 0 || cfg.timeDivisorAuto) && cfg.timeDivisor <= 1 {
+		return nil, errors.New("-timestamp-divisor-from/auto requires -timestamp-divisor > 1")
 	}
 	if cfg.ignoreFrom > 0 {
 		cfg.ignoreMismatch = true
@@ -562,7 +564,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			return fmt.Errorf("missing block data for block %d (%s)", number, hash.Hex())
 		}
 		ctx.head = block.Header()
-		if err := applyBlock(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew); err != nil {
+		if err := applyBlock(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew); err != nil {
 			return fmt.Errorf("failed to apply block %d (%s): %v", number, hash.Hex(), err)
 		}
 		root, err := stateDB.Commit(chainConfig.IsEIP158(block.Number()))
@@ -588,13 +590,13 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 	return nil
 }
 
-func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, committeeReward bool, committeeFrom uint64, committeeNewVer bool) error {
+func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, timeDivisorAuto bool, committeeReward bool, committeeFrom uint64, committeeNewVer bool) error {
 	originHeader := block.Header()
 	execHeader := *originHeader
 
 	// Use header.Time exactly as stored in DB.
 	// Only divide if the user explicitly requests it.
-	if timeDivisor > 1 && (timeDivisorFrom == 0 || block.NumberU64() >= timeDivisorFrom) {
+	if timeDivisor > 1 && shouldDivideTimestamp(execHeader.Time, block.NumberU64(), timeDivisorFrom, timeDivisorAuto) {
 		execHeader.Time = execHeader.Time / timeDivisor
 	}
 	header := &execHeader
@@ -652,6 +654,13 @@ func loadGenesis(path string) (*core.Genesis, error) {
 		return nil, fmt.Errorf("failed to parse genesis file: %v", err)
 	}
 	return &genesis, nil
+}
+
+func shouldDivideTimestamp(headerTime uint64, blockNumber uint64, divisorFrom uint64, auto bool) bool {
+	if auto {
+		return headerTime >= 1_000_000_000_000
+	}
+	return divisorFrom == 0 || blockNumber >= divisorFrom
 }
 
 func engineFromConfig(config *params.ChainConfig, db ethdb.Database, override string) (consensus.Engine, error) {
