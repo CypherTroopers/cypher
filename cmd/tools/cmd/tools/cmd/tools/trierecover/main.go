@@ -48,6 +48,8 @@ type config struct {
 	batch           int
 	commitEvery     uint64
 	timeDivisorFrom uint64
+	ignoreMismatch  bool
+	ignoreFrom      uint64
 }
 
 func main() {
@@ -134,6 +136,8 @@ func parseConfig() (*config, error) {
 	flag.Uint64Var(&cfg.bloom, "bloom", 256, "Bloom filter size in MB")
 	flag.IntVar(&cfg.batch, "batch", 512, "Max hashes to fetch per iteration")
 	flag.Uint64Var(&cfg.commitEvery, "commit-every", 1000, "Commit trie nodes to disk every N blocks during reexec")
+	flag.BoolVar(&cfg.ignoreMismatch, "ignore-root-mismatch", false, "Continue reexec even if state root mismatch is detected")
+	flag.Uint64Var(&cfg.ignoreFrom, "ignore-root-mismatch-from", 0, "Start block number to ignore state root mismatches (0 means disabled)")
 	flag.Parse()
 
 	cfg.sourcePaths = parseCSV(sources)
@@ -154,6 +158,9 @@ func parseConfig() (*config, error) {
 	}
 	if cfg.timeDivisorFrom > 0 && cfg.timeDivisor <= 1 {
 		return nil, errors.New("-timestamp-divisor-from requires -timestamp-divisor > 1")
+	}
+	if cfg.ignoreFrom > 0 {
+		cfg.ignoreMismatch = true
 	}
 	if cfg.reexec && cfg.reexecFrom != 1 {
 		return nil, errors.New("-reexec-from must be 1 (reexec requires starting from genesis)")
@@ -563,7 +570,10 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			return fmt.Errorf("failed to commit state at block %d: %v", number, err)
 		}
 		if root != block.Root() {
-			return fmt.Errorf("state root mismatch at block %d: computed %s want %s", number, root.Hex(), block.Root().Hex())
+			if !cfg.ignoreMismatch || (cfg.ignoreFrom > 0 && number < cfg.ignoreFrom) {
+				return fmt.Errorf("state root mismatch at block %d: computed %s want %s", number, root.Hex(), block.Root().Hex())
+			}
+			fmt.Fprintf(os.Stderr, "warning: state root mismatch at block %d: computed %s want %s (ignored)\n", number, root.Hex(), block.Root().Hex())
 		}
 		if cfg.commitEvery > 0 && (number%cfg.commitEvery == 0 || number == endNumber) {
 			if err := stateDB.Database().TrieDB().Commit(root, true, nil); err != nil {
