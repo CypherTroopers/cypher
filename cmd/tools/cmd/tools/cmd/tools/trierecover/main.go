@@ -42,6 +42,7 @@ type config struct {
 	committeeFee    bool
 	committeeFrom   uint64
 	committeeNew    bool
+	committeeOnType string
 	cache           int
 	handles         int
 	bloom           uint64
@@ -129,6 +130,7 @@ func parseConfig() (*config, error) {
 	// If you want to divide (e.g. ms->s), do it explicitly with -timestamp-divisor 1000.
 	flag.Uint64Var(&cfg.timeDivisor, "timestamp-divisor", 1, "Divide header time by this value during reexec (1 means no change)")
 	flag.Uint64Var(&cfg.timeDivisorFrom, "timestamp-divisor-from", 0, "Start block number to apply -timestamp-divisor (0 means from genesis)")
+	flag.StringVar(&cfg.committeeOnType, "committee-reward-blocktype", "all", "Apply committee rewards on block type: all, normal, key")
 	flag.BoolVar(&cfg.timeDivisorAuto, "timestamp-divisor-auto", false, "Automatically apply -timestamp-divisor when header time looks like milliseconds")
 	flag.BoolVar(&cfg.committeeFee, "committee-reward", false, "Distribute cypherBFT committee rewards via ethash.RewardCommites during reexec")
 	flag.Uint64Var(&cfg.committeeFrom, "committee-reward-from", 0, "Start block number to apply committee rewards (0 means from genesis when -committee-reward is set)")
@@ -160,6 +162,11 @@ func parseConfig() (*config, error) {
 	}
 	if (cfg.timeDivisorFrom > 0 || cfg.timeDivisorAuto) && cfg.timeDivisor <= 1 {
 		return nil, errors.New("-timestamp-divisor-from/auto requires -timestamp-divisor > 1")
+	}
+		switch strings.ToLower(cfg.committeeOnType) {
+	case "all", "normal", "key":
+	default:
+		return nil, fmt.Errorf("invalid -committee-reward-blocktype %q (expected: all, normal, key)", cfg.committeeOnType)
 	}
 	if cfg.ignoreFrom > 0 {
 		cfg.ignoreMismatch = true
@@ -564,7 +571,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			return fmt.Errorf("missing block data for block %d (%s)", number, hash.Hex())
 		}
 		ctx.head = block.Header()
-		if err := applyBlock(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew); err != nil {
+		if err := applyBlock(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType); err != nil {
 			return fmt.Errorf("failed to apply block %d (%s): %v", number, hash.Hex(), err)
 		}
 		root, err := stateDB.Commit(chainConfig.IsEIP158(block.Number()))
@@ -590,7 +597,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 	return nil
 }
 
-func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, timeDivisorAuto bool, committeeReward bool, committeeFrom uint64, committeeNewVer bool) error {
+func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, committeeReward bool, committeeFrom uint64, committeeNewVer bool, committeeOnType string) error {
 	originHeader := block.Header()
 	execHeader := *originHeader
 
@@ -620,10 +627,21 @@ func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *type
 	}
 
 	ctx.engine.Finalize(ctx, header, statedb, block.Transactions(), block.Uncles(), totalGas)
-	if committeeReward && (committeeFrom == 0 || block.NumberU64() >= committeeFrom) {
+		if committeeReward && (committeeFrom == 0 || block.NumberU64() >= committeeFrom) && shouldApplyCommitteeReward(block.BlockType(), committeeOnType) {
 		ethash.RewardCommites(ctx, statedb, header, totalGas, committeeNewVer)
 	}
 	return nil
+}
+
+func shouldApplyCommitteeReward(blockType uint8, mode string) bool {
+	switch strings.ToLower(mode) {
+	case "normal":
+		return blockType == types.Normal_Block
+	case "key":
+		return blockType == types.Key_Block
+	default:
+		return true
+	}
 }
 
 func resolveReexecEnd(db ethdb.Database, requested uint64) (uint64, error) {
