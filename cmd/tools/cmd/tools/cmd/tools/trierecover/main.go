@@ -163,7 +163,7 @@ func parseConfig() (*config, error) {
 	if (cfg.timeDivisorFrom > 0 || cfg.timeDivisorAuto) && cfg.timeDivisor <= 1 {
 		return nil, errors.New("-timestamp-divisor-from/auto requires -timestamp-divisor > 1")
 	}
-		switch strings.ToLower(cfg.committeeOnType) {
+	switch strings.ToLower(cfg.committeeOnType) {
 	case "all", "normal", "key":
 	default:
 		return nil, fmt.Errorf("invalid -committee-reward-blocktype %q (expected: all, normal, key)", cfg.committeeOnType)
@@ -571,7 +571,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			return fmt.Errorf("missing block data for block %d (%s)", number, hash.Hex())
 		}
 		ctx.head = block.Header()
-		if err := applyBlock(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType); err != nil {
+		if err := applyBlock(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType); err != nil {
 			return fmt.Errorf("failed to apply block %d (%s): %v", number, hash.Hex(), err)
 		}
 		root, err := stateDB.Commit(chainConfig.IsEIP158(block.Number()))
@@ -597,7 +597,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 	return nil
 }
 
-func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, committeeReward bool, committeeFrom uint64, committeeNewVer bool, committeeOnType string) error {
+func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, timeDivisorAuto bool, committeeReward bool, committeeFrom uint64, committeeNewVer bool, committeeOnType string) error {
 	originHeader := block.Header()
 	execHeader := *originHeader
 
@@ -627,7 +627,7 @@ func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *type
 	}
 
 	ctx.engine.Finalize(ctx, header, statedb, block.Transactions(), block.Uncles(), totalGas)
-		if committeeReward && (committeeFrom == 0 || block.NumberU64() >= committeeFrom) && shouldApplyCommitteeReward(block.BlockType(), committeeOnType) {
+	if committeeReward && (committeeFrom == 0 || block.NumberU64() >= committeeFrom) && shouldApplyCommitteeReward(block.BlockType(), committeeOnType) {
 		ethash.RewardCommites(ctx, statedb, header, totalGas, committeeNewVer)
 	}
 	return nil
