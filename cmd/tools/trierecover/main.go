@@ -522,6 +522,9 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 	}
 
 	if genesis != nil {
+		if chainConfig != nil {
+			genesis.Config = chainConfig
+		}
 		chainConfig, _, err = core.SetupGenesisBlock(target, genesis)
 		if err != nil {
 			return fmt.Errorf("failed to ensure genesis state: %v", err)
