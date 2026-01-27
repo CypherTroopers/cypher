@@ -1,0 +1,111 @@
+# patch-blocks
+
+`patch-blocks` is a small Go utility for **copying (patching) a specific block range** from one Cypherium/geth-compatible `chaindata` into another.
+
+It reads canonical block data from a **source** datadir and writes it into a **destination** datadir:
+
+- canonical hash
+- header
+- body
+- total difficulty (TD) if present
+- receipts if present (decoded using the destination chain config)
+
+This is useful when a node’s database is missing a known block interval and you want to “fill the gap” using a healthier database.
+
+## Location
+
+This tool lives here:
+
+- `cmd/tools/patch-blocks/main.go`
+
+## What it does
+
+For each block `n` in `[start, end]` (inclusive):
+
+1. Read the canonical hash from `src`.
+2. Read header and body from `src` by `(hash, number)`.
+3. Read TD from `src` (if available).
+4. Read receipts from `src` (requires chain config for decoding).
+5. Write the above into `dst`.
+
+It prints progress every 1000 blocks and ends with:
+
+- `copied`: number of blocks successfully written
+- `skipped`: number of blocks skipped due to missing data in `src`
+
+## Data directory layout
+
+Both `-src` and `-dst` are expected to have:
+
+<datadir>/
+cypher/
+chaindata/
+(LevelDB files...)
+ancient/
+(freezer tables...)
+
+
+The tool opens:
+
+- LevelDB at `cypher/chaindata`
+- freezer at `cypher/chaindata/ancient`
+
+Namespace is set to empty (`""`) for geth compatibility.
+
+## IMPORTANT warnings
+
+- **Stop the node(s) before running this tool.** Do not read/write the same `chaindata` while a node is running.
+- This tool **does NOT copy state** (state trie / account/storage nodes).
+  - Even if headers/bodies/receipts are repaired, you can still see errors like `missing trie node` or `state root mismatch` if the destination state is incomplete or inconsistent.
+- Receipts decoding depends on **chain config**:
+  - The tool tries to read chain config from the destination DB using the destination genesis hash.
+  - If not found, it falls back to `params.MainnetChainConfig` and logs a warning.
+  - If the destination datadir is not the expected network/genesis, receipts may decode incorrectly.
+- The tool does **not** check if the destination already has data for those blocks; it will write the values (effectively overwriting).
+
+## Build
+
+Run from the repository root:
+
+```bash
+go build -o patch-blocks ./cmd/tools/patch-blocks
+Usage
+./patch-blocks \
+  -src ./data2 \
+  -dst ./data3 \
+  -start 93958 \
+  -end 104001
+Flags
+-src (string): source datadir (default: ./data2)
+
+-dst (string): destination datadir (default: ./data3)
+
+-start (uint64): start block number (inclusive, default: 93958)
+
+-end (uint64): end block number (inclusive, default: 104001)
+
+Output example
+2026/01/27 12:00:00 COPIED 94000
+2026/01/27 12:00:05 MISS src header/body: 95012 0x...
+DONE copied=10044 skipped=3
+Meaning:
+
+MISS src canonical hash: canonical hash missing in source DB for that block number
+
+MISS src header/body: header or body missing in source DB for that (hash, number)
+
+COPIED <n>: progress log every 1000 blocks
+
+DONE copied=X skipped=Y: summary
+
+Typical use cases
+Patching a destination node DB that is missing a known block range.
+
+Transferring a small block interval from a “good” DB into a “bad” DB without copying the entire chaindata.
+
+Limitations
+No state repair (state trie is not handled).
+
+No integrity verification beyond “is data present in source”.
+
+Potential receipts decode mismatch if chain config/genesis differs.
