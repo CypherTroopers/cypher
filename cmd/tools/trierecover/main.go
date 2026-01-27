@@ -730,7 +730,8 @@ func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *type
 
 	ctx.engine.Finalize(ctx, header, statedb, block.Transactions(), block.Uncles(), totalGas)
 	if committeeReward && (committeeFrom == 0 || block.NumberU64() >= committeeFrom) && shouldApplyCommitteeReward(block.BlockType(), committeeOnType) {
-		ethash.RewardCommites(ctx, statedb, header, totalGas, committeeNewVer)
+		committeeRewardValue := committeeBlockReward(config, block.Number())
+		ethash.RewardCommites(ctx, statedb, header, committeeRewardValue, committeeNewVer)
 	}
 	return nil
 }
@@ -741,6 +742,13 @@ func applyBlockWithRoot(config *params.ChainConfig, ctx *reexecChainContext, blo
 	}
 	root := statedb.IntermediateRoot(config.IsEIP158(block.Number()))
 	return root, nil
+}
+
+func committeeBlockReward(config *params.ChainConfig, number *big.Int) uint64 {
+	if config != nil && config.IsByzantium(number) {
+		return ethash.ByzantiumBlockReward.Uint64()
+	}
+	return ethash.FrontierBlockReward.Uint64()
 }
 
 func shouldApplyCommitteeReward(blockType uint8, mode string) bool {
