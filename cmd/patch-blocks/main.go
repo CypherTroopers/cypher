@@ -15,7 +15,7 @@ import (
 func openDB(datadir string) (ethdb.Database, error) {
         chaindata := filepath.Join(datadir, "cypher", "chaindata")
         freezer := filepath.Join(chaindata, "ancient")
-        // namespace は空でOK（geth互換）
+        // namespace）
         return rawdb.NewLevelDBDatabaseWithFreezer(chaindata, 512, 512, freezer, "")
 }
 
@@ -38,7 +38,6 @@ func main() {
         }
         defer dstDB.Close()
 
-        // receipts decode のため chain config を dst から読む（無い場合は fallback）
         genesisHash := rawdb.ReadCanonicalHash(dstDB, 0)
         cfg := rawdb.ReadChainConfig(dstDB, genesisHash)
         if cfg == nil {
