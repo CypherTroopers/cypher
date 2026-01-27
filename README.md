@@ -1,1 +1,2 @@
-# **The following steps were performed on a 
+./build/bin/cypher --datadir ./chaindbname  export ./chaindbname/cypher/blocks.rlp
+
