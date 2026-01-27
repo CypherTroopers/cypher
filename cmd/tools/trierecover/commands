@@ -1,0 +1,1 @@
+go run ./cmd/tools/trierecover   -target ./chaindbname/cypher/chaindata   -reexec   -genesis ./genesis.json   -engine ethash
