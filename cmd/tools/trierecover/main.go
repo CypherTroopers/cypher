@@ -582,29 +582,69 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			return fmt.Errorf("failed to apply block %d (%s): %v", number, hash.Hex(), err)
 		}
 		if root != block.Root() && cfg.committeeAuto {
-			// Retry with committee rewards enabled (legacy, then new rules).
+			// Retry with committee reward variations (legacy/new rules, block types, or disabled).
 			recovered := false
-			for _, tryNewVer := range []bool{false, true} {
-				if cfg.committeeFee && cfg.committeeNew == tryNewVer {
+						seenTypes := map[string]struct{}{
+				cfg.committeeOnType: {},
+			}
+			committeeTypes := []string{cfg.committeeOnType}
+			for _, candidate := range []string{"normal", "key", "all"} {
+				if _, ok := seenTypes[candidate]; ok {
 					continue
 				}
+				seenTypes[candidate] = struct{}{}
+				committeeTypes = append(committeeTypes, candidate)
+			}
+			type committeeOption struct {
+				enabled bool
+				newVer  bool
+				onType  string
+			}
+			var options []committeeOption
+			if cfg.committeeFee {
+				options = append(options, committeeOption{enabled: false})
+			}
+			for _, onType := range committeeTypes {
+				for _, tryNewVer := range []bool{false, true} {
+					if cfg.committeeFee && cfg.committeeNew == tryNewVer && cfg.committeeOnType == onType {
+						continue
+					}
+					options = append(options, committeeOption{
+						enabled: true,
+						newVer:  tryNewVer,
+						onType:  onType,
+					})
+				}
+			}
+			for _, opt := range options {
 				retryState := baseState.Copy()
 				tryFrom := cfg.committeeFrom
-				if tryFrom == 0 || number < tryFrom {
-					tryFrom = number
+				if opt.enabled {
+					if tryFrom == 0 || number < tryFrom {
+						tryFrom = number
+					}
+				} else {
+					tryFrom = 0
 				}
-				tryRoot, tryErr := applyBlockWithRoot(chainConfig, ctx, block, retryState, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, true, tryFrom, tryNewVer, cfg.committeeOnType)
+				tryRoot, tryErr := applyBlockWithRoot(chainConfig, ctx, block, retryState, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, opt.enabled, tryFrom, opt.newVer, opt.onType)
 				if tryErr != nil {
-					return fmt.Errorf("failed to apply block %d (%s) with committee rewards: %v", number, hash.Hex(), tryErr)
+					return fmt.Errorf("failed to apply block %d (%s) with committee reward options: %v", number, hash.Hex(), tryErr)
 				}
 				if tryRoot == block.Root() {
-					cfg.committeeFee = true
-					cfg.committeeNew = tryNewVer
+					cfg.committeeFee = opt.enabled
+					cfg.committeeNew = opt.newVer
 					cfg.committeeFrom = tryFrom
+					if opt.onType != "" {
+						cfg.committeeOnType = opt.onType
+					}
 					root = tryRoot
 					stateDB = retryState
 					recovered = true
-					fmt.Fprintf(os.Stderr, "auto committee reward enabled at block %d (newver=%v)\n", number, tryNewVer)
+					if opt.enabled {
+						fmt.Fprintf(os.Stderr, "auto committee reward enabled at block %d (newver=%v, type=%s)\n", number, opt.newVer, cfg.committeeOnType)
+					} else {
+						fmt.Fprintf(os.Stderr, "auto committee reward disabled at block %d\n", number)
+					}
 					break
 				}
 			}
