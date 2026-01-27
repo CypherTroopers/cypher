@@ -573,9 +573,9 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			return fmt.Errorf("missing block data for block %d (%s)", number, hash.Hex())
 		}
 		ctx.head = block.Header()
-		snapshot := 0
+		var baseState *state.StateDB
 		if cfg.committeeAuto {
-			snapshot = stateDB.Snapshot()
+			baseState = stateDB.Copy()
 		}
 		root, err := applyBlockWithRoot(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
 		if err != nil {
@@ -588,12 +588,12 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 				if cfg.committeeFee && cfg.committeeNew == tryNewVer {
 					continue
 				}
-				stateDB.RevertToSnapshot(snapshot)
+				retryState := baseState.Copy()
 				tryFrom := cfg.committeeFrom
 				if tryFrom == 0 || number < tryFrom {
 					tryFrom = number
 				}
-				tryRoot, tryErr := applyBlockWithRoot(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, true, tryFrom, tryNewVer, cfg.committeeOnType)
+				tryRoot, tryErr := applyBlockWithRoot(chainConfig, ctx, block, retryState, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, true, tryFrom, tryNewVer, cfg.committeeOnType)
 				if tryErr != nil {
 					return fmt.Errorf("failed to apply block %d (%s) with committee rewards: %v", number, hash.Hex(), tryErr)
 				}
@@ -602,13 +602,14 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 					cfg.committeeNew = tryNewVer
 					cfg.committeeFrom = tryFrom
 					root = tryRoot
+					stateDB = retryState
 					recovered = true
 					fmt.Fprintf(os.Stderr, "auto committee reward enabled at block %d (newver=%v)\n", number, tryNewVer)
 					break
 				}
 			}
 			if !recovered {
-				stateDB.RevertToSnapshot(snapshot)
+				stateDB = baseState.Copy()
 				root, err = applyBlockWithRoot(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
 				if err != nil {
 					return fmt.Errorf("failed to re-apply block %d (%s) after mismatch: %v", number, hash.Hex(), err)
