@@ -57,6 +57,13 @@ type config struct {
 	timeDivisorAuto bool
 }
 
+type timestampOption struct {
+	divisor uint64
+	from    uint64
+	auto    bool
+	name    string
+}
+
 const mainnetConfigOverrideBlock uint64 = 182544
 
 func main() {
@@ -519,6 +526,14 @@ func (c *reexecKeyBlockChain) CurrentBlockN() uint64 {
 	return 0
 }
 
+func (c *reexecKeyBlockChain) GetBlockByNumber(number uint64) *types.KeyBlock {
+	hash := rawdb.ReadKeyBlockHash(c.db, number)
+	if hash == (common.Hash{}) {
+		return nil
+	}
+	return rawdb.ReadKeyBlock(c.db, hash, number)
+}
+
 func (c *reexecKeyBlockChain) GetBlockByHash(hash common.Hash) *types.KeyBlock {
 	if number := rawdb.ReadKeyHeaderNumber(c.db, hash); number != nil {
 		return rawdb.ReadKeyBlock(c.db, hash, *number)
@@ -561,6 +576,37 @@ func isCurrentCommitteeOption(cfg *config, opt committeeOption) bool {
 		opt.onType == cfg.committeeOnType &&
 		opt.source == cfg.committeeSource &&
 		opt.from == cfg.committeeFrom
+}
+
+func isCurrentTimestampOption(cfg *config, opt timestampOption) bool {
+	return opt.divisor == cfg.timeDivisor &&
+		opt.from == cfg.timeDivisorFrom &&
+		opt.auto == cfg.timeDivisorAuto
+}
+
+func timestampRetryOptions(cfg *config, number uint64) []timestampOption {
+	options := []timestampOption{{
+		divisor: cfg.timeDivisor,
+		from:    cfg.timeDivisorFrom,
+		auto:    cfg.timeDivisorAuto,
+		name:    "configured",
+	}}
+	if cfg.timeDivisor <= 1 || !cfg.timeDivisorAuto {
+		return options
+	}
+	options = append(options, timestampOption{
+		divisor: cfg.timeDivisor,
+		from:    number,
+		auto:    false,
+		name:    "force-divide",
+	})
+	options = append(options, timestampOption{
+		divisor: 1,
+		from:    0,
+		auto:    false,
+		name:    "no-divide",
+	})
+	return options
 }
 
 func committeeRetryOptions(cfg *config, number uint64) []committeeOption {
@@ -760,14 +806,14 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 		}
 		ctx.head = block.Header()
 		var baseState *state.StateDB
-		if cfg.committeeAuto || cfg.rewardAuto {
+		if cfg.committeeAuto || cfg.rewardAuto || cfg.timeDivisorAuto {
 			baseState = stateDB.Copy()
 		}
 		root, err := applyBlockWithRoot(activeConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType, cfg.committeeSource, ctx.engine)
 		if err != nil {
 			return fmt.Errorf("failed to apply block %d (%s): %v", number, hash.Hex(), err)
 		}
-		if root != block.Root() && (cfg.committeeAuto || cfg.rewardAuto) {
+		if root != block.Root() && (cfg.committeeAuto || cfg.rewardAuto || cfg.timeDivisorAuto) {
 			// Retry with reward engine and/or committee reward variations.
 			recovered := false
 			engineOptions := []struct {
@@ -786,53 +832,70 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 					}{engine: altEngine, name: altName, alternative: true})
 				}
 			}
-			for _, engineOpt := range engineOptions {
-				committeeOptions := []committeeOption{{
-					enabled: cfg.committeeFee,
-					newVer:  cfg.committeeNew,
-					onType:  cfg.committeeOnType,
-					source:  cfg.committeeSource,
-					from:    cfg.committeeFrom,
-				}}
-				if cfg.committeeAuto {
-					committeeOptions = append(committeeOptions, committeeRetryOptions(cfg, number)...)
-				} else if engineOpt.engine == ctx.engine {
-					// Current engine + current committee settings already tried.
-					continue
-				}
-				for _, opt := range committeeOptions {
-					if engineOpt.engine == ctx.engine && isCurrentCommitteeOption(cfg, opt) {
+			timeOptions := timestampRetryOptions(cfg, number)
+			for _, timeOpt := range timeOptions {
+				for _, engineOpt := range engineOptions {
+					committeeOptions := []committeeOption{{
+						enabled: cfg.committeeFee,
+						newVer:  cfg.committeeNew,
+						onType:  cfg.committeeOnType,
+						source:  cfg.committeeSource,
+						from:    cfg.committeeFrom,
+					}}
+					if cfg.committeeAuto {
+						committeeOptions = append(committeeOptions, committeeRetryOptions(cfg, number)...)
+					} else if engineOpt.engine == ctx.engine && isCurrentTimestampOption(cfg, timeOpt) {
+						// Current engine + current committee settings already tried.
 						continue
 					}
-					retryState := baseState.Copy()
-					tryRoot, tryErr := applyBlockWithRoot(activeConfig, ctx, block, retryState, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, opt.enabled, opt.from, opt.newVer, opt.onType, opt.source, engineOpt.engine)
-					if tryErr != nil {
-						return fmt.Errorf("failed to apply block %d (%s) with reward options: %v", number, hash.Hex(), tryErr)
+					for _, opt := range committeeOptions {
+						if engineOpt.engine == ctx.engine &&
+							isCurrentCommitteeOption(cfg, opt) &&
+							isCurrentTimestampOption(cfg, timeOpt) {
+							continue
+						}
+						retryState := baseState.Copy()
+						tryRoot, tryErr := applyBlockWithRoot(activeConfig, ctx, block, retryState, timeOpt.divisor, timeOpt.from, timeOpt.auto, opt.enabled, opt.from, opt.newVer, opt.onType, opt.source, engineOpt.engine)
+						if tryErr != nil {
+							return fmt.Errorf("failed to apply block %d (%s) with reward options: %v", number, hash.Hex(), tryErr)
+						}
+						if tryRoot == block.Root() {
+							prevCommitteeFee := cfg.committeeFee
+							prevCommitteeNew := cfg.committeeNew
+							prevCommitteeType := cfg.committeeOnType
+							prevCommitteeSource := cfg.committeeSource
+							prevTimeDivisor := cfg.timeDivisor
+							prevTimeDivisorFrom := cfg.timeDivisorFrom
+							prevTimeDivisorAuto := cfg.timeDivisorAuto
+							cfg.committeeFee = opt.enabled
+							cfg.committeeNew = opt.newVer
+							cfg.committeeFrom = opt.from
+							if opt.onType != "" {
+								cfg.committeeOnType = opt.onType
+							}
+							if opt.source != "" {
+								cfg.committeeSource = opt.source
+							}
+							cfg.timeDivisor = timeOpt.divisor
+							cfg.timeDivisorFrom = timeOpt.from
+							cfg.timeDivisorAuto = timeOpt.auto
+							if engineOpt.engine != ctx.engine {
+								ctx.engine = engineOpt.engine
+								fmt.Fprintf(os.Stderr, "auto reward engine switched to %s at block %d\n", engineOpt.name, number)
+							}
+							if cfg.committeeFee != prevCommitteeFee || cfg.committeeNew != prevCommitteeNew || cfg.committeeOnType != prevCommitteeType || cfg.committeeSource != prevCommitteeSource {
+								fmt.Fprintf(os.Stderr, "auto committee reward updated at block %d (enabled=%v, newver=%v, type=%s, source=%s)\n", number, opt.enabled, opt.newVer, cfg.committeeOnType, cfg.committeeSource)
+							}
+							if cfg.timeDivisor != prevTimeDivisor || cfg.timeDivisorFrom != prevTimeDivisorFrom || cfg.timeDivisorAuto != prevTimeDivisorAuto {
+								fmt.Fprintf(os.Stderr, "auto timestamp divisor updated at block %d (%s): divisor=%d from=%d auto=%v\n", number, timeOpt.name, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto)
+							}
+							root = tryRoot
+							stateDB = retryState
+							recovered = true
+							break
+						}
 					}
-					if tryRoot == block.Root() {
-						prevCommitteeFee := cfg.committeeFee
-						prevCommitteeNew := cfg.committeeNew
-						prevCommitteeType := cfg.committeeOnType
-						prevCommitteeSource := cfg.committeeSource
-						cfg.committeeFee = opt.enabled
-						cfg.committeeNew = opt.newVer
-						cfg.committeeFrom = opt.from
-						if opt.onType != "" {
-							cfg.committeeOnType = opt.onType
-						}
-						if opt.source != "" {
-							cfg.committeeSource = opt.source
-						}
-						if engineOpt.engine != ctx.engine {
-							ctx.engine = engineOpt.engine
-							fmt.Fprintf(os.Stderr, "auto reward engine switched to %s at block %d\n", engineOpt.name, number)
-						}
-						if cfg.committeeFee != prevCommitteeFee || cfg.committeeNew != prevCommitteeNew || cfg.committeeOnType != prevCommitteeType || cfg.committeeSource != prevCommitteeSource {
-							fmt.Fprintf(os.Stderr, "auto committee reward updated at block %d (enabled=%v, newver=%v, type=%s, source=%s)\n", number, opt.enabled, opt.newVer, cfg.committeeOnType, cfg.committeeSource)
-						}
-						root = tryRoot
-						stateDB = retryState
-						recovered = true
+					if recovered {
 						break
 					}
 				}
