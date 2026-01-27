@@ -43,6 +43,7 @@ type config struct {
 	committeeFrom   uint64
 	committeeNew    bool
 	committeeOnType string
+	committeeAuto   bool
 	cache           int
 	handles         int
 	bloom           uint64
@@ -135,6 +136,7 @@ func parseConfig() (*config, error) {
 	flag.BoolVar(&cfg.committeeFee, "committee-reward", false, "Distribute cypherBFT committee rewards via ethash.RewardCommites during reexec")
 	flag.Uint64Var(&cfg.committeeFrom, "committee-reward-from", 0, "Start block number to apply committee rewards (0 means from genesis when -committee-reward is set)")
 	flag.BoolVar(&cfg.committeeNew, "committee-reward-newver", false, "Use new committee reward rules when applying ethash.RewardCommites")
+	flag.BoolVar(&cfg.committeeAuto, "committee-reward-auto", false, "Auto-enable committee rewards on the first mismatch by retrying with legacy and new rules")
 	flag.IntVar(&cfg.cache, "cache", 256, "LevelDB cache size in MB")
 	flag.IntVar(&cfg.handles, "handles", 256, "LevelDB file handles")
 	flag.Uint64Var(&cfg.bloom, "bloom", 256, "Bloom filter size in MB")
@@ -547,7 +549,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 	}
 
 	var keyChain *reexecKeyChainReader
-	if cfg.committeeFee {
+	if cfg.committeeFee || cfg.committeeAuto {
 		keyChain = newReexecKeyChainReader(target, chainConfig)
 		bftview.SetCommitteeConfig(target, &reexecKeyBlockChain{db: target, config: chainConfig}, nil)
 	}
@@ -571,12 +573,54 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			return fmt.Errorf("missing block data for block %d (%s)", number, hash.Hex())
 		}
 		ctx.head = block.Header()
-		if err := applyBlock(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType); err != nil {
+		snapshot := 0
+		if cfg.committeeAuto {
+			snapshot = stateDB.Snapshot()
+		}
+		root, err := applyBlockWithRoot(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
+		if err != nil {
 			return fmt.Errorf("failed to apply block %d (%s): %v", number, hash.Hex(), err)
 		}
-		root, err := stateDB.Commit(chainConfig.IsEIP158(block.Number()))
+		if root != block.Root() && cfg.committeeAuto {
+			// Retry with committee rewards enabled (legacy, then new rules).
+			recovered := false
+			for _, tryNewVer := range []bool{false, true} {
+				if cfg.committeeFee && cfg.committeeNew == tryNewVer {
+					continue
+				}
+				stateDB.RevertToSnapshot(snapshot)
+				tryFrom := cfg.committeeFrom
+				if tryFrom == 0 || number < tryFrom {
+					tryFrom = number
+				}
+				tryRoot, tryErr := applyBlockWithRoot(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, true, tryFrom, tryNewVer, cfg.committeeOnType)
+				if tryErr != nil {
+					return fmt.Errorf("failed to apply block %d (%s) with committee rewards: %v", number, hash.Hex(), tryErr)
+				}
+				if tryRoot == block.Root() {
+					cfg.committeeFee = true
+					cfg.committeeNew = tryNewVer
+					cfg.committeeFrom = tryFrom
+					root = tryRoot
+					recovered = true
+					fmt.Fprintf(os.Stderr, "auto committee reward enabled at block %d (newver=%v)\n", number, tryNewVer)
+					break
+				}
+			}
+			if !recovered {
+				stateDB.RevertToSnapshot(snapshot)
+				root, err = applyBlockWithRoot(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
+				if err != nil {
+					return fmt.Errorf("failed to re-apply block %d (%s) after mismatch: %v", number, hash.Hex(), err)
+				}
+			}
+		}
+		committedRoot, err := stateDB.Commit(chainConfig.IsEIP158(block.Number()))
 		if err != nil {
 			return fmt.Errorf("failed to commit state at block %d: %v", number, err)
+		}
+		if committedRoot != root {
+			return fmt.Errorf("state root mismatch after commit at block %d: computed %s want %s", number, committedRoot.Hex(), root.Hex())
 		}
 		if root != block.Root() {
 			if !cfg.ignoreMismatch || (cfg.ignoreFrom > 0 && number < cfg.ignoreFrom) {
@@ -629,6 +673,14 @@ func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *type
 		ethash.RewardCommites(ctx, statedb, header, totalGas, committeeNewVer)
 	}
 	return nil
+}
+
+func applyBlockWithRoot(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, timeDivisorAuto bool, committeeReward bool, committeeFrom uint64, committeeNewVer bool, committeeOnType string) (common.Hash, error) {
+	if err := applyBlock(config, ctx, block, statedb, timeDivisor, timeDivisorFrom, timeDivisorAuto, committeeReward, committeeFrom, committeeNewVer, committeeOnType); err != nil {
+		return common.Hash{}, err
+	}
+	root := statedb.IntermediateRoot(config.IsEIP158(block.Number()))
+	return root, nil
 }
 
 func shouldApplyCommitteeReward(blockType uint8, mode string) bool {
