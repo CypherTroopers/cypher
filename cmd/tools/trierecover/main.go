@@ -44,6 +44,7 @@ type config struct {
 	committeeNew    bool
 	committeeOnType string
 	committeeAuto   bool
+	committeeSource string
 	cache           int
 	handles         int
 	bloom           uint64
@@ -146,6 +147,7 @@ func parseConfig() (*config, error) {
 	flag.Uint64Var(&cfg.committeeFrom, "committee-reward-from", 0, "Start block number to apply committee rewards (0 means from genesis when -committee-reward is set)")
 	flag.BoolVar(&cfg.committeeNew, "committee-reward-newver", false, "Use new committee reward rules when applying ethash.RewardCommites")
 	flag.BoolVar(&cfg.committeeAuto, "committee-reward-auto", false, "Auto-enable committee rewards on the first mismatch by retrying with legacy and new rules")
+	flag.StringVar(&cfg.committeeSource, "committee-reward-source", "fees", "Committee reward source: fees (tx fees) or block (static block reward)")
 	flag.IntVar(&cfg.cache, "cache", 256, "LevelDB cache size in MB")
 	flag.IntVar(&cfg.handles, "handles", 256, "LevelDB file handles")
 	flag.Uint64Var(&cfg.bloom, "bloom", 256, "Bloom filter size in MB")
@@ -178,6 +180,11 @@ func parseConfig() (*config, error) {
 	case "all", "normal", "key":
 	default:
 		return nil, fmt.Errorf("invalid -committee-reward-blocktype %q (expected: all, normal, key)", cfg.committeeOnType)
+	}
+	switch strings.ToLower(cfg.committeeSource) {
+	case "fees", "block":
+	default:
+		return nil, fmt.Errorf("invalid -committee-reward-source %q (expected: fees, block)", cfg.committeeSource)
 	}
 	if cfg.ignoreFrom > 0 {
 		cfg.ignoreMismatch = true
@@ -596,7 +603,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 		if cfg.committeeAuto {
 			baseState = stateDB.Copy()
 		}
-		root, err := applyBlockWithRoot(activeConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
+		root, err := applyBlockWithRoot(activeConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType, cfg.committeeSource)
 		if err != nil {
 			return fmt.Errorf("failed to apply block %d (%s): %v", number, hash.Hex(), err)
 		}
@@ -618,21 +625,36 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 				enabled bool
 				newVer  bool
 				onType  string
+				source  string
 			}
 			var options []committeeOption
 			if cfg.committeeFee {
 				options = append(options, committeeOption{enabled: false})
 			}
+			sources := []string{cfg.committeeSource, "fees", "block"}
+			sourceSet := make(map[string]struct{}, len(sources))
+			var uniqueSources []string
+			for _, source := range sources {
+				source = strings.ToLower(source)
+				if _, ok := sourceSet[source]; ok {
+					continue
+				}
+				sourceSet[source] = struct{}{}
+				uniqueSources = append(uniqueSources, source)
+			}
 			for _, onType := range committeeTypes {
 				for _, tryNewVer := range []bool{false, true} {
-					if cfg.committeeFee && cfg.committeeNew == tryNewVer && cfg.committeeOnType == onType {
-						continue
+					for _, source := range uniqueSources {
+						if cfg.committeeFee && cfg.committeeNew == tryNewVer && cfg.committeeOnType == onType && cfg.committeeSource == source {
+							continue
+						}
+						options = append(options, committeeOption{
+							enabled: true,
+							newVer:  tryNewVer,
+							onType:  onType,
+							source:  source,
+						})
 					}
-					options = append(options, committeeOption{
-						enabled: true,
-						newVer:  tryNewVer,
-						onType:  onType,
-					})
 				}
 			}
 			for _, opt := range options {
@@ -645,7 +667,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 				} else {
 					tryFrom = 0
 				}
-				tryRoot, tryErr := applyBlockWithRoot(activeConfig, ctx, block, retryState, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, opt.enabled, tryFrom, opt.newVer, opt.onType)
+				tryRoot, tryErr := applyBlockWithRoot(activeConfig, ctx, block, retryState, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, opt.enabled, tryFrom, opt.newVer, opt.onType, opt.source)
 				if tryErr != nil {
 					return fmt.Errorf("failed to apply block %d (%s) with committee reward options: %v", number, hash.Hex(), tryErr)
 				}
@@ -655,6 +677,9 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 					cfg.committeeFrom = tryFrom
 					if opt.onType != "" {
 						cfg.committeeOnType = opt.onType
+					}
+					if opt.source != "" {
+						cfg.committeeSource = opt.source
 					}
 					root = tryRoot
 					stateDB = retryState
@@ -669,7 +694,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			}
 			if !recovered {
 				stateDB = baseState.Copy()
-				root, err = applyBlockWithRoot(activeConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
+				root, err = applyBlockWithRoot(activeConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType, cfg.committeeSource)
 				if err != nil {
 					return fmt.Errorf("failed to re-apply block %d (%s) after mismatch: %v", number, hash.Hex(), err)
 				}
@@ -701,7 +726,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 	return nil
 }
 
-func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, timeDivisorAuto bool, committeeReward bool, committeeFrom uint64, committeeNewVer bool, committeeOnType string) error {
+func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, timeDivisorAuto bool, committeeReward bool, committeeFrom uint64, committeeNewVer bool, committeeOnType string, committeeSource string) error {
 	originHeader := block.Header()
 	execHeader := *originHeader
 
@@ -730,18 +755,27 @@ func applyBlock(config *params.ChainConfig, ctx *reexecChainContext, block *type
 
 	ctx.engine.Finalize(ctx, header, statedb, block.Transactions(), block.Uncles(), totalGas)
 	if committeeReward && (committeeFrom == 0 || block.NumberU64() >= committeeFrom) && shouldApplyCommitteeReward(block.BlockType(), committeeOnType) {
-		committeeRewardValue := committeeBlockReward(config, block.Number())
+		committeeRewardValue := committeeRewardValue(config, block.Number(), totalGas, committeeSource)
 		ethash.RewardCommites(ctx, statedb, header, committeeRewardValue, committeeNewVer)
 	}
 	return nil
 }
 
-func applyBlockWithRoot(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, timeDivisorAuto bool, committeeReward bool, committeeFrom uint64, committeeNewVer bool, committeeOnType string) (common.Hash, error) {
-	if err := applyBlock(config, ctx, block, statedb, timeDivisor, timeDivisorFrom, timeDivisorAuto, committeeReward, committeeFrom, committeeNewVer, committeeOnType); err != nil {
+func applyBlockWithRoot(config *params.ChainConfig, ctx *reexecChainContext, block *types.Block, statedb *state.StateDB, timeDivisor uint64, timeDivisorFrom uint64, timeDivisorAuto bool, committeeReward bool, committeeFrom uint64, committeeNewVer bool, committeeOnType string, committeeSource string) (common.Hash, error) {
+	if err := applyBlock(config, ctx, block, statedb, timeDivisor, timeDivisorFrom, timeDivisorAuto, committeeReward, committeeFrom, committeeNewVer, committeeOnType, committeeSource); err != nil {
 		return common.Hash{}, err
 	}
 	root := statedb.IntermediateRoot(config.IsEIP158(block.Number()))
 	return root, nil
+}
+
+func committeeRewardValue(config *params.ChainConfig, number *big.Int, totalGas uint64, source string) uint64 {
+	switch strings.ToLower(source) {
+	case "block":
+		return committeeBlockReward(config, number)
+	default:
+		return totalGas
+	}
 }
 
 func committeeBlockReward(config *params.ChainConfig, number *big.Int) uint64 {
