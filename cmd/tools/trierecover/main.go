@@ -55,6 +55,8 @@ type config struct {
 	timeDivisorAuto bool
 }
 
+const mainnetConfigOverrideBlock uint64 = 182544
+
 func main() {
 	cfg, err := parseConfig()
 	if err != nil {
@@ -103,6 +105,13 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+func activeChainConfig(number uint64, genesisHash common.Hash, base *params.ChainConfig) *params.ChainConfig {
+	if genesisHash == params.MainnetGenesisHash && number >= mainnetConfigOverrideBlock {
+		return params.MainnetChainConfig
+	}
+	return base
 }
 
 func parseConfig() (*config, error) {
@@ -567,6 +576,13 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 
 	fmt.Printf("Starting reexec recovery from genesis to block %d\n", endNumber)
 	for number := uint64(1); number <= endNumber; number++ {
+				activeConfig := activeChainConfig(number, genesisHash, chainConfig)
+		if ctx.config != activeConfig {
+			ctx.config = activeConfig
+			if ctx.keyChain != nil {
+				ctx.keyChain.config = activeConfig
+			}
+		}
 		hash := rawdb.ReadCanonicalHash(target, number)
 		if hash == (common.Hash{}) {
 			return fmt.Errorf("missing canonical hash for block %d", number)
@@ -580,14 +596,14 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 		if cfg.committeeAuto {
 			baseState = stateDB.Copy()
 		}
-		root, err := applyBlockWithRoot(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
+		root, err := applyBlockWithRoot(activeConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
 		if err != nil {
 			return fmt.Errorf("failed to apply block %d (%s): %v", number, hash.Hex(), err)
 		}
 		if root != block.Root() && cfg.committeeAuto {
 			// Retry with committee reward variations (legacy/new rules, block types, or disabled).
 			recovered := false
-						seenTypes := map[string]struct{}{
+			seenTypes := map[string]struct{}{
 				cfg.committeeOnType: {},
 			}
 			committeeTypes := []string{cfg.committeeOnType}
@@ -629,7 +645,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 				} else {
 					tryFrom = 0
 				}
-				tryRoot, tryErr := applyBlockWithRoot(chainConfig, ctx, block, retryState, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, opt.enabled, tryFrom, opt.newVer, opt.onType)
+				tryRoot, tryErr := applyBlockWithRoot(activeConfig, ctx, block, retryState, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, opt.enabled, tryFrom, opt.newVer, opt.onType)
 				if tryErr != nil {
 					return fmt.Errorf("failed to apply block %d (%s) with committee reward options: %v", number, hash.Hex(), tryErr)
 				}
@@ -653,13 +669,13 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 			}
 			if !recovered {
 				stateDB = baseState.Copy()
-				root, err = applyBlockWithRoot(chainConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
+				root, err = applyBlockWithRoot(activeConfig, ctx, block, stateDB, cfg.timeDivisor, cfg.timeDivisorFrom, cfg.timeDivisorAuto, cfg.committeeFee, cfg.committeeFrom, cfg.committeeNew, cfg.committeeOnType)
 				if err != nil {
 					return fmt.Errorf("failed to re-apply block %d (%s) after mismatch: %v", number, hash.Hex(), err)
 				}
 			}
 		}
-		committedRoot, err := stateDB.Commit(chainConfig.IsEIP158(block.Number()))
+		committedRoot, err := stateDB.Commit(activeConfig.IsEIP158(block.Number()))
 		if err != nil {
 			return fmt.Errorf("failed to commit state at block %d: %v", number, err)
 		}
