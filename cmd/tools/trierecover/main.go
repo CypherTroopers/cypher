@@ -131,8 +131,8 @@ func parseConfig() (*config, error) {
 	flag.Uint64Var(&cfg.reexecFrom, "reexec-from", 1, "Start block number for reexecution (must be 1)")
 	flag.Uint64Var(&cfg.reexecTo, "reexec-to", 0, "Stop block number for reexecution (0 means chain head)")
 	// NOTE:
-	// Ethash.Finalize() may double-apply rewards on this network during reexec.
-	// Default mapping for Ethash is therefore "noreward". You can still force ethash with -engine ethash.
+	// Ethash networks default to Ethash reexec. If you observe reward-related mismatches,
+	// retry with -engine noreward.
 	flag.StringVar(&cfg.engine, "engine", "", "Force consensus engine for reexec: ethash, clique, istanbul, noreward")
 
 	// IMPORTANT:
@@ -576,7 +576,7 @@ func recoverByReexec(target ethdb.Database, cfg *config) error {
 
 	fmt.Printf("Starting reexec recovery from genesis to block %d\n", endNumber)
 	for number := uint64(1); number <= endNumber; number++ {
-				activeConfig := activeChainConfig(number, genesisHash, chainConfig)
+		activeConfig := activeChainConfig(number, genesisHash, chainConfig)
 		if ctx.config != activeConfig {
 			ctx.config = activeConfig
 			if ctx.keyChain != nil {
@@ -745,9 +745,8 @@ func applyBlockWithRoot(config *params.ChainConfig, ctx *reexecChainContext, blo
 }
 
 func committeeBlockReward(config *params.ChainConfig, number *big.Int) uint64 {
-	if config != nil && config.IsByzantium(number) {
-		return ethash.ByzantiumBlockReward.Uint64()
-	}
+	_ = config
+	_ = number
 	return ethash.FrontierBlockReward.Uint64()
 }
 
@@ -815,11 +814,10 @@ func engineFromConfig(config *params.ChainConfig, db ethdb.Database, override st
 		}
 	}
 	// Default engine selection:
-	// - Ethash chains in this network appear to mismatch if Ethash.Finalize() is used in reexec.
-	//   Default to NoReward, but allow -engine ethash for experiments.
+	// - Use Ethash when configured; fall back to noreward only if explicitly requested.
 	switch {
 	case config.Ethash != nil:
-		return &reexecNoRewardEngine{}, nil
+		return ethash.NewFaker(), nil
 	case config.Clique != nil:
 		return &reexecCliqueEngine{Clique: clique.New(config.Clique, db)}, nil
 	case config.Istanbul != nil:
