@@ -262,8 +262,8 @@ func (kbc *KeyBlockChain) InsertBlockFromData(data []byte) error {
 	}
 	_, err := kbc.insert_Chain(types.KeyBlocks{b})
 	if err != nil && kbc.candidatePool != nil {
-		kbc.candidatePool.ClearObsolete(b.Number())␊
-	}␊
+		kbc.candidatePool.ClearObsolete(b.Number())
+	}
 	return err
 }
 
@@ -490,4 +490,5 @@ func (kbc *KeyBlockChain) GetCommitteeByNumber(kNumber uint64) []*common.Cnode {
 	log.Warn("GetCommitteeByNumber not found committee", "number", kNumber)
 	return nil
 }
+
 
