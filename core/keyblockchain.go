@@ -67,6 +67,10 @@ func NewKeyBlockChain(cph Backend, db ethdb.Database, cacheConfig *CacheConfig, 
 	blockCache, _ := lru.New(blockCacheLimit)
 	blockRLPCache, _ := lru.New(bodyCacheLimit)
 
+	var candidatePool *CandidatePool
+	if cph != nil {
+		candidatePool = cph.CandidatePool()
+	}
 	kbc := &KeyBlockChain{
 		chainConfig:   chainConfig,
 		db:            db,
@@ -75,7 +79,7 @@ func NewKeyBlockChain(cph Backend, db ethdb.Database, cacheConfig *CacheConfig, 
 		engine:        engine,
 		mux:           mux,
 		backend:       cph,
-		candidatePool: cph.CandidatePool(),
+		candidatePool: candidatePool,
 	}
 
 	var err error
@@ -257,9 +261,9 @@ func (kbc *KeyBlockChain) InsertBlockFromData(data []byte) error {
 		log.Error("InsertBlockFromData DecodeToKeyBlock return nil")
 	}
 	_, err := kbc.insert_Chain(types.KeyBlocks{b})
-	if err != nil {
-		kbc.candidatePool.ClearObsolete(b.Number())
-	}
+	if err != nil && kbc.candidatePool != nil {
+		kbc.candidatePool.ClearObsolete(b.Number())␊
+	}␊
 	return err
 }
 
@@ -486,3 +490,4 @@ func (kbc *KeyBlockChain) GetCommitteeByNumber(kNumber uint64) []*common.Cnode {
 	log.Warn("GetCommitteeByNumber not found committee", "number", kNumber)
 	return nil
 }
+
