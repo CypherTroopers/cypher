@@ -23,7 +23,6 @@ import (
 	"io"
 	"math/big"
 	mrand "math/rand"
-	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -216,13 +215,6 @@ type BlockChain struct {
 	ProcInsertDone func(*types.Block)
 }
 
-func (bc *BlockChain) shouldSkipKeyBlockChain() bool {
-	if bc.keyBlockChain == nil {
-		return true
-	}
-	return os.Getenv("CYPHER_SKIP_KEYBLOCKCHAIN") != ""
-}
-
 // NewBlockChain returns a fully initialised block chain using information
 // available in the database. It initialises the default Ethereum Validator and
 // Processor.
@@ -258,6 +250,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 		badBlocks:      badBlocks,
 		keyBlockChain:  kbc,
 	}
+
 	bc.validator = NewBlockValidator(chainConfig, bc, engine)
 	bc.prefetcher = newStatePrefetcher(chainConfig, bc, engine)
 	bc.processor = NewStateProcessor(chainConfig, bc, engine)
@@ -398,13 +391,6 @@ func (bc *BlockChain) empty() bool {
 // loadLastState loads the last known chain state from the database. This method
 // assumes that the chain manager mutex is held.
 func (bc *BlockChain) loadLastState() error {
-	if rawdb.ReadHeadBlockHash(bc.db) == (common.Hash{}) {
-		log.Warn("Empty database, initializing genesis")
-		if err := bc.ResetWithGenesisBlock(bc.genesisBlock); err != nil {
-			log.Crit("Failed to initialize genesis", "err", err)
-		}
-		return nil
-	}
 	// Restore the last known head block
 	head := rawdb.ReadHeadBlockHash(bc.db)
 	if head == (common.Hash{}) {
@@ -664,13 +650,6 @@ func (bc *BlockChain) Reset() error {
 // ResetWithGenesisBlock purges the entire blockchain, restoring it to the
 // specified genesis state.
 func (bc *BlockChain) ResetWithGenesisBlock(genesis *types.Block) error {
-	if genesis == nil {
-		return errors.New("nil genesis block")
-	}
-
-	if genesis.NumberU64() != 0 {
-		return errors.New("invalid genesis block number")
-	}
 	// Dump the entire block chain and purge the caches
 	if err := bc.SetHead(0); err != nil {
 		return err
@@ -1965,13 +1944,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool, verifySi
 		}
 		//--write keyblock----------------------------------------------------------------------------------------------
 		if block.BlockType() == types.Key_Block {
-			if bc.shouldSkipKeyBlockChain() {
-				log.Warn("Skipping key block import due to missing or disabled key block chain", "number", block.NumberU64(), "hash", block.Hash())
-			} else {
-				err := bc.keyBlockChain.InsertBlockFromData(block.KeyInfo())
-				if err != nil {
-					return it.index, err
-				}
+			err := bc.keyBlockChain.InsertBlockFromData(block.KeyInfo())
+			if err != nil {
+				return it.index, err
 			}
 		}
 		//------------------------------------------------------------------------------------------------
