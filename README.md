@@ -1,3 +1,4 @@
+
 totch chaindbname/cypher/blocks.rlp
 
 ./build/bin/cypher --datadir ./chaindbname  export ./chaindbname/cypher/blocks.rlp
