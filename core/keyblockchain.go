@@ -88,6 +88,8 @@ func NewKeyBlockChain(cph Backend, db ethdb.Database, cacheConfig *CacheConfig, 
 		return nil, err
 	}
 
+	bftview.SetCommitteeConfig(db, nil, nil)
+
 	h := kbc.GetHeaderByNumber(0)
 	if h == nil {
 		return nil, ErrNoGenesis
@@ -490,5 +492,6 @@ func (kbc *KeyBlockChain) GetCommitteeByNumber(kNumber uint64) []*common.Cnode {
 	log.Warn("GetCommitteeByNumber not found committee", "number", kNumber)
 	return nil
 }
+
 
 
