@@ -26,5 +26,6 @@ chmod +x scripts/rebuild-state-from-blocks.sh
 ./build/bin/cypher --datadir ./chaindata-rebuild <your usual flags>
 ~~~
 
-
-
+~~~
+./build/bin/cypher attach ipc:./chaindata-rebuild/cypher.ipc
+~~~
