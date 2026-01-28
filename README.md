@@ -1,6 +1,6 @@
----
+~~~
 touch chaindbname/cypher/blocks.rlp
----
+~~~
  all blocks ver
 ---
 ./build/bin/cypher --datadir ./chaindbname  export ./chaindbname/cypher/blocks.rlp
