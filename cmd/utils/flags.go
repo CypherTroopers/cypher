@@ -188,11 +188,11 @@ var (
 		Usage: "Exclude contract code (save db lookups)",
 	}
 	defaultSyncMode = eth.DefaultConfig.SyncMode
-	SyncModeFlag    = TextMarshalerFlag{
-		Name:  "syncmode",
-		Usage: `Blockchain sync mode ("fast", "full", or "light")`,
-		Value: &defaultSyncMode,
-	}
+SyncModeFlag = TextMarshalerFlag{
+    Name:  "syncmode",
+    Usage: `Blockchain sync mode ("fast", "full", or "light")`,
+    Value: &defaultSyncMode,
+}
 	GCModeFlag = cli.StringFlag{
 		Name:  "gcmode",
 		Usage: `Blockchain garbage collection mode ("full", "archive")`,
@@ -1286,7 +1286,7 @@ func setDataDir(ctx *cli.Context, cfg *node.Config) {
 		// Ropsten database in `testnet` instead of `ropsten`.
 		legacyPath := filepath.Join(node.DefaultDataDir(), "testnet")
 		if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
-			log.Warn("Using the deprecated `testnet` datadir. Future versions will store the Ropsten chain in `ropsten`.")
+log.Warn("Using the deprecated testnet datadir. Future versions will store the Ropsten chain in ropsten.")
 			cfg.DataDir = legacyPath
 		} else {
 			cfg.DataDir = filepath.Join(node.DefaultDataDir(), "ropsten")
