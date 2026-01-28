@@ -83,7 +83,6 @@ COMMANDS:
 GLOBAL OPTIONS:
    {{range .Flags}}{{.}}
    {{end}}{{end}}
-`
 	cli.CommandHelpTemplate = flags.CommandHelpTemplate
 	cli.HelpPrinter = printHelp
 }
@@ -1907,12 +1906,11 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readOnly bool, useExist bool)
 		l := ctx.GlobalUint64(TxLookupLimitFlag.Name)
 		limit = &l
 	}
-		keyChain, err := core.NewKeyBlockChain(nil, chainDb, cache, config, engine, nil)
+	keyChain, err := core.NewKeyBlockChain(nil, chainDb, cache, config, engine, nil)
 	if err != nil {
 		Fatalf("Can't create KeyBlockChain: %v", err)
 	}
 	chain, err = core.NewBlockChain(chainDb, cache, config, engine, vmcfg, nil, limit, keyChain)
-	chain, err = core.NewBlockChain(chainDb, cache, config, engine, vmcfg, nil, limit, nil)
 	if err != nil {
 		Fatalf("Can't create BlockChain: %v", err)
 	}
