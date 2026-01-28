@@ -23,6 +23,7 @@ import (
 	"io"
 	"math/big"
 	mrand "math/rand"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -213,6 +214,13 @@ type BlockChain struct {
 
 	keyBlockChain  *KeyBlockChain
 	ProcInsertDone func(*types.Block)
+}
+
+func (bc *BlockChain) shouldSkipKeyBlockChain() bool {
+	if bc.keyBlockChain == nil {
+		return true
+	}
+	return os.Getenv("CYPHER_SKIP_KEYBLOCKCHAIN") != ""
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -1957,9 +1965,13 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool, verifySi
 		}
 		//--write keyblock----------------------------------------------------------------------------------------------
 		if block.BlockType() == types.Key_Block {
-			err := bc.keyBlockChain.InsertBlockFromData(block.KeyInfo())
-			if err != nil {
-				return it.index, err
+			if bc.shouldSkipKeyBlockChain() {
+				log.Warn("Skipping key block import due to missing or disabled key block chain", "number", block.NumberU64(), "hash", block.Hash())
+			} else {
+				err := bc.keyBlockChain.InsertBlockFromData(block.KeyInfo())
+				if err != nil {
+					return it.index, err
+				}
 			}
 		}
 		//------------------------------------------------------------------------------------------------
