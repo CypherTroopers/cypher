@@ -83,6 +83,7 @@ COMMANDS:
 GLOBAL OPTIONS:
    {{range .Flags}}{{.}}
    {{end}}{{end}}
+`
 	cli.CommandHelpTemplate = flags.CommandHelpTemplate
 	cli.HelpPrinter = printHelp
 }
