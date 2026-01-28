@@ -22,7 +22,6 @@ import (
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
-	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/reconfig/hotstuff"
@@ -162,10 +161,6 @@ func CalcGasLimit(parent *types.Block, gasFloor, gasCeil uint64) uint64 {
 
 func (v *BlockValidator) VerifySignature(block *types.Block) error {
 	//TxHash  verify
-	if v.bc.shouldSkipKeyBlockChain() {
-		log.Warn("VerifySignature skipped due to missing or disabled key block chain")
-		return nil
-	}
 	mycommittee := &bftview.Committee{List: v.bc.keyBlockChain.GetCommitteeByHash(block.KeyHash())}
 	if mycommittee == nil || len(mycommittee.List) < 2 {
 		return types.ErrInvalidCommittee
