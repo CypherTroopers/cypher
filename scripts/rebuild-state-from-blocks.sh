@@ -14,7 +14,8 @@ Options:
   --syncmode <mode>    Sync mode (default: full)
   --gcmode <mode>      GC mode (default: archive)
   --keep-datadir       Do not move existing datadir out of the way
-
+  --skip-keyblocks     Skip key-block validation/import (sets CYPHER_SKIP_KEYBLOCKCHAIN=1)
+  
 Notes:
   - The block files must be RLP-encoded block exports compatible with `cypher import`.
   - When --blocks is a directory, files are imported in lexicographical order.
@@ -28,6 +29,7 @@ cache="2048"
 syncmode="full"
 gcmode="archive"
 keep_datadir="false"
+skip_keyblocks="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -57,6 +59,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --keep-datadir)
       keep_datadir="true"
+      shift 1
+      ;;
+    --skip-keyblocks)
+      skip_keyblocks="true"
       shift 1
       ;;
     -h|--help)
@@ -107,7 +113,12 @@ if [[ ${#block_files[@]} -eq 0 ]]; then
 fi
 
 echo "Importing ${#block_files[@]} block file(s)..."
-"$cypher_bin" \
+declare -a import_env=()
+if [[ "$skip_keyblocks" == "true" ]]; then
+  import_env=(CYPHER_SKIP_KEYBLOCKCHAIN=1)
+fi
+
+"${import_env[@]}" "$cypher_bin" \
   --datadir "$datadir" \
   --cache "$cache" \
   --syncmode "$syncmode" \
