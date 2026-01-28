@@ -7,7 +7,7 @@ touch chaindbname/cypher/blocks.rlp
 ~~~
 Range specification　ver
 ~~~
-./build/bin/cypher export /path/to/blocks.rlp 0 182531
+./build/bin/cypher --datadir ./chaindbname export ./chaindbname/cypher/blocks.rlp 0 182531
 ~~~
 
 ~~~
