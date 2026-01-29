@@ -1907,7 +1907,11 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readOnly bool, useExist bool)
 		l := ctx.GlobalUint64(TxLookupLimitFlag.Name)
 		limit = &l
 	}
-	chain, err = core.NewBlockChain(chainDb, cache, config, engine, vmcfg, nil, limit, nil)
+	keyBlockChain, err := core.NewKeyBlockChain(nil, chainDb, cache, config, engine, nil)
+	if err != nil {
+		Fatalf("Can't create KeyBlockChain: %v", err)
+	}
+	chain, err = core.NewBlockChain(chainDb, cache, config, engine, vmcfg, nil, limit, keyBlockChain)
 	if err != nil {
 		Fatalf("Can't create BlockChain: %v", err)
 	}
