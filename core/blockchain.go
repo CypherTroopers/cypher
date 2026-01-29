@@ -690,6 +690,9 @@ func (bc *BlockChain) ExportN(w io.Writer, first uint64, last uint64) error {
 	if first > last {
 		return fmt.Errorf("export failed: first (%d) is greater than last (%d)", first, last)
 	}
+	if err := bc.exportKeyBlocksAndCommittees(w); err != nil {
+		return err
+	}
 	log.Info("Exporting batch of blocks", "count", last-first+1)
 
 	start, reported := time.Now(), time.Now()
@@ -698,7 +701,7 @@ func (bc *BlockChain) ExportN(w io.Writer, first uint64, last uint64) error {
 		if block == nil {
 			return fmt.Errorf("export failed on #%d: not found", nr)
 		}
-		if err := block.EncodeRLP(w); err != nil {
+		if err := EncodeExportItem(w, ExportKindBlock, block); err != nil {
 			return err
 		}
 		if time.Since(reported) >= statsReportLimit {
