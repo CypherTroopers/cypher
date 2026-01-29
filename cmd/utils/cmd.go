@@ -36,6 +36,7 @@ import (
 	"github.com/cypherium/cypher/internal/debug"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/node"
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
 )
 
@@ -125,6 +126,13 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 	}
 	stream := rlp.NewStream(reader, 0)
 
+	var keyBlockChain *core.KeyBlockChain
+	if keyReader := chain.GetKeyChainReader(); keyReader != nil {
+		if kbc, ok := keyReader.(*core.KeyBlockChain); ok {
+			keyBlockChain = kbc
+		}
+	}
+
 	// Run actual the import.
 	blocks := make(types.Blocks, importBatchSize)
 	n := 0
@@ -134,19 +142,62 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 			return fmt.Errorf("interrupted")
 		}
 		i := 0
-		for ; i < importBatchSize; i++ {
-			var b types.Block
-			if err := stream.Decode(&b); err == io.EOF {
+		for i < importBatchSize {
+			var raw rlp.RawValue
+			if err := stream.Decode(&raw); err == io.EOF {
 				break
 			} else if err != nil {
 				return fmt.Errorf("at block %d: %v", n, err)
 			}
+
+			if item, err := core.DecodeExportItem(raw); err == nil {
+				switch item.Kind {
+				case core.ExportKindBlock:
+					var b types.Block
+					if err := rlp.DecodeBytes(item.Payload, &b); err != nil {
+						return fmt.Errorf("at block %d: %v", n, err)
+					}
+					// don't import first block
+					if b.NumberU64() == 0 {
+						continue
+					}
+					blocks[i] = &b
+					i++
+					n++
+				case core.ExportKindKeyBlock:
+					if keyBlockChain == nil {
+						return fmt.Errorf("missing key block chain for import")
+					}
+					if err := keyBlockChain.InsertBlockFromData(item.Payload); err != nil {
+						return err
+					}
+				case core.ExportKindCommittee:
+					var committee core.ExportCommittee
+					if err := rlp.DecodeBytes(item.Payload, &committee); err != nil {
+						return err
+					}
+					if committee.Committee == nil {
+						return fmt.Errorf("empty committee payload for keyblock %d", committee.KeyNumber)
+					}
+					if ok := bftview.WriteCommittee(committee.KeyNumber, committee.KeyHash, committee.Committee); !ok {
+						return fmt.Errorf("failed to store committee for keyblock %d", committee.KeyNumber)
+					}
+				default:
+					return fmt.Errorf("unknown export item kind %d", item.Kind)
+				}
+				continue
+			}
+
+			var b types.Block
+			if err := rlp.DecodeBytes(raw, &b); err != nil {
+				return fmt.Errorf("at block %d: %v", n, err)
+			}
 			// don't import first block
 			if b.NumberU64() == 0 {
-				i--
 				continue
 			}
 			blocks[i] = &b
+			i++
 			n++
 		}
 		if i == 0 {
