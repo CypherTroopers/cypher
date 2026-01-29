@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -218,6 +219,30 @@ Use "ethereum dump 0" to dump the genesis block.`,
 			utils.SyncModeFlag,
 		},
 		Category: "BLOCKCHAIN COMMANDS",
+	}
+	scanMissingCommand = cli.Command{
+		Action:    utils.MigrateFlags(scanMissing),
+		Name:      "scanmissing",
+		Usage:     "Scan missing normal/key blocks within a range",
+		ArgsUsage: "<start> <end>",
+		Flags: []cli.Flag{
+			utils.DataDirFlag,
+			utils.AncientFlag,
+			utils.CacheFlag,
+			utils.CacheDatabaseFlag,
+			utils.SyncModeFlag,
+			cli.StringFlag{
+				Name:  "out",
+				Usage: "Output file path (default: ./missing-blocks-<start>-<end>.json)",
+			},
+		},
+		Category: "BLOCKCHAIN COMMANDS",
+		Description: `
+The scanmissing command scans the local chaindata for missing normal blocks and key
+blocks within the specified inclusive range without starting the node.
+
+Examples:
+  cypher scanmissing 0 194001 --datadir ./chaindbname`,
 	}
 )
 
@@ -457,6 +482,114 @@ func exportPreimages(ctx *cli.Context) error {
 		utils.Fatalf("Export error: %v\n", err)
 	}
 	fmt.Printf("Export done in %v\n", time.Since(start))
+	return nil
+}
+
+type missingEntry struct {
+	Number uint64 `json:"number"`
+	Reason string `json:"reason"`
+}
+
+type missingReport struct {
+	Start             uint64         `json:"start"`
+	End               uint64         `json:"end"`
+	MissingBlocks     []missingEntry `json:"missing_blocks"`
+	MissingKeyBlocks  []missingEntry `json:"missing_key_blocks"`
+	GeneratedAt       time.Time      `json:"generated_at"`
+	TotalNormalScans  uint64         `json:"total_normal_scans"`
+	TotalKeyBlockScan uint64         `json:"total_key_block_scans"`
+}
+
+func scanMissing(ctx *cli.Context) error {
+	if len(ctx.Args()) < 2 {
+		utils.Fatalf("This command requires <start> and <end> arguments.")
+	}
+	start, err := strconv.ParseUint(ctx.Args().Get(0), 10, 64)
+	if err != nil {
+		utils.Fatalf("Invalid start block number: %v", err)
+	}
+	end, err := strconv.ParseUint(ctx.Args().Get(1), 10, 64)
+	if err != nil {
+		utils.Fatalf("Invalid end block number: %v", err)
+	}
+	if start > end {
+		utils.Fatalf("Start block must be <= end block")
+	}
+
+	outPath := ctx.String("out")
+	if outPath == "" {
+		outPath = fmt.Sprintf("missing-blocks-%d-%d.json", start, end)
+	}
+
+	stack, _ := makeConfigNode(ctx)
+	defer stack.Close()
+
+	db := utils.MakeChainDatabase(ctx, stack)
+	defer db.Close()
+
+	missingBlocks := make([]missingEntry, 0)
+	missingKeyBlocks := make([]missingEntry, 0)
+
+	for number := start; number <= end; number++ {
+		var reasons []string
+		hash := rawdb.ReadCanonicalHash(db, number)
+		if hash == (common.Hash{}) {
+			reasons = append(reasons, "missing canonical hash")
+		} else {
+			if rawdb.ReadHeader(db, hash, number) == nil {
+				reasons = append(reasons, "missing header")
+			}
+			if rawdb.ReadBody(db, hash, number) == nil {
+				reasons = append(reasons, "missing body")
+			}
+		}
+		if len(reasons) > 0 {
+			missingBlocks = append(missingBlocks, missingEntry{
+				Number: number,
+				Reason: strings.Join(reasons, ", "),
+			})
+		}
+
+		var keyReasons []string
+		keyHash := rawdb.ReadKeyBlockHash(db, number)
+		if keyHash == (common.Hash{}) {
+			keyReasons = append(keyReasons, "missing key block hash")
+		} else {
+			if rawdb.ReadKeyHeader(db, keyHash, number) == nil {
+				keyReasons = append(keyReasons, "missing key header")
+			}
+			if rawdb.ReadKeyBody(db, keyHash, number) == nil {
+				keyReasons = append(keyReasons, "missing key body")
+			}
+		}
+		if len(keyReasons) > 0 {
+			missingKeyBlocks = append(missingKeyBlocks, missingEntry{
+				Number: number,
+				Reason: strings.Join(keyReasons, ", "),
+			})
+		}
+		if number == end {
+			break
+		}
+	}
+
+	report := missingReport{
+		Start:             start,
+		End:               end,
+		MissingBlocks:     missingBlocks,
+		MissingKeyBlocks:  missingKeyBlocks,
+		GeneratedAt:       time.Now().UTC(),
+		TotalNormalScans:  end - start + 1,
+		TotalKeyBlockScan: end - start + 1,
+	}
+	payload, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		utils.Fatalf("Failed to marshal report: %v", err)
+	}
+	if err := os.WriteFile(outPath, payload, 0o644); err != nil {
+		utils.Fatalf("Failed to write output file: %v", err)
+	}
+	fmt.Printf("Missing block report written to %s\n", outPath)
 	return nil
 }
 
