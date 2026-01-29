@@ -7,7 +7,6 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/rawdb"
-	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
