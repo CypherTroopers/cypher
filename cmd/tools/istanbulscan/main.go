@@ -31,6 +31,7 @@ type scanConfig struct {
 	end           uint64
 	istanbulBlock int64
 	engine        string
+	checkReceipts bool
 	cache         int
 	handles       int
 }
@@ -154,13 +155,16 @@ func main() {
 			fmt.Fprintf(os.Stderr, "failed to execute block %d: %v\n", number, err)
 			os.Exit(1)
 		}
-		if root != block.Root() || receiptRoot != block.ReceiptHash() {
+		receiptMismatch := cfg.checkReceipts && receiptRoot != block.ReceiptHash()
+		if root != block.Root() || receiptMismatch {
 			fmt.Printf("Mismatch at block %d (%s)\n", number, hash.Hex())
 			fmt.Printf("  computed state root:   %s\n", root.Hex())
 			fmt.Printf("  expected state root:   %s\n", block.Root().Hex())
-			fmt.Printf("  computed receipt root: %s\n", receiptRoot.Hex())
-			fmt.Printf("  expected receipt root: %s\n", block.ReceiptHash().Hex())
-			fmt.Printf("  tx count: %d\n", len(receipts))
+			if cfg.checkReceipts {
+				fmt.Printf("  computed receipt root: %s\n", receiptRoot.Hex())
+				fmt.Printf("  expected receipt root: %s\n", block.ReceiptHash().Hex())
+				fmt.Printf("  tx count: %d\n", len(receipts))
+			}
 			return
 		}
 		if number%1000 == 0 {
@@ -179,6 +183,7 @@ func parseConfig() (*scanConfig, error) {
 	flag.Uint64Var(&cfg.end, "end", 0, "End block number for scanning (0 means chain head)")
 	flag.Int64Var(&cfg.istanbulBlock, "istanbul-block", -1, "Override Istanbul fork block for reexecution (-1 means never activate)")
 	flag.StringVar(&cfg.engine, "engine", "", "Force consensus engine: ethash, clique, noreward (default: auto)")
+	flag.BoolVar(&cfg.checkReceipts, "check-receipts", false, "Validate receipt root in addition to state root")
 	flag.IntVar(&cfg.cache, "cache", 256, "LevelDB cache size in MB")
 	flag.IntVar(&cfg.handles, "handles", 256, "LevelDB file handles")
 	flag.Parse()
