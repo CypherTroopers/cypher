@@ -235,12 +235,12 @@ func chooseEngine(force string, config *params.ChainConfig, db ethdb.Database) (
 		if config.Clique == nil {
 			return nil, errors.New("clique engine requested but Clique config is nil")
 		}
-		return clique.New(config.Clique, db), nil
+		return &scanCliqueEngine{Clique: clique.New(config.Clique, db)}, nil
 	case "noreward":
 		return &noRewardEngine{}, nil
 	case "":
 		if config.Clique != nil {
-			return clique.New(config.Clique, db), nil
+			return &scanCliqueEngine{Clique: clique.New(config.Clique, db)}, nil
 		}
 		return ethash.NewFaker(), nil
 	default:
@@ -275,9 +275,33 @@ func applyBlock(config *params.ChainConfig, ctx *chainContext, block *types.Bloc
 	if len(receipts) == 0 {
 		receiptRoot = types.EmptyRootHash
 	} else {
-		receiptRoot = types.DeriveSha(receipts, trie.NewStackTrie(nil))
+		receiptRoot = types.DeriveSha(receipts, new(trie.Trie))
 	}
 	return receipts, root, receiptRoot, nil
+}
+
+type scanCliqueEngine struct {
+	*clique.Clique
+}
+
+func (e *scanCliqueEngine) SealCandidate(candidate *types.Candidate, stop <-chan struct{}) (*types.Candidate, error) {
+	return nil, errors.New("istanbulscan: SealCandidate not supported")
+}
+
+func (e *scanCliqueEngine) VerifyCandidate(chain types.KeyChainReader, candidate *types.Candidate) error {
+	return nil
+}
+
+func (e *scanCliqueEngine) PrepareCandidate(chain types.KeyChainReader, candidate *types.Candidate, committeeSize int) error {
+	return nil
+}
+
+func (e *scanCliqueEngine) CalcKeyBlockDifficulty(chain types.KeyChainReader, time uint64, parent *types.KeyBlockHeader) *big.Int {
+	return big.NewInt(0)
+}
+
+func (e *scanCliqueEngine) PowMode() uint {
+	return uint(ethash.ModeFake)
 }
 
 type noRewardEngine struct{}
