@@ -50,9 +50,11 @@ type chainContext struct {
 	head   *types.Header
 }
 
-func (c *chainContext) Engine() consensus.Engine         { return c.engine }
-func (c *chainContext) Config() *params.ChainConfig       { return c.config }
-func (c *chainContext) CurrentHeader() *types.Header      { return c.head }
+func (c *chainContext) Engine() consensus.Engine    { return c.engine }
+func (c *chainContext) Config() *params.ChainConfig { return c.config }
+func (c *chainContext) CurrentHeader() *types.Header {
+	return c.head
+}
 func (c *chainContext) GetHeader(hash common.Hash, number uint64) *types.Header {
 	return rawdb.ReadHeader(c.db, hash, number)
 }
@@ -216,7 +218,7 @@ func parseConfig() (*scanConfig, error) {
 	flag.Uint64Var(&cfg.end, "end", 0, "End block number for scanning (0 means chain head)")
 	flag.Int64Var(&cfg.istanbulBlock, "istanbul-block", -1, "Override Istanbul fork block for reexecution (-1 means never activate)")
 	flag.StringVar(&cfg.engine, "engine", "", "Force consensus engine: ethash, clique, noreward (default: auto)")
-	flag.BoolVar(&cfg.checkReceipts, "check-receipts", false, "Validate receipt root in addition to state root (may not match on Cypherium forks)")
+	flag.BoolVar(&cfg.checkReceipts, "check-receipts", false, "Validate receipt root in addition to state root (may not match on forks)")
 	flag.IntVar(&cfg.cache, "cache", 256, "LevelDB cache size in MB")
 	flag.IntVar(&cfg.handles, "handles", 256, "LevelDB file handles")
 
@@ -306,7 +308,6 @@ func applyBlock(
 
 	gp := new(core.GasPool).AddGas(block.GasLimit())
 	usedGas := new(uint64)
-	var totalGas uint64
 
 	receipts := make(types.Receipts, 0, len(block.Transactions()))
 	for i, tx := range block.Transactions() {
@@ -316,10 +317,14 @@ func applyBlock(
 			return nil, common.Hash{}, common.Hash{}, err
 		}
 		receipts = append(receipts, receipt)
-		totalGas += receipt.GasUsed * tx.GasPrice().Uint64()
 	}
 
-	ctx.engine.Finalize(ctx, header, statedb, block.Transactions(), block.Uncles(), totalGas)
+	totalGasUsed := uint64(0)
+	for _, r := range receipts {
+		totalGasUsed += r.GasUsed
+	}
+
+	ctx.engine.Finalize(ctx, header, statedb, block.Transactions(), block.Uncles(), totalGasUsed)
 
 	deleteEmpty := config.IsEIP158(block.Number())
 	if forceEIP158 != nil {
