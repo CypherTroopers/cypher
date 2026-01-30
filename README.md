@@ -34,10 +34,10 @@ chmod +x scripts/rebuild-state-from-blocks.sh
 mkdir -p ./exports
 ~~~
 ~~~
-./build/bin/cypher --datadir ./data3 export ./exports/blocks-000001-184999.rlp 1 184999
+./build/bin/cypher --datadir ./data3 export ./exports/blocks-000001-182531.rlp 1 182531
 ~~~
 ~~~
-./build/bin/cypher --datadir ./data4 export ./exports/blocks-185000-208223.rlp 185000 208223
+./build/bin/cypher --datadir ./data4 export ./exports/blocks-182532-263109.rlp 182532 263109
 ~~~
 ~~~
 scripts/rebuild-state-from-blocks.sh --datadir ./data5 --genesis ./genesis.json --blocks ./exports --cache 4096 --syncmode full --gcmode archive
