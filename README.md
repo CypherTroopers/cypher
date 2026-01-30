@@ -33,6 +33,7 @@ chmod +x scripts/rebuild-state-from-blocks.sh
 ~~~
 mkdir -p ./exports
 ~~~
+~~~
 ./build/bin/cypher --datadir ./data3 export ./exports/blocks-000001-184999.rlp 1 184999
 ~~~
 ~~~
