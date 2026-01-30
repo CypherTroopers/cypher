@@ -22,6 +22,7 @@ import (
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rpc"
 	"github.com/cypherium/cypher/trie"
 )
@@ -40,7 +41,7 @@ type scanConfig struct {
 	handles int
 
 	dumpConfig bool
-	eip158    string // auto|on|off
+	eip158     string // auto|on|off
 
 	committeeReward bool
 	committeeFrom   uint64
@@ -50,11 +51,12 @@ type scanConfig struct {
 }
 
 type chainContext struct {
-	db     ethdb.Database
-	config *params.ChainConfig
-	engine consensus.Engine
-	head   *types.Header
-}
+	db        ethdb.Database
+	config    *params.ChainConfig
+	engine    consensus.Engine
+	head      *types.Header
+	keyReader types.KeyChainReader
+	}
 
 func (c *chainContext) Engine() consensus.Engine    { return c.engine }
 func (c *chainContext) Config() *params.ChainConfig { return c.config }
@@ -91,6 +93,90 @@ func (c *chainContext) GetBlockByNumber(number uint64) *types.Block {
 	}
 	return rawdb.ReadBlock(c.db, hash, number)
 }
+func (c *chainContext) GetKeyChainReader() types.KeyChainReader { return c.keyReader }
+
+type dbKeyChainReader struct {
+	db  ethdb.Database
+	cfg *params.ChainConfig
+}
+
+func (r *dbKeyChainReader) Config() *params.ChainConfig { return r.cfg }
+
+func (r *dbKeyChainReader) GetHeader(hash common.Hash, number uint64) *types.KeyBlockHeader {
+	return rawdb.ReadKeyHeader(r.db, hash, number)
+}
+
+func (r *dbKeyChainReader) GetHeaderByNumber(number uint64) *types.KeyBlockHeader {
+	hash := rawdb.ReadKeyBlockHash(r.db, number)
+	if hash == (common.Hash{}) {
+		return nil
+	}
+	return rawdb.ReadKeyHeader(r.db, hash, number)
+}
+
+func (r *dbKeyChainReader) GetHeaderByHash(hash common.Hash) *types.KeyBlockHeader {
+	number := rawdb.ReadKeyHeaderNumber(r.db, hash)
+	if number == nil {
+		return nil
+	}
+	return rawdb.ReadKeyHeader(r.db, hash, *number)
+}
+
+func (r *dbKeyChainReader) CurrentHeader() *types.KeyBlockHeader {
+	headHash := rawdb.ReadHeadKeyHeaderHash(r.db)
+	if headHash == (common.Hash{}) {
+		return nil
+	}
+	number := rawdb.ReadKeyHeaderNumber(r.db, headHash)
+	if number == nil {
+		return nil
+	}
+	return rawdb.ReadKeyHeader(r.db, headHash, *number)
+}
+
+func (r *dbKeyChainReader) GetBlock(hash common.Hash, number uint64) *types.KeyBlock {
+	return rawdb.ReadKeyBlock(r.db, hash, number)
+}
+
+func (r *dbKeyChainReader) CurrentCommittee() []*common.Cnode {
+	headHash := rawdb.ReadHeadKeyBlockHash(r.db)
+	if headHash == (common.Hash{}) {
+		return nil
+	}
+	number := rawdb.ReadKeyHeaderNumber(r.db, headHash)
+	if number == nil {
+		return nil
+	}
+	committee := bftview.LoadMember(*number, headHash, false)
+	if committee == nil {
+		return nil
+	}
+	return committee.List
+}
+
+func (r *dbKeyChainReader) GetCommitteeByNumber(number uint64) []*common.Cnode {
+	hash := rawdb.ReadKeyBlockHash(r.db, number)
+	if hash == (common.Hash{}) {
+		return nil
+	}
+	committee := bftview.LoadMember(number, hash, false)
+	if committee == nil {
+		return nil
+	}
+	return committee.List
+}
+
+func (r *dbKeyChainReader) GetCommitteeByHash(hash common.Hash) []*common.Cnode {
+	number := rawdb.ReadKeyHeaderNumber(r.db, hash)
+	if number == nil {
+		return nil
+	}
+	committee := bftview.LoadMember(*number, hash, false)
+	if committee == nil {
+		return nil
+	}
+	return committee.List
+}
 
 func main() {
 	cfg, err := parseConfig()
@@ -110,7 +196,8 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
-
+	bftview.SetCommitteeConfig(db, nil, nil)
+	
 	genesisHash := rawdb.ReadCanonicalHash(db, 0)
 	if genesisHash == (common.Hash{}) {
 		fmt.Fprintln(os.Stderr, "missing genesis hash in database")
@@ -152,7 +239,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx := &chainContext{db: db, config: execConfig, engine: engine}
+	ctx := &chainContext{
+		db:     db,
+		config: execConfig,
+		engine: engine,
+		keyReader: &dbKeyChainReader{
+			db:  db,
+			cfg: execConfig,
+		},
+	}
 	stateDB := state.NewDatabase(db)
 
 	forceEIP158, err := parseTri(cfg.eip158)
@@ -426,7 +521,9 @@ func (e *scanCliqueEngine) PowMode() uint { return uint(ethash.ModeFake) }
 
 type noRewardEngine struct{}
 
-func (e *noRewardEngine) Author(header *types.Header) (common.Address, error) { return header.Coinbase, nil }
+func (e *noRewardEngine) Author(header *types.Header) (common.Address, error) {
+	return header.Coinbase, nil
+}
 func (e *noRewardEngine) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
 	return nil
 }
@@ -448,7 +545,9 @@ func (e *noRewardEngine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, 
 func (e *noRewardEngine) SealCandidate(candidate *types.Candidate, stop <-chan struct{}) (*types.Candidate, error) {
 	return nil, errors.New("istanbulscan: SealCandidate not supported")
 }
-func (e *noRewardEngine) VerifyCandidate(chain types.KeyChainReader, candidate *types.Candidate) error { return nil }
+func (e *noRewardEngine) VerifyCandidate(chain types.KeyChainReader, candidate *types.Candidate) error {
+	return nil
+}
 func (e *noRewardEngine) PrepareCandidate(chain types.KeyChainReader, candidate *types.Candidate, committeeSize int) error {
 	return nil
 }
