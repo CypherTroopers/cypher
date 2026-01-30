@@ -68,7 +68,7 @@ var (
 		ByzantiumBlock:      big.NewInt(0),
 		ConstantinopleBlock: big.NewInt(0),
 		PetersburgBlock:     big.NewInt(0),
-		IstanbulBlock:       big.NewInt(0),
+		IstanbulBlock:       big.NewInt(182529),
 		MuirGlacierBlock:    big.NewInt(0),
 		Ethash:              new(EthashConfig)}
 
