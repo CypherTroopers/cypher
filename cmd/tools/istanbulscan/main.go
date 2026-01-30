@@ -48,6 +48,7 @@ type scanConfig struct {
 	committeeSource string // block|gas
 	committeeOn     string // normal|key|all
 	committeeNewVer bool
+	committeeToZero bool
 }
 
 type chainContext struct {
@@ -56,7 +57,7 @@ type chainContext struct {
 	engine    consensus.Engine
 	head      *types.Header
 	keyReader types.KeyChainReader
-	}
+}
 
 func (c *chainContext) Engine() consensus.Engine    { return c.engine }
 func (c *chainContext) Config() *params.ChainConfig { return c.config }
@@ -197,7 +198,7 @@ func main() {
 	}
 	defer db.Close()
 	bftview.SetCommitteeConfig(db, nil, nil)
-	
+
 	genesisHash := rawdb.ReadCanonicalHash(db, 0)
 	if genesisHash == (common.Hash{}) {
 		fmt.Fprintln(os.Stderr, "missing genesis hash in database")
@@ -256,9 +257,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Scanning blocks %d..%d with IstanbulBlock=%s, EIP158=%s, engine=%s, checkReceipts=%v, committeeReward=%v, committeeFrom=%d, committeeSource=%s, committeeOn=%s, committeeNewVer=%v\n",
+	fmt.Printf("Scanning blocks %d..%d with IstanbulBlock=%s, EIP158=%s, engine=%s, checkReceipts=%v, committeeReward=%v, committeeFrom=%d, committeeSource=%s, committeeOn=%s, committeeNewVer=%v, committeeToZeroAddr=%v\n",
 		cfg.start, endNumber, execConfig.IstanbulBlock.String(), cfg.eip158, effectiveEngineName(cfg.engine, execConfig),
-		cfg.checkReceipts, cfg.committeeReward, cfg.committeeFrom, cfg.committeeSource, cfg.committeeOn, cfg.committeeNewVer)
+		cfg.checkReceipts, cfg.committeeReward, cfg.committeeFrom, cfg.committeeSource, cfg.committeeOn, cfg.committeeNewVer, cfg.committeeToZero)
 
 	for number := cfg.start; number <= endNumber; number++ {
 		hash := rawdb.ReadCanonicalHash(db, number)
@@ -342,6 +343,7 @@ func parseConfig() (*scanConfig, error) {
 	flag.StringVar(&cfg.eip158, "eip158", "auto", "EIP158 delete-empty-objects mode for IntermediateRoot: auto|on|off")
 
 	flag.BoolVar(&cfg.committeeReward, "committee-reward", false, "Apply committee reward after finalize")
+	flag.BoolVar(&cfg.committeeToZero, "committee-to-zeroaddr", false, "Allow committee reward even when KeyHash is 0x0")
 	flag.Uint64Var(&cfg.committeeFrom, "committee-from", 0, "Apply committee reward starting from this block (0 = from genesis)")
 	flag.StringVar(&cfg.committeeSource, "committee-source", "block", "Committee reward source: block|gas")
 	flag.StringVar(&cfg.committeeOn, "committee-on", "all", "Apply committee reward on: normal|key|all")
@@ -473,7 +475,9 @@ func applyBlock(
 			committeeRewardValue = totalGasUsed // 注意: gasUsed として扱う（fee ではない）
 		}
 
-		ethash.RewardCommites(ctx, statedb, header, committeeRewardValue, cfg.committeeNewVer)
+		if header.KeyHash != (common.Hash{}) || cfg.committeeToZero {
+			ethash.RewardCommites(ctx, statedb, header, committeeRewardValue, cfg.committeeNewVer)
+		}
 	}
 
 	deleteEmpty := config.IsEIP158(block.Number())
