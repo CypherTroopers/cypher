@@ -108,4 +108,9 @@ func main() {
 }
 EOF
 ~~~
-
+~~~
+go run /tmp/fixcfg.go -dry -chaindata /root/go/src/github.com/cypherium/cypher/data5/cypher/chaindata
+~~~
+~~~
+go run /tmp/fixcfg.go -chaindata /root/go/src/github.com/cypherium/cypher/data5/cypher/chaindata
+~~~
