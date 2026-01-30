@@ -116,3 +116,172 @@ go run /tmp/fixcfg.go -dry -chaindata /root/go/src/github.com/cypherium/cypher/d
 ~~~
 go run /tmp/fixcfg.go -chaindata /root/go/src/github.com/cypherium/cypher/data5/cypher/chaindata
 ~~~
+
+##BlockScan in console
+~~~bash
+// mega_verify.js
+// Cypher/geth console script: chain sanity checks in one run
+
+(function () {
+  // ========= config =========
+  var START = 0;
+  var END   = 208223;         // inclusive
+  var STEP  = 1;              // 1: full scan, 10/100: sampling
+  var PROGRESS_EVERY = 2000;
+
+  var CHECK = {
+    blockExist: true,         // eth.getBlock(i)
+    headerExist: true,        // eth.getHeaderByNumber(i)
+    receipts: false,          // tx receipts (heavy)
+    txCount: false,           // eth.getBlockTransactionCount(i) (heavy)
+    keyHashToKeyBlock: true,  // b.keyHash -> eth.getKeyBlockByHash
+    committeeProbe: true,     // eth.committeeMembers(i) の例外/空
+    storageRootProbe: false   // eth.storageRoot(i) (if your client supports)
+  };
+
+  var COMMITTEE_EVERY = 5000;   // 0: disable, or e.g. 1000/5000
+  var COMMITTEE_FROM  = 0;
+
+  // ========= state =========
+  var missBlock = [];
+  var missHeader = [];
+  var err = [];
+  var keyBlockMiss = [];    
+  var committeeErr = [];
+  var committeeEmpty = [];
+  var receiptErr = [];
+  var txCountErr = [];
+  var storageRootErr = [];
+
+  function now() { return (new Date()).toISOString(); }
+
+  function safe(fn, onerr) {
+    try { return fn(); } catch (e) { onerr(String(e)); return undefined; }
+  }
+
+  function logProgress(i) {
+    if (i % PROGRESS_EVERY === 0) {
+      console.log("PROGRESS", i, "/", END,
+        "missBlock=", missBlock.length,
+        "missHeader=", missHeader.length,
+        "keyBlockMiss=", keyBlockMiss.length,
+        "err=", err.length,
+        "t=", now()
+      );
+    }
+  }
+
+  // ========= preflight =========
+  console.log("=== MEGA VERIFY START ===", now());
+  console.log("range", START, "->", END, "step", STEP);
+  console.log("latest blockNumber =", safe(function(){ return eth.blockNumber; }, function(e){ err.push(["eth.blockNumber", e]); }));
+  console.log("latest keyBlockNumber =", safe(function(){ return eth.keyBlockNumber; }, function(e){ err.push(["eth.keyBlockNumber", e]); }));
+  console.log("syncing =", safe(function(){ return eth.syncing; }, function(e){ err.push(["eth.syncing", e]); }));
+
+  // ========= scan =========
+  for (var i = START; i <= END; i += STEP) {
+
+    // --- block existence ---
+    var b;
+    if (CHECK.blockExist) {
+      b = safe(
+        function(){ return eth.getBlock(i); },
+        function(e){ err.push(["getBlock", i, e]); }
+      );
+      if (!b) missBlock.push(i);
+    }
+
+    // --- header existence ---
+    if (CHECK.headerExist) {
+      var h = safe(
+        function(){ return eth.getHeaderByNumber(i); },
+        function(e){ err.push(["getHeaderByNumber", i, e]); }
+      );
+      if (!h) missHeader.push(i);
+    }
+
+    // --- keyHash -> keyblock check (Cypherium specific) ---
+    if (CHECK.keyHashToKeyBlock && b && b.keyHash) {
+      var kb = safe(
+        function(){ return eth.getKeyBlockByHash(b.keyHash); },
+        function(e){ err.push(["getKeyBlockByHash", i, String(b.keyHash), e]); }
+      );
+      if (!kb) keyBlockMiss.push([i, String(b.keyHash)]);
+    }
+
+    // --- tx count (optional heavy) ---
+    if (CHECK.txCount) {
+      var tcnt = safe(
+        function(){ return eth.getBlockTransactionCount(i); },
+        function(e){ txCountErr.push([i, e]); }
+      );
+      // optional: sanity print when huge
+      // if (tcnt > 10000) console.log("HUGE_TX_COUNT", i, tcnt);
+    }
+
+    // --- receipts check (very heavy) ---
+    if (CHECK.receipts && b && b.transactions && b.transactions.length) {
+      for (var k = 0; k < b.transactions.length; k++) {
+        var txh = b.transactions[k];
+        var r = safe(
+          function(){ return eth.getTransactionReceipt(txh); },
+          function(e){ receiptErr.push([i, String(txh), e]); }
+        );
+        if (!r) receiptErr.push([i, String(txh), "null receipt"]);
+      }
+    }
+
+    // --- committeeMembers probe (sampled) ---
+    if (CHECK.committeeProbe && COMMITTEE_EVERY > 0) {
+      if (i >= COMMITTEE_FROM && (i % COMMITTEE_EVERY === 0)) {
+        var members = safe(
+          function(){ return eth.committeeMembers(i); },
+          function(e){ committeeErr.push([i, e]); }
+        );
+       
+        if (members && members.length === 0) committeeEmpty.push(i);
+      }
+    }
+
+    // --- storageRoot probe (optional) ---
+    if (CHECK.storageRootProbe) {
+      safe(
+        function(){ return eth.storageRoot(i); },
+        function(e){ storageRootErr.push([i, e]); }
+      );
+    }
+
+    logProgress(i);
+  }
+
+  // ========= summary =========
+  console.log("=== MEGA VERIFY DONE ===", now());
+
+  function printList(tag, list, limit) {
+    limit = (limit === undefined) ? 50 : limit;
+    console.log(tag + "_COUNT", list.length);
+    if (list.length === 0) return;
+    var head = list.slice(0, limit);
+    console.log(tag + "_HEAD(" + limit + ")", JSON.stringify(head));
+    if (list.length > limit) console.log(tag + "_NOTE", "truncated; increase limit in printList()");
+  }
+
+  printList("MISSING_BLOCK", missBlock, 200);
+  printList("MISSING_HEADER", missHeader, 200);
+  printList("KEYBLOCK_MISSING", keyBlockMiss, 50);
+  printList("COMMITTEE_ERR", committeeErr, 50);
+  printList("COMMITTEE_EMPTY", committeeEmpty, 200);
+  printList("RECEIPT_ERR", receiptErr, 50);
+  printList("TXCOUNT_ERR", txCountErr, 50);
+  printList("STORAGEROOT_ERR", storageRootErr, 50);
+  printList("OTHER_ERR", err, 50);
+
+  // quick verdict
+  console.log("VERDICT",
+    (missBlock.length || missHeader.length || keyBlockMiss.length || committeeErr.length || receiptErr.length || txCountErr.length || storageRootErr.length || err.length)
+      ? "ISSUES_FOUND"
+      : "OK"
+  );
+})();
+
+~~~
