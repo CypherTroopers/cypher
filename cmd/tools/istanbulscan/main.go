@@ -61,6 +61,7 @@ func (c *chainContext) Config() *params.ChainConfig { return c.config }
 func (c *chainContext) CurrentHeader() *types.Header {
 	return c.head
 }
+
 func (c *chainContext) GetHeader(hash common.Hash, number uint64) *types.Header {
 	return rawdb.ReadHeader(c.db, hash, number)
 }
@@ -77,6 +78,18 @@ func (c *chainContext) GetHeaderByHash(hash common.Hash) *types.Header {
 		return nil
 	}
 	return rawdb.ReadHeader(c.db, hash, *number)
+}
+
+// types.ChainReader が要求するメソッド（RewardCommites が必要とする）
+func (c *chainContext) GetBlock(hash common.Hash, number uint64) *types.Block {
+	return rawdb.ReadBlock(c.db, hash, number)
+}
+func (c *chainContext) GetBlockByNumber(number uint64) *types.Block {
+	hash := rawdb.ReadCanonicalHash(c.db, number)
+	if hash == (common.Hash{}) {
+		return nil
+	}
+	return rawdb.ReadBlock(c.db, hash, number)
 }
 
 func main() {
@@ -178,7 +191,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		receipts, root, receiptRoot, err := applyBlock(execConfig, ctx, &cfg, block, statedb, forceEIP158)
+		// ★ cfg は *scanConfig なので &cfg ではなく cfg を渡す
+		receipts, root, receiptRoot, err := applyBlock(execConfig, ctx, cfg, block, statedb, forceEIP158)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to execute block %d: %v\n", number, err)
 			os.Exit(1)
@@ -359,9 +373,9 @@ func applyBlock(
 		var committeeRewardValue uint64
 		switch strings.ToLower(strings.TrimSpace(cfg.committeeSource)) {
 		case "block":
-			committeeRewardValue = ethash.FrontierBlockReward.Uint64()
+			committeeRewardValue = ethash.FrontierBlockReward.Uint64() // 5e18
 		default:
-			committeeRewardValue = totalGasUsed
+			committeeRewardValue = totalGasUsed // 注意: gasUsed として扱う（fee ではない）
 		}
 
 		ethash.RewardCommites(ctx, statedb, header, committeeRewardValue, cfg.committeeNewVer)
