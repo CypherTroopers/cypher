@@ -41,6 +41,12 @@ type scanConfig struct {
 
 	dumpConfig bool
 	eip158    string // auto|on|off
+
+	committeeReward bool
+	committeeFrom   uint64
+	committeeSource string // block|gas
+	committeeOn     string // normal|key|all
+	committeeNewVer bool
 }
 
 type chainContext struct {
@@ -142,8 +148,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Scanning blocks %d..%d with IstanbulBlock=%s, EIP158=%s, engine=%s, checkReceipts=%v\n",
-		cfg.start, endNumber, execConfig.IstanbulBlock.String(), cfg.eip158, effectiveEngineName(cfg.engine, execConfig), cfg.checkReceipts)
+	fmt.Printf("Scanning blocks %d..%d with IstanbulBlock=%s, EIP158=%s, engine=%s, checkReceipts=%v, committeeReward=%v, committeeFrom=%d, committeeSource=%s, committeeOn=%s, committeeNewVer=%v\n",
+		cfg.start, endNumber, execConfig.IstanbulBlock.String(), cfg.eip158, effectiveEngineName(cfg.engine, execConfig),
+		cfg.checkReceipts, cfg.committeeReward, cfg.committeeFrom, cfg.committeeSource, cfg.committeeOn, cfg.committeeNewVer)
 
 	for number := cfg.start; number <= endNumber; number++ {
 		hash := rawdb.ReadCanonicalHash(db, number)
@@ -171,7 +178,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		receipts, root, receiptRoot, err := applyBlock(execConfig, ctx, block, statedb, forceEIP158)
+		receipts, root, receiptRoot, err := applyBlock(execConfig, ctx, &cfg, block, statedb, forceEIP158)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "failed to execute block %d: %v\n", number, err)
 			os.Exit(1)
@@ -225,6 +232,12 @@ func parseConfig() (*scanConfig, error) {
 	flag.BoolVar(&cfg.dumpConfig, "dump-config", true, "Print ChainConfig (JSON) loaded from DB at startup")
 	flag.StringVar(&cfg.eip158, "eip158", "auto", "EIP158 delete-empty-objects mode for IntermediateRoot: auto|on|off")
 
+	flag.BoolVar(&cfg.committeeReward, "committee-reward", false, "Apply committee reward after finalize")
+	flag.Uint64Var(&cfg.committeeFrom, "committee-from", 0, "Apply committee reward starting from this block (0 = from genesis)")
+	flag.StringVar(&cfg.committeeSource, "committee-source", "block", "Committee reward source: block|gas")
+	flag.StringVar(&cfg.committeeOn, "committee-on", "all", "Apply committee reward on: normal|key|all")
+	flag.BoolVar(&cfg.committeeNewVer, "committee-newver", false, "Use new committee reward version (if supported)")
+
 	flag.Parse()
 
 	if cfg.chaindata == "" {
@@ -239,6 +252,18 @@ func parseConfig() (*scanConfig, error) {
 	if cfg.eip158 != "auto" && cfg.eip158 != "on" && cfg.eip158 != "off" {
 		return nil, errors.New("-eip158 must be auto|on|off")
 	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.committeeSource)) {
+	case "block", "gas":
+	default:
+		return nil, errors.New("-committee-source must be block|gas")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.committeeOn)) {
+	case "normal", "key", "all":
+	default:
+		return nil, errors.New("-committee-on must be normal|key|all")
+	}
+
 	return cfg, nil
 }
 
@@ -298,6 +323,7 @@ func chooseEngine(force string, config *params.ChainConfig, db ethdb.Database) (
 func applyBlock(
 	config *params.ChainConfig,
 	ctx *chainContext,
+	cfg *scanConfig,
 	block *types.Block,
 	statedb *state.StateDB,
 	forceEIP158 *bool,
@@ -326,6 +352,21 @@ func applyBlock(
 
 	ctx.engine.Finalize(ctx, header, statedb, block.Transactions(), block.Uncles(), totalGasUsed)
 
+	if cfg.committeeReward &&
+		(cfg.committeeFrom == 0 || block.NumberU64() >= cfg.committeeFrom) &&
+		shouldApplyCommitteeReward(block.BlockType(), cfg.committeeOn) {
+
+		var committeeRewardValue uint64
+		switch strings.ToLower(strings.TrimSpace(cfg.committeeSource)) {
+		case "block":
+			committeeRewardValue = ethash.FrontierBlockReward.Uint64()
+		default:
+			committeeRewardValue = totalGasUsed
+		}
+
+		ethash.RewardCommites(ctx, statedb, header, committeeRewardValue, cfg.committeeNewVer)
+	}
+
 	deleteEmpty := config.IsEIP158(block.Number())
 	if forceEIP158 != nil {
 		deleteEmpty = *forceEIP158
@@ -340,6 +381,17 @@ func applyBlock(
 	}
 
 	return receipts, root, receiptRoot, nil
+}
+
+func shouldApplyCommitteeReward(blockType uint8, mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "normal":
+		return blockType == types.Normal_Block
+	case "key":
+		return blockType == types.Key_Block
+	default:
+		return true
+	}
 }
 
 type scanCliqueEngine struct{ *clique.Clique }
