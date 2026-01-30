@@ -109,6 +109,7 @@ func main() {
 }
 EOF
 ~~~
+#Test run
 ~~~
 go run /tmp/fixcfg.go -dry -chaindata /root/go/src/github.com/cypherium/cypher/data5/cypher/chaindata
 ~~~
