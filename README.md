@@ -40,7 +40,7 @@ mkdir -p ./exports
 ~~~
 ~~~
 scripts/rebuild-state-from-blocks.sh --datadir ./data5 --genesis ./genesis.json --blocks ./exports --cache 4096 --syncmode full --gcmode archive
-
+~~~
 ~~~bash
 cat > /tmp/fixcfg.go <<'EOF'
 package main
