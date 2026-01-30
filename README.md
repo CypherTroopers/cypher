@@ -41,8 +41,7 @@ mkdir -p ./exports
 ~~~
 scripts/rebuild-state-from-blocks.sh --datadir ./data5 --genesis ./genesis.json --blocks ./exports --cache 4096 --syncmode full --gcmode archive
 
-~~~
-~~~
+~~~bash
 cat > /tmp/fixcfg.go <<'EOF'
 package main
 
@@ -58,6 +57,7 @@ import (
 
 func main() {
 	chaindata := flag.String("chaindata", "", "path to .../cypher/chaindata")
+	dry := flag.Bool("dry", false, "dry-run (do not write)")
 	flag.Parse()
 	if *chaindata == "" {
 		log.Fatal("need -chaindata")
@@ -69,18 +69,39 @@ func main() {
 	}
 	defer db.Close()
 
-	genesisHash := rawdb.ReadCanonicalHash(db, 0)
-	fmt.Println("genesisHash =", genesisHash)
-	if genesisHash == (common.Hash{}) {
-		log.Fatal("genesisHash is empty (0x00..00). Did you run `cypher init` on this datadir?")
+	// canonical hash for block 0
+	h0 := rawdb.ReadCanonicalHash(db, 0)
+	fmt.Println("canonicalHash(0) =", h0)
+	if h0 == (common.Hash{}) {
+		log.Fatal("canonicalHash(0) is empty -> this DB is not properly initialized (run `cypher init` on this datadir)")
 	}
 
-	old := rawdb.ReadChainConfig(db, genesisHash)
+	// sanity: header(0) should exist and its hash should match canonicalHash(0)
+	head0 := rawdb.ReadHeader(db, h0, 0)
+	if head0 == nil {
+		log.Fatal("header(0) is nil -> block 0 header not found in DB (init likely wrong or different namespace)")
+	}
+	fmt.Println("header(0).hash   =", head0.Hash())
+	if head0.Hash() != h0 {
+		log.Fatal("mismatch: header(0).hash != canonicalHash(0) -> wrong DB/namespace/path")
+	}
+
+	// show current chain config
+	old := rawdb.ReadChainConfig(db, h0)
 	fmt.Printf("old chainConfig = %+v\n", old)
 
-	rawdb.WriteChainConfig(db, genesisHash, params.MainnetChainConfig)
+	// show the config we are about to write
+	fmt.Printf("params.MainnetChainConfig = %+v\n", params.MainnetChainConfig)
 
-	newcfg := rawdb.ReadChainConfig(db, genesisHash)
+	if *dry {
+		fmt.Println("DRY-RUN: not writing chain config")
+		return
+	}
+
+	// write config
+	rawdb.WriteChainConfig(db, h0, params.MainnetChainConfig)
+
+	newcfg := rawdb.ReadChainConfig(db, h0)
 	fmt.Printf("new chainConfig = %+v\n", newcfg)
 
 	fmt.Println("OK: chain config written into DB")
