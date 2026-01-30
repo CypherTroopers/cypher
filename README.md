@@ -39,13 +39,8 @@ mkdir -p ./exports
 ./build/bin/cypher --datadir ./data4 export ./exports/blocks-185000-208223.rlp 185000 208223
 ~~~
 ~~~
-scripts/rebuild-state-from-blocks.sh \
-  --datadir ./data5 \
-  --genesis ./genesis.json \
-  --blocks ./exports \
-  --cache 4096 \
-  --syncmode full \
-  --gcmode archive
+scripts/rebuild-state-from-blocks.sh --datadir ./data5 --genesis ./genesis.json --blocks ./exports --cache 4096 --syncmode full --gcmode archive
+
 ~~~
 
 
