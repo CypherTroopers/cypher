@@ -4,6 +4,8 @@
 
 The `blockscan` tool is an offline utility to scan Cypherium chaindata for missing blocks. It checks both the LevelDB database (.ldb files) and the ancient directory for block continuity and reports any gaps or missing data.
 
+日本語説明: `blockscan`ツールは、Cypheriumのchaindataをオフラインでスキャンし、欠落ブロックを検出するユーティリティです。LevelDBデータベース（.ldbファイル）とancientディレクトリの両方をチェックし、ブロックの連続性を確認して、ギャップや欠落データを報告します。
+
 ## Features
 
 - Scans chaindata offline without running a full node
@@ -16,14 +18,15 @@ The `blockscan` tool is an offline utility to scan Cypherium chaindata for missi
 ## Building
 
 ```bash
-cd cmd/tools/blockscan
-go build -o blockscan
+# From repository root
+make blockscan
 ```
 
-Or from the repository root:
+Or manually:
 
 ```bash
-make blockscan
+cd cmd/tools/blockscan
+go build -o blockscan
 ```
 
 ## Usage
@@ -66,7 +69,20 @@ make blockscan
 
 For the mentioned location in the issue:
 ```bash
-./blockscan --chaindata /root/go/src/github.com/cypherium/cypher/182531/data5/chaindata
+# Build the tool
+make blockscan
+
+# Run the scan
+./build/bin/blockscan --chaindata /root/go/src/github.com/cypherium/cypher/182531/data5/chaindata
+```
+
+日本語での使用例:
+```bash
+# ツールをビルド
+make blockscan
+
+# スキャンを実行
+./build/bin/blockscan --chaindata /root/go/src/github.com/cypherium/cypher/182531/data5/chaindata
 ```
 
 ## Output
