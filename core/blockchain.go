@@ -860,7 +860,13 @@ func (bc *BlockChain) GetBlockByNumber(number uint64) *types.Block {
 	hash := rawdb.ReadCanonicalHash(bc.db, number)
 	log.Warn("GetBlockByNumer", "number", number)
 	if hash == (common.Hash{}) {
-		return nil
+		ancientHash, err := bc.db.Ancient(rawdb.freezerHashTable, number)
+		if err == nil && len(ancientHash) > 0 {
+			hash = common.BytesToHash(ancientHash)
+			log.Debug("Block found in ancient store", "number", number, "hash", hash)
+		} else {
+			return nil
+		}
 	}
 	return bc.GetBlock(hash, number)
 }
