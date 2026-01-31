@@ -49,6 +49,15 @@ func ReadCanonicalHash(db ethdb.Reader, number uint64) common.Hash {
 	return common.BytesToHash(data)
 }
 
+// ReadAncientCanonicalHash retrieves canonical hash from ancient store directly.
+func ReadAncientCanonicalHash(db ethdb.Reader, number uint64) common.Hash {
+	data, _ := db.Ancient(freezerHashTable, number)
+	if len(data) == 0 {
+		return common.Hash{}
+	}
+	return common.BytesToHash(data)
+}
+
 // WriteCanonicalHash stores the hash assigned to a canonical block number.
 func WriteCanonicalHash(db ethdb.KeyValueWriter, hash common.Hash, number uint64) {
 	if err := db.Put(headerHashKey(number), hash.Bytes()); err != nil {
