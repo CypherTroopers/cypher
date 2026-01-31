@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/ethdb/leveldb"
@@ -121,7 +122,7 @@ func scanBlocks(db ethdb.Database, start, end uint64) error {
 
 	// Get the head block hash to determine the highest block
 	headHash := rawdb.ReadHeadBlockHash(db)
-	if headHash.Hex() == "0x0000000000000000000000000000000000000000000000000000000000000000" {
+	if headHash == (common.Hash{}) {
 		return fmt.Errorf("no head block found in database")
 	}
 
@@ -154,7 +155,7 @@ func scanBlocks(db ethdb.Database, start, end uint64) error {
 	for blockNum := scanStart; blockNum <= scanEnd; blockNum++ {
 		// Get canonical hash for this block number
 		hash := rawdb.ReadCanonicalHash(db, blockNum)
-		if hash.Hex() == "0x0000000000000000000000000000000000000000000000000000000000000000" {
+		if hash == (common.Hash{}) {
 			log.Warn("Missing canonical hash", "block", blockNum)
 			missingBlocks = append(missingBlocks, blockNum)
 			continue
@@ -177,7 +178,7 @@ func scanBlocks(db ethdb.Database, start, end uint64) error {
 		}
 
 		// Log progress periodically
-		if blockNum%10000 == 0 && blockNum > 0 {
+		if blockNum%10000 == 0 && blockNum > 0 && scanEnd > scanStart {
 			log.Info("Scan progress", "block", blockNum, "progress", fmt.Sprintf("%.2f%%", float64(blockNum-scanStart)/float64(scanEnd-scanStart)*100))
 		}
 	}
