@@ -463,7 +463,13 @@ func (hc *HeaderChain) HasHeader(hash common.Hash, number uint64) bool {
 func (hc *HeaderChain) GetHeaderByNumber(number uint64) *types.Header {
 	hash := rawdb.ReadCanonicalHash(hc.chainDb, number)
 	if hash == (common.Hash{}) {
-		return nil
+		ancientHash, err := hc.chainDb.Ancient(rawdb.freezerHashTable, number)
+		if err == nil && len(ancientHash) > 0 {
+			hash = common.BytesToHash(ancientHash)
+			log.Debug("Header found in ancient store", "number", number, "hash", hash)
+		} else {
+			return nil
+		}
 	}
 	return hc.GetHeader(hash, number)
 }
