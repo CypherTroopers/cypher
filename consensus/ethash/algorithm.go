@@ -48,6 +48,20 @@ const (
 	loopAccesses       = 64      // Number of accesses in hashimoto loop
 )
 
+const (
+	colossusPageBytes       = 512
+	colossusTileBytes       = 512
+	colossusScratchpadBytes = 8 * 1024 * 1024
+	colossusScratchpadWords = colossusScratchpadBytes / 4
+	colossusPageWords       = colossusPageBytes / 4
+	colossusTileWords       = colossusTileBytes / 4
+	colossusRounds          = 64
+	colossusInternalPasses  = 4
+	colossusStateWords      = 16
+	colossusAccWords        = 8
+	colossusDomainTag       = "COLXH1"
+)
+
 // cacheSize returns the size of the ethash verification cache that belongs to a certain
 // block number.
 func cacheSize(block uint64) uint64 {
@@ -399,6 +413,148 @@ func hashimotoFull(dataset []uint32, hash []byte, nonce uint64) ([]byte, []byte)
 		return dataset[offset : offset+hashWords]
 	}
 	return hashimoto(hash, nonce, uint64(len(dataset))*4, lookup)
+}
+
+func colossusEffectiveDatasetBytes(size uint64) uint64 {
+	return (size / colossusPageBytes) * colossusPageBytes
+}
+
+func colossusNumPages(size uint64) uint32 {
+	return uint32(colossusEffectiveDatasetBytes(size) / colossusPageBytes)
+}
+
+func colossusNonceLE(n uint64) [8]byte {
+	var out [8]byte
+	binary.LittleEndian.PutUint64(out[:], n)
+	return out
+}
+
+func colossusSeed(sealHash []byte, nonce uint64) []byte {
+	nonceLE := colossusNonceLE(nonce)
+	seedInput := make([]byte, 0, len(colossusDomainTag)+len(sealHash)+len(nonceLE))
+	seedInput = append(seedInput, []byte(colossusDomainTag)...)
+	seedInput = append(seedInput, sealHash...)
+	seedInput = append(seedInput, nonceLE[:]...)
+	return crypto.Keccak512(seedInput)
+}
+
+func rotl32(v uint32, shift uint32) uint32 {
+	shift %= 32
+	if shift == 0 {
+		return v
+	}
+	return (v << shift) | (v >> (32 - shift))
+}
+
+func colossusHash(sealHash []byte, nonce uint64, numPages uint32, lookupPage func(pageIndex uint32, out []uint32)) ([]byte, []byte) {
+	if numPages == 0 {
+		return nil, nil
+	}
+	numTiles := uint32(colossusScratchpadWords / colossusTileWords)
+	seed := colossusSeed(sealHash, nonce)
+
+	var (
+		state [colossusStateWords]uint32
+		acc   [colossusAccWords]uint32
+	)
+	for i := 0; i < colossusStateWords; i++ {
+		state[i] = binary.LittleEndian.Uint32(seed[i*4:])
+	}
+	for i := 0; i < colossusAccWords; i++ {
+		acc[i] = state[i] ^ state[i+colossusAccWords]
+	}
+
+	scratchpad := make([]uint32, colossusScratchpadWords)
+	for k := uint32(0); k < uint32(colossusScratchpadWords); k++ {
+		idx := k % colossusStateWords
+		x := state[idx]
+		y := k
+		z := fnv(x^y, 0x9e3779b9+y)
+		state[idx] = rotl32(x+z, z%32) ^ y
+		scratchpad[k] = state[idx] ^ fnv(z, x+y)
+	}
+
+	page := make([]uint32, colossusPageWords)
+	tile := make([]uint32, colossusTileWords)
+
+	for r := uint32(0); r < colossusRounds; r++ {
+		a := state[r%colossusStateWords]
+		b := state[(r+5)%colossusStateWords]
+		c := acc[r%colossusAccWords]
+		dp := fnv(a^r, b+c) % numPages
+		sp := fnv(b^r, a+c) % numTiles
+
+		lookupPage(dp, page)
+		copy(tile, scratchpad[sp*colossusTileWords:(sp+1)*colossusTileWords])
+
+		for p := uint32(0); p < colossusInternalPasses; p++ {
+			for i := uint32(0); i < colossusTileWords; i++ {
+				x := tile[i]
+				y := page[(i+p*13)%colossusPageWords]
+				stateIdx := (i + r + p) % colossusStateWords
+				accIdx := (i + p) % colossusAccWords
+				z := state[stateIdx]
+				w := acc[accIdx]
+
+				m1 := fnv(x^z, y+r)
+				m2 := rotl32(x+y+w+p, (z^y)%32)
+				m3 := (z * 0x9e3779b1) + (w ^ i)
+				newX := m1 ^ m2 ^ m3
+
+				tile[i] = newX
+				state[stateIdx] = fnv(z^y, newX+i)
+				acc[accIdx] = fnv(w^newX, y+r+p)
+			}
+		}
+
+		state[r%colossusStateWords] ^= tile[(r*7)%colossusTileWords]
+		state[(r+3)%colossusStateWords] = fnv(state[(r+3)%colossusStateWords], tile[(r*11+5)%colossusTileWords])
+		acc[r%colossusAccWords] ^= tile[(r*13+9)%colossusTileWords]
+
+		copy(scratchpad[sp*colossusTileWords:(sp+1)*colossusTileWords], tile)
+	}
+
+	finalState := make([]byte, (colossusStateWords+colossusAccWords)*4)
+	for i := 0; i < colossusStateWords; i++ {
+		binary.LittleEndian.PutUint32(finalState[i*4:], state[i])
+	}
+	for i := 0; i < colossusAccWords; i++ {
+		binary.LittleEndian.PutUint32(finalState[(colossusStateWords+i)*4:], acc[i])
+	}
+
+	mixDigest := crypto.Keccak256(finalState)
+	resultInput := make([]byte, 0, len(seed)+len(mixDigest))
+	resultInput = append(resultInput, seed...)
+	resultInput = append(resultInput, mixDigest...)
+	return mixDigest, crypto.Keccak256(resultInput)
+}
+
+func colossusHashFull(dataset []uint32, sealHash []byte, nonce uint64) ([]byte, []byte) {
+	numPages := colossusNumPages(uint64(len(dataset)) * 4)
+	if numPages == 0 {
+		return nil, nil
+	}
+	return colossusHash(sealHash, nonce, numPages, func(pageIndex uint32, out []uint32) {
+		offset := pageIndex * colossusPageWords
+		copy(out, dataset[offset:offset+colossusPageWords])
+	})
+}
+
+func colossusHashLight(size uint64, cache []uint32, sealHash []byte, nonce uint64) ([]byte, []byte) {
+	numPages := colossusNumPages(size)
+	if numPages == 0 {
+		return nil, nil
+	}
+	keccak512 := makeHasher(sha3.NewLegacyKeccak512())
+	return colossusHash(sealHash, nonce, numPages, func(pageIndex uint32, out []uint32) {
+		itemBase := pageIndex * 8
+		for i := uint32(0); i < 8; i++ {
+			raw := generateDatasetItem(cache, itemBase+i, keccak512)
+			for w := 0; w < hashWords; w++ {
+				out[i*hashWords+uint32(w)] = binary.LittleEndian.Uint32(raw[w*4:])
+			}
+		}
+	})
 }
 
 // maxEpoch bounds the pre-generated future cache/dataset epoch in the LRU.

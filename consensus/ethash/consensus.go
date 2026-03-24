@@ -185,6 +185,53 @@ func (ethash *Ethash) VerifyCandidate(chain types.KeyChainReader, candidate *typ
 	return nil
 }
 
+// VerifySeal implements consensus.Engine, checking whether the given block satisfies
+// the PoW difficulty requirements.
+func (ethash *Ethash) VerifySeal(chain consensus.ChainHeaderReader, header *types.Header) error {
+	// Only normal blocks use this PoW path.
+	if header.BlockType != types.Normal_Block {
+		return nil
+	}
+	// If we're running a fake PoW, accept any seal as valid.
+	if ethash.config.PowMode == ModeFake || ethash.config.PowMode == ModeFullFake {
+		if ethash.fakeFail == header.Number.Uint64() {
+			return errInvalidPoW
+		}
+		return nil
+	}
+	// If we're running a shared PoW, delegate verification to it.
+	if ethash.shared != nil {
+		return ethash.shared.VerifySeal(chain, header)
+	}
+	// Ensure that we have a valid difficulty for the block.
+	if header.Difficulty.Sign() <= 0 {
+		return errInvalidDifficulty
+	}
+	number := header.Number.Uint64()
+	cache := ethash.cache(number)
+	size := datasetSize(number)
+	if ethash.config.PowMode == ModeTest {
+		size = 32 * 1024
+	}
+
+	digest, result := colossusHashLight(size, cache.cache, header.SealHash().Bytes(), header.Nonce.Uint64())
+	// Caches are unmapped in a finalizer. Ensure that the cache stays live
+	// until after the hash call so it's not unmapped while being used.
+	runtime.KeepAlive(cache)
+
+	if digest == nil || result == nil {
+		return errInvalidPoW
+	}
+	if !bytes.Equal(header.MixDigest[:], digest) {
+		return errInvalidMixDigest
+	}
+	target := new(big.Int).Div(maxUint256, header.Difficulty)
+	if new(big.Int).SetBytes(result).Cmp(target) > 0 {
+		return errInvalidPoW
+	}
+	return nil
+}
+
 // Prepare implements pow.Engine, initializing the difficulty field of a
 // candidate to conform to the ethash protocol. The changes are done inline.
 func (ethash *Ethash) PrepareCandidate(chain types.KeyChainReader, candidate *types.Candidate, committeeSize int) error {
@@ -414,13 +461,13 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 		return consensus.ErrInvalidNumber
 	}
 
-	/*??
 	// Verify the engine specific seal securing the block
-	if seal {
+	if seal && header.BlockType == types.Normal_Block {
 		if err := ethash.VerifySeal(chain, header); err != nil {
 			return err
 		}
 	}
+	/*??
 	// If all checks passed, validate any special fields for hard forks
 	if err := misc.VerifyDAOHeaderExtraData(chain.Config(), header); err != nil {
 		return err
