@@ -156,7 +156,7 @@ func (a *RemoteAgent) SubmitWork(nonce types.BlockNonce, mixDigest, hash common.
 	}
 
 	// Solutions seems to be valid, return to the miner and notify acceptance
-	a.returnCh <- &Result{work, candidate}
+	a.returnCh <- &Result{Work: work, Candidate: candidate}
 	delete(a.work, hash)
 
 	return true

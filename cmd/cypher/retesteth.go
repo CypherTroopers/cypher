@@ -273,15 +273,13 @@ func (e *NoRewardEngine) VerifyCandidate(chain types.KeyChainReader, candidate *
 	return nil
 }
 
-/*
-func (e *NoRewardEngine) Seal(chain consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
-	return e.inner.Seal(chain, block, results, stop)
+func (e *NoRewardEngine) Seal(chain consensus.ChainHeaderReader, block *types.Block, stop <-chan struct{}) (*types.Block, error) {
+	return e.inner.Seal(chain, block, stop)
 }
 
 func (e *NoRewardEngine) SealHash(header *types.Header) common.Hash {
 	return e.inner.SealHash(header)
 }
-*/
 
 func (e *NoRewardEngine) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
 	return e.inner.CalcDifficulty(chain, time, parent)

@@ -103,10 +103,21 @@ out:
 
 func (self *CpuAgent) mine(work *Work, stop <-chan struct{}) {
 	log.Info("CpuAgent.mine")
+	if work.block != nil {
+		if result, err := self.engine.Seal(nil, work.block, stop); result != nil {
+			self.returnCh <- &Result{Work: work, Block: result}
+		} else {
+			if err != nil {
+				log.Warn("Block sealing failed", "err", err)
+			}
+			self.returnCh <- nil
+		}
+		return
+	}
 	if result, err := self.engine.SealCandidate(work.candidate, stop); result != nil {
 		log.Info("Successfully sealed new candidate", "nonce", work.candidate.KeyCandidate.Nonce.Uint64(), "mixdigest", work.candidate.KeyCandidate.MixDigest.Hex())
 
-		self.returnCh <- &Result{work, result}
+		self.returnCh <- &Result{Work: work, Candidate: result}
 	} else {
 		if err != nil {
 			log.Warn("Candidate sealing failed", "err", err)

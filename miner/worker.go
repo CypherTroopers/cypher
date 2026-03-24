@@ -45,6 +45,7 @@ type Work struct {
 	signer types.Signer
 
 	keyBlock  *types.KeyBlock // todo: should be the latest key block header
+	block     *types.Block
 	candidate *types.Candidate
 
 	createdAt time.Time
@@ -52,6 +53,7 @@ type Work struct {
 
 type Result struct {
 	Work      *Work
+	Block     *types.Block
 	Candidate *types.Candidate
 }
 
@@ -227,7 +229,10 @@ func (self *worker) wait() {
 				continue
 			}
 
-			candidate := result.Candidate
+				if result.Candidate == nil {
+					continue
+				}
+				candidate := result.Candidate
 
 			if err := self.engine.VerifyCandidate(self.chain, candidate); err != nil {
 				log.Error("Fail to verify sealed candidate", "err", err)

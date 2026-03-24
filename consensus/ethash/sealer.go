@@ -28,11 +28,29 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 )
 
 var errSealingStopped = errors.New("sealing stopped")
+
+// Seal implements consensus.Engine, attempting to find a valid nonce for normal blocks.
+func (ethash *Ethash) Seal(chain consensus.ChainHeaderReader, block *types.Block, stop <-chan struct{}) (*types.Block, error) {
+	_ = chain
+	if block == nil {
+		return nil, errors.New("nil block")
+	}
+	header := block.Header()
+	if header.BlockType != types.Normal_Block {
+		return nil, errors.New("seal only supports normal block type")
+	}
+	sealed, err := ethash.SealHeader(header, stop)
+	if err != nil {
+		return nil, err
+	}
+	return block.WithSeal(sealed), nil
+}
 
 // SealCandidate implements pow.Engine, attempting to find a nonce that satisfies
 // the candidate's difficulty requirements.

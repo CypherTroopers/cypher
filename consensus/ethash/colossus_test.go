@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core/types"
 	"golang.org/x/crypto/sha3"
 )
@@ -211,5 +212,54 @@ func TestColossusGoldenVectors(t *testing.T) {
 		if !bytes.Equal(mix, fullMix) || !bytes.Equal(res, fullRes) {
 			t.Fatalf("golden vector mismatch for epoch=%d nonce=%d", v.epoch, v.nonce)
 		}
+	}
+}
+
+func TestEngineSealNormalBlockViaInterface(t *testing.T) {
+	eth := NewTester()
+	defer eth.Close()
+	eth.SetThreads(1)
+
+	var engine consensus.Engine = eth
+	header := testHeader()
+	header.Number = big.NewInt(1)
+	header.Difficulty = big.NewInt(1)
+	header.MixDigest = common.Hash{}
+	header.Nonce = types.BlockNonce{}
+	header.BlockType = types.Normal_Block
+
+	block := types.NewBlock(header, nil, nil, nil, nil)
+	stop := make(chan struct{})
+	sealed, err := engine.Seal(nil, block, stop)
+	if err != nil {
+		t.Fatalf("engine seal failed: %v", err)
+	}
+	if sealed == nil {
+		t.Fatal("engine returned nil sealed block")
+	}
+	if sealed.Header().MixDigest == (common.Hash{}) {
+		t.Fatal("sealed block mix digest is empty")
+	}
+	if err := eth.VerifySeal(nil, sealed.Header()); err != nil {
+		t.Fatalf("sealed block failed VerifySeal: %v", err)
+	}
+}
+
+func TestSealCandidateFlowUnchanged(t *testing.T) {
+	eth := NewFaker()
+	defer eth.Close()
+
+	candidate := types.NewCandidate(common.HexToHash("0x1"), big.NewInt(1), 1, 0, nil, []byte{127, 0, 0, 1}, "pk", "cb", 30303)
+	stop := make(chan struct{})
+
+	sealed, err := eth.SealCandidate(candidate, stop)
+	if err != nil {
+		t.Fatalf("SealCandidate failed: %v", err)
+	}
+	if sealed == nil {
+		t.Fatal("SealCandidate returned nil")
+	}
+	if err := eth.VerifyCandidate(nil, sealed); err != nil {
+		t.Fatalf("VerifyCandidate failed: %v", err)
 	}
 }

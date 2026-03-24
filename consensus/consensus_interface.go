@@ -70,7 +70,9 @@ type Engine interface {
 	FinalizeAndAssemble(chain ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction,
 		uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error)
 
-	//Seal(chain ChainReader, block *types.Block, stop <-chan struct{}) (*types.Block, error)
+	// Seal generates a new block for the given input block with the local miner's
+	// seal placed on top.
+	Seal(chain ChainHeaderReader, block *types.Block, stop <-chan struct{}) (*types.Block, error)
 
 	// SealCandidate generates a new candidate with the local miner's seal place on top.
 	SealCandidate(candidate *types.Candidate, stop <-chan struct{}) (*types.Candidate, error)
