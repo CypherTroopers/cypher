@@ -19,6 +19,7 @@ package ethash
 
 import (
 	crand "crypto/rand"
+	"errors"
 	"math"
 	"math/big"
 	"math/rand"
@@ -30,6 +31,8 @@ import (
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 )
+
+var errSealingStopped = errors.New("sealing stopped")
 
 // SealCandidate implements pow.Engine, attempting to find a nonce that satisfies
 // the candidate's difficulty requirements.
@@ -150,5 +153,111 @@ search:
 	}
 	// Datasets are unmapped in a finalizer. Ensure that the dataset stays live
 	// during sealing so it's not unmapped while being read.
+	runtime.KeepAlive(dataset)
+}
+
+// SealHeader searches for a valid PoW nonce for normal block headers using Colossus.
+func (ethash *Ethash) SealHeader(header *types.Header, stop <-chan struct{}) (*types.Header, error) {
+	if header.BlockType != types.Normal_Block {
+		return nil, errors.New("seal header only supports normal block type")
+	}
+	if ethash.config.PowMode == ModeFake || ethash.config.PowMode == ModeFullFake {
+		sealed := types.CopyHeader(header)
+		sealed.Nonce, sealed.MixDigest = types.BlockNonce{}, common.Hash{}
+		return sealed, nil
+	}
+	abort := make(chan struct{})
+	found := make(chan *types.Header)
+
+	ethash.lock.Lock()
+	threads := ethash.threads
+	if ethash.rand == nil {
+		seed, err := crand.Int(crand.Reader, big.NewInt(math.MaxInt64))
+		if err != nil {
+			ethash.lock.Unlock()
+			return nil, err
+		}
+		ethash.rand = rand.New(rand.NewSource(seed.Int64()))
+	}
+
+	ethash.lock.Unlock()
+	if threads == 0 {
+		threads = runtime.NumCPU()
+	}
+	if threads < 0 {
+		threads = 1
+	}
+
+	var pend sync.WaitGroup
+	for i := 0; i < threads; i++ {
+		pend.Add(1)
+		go func(id int, nonce uint64) {
+			defer pend.Done()
+			ethash.mineHeader(header, id, nonce, abort, found)
+		}(i, uint64(ethash.rand.Int63()))
+	}
+
+	var (
+		result *types.Header
+		err    error
+	)
+	select {
+	case <-stop:
+		close(abort)
+		err = errSealingStopped
+	case result = <-found:
+		close(abort)
+	case <-ethash.update:
+		close(abort)
+		pend.Wait()
+		return ethash.SealHeader(header, stop)
+	}
+	pend.Wait()
+	return result, err
+}
+
+func (ethash *Ethash) mineHeader(header *types.Header, id int, seed uint64, abort chan struct{}, found chan *types.Header) {
+	var (
+		sealHash = header.SealHash().Bytes()
+		target   = new(big.Int).Div(maxUint256, header.Difficulty)
+		number   = header.Number.Uint64()
+		dataset  = ethash.dataset(number)
+		attempts int64
+		nonce = seed
+	)
+	logger := log.New("miner", id, "type", "normal")
+search:
+	for {
+		select {
+		case <-abort:
+			ethash.hashrate.Mark(attempts)
+			break search
+		default:
+			attempts++
+			if (attempts % (1 << 15)) == 0 {
+				ethash.hashrate.Mark(attempts)
+				attempts = 0
+			}
+			digest, result := colossusHashFull(dataset.dataset, sealHash, nonce)
+			if digest == nil || result == nil {
+				nonce++
+				continue
+			}
+			if new(big.Int).SetBytes(result).Cmp(target) <= 0 {
+				sealed := types.CopyHeader(header)
+				sealed.Nonce = types.EncodeNonce(nonce)
+				sealed.MixDigest = common.BytesToHash(digest)
+
+				select {
+				case found <- sealed:
+					logger.Info("Colossus nonce found", "attempts", nonce-seed, "nonce", nonce)
+				case <-abort:
+					logger.Trace("Colossus nonce found but discarded", "attempts", nonce-seed, "nonce", nonce)
+				}
+				break search
+			}
+			nonce++
+		}
+	}
 	runtime.KeepAlive(dataset)
 }

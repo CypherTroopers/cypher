@@ -324,8 +324,16 @@ func (d *dataset) generate(dir string, limit int, test bool) {
 		var err error
 		d.dump, d.mmap, d.dataset, err = memoryMap(path)
 		if err == nil {
-			logger.Debug("Loaded old ethash dataset from disk")
-			return
+			if uint64(len(d.dataset))*4 != dsize {
+				logger.Warn("Loaded ethash dataset with unexpected size, regenerating", "have", uint64(len(d.dataset))*4, "want", dsize)
+				d.mmap.Unmap()
+				d.dump.Close()
+				d.mmap, d.dump = nil, nil
+				d.dataset = nil
+			} else {
+				logger.Debug("Loaded old ethash dataset from disk")
+				return
+			}
 		}
 		logger.Debug("Failed to load old ethash dataset", "err", err)
 
