@@ -110,8 +110,8 @@
   },
   "difficulty" : "0x44C",
   "gasLimit"   : "0xE000000000",
-  "nonce"      : "0x0",
-  "mixHash"    : "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "nonce"      : "0x0000000000000a14",
+  "mixHash"    : "0xfacf3fd48ddb004c81772b82f069e7ede8e6a57df90bd0b15ebe4861f65336a1",
   "parentHash" : "0x0000000000000000000000000000000000000000000000000000000000000000",
   "timestamp"  : "0x659fe331",
   "extraData"  : "IMF, World Bank and BIS in first 'tokenisation' collaboration"
