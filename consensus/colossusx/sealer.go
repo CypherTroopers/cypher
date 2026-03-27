@@ -147,7 +147,7 @@ search:
 		select {
 		case <-abort:
 			// Mining terminated, update stats and abort
-			logger.Trace("Ethash nonce search aborted", "attempts", nonce-seed)
+			logger.Trace("Colossusx nonce search aborted", "attempts", nonce-seed)
 			ethash.hashrate.Mark(attempts)
 			break search
 
@@ -172,9 +172,9 @@ search:
 				// Seal and return a block (if still needed)
 				select {
 				case found <- candidate:
-					log.Info("Ethash nonce found and reported", "attempts", nonce-seed, "nonce", nonce)
+					log.Info("Colossusx nonce found and reported", "attempts", nonce-seed, "nonce", nonce)
 				case <-abort:
-					logger.Trace("Ethash nonce found but discarded", "attempts", nonce-seed, "nonce", nonce)
+					logger.Trace("Colossusx nonce found but discarded", "attempts", nonce-seed, "nonce", nonce)
 				}
 				break search
 			}
