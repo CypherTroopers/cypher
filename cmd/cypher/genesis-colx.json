@@ -9,9 +9,14 @@
     "constantinopleBlock": 0,
     "committee": {
       "0": {
-        "address": "127.0.0.1:7102",
+        "address": "161.97.184.220:7102",
         "coinbase": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "public": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "1": {
+        "address": "149.102.156.210:7102",
+        "coinbase": "dddddddddddddddddddddddddddddddddddddddd",
+        "public": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       }
     }
   },
@@ -19,7 +24,7 @@
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
       "balance": "1000000000000000000000000"
     },
-    "cccccccccccccccccccccccccccccccccccccccc": {
+    "dddddddddddddddddddddddddddddddddddddddd": {
       "balance": "1000000000000000000000000"
     }
   },
