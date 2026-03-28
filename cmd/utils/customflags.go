@@ -61,7 +61,7 @@ func (f DirectoryFlag) String() string {
 // and adds variable to flag set for parsing.
 func (f DirectoryFlag) Apply(set *flag.FlagSet) {
 	eachName(f.Name, func(name string) {
-		set.Var(&f.Value, f.Name, f.Usage)
+		set.Var(&f.Value, name, f.Usage)
 	})
 }
 
@@ -121,7 +121,7 @@ func (f TextMarshalerFlag) String() string {
 
 func (f TextMarshalerFlag) Apply(set *flag.FlagSet) {
 	eachName(f.Name, func(name string) {
-		set.Var(textMarshalerVal{f.Value}, f.Name, f.Usage)
+		set.Var(textMarshalerVal{f.Value}, name, f.Usage)
 	})
 }
 
@@ -172,7 +172,7 @@ func (f BigFlag) String() string {
 
 func (f BigFlag) Apply(set *flag.FlagSet) {
 	eachName(f.Name, func(name string) {
-		set.Var((*bigValue)(f.Value), f.Name, f.Usage)
+		set.Var((*bigValue)(f.Value), name, f.Usage)
 	})
 }
 
