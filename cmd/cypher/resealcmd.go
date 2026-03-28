@@ -19,12 +19,12 @@ var resealKeyGenesisCommand = cli.Command{
 	Flags: []cli.Flag{
 		utils.DataDirFlag,
 		configFileFlag,
-		utils.EthashCacheDirFlag,
-		utils.EthashCachesInMemoryFlag,
-		utils.EthashCachesOnDiskFlag,
-		utils.EthashDatasetDirFlag,
-		utils.EthashDatasetsInMemoryFlag,
-		utils.EthashDatasetsOnDiskFlag,
+		utils.ColossusxCacheDirFlag,
+		utils.ColossusxCachesInMemoryFlag,
+		utils.ColossusxCachesOnDiskFlag,
+		utils.ColossusxDatasetDirFlag,
+		utils.ColossusxDatasetsInMemoryFlag,
+		utils.ColossusxDatasetsOnDiskFlag,
 	},
 	Category: "BLOCKCHAIN COMMANDS",
 }
@@ -64,7 +64,7 @@ func resealKeyGenesis(ctx *cli.Context) error {
 	}
 
 	header := block.Header()
-	engine := colossusx.New(cfg.Eth.Ethash)
+	engine := colossusx.New(cfg.Eth.Colossusx)
 
 	if err := engine.SealKeyHeaderDeterministic(header, 0); err != nil {
 		utils.Fatalf("Failed to reseal keyblock #0: %v", err)

@@ -284,7 +284,7 @@ func makeExtraData(extra []byte, hasPrivate bool) []byte {
 
 // CreateConsensusEngine creates the required type of consensus engine instance for an Ethereum service
 func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, config *Config) consensus.Engine {
-	s := config.Ethash
+	s := config.Colossusx
 	engine := colossusx.New(colossusx.Config{
 		CacheDir:       stack.ResolvePath(s.CacheDir),
 		CachesInMem:    s.CachesInMem,

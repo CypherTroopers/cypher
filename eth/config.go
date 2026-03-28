@@ -48,7 +48,7 @@ var DefaultLightGPOConfig = gasprice.Config{
 // DefaultConfig contains default settings for use on the Ethereum main net.
 var DefaultConfig = Config{
 	SyncMode: downloader.FastSync,
-	Ethash: colossusx.Config{
+	Colossusx: colossusx.Config{
 		CacheDir:         "ethash",
 		CachesInMem:      2,
 		CachesOnDisk:     3,
@@ -87,17 +87,18 @@ func init() {
 		}
 	}
 	if runtime.GOOS == "darwin" {
-		DefaultConfig.Ethash.DatasetDir = filepath.Join(home, "Library", "Ethash")
+		DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, "Library", "Ethash")
 	} else if runtime.GOOS == "windows" {
 		localappdata := os.Getenv("LOCALAPPDATA")
 		if localappdata != "" {
-			DefaultConfig.Ethash.DatasetDir = filepath.Join(localappdata, "Ethash")
+			DefaultConfig.Colossusx.DatasetDir = filepath.Join(localappdata, "Ethash")
 		} else {
-			DefaultConfig.Ethash.DatasetDir = filepath.Join(home, "AppData", "Local", "Ethash")
+			DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, "AppData", "Local", "Ethash")
 		}
 	} else {
-		DefaultConfig.Ethash.DatasetDir = filepath.Join(home, ".ethash")
+		DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, ".ethash")
 	}
+	DefaultConfig.Ethash = DefaultConfig.Colossusx
 }
 
 //go:generate gencodec -type Config -formats toml -out gen_config.go
@@ -152,9 +153,12 @@ type Config struct {
 	// Mining options
 	Miner miner.Config
 
-	// Ethash-named config field kept for compatibility during the first
-	// split, but the concrete type now comes from consensus/colossusx.
-	Ethash colossusx.Config
+	// Colossusx holds PoW engine settings.
+	Colossusx colossusx.Config
+
+	// Ethash-named config field kept for backward compatibility with old config
+	// files and callers. New code should use Colossusx.
+	Ethash colossusx.Config `toml:",omitempty"`
 
 	// Transaction pool options
 	TxPool core.TxPoolConfig
