@@ -13,14 +13,12 @@ import (
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
-	"github.com/cypherium/cypher/reconfig/bftview"
 
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/consensus/colossusx"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
-	"github.com/cypherium/cypher/p2p/netutil"
 	"github.com/cypherium/cypher/params"
 )
 
@@ -129,12 +127,6 @@ func (self *worker) start() {
 	if atomic.LoadInt32(&self.running) == 1 {
 		return
 	}
-	port, _ := strconv.Atoi(self.config.RnetPort)
-	err := netutil.VerifyConnectivity("udp", net.ParseIP("127.0.0.1"), port)
-	if err != nil {
-		log.Error("Your node haven't opened UDP consensus port.So POW work is not to permit", "The port is", port)
-		return
-	}
 
 	atomic.StoreInt32(&self.running, 1)
 	self.keyHeadSub = self.eth.KeyBlockChain().SubscribeChainEvent(self.keyHeadCh)
@@ -185,28 +177,24 @@ func (self *worker) unregister(agent Agent) {
 
 func (self *worker) autoCommit() {
 	log.Info("Miner worker start auto-committing")
-	if bftview.IamMember() < 0 {
-		self.commitNewWork()
-	}
+	self.commitNewWork()
 
 	for {
 		select {
 		case <-self.keyHeadCh:
-			if bftview.IamMember() < 0 {
-				self.commitNewWork()
-				self.stop()
+			self.commitNewWork()
+			self.stop()
 
-				shouldStart := atomic.LoadInt32(&self.shouldStart) == 1
-				if shouldStart {
-					if !self.isRunning() {
-						log.Info("Restore,Ready to start pow work")
-						self.start() //now action
-					}
+			shouldStart := atomic.LoadInt32(&self.shouldStart) == 1
+			if shouldStart {
+				if !self.isRunning() {
+					log.Info("Restore,Ready to start pow work")
+					self.start() //now action
+				}
 
-				} else {
-					if !shouldStart {
-						log.Info("User has not permitted  to start")
-					}
+			} else {
+				if !shouldStart {
+					log.Info("User has not permitted  to start")
 				}
 			}
 
