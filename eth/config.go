@@ -49,7 +49,7 @@ var DefaultLightGPOConfig = gasprice.Config{
 var DefaultConfig = Config{
 	SyncMode: downloader.FastSync,
 	Colossusx: colossusx.Config{
-		CacheDir:         "ethash",
+		CacheDir:         "colossusx",
 		CachesInMem:      2,
 		CachesOnDisk:     3,
 		CachesLockMmap:   false,
@@ -87,16 +87,16 @@ func init() {
 		}
 	}
 	if runtime.GOOS == "darwin" {
-		DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, "Library", "Ethash")
+		DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, "Library", "Colossusx")
 	} else if runtime.GOOS == "windows" {
 		localappdata := os.Getenv("LOCALAPPDATA")
 		if localappdata != "" {
-			DefaultConfig.Colossusx.DatasetDir = filepath.Join(localappdata, "Ethash")
+			DefaultConfig.Colossusx.DatasetDir = filepath.Join(localappdata, "Colossusx")
 		} else {
-			DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, "AppData", "Local", "Ethash")
+			DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, "AppData", "Local", "Colossusx")
 		}
 	} else {
-		DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, ".ethash")
+		DefaultConfig.Colossusx.DatasetDir = filepath.Join(home, ".colossusx")
 	}
 	DefaultConfig.Ethash = DefaultConfig.Colossusx
 }
