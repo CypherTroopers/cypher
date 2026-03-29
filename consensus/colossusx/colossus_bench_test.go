@@ -1,7 +1,9 @@
 package colossusx
 
 import (
+	"fmt"
 	"math/big"
+	"path/filepath"
 	"runtime"
 	"sync/atomic"
 	"testing"
@@ -15,16 +17,20 @@ const (
 	benchHeaderPool         = 256
 )
 
-func newBenchEngine() *Ethash {
+func newBenchEngineWithDirs(cacheDir, datasetDir string) *Ethash {
 	return New(Config{
-		CacheDir:       "/root/.colossusx",
+		CacheDir:       cacheDir,
 		CachesInMem:    1,
 		CachesOnDisk:   1,
-		DatasetDir:     "/root/.colossusx",
+		DatasetDir:     datasetDir,
 		DatasetsInMem:  1,
 		DatasetsOnDisk: 1,
 		PowMode:        ModeNormal,
 	})
+}
+
+func newBenchEngine() *Ethash {
+	return newBenchEngineWithDirs("/root/.colossusx", "/root/.colossusx")
 }
 
 func benchSealHash() []byte {
@@ -119,6 +125,62 @@ func BenchmarkColossusHashFullWithScratchpad_ProdLike_Parallel(b *testing.B) {
 	runtime.KeepAlive(dataset)
 }
 
+func BenchmarkCacheInit_ProdLike_Cold(b *testing.B) {
+	const number = benchBlockNumber
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		benchDir := filepath.Join(b.TempDir(), fmt.Sprintf("cold-cache-%d", i))
+		engine := newBenchEngineWithDirs(benchDir, benchDir)
+		cache := engine.cache(number)
+		runtime.KeepAlive(cache)
+	}
+}
+
+func BenchmarkCacheInit_ProdLike_Warm(b *testing.B) {
+	const number = benchBlockNumber
+
+	benchDir := b.TempDir()
+	warmEngine := newBenchEngineWithDirs(benchDir, benchDir)
+	_ = warmEngine.cache(number)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine := newBenchEngineWithDirs(benchDir, benchDir)
+		cache := engine.cache(number)
+		runtime.KeepAlive(cache)
+	}
+}
+
+func BenchmarkDatasetInit_ProdLike_Cold(b *testing.B) {
+	const number = benchBlockNumber
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		benchDir := filepath.Join(b.TempDir(), fmt.Sprintf("cold-dataset-%d", i))
+		engine := newBenchEngineWithDirs(benchDir, benchDir)
+		dataset := engine.dataset(number)
+		runtime.KeepAlive(dataset)
+	}
+}
+
+func BenchmarkDatasetInit_ProdLike_Warm(b *testing.B) {
+	const number = benchBlockNumber
+
+	benchDir := b.TempDir()
+	warmEngine := newBenchEngineWithDirs(benchDir, benchDir)
+	_ = warmEngine.dataset(number)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		engine := newBenchEngineWithDirs(benchDir, benchDir)
+		dataset := engine.dataset(number)
+		runtime.KeepAlive(dataset)
+	}
+}
+
 func makeValidPowHeaderForBench(b testing.TB, engine *Ethash, number uint64, nonce uint64) *types.Header {
 	b.Helper()
 
@@ -157,6 +219,34 @@ func makeValidPowHeadersForBench(b testing.TB, engine *Ethash, number uint64, co
 	return headers
 }
 
+func makeValidPowKeyHeaderForBench(b testing.TB, engine *Ethash, number uint64, nonce uint64) *types.KeyBlockHeader {
+	b.Helper()
+
+	header := &types.KeyBlockHeader{
+		ParentHash:    common.Hash{},
+		Difficulty:    big.NewInt(1),
+		Number:        new(big.Int).SetUint64(number),
+		Time:          number + 1,
+		BlockType:     0,
+		CommitteeHash: common.Hash{},
+		T_Number:      0,
+	}
+
+	cache := engine.cache(number)
+	size := datasetSize(number)
+	digest, result := colossusHashLight(size, cache.cache, header.SealHash().Bytes(), nonce)
+	runtime.KeepAlive(cache)
+
+	header.Nonce = types.EncodeNonce(nonce)
+	header.MixDigest = common.BytesToHash(digest)
+
+	target := new(big.Int).Div(maxUint256, header.Difficulty)
+	if new(big.Int).SetBytes(result).Cmp(target) > 0 {
+		b.Fatalf("nonce %d is not valid at difficulty=1, unexpected for key-header benchmark setup", nonce)
+	}
+	return header
+}
+
 func BenchmarkVerifyHeaderSeal_ProdLike(b *testing.B) {
 	engine := newBenchEngine()
 	header := makeValidPowHeaderForBench(b, engine, benchBlockNumber, 0)
@@ -188,4 +278,18 @@ func BenchmarkVerifyHeaderSeal_ProdLike_Parallel(b *testing.B) {
 			}
 		}
 	})
+}
+
+func BenchmarkVerifyKeyHeaderSeal_ProdLike(b *testing.B) {
+	engine := newBenchEngine()
+	header := makeValidPowKeyHeaderForBench(b, engine, benchBlockNumber, 0)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		if err := engine.VerifyKeyHeaderSeal(header); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
