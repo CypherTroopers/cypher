@@ -74,9 +74,3 @@ Use this template in reports:
 | Warm parallel | `BenchmarkColossusHashLight_ProdLike_Parallel` | 5 | `2s` |  |  |  |  | contention/throughput |
 | Warm parallel | `BenchmarkColossusHashFullWithScratchpad_ProdLike_Parallel` | 5 | `2s` |  |  |  |  | contention/throughput |
 | Warm parallel | `BenchmarkVerifyHeaderSeal_ProdLike_Parallel` | 5 | `2s` |  |  |  |  | contention/throughput |
-
-## 4) Notes for stable measurement
-
-- Pin CPU governor and avoid noisy co-tenants.
-- Keep benchmark host memory pressure low, especially for dataset operations.
-- Separate reporting for cold and warm results; do not average them together.
