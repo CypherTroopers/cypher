@@ -231,6 +231,11 @@ func NewHotstuffProtocolManager(a HotStuffApplication, secretKey *bls.SecretKey,
 }
 
 func CalcThreshold(size int) int {
+	if size <= 2 {
+		// Test/dev override: allow 2-node clusters to make progress.
+		// Keep NewView stricter via its local `threshold+1` logic.
+		return 1
+	}
 	return (size + 1) * 2 / 3
 }
 
@@ -689,7 +694,7 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 	}
 
 	if len(v.highVoteInfo) < threshold {
-		log.Info("handleNewViewMsg need more voteInfo", "threshold", v.threshold, "current", len(v.highVoteInfo))
+		log.Info("handleNewViewMsg need more voteInfo", "threshold", threshold, "current", len(v.highVoteInfo))
 		return ErrInsufficientQC
 	}
 
