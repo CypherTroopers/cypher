@@ -380,7 +380,16 @@ func (r *Router) connection(sid ServerIdentityID) Conn {
 	if len(arr) == 0 {
 		return nil
 	}
-	return arr[0]
+
+	// Prefer an active connection. During reconnect races, a closed connection
+	// may temporarily remain in the slice and would otherwise be picked first,
+	// causing repeated "read/write on closed pipe" retries.
+	for _, c := range arr {
+		if c != nil && !c.IsClosed() {
+			return c
+		}
+	}
+	return nil
 }
 
 // registerConnection registers a ServerIdentity for a new connection, mapped with the
