@@ -380,7 +380,9 @@ func (r *Router) connection(sid ServerIdentityID) Conn {
 	if len(arr) == 0 {
 		return nil
 	}
-	return arr[0]
+	// Prefer the most recently registered connection. Older entries can be stale
+	// while a reconnect has already succeeded.
+	return arr[len(arr)-1]
 }
 
 // registerConnection registers a ServerIdentity for a new connection, mapped with the
