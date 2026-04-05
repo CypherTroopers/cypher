@@ -18,10 +18,6 @@ package eth
 
 import (
 	"math/big"
-	"os"
-	"os/user"
-	"path/filepath"
-	"runtime"
 	"time"
 
 	"github.com/cypherium/cypher/common"
@@ -54,7 +50,7 @@ var DefaultConfig = Config{
 		CachesOnDisk:     3,
 		CachesLockMmap:   false,
 		DatasetsInMem:    1,
-		DatasetsOnDisk:   2,
+		DatasetsOnDisk:   0,
 		DatasetsLockMmap: false,
 	},
 	NetworkId:               1,
@@ -77,27 +73,6 @@ var DefaultConfig = Config{
 	RPCGasCap:   9000000000000000000,
 	GPO:         DefaultFullGPOConfig,
 	RPCTxFeeCap: 100, // 1 ether
-}
-
-func init() {
-	home := os.Getenv("HOME")
-	if home == "" {
-		if user, err := user.Current(); err == nil {
-			home = user.HomeDir
-		}
-	}
-	if runtime.GOOS == "darwin" {
-		DefaultConfig.Ethash.DatasetDir = filepath.Join(home, "Library", "Ethash")
-	} else if runtime.GOOS == "windows" {
-		localappdata := os.Getenv("LOCALAPPDATA")
-		if localappdata != "" {
-			DefaultConfig.Ethash.DatasetDir = filepath.Join(localappdata, "Ethash")
-		} else {
-			DefaultConfig.Ethash.DatasetDir = filepath.Join(home, "AppData", "Local", "Ethash")
-		}
-	} else {
-		DefaultConfig.Ethash.DatasetDir = filepath.Join(home, ".ethash")
-	}
 }
 
 //go:generate gencodec -type Config -formats toml -out gen_config.go

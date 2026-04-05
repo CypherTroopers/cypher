@@ -35,8 +35,8 @@ import (
 )
 
 const (
-	datasetInitBytes   = 1 << 30 // Bytes in dataset at genesis
-	datasetGrowthBytes = 1 << 23 // Dataset growth per epoch
+	datasetInitBytes   = 1 << 33 // Bytes in dataset at genesis
+	datasetGrowthBytes = 1 << 28 // Dataset growth per epoch
 	cacheInitBytes     = 1 << 24 // Bytes in cache at genesis
 	cacheGrowthBytes   = 1 << 17 // Cache growth per epoch
 	epochLength        = 30000   // Blocks per epoch
@@ -73,9 +73,6 @@ func calcCacheSize(epoch int) uint64 {
 // block number.
 func datasetSize(block uint64) uint64 {
 	epoch := int(block / epochLength)
-	if epoch < maxEpoch {
-		return datasetSizes[epoch]
-	}
 	return calcDatasetSize(epoch)
 }
 
