@@ -8,6 +8,7 @@ const (
 	eth63      = 63
 	eth64      = 64
 	eth65      = 65
+	colossusX1 = 1
 	Istanbul64 = 64
 	Istanbul99 = 99
 	// this istanbul subprotocol will be registered in addition to "eth"
@@ -40,6 +41,12 @@ var (
 		Name:     "Norewards",
 		Versions: []uint{0},
 		Lengths:  map[uint]uint64{0: 0},
+	}
+
+	ColossusXProtocol = Protocol{
+		Name:     "colossusX",
+		Versions: []uint{colossusX1},
+		Lengths:  map[uint]uint64{colossusX1: 5},
 	}
 )
 
