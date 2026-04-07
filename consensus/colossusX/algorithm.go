@@ -195,7 +195,7 @@ func generateCache(dest []uint32, epoch uint64, seed []byte) {
 		if elapsed > 3*time.Second {
 			logFn = logger.Info
 		}
-		logFn("Generated colossusX verification cache", "elapsed", common.PrettyDuration(elapsed))
+		logFn("Generated colossusX DAG", "elapsed", common.PrettyDuration(elapsed))
 	}()
 	// Convert our destination slice to a byte buffer
 	header := *(*reflect.SliceHeader)(unsafe.Pointer(&dest))
