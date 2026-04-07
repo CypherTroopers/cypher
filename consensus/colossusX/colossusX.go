@@ -1,5 +1,3 @@
-// Package colossusX implements the colossusX proof-of-work pow engine.
-
 package colossusX
 
 import (
@@ -294,6 +292,61 @@ func newDataset(epoch uint64) interface{} {
 	return &dataset{epoch: epoch}
 }
 
+func datasetPath(dir string, seed []byte, endian string) string {
+	return filepath.Join(dir, fmt.Sprintf("full-R%d-%x%s", algorithmRevision, seed[:8], endian))
+}
+
+func pruneOldDatasets(dir, endian string, epoch uint64, limit int) {
+	for ep := int(epoch) - limit; ep >= 0; ep-- {
+		seed := seedHash(uint64(ep)*epochLength + 1)
+		path := datasetPath(dir, seed, endian)
+		os.Remove(path)
+	}
+}
+
+// prepareOnDisk ensures that the dataset for this epoch exists on disk without
+// keeping an active mmap in memory. This is used for pre-generating the next
+// epoch while the current epoch's dataset remains RAM locked.
+func (d *dataset) prepareOnDisk(dir string, limit int, test bool) error {
+	csize := cacheSize(d.epoch*epochLength + 1)
+	dsize := datasetSize(d.epoch*epochLength + 1)
+	seed := seedHash(d.epoch*epochLength + 1)
+	if test {
+		csize = 1024
+		dsize = 32 * 1024
+	}
+	var endian string
+	if !isLittleEndian() {
+		endian = ".be"
+	}
+	path := datasetPath(dir, seed, endian)
+	logger := log.New("epoch", d.epoch)
+
+	// Already present on disk, keep it as-is.
+	if _, err := os.Stat(path); err == nil {
+		pruneOldDatasets(dir, endian, d.epoch, limit)
+		return nil
+	}
+
+	// Generate directly to disk and release mmap immediately after completion.
+	cache := make([]uint32, csize/4)
+	generateCache(cache, d.epoch, seed)
+	dump, data, _, err := memoryMapAndGenerate(path, dsize, func(buffer []uint32) { generateDataset(buffer, d.epoch, cache) })
+	if err != nil {
+		logger.Warn("Failed to pre-generate colossusX dataset on disk", "err", err)
+		return err
+	}
+	if data != nil {
+		data.Unmap()
+	}
+	if dump != nil {
+		dump.Close()
+	}
+	pruneOldDatasets(dir, endian, d.epoch, limit)
+	logger.Debug("Pre-generated future colossusX dataset on disk")
+	return nil
+}
+
 // generate ensures that the dataset content is generated before use.
 func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) error {
 	d.once.Do(func() {
@@ -322,7 +375,7 @@ func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) erro
 		if !isLittleEndian() {
 			endian = ".be"
 		}
-		path := filepath.Join(dir, fmt.Sprintf("full-R%d-%x%s", algorithmRevision, seed[:8], endian))
+		path := datasetPath(dir, seed, endian)
 		logger := log.New("epoch", d.epoch)
 
 		// We're about to mmap the file, ensure that the mapping is cleaned up when the
@@ -362,12 +415,8 @@ func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) erro
 			}
 			d.locked = true
 		}
-		// Iterate over all previous instances and delete old ones
-		for ep := int(d.epoch) - limit; ep >= 0; ep-- {
-			seed := seedHash(uint64(ep)*epochLength + 1)
-			path := filepath.Join(dir, fmt.Sprintf("full-R%d-%x%s", algorithmRevision, seed[:8], endian))
-			os.Remove(path)
-		}
+		// Iterate over all previous instances and delete old ones.
+		pruneOldDatasets(dir, endian, d.epoch, limit)
 	})
 	return d.genErr
 }
@@ -440,7 +489,7 @@ type colossusX struct {
 	hashrate metrics.Meter // Meter tracking the average hashrate
 
 	// The fields below are hooks for testing
-	shared    *colossusX       // Shared PoW verifier to avoid cache regeneration
+	shared    *colossusX    // Shared PoW verifier to avoid cache regeneration
 	fakeFail  uint64        // Block number which fails PoW check even in fake mode
 	fakeDelay time.Duration // Time delay to sleep for before returning from verify
 
@@ -564,8 +613,11 @@ func (colossusX *colossusX) dataset(block uint64) (*dataset, error) {
 	if futureI != nil {
 		future := futureI.(*dataset)
 		go func() {
-			if err := future.generate(colossusX.config.DatasetDir, colossusX.config.DatasetsOnDisk, colossusX.config.DatasetsLockMmap, colossusX.config.PowMode == ModeTest); err != nil {
-				log.Warn("Failed to prepare future colossusX dataset", "epoch", future.epoch, "err", err)
+			if colossusX.config.DatasetDir == "" {
+				return
+			}
+			if err := future.prepareOnDisk(colossusX.config.DatasetDir, colossusX.config.DatasetsOnDisk, colossusX.config.PowMode == ModeTest); err != nil {
+				log.Warn("Failed to pre-generate future colossusX dataset on disk", "epoch", future.epoch, "err", err)
 			}
 		}()
 	}
