@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/consensus/ethash"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/eth/downloader"
 	"github.com/cypherium/cypher/eth/gasprice"
@@ -48,8 +48,8 @@ var DefaultLightGPOConfig = gasprice.Config{
 // DefaultConfig contains default settings for use on the Ethereum main net.
 var DefaultConfig = Config{
 	SyncMode: downloader.FastSync,
-	Ethash: ethash.Config{
-		CacheDir:         "ethash",
+	colossusX: colossusX.Config{
+		CacheDir:         "colossusX",
 		CachesInMem:      2,
 		CachesOnDisk:     3,
 		CachesLockMmap:   false,
@@ -87,17 +87,22 @@ func init() {
 		}
 	}
 	if runtime.GOOS == "darwin" {
-		DefaultConfig.Ethash.DatasetDir = filepath.Join(home, "Library", "Ethash")
+		DefaultConfig.colossusX.DatasetDir = filepath.Join(home, "Library", "colossusX")
 	} else if runtime.GOOS == "windows" {
 		localappdata := os.Getenv("LOCALAPPDATA")
 		if localappdata != "" {
-			DefaultConfig.Ethash.DatasetDir = filepath.Join(localappdata, "Ethash")
+			DefaultConfig.colossusX.DatasetDir = filepath.Join(localappdata, "colossusX")
 		} else {
-			DefaultConfig.Ethash.DatasetDir = filepath.Join(home, "AppData", "Local", "Ethash")
+			DefaultConfig.colossusX.DatasetDir = filepath.Join(home, "AppData", "Local", "colossusX")
 		}
 	} else {
-		DefaultConfig.Ethash.DatasetDir = filepath.Join(home, ".ethash")
+		DefaultConfig.colossusX.DatasetDir = filepath.Join(home, ".colossusX")
 	}
+}
+
+// ColossusX returns the consensus-engine configuration.
+func (c *Config) ColossusX() *colossusX.Config {
+	return &c.colossusX
 }
 
 //go:generate gencodec -type Config -formats toml -out gen_config.go
@@ -152,8 +157,8 @@ type Config struct {
 	// Mining options
 	Miner miner.Config
 
-	// Ethash options
-	Ethash ethash.Config
+	// colossusX options
+	colossusX colossusX.Config
 
 	// Transaction pool options
 	TxPool core.TxPoolConfig

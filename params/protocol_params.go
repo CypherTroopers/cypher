@@ -34,7 +34,7 @@ const (
 	KeyBlock_Reward        = 1e+18 // Block reward in wei for successfully mining a block
 	CheckBackNumber        = 10
 	CollectVoteInfoTimeout = 5 * time.Second
-	// these are original values from upstream Geth, used in ethash consensus
+	// these are original values from upstream Geth, used in colossusX consensus
 	OriginalMinGasLimit          uint64 = 5000 // The bound divisor of the gas limit, used in update calculations.
 	OriginalGasLimitBoundDivisor uint64 = 1024 // Minimum the gas limit may ever be.
 

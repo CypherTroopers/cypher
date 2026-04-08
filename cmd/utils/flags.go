@@ -36,7 +36,7 @@ import (
 	"github.com/cypherium/cypher/accounts/keystore"
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/fdlimit"
-	"github.com/cypherium/cypher/consensus/ethash"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/vm"
@@ -255,44 +255,53 @@ var (
 		Name:  "light.nopruning",
 		Usage: "Disable ancient light chain data pruning",
 	}
-	// Ethash settings
-	EthashCacheDirFlag = DirectoryFlag{
-		Name:  "ethash.cachedir",
-		Usage: "Directory to store the ethash verification caches (default = inside the datadir)",
+	// colossusX settings
+	colossusXCacheDirFlag = DirectoryFlag{
+		Name:  "colossusX.cachedir",
+		Usage: "Directory to store the colossusX verification caches (default = inside the datadir)",
 	}
-	EthashCachesInMemoryFlag = cli.IntFlag{
-		Name:  "ethash.cachesinmem",
-		Usage: "Number of recent ethash caches to keep in memory (16MB each)",
-		Value: eth.DefaultConfig.Ethash.CachesInMem,
+	colossusXCachesInMemoryFlag = cli.IntFlag{
+		Name:  "colossusX.cachesinmem",
+		Usage: "Number of recent colossusX caches to keep in memory (16MB each)",
+		Value: eth.DefaultConfig.ColossusX().CachesInMem,
 	}
-	EthashCachesOnDiskFlag = cli.IntFlag{
-		Name:  "ethash.cachesondisk",
-		Usage: "Number of recent ethash caches to keep on disk (16MB each)",
-		Value: eth.DefaultConfig.Ethash.CachesOnDisk,
+	colossusXCachesOnDiskFlag = cli.IntFlag{
+		Name:  "colossusX.cachesondisk",
+		Usage: "Number of recent colossusX caches to keep on disk (16MB each)",
+		Value: eth.DefaultConfig.ColossusX().CachesOnDisk,
 	}
-	EthashCachesLockMmapFlag = cli.BoolFlag{
-		Name:  "ethash.cacheslockmmap",
-		Usage: "Lock memory maps of recent ethash caches",
+	colossusXCachesLockMmapFlag = cli.BoolFlag{
+		Name:  "colossusX.cacheslockmmap",
+		Usage: "Lock memory maps of recent colossusX caches",
 	}
-	EthashDatasetDirFlag = DirectoryFlag{
-		Name:  "ethash.dagdir",
-		Usage: "Directory to store the ethash mining DAGs",
-		Value: DirectoryString(eth.DefaultConfig.Ethash.DatasetDir),
+	colossusXDatasetDirFlag = DirectoryFlag{
+		Name:  "colossusX.dagdir",
+		Usage: "Directory to store the colossusX mining DAGs",
+		Value: DirectoryString(eth.DefaultConfig.ColossusX().DatasetDir),
 	}
-	EthashDatasetsInMemoryFlag = cli.IntFlag{
-		Name:  "ethash.dagsinmem",
-		Usage: "Number of recent ethash mining DAGs to keep in memory (1+GB each)",
-		Value: eth.DefaultConfig.Ethash.DatasetsInMem,
+	colossusXDatasetsInMemoryFlag = cli.IntFlag{
+		Name:  "colossusX.dagsinmem",
+		Usage: "Number of recent colossusX mining DAGs to keep in memory (1+GB each)",
+		Value: eth.DefaultConfig.ColossusX().DatasetsInMem,
 	}
-	EthashDatasetsOnDiskFlag = cli.IntFlag{
-		Name:  "ethash.dagsondisk",
-		Usage: "Number of recent ethash mining DAGs to keep on disk (1+GB each)",
-		Value: eth.DefaultConfig.Ethash.DatasetsOnDisk,
+	colossusXDatasetsOnDiskFlag = cli.IntFlag{
+		Name:  "colossusX.dagsondisk",
+		Usage: "Number of recent colossusX mining DAGs to keep on disk (1+GB each)",
+		Value: eth.DefaultConfig.ColossusX().DatasetsOnDisk,
 	}
-	EthashDatasetsLockMmapFlag = cli.BoolFlag{
-		Name:  "ethash.dagslockmmap",
-		Usage: "Lock memory maps for recent ethash mining DAGs",
+	colossusXDatasetsLockMmapFlag = cli.BoolFlag{
+		Name:  "colossusX.dagslockmmap",
+		Usage: "Lock memory maps for recent colossusX mining DAGs",
 	}
+	// Exported aliases used by cmd packages.
+	ColossusXCacheDirFlag         = colossusXCacheDirFlag
+	ColossusXCachesInMemoryFlag   = colossusXCachesInMemoryFlag
+	ColossusXCachesOnDiskFlag     = colossusXCachesOnDiskFlag
+	ColossusXCachesLockMmapFlag   = colossusXCachesLockMmapFlag
+	ColossusXDatasetDirFlag       = colossusXDatasetDirFlag
+	ColossusXDatasetsInMemoryFlag = colossusXDatasetsInMemoryFlag
+	ColossusXDatasetsOnDiskFlag   = colossusXDatasetsOnDiskFlag
+	ColossusXDatasetsLockMmapFlag = colossusXDatasetsLockMmapFlag
 	// Transaction pool settings
 	TxPoolLocalsFlag = cli.StringFlag{
 		Name:  "txpool.locals",
@@ -1378,30 +1387,30 @@ func setTxPool(ctx *cli.Context, cfg *core.TxPoolConfig) {
 	}
 }
 
-func setEthash(ctx *cli.Context, cfg *eth.Config) {
-	if ctx.GlobalIsSet(EthashCacheDirFlag.Name) {
-		cfg.Ethash.CacheDir = ctx.GlobalString(EthashCacheDirFlag.Name)
+func setcolossusX(ctx *cli.Context, cfg *eth.Config) {
+	if ctx.GlobalIsSet(colossusXCacheDirFlag.Name) {
+		cfg.ColossusX().CacheDir = ctx.GlobalString(colossusXCacheDirFlag.Name)
 	}
-	if ctx.GlobalIsSet(EthashDatasetDirFlag.Name) {
-		cfg.Ethash.DatasetDir = ctx.GlobalString(EthashDatasetDirFlag.Name)
+	if ctx.GlobalIsSet(colossusXDatasetDirFlag.Name) {
+		cfg.ColossusX().DatasetDir = ctx.GlobalString(colossusXDatasetDirFlag.Name)
 	}
-	if ctx.GlobalIsSet(EthashCachesInMemoryFlag.Name) {
-		cfg.Ethash.CachesInMem = ctx.GlobalInt(EthashCachesInMemoryFlag.Name)
+	if ctx.GlobalIsSet(colossusXCachesInMemoryFlag.Name) {
+		cfg.ColossusX().CachesInMem = ctx.GlobalInt(colossusXCachesInMemoryFlag.Name)
 	}
-	if ctx.GlobalIsSet(EthashCachesOnDiskFlag.Name) {
-		cfg.Ethash.CachesOnDisk = ctx.GlobalInt(EthashCachesOnDiskFlag.Name)
+	if ctx.GlobalIsSet(colossusXCachesOnDiskFlag.Name) {
+		cfg.ColossusX().CachesOnDisk = ctx.GlobalInt(colossusXCachesOnDiskFlag.Name)
 	}
-	if ctx.GlobalIsSet(EthashCachesLockMmapFlag.Name) {
-		cfg.Ethash.CachesLockMmap = ctx.GlobalBool(EthashCachesLockMmapFlag.Name)
+	if ctx.GlobalIsSet(colossusXCachesLockMmapFlag.Name) {
+		cfg.ColossusX().CachesLockMmap = ctx.GlobalBool(colossusXCachesLockMmapFlag.Name)
 	}
-	if ctx.GlobalIsSet(EthashDatasetsInMemoryFlag.Name) {
-		cfg.Ethash.DatasetsInMem = ctx.GlobalInt(EthashDatasetsInMemoryFlag.Name)
+	if ctx.GlobalIsSet(colossusXDatasetsInMemoryFlag.Name) {
+		cfg.ColossusX().DatasetsInMem = ctx.GlobalInt(colossusXDatasetsInMemoryFlag.Name)
 	}
-	if ctx.GlobalIsSet(EthashDatasetsOnDiskFlag.Name) {
-		cfg.Ethash.DatasetsOnDisk = ctx.GlobalInt(EthashDatasetsOnDiskFlag.Name)
+	if ctx.GlobalIsSet(colossusXDatasetsOnDiskFlag.Name) {
+		cfg.ColossusX().DatasetsOnDisk = ctx.GlobalInt(colossusXDatasetsOnDiskFlag.Name)
 	}
-	if ctx.GlobalIsSet(EthashDatasetsLockMmapFlag.Name) {
-		cfg.Ethash.DatasetsLockMmap = ctx.GlobalBool(EthashDatasetsLockMmapFlag.Name)
+	if ctx.GlobalIsSet(colossusXDatasetsLockMmapFlag.Name) {
+		cfg.ColossusX().DatasetsLockMmap = ctx.GlobalBool(colossusXDatasetsLockMmapFlag.Name)
 	}
 }
 
@@ -1542,7 +1551,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *eth.Config) {
 	setEtherbase(ctx, ks, cfg)
 	setGPO(ctx, &cfg.GPO, ctx.GlobalString(SyncModeFlag.Name) == "light")
 	setTxPool(ctx, &cfg.TxPool)
-	setEthash(ctx, cfg)
+	setcolossusX(ctx, cfg)
 	setMiner(ctx, &cfg.Miner)
 	setWhitelist(ctx, cfg)
 	setLes(ctx, cfg)
@@ -1880,7 +1889,7 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readOnly bool, useExist bool)
 		}
 	}
 
-	engine := ethash.NewFullFaker()
+	engine := colossusX.NewFullFaker()
 	if gcmode := ctx.GlobalString(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {
 		Fatalf("--%s must be either 'full' or 'archive'", GCModeFlag.Name)
 	}

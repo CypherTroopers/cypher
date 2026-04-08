@@ -31,7 +31,7 @@ import (
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/common/math"
 	"github.com/cypherium/cypher/consensus"
-	"github.com/cypherium/cypher/consensus/ethash"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/consensus/misc"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/rawdb"
@@ -406,10 +406,10 @@ func (api *RetestethAPI) SetChainParams(ctx context.Context, chainParams ChainPa
 	var inner consensus.Engine
 	switch chainParams.SealEngine {
 	case "NoProof", "NoReward":
-		inner = ethash.NewFaker()
-	case "Ethash":
-		inner = ethash.New(ethash.Config{
-			CacheDir:         "ethash",
+		inner = colossusX.NewFaker()
+	case "colossusX":
+		inner = colossusX.New(colossusX.Config{
+			CacheDir:         "colossusX",
 			CachesInMem:      2,
 			CachesOnDisk:     3,
 			CachesLockMmap:   false,

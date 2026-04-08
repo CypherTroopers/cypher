@@ -5,7 +5,7 @@ import (
 	"math/big"
 
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/consensus/ethash"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
@@ -61,7 +61,7 @@ func (cg *callHelper) MakeCall(private bool, key *ecdsa.PrivateKey, to common.Ad
 
 	publicState := cg.PublicState
 	// TODO(joel): can we just pass nil instead of bc?
-	bc, _ := NewBlockChain(cg.db, nil, params.CypherTestChainConfig, ethash.NewFaker(), vm.Config{}, nil, nil, nil)
+	bc, _ := NewBlockChain(cg.db, nil, params.CypherTestChainConfig, colossusX.NewFaker(), vm.Config{}, nil, nil, nil)
 	context := NewEVMContext(msg, &cg.header, bc, &from)
 	vmenv := vm.NewEVM(context, publicState, params.CypherTestChainConfig, vm.Config{})
 	sender := vm.AccountRef(msg.From())

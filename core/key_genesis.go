@@ -142,7 +142,7 @@ func (e *KeyGenesisMismatchError) Error() string {
 // The returned chain configuration is never nil.
 func SetupGenesisKeyBlock(db ethdb.Database, genesis *GenesisKey) (*params.ChainConfig, common.Hash, error) {
 	if genesis != nil && genesis.Config == nil {
-		return params.AllEthashProtocolChanges, common.Hash{}, errKeyGenesisNoConfig
+		return params.AllcolossusXProtocolChanges, common.Hash{}, errKeyGenesisNoConfig
 	}
 	bftview.SetCommitteeConfig(db, nil, nil)
 
@@ -217,7 +217,7 @@ func (g *GenesisKey) configOrDefault(ghash common.Hash) *params.ChainConfig {
 				return params.TestnetChainConfig
 		*/
 	default:
-		return params.AllEthashProtocolChanges
+		return params.AllcolossusXProtocolChanges
 	}
 }
 
@@ -259,7 +259,7 @@ func (g *GenesisKey) ToBlock() *types.KeyBlock {
 func (g *GenesisKey) Commit(db ethdb.Database) (*types.KeyBlock, error) {
 	config := g.Config
 	if config == nil {
-		//config = params.AllEthashProtocolChanges
+		//config = params.AllcolossusXProtocolChanges
 		return nil, fmt.Errorf("can't commit genesis block without config")
 
 	}

@@ -77,14 +77,14 @@ var AppHelpFlagGroups = []flags.FlagGroup{
 	{
 		Name: "ETHASH",
 		Flags: []cli.Flag{
-			utils.EthashCacheDirFlag,
-			utils.EthashCachesInMemoryFlag,
-			utils.EthashCachesOnDiskFlag,
-			utils.EthashCachesLockMmapFlag,
-			utils.EthashDatasetDirFlag,
-			utils.EthashDatasetsInMemoryFlag,
-			utils.EthashDatasetsOnDiskFlag,
-			utils.EthashDatasetsLockMmapFlag,
+			utils.ColossusXCacheDirFlag,
+			utils.ColossusXCachesInMemoryFlag,
+			utils.ColossusXCachesOnDiskFlag,
+			utils.ColossusXCachesLockMmapFlag,
+			utils.ColossusXDatasetDirFlag,
+			utils.ColossusXDatasetsInMemoryFlag,
+			utils.ColossusXDatasetsOnDiskFlag,
+			utils.ColossusXDatasetsLockMmapFlag,
 		},
 	},
 	{
