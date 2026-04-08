@@ -24,7 +24,7 @@ import (
 	"strings"
 
 	"github.com/cypherium/cypher/cmd/utils"
-	"github.com/cypherium/cypher/consensus/ethash"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/eth"
 	"github.com/cypherium/cypher/params"
 	cli "gopkg.in/urfave/cli.v1"
@@ -34,11 +34,11 @@ var (
 	makecacheCommand = cli.Command{
 		Action:    utils.MigrateFlags(makecache),
 		Name:      "makecache",
-		Usage:     "Generate ethash verification cache (for testing)",
+		Usage:     "Generate colossusX verification cache (for testing)",
 		ArgsUsage: "<blockNum> <outputDir>",
 		Category:  "MISCELLANEOUS COMMANDS",
 		Description: `
-The makecache command generates an ethash cache in <outputDir>.
+The makecache command generates an colossusX cache in <outputDir>.
 
 This command exists to support the system testing project.
 Regular users do not need to execute it.
@@ -47,11 +47,11 @@ Regular users do not need to execute it.
 	makedagCommand = cli.Command{
 		Action:    utils.MigrateFlags(makedag),
 		Name:      "makedag",
-		Usage:     "Generate ethash mining DAG (for testing)",
+		Usage:     "Generate colossusX mining DAG (for testing)",
 		ArgsUsage: "<blockNum> <outputDir>",
 		Category:  "MISCELLANEOUS COMMANDS",
 		Description: `
-The makedag command generates an ethash DAG in <outputDir>.
+The makedag command generates an colossusX DAG in <outputDir>.
 
 This command exists to support the system testing project.
 Regular users do not need to execute it.
@@ -76,7 +76,7 @@ The output of this command is supposed to be machine-readable.
 	}
 )
 
-// makecache generates an ethash verification cache into the provided folder.
+// makecache generates an colossusX verification cache into the provided folder.
 func makecache(ctx *cli.Context) error {
 	args := ctx.Args()
 	if len(args) != 2 {
@@ -86,12 +86,12 @@ func makecache(ctx *cli.Context) error {
 	if err != nil {
 		utils.Fatalf("Invalid block number: %v", err)
 	}
-	ethash.MakeCache(block, args[1])
+	colossusX.MakeCache(block, args[1])
 
 	return nil
 }
 
-// makedag generates an ethash mining DAG into the provided folder.
+// makedag generates an colossusX mining DAG into the provided folder.
 func makedag(ctx *cli.Context) error {
 	args := ctx.Args()
 	if len(args) != 2 {
@@ -101,7 +101,7 @@ func makedag(ctx *cli.Context) error {
 	if err != nil {
 		utils.Fatalf("Invalid block number: %v", err)
 	}
-	ethash.MakeDataset(block, args[1])
+	colossusX.MakeDataset(block, args[1])
 
 	return nil
 }

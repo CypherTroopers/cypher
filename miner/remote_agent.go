@@ -26,7 +26,7 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
-	"github.com/cypherium/cypher/consensus/ethash"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 )
@@ -117,7 +117,7 @@ func (a *RemoteAgent) GetWork() ([3]string, error) {
 		candidate := a.currentWork.candidate
 
 		res[0] = candidate.HashNoNonce().Hex()
-		seedHash := ethash.SeedHash(candidate.KeyCandidate.Number.Uint64())
+		seedHash := colossusX.SeedHash(candidate.KeyCandidate.Number.Uint64())
 		res[1] = common.BytesToHash(seedHash).Hex()
 		// Calculate the "target" to be returned to the external miner
 		n := big.NewInt(1)

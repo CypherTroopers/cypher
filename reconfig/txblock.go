@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/consensus/ethash"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
@@ -81,7 +81,7 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 
 	header := work.header
 	// commit state root after all state transitions.
-	ethash.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
 	header.Root = work.publicState.IntermediateRoot(false)
 
 	header.BlockType = types.Key_Block
@@ -119,7 +119,7 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 	header := work.header
 
 	// commit state root after all state transitions.
-	ethash.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
 	header.Root = work.publicState.IntermediateRoot(false)
 	header.KeyHash = txS.kbc.CurrentBlock().Hash()
 
@@ -280,7 +280,7 @@ func (txS *txService) createWork() *work {
 	header := &types.Header{
 		ParentHash: parent.Hash(),
 		Number:     parentNumber.Add(parentNumber, common.Big1),
-		Difficulty: parent.Difficulty(), //ethash.CalcDifficulty(txS.config, uint64(tstamp), parent.Header()),
+		Difficulty: parent.Difficulty(), //colossusX.CalcDifficulty(txS.config, uint64(tstamp), parent.Header()),
 		GasLimit:   txS.cph.calcGasLimitFunc(parent),
 		GasUsed:    0,
 		Coinbase:   bftview.GetServerCoinBase(),
