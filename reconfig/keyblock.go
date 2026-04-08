@@ -123,6 +123,11 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	}
 
 	keyType := keyblock.BlockType()
+	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) &&
+		(keyType == types.PowReconfig || keyType == types.PacePowReconfig) {
+		return fmt.Errorf("keyblock verify failed, pow reconfig is disabled when fixedLeader/fixedCommittee is enabled")
+	}
+
 	if keyType == types.PowReconfig || keyType == types.PacePowReconfig {
 		if bestCandi == nil {
 			return fmt.Errorf("keyblock verify failed, pow reconfig need the best candidate")
@@ -189,10 +194,10 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		return fmt.Errorf("keyblock verify failed, in is not correct")
 	}
 	if bftview.InRescueMode(keyblock.NumberU64(), keyblock.Hash()) {
-        bftview.ClearRescueMode()
-        log.Info("Rescue mode cleared after processing block", 
-            "number", keyblock.NumberU64())
-    }
+		bftview.ClearRescueMode()
+		log.Info("Rescue mode cleared after processing block",
+			"number", keyblock.NumberU64())
+	}
 	if bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true) == nil {
 		mb.Store(keyblock)
 	}
@@ -204,6 +209,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 // Try to change committee and proposal a new keyblock
 func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool) (*types.KeyBlock, *bftview.Committee, *types.Candidate, error) {
 	log.Info("tryProposalChangeCommittee", "tx number", keyS.bc.CurrentBlockN(), "isDone", isDone, "leaderIndex", leaderIndex)
+	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
+		leaderIndex = 0
+	}
 	curKeyBlock := keyS.kbc.CurrentBlock()
 	curKNumber := curKeyBlock.Number()
 	curKHash := curKeyBlock.Hash()
@@ -221,6 +229,9 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 
 	var outerPublic, outerCoinBase string
 	best := keyS.getBestCandidate(false)
+	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
+		best = nil
+	}
 
 	var reconfigType uint8
 	if isDone {
@@ -272,6 +283,10 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 }
 
 func (keyS *keyService) getNextLeaderIndex(leaderIndex uint) uint {
+	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
+		return 0
+	}
+
 	mb := bftview.GetCurrentMember()
 	if mb == nil {
 		return 1
