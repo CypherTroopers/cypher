@@ -1,3 +1,17 @@
+// Copyright 2015 The go-ethereum Authors
+// Copyright 2017 The cypherBFT Authors
+// This file is part of the cypherBFT library.
+//
+// The cypherBFT library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// The cypherBFT library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
 // You should have received a copy of the GNU Lesser General Public License
 // along with the cypherBFT library. If not, see <http://www.gnu.org/licenses/>.
 
@@ -30,7 +44,7 @@ import (
 // codebase, inherently breaking if the engine is swapped out. Please put common
 // error types into the pow package.
 var (
-	FrontierBlockReward  = big.NewInt(5e+18) // Block reward in wei for successfully mining a block
+	FrontierBlockReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Block reward in wei for successfully mining a block
 	ByzantiumBlockReward = big.NewInt(3e+18) // Block reward in wei for successfully mining a block upward from Byzantium
 
 	errLargeBlockTime    = errors.New("timestamp too big")
