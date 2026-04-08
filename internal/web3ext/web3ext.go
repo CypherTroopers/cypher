@@ -22,7 +22,7 @@ var Modules = map[string]string{
 	"admin":          AdminJs,
 	"chequebook":     ChequebookJs,
 	"clique":         CliqueJs,
-	"ethash":         EthashJs,
+	"colossusX":         colossusXJs,
 	"debug":          DebugJs,
 	"eth":            EthJs,
 	"miner":          MinerJs,
@@ -121,28 +121,28 @@ web3._extend({
 });
 `
 
-const EthashJs = `
+const colossusXJs = `
 web3._extend({
-	property: 'ethash',
+	property: 'colossusX',
 	methods: [
 		new web3._extend.Method({
 			name: 'getWork',
-			call: 'ethash_getWork',
+			call: 'colossusX_getWork',
 			params: 0
 		}),
 		new web3._extend.Method({
 			name: 'getHashrate',
-			call: 'ethash_getHashrate',
+			call: 'colossusX_getHashrate',
 			params: 0
 		}),
 		new web3._extend.Method({
 			name: 'submitWork',
-			call: 'ethash_submitWork',
+			call: 'colossusX_submitWork',
 			params: 3,
 		}),
 		new web3._extend.Method({
 			name: 'submitHashRate',
-			call: 'ethash_submitHashRate',
+			call: 'colossusX_submitHashRate',
 			params: 2,
 		}),
 	]

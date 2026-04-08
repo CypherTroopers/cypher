@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/consensus/ethash"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/types"
@@ -65,7 +65,7 @@ func newTestBackend(t *testing.T) *testBackend {
 		}
 		signer = types.NewEIP155Signer(gspec.Config.ChainID)
 	)
-	engine := ethash.NewFaker()
+	engine := colossusX.NewFaker()
 	db := rawdb.NewMemoryDatabase()
 	genesis, _ := gspec.Commit(db)
 
