@@ -17,20 +17,20 @@
 package reconfig
 
 import (
-
 	//	"runtime"
 	"sync"
 	"time"
 
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
-//	"github.com/cypherium/cypher/event"
+	//	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
 )
 
 var maxPaceMakerTime time.Time
+var fixedModeKeyBlockInterval = 10 * time.Minute
 
 type paceMakerTimer struct {
 	startTime     time.Time
@@ -134,6 +134,19 @@ func (t *paceMakerTimer) loopTimer() {
 		}
 
 		now := time.Now()
+		if t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee) && bftview.IamMember() >= 0 {
+			t.mu.Lock()
+			lastKeyTime := t.lastKeyTime
+			if now.Sub(lastKeyTime) >= fixedModeKeyBlockInterval {
+				t.lastKeyTime = now
+				t.mu.Unlock()
+				log.Warn("paceMakerTimer fixed mode keyblock trigger", "elapsed", now.Sub(lastKeyTime))
+				t.setNextLeader(true)
+				continue
+			}
+			t.mu.Unlock()
+		}
+
 		diff := now.Sub(startTime)
 		if diff > params.AckTimeout && now.Sub(t.service.LeaderAckTime()) > params.AckTimeout && bftview.IamMember() >= 0 {
 			log.Warn("paceMakerTimer Viewchange AckTimeout")
@@ -168,8 +181,11 @@ var m_tps10StartTm time.Time
 // Event for new block done
 func (t *paceMakerTimer) procBlockDone(curBlock *types.Block, curKeyBlock *types.KeyBlock, isKeyBlock bool) {
 	if isKeyBlock {
+		t.mu.Lock()
 		t.lastKeyTime = time.Now()
-		log.Debug("paceMakerTimer keyblock done", "lastKeyTime", t.lastKeyTime)
+		lastKeyTime := t.lastKeyTime
+		t.mu.Unlock()
+		log.Debug("paceMakerTimer keyblock done", "lastKeyTime", lastKeyTime)
 	}
 	if curBlock != nil {
 		if t.config.EnabledTPS {
