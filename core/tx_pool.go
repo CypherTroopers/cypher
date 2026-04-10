@@ -638,8 +638,8 @@ func (pool *TxPool) noteSeen(hash common.Hash) {
 }
 
 func (pool *TxPool) PendingByLane(lane TxLane) (map[common.Address]types.Transactions, error) {
-	pool.mu.Lock()
-	defer pool.mu.Unlock()
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
 
 	pending := make(map[common.Address]types.Transactions)
 	for addr, list := range pool.pending {
@@ -1512,6 +1512,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		for _, tx := range windowDrops {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			delete(pool.seen, hash)
 			log.Trace("Removed too-far future queued transaction", "hash", hash)
 		}
 		log.Trace("Removed too-far future queued transactions", "count", len(windowDrops))

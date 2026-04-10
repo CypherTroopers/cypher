@@ -265,6 +265,9 @@ const (
 	slowBlockMaxTxCount      = uint64(256)
 	fastBlockMaxGasPerTx     = uint64(300000)
 	fastBlockMaxDataBytes    = 1024
+
+	fastBlockGasTargetPct = uint64(30)
+	slowBlockGasTargetPct = uint64(70)
 )
 
 const (
@@ -428,6 +431,7 @@ func (txS *txService) createWork(blockType uint8) *work {
 		header:      header,
 		txPool:      txS.txPool,
 		maxTxCount:  blockMaxTxCount(blockType),
+		gasTarget:   blockGasTarget(blockType, header.GasLimit),
 		blockType:   blockType,
 	}
 }
@@ -437,6 +441,16 @@ func blockMaxTxCount(blockType uint8) uint64 {
 		return fastBlockMaxTxCount
 	}
 	return slowBlockMaxTxCount
+}
+
+func blockGasTarget(blockType uint8, gasLimit uint64) uint64 {
+	if blockType == types.Key_Block {
+		return 0
+	}
+	if isFastBlockType(blockType) {
+		return gasLimit * fastBlockGasTargetPct / 100
+	}
+	return gasLimit * slowBlockGasTargetPct / 100
 }
 
 func (txS *txService) getTransactions(blockType uint8) *types.TransactionsByPriceAndNonce {
@@ -501,6 +515,7 @@ type work struct {
 	header      *types.Header
 	txPool      *core.TxPool
 	maxTxCount  uint64
+	gasTarget   uint64
 	blockType   uint8
 }
 
@@ -518,9 +533,19 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		if env.maxTxCount > 0 && uint64(txCount) >= env.maxTxCount {
 			break
 		}
+		if env.gasTarget > 0 && env.header.GasUsed >= env.gasTarget {
+			break
+		}
 		tx := txes.Peek()
 		if tx == nil {
 			break
+		}
+		if env.gasTarget > 0 {
+			remainingGas := env.gasTarget - env.header.GasUsed
+			if tx.Gas() > remainingGas {
+				log.Trace("Stopping block assembly at gas target", "gasUsed", env.header.GasUsed, "gasTarget", env.gasTarget, "nextTxGas", tx.Gas(), "blockType", env.blockType)
+				break
+			}
 		}
 		if to := tx.To(); to != nil {
 			bannedTx := false
