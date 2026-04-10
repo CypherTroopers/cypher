@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,12 +35,15 @@ type rpcErr struct {
 
 func main() {
 	var (
-		rpcURL   = flag.String("rpc", "http://127.0.0.1:8545", "HTTP RPC endpoint")
-		txFile   = flag.String("tx-file", "", "file containing 0x-prefixed signed raw tx per line")
-		workers  = flag.Int("workers", 32, "parallel workers")
-		duration = flag.Duration("duration", 30*time.Second, "test duration")
-		rate     = flag.Int("rate", 0, "global request rate limit (tx/s), 0 = unlimited")
-		timeout  = flag.Duration("timeout", 10*time.Second, "HTTP timeout")
+		rpcURL       = flag.String("rpc", "http://127.0.0.1:8545", "HTTP RPC endpoint")
+		txFile       = flag.String("tx-file", "", "file containing 0x-prefixed signed raw tx per line")
+		workers      = flag.Int("workers", 32, "parallel workers")
+		duration     = flag.Duration("duration", 30*time.Second, "test duration")
+		rate         = flag.Int("rate", 0, "global request rate limit (tx/s), 0 = unlimited")
+		timeout      = flag.Duration("timeout", 10*time.Second, "HTTP timeout")
+		showTop      = flag.Int("show-top", 10, "show top N reject reasons / HTTP statuses")
+		noReuse      = flag.Bool("no-reuse", false, "send each tx at most once; stop after tx-file is exhausted")
+		stopOnAccept = flag.Bool("stop-on-accept-exhaust", false, "with -no-reuse, stop the whole run once all txs have been attempted")
 	)
 	flag.Parse()
 
@@ -59,7 +63,7 @@ func main() {
 	}
 
 	fmt.Printf("Loaded %d tx(s) from %s\n", len(txs), *txFile)
-	fmt.Printf("RPC=%s workers=%d duration=%s rate=%d tx/s\n", *rpcURL, *workers, *duration, *rate)
+	fmt.Printf("RPC=%s workers=%d duration=%s rate=%d tx/s no_reuse=%v\n", *rpcURL, *workers, *duration, *rate, *noReuse)
 
 	ctx, cancel := context.WithTimeout(context.Background(), *duration)
 	defer cancel()
@@ -84,10 +88,39 @@ func main() {
 		limiter = ticker.C
 	}
 
+	var errMu sync.Mutex
+	rejectReasons := make(map[string]uint64)
+	httpStatusCounts := make(map[int]uint64)
+	httpErrorTexts := make(map[string]uint64)
+
+	recordReject := func(msg string) {
+		msg = normalizeReject(msg)
+		errMu.Lock()
+		rejectReasons[msg]++
+		errMu.Unlock()
+	}
+
+	recordHTTPStatus := func(code int) {
+		errMu.Lock()
+		httpStatusCounts[code]++
+		errMu.Unlock()
+	}
+
+	recordHTTPErrorText := func(msg string) {
+		msg = strings.TrimSpace(msg)
+		if msg == "" {
+			msg = "(empty error)"
+		}
+		errMu.Lock()
+		httpErrorTexts[msg]++
+		errMu.Unlock()
+	}
+
 	for i := 0; i < *workers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+
 			for {
 				select {
 				case <-ctx.Done():
@@ -104,31 +137,66 @@ func main() {
 				}
 
 				myIdx := atomic.AddUint64(&idx, 1) - 1
+				if *noReuse && myIdx >= uint64(len(txs)) {
+					if *stopOnAccept {
+						cancel()
+					}
+					return
+				}
+
 				txHex := txs[int(myIdx%uint64(len(txs)))]
 				id := atomic.AddInt64(&reqID, 1)
 
-				reqBody := rpcReq{JSONRPC: "2.0", Method: "eth_sendRawTransaction", Params: []interface{}{txHex}, ID: id}
-				payload, _ := json.Marshal(reqBody)
-				hreq, _ := http.NewRequestWithContext(ctx, http.MethodPost, *rpcURL, bytes.NewReader(payload))
+				reqBody := rpcReq{
+					JSONRPC: "2.0",
+					Method:  "eth_sendRawTransaction",
+					Params:  []interface{}{txHex},
+					ID:      id,
+				}
+
+				payload, err := json.Marshal(reqBody)
+				if err != nil {
+					atomic.AddUint64(&httpErrs, 1)
+					recordHTTPErrorText("marshal rpc request failed: " + err.Error())
+					continue
+				}
+
+				hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, *rpcURL, bytes.NewReader(payload))
+				if err != nil {
+					atomic.AddUint64(&httpErrs, 1)
+					recordHTTPErrorText("build http request failed: " + err.Error())
+					continue
+				}
 				hreq.Header.Set("Content-Type", "application/json")
 
 				resp, err := client.Do(hreq)
 				atomic.AddUint64(&sent, 1)
+
 				if err != nil {
 					atomic.AddUint64(&httpErrs, 1)
+					recordHTTPErrorText(err.Error())
 					continue
 				}
 
 				var rr rpcResp
 				decodeErr := json.NewDecoder(resp.Body).Decode(&rr)
 				resp.Body.Close()
-				if decodeErr != nil || resp.StatusCode < 200 || resp.StatusCode > 299 {
+
+				if resp.StatusCode < 200 || resp.StatusCode > 299 {
 					atomic.AddUint64(&httpErrs, 1)
+					recordHTTPStatus(resp.StatusCode)
+					continue
+				}
+
+				if decodeErr != nil {
+					atomic.AddUint64(&httpErrs, 1)
+					recordHTTPErrorText("decode response failed: " + decodeErr.Error())
 					continue
 				}
 
 				if rr.Error != nil {
 					atomic.AddUint64(&rpcRejected, 1)
+					recordReject(rr.Error.Message)
 				} else {
 					atomic.AddUint64(&rpcAccepted, 1)
 				}
@@ -137,6 +205,7 @@ func main() {
 	}
 
 	wg.Wait()
+
 	elapsed := time.Since(start).Seconds()
 	if elapsed == 0 {
 		elapsed = 1
@@ -148,6 +217,10 @@ func main() {
 	fmt.Printf("rpc_accepted=%d (%.2f tx/s)\n", rpcAccepted, float64(rpcAccepted)/elapsed)
 	fmt.Printf("rpc_rejected=%d\n", rpcRejected)
 	fmt.Printf("http_errors=%d\n", httpErrs)
+
+	printTopRejects("Top RPC reject reasons", rejectReasons, *showTop)
+	printTopStatus("Top HTTP status codes", httpStatusCounts, *showTop)
+	printTopRejects("Top HTTP/client errors", httpErrorTexts, *showTop)
 }
 
 func readTxs(path string) ([]string, error) {
@@ -159,6 +232,11 @@ func readTxs(path string) ([]string, error) {
 
 	var txs []string
 	s := bufio.NewScanner(f)
+
+	// 長い raw tx 用
+	buf := make([]byte, 0, 1024*1024)
+	s.Buffer(buf, 4*1024*1024)
+
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -176,4 +254,98 @@ func readTxs(path string) ([]string, error) {
 		return nil, fmt.Errorf("no tx found in file")
 	}
 	return txs, nil
+}
+
+func normalizeReject(msg string) string {
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return "(empty rpc error)"
+	}
+
+	lower := strings.ToLower(msg)
+
+	switch {
+	case strings.Contains(lower, "already known"):
+		return "already known"
+	case strings.Contains(lower, "nonce too low"):
+		return "nonce too low"
+	case strings.Contains(lower, "replacement transaction underpriced"):
+		return "replacement transaction underpriced"
+	case strings.Contains(lower, "underpriced"):
+		return "underpriced"
+	case strings.Contains(lower, "insufficient funds"):
+		return "insufficient funds"
+	case strings.Contains(lower, "invalid sender"):
+		return "invalid sender"
+	case strings.Contains(lower, "intrinsic gas too low"):
+		return "intrinsic gas too low"
+	case strings.Contains(lower, "txpool is full"):
+		return "txpool is full"
+	case strings.Contains(lower, "rlp:"):
+		return msg
+	default:
+		return msg
+	}
+}
+
+func printTopRejects(title string, m map[string]uint64, topN int) {
+	fmt.Println("---- " + title + " ----")
+	if len(m) == 0 {
+		fmt.Println("(none)")
+		return
+	}
+
+	type kv struct {
+		Key string
+		Val uint64
+	}
+	items := make([]kv, 0, len(m))
+	for k, v := range m {
+		items = append(items, kv{Key: k, Val: v})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Val == items[j].Val {
+			return items[i].Key < items[j].Key
+		}
+		return items[i].Val > items[j].Val
+	})
+
+	if topN <= 0 || topN > len(items) {
+		topN = len(items)
+	}
+	for i := 0; i < topN; i++ {
+		fmt.Printf("%d\t%s\n", items[i].Val, items[i].Key)
+	}
+}
+
+func printTopStatus(title string, m map[int]uint64, topN int) {
+	fmt.Println("---- " + title + " ----")
+	if len(m) == 0 {
+		fmt.Println("(none)")
+		return
+	}
+
+	type kv struct {
+		Key int
+		Val uint64
+	}
+	items := make([]kv, 0, len(m))
+	for k, v := range m {
+		items = append(items, kv{Key: k, Val: v})
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Val == items[j].Val {
+			return items[i].Key < items[j].Key
+		}
+		return items[i].Val > items[j].Val
+	})
+
+	if topN <= 0 || topN > len(items) {
+		topN = len(items)
+	}
+	for i := 0; i < topN; i++ {
+		fmt.Printf("%d\tHTTP %d\n", items[i].Val, items[i].Key)
+	}
 }
