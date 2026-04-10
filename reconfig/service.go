@@ -38,6 +38,9 @@ import (
 
 const failedProposalRetry = 200 * time.Millisecond
 const hotstuffIdleSleep = 10 * time.Millisecond
+const tryProposeDebounce = 25 * time.Millisecond
+const slowBlockMinPending = 64
+const slowBlockMinInterval = 750 * time.Millisecond
 
 type committeeInfo struct {
 	Committee *bftview.Committee
@@ -103,10 +106,12 @@ type Service struct {
 	lastReqCmNumber uint64
 	muCurrentView   sync.Mutex
 
-	replicaView     *bftview.View
-	runningState    int32
-	lastProposeTime time.Time
-	pacetMakerTimer *paceMakerTimer
+	replicaView       *bftview.View
+	runningState      int32
+	lastProposeTime   time.Time
+	lastSlowBlockTime time.Time
+	tryProposeQueuedAt int64
+	pacetMakerTimer   *paceMakerTimer
 
 	hotstuffMsgQ *common.Queue
 	feed1        event.Feed
@@ -339,10 +344,20 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 			return fmt.Errorf("tryProposalChangeCommittee failed"), nil, nil, nil
 		}
 	}
-	data, err := s.txService.tryProposalNewBlock(types.Normal_Block)
+	blockType := s.chooseTxBlockType()
+	data, err := s.txService.tryProposalNewBlock(blockType)
+	if err != nil && blockType == types.FastTx_Block {
+		data, err = s.txService.tryProposalNewBlock(types.SlowTx_Block)
+		if err == nil {
+			blockType = types.SlowTx_Block
+		}
+	}
 	if err != nil {
 		log.Warn("tryProposalNewBlock", "error", err)
 		return err, nil, nil, nil
+	}
+	if blockType == types.SlowTx_Block {
+		s.lastSlowBlockTime = time.Now()
 	}
 	proposeOK = true
 	return nil, nil, data, nil
@@ -352,11 +367,27 @@ func (s *Service) triggerTryPropose(lastN uint64) {
 	if atomic.LoadInt32(&s.runningState) != 1 {
 		return
 	}
+	now := time.Now().UnixNano()
+	prev := atomic.LoadInt64(&s.tryProposeQueuedAt)
+	if prev != 0 && time.Duration(now-prev) < tryProposeDebounce {
+		return
+	}
+	atomic.StoreInt64(&s.tryProposeQueuedAt, now)
 	s.hotstuffMsgQ.PushBack(&hotstuffMsg{
 		sid:   nil,
 		lastN: lastN,
 		hMsg:  &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose},
 	})
+}
+
+func (s *Service) chooseTxBlockType() uint8 {
+	pending, _ := s.txPool.Stats()
+	if pending >= slowBlockMinPending {
+		if s.lastSlowBlockTime.IsZero() || time.Since(s.lastSlowBlockTime) >= slowBlockMinInterval {
+			return types.SlowTx_Block
+		}
+	}
+	return types.FastTx_Block
 }
 
 // OnViewDone call by hotstuff
@@ -439,6 +470,9 @@ func (s *Service) handleHotStuffMsg() {
 		}
 		msg := data.(*hotstuffMsg)
 		msgCode := msg.hMsg.Code
+		if msgCode == hotstuff.MsgTryPropose {
+			atomic.StoreInt64(&s.tryProposeQueuedAt, 0)
+		}
 		log.Debug("handleHotStuffMsg", "id", msg.hMsg.Id, "code", hotstuff.ReadableMsgType(msgCode), "ViewId", msg.hMsg.ViewId)
 
 		var curN uint64

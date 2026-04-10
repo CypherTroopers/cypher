@@ -97,7 +97,7 @@ var (
 var (
 	evictionInterval    = time.Minute     // Time interval to check for evictable transactions
 	statsReportInterval = 8 * time.Second // Time interval to report transaction pool stats
-	reqWaitTimeout      = 60 * time.Second
+	reqWaitTimeout      = 3 * time.Second
 )
 
 var (
@@ -997,7 +997,9 @@ func (pool *TxPool) requestReset(oldHead *types.Header, newHead *types.Header) c
 	case <-pool.reorgShutdownCh:
 		return pool.reorgShutdownCh
 	case <-time.After(reqWaitTimeout):
-		return nil
+		ch := make(chan struct{})
+		close(ch)
+		return ch
 	}
 }
 
@@ -1010,7 +1012,9 @@ func (pool *TxPool) requestPromoteExecutables(set *accountSet) chan struct{} {
 	case <-pool.reorgShutdownCh:
 		return pool.reorgShutdownCh
 	case <-time.After(reqWaitTimeout):
-		return nil
+		ch := make(chan struct{})
+		close(ch)
+		return ch
 	}
 }
 
