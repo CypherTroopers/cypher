@@ -268,8 +268,9 @@ const (
 )
 
 const (
-	failedTxDrop failedTxAction = iota
-	failedTxRetryLater
+	failedTxDropAndShift failedTxAction = iota
+	failedTxDropAndPop
+	failedTxKeepAndPop
 )
 
 func isFastBlockType(blockType uint8) bool {
@@ -338,25 +339,64 @@ func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8) AddressTxes {
 }
 
 func classifyCommitTxError(err error) failedTxAction {
+	if err == nil {
+		return failedTxKeepAndPop
+	}
 	switch {
-	case errors.Is(err, core.ErrNonceTooLow),
-		errors.Is(err, core.ErrIntrinsicGas),
+	case errors.Is(err, core.ErrNonceTooLow):
+		return failedTxDropAndShift
+	case errors.Is(err, core.ErrIntrinsicGas),
 		errors.Is(err, core.ErrGasLimit),
-		errors.Is(err, core.ErrInsufficientFunds),
+		errors.Is(err, core.ErrGasUintOverflow),
 		errors.Is(err, core.ErrInvalidSender):
-		return failedTxDrop
+		return failedTxDropAndPop
+	case errors.Is(err, core.ErrNonceTooHigh),
+		errors.Is(err, core.ErrGasLimitReached),
+		errors.Is(err, core.ErrInsufficientFunds),
+		errors.Is(err, core.ErrInsufficientFundsForTransfer):
+		return failedTxKeepAndPop
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
-	case strings.Contains(msg, "nonce too low"),
-		strings.Contains(msg, "intrinsic gas"),
-		strings.Contains(msg, "insufficient funds"),
+	case strings.Contains(msg, "nonce too low"):
+		return failedTxDropAndShift
+	case strings.Contains(msg, "nonce too high"),
+		strings.Contains(msg, "gas limit reached"),
+		strings.Contains(msg, "insufficient funds for transfer"),
+		strings.Contains(msg, "insufficient funds for gas * price + value"),
+		strings.Contains(msg, "insufficient funds"):
+		return failedTxKeepAndPop
+	case strings.Contains(msg, "intrinsic gas"),
 		strings.Contains(msg, "invalid sender"),
-		strings.Contains(msg, "exceeds block gas limit"),
-		strings.Contains(msg, "gas limit"):
-		return failedTxDrop
+		strings.Contains(msg, "gas uint64 overflow"),
+		strings.Contains(msg, "exceeds block gas limit"):
+		return failedTxDropAndPop
 	default:
-		return failedTxRetryLater
+		return failedTxKeepAndPop
+	}
+}
+
+func applyFailedTxAction(txes *types.TransactionsByPriceAndNonce, failedTxes *types.Transactions, tx *types.Transaction, action failedTxAction) {
+	switch action {
+	case failedTxDropAndShift:
+		*failedTxes = append(*failedTxes, tx)
+		txes.Shift()
+	case failedTxDropAndPop:
+		*failedTxes = append(*failedTxes, tx)
+		txes.Pop()
+	default:
+		txes.Pop()
+	}
+}
+
+func logFailedTxAction(tx *types.Transaction, err error, action failedTxAction) {
+	switch action {
+	case failedTxDropAndShift:
+		log.Info("TX failed, dropping stale tx and shifting same-account head", "hash", tx.Hash(), "err", err)
+	case failedTxDropAndPop:
+		log.Info("TX failed, dropping tx and skipping rest of account for this proposal", "hash", tx.Hash(), "err", err)
+	default:
+		log.Info("TX failed, keeping tx for retry later and skipping rest of account for this proposal", "hash", tx.Hash(), "err", err)
 	}
 }
 
@@ -466,49 +506,50 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 			break
 		}
 		if to := tx.To(); to != nil {
+			bannedTx := false
 			for _, banned := range params.BlackAddressList {
 				if *to == banned {
 					log.Warn("Discarding transaction to banned address",
 						"hash", tx.Hash(),
 						"to", banned.Hex())
-					failedTxes = append(failedTxes, tx)
-					txes.Pop()
-					continue
+					applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
+					bannedTx = true
+					break
 				}
+			}
+			if bannedTx {
+				continue
 			}
 		}
 		// Check sender
 		from, err := types.Sender(types.NewEIP155Signer(env.config.ChainID), tx)
 		if err != nil {
 			log.Warn("Discarding transaction with invalid sender", "hash", tx.Hash(), "err", err)
-			failedTxes = append(failedTxes, tx)
-			txes.Pop()
+			applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
 			continue
 		}
+		bannedFrom := false
 		for _, banned := range params.BlackAddressList {
 			if from == banned {
 				log.Warn("Discarding transaction from banned address",
 					"hash", tx.Hash(),
 					"from", banned.Hex())
-				failedTxes = append(failedTxes, tx)
-				txes.Pop()
-				continue
+				applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
+				bannedFrom = true
+				break
 			}
+		}
+		if bannedFrom {
+			continue
 		}
 		env.publicState.Prepare(tx.Hash(), common.Hash{}, txCount)
 
 		publicReceipt, err := env.commitTransaction(tx, bc, gp)
 		switch {
 		case err != nil:
-			switch classifyCommitTxError(err) {
-			case failedTxDrop:
-				log.Info("TX failed, dropping from txpool", "hash", tx.Hash(), "err", err)
-				failedTxes = append(failedTxes, tx)
-				txes.Pop()
-			default:
-				log.Info("TX failed, keeping for retry later", "hash", tx.Hash(), "err", err)
-				txes.Pop()
-			}
+			action := classifyCommitTxError(err)
+			logFailedTxAction(tx, err, action)
+			applyFailedTxAction(txes, &failedTxes, tx, action)
 		default:
 			txCount++
 			committedTxes = append(committedTxes, tx)
