@@ -20,7 +20,6 @@ package reconfig
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -342,39 +341,28 @@ func classifyCommitTxError(err error) failedTxAction {
 	if err == nil {
 		return failedTxKeepAndPop
 	}
+
 	switch {
 	case errors.Is(err, core.ErrNonceTooLow):
 		return failedTxDropAndShift
+
 	case errors.Is(err, core.ErrIntrinsicGas),
 		errors.Is(err, core.ErrGasLimit),
 		errors.Is(err, core.ErrGasUintOverflow),
 		errors.Is(err, core.ErrInvalidSender):
 		return failedTxDropAndPop
+
 	case errors.Is(err, core.ErrNonceTooHigh),
 		errors.Is(err, core.ErrGasLimitReached),
 		errors.Is(err, core.ErrInsufficientFunds),
 		errors.Is(err, core.ErrInsufficientFundsForTransfer):
 		return failedTxKeepAndPop
-	}
-	msg := strings.ToLower(err.Error())
-	switch {
-	case strings.Contains(msg, "nonce too low"):
-		return failedTxDropAndShift
-	case strings.Contains(msg, "nonce too high"),
-		strings.Contains(msg, "gas limit reached"),
-		strings.Contains(msg, "insufficient funds for transfer"),
-		strings.Contains(msg, "insufficient funds for gas * price + value"),
-		strings.Contains(msg, "insufficient funds"):
-		return failedTxKeepAndPop
-	case strings.Contains(msg, "intrinsic gas"),
-		strings.Contains(msg, "invalid sender"),
-		strings.Contains(msg, "gas uint64 overflow"),
-		strings.Contains(msg, "exceeds block gas limit"):
-		return failedTxDropAndPop
+
 	default:
 		return failedTxKeepAndPop
 	}
 }
+
 
 func applyFailedTxAction(txes *types.TransactionsByPriceAndNonce, failedTxes *types.Transactions, tx *types.Transaction, action failedTxAction) {
 	switch action {
