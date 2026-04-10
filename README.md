@@ -96,3 +96,42 @@ done
 
 `validator.txt` と enode を使って `genesistest.json` の `config.committee` を 0〜6 で埋めれば、7ノード用の testnet 設定を作れます。
 
+
+## RPC 実トランザクション負荷テスト（TPS計測）
+
+`eth_sendRawTransaction` を実際の RPC に大量送信して、ノードがどれくらい受け付けられるか（目安 TPS）を計測する簡易ツールを追加しています。
+
+### 1) 署名済みトランザクションを用意
+
+1行に1つ、`0x` から始まる signed raw tx を `txs.txt` に保存してください。
+
+```txt
+0x02f8...
+0x02f8...
+```
+
+> 同じ nonce の tx を繰り返し送ると `already known` や `nonce too low` が増えます。実効 TPS を測るには nonce が重複しない tx 群を用意してください。
+
+### 2) テスト実行
+
+```bash
+go run ./cmd/rpctps \
+  -rpc http://127.0.0.1:8000 \
+  -tx-file ./txs.txt \
+  -workers 64 \
+  -duration 60s \
+  -rate 0
+```
+
+- `-workers`: 並列送信数
+- `-duration`: 計測時間
+- `-rate`: 送信レート上限（tx/s）。`0` は上限なし
+
+### 3) 結果の見方
+
+- `requests`: 全 RPC リクエスト数（req/s）
+- `rpc_accepted`: RPC が受理した tx 数（tx/s）
+- `rpc_rejected`: RPC エラーで拒否された tx 数
+- `http_errors`: 接続失敗・タイムアウト・非2xx・不正JSON
+
+`rpc_accepted` の tx/s を基準に、`workers` や `rate` を段階的に上げていくと、実運用に近い限界値を探れます。
