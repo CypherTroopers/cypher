@@ -262,6 +262,7 @@ const (
 	proposalPerAccountLimit  = 8
 	fastBlockPerAccountLimit = 4
 	fastBlockMaxTxCount      = uint64(128)
+	slowBlockMaxTxCount      = uint64(256)
 	fastBlockMaxGasPerTx     = uint64(300000)
 	fastBlockMaxDataBytes    = 1024
 )
@@ -435,7 +436,7 @@ func blockMaxTxCount(blockType uint8) uint64 {
 	if isFastBlockType(blockType) {
 		return fastBlockMaxTxCount
 	}
-	return 0
+	return slowBlockMaxTxCount
 }
 
 func (txS *txService) getTransactions(blockType uint8) *types.TransactionsByPriceAndNonce {
