@@ -8,11 +8,11 @@ import (
 	"bytes"
 
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/crypto/bls"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
+	"github.com/zeebo/blake3"
 )
 
 var (
@@ -40,6 +40,39 @@ var (
 	ErrOldState    = fmt.Errorf("hotstuff view state too old")
 	ErrFutureState = fmt.Errorf("hotstuff view state of future")
 )
+
+func hotstuffDigest(data []byte) []byte {
+	sum := blake3.Sum256(data)
+	out := make([]byte, len(sum))
+	copy(out, sum[:])
+	return out
+}
+
+func hotstuffDigestHash(parts ...[]byte) common.Hash {
+	total := 0
+	for _, p := range parts {
+		total += len(p)
+	}
+	buf := make([]byte, 0, total)
+	for _, p := range parts {
+		if len(p) == 0 {
+			continue
+		}
+		buf = append(buf, p...)
+	}
+	sum := blake3.Sum256(buf)
+	var out common.Hash
+	copy(out[:], sum[:])
+	return out
+}
+
+func buildReplicaIndex(groupPublicKey []*bls.PublicKey) map[string]int {
+	index := make(map[string]int, len(groupPublicKey))
+	for i, p := range groupPublicKey {
+		index[hex.EncodeToString(p.Serialize())] = i
+	}
+	return index
+}
 
 const (
 	MsgNewView = iota
@@ -183,6 +216,9 @@ type View struct {
 	proposedKState []byte
 	proposedTState []byte
 
+	proposedKDigest   []byte
+	proposedTDigest   []byte
+	replicaIndex      map[string]int
 	highVoteInfo      []*VoteInfo
 	prepareVoteInfo   []*VoteInfo
 	preCommitVoteInfo []*VoteInfo
@@ -240,20 +276,16 @@ func (hsm *HotstuffProtocolManager) UpdateKeyPair(sec *bls.SecretKey) {
 }
 
 func (v *View) lookupReplica(pubKey *bls.PublicKey) int {
+	if v.replicaIndex != nil {
+		if index, ok := v.replicaIndex[hex.EncodeToString(pubKey.Serialize())]; ok {
+			return index
+		}
+	}
 	for i, p := range v.groupPublicKey {
 		if p.IsEqual(pubKey) {
 			return i
 		}
 	}
-	/*??
-	log.Debug("lookupReplica miss replica's public key", "key", hex.EncodeToString(pubKey.Serialize()))
-
-	log.Debug("lookupReplica start dumping committee members' public key ====================")
-	for i, p := range v.groupPublicKey {
-		log.Debug("Public Key", "index", i, "key", hex.EncodeToString(p.Serialize()))
-	}
-	log.Debug("lookupReplica finish dumping committee members' public key ====================")
-	*/
 	return -1
 }
 
@@ -353,7 +385,7 @@ func (hsm *HotstuffProtocolManager) newView() (*View, []byte) {
 	v.currentState = make([]byte, len(currentState))
 	copy(v.currentState, currentState)
 
-	v.hash = crypto.Keccak256Hash([]byte(v.leaderId), v.currentState)
+	v.hash = hotstuffDigestHash([]byte(v.leaderId), v.currentState)
 
 	groupPublicKey := hsm.app.GetPublicKey()
 	v.groupPublicKey = make([]*bls.PublicKey, 0)
@@ -362,6 +394,7 @@ func (hsm *HotstuffProtocolManager) newView() (*View, []byte) {
 	}
 	v.cmLen = len(groupPublicKey)
 	v.threshold = CalcThreshold(v.cmLen)
+	v.replicaIndex = buildReplicaIndex(v.groupPublicKey)
 
 	return v, hsm.app.GetExtra()
 }
@@ -390,7 +423,7 @@ func (hsm *HotstuffProtocolManager) createView(asLeader bool, phase uint32, lead
 	v.currentState = make([]byte, len(currentState))
 	copy(v.currentState, currentState)
 
-	v.hash = crypto.Keccak256Hash([]byte(v.leaderId), v.currentState)
+	v.hash = hotstuffDigestHash([]byte(v.leaderId), v.currentState)
 
 	groupPublicKey := hsm.app.GetPublicKey()
 	v.groupPublicKey = make([]*bls.PublicKey, 0)
@@ -399,6 +432,7 @@ func (hsm *HotstuffProtocolManager) createView(asLeader bool, phase uint32, lead
 	}
 	v.cmLen = len(groupPublicKey)
 	v.threshold = CalcThreshold(v.cmLen)
+	v.replicaIndex = buildReplicaIndex(v.groupPublicKey)
 
 	return v
 }
@@ -409,6 +443,7 @@ func (hsm *HotstuffProtocolManager) updateViewPublicKey(v *View) {
 	for _, p := range groupPublicKey {
 		v.groupPublicKey = append(v.groupPublicKey, p)
 	}
+	v.replicaIndex = buildReplicaIndex(v.groupPublicKey)
 }
 
 func (hsm *HotstuffProtocolManager) DumpView(v *View, asLeader bool) {
@@ -619,7 +654,7 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 			continue
 		}
 
-		if !qrum.KSign.VerifyHash(qrum.PubKey, crypto.Keccak256(m.DataA)) {
+		if !qrum.KSign.VerifyHash(qrum.PubKey, hotstuffDigest(m.DataA)) {
 			log.Debug("New view message failed to verify voteInfo")
 			err = ErrQCVerification
 			continue
@@ -750,11 +785,13 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 	if kProposal != nil && len(kProposal) > 0 {
 		v.proposedKState = make([]byte, len(kProposal))
 		copy(v.proposedKState, kProposal)
+		v.proposedKDigest = hotstuffDigest(v.proposedKState)
 	}
 
 	if tProposal != nil && len(tProposal) > 0 {
 		v.proposedTState = make([]byte, len(tProposal))
 		copy(v.proposedTState, tProposal)
+		v.proposedTDigest = hotstuffDigest(v.proposedTState)
 	}
 
 	v.phaseAsLeader = PhasePreCommit
@@ -796,7 +833,7 @@ loop:
 		}
 	}
 
-	if signer < threshold || !sign.VerifyHash(&pub, crypto.Keccak256(data)) {
+	if signer < threshold || !sign.VerifyHash(&pub, hotstuffDigest(data)) {
 		log.Debug("Dump failed signature ================")
 		log.Debug("signer", "is", signer, "threshold", threshold)
 		log.Debug("Signature", "is ", hex.EncodeToString(bSign))
@@ -898,6 +935,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	if m.DataA != nil && len(m.DataA) > 0 {
 		v.proposedKState = make([]byte, len(m.DataA))
 		copy(v.proposedKState, m.DataA)
+		v.proposedKDigest = hotstuffDigest(v.proposedKState)
 
 		kSign = hsm.SignHash(v.proposedKState)
 	}
@@ -905,6 +943,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	if m.DataB != nil && len(m.DataB) > 0 {
 		v.proposedTState = make([]byte, len(m.DataB))
 		copy(v.proposedTState, m.DataB)
+		v.proposedTDigest = hotstuffDigest(v.proposedTState)
 
 		tSign = hsm.SignHash(v.proposedTState)
 	}
@@ -947,14 +986,20 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 	}
 
 	if v.hasKState() {
-		if !qrum.ValidKSign || !qrum.KSign.VerifyHash(qrum.PubKey, crypto.Keccak256(v.proposedKState)) {
+		if len(v.proposedKDigest) == 0 {
+			v.proposedKDigest = hotstuffDigest(v.proposedKState)
+		}
+		if !qrum.ValidKSign || !qrum.KSign.VerifyHash(qrum.PubKey, v.proposedKDigest) {
 			log.Debug("handlePrepareVoteMsg failed to verify k-state signature", "viewId", m.ViewId)
 			return ErrQCVerification
 		}
 	}
 
 	if v.hasTState() {
-		if !qrum.ValidTSign || !qrum.TSign.VerifyHash(qrum.PubKey, crypto.Keccak256(v.proposedTState)) {
+		if len(v.proposedTDigest) == 0 {
+			v.proposedTDigest = hotstuffDigest(v.proposedTState)
+		}
+		if !qrum.ValidTSign || !qrum.TSign.VerifyHash(qrum.PubKey, v.proposedTDigest) {
 			log.Debug("handlePrepareVoteMsg failed to verify t-state signature", "viewId", m.ViewId)
 			hsm.DumpView(v, true)
 			return ErrQCVerification
@@ -964,9 +1009,9 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 	if v.phaseAsLeader != PhasePreCommit {
 		log.Trace("handlePrepareVoteMsg view phase not match", "viewID", hex.EncodeToString(v.hash[:]), "phase", readablePhase(v.phaseAsLeader), "shouldBe", readablePhase(PhasePreCommit))
 
-		if preCommitMsg, ok := v.leaderMsg[MsgPreCommit]; ok {
-			log.Debug("handlePrepareVoteMsg load PreCommit message and send to replica", "replicaId", m.Id)
-			hsm.app.Write(m.Id, preCommitMsg)
+		if decideMsg, ok := v.leaderMsg[MsgDecide]; ok {
+			log.Debug("handlePrepareVoteMsg load Decide message and send to replica", "replicaId", m.Id)
+			hsm.app.Write(m.Id, decideMsg)
 
 			return nil
 		}
@@ -996,22 +1041,6 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 		return ErrInsufficientQC
 	}
 
-	isTimeout := false
-	if v.waitingMoreVoteInfo {
-		elapsed := time.Now().Sub(v.waitingMoreVoteInfoAt)
-		log.Debug("@@@handlePrepareVoteMsg collect sufficient votes", "viewId", m.ViewId, "number", v.number, "elapsed(s)", elapsed)
-		if elapsed >= params.CollectVoteInfoTimeout {
-			isTimeout = true
-		}
-	}
-
-	if !isTimeout && len(v.prepareVoteInfo) < v.cmLen-1 {
-		if !v.waitingMoreVoteInfo {
-			v.waitingMoreVoteInfo = true
-			v.waitingMoreVoteInfoAt = time.Now()
-		}
-		return nil
-	}
 	v.waitingMoreVoteInfo = false
 	if err := hsm.aggregateQC(v, "prepare", v.prepareVoteInfo); err != nil {
 		log.Debug("aggregate prepare voteInfo failed")
@@ -1117,7 +1146,7 @@ func (hsm *HotstuffProtocolManager) addToUnhandled(m *HotstuffMessage) {
 	}
 	m.ReceivedAt = time.Now() //??
 
-	k := crypto.Keccak256Hash(bs)
+	k := hotstuffDigestHash(bs)
 	hsm.unhandledMsg[k] = m
 }
 
@@ -1174,7 +1203,7 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 }
 
 func (hsm *HotstuffProtocolManager) SignHash(data []byte) []byte {
-	sign := hsm.secretKey.SignHash(crypto.Keccak256(data)).Serialize()
+	sign := hsm.secretKey.SignHash(hotstuffDigest(data)).Serialize()
 	log.Info("Signed hotstuff data!")
 	return sign
 }
