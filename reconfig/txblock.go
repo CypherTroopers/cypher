@@ -134,10 +134,6 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 
 	log.Info("Generated next block", "block num", block.Number(), "num txes", txCount)
 
-	if err := txS.bc.CommitBlockWithState(false, work.publicState); err != nil {
-		panic(err)
-	}
-
 	txS.proposedChain.extend(block)
 
 	elapsed := time.Since(time.Unix(0, int64(header.Time)))
@@ -258,6 +254,23 @@ func (txS *txService) eventLoop() {
 
 type AddressTxes map[common.Address]types.Transactions
 
+const proposalPerAccountLimit = 8
+
+func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
+	if perAccount <= 0 {
+		return addrTxes
+	}
+	limited := make(AddressTxes, len(addrTxes))
+	for addr, txs := range addrTxes {
+		if len(txs) > perAccount {
+			limited[addr] = txs[:perAccount]
+		} else {
+			limited[addr] = txs
+		}
+	}
+	return limited
+}
+
 func (txS *txService) updateChainPerNewHead(newBlock *types.Block) {
 	txS.mu.Lock()
 	defer txS.mu.Unlock()
@@ -305,7 +318,8 @@ func (txS *txService) getTransactions() *types.TransactionsByPriceAndNonce {
 	if err != nil { // TODO: handle
 		panic(err)
 	}
-	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes)
+	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes, time.Now())
+	addrTxes = limitAddressTxes(addrTxes, proposalPerAccountLimit)
 	return types.NewTransactionsByPriceAndNonce(txS.config, txS.bc.CurrentBlock().Number(), addrTxes)
 }
 
@@ -337,7 +351,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 	var allLogs []*types.Log
 	var committedTxes types.Transactions
 	var publicReceipts types.Receipts
-	//	var failedTxes types.Transactions
+	var failedTxes types.Transactions
 
 	gp := new(core.GasPool).AddGas(env.header.GasLimit)
 	txCount := 0
@@ -353,6 +367,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 					log.Warn("Discarding transaction to banned address",
 						"hash", tx.Hash(),
 						"to", banned.Hex())
+					failedTxes = append(failedTxes, tx)
 					txes.Pop()
 					continue
 				}
@@ -362,6 +377,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		from, err := types.Sender(types.NewEIP155Signer(env.config.ChainID), tx)
 		if err != nil {
 			log.Warn("Discarding transaction with invalid sender", "hash", tx.Hash(), "err", err)
+			failedTxes = append(failedTxes, tx)
 			txes.Pop()
 			continue
 		}
@@ -370,6 +386,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 				log.Warn("Discarding transaction from banned address",
 					"hash", tx.Hash(),
 					"from", banned.Hex())
+					failedTxes = append(failedTxes, tx)
 				txes.Pop()
 				continue
 			}
@@ -380,7 +397,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		switch {
 		case err != nil:
 			log.Info("TX failed, will be removed", "hash", tx.Hash(), "err", err)
-			//failedTxes = append(failedTxes, tx)
+			failedTxes = append(failedTxes, tx)
 
 			txes.Pop() // skip rest of txes from this account
 		default:
@@ -393,7 +410,10 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 			txes.Shift()
 		}
 	}
-	//	env.txPool.RemoveBatch(failedTxes)
+	if len(failedTxes) > 0 {
+		env.txPool.RemoveBatch(failedTxes)
+		log.Warn("Removed failed proposal txs from txpool", "count", len(failedTxes))
+	}
 	return committedTxes, publicReceipts, allLogs
 }
 

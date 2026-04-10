@@ -1,6 +1,7 @@
 package reconfig
 
 import (
+	"time"
 	mapset "github.com/deckarep/golang-set"
 	"gopkg.in/oleiade/lane.v1"
 
@@ -9,11 +10,13 @@ import (
 	"github.com/cypherium/cypher/log"
 )
 
+const proposedTxTTL = 1500 * time.Millisecond
+
 type proposedChain struct {
 	head               *types.Block
 	unappliedBlocks    *lane.Deque
 	invalidBlockHashes mapset.Set // This is thread-safe. This set is referred to as our "guard" below.
-	proposedTxes       mapset.Set // This is thread-safe.
+	proposedTxes       map[common.Hash]time.Time
 }
 
 func newProposedChain() *proposedChain {
@@ -21,7 +24,7 @@ func newProposedChain() *proposedChain {
 		head:               nil,
 		unappliedBlocks:    lane.NewDeque(),
 		invalidBlockHashes: mapset.NewSet(),
-		proposedTxes:       mapset.NewSet(),
+		proposedTxes:       make(map[common.Hash]time.Time),
 	}
 }
 
@@ -29,13 +32,13 @@ func (chain *proposedChain) clear(block *types.Block) {
 	chain.head = block
 	chain.unappliedBlocks = lane.NewDeque()
 	chain.invalidBlockHashes.Clear()
-	chain.proposedTxes.Clear()
+	chain.proposedTxes = make(map[common.Hash]time.Time)
 }
 
 // Append a new speculative block
 func (chain *proposedChain) extend(block *types.Block) {
 	chain.head = block
-	chain.recordProposedTransactions(block.Transactions())
+	chain.recordProposedTransactions(block.Transactions(), time.Now())
 	chain.unappliedBlocks.Append(block)
 }
 
@@ -63,9 +66,11 @@ func (chain *proposedChain) accept(acceptedBlock *types.Block) {
 	//    `acceptedBlock` takes precedence over our speculative state.
 	if earliestProposed == nil {
 		chain.head = acceptedBlock
+		chain.cleanupExpiredProposedTxes(time.Now())
 	} else if expectedBlock := earliestProposed.Hash() == acceptedBlock.Hash(); expectedBlock {
 		// Remove the txes in this accepted block from our blacklist.
 		chain.removeProposedTxes(acceptedBlock)
+		chain.cleanupExpiredProposedTxes(time.Now())
 	} else {
 		log.Info("Another node minted; Clearing speculative state", "block", acceptedBlock.Hash())
 
@@ -126,13 +131,9 @@ func (chain *proposedChain) unwindFrom(invalidHash common.Hash, headBlock *types
 // with the same transactions. This is necessary because the TX pool will keep
 // supplying us these transactions until they are in the chain (after having
 // flown through raft).
-func (chain *proposedChain) recordProposedTransactions(txes types.Transactions) {
-	txHashIs := make([]interface{}, len(txes))
-	for i, tx := range txes {
-		txHashIs[i] = tx.Hash()
-	}
-	for _, i := range txHashIs {
-		chain.proposedTxes.Add(i)
+func (chain *proposedChain) recordProposedTransactions(txes types.Transactions, now time.Time) {
+	for _, tx := range txes {
+		chain.proposedTxes[tx.Hash()] = now
 	}
 }
 
@@ -144,28 +145,27 @@ func (chain *proposedChain) recordProposedTransactions(txes types.Transactions) 
 // It's important to remove hashes from this blacklist (once we know we don't
 // need them in there anymore) so that it doesn't grow endlessly.
 func (chain *proposedChain) removeProposedTxes(block *types.Block) {
-	minedTxes := block.Transactions()
-	minedTxInterfaces := make([]interface{}, len(minedTxes))
-	for i, tx := range minedTxes {
-		minedTxInterfaces[i] = tx.Hash()
-	}
-
-	// NOTE: we are using a thread-safe Set here, so it's fine if we access this
-	// here and in mintNewBlock concurrently. using a finer-grained set-specific
-	// lock here is preferable, because mintNewBlock holds its locks for a
-	// nontrivial amount of time.
-	for _, i := range minedTxInterfaces {
-		chain.proposedTxes.Remove(i)
+	for _, tx := range block.Transactions() {
+		delete(chain.proposedTxes, tx.Hash())
 	}
 }
 
-func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes) AddressTxes {
+func (chain *proposedChain) cleanupExpiredProposedTxes(now time.Time) {
+	for hash, ts := range chain.proposedTxes {
+		if now.Sub(ts) > proposedTxTTL {
+			delete(chain.proposedTxes, hash)
+		}
+	}
+}
+
+func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes, now time.Time) AddressTxes {
+	chain.cleanupExpiredProposedTxes(now)
 	newMap := make(AddressTxes)
 
 	for addr, txes := range addrTxes {
 		filteredTxes := make(types.Transactions, 0)
 		for _, tx := range txes {
-			if !chain.proposedTxes.Contains(tx.Hash()) {
+			if _, blocked := chain.proposedTxes[tx.Hash()]; !blocked {
 				filteredTxes = append(filteredTxes, tx)
 			}
 		}

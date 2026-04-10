@@ -1,4 +1,5 @@
 diff --git a/reconfig/proposedChain.go b/reconfig/proposedChain.go
+index 5f8c3ff..1111111 100644
 --- a/reconfig/proposedChain.go
 +++ b/reconfig/proposedChain.go
 @@ -1,6 +1,7 @@
@@ -9,7 +10,7 @@ diff --git a/reconfig/proposedChain.go b/reconfig/proposedChain.go
  	mapset "github.com/deckarep/golang-set"
  	"gopkg.in/oleiade/lane.v1"
  
-@@ -9,17 +10,19 @@ import (
+@@ -9,19 +10,21 @@ import (
  	"github.com/cypherium/cypher/log"
  )
  
@@ -61,7 +62,7 @@ diff --git a/reconfig/proposedChain.go b/reconfig/proposedChain.go
  	} else {
  		log.Info("Another node minted; Clearing speculative state", "block", acceptedBlock.Hash())
  
-@@ -114,15 +119,10 @@ func (chain *proposedChain) unwindFrom(invalidHash common.Hash, headBlock *types
+@@ -114,15 +119,11 @@ func (chain *proposedChain) unwindFrom(invalidHash common.Hash, headBlock *types
  // We keep track of txes we've put in all newly-mined blocks since the last
  // ChainHeadEvent, and filter them out so that we don't try to create blocks
  // with the same transactions. This is necessary because the TX pool will keep
@@ -80,7 +81,7 @@ diff --git a/reconfig/proposedChain.go b/reconfig/proposedChain.go
  	}
  }
  
-@@ -132,23 +132,28 @@ func (chain *proposedChain) recordProposedTransactions(txes types.Transactions)
+@@ -132,27 +132,26 @@ func (chain *proposedChain) recordProposedTransactions(txes types.Transactions)
  // need them in there anymore) so that it doesn't grow endlessly.
  func (chain *proposedChain) removeProposedTxes(block *types.Block) {
 -	minedTxes := block.Transactions()
@@ -122,9 +123,21 @@ diff --git a/reconfig/proposedChain.go b/reconfig/proposedChain.go
  			}
  		}
 diff --git a/reconfig/txblock.go b/reconfig/txblock.go
+index 80a7e89..2222222 100644
 --- a/reconfig/txblock.go
 +++ b/reconfig/txblock.go
-@@ -202,6 +202,22 @@ func (txS *txService) eventLoop() {
+@@ -114,10 +114,6 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
+ 
+ 	log.Info("Generated next block", "block num", block.Number(), "num txes", txCount)
+ 
+-	if err := txS.bc.CommitBlockWithState(false, work.publicState); err != nil {
+-		panic(err)
+-	}
+-
+ 	txS.proposedChain.extend(block)
+ 
+ 	elapsed := time.Since(time.Unix(0, int64(header.Time)))
+@@ -202,6 +198,23 @@ func (txS *txService) eventLoop() {
  
  type AddressTxes map[common.Address]types.Transactions
  
@@ -148,7 +161,7 @@ diff --git a/reconfig/txblock.go b/reconfig/txblock.go
  func (txS *txService) updateChainPerNewHead(newBlock *types.Block) {
  	txS.mu.Lock()
  	defer txS.mu.Unlock()
-@@ -265,7 +281,8 @@ func (txS *txService) getTransactions() *types.TransactionsByPriceAndNonce {
+@@ -265,7 +277,8 @@ func (txS *txService) getTransactions() *types.TransactionsByPriceAndNonce {
  	if err != nil { // TODO: handle
  		panic(err)
  	}
@@ -158,18 +171,7 @@ diff --git a/reconfig/txblock.go b/reconfig/txblock.go
  	return types.NewTransactionsByPriceAndNonce(txS.config, txS.bc.CurrentBlock().Number(), addrTxes)
  }
  
-@@ -117,10 +117,6 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
- 
- 	log.Info("Generated next block", "block num", block.Number(), "num txes", txCount)
- 
--	if err := txS.bc.CommitBlockWithState(false, work.publicState); err != nil {
--		panic(err)
--	}
--
- 	txS.proposedChain.extend(block)
- 
- 	elapsed := time.Since(time.Unix(0, int64(header.Time)))
-@@ -296,7 +308,7 @@ type work struct {
+@@ -296,8 +309,8 @@ type work struct {
  func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc *core.BlockChain) (types.Transactions, types.Receipts, []*types.Log) {
  	var allLogs []*types.Log
  	var committedTxes types.Transactions
@@ -179,7 +181,7 @@ diff --git a/reconfig/txblock.go b/reconfig/txblock.go
  
  	gp := new(core.GasPool).AddGas(env.header.GasLimit)
  	txCount := 0
-@@ -313,6 +325,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+@@ -313,6 +326,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
  					log.Warn("Discarding transaction to banned address",
  						"hash", tx.Hash(),
  						"to", banned.Hex())
@@ -187,7 +189,7 @@ diff --git a/reconfig/txblock.go b/reconfig/txblock.go
  					txes.Pop()
  					continue
  				}
-@@ -321,6 +334,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+@@ -321,7 +335,8 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
  		// Check sender
  		from, err := types.Sender(types.NewEIP155Signer(env.config.ChainID), tx)
  		if err != nil {
@@ -196,15 +198,15 @@ diff --git a/reconfig/txblock.go b/reconfig/txblock.go
  			txes.Pop()
  			continue
  		}
-@@ -329,6 +343,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+@@ -329,6 +344,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
  				log.Warn("Discarding transaction from banned address",
  					"hash", tx.Hash(),
  					"from", banned.Hex())
-+				failedTxes = append(failedTxes, tx)
++					failedTxes = append(failedTxes, tx)
  				txes.Pop()
  				continue
  			}
-@@ -340,7 +355,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+@@ -340,7 +356,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
  		switch {
  		case err != nil:
  			log.Info("TX failed, will be removed", "hash", tx.Hash(), "err", err)
@@ -213,7 +215,7 @@ diff --git a/reconfig/txblock.go b/reconfig/txblock.go
  
  			txes.Pop() // skip rest of txes from this account
  		default:
-@@ -354,7 +369,10 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+@@ -354,7 +370,10 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
  			txes.Shift()
  		}
  	}
@@ -226,9 +228,10 @@ diff --git a/reconfig/txblock.go b/reconfig/txblock.go
  }
  
 diff --git a/reconfig/paceMaker.go b/reconfig/paceMaker.go
+index b2d9cf0..3333333 100644
 --- a/reconfig/paceMaker.go
 +++ b/reconfig/paceMaker.go
-@@ -8,16 +8,16 @@
+@@ -8,20 +8,20 @@
  package reconfig
  
  import (
@@ -315,7 +318,7 @@ diff --git a/reconfig/paceMaker.go b/reconfig/paceMaker.go
  func (t *paceMakerTimer) setNextLeader(isDone bool) {
  	curView := t.service.GetCurrentView()
  	t.service.setNextLeader(isDone)
-@@ -169,27 +186,32 @@ func (t *paceMakerTimer) procBlockDone(curBlock *types.Block, curKeyBlock *type
+@@ -169,26 +186,31 @@ func (t *paceMakerTimer) procBlockDone(curBlock *types.Block, curKeyBlock *type
  
  }
  
@@ -357,6 +360,7 @@ diff --git a/reconfig/paceMaker.go b/reconfig/paceMaker.go
 -*/
 +
 diff --git a/reconfig/service.go b/reconfig/service.go
+index adcbcc8..4444444 100644
 --- a/reconfig/service.go
 +++ b/reconfig/service.go
 @@ -18,6 +18,9 @@ import (
@@ -369,7 +373,7 @@ diff --git a/reconfig/service.go b/reconfig/service.go
  type committeeInfo struct {
  	Committee *bftview.Committee
  	KeyHash   common.Hash
-@@ -207,10 +210,10 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byt
+@@ -207,12 +210,12 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byt
  	proposeOK := false
  	defer func() {
  		if !proposeOK {
@@ -384,7 +388,7 @@ diff --git a/reconfig/service.go b/reconfig/service.go
  			}()
  		} else {
  			s.lastProposeTime = time.Now()
-@@ -255,6 +258,18 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byt
+@@ -255,6 +258,17 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byt
  	return nil, nil, data, nil
  }
  
@@ -411,7 +415,7 @@ diff --git a/reconfig/service.go b/reconfig/service.go
  			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
  			continue
  		}
-@@ -328,7 +343,7 @@ func (s *Service) handleHotStuffMsg() {
+@@ -328,10 +343,10 @@ func (s *Service) handleHotStuffMsg() {
  
  		err := s.protocolMng.HandleMessage(msg.hMsg)
  		if err != nil && msgCode == hotstuff.MsgStartNewView {
@@ -421,13 +425,5 @@ diff --git a/reconfig/service.go b/reconfig/service.go
  				s.sendNewViewMsg(curN)
  			}(curN)
  		}
-diff --git a/core/tx_pool.go b/core/tx_pool.go
---- a/core/tx_pool.go
-+++ b/core/tx_pool.go
-@@ -1,7 +1,7 @@
- var (
- 	evictionInterval    = time.Minute     // Time interval to check for evictable transactions
- 	statsReportInterval = 8 * time.Second // Time interval to report transaction pool stats
--	reqWaitTimeout      = 60 * time.Second
-+	reqWaitTimeout      = 3 * time.Second
- )
+ 	}
+ }
