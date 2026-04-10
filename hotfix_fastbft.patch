@@ -1,0 +1,433 @@
+diff --git a/reconfig/proposedChain.go b/reconfig/proposedChain.go
+--- a/reconfig/proposedChain.go
++++ b/reconfig/proposedChain.go
+@@ -1,6 +1,7 @@
+ package reconfig
+ 
+ import (
++	"time"
+ 	mapset "github.com/deckarep/golang-set"
+ 	"gopkg.in/oleiade/lane.v1"
+ 
+@@ -9,17 +10,19 @@ import (
+ 	"github.com/cypherium/cypher/log"
+ )
+ 
++const proposedTxTTL = 1500 * time.Millisecond
++
+ type proposedChain struct {
+ 	head               *types.Block
+ 	unappliedBlocks    *lane.Deque
+ 	invalidBlockHashes mapset.Set // This is thread-safe. This set is referred to as our "guard" below.
+-	proposedTxes       mapset.Set // This is thread-safe.
++	proposedTxes       map[common.Hash]time.Time
+ }
+ 
+ func newProposedChain() *proposedChain {
+ 	return &proposedChain{
+ 		head:               nil,
+ 		unappliedBlocks:    lane.NewDeque(),
+ 		invalidBlockHashes: mapset.NewSet(),
+-		proposedTxes:       mapset.NewSet(),
++		proposedTxes:       make(map[common.Hash]time.Time),
+ 	}
+ }
+ 
+@@ -27,13 +30,13 @@ func (chain *proposedChain) clear(block *types.Block) {
+ 	chain.head = block
+ 	chain.unappliedBlocks = lane.NewDeque()
+ 	chain.invalidBlockHashes.Clear()
+-	chain.proposedTxes.Clear()
++	chain.proposedTxes = make(map[common.Hash]time.Time)
+ }
+ 
+ // Append a new speculative block
+ func (chain *proposedChain) extend(block *types.Block) {
+ 	chain.head = block
+-	chain.recordProposedTransactions(block.Transactions())
++	chain.recordProposedTransactions(block.Transactions(), time.Now())
+ 	chain.unappliedBlocks.Append(block)
+ }
+ 
+@@ -58,9 +61,11 @@ func (chain *proposedChain) accept(acceptedBlock *types.Block) {
+ 	//    `acceptedBlock` takes precedence over our speculative state.
+ 	if earliestProposed == nil {
+ 		chain.head = acceptedBlock
++		chain.cleanupExpiredProposedTxes(time.Now())
+ 	} else if expectedBlock := earliestProposed.Hash() == acceptedBlock.Hash(); expectedBlock {
+ 		// Remove the txes in this accepted block from our blacklist.
+ 		chain.removeProposedTxes(acceptedBlock)
++		chain.cleanupExpiredProposedTxes(time.Now())
+ 	} else {
+ 		log.Info("Another node minted; Clearing speculative state", "block", acceptedBlock.Hash())
+ 
+@@ -114,15 +119,10 @@ func (chain *proposedChain) unwindFrom(invalidHash common.Hash, headBlock *types
+ // We keep track of txes we've put in all newly-mined blocks since the last
+ // ChainHeadEvent, and filter them out so that we don't try to create blocks
+ // with the same transactions. This is necessary because the TX pool will keep
+ // supplying us these transactions until they are in the chain (after having
+ // flown through raft).
+-func (chain *proposedChain) recordProposedTransactions(txes types.Transactions) {
+-	txHashIs := make([]interface{}, len(txes))
+-	for i, tx := range txes {
+-		txHashIs[i] = tx.Hash()
+-	}
+-	for _, i := range txHashIs {
+-		chain.proposedTxes.Add(i)
++func (chain *proposedChain) recordProposedTransactions(txes types.Transactions, now time.Time) {
++	for _, tx := range txes {
++		chain.proposedTxes[tx.Hash()] = now
+ 	}
+ }
+ 
+@@ -132,23 +132,28 @@ func (chain *proposedChain) recordProposedTransactions(txes types.Transactions)
+ // need them in there anymore) so that it doesn't grow endlessly.
+ func (chain *proposedChain) removeProposedTxes(block *types.Block) {
+-	minedTxes := block.Transactions()
+-	minedTxInterfaces := make([]interface{}, len(minedTxes))
+-	for i, tx := range minedTxes {
+-		minedTxInterfaces[i] = tx.Hash()
+-	}
+-
+-	// NOTE: we are using a thread-safe Set here, so it's fine if we access this
+-	// here and in mintNewBlock concurrently. using a finer-grained set-specific
+-	// lock here is preferable, because mintNewBlock holds its locks for a
+-	// nontrivial amount of time.
+-	for _, i := range minedTxInterfaces {
+-		chain.proposedTxes.Remove(i)
++	for _, tx := range block.Transactions() {
++		delete(chain.proposedTxes, tx.Hash())
+ 	}
+ }
+ 
+-func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes) AddressTxes {
++func (chain *proposedChain) cleanupExpiredProposedTxes(now time.Time) {
++	for hash, ts := range chain.proposedTxes {
++		if now.Sub(ts) > proposedTxTTL {
++			delete(chain.proposedTxes, hash)
++		}
++	}
++}
++
++func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes, now time.Time) AddressTxes {
++	chain.cleanupExpiredProposedTxes(now)
+ 	newMap := make(AddressTxes)
+ 
+ 	for addr, txes := range addrTxes {
+ 		filteredTxes := make(types.Transactions, 0)
+ 		for _, tx := range txes {
+-			if !chain.proposedTxes.Contains(tx.Hash()) {
++			if _, blocked := chain.proposedTxes[tx.Hash()]; !blocked {
+ 				filteredTxes = append(filteredTxes, tx)
+ 			}
+ 		}
+diff --git a/reconfig/txblock.go b/reconfig/txblock.go
+--- a/reconfig/txblock.go
++++ b/reconfig/txblock.go
+@@ -202,6 +202,22 @@ func (txS *txService) eventLoop() {
+ 
+ type AddressTxes map[common.Address]types.Transactions
+ 
++const proposalPerAccountLimit = 8
++
++func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
++	if perAccount <= 0 {
++		return addrTxes
++	}
++	limited := make(AddressTxes, len(addrTxes))
++	for addr, txs := range addrTxes {
++		if len(txs) > perAccount {
++			limited[addr] = txs[:perAccount]
++		} else {
++			limited[addr] = txs
++		}
++	}
++	return limited
++}
++
+ func (txS *txService) updateChainPerNewHead(newBlock *types.Block) {
+ 	txS.mu.Lock()
+ 	defer txS.mu.Unlock()
+@@ -265,7 +281,8 @@ func (txS *txService) getTransactions() *types.TransactionsByPriceAndNonce {
+ 	if err != nil { // TODO: handle
+ 		panic(err)
+ 	}
+-	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes)
++	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes, time.Now())
++	addrTxes = limitAddressTxes(addrTxes, proposalPerAccountLimit)
+ 	return types.NewTransactionsByPriceAndNonce(txS.config, txS.bc.CurrentBlock().Number(), addrTxes)
+ }
+ 
+@@ -117,10 +117,6 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
+ 
+ 	log.Info("Generated next block", "block num", block.Number(), "num txes", txCount)
+ 
+-	if err := txS.bc.CommitBlockWithState(false, work.publicState); err != nil {
+-		panic(err)
+-	}
+-
+ 	txS.proposedChain.extend(block)
+ 
+ 	elapsed := time.Since(time.Unix(0, int64(header.Time)))
+@@ -296,7 +308,7 @@ type work struct {
+ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc *core.BlockChain) (types.Transactions, types.Receipts, []*types.Log) {
+ 	var allLogs []*types.Log
+ 	var committedTxes types.Transactions
+ 	var publicReceipts types.Receipts
+-	//	var failedTxes types.Transactions
++	var failedTxes types.Transactions
+ 
+ 	gp := new(core.GasPool).AddGas(env.header.GasLimit)
+ 	txCount := 0
+@@ -313,6 +325,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+ 					log.Warn("Discarding transaction to banned address",
+ 						"hash", tx.Hash(),
+ 						"to", banned.Hex())
++					failedTxes = append(failedTxes, tx)
+ 					txes.Pop()
+ 					continue
+ 				}
+@@ -321,6 +334,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+ 		// Check sender
+ 		from, err := types.Sender(types.NewEIP155Signer(env.config.ChainID), tx)
+ 		if err != nil {
+ 			log.Warn("Discarding transaction with invalid sender", "hash", tx.Hash(), "err", err)
++			failedTxes = append(failedTxes, tx)
+ 			txes.Pop()
+ 			continue
+ 		}
+@@ -329,6 +343,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+ 				log.Warn("Discarding transaction from banned address",
+ 					"hash", tx.Hash(),
+ 					"from", banned.Hex())
++				failedTxes = append(failedTxes, tx)
+ 				txes.Pop()
+ 				continue
+ 			}
+@@ -340,7 +355,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+ 		switch {
+ 		case err != nil:
+ 			log.Info("TX failed, will be removed", "hash", tx.Hash(), "err", err)
+-			//failedTxes = append(failedTxes, tx)
++			failedTxes = append(failedTxes, tx)
+ 
+ 			txes.Pop() // skip rest of txes from this account
+ 		default:
+@@ -354,7 +369,10 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc
+ 			txes.Shift()
+ 		}
+ 	}
+-	//	env.txPool.RemoveBatch(failedTxes)
++	if len(failedTxes) > 0 {
++		env.txPool.RemoveBatch(failedTxes)
++		log.Warn("Removed failed proposal txs from txpool", "count", len(failedTxes))
++	}
+ 	return committedTxes, publicReceipts, allLogs
+ }
+ 
+diff --git a/reconfig/paceMaker.go b/reconfig/paceMaker.go
+--- a/reconfig/paceMaker.go
++++ b/reconfig/paceMaker.go
+@@ -8,16 +8,16 @@
+ package reconfig
+ 
+ import (
+-	//	"runtime"
+ 	"sync"
+ 	"time"
+ 
+ 	"github.com/cypherium/cypher/core"
+ 	"github.com/cypherium/cypher/core/types"
+-	//	"github.com/cypherium/cypher/event"
++	"github.com/cypherium/cypher/event"
+ 	"github.com/cypherium/cypher/log"
+ 	"github.com/cypherium/cypher/params"
+ 	"github.com/cypherium/cypher/reconfig/bftview"
+ )
+ 
+ var maxPaceMakerTime time.Time
+ var fixedModeKeyBlockInterval = 10 * time.Minute
++var paceMakerPollInterval = 10 * time.Millisecond
+ 
+ type paceMakerTimer struct {
+ 	startTime     time.Time
+@@ -31,8 +31,8 @@ type paceMakerTimer struct {
+ 	kbc           *core.KeyBlockChain
+ 	mu            sync.Mutex
+ 
+-	//	txsCh  chan core.NewTxsEvent
+-	//	txsSub event.Subscription
++	txsCh  chan core.NewTxsEvent
++	txsSub event.Subscription
+ }
+ 
+ func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *ReconfigBackend) *paceMakerTimer {
+@@ -47,9 +47,9 @@ func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *Reconfi
+ 		config:        config,
+ 	}
+ 
+-	//	t.txsCh = make(chan core.NewTxsEvent, 128)
+-	//	t.txsSub = backend.TxPool().SubscribeNewTxsEvent(t.txsCh)
+-	//	go t.txsEventLoop()
++	t.txsCh = make(chan core.NewTxsEvent, 128)
++	t.txsSub = backend.TxPool().SubscribeNewTxsEvent(t.txsCh)
++	go t.txsEventLoop()
+ 
+ 	go t.loopTimer()
+ 	return t
+@@ -80,6 +80,9 @@ func (t *paceMakerTimer) close() {
+ 	t.mu.Lock()
+ 	defer t.mu.Unlock()
+ 	t.beClose = true
++	if t.txsSub != nil {
++		t.txsSub.Unsubscribe()
++	}
+ }
+ func (t *paceMakerTimer) get() (time.Time, bool, bool, int) {
+ 	t.mu.Lock()
+@@ -90,7 +93,7 @@ func (t *paceMakerTimer) get() (time.Time, bool, bool, int) {
+ // Loop for status action
+ func (t *paceMakerTimer) loopTimer() {
+ 	for {
+-		time.Sleep(50 * time.Millisecond)
++		time.Sleep(paceMakerPollInterval)
+ 		startTime, beStop, beClose, retryNumber := t.get()
+ 		if beClose {
+ 			return
+@@ -126,6 +129,20 @@ func (t *paceMakerTimer) loopTimer() {
+ 	}
+ }
+ 
++func (t *paceMakerTimer) triggerTryPropose() {
++	curView := t.service.GetCurrentView()
++	if !bftview.IamLeader(curView.LeaderIndex) {
++		return
++	}
++	pending, _ := t.txPool.Stats()
++	if pending == 0 {
++		return
++	}
++	if svc, ok := t.service.(*Service); ok {
++		svc.triggerTryPropose(curView.TxNumber)
++	}
++}
++
+ func (t *paceMakerTimer) setNextLeader(isDone bool) {
+ 	curView := t.service.GetCurrentView()
+ 	t.service.setNextLeader(isDone)
+@@ -169,27 +186,32 @@ func (t *paceMakerTimer) procBlockDone(curBlock *types.Block, curKeyBlock *type
+ 
+ }
+ 
+-/*
+ func (t *paceMakerTimer) txsEventLoop() {
+ 	for {
+ 		select {
+-		case <-t.txsCh: // Event for New TXS coming
+-			//log.Debug("core.NewTxsEvent")
++		case <-t.txsCh:
+ 			t.mu.Lock()
+-			if t.beStop || t.beClose {
+-				t.mu.Unlock()
++			beStop := t.beStop
++			beClose := t.beClose
++			if !beStop && !beClose {
++				t.startTime = time.Now()
++			}
++			t.mu.Unlock()
++
++			if beClose {
+ 				return
+ 			}
+-			if t.startTime == maxPaceMakerTime {
+-				t.startTime = time.Now()
++			if beStop || bftview.IamMember() < 0 {
++				continue
+ 			}
+-			t.mu.Unlock()
++
++			t.triggerTryPropose()
+ 
+ 		case <-t.txsSub.Err():
+ 			log.Info("txsEventLoop stopped")
+ 			return
+ 		}
+ 	}
+ }
+-*/
++
+diff --git a/reconfig/service.go b/reconfig/service.go
+--- a/reconfig/service.go
++++ b/reconfig/service.go
+@@ -18,6 +18,9 @@ import (
+ 	"github.com/cypherium/cypher/rnet/network"
+ )
+ 
++const failedProposalRetry = 200 * time.Millisecond
++const hotstuffIdleSleep = 10 * time.Millisecond
++
+ type committeeInfo struct {
+ 	Committee *bftview.Committee
+ 	KeyHash   common.Hash
+@@ -207,10 +210,10 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byt
+ 	proposeOK := false
+ 	defer func() {
+ 		if !proposeOK {
+ 			go func() {
+-				time.Sleep(2 * time.Second)
++				time.Sleep(failedProposalRetry)
+ 				curView := s.GetCurrentView()
+ 				if bftview.IamLeader(curView.LeaderIndex) {
+-					s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, lastN: s.bc.CurrentBlockN(), hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose}})
++					s.triggerTryPropose(s.bc.CurrentBlockN())
+ 				}
+ 			}()
+ 		} else {
+ 			s.lastProposeTime = time.Now()
+@@ -255,6 +258,18 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byt
+ 	return nil, nil, data, nil
+ }
+ 
++func (s *Service) triggerTryPropose(lastN uint64) {
++	if atomic.LoadInt32(&s.runningState) != 1 {
++		return
++	}
++	s.hotstuffMsgQ.PushBack(&hotstuffMsg{
++		sid:   nil,
++		lastN: lastN,
++		hMsg:  &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose},
++	})
++}
++
+ // OnViewDone call by hotstuff
+ func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
+ 	if !s.isRunning() {
+@@ -300,7 +315,7 @@ func (s *Service) handleHotStuffMsg() {
+ 	for {
+ 		data := s.hotstuffMsgQ.PopFront()
+ 		if data == nil {
+-			time.Sleep(100 * time.Millisecond)
++			time.Sleep(hotstuffIdleSleep)
+ 			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+ 			continue
+ 		}
+@@ -328,7 +343,7 @@ func (s *Service) handleHotStuffMsg() {
+ 
+ 		err := s.protocolMng.HandleMessage(msg.hMsg)
+ 		if err != nil && msgCode == hotstuff.MsgStartNewView {
+ 			go func(curN uint64) {
+-				time.Sleep(2 * time.Second)
++				time.Sleep(failedProposalRetry)
+ 				s.sendNewViewMsg(curN)
+ 			}(curN)
+ 		}
+diff --git a/core/tx_pool.go b/core/tx_pool.go
+--- a/core/tx_pool.go
++++ b/core/tx_pool.go
+@@ -1,7 +1,7 @@
+ var (
+ 	evictionInterval    = time.Minute     // Time interval to check for evictable transactions
+ 	statsReportInterval = 8 * time.Second // Time interval to report transaction pool stats
+-	reqWaitTimeout      = 60 * time.Second
++	reqWaitTimeout      = 3 * time.Second
+ )
