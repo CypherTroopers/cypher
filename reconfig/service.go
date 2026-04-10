@@ -36,6 +36,9 @@ import (
 	"github.com/cypherium/cypher/rnet/network"
 )
 
+const failedProposalRetry = 200 * time.Millisecond
+const hotstuffIdleSleep = 10 * time.Millisecond
+
 type committeeInfo struct {
 	Committee *bftview.Committee
 	KeyHash   common.Hash
@@ -283,10 +286,10 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	defer func() {
 		if !proposeOK {
 			go func() {
-				time.Sleep(2 * time.Second)
+				time.Sleep(failedProposalRetry)
 				curView := s.GetCurrentView()
 				if bftview.IamLeader(curView.LeaderIndex) {
-					s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, lastN: s.bc.CurrentBlockN(), hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose}})
+					s.triggerTryPropose(s.bc.CurrentBlockN())
 				}
 			}()
 		} else {
@@ -343,6 +346,17 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	}
 	proposeOK = true
 	return nil, nil, data, nil
+}
+
+func (s *Service) triggerTryPropose(lastN uint64) {
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		return
+	}
+	s.hotstuffMsgQ.PushBack(&hotstuffMsg{
+		sid:   nil,
+		lastN: lastN,
+		hMsg:  &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose},
+	})
 }
 
 // OnViewDone call by hotstuff
@@ -419,7 +433,7 @@ func (s *Service) handleHotStuffMsg() {
 	for {
 		data := s.hotstuffMsgQ.PopFront()
 		if data == nil {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(hotstuffIdleSleep)
 			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
 			continue
 		}
@@ -448,7 +462,7 @@ func (s *Service) handleHotStuffMsg() {
 		err := s.protocolMng.HandleMessage(msg.hMsg)
 		if err != nil && msgCode == hotstuff.MsgStartNewView {
 			go func(curN uint64) {
-				time.Sleep(2 * time.Second)
+				time.Sleep(failedProposalRetry)
 				s.sendNewViewMsg(curN)
 			}(curN)
 		}
