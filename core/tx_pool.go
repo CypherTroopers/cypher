@@ -646,15 +646,9 @@ func (pool *TxPool) PendingByLane(lane TxLane) (map[common.Address]types.Transac
 	pending := make(map[common.Address]types.Transactions)
 	for addr, list := range pool.pending {
 		src := list.Flatten()
-		if lane == TxLaneSlow {
-			if len(src) > 0 {
-				pending[addr] = src
-			}
-			continue
-		}
 		dst := make(types.Transactions, 0, len(src))
 		for _, tx := range src {
-			if ClassifyTxLane(tx) != TxLaneFast {
+			if ClassifyTxLane(tx) != lane {
 				break
 			}
 			dst = append(dst, tx)
