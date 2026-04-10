@@ -141,6 +141,13 @@ func (m *txSortedMap) filter(filter func(*types.Transaction) bool) types.Transac
 
 // Cap places a hard limit on the number of items, returning all transactions
 // exceeding that limit.
+
+func (l *txList) FilterNonceAbove(maxNonce uint64) types.Transactions {
+	return l.txs.Filter(func(tx *types.Transaction) bool {
+		return tx.Nonce() > maxNonce
+	})
+}
+
 func (m *txSortedMap) Cap(threshold int) types.Transactions {
 	// Short circuit if the number of items is under the limit
 	if len(m.items) <= threshold {

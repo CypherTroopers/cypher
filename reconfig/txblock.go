@@ -363,7 +363,6 @@ func classifyCommitTxError(err error) failedTxAction {
 	}
 }
 
-
 func applyFailedTxAction(txes *types.TransactionsByPriceAndNonce, failedTxes *types.Transactions, tx *types.Transaction, action failedTxAction) {
 	switch action {
 	case failedTxDropAndShift:
@@ -440,7 +439,11 @@ func blockMaxTxCount(blockType uint8) uint64 {
 }
 
 func (txS *txService) getTransactions(blockType uint8) *types.TransactionsByPriceAndNonce {
-	allAddrTxes, err := txS.txPool.Pending()
+	lane := core.TxLaneSlow
+	if isFastBlockType(blockType) {
+		lane = core.TxLaneFast
+	}
+	allAddrTxes, err := txS.txPool.PendingByLane(lane)
 	if err != nil { // TODO: handle
 		panic(err)
 	}
@@ -451,6 +454,30 @@ func (txS *txService) getTransactions(blockType uint8) *types.TransactionsByPric
 }
 
 // Sends-off events asynchronously.
+
+func precheckTxForProposal(st *state.StateDB, header *types.Header, tx *types.Transaction, from common.Address) error {
+	if st.GetNonce(from) > tx.Nonce() {
+		return core.ErrNonceTooLow
+	}
+	if st.GetNonce(from) < tx.Nonce() {
+		return core.ErrNonceTooHigh
+	}
+	if tx.Gas() > header.GasLimit {
+		return core.ErrGasLimit
+	}
+	if st.GetBalance(from).Cmp(tx.Cost()) < 0 {
+		return core.ErrInsufficientFunds
+	}
+	intrGas, err := core.IntrinsicGas(tx.Data(), tx.To() == nil)
+	if err != nil {
+		return err
+	}
+	if tx.Gas() < intrGas {
+		return core.ErrIntrinsicGas
+	}
+	return nil
+}
+
 func (txS *txService) firePendingBlockEvents(logs []*types.Log) {
 	// Copy logs before we mutate them, adding a block hash.
 	copiedLogs := make([]*types.Log, len(logs))
@@ -483,6 +510,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 	var failedTxes types.Transactions
 
 	gp := new(core.GasPool).AddGas(env.header.GasLimit)
+	signer := types.NewEIP155Signer(env.config.ChainID)
 	txCount := 0
 
 	for {
@@ -510,7 +538,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 			}
 		}
 		// Check sender
-		from, err := types.Sender(types.NewEIP155Signer(env.config.ChainID), tx)
+		from, err := types.Sender(signer, tx)
 		if err != nil {
 			log.Warn("Discarding transaction with invalid sender", "hash", tx.Hash(), "err", err)
 			applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
@@ -528,6 +556,12 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 			}
 		}
 		if bannedFrom {
+			continue
+		}
+		if err := precheckTxForProposal(env.publicState, env.header, tx, from); err != nil {
+			action := classifyCommitTxError(err)
+			logFailedTxAction(tx, err, action)
+			applyFailedTxAction(txes, &failedTxes, tx, action)
 			continue
 		}
 		env.publicState.Prepare(tx.Hash(), common.Hash{}, txCount)

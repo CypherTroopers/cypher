@@ -74,6 +74,10 @@ var (
 	// with a different one without the required price bump.
 	ErrReplaceUnderpriced = errors.New("replacement transaction underpriced")
 
+	// ErrNonceTooFarInFuture is returned if a transaction nonce is too far ahead
+	// of the currently accepted txpool execution window.
+	ErrNonceTooFarInFuture = errors.New("nonce too far in future")
+
 	// ErrGasLimit is returned if a transaction's requested gas limit exceeds the
 	// maximum allowance of the current block.
 	ErrGasLimit = errors.New("exceeds block gas limit")
@@ -136,6 +140,18 @@ const (
 	TxStatusIncluded
 )
 
+type TxLane uint8
+
+const (
+	TxLaneFast TxLane = iota
+	TxLaneSlow
+)
+
+const (
+	txLaneFastMaxDataBytes = 1024
+	txLaneFastMaxGasPerTx  = uint64(300000)
+)
+
 // blockChain provides the state of blockchain and current gas limit to do
 // some pre checks in tx pool and event subscribers.
 type blockChain interface {
@@ -161,6 +177,13 @@ type TxPoolConfig struct {
 	AccountQueue uint64 // Maximum number of non-executable transaction slots permitted per account
 	GlobalQueue  uint64 // Maximum number of non-executable transaction slots for all accounts
 
+	RemoteAccountWindow uint64        // Max future nonce distance allowed for remote txs
+	LocalAccountWindow  uint64        // Max future nonce distance allowed for local txs
+	FastPendingLifetime time.Duration // Max age for fast-lane pending txs
+	SlowPendingLifetime time.Duration // Max age for slow-lane pending txs
+	FastQueuedLifetime  time.Duration // Max age for fast-lane queued txs
+	SlowQueuedLifetime  time.Duration // Max age for slow-lane queued txs
+
 	Lifetime time.Duration // Maximum amount of time non-executable transaction are queued
 
 	TransactionSizeLimit uint64 // Maximum size allowed for valid transaction (in KB)
@@ -180,6 +203,13 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	GlobalSlots:  4096,
 	AccountQueue: 64,
 	GlobalQueue:  1024,
+
+	RemoteAccountWindow: 8,
+	LocalAccountWindow:  32,
+	FastPendingLifetime: 2 * time.Minute,
+	SlowPendingLifetime: 10 * time.Minute,
+	FastQueuedLifetime:  5 * time.Minute,
+	SlowQueuedLifetime:  30 * time.Minute,
 
 	Lifetime: 3 * time.Hour,
 
@@ -218,6 +248,30 @@ func (config *TxPoolConfig) sanitize() TxPoolConfig {
 	if conf.GlobalQueue < 1 {
 		log.Warn("Sanitizing invalid txpool global queue", "provided", conf.GlobalQueue, "updated", DefaultTxPoolConfig.GlobalQueue)
 		conf.GlobalQueue = DefaultTxPoolConfig.GlobalQueue
+	}
+	if conf.RemoteAccountWindow < 1 {
+		log.Warn("Sanitizing invalid txpool remote account window", "provided", conf.RemoteAccountWindow, "updated", DefaultTxPoolConfig.RemoteAccountWindow)
+		conf.RemoteAccountWindow = DefaultTxPoolConfig.RemoteAccountWindow
+	}
+	if conf.LocalAccountWindow < 1 {
+		log.Warn("Sanitizing invalid txpool local account window", "provided", conf.LocalAccountWindow, "updated", DefaultTxPoolConfig.LocalAccountWindow)
+		conf.LocalAccountWindow = DefaultTxPoolConfig.LocalAccountWindow
+	}
+	if conf.FastPendingLifetime < time.Second {
+		log.Warn("Sanitizing invalid txpool fast pending lifetime", "provided", conf.FastPendingLifetime, "updated", DefaultTxPoolConfig.FastPendingLifetime)
+		conf.FastPendingLifetime = DefaultTxPoolConfig.FastPendingLifetime
+	}
+	if conf.SlowPendingLifetime < time.Second {
+		log.Warn("Sanitizing invalid txpool slow pending lifetime", "provided", conf.SlowPendingLifetime, "updated", DefaultTxPoolConfig.SlowPendingLifetime)
+		conf.SlowPendingLifetime = DefaultTxPoolConfig.SlowPendingLifetime
+	}
+	if conf.FastQueuedLifetime < time.Second {
+		log.Warn("Sanitizing invalid txpool fast queued lifetime", "provided", conf.FastQueuedLifetime, "updated", DefaultTxPoolConfig.FastQueuedLifetime)
+		conf.FastQueuedLifetime = DefaultTxPoolConfig.FastQueuedLifetime
+	}
+	if conf.SlowQueuedLifetime < time.Second {
+		log.Warn("Sanitizing invalid txpool slow queued lifetime", "provided", conf.SlowQueuedLifetime, "updated", DefaultTxPoolConfig.SlowQueuedLifetime)
+		conf.SlowQueuedLifetime = DefaultTxPoolConfig.SlowQueuedLifetime
 	}
 	if conf.Lifetime < 1 {
 		log.Warn("Sanitizing invalid txpool lifetime", "provided", conf.Lifetime, "updated", DefaultTxPoolConfig.Lifetime)
@@ -258,6 +312,7 @@ type TxPool struct {
 	beats   map[common.Address]time.Time // Last heartbeat from each known account
 	all     *txLookup                    // All transactions to allow lookups
 	priced  *txPricedList                // All transactions sorted by price
+	seen    map[common.Hash]time.Time    // First acceptance time per tx hash
 
 	chainHeadCh       chan ChainHeadEvent
 	chainHeadSub      event.Subscription
@@ -290,6 +345,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		queue:           make(map[common.Address]*txList),
 		beats:           make(map[common.Address]time.Time),
 		all:             newTxLookup(),
+		seen:            make(map[common.Hash]time.Time),
 		chainHeadCh:     make(chan ChainHeadEvent, chainHeadChanSize),
 		reqResetCh:      make(chan *txpoolResetRequest),
 		reqPromoteCh:    make(chan *accountSet),
@@ -392,6 +448,7 @@ func (pool *TxPool) loop() {
 					queuedEvictionMeter.Mark(int64(len(list)))
 				}
 			}
+			pool.evictStaleTransactionsLocked(time.Now())
 			pool.mu.Unlock()
 
 		// Handle local transaction journal rotation
@@ -537,6 +594,123 @@ func (pool *TxPool) local() map[common.Address]types.Transactions {
 }
 
 // validateTx checks whether a transaction is valid according to the consensus
+
+func ClassifyTxLane(tx *types.Transaction) TxLane {
+	if tx == nil {
+		return TxLaneSlow
+	}
+	if tx.To() == nil {
+		return TxLaneSlow
+	}
+	if len(tx.Data()) > txLaneFastMaxDataBytes {
+		return TxLaneSlow
+	}
+	if tx.Gas() > txLaneFastMaxGasPerTx {
+		return TxLaneSlow
+	}
+	return TxLaneFast
+}
+
+func (pool *TxPool) accountWindow(local bool) uint64 {
+	if local {
+		return pool.config.LocalAccountWindow
+	}
+	return pool.config.RemoteAccountWindow
+}
+
+func (pool *TxPool) txLifetime(lane TxLane, pending bool) time.Duration {
+	if pending {
+		if lane == TxLaneFast {
+			return pool.config.FastPendingLifetime
+		}
+		return pool.config.SlowPendingLifetime
+	}
+	if lane == TxLaneFast {
+		return pool.config.FastQueuedLifetime
+	}
+	return pool.config.SlowQueuedLifetime
+}
+
+func (pool *TxPool) noteSeen(hash common.Hash) {
+	if _, ok := pool.seen[hash]; !ok {
+		pool.seen[hash] = time.Now()
+	}
+}
+
+func (pool *TxPool) PendingByLane(lane TxLane) (map[common.Address]types.Transactions, error) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	pending := make(map[common.Address]types.Transactions)
+	for addr, list := range pool.pending {
+		src := list.Flatten()
+		if lane == TxLaneSlow {
+			if len(src) > 0 {
+				pending[addr] = src
+			}
+			continue
+		}
+		dst := make(types.Transactions, 0, len(src))
+		for _, tx := range src {
+			if ClassifyTxLane(tx) != TxLaneFast {
+				break
+			}
+			dst = append(dst, tx)
+		}
+		if len(dst) > 0 {
+			pending[addr] = dst
+		}
+	}
+	return pending, nil
+}
+
+func (pool *TxPool) evictStaleTransactionsLocked(now time.Time) {
+	var evictedPending int
+	var evictedQueued int
+
+	for addr, list := range pool.pending {
+		if pool.locals.contains(addr) {
+			continue
+		}
+		for _, tx := range list.Flatten() {
+			seenAt, ok := pool.seen[tx.Hash()]
+			if !ok {
+				pool.seen[tx.Hash()] = now
+				continue
+			}
+			if now.Sub(seenAt) > pool.txLifetime(ClassifyTxLane(tx), true) {
+				pool.removeTx(tx.Hash(), true)
+				evictedPending++
+			}
+		}
+	}
+
+	for addr, list := range pool.queue {
+		if pool.locals.contains(addr) {
+			continue
+		}
+		for _, tx := range list.Flatten() {
+			seenAt, ok := pool.seen[tx.Hash()]
+			if !ok {
+				pool.seen[tx.Hash()] = now
+				continue
+			}
+			if now.Sub(seenAt) > pool.txLifetime(ClassifyTxLane(tx), false) {
+				pool.removeTx(tx.Hash(), true)
+				evictedQueued++
+			}
+		}
+	}
+
+	if evictedPending > 0 {
+		log.Debug("Evicted stale pending transactions", "count", evictedPending)
+	}
+	if evictedQueued > 0 {
+		queuedEvictionMeter.Mark(int64(evictedQueued))
+		log.Debug("Evicted stale queued transactions", "count", evictedQueued)
+	}
+}
+
 // rules and adheres to some heuristic limits of the local node (price and size).
 func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	sizeLimit := pool.chainconfig.TransactionSizeLimit
@@ -569,6 +743,14 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	// Ensure the transaction adheres to nonce ordering
 	if pool.currentState.GetNonce(from) > tx.Nonce() {
 		return ErrNonceTooLow
+	}
+	baseNonce := pool.currentState.GetNonce(from)
+	if pendingNonce := pool.pendingNonces.get(from); pendingNonce > baseNonce {
+		baseNonce = pendingNonce
+	}
+	window := pool.accountWindow(local)
+	if tx.Nonce() > baseNonce && tx.Nonce()-baseNonce > window {
+		return ErrNonceTooFarInFuture
 	}
 	// Transactor should have enough funds to cover the costs
 	// cost == V + GP * GL
@@ -671,6 +853,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		}
 		pool.all.Add(tx, isLocal)
 		pool.priced.Put(tx)
+		pool.noteSeen(hash)
 		pool.journalTx(from, tx)
 		pool.queueTxEvent(tx)
 		log.Trace("Pooled new executable transaction", "hash", hash, "from", from, "to", tx.To())
@@ -732,6 +915,7 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 		pool.all.Add(tx, local)
 		pool.priced.Put(tx)
 	}
+	pool.noteSeen(hash)
 	// If we never record the heartbeat, do it right now.
 	if _, exist := pool.beats[from]; !exist {
 		pool.beats[from] = time.Now()
@@ -950,6 +1134,7 @@ func (pool *TxPool) removeTx(hash common.Hash, outofbound bool) {
 
 	// Remove it from the list of known transactions
 	pool.all.Remove(hash)
+	delete(pool.seen, hash)
 	if outofbound {
 		pool.priced.Removed(1)
 	}
@@ -1319,6 +1504,18 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		log.Trace("Removed unpayable queued transactions", "count", len(drops))
 		queuedNofundsMeter.Mark(int64(len(drops)))
 
+		baseNonce := pool.currentState.GetNonce(addr)
+		if pendingNonce := pool.pendingNonces.get(addr); pendingNonce > baseNonce {
+			baseNonce = pendingNonce
+		}
+		windowDrops := list.FilterNonceAbove(baseNonce + pool.accountWindow(pool.locals.contains(addr)))
+		for _, tx := range windowDrops {
+			hash := tx.Hash()
+			pool.all.Remove(hash)
+			log.Trace("Removed too-far future queued transaction", "hash", hash)
+		}
+		log.Trace("Removed too-far future queued transactions", "count", len(windowDrops))
+
 		// Gather all executable transactions and promote them
 		readies := list.Ready(pool.pendingNonces.get(addr))
 		for _, tx := range readies {
@@ -1342,10 +1539,10 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 			queuedRateLimitMeter.Mark(int64(len(caps)))
 		}
 		// Mark all the items dropped as removed
-		pool.priced.Removed(len(forwards) + len(drops) + len(caps))
-		queuedGauge.Dec(int64(len(forwards) + len(drops) + len(caps)))
+		pool.priced.Removed(len(forwards) + len(drops) + len(windowDrops) + len(caps))
+		queuedGauge.Dec(int64(len(forwards) + len(drops) + len(windowDrops) + len(caps)))
 		if pool.locals.contains(addr) {
-			localGauge.Dec(int64(len(forwards) + len(drops) + len(caps)))
+			localGauge.Dec(int64(len(forwards) + len(drops) + len(windowDrops) + len(caps)))
 		}
 		// Delete the entire queue entry if it became empty.
 		if list.Empty() {
