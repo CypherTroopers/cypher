@@ -101,46 +101,62 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 
 // Try proposal new txBlock for current txs
 func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
-	txS.mu.Lock()
-	defer txS.mu.Unlock()
-
-	work := txS.createWork(blockType)
-	transactions := txS.getTransactions(blockType)
-
-	committedTxes, publicReceipts, logs := work.commitTransactions(transactions, txS.bc)
-	txCount := len(committedTxes)
-
-	if txCount == 0 {
-		log.Info("Not minting a new block since there are no pending transactions")
-		return nil, fmt.Errorf("Not minting a new block since there are no pending transactions")
+	allAddrTxes, err := txS.loadPendingAddressTxes(blockType)
+	if err != nil {
+		return nil, err
 	}
 
-	//txS.firePendingBlockEvents(logs)
+	var failedTxes types.Transactions
+	data, err := func() ([]byte, error) {
+		txS.mu.Lock()
+		defer txS.mu.Unlock()
 
-	header := work.header
+		work := txS.createWork(blockType)
+		transactions := txS.getTransactions(blockType, allAddrTxes)
 
-	// commit state root after all state transitions.
-	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
-	header.Root = work.publicState.IntermediateRoot(false)
-	header.KeyHash = txS.kbc.CurrentBlock().Hash()
-	header.BlockType = blockType
+		committedTxes, publicReceipts, logs, failed := work.commitTransactions(transactions, txS.bc)
+		failedTxes = failed
+		txCount := len(committedTxes)
 
-	// update block hash since it is now available, but was not when the
-	// receipt/log of individual transactions were created:
-	headerHash := header.Hash()
-	for _, l := range logs {
-		l.BlockHash = headerHash
+		if txCount == 0 {
+			log.Info("Not minting a new block since there are no pending transactions")
+			return nil, fmt.Errorf("Not minting a new block since there are no pending transactions")
+		}
+
+		//txS.firePendingBlockEvents(logs)
+
+		header := work.header
+
+		// commit state root after all state transitions.
+		colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+		header.Root = work.publicState.IntermediateRoot(false)
+		header.KeyHash = txS.kbc.CurrentBlock().Hash()
+		header.BlockType = blockType
+
+		// update block hash since it is now available, but was not when the
+		// receipt/log of individual transactions were created:
+		headerHash := header.Hash()
+		for _, l := range logs {
+			l.BlockHash = headerHash
+		}
+
+		block := types.NewBlock(header, committedTxes, nil, publicReceipts, new(trie.Trie))
+
+		log.Info("Generated next block", "block num", block.Number(), "num txes", txCount)
+
+		txS.proposedChain.extend(block)
+
+		elapsed := time.Since(time.Unix(0, int64(header.Time)))
+		log.Info("🔨  Mined block", "number", block.Number(), "hash", fmt.Sprintf("%x", block.Hash().Bytes()[:4]), "elapsed", elapsed)
+		return block.EncodeToBytes(), nil
+	}()
+
+	if len(failedTxes) > 0 {
+		txS.txPool.RemoveBatch(failedTxes)
+		log.Warn("Removed failed proposal txs from txpool", "count", len(failedTxes))
 	}
 
-	block := types.NewBlock(header, committedTxes, nil, publicReceipts, new(trie.Trie))
-
-	log.Info("Generated next block", "block num", block.Number(), "num txes", txCount)
-
-	txS.proposedChain.extend(block)
-
-	elapsed := time.Since(time.Unix(0, int64(header.Time)))
-	log.Info("🔨  Mined block", "number", block.Number(), "hash", fmt.Sprintf("%x", block.Hash().Bytes()[:4]), "elapsed", elapsed)
-	return block.EncodeToBytes(), nil
+	return data, err
 }
 
 // Verify txBlock
@@ -453,15 +469,15 @@ func blockGasTarget(blockType uint8, gasLimit uint64) uint64 {
 	return gasLimit * slowBlockGasTargetPct / 100
 }
 
-func (txS *txService) getTransactions(blockType uint8) *types.TransactionsByPriceAndNonce {
+func (txS *txService) loadPendingAddressTxes(blockType uint8) (AddressTxes, error) {
 	lane := core.TxLaneSlow
 	if isFastBlockType(blockType) {
 		lane = core.TxLaneFast
 	}
-	allAddrTxes, err := txS.txPool.PendingByLane(lane)
-	if err != nil { // TODO: handle
-		panic(err)
-	}
+	return txS.txPool.PendingByLane(lane)
+}
+
+func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) *types.TransactionsByPriceAndNonce {
 	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes, time.Now())
 	addrTxes = selectTxsForBlockType(addrTxes, blockType)
 	addrTxes = limitAddressTxes(addrTxes, blockProposalLimit(blockType))
@@ -519,7 +535,7 @@ type work struct {
 	blockType   uint8
 }
 
-func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc *core.BlockChain) (types.Transactions, types.Receipts, []*types.Log) {
+func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc *core.BlockChain) (types.Transactions, types.Receipts, []*types.Log, types.Transactions) {
 	var allLogs []*types.Log
 	var committedTxes types.Transactions
 	var publicReceipts types.Receipts
@@ -612,11 +628,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 			txes.Shift()
 		}
 	}
-	if len(failedTxes) > 0 {
-		env.txPool.RemoveBatch(failedTxes)
-		log.Warn("Removed failed proposal txs from txpool", "count", len(failedTxes))
-	}
-	return committedTxes, publicReceipts, allLogs
+	return committedTxes, publicReceipts, allLogs, failedTxes
 }
 
 func (env *work) commitTransaction(tx *types.Transaction, bc *core.BlockChain, gp *core.GasPool) (*types.Receipt, error) {
