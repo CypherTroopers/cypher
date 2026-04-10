@@ -543,8 +543,12 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		if env.gasTarget > 0 {
 			remainingGas := env.gasTarget - env.header.GasUsed
 			if tx.Gas() > remainingGas {
-				log.Trace("Stopping block assembly at gas target", "gasUsed", env.header.GasUsed, "gasTarget", env.gasTarget, "nextTxGas", tx.Gas(), "blockType", env.blockType)
-				break
+				// This transaction cannot fit into the remaining gas target budget.
+				// Drop this account head from the local proposal view and continue,
+				// so we can still consider other accounts' transactions.
+				log.Trace("Skipping account head above gas target remainder", "gasUsed", env.header.GasUsed, "gasTarget", env.gasTarget, "nextTxGas", tx.Gas(), "blockType", env.blockType)
+				txes.Pop()
+				continue
 			}
 		}
 		if to := tx.To(); to != nil {
