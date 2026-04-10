@@ -17,13 +17,12 @@
 package reconfig
 
 import (
-	//	"runtime"
 	"sync"
 	"time"
 
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
-	//	"github.com/cypherium/cypher/event"
+	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
@@ -31,6 +30,7 @@ import (
 
 var maxPaceMakerTime time.Time
 var fixedModeKeyBlockInterval = 10 * time.Minute
+var paceMakerPollInterval = 10 * time.Millisecond
 
 type paceMakerTimer struct {
 	startTime     time.Time
@@ -45,8 +45,8 @@ type paceMakerTimer struct {
 	kbc           *core.KeyBlockChain
 	mu            sync.Mutex
 
-	//	txsCh  chan core.NewTxsEvent
-	//	txsSub event.Subscription
+	txsCh  chan core.NewTxsEvent
+	txsSub event.Subscription
 }
 
 func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *ReconfigBackend) *paceMakerTimer {
@@ -62,9 +62,9 @@ func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *Reconfig
 		config:        config,
 	}
 
-	//	t.txsCh = make(chan core.NewTxsEvent, 128)
-	//	t.txsSub = backend.TxPool().SubscribeNewTxsEvent(t.txsCh)
-	//	go t.txsEventLoop()
+	t.txsCh = make(chan core.NewTxsEvent, 128)
+	t.txsSub = backend.TxPool().SubscribeNewTxsEvent(t.txsCh)
+	go t.txsEventLoop()
 
 	go t.loopTimer()
 	return t
@@ -113,6 +113,9 @@ func (t *paceMakerTimer) close() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.beClose = true
+	if t.txsSub != nil {
+		t.txsSub.Unsubscribe()
+	}
 }
 func (t *paceMakerTimer) get() (time.Time, bool, bool, int) {
 	t.mu.Lock()
@@ -123,7 +126,7 @@ func (t *paceMakerTimer) get() (time.Time, bool, bool, int) {
 // Loop for status action
 func (t *paceMakerTimer) loopTimer() {
 	for {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(paceMakerPollInterval)
 		startTime, beStop, beClose, retryNumber := t.get()
 		if beClose {
 			return
@@ -165,6 +168,20 @@ func (t *paceMakerTimer) loopTimer() {
 			t.setNextLeader(false)
 			t.retryNumber++
 		}
+	}
+}
+
+func (t *paceMakerTimer) triggerTryPropose() {
+	curView := t.service.GetCurrentView()
+	if !bftview.IamLeader(curView.LeaderIndex) {
+		return
+	}
+	pending, _ := t.txPool.Stats()
+	if pending == 0 {
+		return
+	}
+	if svc, ok := t.service.(*Service); ok {
+		svc.triggerTryPropose(curView.TxNumber)
 	}
 }
 
@@ -225,21 +242,26 @@ func (t *paceMakerTimer) procBlockDone(curBlock *types.Block, curKeyBlock *types
 
 }
 
-/*
 func (t *paceMakerTimer) txsEventLoop() {
 	for {
 		select {
-		case <-t.txsCh: // Event for New TXS coming
-			//log.Debug("core.NewTxsEvent")
+		case <-t.txsCh:
 			t.mu.Lock()
-			if t.beStop || t.beClose {
-				t.mu.Unlock()
-				return
-			}
-			if t.startTime == maxPaceMakerTime {
+			beStop := t.beStop
+			beClose := t.beClose
+			if !beStop && !beClose {
 				t.startTime = time.Now()
 			}
 			t.mu.Unlock()
+
+			if beClose {
+				return
+			}
+			if beStop || bftview.IamMember() < 0 {
+				continue
+			}
+
+			t.triggerTryPropose()
 
 		case <-t.txsSub.Err():
 			log.Info("txsEventLoop stopped")
@@ -247,4 +269,3 @@ func (t *paceMakerTimer) txsEventLoop() {
 		}
 	}
 }
-*/
