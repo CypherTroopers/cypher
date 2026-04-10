@@ -638,8 +638,10 @@ func (pool *TxPool) noteSeen(hash common.Hash) {
 }
 
 func (pool *TxPool) PendingByLane(lane TxLane) (map[common.Address]types.Transactions, error) {
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
+	// list.Flatten() may update internal caches, so this path requires
+	// exclusive access to avoid races between concurrent callers.
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
 
 	pending := make(map[common.Address]types.Transactions)
 	for addr, list := range pool.pending {
@@ -1493,6 +1495,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		for _, tx := range forwards {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			delete(pool.seen, hash)
 		}
 		log.Trace("Removed old queued transactions", "count", len(forwards))
 		// Drop all transactions that are too costly (low balance or out of gas)
@@ -1500,6 +1503,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		for _, tx := range drops {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			delete(pool.seen, hash)
 		}
 		log.Trace("Removed unpayable queued transactions", "count", len(drops))
 		queuedNofundsMeter.Mark(int64(len(drops)))
@@ -1535,6 +1539,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 			for _, tx := range caps {
 				hash := tx.Hash()
 				pool.all.Remove(hash)
+				delete(pool.seen, hash)
 				log.Trace("Removed cap-exceeding queued transaction", "hash", hash)
 			}
 			queuedRateLimitMeter.Mark(int64(len(caps)))
