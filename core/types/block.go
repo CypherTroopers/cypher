@@ -41,8 +41,11 @@ var (
 )
 
 const (
-	Normal_Block uint8 = iota
+	FastTx_Block uint8 = iota
 	Key_Block
+	SlowTx_Block
+
+	Normal_Block = FastTx_Block
 )
 
 // A BlockNonce is a 64-bit hash which proves (combined with the

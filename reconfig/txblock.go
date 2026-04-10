@@ -18,7 +18,9 @@
 package reconfig
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,7 +79,7 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	txS.mu.Lock()
 	defer txS.mu.Unlock()
 
-	work := txS.createWork()
+	work := txS.createWork(types.Key_Block)
 
 	header := work.header
 	// commit state root after all state transitions.
@@ -103,8 +105,8 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 	txS.mu.Lock()
 	defer txS.mu.Unlock()
 
-	work := txS.createWork()
-	transactions := txS.getTransactions()
+	work := txS.createWork(blockType)
+	transactions := txS.getTransactions(blockType)
 
 	committedTxes, publicReceipts, logs := work.commitTransactions(transactions, txS.bc)
 	txCount := len(committedTxes)
@@ -122,6 +124,7 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
 	header.Root = work.publicState.IntermediateRoot(false)
 	header.KeyHash = txS.kbc.CurrentBlock().Hash()
+	header.BlockType = blockType
 
 	// update block hash since it is now available, but was not when the
 	// receipt/log of individual transactions were created:
@@ -210,7 +213,7 @@ func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte
 	return nil
 }
 
-//-----------------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------------------------------
 func (txS *txService) procBlockDone(newBlock *types.Block) {
 	log.Info("chainBlockEvent...", "number", newBlock.NumberU64())
 	txS.txPool.RemoveBatch(newBlock.Transactions())
@@ -254,7 +257,31 @@ func (txS *txService) eventLoop() {
 
 type AddressTxes map[common.Address]types.Transactions
 
-const proposalPerAccountLimit = 8
+type failedTxAction uint8
+
+const (
+	proposalPerAccountLimit  = 8
+	fastBlockPerAccountLimit = 4
+	fastBlockMaxTxCount      = uint64(128)
+	fastBlockMaxGasPerTx     = uint64(300000)
+	fastBlockMaxDataBytes    = 1024
+)
+
+const (
+	failedTxDrop failedTxAction = iota
+	failedTxRetryLater
+)
+
+func isFastBlockType(blockType uint8) bool {
+	return blockType == types.FastTx_Block || blockType == types.Normal_Block
+}
+
+func blockProposalLimit(blockType uint8) int {
+	if isFastBlockType(blockType) {
+		return fastBlockPerAccountLimit
+	}
+	return proposalPerAccountLimit
+}
 
 func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
 	if perAccount <= 0 {
@@ -271,6 +298,68 @@ func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
 	return limited
 }
 
+func fastEligibleTx(tx *types.Transaction) bool {
+	if tx == nil {
+		return false
+	}
+	if tx.To() == nil {
+		return false
+	}
+	if len(tx.Data()) > fastBlockMaxDataBytes {
+		return false
+	}
+	if tx.Gas() > fastBlockMaxGasPerTx {
+		return false
+	}
+	return true
+}
+
+func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8) AddressTxes {
+	selected := make(AddressTxes, len(addrTxes))
+	perAccount := blockProposalLimit(blockType)
+	fastPath := isFastBlockType(blockType)
+
+	for addr, txs := range addrTxes {
+		picked := make(types.Transactions, 0, len(txs))
+		for _, tx := range txs {
+			if fastPath && !fastEligibleTx(tx) {
+				break
+			}
+			picked = append(picked, tx)
+			if perAccount > 0 && len(picked) >= perAccount {
+				break
+			}
+		}
+		if len(picked) > 0 {
+			selected[addr] = picked
+		}
+	}
+	return selected
+}
+
+func classifyCommitTxError(err error) failedTxAction {
+	switch {
+	case errors.Is(err, core.ErrNonceTooLow),
+		errors.Is(err, core.ErrIntrinsicGas),
+		errors.Is(err, core.ErrGasLimit),
+		errors.Is(err, core.ErrInsufficientFunds),
+		errors.Is(err, core.ErrInvalidSender):
+		return failedTxDrop
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(msg, "nonce too low"),
+		strings.Contains(msg, "intrinsic gas"),
+		strings.Contains(msg, "insufficient funds"),
+		strings.Contains(msg, "invalid sender"),
+		strings.Contains(msg, "exceeds block gas limit"),
+		strings.Contains(msg, "gas limit"):
+		return failedTxDrop
+	default:
+		return failedTxRetryLater
+	}
+}
+
 func (txS *txService) updateChainPerNewHead(newBlock *types.Block) {
 	txS.mu.Lock()
 	defer txS.mu.Unlock()
@@ -279,7 +368,7 @@ func (txS *txService) updateChainPerNewHead(newBlock *types.Block) {
 }
 
 // Assumes mu is held.
-func (txS *txService) createWork() *work {
+func (txS *txService) createWork(blockType uint8) *work {
 	parent := txS.bc.CurrentBlock()
 	parentNumber := parent.Number()
 
@@ -310,16 +399,26 @@ func (txS *txService) createWork() *work {
 		publicState: publicState,
 		header:      header,
 		txPool:      txS.txPool,
+		maxTxCount:  blockMaxTxCount(blockType),
+		blockType:   blockType,
 	}
 }
 
-func (txS *txService) getTransactions() *types.TransactionsByPriceAndNonce {
+func blockMaxTxCount(blockType uint8) uint64 {
+	if isFastBlockType(blockType) {
+		return fastBlockMaxTxCount
+	}
+	return 0
+}
+
+func (txS *txService) getTransactions(blockType uint8) *types.TransactionsByPriceAndNonce {
 	allAddrTxes, err := txS.txPool.Pending()
 	if err != nil { // TODO: handle
 		panic(err)
 	}
 	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes, time.Now())
-	addrTxes = limitAddressTxes(addrTxes, proposalPerAccountLimit)
+	addrTxes = selectTxsForBlockType(addrTxes, blockType)
+	addrTxes = limitAddressTxes(addrTxes, blockProposalLimit(blockType))
 	return types.NewTransactionsByPriceAndNonce(txS.config, txS.bc.CurrentBlock().Number(), addrTxes)
 }
 
@@ -345,6 +444,8 @@ type work struct {
 	Block       *types.Block
 	header      *types.Header
 	txPool      *core.TxPool
+	maxTxCount  uint64
+	blockType   uint8
 }
 
 func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc *core.BlockChain) (types.Transactions, types.Receipts, []*types.Log) {
@@ -357,6 +458,9 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 	txCount := 0
 
 	for {
+		if env.maxTxCount > 0 && uint64(txCount) >= env.maxTxCount {
+			break
+		}
 		tx := txes.Peek()
 		if tx == nil {
 			break
@@ -386,7 +490,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 				log.Warn("Discarding transaction from banned address",
 					"hash", tx.Hash(),
 					"from", banned.Hex())
-					failedTxes = append(failedTxes, tx)
+				failedTxes = append(failedTxes, tx)
 				txes.Pop()
 				continue
 			}
@@ -396,10 +500,15 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		publicReceipt, err := env.commitTransaction(tx, bc, gp)
 		switch {
 		case err != nil:
-			log.Info("TX failed, will be removed", "hash", tx.Hash(), "err", err)
-			failedTxes = append(failedTxes, tx)
-
-			txes.Pop() // skip rest of txes from this account
+			switch classifyCommitTxError(err) {
+			case failedTxDrop:
+				log.Info("TX failed, dropping from txpool", "hash", tx.Hash(), "err", err)
+				failedTxes = append(failedTxes, tx)
+				txes.Pop()
+			default:
+				log.Info("TX failed, keeping for retry later", "hash", tx.Hash(), "err", err)
+				txes.Pop()
+			}
 		default:
 			txCount++
 			committedTxes = append(committedTxes, tx)
