@@ -259,9 +259,6 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 // Try to change committee and proposal a new keyblock
 func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool) (*types.KeyBlock, *bftview.Committee, *types.Candidate, error) {
 	log.Info("tryProposalChangeCommittee", "tx number", keyS.bc.CurrentBlockN(), "isDone", isDone, "leaderIndex", leaderIndex)
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
-		leaderIndex = 0
-	}
 	curKeyBlock := keyS.kbc.CurrentBlock()
 	curKNumber := curKeyBlock.Number()
 	curKHash := curKeyBlock.Hash()
