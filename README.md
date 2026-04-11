@@ -6,7 +6,7 @@ Clone the repository and switch to the target branch:
 git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
 git fetch --all
-git checkout ecdsa_1.1_test_colossus-Xv2test
+git checkout colossusXv2_fastBFT
 ```
 
 Initialize the node with the test genesis file:
@@ -18,7 +18,7 @@ Initialize the node with the test genesis file:
 Start the node:
 
 ```powershell
-.\build\bin\cypher.exe --verbosity 4 --rnetport 7200 --syncmode full --nat extip:$((Invoke-RestMethod -Uri "https://ifconfig.io/ip").Trim()) --ws --ws.addr 0.0.0.0 --ws.port 9251 --ws.origins "*" --metrics --http --http.addr 0.0.0.0 --http.port 8000 --http.api eth,web3,net,txpool --http.corsdomain "*" --port 6000 --datadir chaindbname --networkid 12367 --gcmode archive --bootnodes "enode://1300eb515ce5ae1167f05cc2123c8ca7100cb86cfefc39d761e26ce19ba14535b233e9fc4c263444cc4c5934058eb9daa9cf7c4f9c40cbff19ee83055284c718@161.97.184.220:6000" console
+.\build\bin\cypher.exe --verbosity 4 --rnetport 7200 --syncmode full --nat extip:$((Invoke-RestMethod -Uri "https://ifconfig.io/ip").Trim()) --ws --ws.addr 0.0.0.0 --ws.port 9251 --ws.origins "*" --metrics --http --http.addr 0.0.0.0 --http.port 8000 --http.api eth,web3,net,txpool --http.corsdomain "*" --port 6000 --datadir chaindbname --networkid 123678 --gcmode archive --bootnodes "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@149.102.156.210:6000" console
 ```
 
 ## console command (mining)
@@ -38,7 +38,7 @@ Clone the repository and switch to the target branch:
 git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
 git fetch --all
-git checkout ecdsa_1.1_test_colossus-Xv2test
+git checkout colossusXv2_fastBFT
 ```
 ```
 ./build/bin/cypher --datadir chaindbname init ./genesistest.json
