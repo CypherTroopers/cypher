@@ -27,7 +27,7 @@ const (
 	DisableGAS             = false
 	KeyblockPerTxBlocks    = 360
 	MaxTxCountPerBlock     = 1024
-	AckTimeout             = 120 * time.Second
+	AckTimeout             = 20 * time.Second
 	HeatBeatTimeout        = 10 * time.Second
 	PaceMakerTimeout       = 3 * time.Minute
 	KeyBlockTimeout        = 20 * time.Minute
