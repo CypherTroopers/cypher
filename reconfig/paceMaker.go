@@ -151,7 +151,8 @@ func (t *paceMakerTimer) loopTimer() {
 		}
 
 		diff := now.Sub(startTime)
-		if diff > params.AckTimeout && now.Sub(t.service.LeaderAckTime()) > params.AckTimeout && bftview.IamMember() >= 0 {
+		leaderSilentFor := now.Sub(t.service.LeaderAckTime())
+		if leaderSilentFor > params.AckTimeout && bftview.IamMember() >= 0 {
 			log.Warn("paceMakerTimer Viewchange AckTimeout")
 			t.setNextLeader(false)
 			t.service.ResetLeaderAckTime()
