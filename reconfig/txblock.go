@@ -275,15 +275,22 @@ type AddressTxes map[common.Address]types.Transactions
 type failedTxAction uint8
 
 const (
-	proposalPerAccountLimit  = 8
-	fastBlockPerAccountLimit = 4
-	fastBlockMaxTxCount      = uint64(128)
-	slowBlockMaxTxCount      = uint64(256)
-	fastBlockMaxGasPerTx     = uint64(300000)
-	fastBlockMaxDataBytes    = 1024
+	pendingTierSmall  = 64
+	pendingTierMedium = 256
+	pendingTierLarge  = 1024
 
-	fastBlockGasTargetPct = uint64(30)
-	slowBlockGasTargetPct = uint64(70)
+	fastPerAccountTierSmall  = 4
+	slowPerAccountTierSmall  = 8
+	fastPerAccountTierMedium = 16
+	slowPerAccountTierMedium = 32
+	fastPerAccountTierLarge  = 64
+	slowPerAccountTierLarge  = 128
+	fastBlockMaxTxCount      = uint64(20000)
+	slowBlockMaxTxCount      = uint64(40000)
+	fastBlockMaxGasPerTx  = uint64(300000)
+	fastBlockMaxDataBytes = 1024
+	fastBlockGasTargetPct = uint64(80)
+	slowBlockGasTargetPct = uint64(95)
 )
 
 const (
@@ -296,11 +303,38 @@ func isFastBlockType(blockType uint8) bool {
 	return blockType == types.FastTx_Block || blockType == types.Normal_Block
 }
 
-func blockProposalLimit(blockType uint8) int {
-	if isFastBlockType(blockType) {
-		return fastBlockPerAccountLimit
+func countAddressTxes(addrTxes AddressTxes) int {
+	count := 0
+	for _, txs := range addrTxes {
+		count += len(txs)
 	}
-	return proposalPerAccountLimit
+	return count
+}
+
+func blockProposalLimit(blockType uint8, pending int) int {
+	if isFastBlockType(blockType) {
+		switch {
+		case pending < pendingTierSmall:
+			return fastPerAccountTierSmall
+		case pending < pendingTierMedium:
+			return fastPerAccountTierMedium
+		case pending < pendingTierLarge:
+			return fastPerAccountTierLarge
+		default:
+			return 0
+		}
+	}
+
+	switch {
+	case pending < pendingTierSmall:
+		return slowPerAccountTierSmall
+	case pending < pendingTierMedium:
+		return slowPerAccountTierMedium
+	case pending < pendingTierLarge:
+		return slowPerAccountTierLarge
+	default:
+		return 0
+	}
 }
 
 func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
@@ -334,9 +368,8 @@ func fastEligibleTx(tx *types.Transaction) bool {
 	return true
 }
 
-func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8) AddressTxes {
+func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8, perAccount int) AddressTxes {
 	selected := make(AddressTxes, len(addrTxes))
-	perAccount := blockProposalLimit(blockType)
 	fastPath := isFastBlockType(blockType)
 
 	for addr, txs := range addrTxes {
@@ -479,8 +512,17 @@ func (txS *txService) loadPendingAddressTxes(blockType uint8) (AddressTxes, erro
 
 func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) *types.TransactionsByPriceAndNonce {
 	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes, time.Now())
-	addrTxes = selectTxsForBlockType(addrTxes, blockType)
-	addrTxes = limitAddressTxes(addrTxes, blockProposalLimit(blockType))
+	pendingTotal, _ := txS.txPool.Stats()
+	perAccountLimit := blockProposalLimit(blockType, pendingTotal)
+	availableTxs := countAddressTxes(addrTxes)
+	addrTxes = selectTxsForBlockType(addrTxes, blockType, perAccountLimit)
+	addrTxes = limitAddressTxes(addrTxes, perAccountLimit)
+	log.Debug("tx proposal scheduler",
+		"blockType", readableTxBlockType(blockType),
+		"pendingTotal", pendingTotal,
+		"availableTxs", availableTxs,
+		"accounts", len(addrTxes),
+		"perAccountLimit", perAccountLimit)
 	return types.NewTransactionsByPriceAndNonce(txS.config, txS.bc.CurrentBlock().Number(), addrTxes)
 }
 

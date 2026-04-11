@@ -346,10 +346,18 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	}
 	blockType := s.chooseTxBlockType()
 	data, err := s.txService.tryProposalNewBlock(blockType)
-	if err != nil && blockType == types.FastTx_Block {
-		data, err = s.txService.tryProposalNewBlock(types.SlowTx_Block)
+	if err != nil {
+		fallbackType := uint8(types.FastTx_Block)
+		if blockType == types.FastTx_Block {
+			fallbackType = types.SlowTx_Block
+		}
+		log.Warn("Primary tx block proposal failed, trying fallback lane",
+			"primary", readableTxBlockType(blockType),
+			"fallback", readableTxBlockType(fallbackType),
+			"err", err)
+		data, err = s.txService.tryProposalNewBlock(fallbackType)
 		if err == nil {
-			blockType = types.SlowTx_Block
+			blockType = fallbackType
 		}
 	}
 	if err != nil {
@@ -380,14 +388,68 @@ func (s *Service) triggerTryPropose(lastN uint64) {
 	})
 }
 
-func (s *Service) chooseTxBlockType() uint8 {
-	pending, _ := s.txPool.Stats()
-	if pending >= slowBlockMinPending {
-		if s.lastSlowBlockTime.IsZero() || time.Since(s.lastSlowBlockTime) >= slowBlockMinInterval {
-			return types.SlowTx_Block
-		}
+func readableTxBlockType(blockType uint8) string {
+	switch blockType {
+	case types.FastTx_Block:
+		return "fast"
+	case types.SlowTx_Block:
+		return "slow"
+	case types.Key_Block:
+		return "key"
+	default:
+		return "unknown"
 	}
-	return types.FastTx_Block
+}
+
+func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
+	fastAddrTxes, fastErr := s.txService.loadPendingAddressTxes(types.FastTx_Block)
+	if fastErr != nil {
+		log.Warn("Failed to load fast-lane pending txs", "err", fastErr)
+	} else {
+		fastPending = countAddressTxes(fastAddrTxes)
+	}
+
+	slowAddrTxes, slowErr := s.txService.loadPendingAddressTxes(types.SlowTx_Block)
+	if slowErr != nil {
+		log.Warn("Failed to load slow-lane pending txs", "err", slowErr)
+	} else {
+		slowPending = countAddressTxes(slowAddrTxes)
+	}
+
+	return fastPending, slowPending
+}
+
+func (s *Service) chooseTxBlockType() uint8 {
+	fastPending, slowPending := s.lanePendingCounts()
+	lastSlowAgo := time.Duration(0)
+	if !s.lastSlowBlockTime.IsZero() {
+		lastSlowAgo = time.Since(s.lastSlowBlockTime)
+	}
+
+	blockType := uint8(types.FastTx_Block)
+	switch {
+	case slowPending == 0:
+		blockType = types.FastTx_Block
+	case fastPending == 0:
+		blockType = types.SlowTx_Block
+	case slowPending == fastPending:
+		// All currently proposal-eligible heads are fast-lane transactions.
+		// Prefer fast blocks so simple transfers never get dragged into the slow path.
+		blockType = types.FastTx_Block
+	case slowPending >= slowBlockMinPending &&
+		(s.lastSlowBlockTime.IsZero() || time.Since(s.lastSlowBlockTime) >= slowBlockMinInterval):
+		blockType = types.SlowTx_Block
+	default:
+		blockType = types.FastTx_Block
+	}
+
+	log.Debug("chooseTxBlockType",
+		"fastPending", fastPending,
+		"slowPending", slowPending,
+		"lastSlowAgo", lastSlowAgo,
+		"chosen", readableTxBlockType(blockType))
+
+	return blockType
 }
 
 // OnViewDone call by hotstuff
