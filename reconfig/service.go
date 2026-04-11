@@ -917,6 +917,9 @@ func (s *Service) LeaderAckTime() time.Time {
 	mb := bftview.GetCurrentMember()
 	if mb != nil {
 		curView := s.GetCurrentView()
+		if bftview.IamLeader(curView.LeaderIndex) {
+			return time.Now()
+		}
 		leader := mb.List[curView.LeaderIndex]
 		return s.netService.GetAckTime(leader.Address)
 	}
