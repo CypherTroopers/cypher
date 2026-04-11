@@ -826,14 +826,16 @@ func (s *Service) setNextLeader(isDone bool) {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
 
+	restoredPrimary := false
 	if s.keyService.fixedModeEnabled() && s.shouldRestorePrimaryLeader() {
 		s.keyService.restorePrimaryLeader()
+		restoredPrimary = true
 	}
 
 	if isDone {
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(0)
 	} else {
-		if s.keyService.fixedModeEnabled() {
+		if s.keyService.fixedModeEnabled() && !restoredPrimary {
 			s.keyService.promoteFallbackLeader(s.currentView.LeaderIndex)
 		}
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(s.currentView.LeaderIndex)

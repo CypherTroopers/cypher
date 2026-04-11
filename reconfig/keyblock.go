@@ -46,6 +46,7 @@ type keyService struct {
 	engine          consensus.Engine
 	config          *params.ChainConfig
 	primaryLeader   uint
+	primaryLeaderPK string
 	activeLeader    uint
 }
 
@@ -59,6 +60,16 @@ func newKeyService(s serviceI, backend *ReconfigBackend, config *params.ChainCon
 	keyS.config = config
 	keyS.primaryLeader = 0
 	keyS.activeLeader = 0
+	if config != nil {
+		if n, ok := config.GenCommittee[0]; ok && n.Public != "" {
+			keyS.primaryLeaderPK = n.Public
+		}
+	}
+	if keyS.primaryLeaderPK == "" && keyS.kbc != nil {
+		if cm := keyS.kbc.CurrentCommittee(); len(cm) > 0 {
+			keyS.primaryLeaderPK = cm[0].Public
+		}
+	}
 	return keyS
 }
 
@@ -78,6 +89,7 @@ func (keyS *keyService) promoteFallbackLeader(current uint) {
 	keyS.muLeaderState.Lock()
 	defer keyS.muLeaderState.Unlock()
 
+	keyS.syncPrimaryLeaderLocked(mb)
 	if keyS.activeLeader >= uint(len(mb.List)) {
 		keyS.activeLeader = keyS.primaryLeader % uint(len(mb.List))
 	}
@@ -104,7 +116,27 @@ func (keyS *keyService) restorePrimaryLeader() {
 func (keyS *keyService) getPrimaryLeaderIndex() uint {
 	keyS.muLeaderState.Lock()
 	defer keyS.muLeaderState.Unlock()
+	mb := bftview.GetCurrentMember()
+	keyS.syncPrimaryLeaderLocked(mb)
 	return keyS.primaryLeader
+}
+
+func (keyS *keyService) syncPrimaryLeaderLocked(mb *bftview.Committee) {
+	if mb == nil || len(mb.List) == 0 {
+		return
+	}
+	if keyS.primaryLeaderPK == "" {
+		keyS.primaryLeaderPK = mb.List[0].Public
+	}
+	for i, node := range mb.List {
+		if node.Public == keyS.primaryLeaderPK {
+			keyS.primaryLeader = uint(i)
+			return
+		}
+	}
+	if keyS.primaryLeader >= uint(len(mb.List)) {
+		keyS.primaryLeader = 0
+	}
 }
 
 // Verify keyblock
@@ -334,10 +366,8 @@ func (keyS *keyService) getNextLeaderIndex(leaderIndex uint) uint {
 		mb := bftview.GetCurrentMember()
 		keyS.muLeaderState.Lock()
 		defer keyS.muLeaderState.Unlock()
+		keyS.syncPrimaryLeaderLocked(mb)
 		if mb != nil && len(mb.List) > 0 {
-			if keyS.primaryLeader >= uint(len(mb.List)) {
-				keyS.primaryLeader = 0
-			}
 			if keyS.activeLeader >= uint(len(mb.List)) {
 				keyS.activeLeader = keyS.primaryLeader
 			}
