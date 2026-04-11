@@ -38,12 +38,15 @@ import (
 type keyService struct {
 	s               serviceI
 	muBestCandidate sync.Mutex
+	muLeaderState   sync.Mutex
 	bestCandidate   *types.Candidate
 	candidatepool   *core.CandidatePool
 	bc              *core.BlockChain
 	kbc             *core.KeyBlockChain
 	engine          consensus.Engine
 	config          *params.ChainConfig
+	primaryLeader   uint
+	activeLeader    uint
 }
 
 func newKeyService(s serviceI, backend *ReconfigBackend, config *params.ChainConfig) *keyService {
@@ -54,7 +57,54 @@ func newKeyService(s serviceI, backend *ReconfigBackend, config *params.ChainCon
 	keyS.kbc = backend.KeyBlockChain()
 	keyS.engine = backend.Engine()
 	keyS.config = config
+	keyS.primaryLeader = 0
+	keyS.activeLeader = 0
 	return keyS
+}
+
+func (keyS *keyService) fixedModeEnabled() bool {
+	return keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee)
+}
+
+func (keyS *keyService) promoteFallbackLeader(current uint) {
+	if !keyS.fixedModeEnabled() {
+		return
+	}
+	mb := bftview.GetCurrentMember()
+	if mb == nil || len(mb.List) == 0 {
+		return
+	}
+
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+
+	if keyS.activeLeader >= uint(len(mb.List)) {
+		keyS.activeLeader = keyS.primaryLeader % uint(len(mb.List))
+	}
+	next := current + 1
+	if next >= uint(len(mb.List)) {
+		next = 0
+	}
+	keyS.activeLeader = next
+	log.Warn("fixed-mode leader fallback activated", "primary", keyS.primaryLeader, "active", keyS.activeLeader, "committeeSize", len(mb.List))
+}
+
+func (keyS *keyService) restorePrimaryLeader() {
+	if !keyS.fixedModeEnabled() {
+		return
+	}
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+	if keyS.activeLeader != keyS.primaryLeader {
+		log.Info("fixed-mode leader restored", "from", keyS.activeLeader, "to", keyS.primaryLeader)
+	}
+	keyS.activeLeader = keyS.primaryLeader
+}
+
+func (keyS *keyService) getPrimaryLeaderIndex() uint {
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+	return keyS.primaryLeader
 }
 
 // Verify keyblock
@@ -283,8 +333,19 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 }
 
 func (keyS *keyService) getNextLeaderIndex(leaderIndex uint) uint {
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
-		return 0
+	if keyS.fixedModeEnabled() {
+		mb := bftview.GetCurrentMember()
+		keyS.muLeaderState.Lock()
+		defer keyS.muLeaderState.Unlock()
+		if mb != nil && len(mb.List) > 0 {
+			if keyS.primaryLeader >= uint(len(mb.List)) {
+				keyS.primaryLeader = 0
+			}
+			if keyS.activeLeader >= uint(len(mb.List)) {
+				keyS.activeLeader = keyS.primaryLeader
+			}
+		}
+		return keyS.activeLeader
 	}
 
 	mb := bftview.GetCurrentMember()
