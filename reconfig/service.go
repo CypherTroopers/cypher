@@ -106,12 +106,12 @@ type Service struct {
 	lastReqCmNumber uint64
 	muCurrentView   sync.Mutex
 
-	replicaView       *bftview.View
-	runningState      int32
-	lastProposeTime   time.Time
-	lastSlowBlockTime time.Time
+	replicaView        *bftview.View
+	runningState       int32
+	lastProposeTime    time.Time
+	lastSlowBlockTime  time.Time
 	tryProposeQueuedAt int64
-	pacetMakerTimer   *paceMakerTimer
+	pacetMakerTimer    *paceMakerTimer
 
 	hotstuffMsgQ *common.Queue
 	feed1        event.Feed
@@ -826,9 +826,16 @@ func (s *Service) setNextLeader(isDone bool) {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
 
+	if s.keyService.fixedModeEnabled() && s.shouldRestorePrimaryLeader() {
+		s.keyService.restorePrimaryLeader()
+	}
+
 	if isDone {
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(0)
 	} else {
+		if s.keyService.fixedModeEnabled() {
+			s.keyService.promoteFallbackLeader(s.currentView.LeaderIndex)
+		}
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(s.currentView.LeaderIndex)
 	}
 	s.currentView.NoDone = !isDone
@@ -836,6 +843,19 @@ func (s *Service) setNextLeader(isDone bool) {
 
 	s.waittingView.TxNumber = s.currentView.TxNumber + 1
 	s.waittingView.KeyNumber = s.currentView.KeyNumber + 1
+}
+
+func (s *Service) shouldRestorePrimaryLeader() bool {
+	mb := bftview.GetCurrentMember()
+	if mb == nil || len(mb.List) == 0 {
+		return false
+	}
+	primary := s.keyService.getPrimaryLeaderIndex()
+	if primary >= uint(len(mb.List)) {
+		return false
+	}
+	ack := s.netService.GetAckTime(mb.List[primary].Address)
+	return time.Since(ack) <= params.AckTimeout
 }
 
 func (s *Service) procBlockDone(block *types.Block) {
