@@ -1751,7 +1751,8 @@ func (bc *BlockChain) InsertBlock(block *types.Block) (int, error) {
 	defer bc.blockProcFeed.Send(false)
 	bc.wg.Add(1)
 	bc.chainmu.Lock()
-	n, err := bc.insertChain(types.Blocks{block}, true, false)
+	// Enforce BFT aggregated-signature verification on the local InsertBlock path too.
+	n, err := bc.insertChain(types.Blocks{block}, true, true)
 	bc.chainmu.Unlock()
 	bc.wg.Done()
 	return n, err
