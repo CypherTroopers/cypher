@@ -38,12 +38,16 @@ import (
 type keyService struct {
 	s               serviceI
 	muBestCandidate sync.Mutex
+	muLeaderState   sync.Mutex
 	bestCandidate   *types.Candidate
 	candidatepool   *core.CandidatePool
 	bc              *core.BlockChain
 	kbc             *core.KeyBlockChain
 	engine          consensus.Engine
 	config          *params.ChainConfig
+	primaryLeader   uint
+	primaryLeaderPK string
+	activeLeader    uint
 }
 
 func newKeyService(s serviceI, backend *ReconfigBackend, config *params.ChainConfig) *keyService {
@@ -54,7 +58,85 @@ func newKeyService(s serviceI, backend *ReconfigBackend, config *params.ChainCon
 	keyS.kbc = backend.KeyBlockChain()
 	keyS.engine = backend.Engine()
 	keyS.config = config
+	keyS.primaryLeader = 0
+	keyS.activeLeader = 0
+	if config != nil {
+		if n, ok := config.GenCommittee[0]; ok && n.Public != "" {
+			keyS.primaryLeaderPK = n.Public
+		}
+	}
+	if keyS.primaryLeaderPK == "" && keyS.kbc != nil {
+		if cm := keyS.kbc.CurrentCommittee(); len(cm) > 0 {
+			keyS.primaryLeaderPK = cm[0].Public
+		}
+	}
 	return keyS
+}
+
+func (keyS *keyService) fixedModeEnabled() bool {
+	return keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee)
+}
+
+func (keyS *keyService) promoteFallbackLeader(current uint) {
+	if !keyS.fixedModeEnabled() {
+		return
+	}
+	mb := bftview.GetCurrentMember()
+	if mb == nil || len(mb.List) == 0 {
+		return
+	}
+
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+
+	keyS.syncPrimaryLeaderLocked(mb)
+	if keyS.activeLeader >= uint(len(mb.List)) {
+		keyS.activeLeader = keyS.primaryLeader % uint(len(mb.List))
+	}
+	next := current + 1
+	if next >= uint(len(mb.List)) {
+		next = 0
+	}
+	keyS.activeLeader = next
+	log.Warn("fixed-mode leader fallback activated", "primary", keyS.primaryLeader, "active", keyS.activeLeader, "committeeSize", len(mb.List))
+}
+
+func (keyS *keyService) restorePrimaryLeader() {
+	if !keyS.fixedModeEnabled() {
+		return
+	}
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+	if keyS.activeLeader != keyS.primaryLeader {
+		log.Info("fixed-mode leader restored", "from", keyS.activeLeader, "to", keyS.primaryLeader)
+	}
+	keyS.activeLeader = keyS.primaryLeader
+}
+
+func (keyS *keyService) getPrimaryLeaderIndex() uint {
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+	mb := bftview.GetCurrentMember()
+	keyS.syncPrimaryLeaderLocked(mb)
+	return keyS.primaryLeader
+}
+
+func (keyS *keyService) syncPrimaryLeaderLocked(mb *bftview.Committee) {
+	if mb == nil || len(mb.List) == 0 {
+		return
+	}
+	if keyS.primaryLeaderPK == "" {
+		keyS.primaryLeaderPK = mb.List[0].Public
+	}
+	for i, node := range mb.List {
+		if node.Public == keyS.primaryLeaderPK {
+			keyS.primaryLeader = uint(i)
+			return
+		}
+	}
+	if keyS.primaryLeader >= uint(len(mb.List)) {
+		keyS.primaryLeader = 0
+	}
 }
 
 // Verify keyblock
@@ -209,9 +291,6 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 // Try to change committee and proposal a new keyblock
 func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool) (*types.KeyBlock, *bftview.Committee, *types.Candidate, error) {
 	log.Info("tryProposalChangeCommittee", "tx number", keyS.bc.CurrentBlockN(), "isDone", isDone, "leaderIndex", leaderIndex)
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
-		leaderIndex = 0
-	}
 	curKeyBlock := keyS.kbc.CurrentBlock()
 	curKNumber := curKeyBlock.Number()
 	curKHash := curKeyBlock.Hash()
@@ -283,8 +362,17 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 }
 
 func (keyS *keyService) getNextLeaderIndex(leaderIndex uint) uint {
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
-		return 0
+	if keyS.fixedModeEnabled() {
+		mb := bftview.GetCurrentMember()
+		keyS.muLeaderState.Lock()
+		defer keyS.muLeaderState.Unlock()
+		keyS.syncPrimaryLeaderLocked(mb)
+		if mb != nil && len(mb.List) > 0 {
+			if keyS.activeLeader >= uint(len(mb.List)) {
+				keyS.activeLeader = keyS.primaryLeader
+			}
+		}
+		return keyS.activeLeader
 	}
 
 	mb := bftview.GetCurrentMember()

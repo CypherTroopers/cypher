@@ -151,11 +151,13 @@ func (t *paceMakerTimer) loopTimer() {
 		}
 
 		diff := now.Sub(startTime)
-		if diff > params.AckTimeout && now.Sub(t.service.LeaderAckTime()) > params.AckTimeout && bftview.IamMember() >= 0 {
+		leaderSilentFor := now.Sub(t.service.LeaderAckTime())
+		if leaderSilentFor > params.AckTimeout && bftview.IamMember() >= 0 {
 			log.Warn("paceMakerTimer Viewchange AckTimeout")
 			t.setNextLeader(false)
 			t.service.ResetLeaderAckTime()
-		} else if diff > params.PaceMakerTimeout /**time.Duration(retryNumber+1)*/ && bftview.IamMember() >= 0 { //timeout
+		} else if diff > params.PaceMakerTimeout /**time.Duration(retryNumber+1)*/ && bftview.IamMember() >= 0 &&
+			!(t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee)) { //timeout
 			log.Warn("paceMakerTimer Viewchange PaceMakerTimeout Event is coming", "retryNumber", retryNumber)
 			/*
 				switchLen := bftview.GetServerCommitteeLen()/2 + 1
