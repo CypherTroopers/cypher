@@ -15,6 +15,8 @@ import (
 	"github.com/zeebo/blake3"
 )
 
+const hotstuffSignatureDomain = "hotstuff-vote-v1"
+
 var (
 	ErrNewViewFail            = fmt.Errorf("hotstuff new view fail")
 	ErrUnhandledMsg           = fmt.Errorf("hotstuff unhandled message")
@@ -40,6 +42,25 @@ var (
 	ErrOldState    = fmt.Errorf("hotstuff view state too old")
 	ErrFutureState = fmt.Errorf("hotstuff view state of future")
 )
+
+func hotstuffContextDigest(chainID uint64, msgCode uint32, viewID common.Hash, leaderID string, data []byte) []byte {
+	stateHash := hotstuffDigest(data)
+	payload, err := rlp.EncodeToBytes([]interface{}{
+		[]byte(hotstuffSignatureDomain),
+		chainID,
+		msgCode,
+		viewID,
+		leaderID,
+		stateHash,
+	})
+	if err != nil {
+		fallback := hotstuffDigestHash([]byte(hotstuffSignatureDomain), stateHash, viewID[:], []byte(leaderID))
+		out := make([]byte, len(fallback))
+		copy(out, fallback[:])
+		return out
+	}
+	return hotstuffDigest(payload)
+}
 
 func hotstuffDigest(data []byte) []byte {
 	sum := blake3.Sum256(data)
@@ -148,9 +169,11 @@ func readablePhase(code uint32) string {
 
 // Proposed K or T state with signature and mask, only for OnViewDone() interface
 type SignedState struct {
-	State []byte
-	Sign  []byte
-	Mask  []byte
+	State    []byte
+	Sign     []byte
+	Mask     []byte
+	ViewID   common.Hash
+	LeaderID string
 }
 
 type HotStuffApplication interface {
@@ -169,6 +192,8 @@ type HotStuffApplication interface {
 	CurrentState() ([]byte, string, uint64)
 	CurrentN() uint64
 	GetExtra() []byte // only for new-view procedure
+	ChainID() uint64
+	UseContextSignatures() bool
 }
 
 type VoteInfo struct {
@@ -494,9 +519,11 @@ func (hsm *HotstuffProtocolManager) viewDone(v *View, kSign []byte, tSign []byte
 		var tSignedState *SignedState
 		if v.hasTState() {
 			tSignedState = &SignedState{
-				State: v.proposedTState,
-				Sign:  tSign,
-				Mask:  mask,
+				State:    v.proposedTState,
+				Sign:     tSign,
+				Mask:     mask,
+				ViewID:   v.hash,
+				LeaderID: v.leaderId,
 			}
 		}
 
@@ -537,7 +564,7 @@ func (hsm *HotstuffProtocolManager) NewView() error {
 		hsm.views[v.hash] = v
 	}
 
-	sig := hsm.SignHash(v.currentState)
+	sig := hsm.SignHashByMessage(MsgNewView, v.hash, v.leaderId, v.currentState)
 	msg := hsm.newMsg(MsgNewView, v.number, v.hash, v.currentState, sig, extra)
 
 	log.Debug("New View", "leader", v.leaderId, "ViewID", common.HexString(v.hash[:]))
@@ -654,7 +681,7 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 			continue
 		}
 
-		if !qrum.KSign.VerifyHash(qrum.PubKey, hotstuffDigest(m.DataA)) {
+		if !hsm.verifyVoteSignature(qrum.KSign, qrum.PubKey, MsgNewView, v.hash, v.leaderId, m.DataA) {
 			log.Debug("New view message failed to verify voteInfo")
 			err = ErrQCVerification
 			continue
@@ -802,8 +829,19 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 }
 
 func VerifySignature(bSign []byte, bMask []byte, data []byte, groupPublicKey []*bls.PublicKey, threshold int) bool {
+	return verifySignatureDigest(bSign, bMask, hotstuffDigest(data), groupPublicKey, threshold)
+}
+
+func VerifySignatureWithContext(bSign []byte, bMask []byte, data []byte, groupPublicKey []*bls.PublicKey, threshold int, chainID uint64, msgCode uint32, viewID common.Hash, leaderID string) bool {
+	return verifySignatureDigest(bSign, bMask, hotstuffContextDigest(chainID, msgCode, viewID, leaderID, data), groupPublicKey, threshold)
+}
+
+func verifySignatureDigest(bSign []byte, bMask []byte, digest []byte, groupPublicKey []*bls.PublicKey, threshold int) bool {
 	var sign bls.Sign
 	if err := sign.Deserialize(bSign); err != nil {
+		return false
+	}
+	if threshold <= 0 {
 		return false
 	}
 
@@ -833,12 +871,12 @@ loop:
 		}
 	}
 
-	if signer < threshold || !sign.VerifyHash(&pub, hotstuffDigest(data)) {
+	if signer < threshold || !sign.VerifyHash(&pub, digest) {
 		log.Debug("Dump failed signature ================")
 		log.Debug("signer", "is", signer, "threshold", threshold)
 		log.Debug("Signature", "is ", hex.EncodeToString(bSign))
 		log.Debug("Mask     ", "is ", hex.EncodeToString(bMask))
-		log.Debug("Data     ", "is ", hex.EncodeToString(data))
+		log.Debug("Digest   ", "is ", hex.EncodeToString(digest))
 
 		for i, p := range groupPublicKey {
 			log.Debug("Public Key", "index", i, "key", hex.EncodeToString(p.Serialize()))
@@ -895,11 +933,31 @@ loop:
 
 // for replica
 func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
+	if err := hsm.app.CheckView(m.DataE); err != nil {
+		return err
+	}
+	expectedState, expectedLeader, expectedNumber := hsm.app.CurrentState()
+	if expectedLeader == "" || expectedLeader != m.Id || expectedNumber != m.Number || !bytes.Equal(expectedState, m.DataE) {
+		log.Warn("handlePrepareMsg rejected non-canonical leader proposal",
+			"from", m.Id,
+			"expectedLeader", expectedLeader,
+			"number", m.Number,
+			"expectedNumber", expectedNumber)
+		return ErrInvalidLeaderView
+	}
+
 	v, exist := hsm.views[m.ViewId]
 	if !exist {
-		v = hsm.createView(false, PhasePrepare, m.Id, m.DataE, m.Number)
+		v = hsm.createView(false, PhasePrepare, expectedLeader, m.DataE, m.Number)
 		hsm.views[v.hash] = v
 		log.Debug("handlePrepareMsg create view", "viewId", m.ViewId)
+	}
+	if v.hash != m.ViewId || v.leaderId != expectedLeader {
+		log.Warn("handlePrepareMsg rejected mismatched view/leader",
+			"viewId", m.ViewId,
+			"expectedLeader", expectedLeader,
+			"viewLeader", v.leaderId)
+		return ErrInvalidLeaderView
 	}
 
 	if v.phaseAsReplica != PhasePrepare {
@@ -918,7 +976,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	}
 
 	// verify highQC in the prepare msg
-	if !VerifySignature(m.DataC, m.DataD, m.DataE, v.groupPublicKey, v.threshold) {
+	if !hsm.verifyAggregatedSignature(m.DataC, m.DataD, MsgNewView, v.hash, v.leaderId, m.DataE, v.groupPublicKey, v.threshold) {
 		log.Debug("handlePrepareMsg failed to verify highQC", "viewId", m.ViewId)
 		return ErrInvalidHighQC
 	}
@@ -937,7 +995,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 		copy(v.proposedKState, m.DataA)
 		v.proposedKDigest = hotstuffDigest(v.proposedKState)
 
-		kSign = hsm.SignHash(v.proposedKState)
+		kSign = hsm.SignHashByMessage(MsgVotePrepare, v.hash, v.leaderId, v.proposedKState)
 	}
 
 	if m.DataB != nil && len(m.DataB) > 0 {
@@ -945,7 +1003,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 		copy(v.proposedTState, m.DataB)
 		v.proposedTDigest = hotstuffDigest(v.proposedTState)
 
-		tSign = hsm.SignHash(v.proposedTState)
+		tSign = hsm.SignHashByMessage(MsgVotePrepare, v.hash, v.leaderId, v.proposedTState)
 	}
 
 	msg := hsm.newMsg(MsgVotePrepare, v.number, v.hash, nil, kSign, tSign)
@@ -989,7 +1047,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 		if len(v.proposedKDigest) == 0 {
 			v.proposedKDigest = hotstuffDigest(v.proposedKState)
 		}
-		if !qrum.ValidKSign || !qrum.KSign.VerifyHash(qrum.PubKey, v.proposedKDigest) {
+		if !qrum.ValidKSign || !hsm.verifyVoteSignature(qrum.KSign, qrum.PubKey, MsgVotePrepare, v.hash, v.leaderId, v.proposedKState) {
 			log.Debug("handlePrepareVoteMsg failed to verify k-state signature", "viewId", m.ViewId)
 			return ErrQCVerification
 		}
@@ -999,7 +1057,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 		if len(v.proposedTDigest) == 0 {
 			v.proposedTDigest = hotstuffDigest(v.proposedTState)
 		}
-		if !qrum.ValidTSign || !qrum.TSign.VerifyHash(qrum.PubKey, v.proposedTDigest) {
+		if !qrum.ValidTSign || !hsm.verifyVoteSignature(qrum.TSign, qrum.PubKey, MsgVotePrepare, v.hash, v.leaderId, v.proposedTState) {
 			log.Debug("handlePrepareVoteMsg failed to verify t-state signature", "viewId", m.ViewId)
 			hsm.DumpView(v, true)
 			return ErrQCVerification
@@ -1077,7 +1135,7 @@ func (hsm *HotstuffProtocolManager) handleDecideMsg(m *HotstuffMessage) error {
 	}
 
 	if v.hasTState() {
-		if !VerifySignature(m.DataB, m.DataC, v.proposedTState, v.groupPublicKey, v.threshold) {
+		if !hsm.verifyAggregatedSignature(m.DataB, m.DataC, MsgVotePrepare, v.hash, v.leaderId, v.proposedTState, v.groupPublicKey, v.threshold) {
 			log.Debug("handleDecideMsg failed to verify aggregated t-state signature", "viewId", m.ViewId)
 			hsm.DumpView(v, false)
 			return ErrInvalidPrepareQC
@@ -1206,4 +1264,31 @@ func (hsm *HotstuffProtocolManager) SignHash(data []byte) []byte {
 	sign := hsm.secretKey.SignHash(hotstuffDigest(data)).Serialize()
 	log.Info("Signed hotstuff data!")
 	return sign
+}
+
+func (hsm *HotstuffProtocolManager) SignHashWithContext(msgCode uint32, viewID common.Hash, leaderID string, data []byte) []byte {
+	sign := hsm.secretKey.SignHash(hotstuffContextDigest(hsm.app.ChainID(), msgCode, viewID, leaderID, data)).Serialize()
+	log.Info("Signed hotstuff data with context!")
+	return sign
+}
+
+func (hsm *HotstuffProtocolManager) SignHashByMessage(msgCode uint32, viewID common.Hash, leaderID string, data []byte) []byte {
+	if hsm.app.UseContextSignatures() {
+		return hsm.SignHashWithContext(msgCode, viewID, leaderID, data)
+	}
+	return hsm.SignHash(data)
+}
+
+func (hsm *HotstuffProtocolManager) verifyVoteSignature(sig bls.Sign, pub *bls.PublicKey, msgCode uint32, viewID common.Hash, leaderID string, data []byte) bool {
+	if hsm.app.UseContextSignatures() {
+		return sig.VerifyHash(pub, hotstuffContextDigest(hsm.app.ChainID(), msgCode, viewID, leaderID, data))
+	}
+	return sig.VerifyHash(pub, hotstuffDigest(data))
+}
+
+func (hsm *HotstuffProtocolManager) verifyAggregatedSignature(bSign []byte, bMask []byte, msgCode uint32, viewID common.Hash, leaderID string, data []byte, groupPublicKey []*bls.PublicKey, threshold int) bool {
+	if hsm.app.UseContextSignatures() {
+		return VerifySignatureWithContext(bSign, bMask, data, groupPublicKey, threshold, hsm.app.ChainID(), msgCode, viewID, leaderID)
+	}
+	return VerifySignature(bSign, bMask, data, groupPublicKey, threshold)
 }
