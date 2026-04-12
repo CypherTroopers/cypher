@@ -38,9 +38,9 @@ import (
 
 const failedProposalRetry = 200 * time.Millisecond
 const hotstuffIdleSleep = 10 * time.Millisecond
-const tryProposeDebounce = 25 * time.Millisecond
-const slowBlockMinPending = 64
-const slowBlockMinInterval = 750 * time.Millisecond
+const tryProposeDebounce = 5 * time.Millisecond
+const slowBlockMinPending = 16
+const slowBlockMinInterval = 300 * time.Millisecond
 
 type committeeInfo struct {
 	Committee *bftview.Committee
