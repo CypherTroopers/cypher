@@ -90,12 +90,13 @@ func (msg *networkMsg) GetCommittee() *bftview.Committee {
 
 // Service work for protcol
 type Service struct {
-	netService *netService
-	bc         *core.BlockChain
-	txService  *txService
-	kbc        *core.KeyBlockChain
-	keyService *keyService
-	txPool     *core.TxPool
+	netService  *netService
+	bc          *core.BlockChain
+	txService   *txService
+	kbc         *core.KeyBlockChain
+	keyService  *keyService
+	txPool      *core.TxPool
+	chainConfig *params.ChainConfig
 
 	protocolMng *hotstuff.HotstuffProtocolManager
 
@@ -128,6 +129,7 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.bc = backend.BlockChain()
 	s.kbc = backend.KeyBlockChain()
 	s.txPool = backend.TxPool()
+	s.chainConfig = chainConfig
 
 	s.lastCmInfoMap = make(map[common.Hash]*cachedCommitteeInfo)
 
@@ -175,6 +177,17 @@ func (s *Service) OnNewView(data []byte, extraes [][]byte) error { //buf is snap
 func (s *Service) CurrentN() uint64 {
 	curView := s.GetCurrentView()
 	return curView.TxNumber + 1
+}
+
+func (s *Service) ChainID() uint64 {
+	if s.chainConfig != nil && s.chainConfig.ChainID != nil {
+		return s.chainConfig.ChainID.Uint64()
+	}
+	return 0
+}
+
+func (s *Service) UseContextSignatures() bool {
+	return true
 }
 
 // CurrentState call by hotstuff
@@ -462,7 +475,7 @@ func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
 		return nil
 	}
 	block := types.DecodeToBlock(tSign.State)
-	err := s.txService.decideNewBlock(block, tSign.Sign, tSign.Mask)
+	err := s.txService.decideNewBlock(block, tSign.Sign, tSign.Mask, tSign.ViewID, tSign.LeaderID)
 	if err != nil {
 		return err
 	}

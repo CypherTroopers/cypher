@@ -176,47 +176,47 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 		retErr = fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, kbc.CurrentBlock().Hash())
 		return retErr
 	}
-	if bftview.IamLeader(txS.s.GetCurrentView().LeaderIndex) {
-		return nil
-	}
 	err := bc.Engine().VerifyHeader(bc, header, false)
 	if err != nil {
 		retErr = fmt.Errorf("invalid header, error:%s", err.Error())
 		return retErr
 	}
 	err = bc.Validator().ValidateBody(txblock)
-	if err == types.ErrFutureBlock || err == types.ErrUnknownAncestor || err == types.ErrPrunedAncestor {
+	if err != nil {
 		retErr = fmt.Errorf("invalid body, error:%s", err.Error())
 		return retErr
 	}
-	/*
-		statedb, _, err := bc.State()
-		if err != nil {
-			retErr = fmt.Errorf("cannot get statedb, error:%s", err.Error())
-			return retErr
-		}
-		receipts, _, usedGas, err := bc.Processor.Process(txblock, statedb, vm.Config{})
-		if err != nil {
-			retErr = fmt.Errorf("cannot get receipts, error:%s", err.Error())
-			return retErr
-		}
-		err = bc.Validator.ValidateState(txblock, bc.GetBlockByHash(txblock.ParentHash()), statedb, receipts, usedGas)
-		if err != nil {
-			retErr = fmt.Errorf("Invalid state, error:%s", err.Error())
-			return retErr
-		}
-	*/
+	parent := bc.GetBlock(txblock.ParentHash(), txblock.NumberU64()-1)
+	if parent == nil {
+		retErr = fmt.Errorf("cannot get parent block, number:%d parent:%x", txblock.NumberU64()-1, txblock.ParentHash())
+		return retErr
+	}
+	statedb, err := bc.StateAt(parent.Root())
+	if err != nil {
+		retErr = fmt.Errorf("cannot get parent statedb, error:%s", err.Error())
+		return retErr
+	}
+	receipts, _, usedGas, err := bc.Processor().Process(txblock, statedb, vm.Config{})
+	if err != nil {
+		retErr = fmt.Errorf("cannot process block state, error:%s", err.Error())
+		return retErr
+	}
+	err = bc.Validator().ValidateState(txblock, statedb, receipts, usedGas)
+	if err != nil {
+		retErr = fmt.Errorf("invalid state, error:%s", err.Error())
+		return retErr
+	}
 	return nil
 }
 
 // New txBlock done, when consensus agreement completed
-func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte) error {
+func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte, viewID common.Hash, leaderID string) error {
 	log.Info("decideNewBlock", "TxBlock Number", block.NumberU64(), "txs", len(block.Transactions()))
 	bc := txS.bc
 	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return nil
 	}
-	block.SetSignature(sig, mask)
+	block.SetSignature(sig, mask, viewID, leaderID)
 	//	log.Info("decideNewBlock", "extra", block.Extra())
 	_, err := bc.InsertBlock(block)
 	if err != nil {
@@ -287,10 +287,10 @@ const (
 	slowPerAccountTierLarge  = 128
 	fastBlockMaxTxCount      = uint64(20000)
 	slowBlockMaxTxCount      = uint64(40000)
-	fastBlockMaxGasPerTx  = uint64(300000)
-	fastBlockMaxDataBytes = 1024
-	fastBlockGasTargetPct = uint64(80)
-	slowBlockGasTargetPct = uint64(95)
+	fastBlockMaxGasPerTx     = uint64(300000)
+	fastBlockMaxDataBytes    = 1024
+	fastBlockGasTargetPct    = uint64(80)
+	slowBlockGasTargetPct    = uint64(95)
 )
 
 const (

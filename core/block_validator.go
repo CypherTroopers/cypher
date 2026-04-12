@@ -18,6 +18,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/cypherium/cypher/common"
 
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core/state"
@@ -184,8 +185,15 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 	if si == nil {
 		return types.ErrEmptySignature
 	}
-
-	if !hotstuff.VerifySignature(si.Signature, si.Exceptions, buf, pubs, hotstuff.CalcThreshold(len(pubs))) {
+	threshold := hotstuff.CalcThreshold(len(pubs))
+	chainID := uint64(0)
+	if v.config != nil && v.config.ChainID != nil {
+		chainID = v.config.ChainID.Uint64()
+	}
+	if si.ViewID == (common.Hash{}) || si.LeaderID == "" {
+		return types.ErrInvalidSignature
+	}
+	if !hotstuff.VerifySignatureWithContext(si.Signature, si.Exceptions, buf, pubs, threshold, chainID, hotstuff.MsgVotePrepare, si.ViewID, si.LeaderID) {
 		return types.ErrInvalidSignature
 	}
 	return nil
