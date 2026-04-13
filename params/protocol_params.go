@@ -176,7 +176,7 @@ const (
 	Roll139976ParentHash    = "0xd77e54ac71f75fddcd81678a0bd0dbb6ee1d64c6a7b4a4821e1ebce04b2e3f07" // 原139976的hash
 	Roll139976backTarget    = 139976
 	BadKeyBlockNumber       = 131881
-	NonTrustedCountThresold = 2
+	NonTrustedCountThresold = 3
 )
 
 // Gas discount table for BLS12-381 G1 and G2 multi exponentiation operations
@@ -193,26 +193,13 @@ var (
 		common.HexToAddress("0x43eb8148fcfba29263d7955e9091b51970cb8c67"),
 	}
 	TrustedAddressList = []common.Address{
-		common.HexToAddress("0x8c22B884c3f774DCd4F0cC4C6E920Bd23b5d513F"),
-		common.HexToAddress("0x83Ea72F02B82199B29CAE3118e163F3A05EF4B16"),
-		common.HexToAddress("0x999086E1149346E803535e7176E6cE8658883f33"),
-		common.HexToAddress("0xCAb788F0767A3b62c33Fe25Ee3e87A94C0403F8E"),
-		common.HexToAddress("0x31cF88E26297545aBdF1E6c1f8fb041CEBb89290"),
-		common.HexToAddress("0x7cB40ba4a764D646100C5A9C058791B26ffBF96E"),
-		common.HexToAddress("0x05c6aCA0Ab3e47C7515c93Ea563dBaF8861d5d5f"),
-		common.HexToAddress("0x2d1E776D5cE8906DcA30635819609b2bb2dE245c"),
-		common.HexToAddress("0xc3a86479301b07a5849e382418fd524fc9e88fbe"),
-		common.HexToAddress("0x41fb9FdF1Db61B4594e3eF0b27A6840F3d2E9208"),
-		common.HexToAddress("0x5A3c2b79Faa6cf64A33a701F345E96911112cBBD"),
-		common.HexToAddress("0x630484e88bA61BA42F98F81bd5981E48B3547a58"),
-		common.HexToAddress("0xca0b3882b1e0a1540cfef7364ccf2ed8027fa86d"),
-		common.HexToAddress("0x597fe78278722f5d96ba85bb66d67785015cbb8a"),
-		common.HexToAddress("0x10CA2b7e3E26801E2A78c67000aC1982Cb8b709e"),
-		common.HexToAddress("0xcA6dF652714911B4C6D14881c143cC09E9Ad61C0"),
-		common.HexToAddress("0x9FFeDc42447cB915DE3EDf1593E81e95c06B408b"),
-		common.HexToAddress("0x693CA592Fa363109dC8B5E8a9a0C8D467D4E69A6"),
-		common.HexToAddress("0xaf006145AfceB9B3f34C03B16893c98b72160323"),
-		common.HexToAddress("0x52cd8c3a22a91b93b672f8d10e19d1c6fbe1ae42"),
+		common.HexToAddress("0x2d409042e185a09e004d1db46cba78c760d3f3ec"),
+		common.HexToAddress("0x5d40b443c478b7fd82e0b634987db8337dce6950"),
+		common.HexToAddress("0x3555d2aa567cda09cb0141ed1e01ed67a2965a14"),
+		common.HexToAddress("0x2eecf241c6b3e7743fe4f5e2e35925c6ac15a038"),
+		common.HexToAddress("0x317afa51f4d3946fe3963c46fd257f1ed576c0b2"),
+		common.HexToAddress("0x26aece2c16b35c4840127b3a487c7ffdfab57e18"),
+		common.HexToAddress("0xf8891c8a4fcd26117dd9ac8ab04401baf652fe99"),
 	}
 )
 
