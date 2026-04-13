@@ -369,7 +369,12 @@ func generateDataset(dest []uint32, epoch uint64, cache []uint32) {
 				if swapped {
 					swap(item)
 				}
-				copy(dataset[index*mixBytes:], item)
+				offsetStart := uint64(index) * uint64(mixBytes)
+				offsetEnd := offsetStart + uint64(mixBytes)
+				if offsetEnd > uint64(len(dataset)) {
+					panic("colossusX dataset write offset out of range")
+				}
+				copy(dataset[int(offsetStart):int(offsetEnd)], item)
 
 				if status := atomic.AddUint32(&progress, 1); status%percent == 0 {
 					logger.Info("Generating DAG in progress", "percentage", uint64(status*100)/cells, "elapsed", common.PrettyDuration(time.Since(start)))
@@ -385,7 +390,10 @@ func generateDataset(dest []uint32, epoch uint64, cache []uint32) {
 // value for a particular header hash and nonce.
 func colossusXhash(hash []byte, nonce uint64, size uint64, lookup func(index uint32) []uint32) ([]byte, []byte) {
 	// Calculate the number of theoretical rows (DAG cells).
-	rows := uint32(size / mixBytes)
+	rows := size / mixBytes
+	if rows == 0 {
+		return make([]byte, common.HashLength), make([]byte, common.HashLength)
+	}
 
 	// Combine header+nonce into a 64 byte seed
 	seed := make([]byte, 40)
@@ -402,7 +410,7 @@ func colossusXhash(hash []byte, nonce uint64, size uint64, lookup func(index uin
 	accessLeaves := make([][]byte, 0, auditCellCount)
 
 	for i := 0; i < loopAccesses; i++ {
-		parent := fnv(uint32(i), mix[i%hashWords]) % rows
+		parent := uint32(uint64(fnv(uint32(i), mix[i%hashWords])) % rows)
 		cell := lookup(parent)
 		cellBytes := make([]byte, mixBytes)
 		for j := range cell {
@@ -475,9 +483,14 @@ func colossusXlight(size uint64, cache []uint32, hash []byte, nonce uint64) ([]b
 // dataset) in order to produce our final value for a particular header hash and
 // nonce.
 func colossusXfull(dataset []uint32, hash []byte, nonce uint64) ([]byte, []byte) {
+	wordsPerMix := uint64(mixBytes / 4)
 	lookup := func(index uint32) []uint32 {
-		offset := index * (mixBytes / 4)
-		return dataset[offset : offset+(mixBytes/4)]
+		start := uint64(index) * wordsPerMix
+		end := start + wordsPerMix
+		if end > uint64(len(dataset)) {
+			panic("colossusX dataset lookup out of range")
+		}
+		return dataset[int(start):int(end)]
 	}
 	return colossusXhash(hash, nonce, uint64(len(dataset))*4, lookup)
 }

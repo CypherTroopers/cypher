@@ -39,7 +39,7 @@ var (
 // the chain it belongs to.
 var TrustedCheckpoints = map[common.Hash]*TrustedCheckpoint{
 	MainnetGenesisHash: MainnetTrustedCheckpoint,
-//	CypheriumGenesisHash: CypheriumTrustedCheckpoint,
+	//	CypheriumGenesisHash: CypheriumTrustedCheckpoint,
 	RopstenGenesisHash: RopstenTrustedCheckpoint,
 	RinkebyGenesisHash: RinkebyTrustedCheckpoint,
 	GoerliGenesisHash:  GoerliTrustedCheckpoint,
@@ -48,7 +48,7 @@ var TrustedCheckpoints = map[common.Hash]*TrustedCheckpoint{
 // CheckpointOracles associates each known checkpoint oracles with the genesis hash of
 // the chain it belongs to.
 var CheckpointOracles = map[common.Hash]*CheckpointOracleConfig{
-//	MainnetGenesisHash: MainnetCheckpointOracle,
+	//	MainnetGenesisHash: MainnetCheckpointOracle,
 	RopstenGenesisHash: RopstenCheckpointOracle,
 	RinkebyGenesisHash: RinkebyCheckpointOracle,
 	GoerliGenesisHash:  GoerliCheckpointOracle,
@@ -70,15 +70,15 @@ var (
 		PetersburgBlock:     big.NewInt(0),
 		IstanbulBlock:       big.NewInt(0),
 		MuirGlacierBlock:    big.NewInt(0),
-		colossusX:              new(colossusXConfig)}
+		colossusX:           new(colossusXConfig)}
 
 	// MainnetTrustedCheckpoint contains the light client trusted checkpoint for the main network.
 	MainnetTrustedCheckpoint = &TrustedCheckpoint{
-          SectionIndex: 182, // Block 182,529 section index (182,529 ÷ 1000 ≈ 182)
-          SectionHead:  common.HexToHash("0x32d96527ae12d49f4cd75d4446cece1324dcc4d54d63f48ddbec7596ab7a061b"),
-          CHTRoot:      common.HexToHash("0x997a477225b460cdc2f92a0e6abb16823144af38836254f99a5a4a58aab1e5bd"),
-          BloomRoot:    common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
-      }
+		SectionIndex: 182, // Block 182,529 section index (182,529 ÷ 1000 ≈ 182)
+		SectionHead:  common.HexToHash("0x32d96527ae12d49f4cd75d4446cece1324dcc4d54d63f48ddbec7596ab7a061b"),
+		CHTRoot:      common.HexToHash("0x997a477225b460cdc2f92a0e6abb16823144af38836254f99a5a4a58aab1e5bd"),
+		BloomRoot:    common.HexToHash("0x0000000000000000000000000000000000000000000000000000000000000000"),
+	}
 
 	// RopstenChainConfig contains the chain parameters to run a node on the Ropsten test network.
 	RopstenChainConfig = &ChainConfig{
@@ -95,7 +95,7 @@ var (
 		PetersburgBlock:     big.NewInt(0),
 		IstanbulBlock:       big.NewInt(0),
 		MuirGlacierBlock:    big.NewInt(0),
-		colossusX:              new(colossusXConfig),
+		colossusX:           new(colossusXConfig),
 	}
 
 	// RopstenTrustedCheckpoint contains the light client trusted checkpoint for the Ropsten test network.
@@ -227,19 +227,135 @@ var (
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllcolossusXProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, new(colossusXConfig), nil, nil, false, 32, 35, big.NewInt(0), nil, nil, "", false}
+	AllcolossusXProtocolChanges = &ChainConfig{
+		ChainID:                big.NewInt(1337),
+		HomesteadBlock:         big.NewInt(0),
+		DAOForkBlock:           nil,
+		DAOForkSupport:         false,
+		EIP150Block:            big.NewInt(0),
+		EIP150Hash:             common.Hash{},
+		EIP155Block:            big.NewInt(0),
+		EIP158Block:            big.NewInt(0),
+		ByzantiumBlock:         big.NewInt(0),
+		ConstantinopleBlock:    big.NewInt(0),
+		PetersburgBlock:        big.NewInt(0),
+		IstanbulBlock:          big.NewInt(0),
+		MuirGlacierBlock:       nil,
+		YoloV1Block:            nil,
+		EWASMBlock:             nil,
+		colossusX:              new(colossusXConfig),
+		Clique:                 nil,
+		Istanbul:               nil,
+		HasPrivate:             false,
+		TransactionSizeLimit:   32,
+		MaxCodeSize:            35,
+		MaxCodeSizeChangeBlock: big.NewInt(0),
+		MaxCodeSizeConfig:      nil,
+		GenCommittee:           nil,
+		RnetPort:               "",
+		FixedCommittee:         false,
+		FixedLeader:            false,
+		EnabledTPS:             false,
+	}
 
 	// AllCliqueProtocolChanges contains every protocol change (EIPs) introduced
 	// and accepted by the Ethereum core developers into the Clique consensus.
 	//
 	// This configuration is intentionally not using keyed fields to force anyone
 	// adding flags to the config to also have to set these fields.
-	AllCliqueProtocolChanges = &ChainConfig{big.NewInt(1337), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, nil, &CliqueConfig{Period: 0, Epoch: 30000}, nil, false, 32, 32, big.NewInt(0), nil, nil, "", false}
+	AllCliqueProtocolChanges = &ChainConfig{
+		ChainID:                big.NewInt(1337),
+		HomesteadBlock:         big.NewInt(0),
+		DAOForkBlock:           nil,
+		DAOForkSupport:         false,
+		EIP150Block:            big.NewInt(0),
+		EIP150Hash:             common.Hash{},
+		EIP155Block:            big.NewInt(0),
+		EIP158Block:            big.NewInt(0),
+		ByzantiumBlock:         big.NewInt(0),
+		ConstantinopleBlock:    big.NewInt(0),
+		PetersburgBlock:        big.NewInt(0),
+		IstanbulBlock:          big.NewInt(0),
+		MuirGlacierBlock:       nil,
+		YoloV1Block:            nil,
+		EWASMBlock:             nil,
+		colossusX:              nil,
+		Clique:                 &CliqueConfig{Period: 0, Epoch: 30000},
+		Istanbul:               nil,
+		HasPrivate:             false,
+		TransactionSizeLimit:   32,
+		MaxCodeSize:            32,
+		MaxCodeSizeChangeBlock: big.NewInt(0),
+		MaxCodeSizeConfig:      nil,
+		GenCommittee:           nil,
+		RnetPort:               "",
+		FixedCommittee:         false,
+		FixedLeader:            false,
+		EnabledTPS:             false,
+	}
 
-	TestChainConfig = &ChainConfig{big.NewInt(10), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, new(colossusXConfig), nil, nil, false, 32, 32, big.NewInt(0), nil, nil, "", false}
-	TestRules       = TestChainConfig.Rules(new(big.Int))
+	TestChainConfig = &ChainConfig{
+		ChainID:                big.NewInt(10),
+		HomesteadBlock:         big.NewInt(0),
+		DAOForkBlock:           nil,
+		DAOForkSupport:         false,
+		EIP150Block:            big.NewInt(0),
+		EIP150Hash:             common.Hash{},
+		EIP155Block:            big.NewInt(0),
+		EIP158Block:            big.NewInt(0),
+		ByzantiumBlock:         big.NewInt(0),
+		ConstantinopleBlock:    big.NewInt(0),
+		PetersburgBlock:        big.NewInt(0),
+		IstanbulBlock:          big.NewInt(0),
+		MuirGlacierBlock:       nil,
+		YoloV1Block:            nil,
+		EWASMBlock:             nil,
+		colossusX:              new(colossusXConfig),
+		Clique:                 nil,
+		Istanbul:               nil,
+		HasPrivate:             false,
+		TransactionSizeLimit:   32,
+		MaxCodeSize:            32,
+		MaxCodeSizeChangeBlock: big.NewInt(0),
+		MaxCodeSizeConfig:      nil,
+		GenCommittee:           nil,
+		RnetPort:               "",
+		FixedCommittee:         false,
+		FixedLeader:            false,
+		EnabledTPS:             false,
+	}
+	TestRules = TestChainConfig.Rules(new(big.Int))
 
-	CypherTestChainConfig = &ChainConfig{big.NewInt(10), big.NewInt(0), nil, false, big.NewInt(0), common.Hash{}, big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), big.NewInt(0), nil, nil, nil, new(colossusXConfig), nil, nil, true, 64, 32, big.NewInt(0), nil, nil, "", false}
+	CypherTestChainConfig = &ChainConfig{
+		ChainID:                big.NewInt(10),
+		HomesteadBlock:         big.NewInt(0),
+		DAOForkBlock:           nil,
+		DAOForkSupport:         false,
+		EIP150Block:            big.NewInt(0),
+		EIP150Hash:             common.Hash{},
+		EIP155Block:            big.NewInt(0),
+		EIP158Block:            big.NewInt(0),
+		ByzantiumBlock:         big.NewInt(0),
+		ConstantinopleBlock:    big.NewInt(0),
+		PetersburgBlock:        big.NewInt(0),
+		IstanbulBlock:          big.NewInt(0),
+		MuirGlacierBlock:       nil,
+		YoloV1Block:            nil,
+		EWASMBlock:             nil,
+		colossusX:              new(colossusXConfig),
+		Clique:                 nil,
+		Istanbul:               nil,
+		HasPrivate:             true,
+		TransactionSizeLimit:   64,
+		MaxCodeSize:            32,
+		MaxCodeSizeChangeBlock: big.NewInt(0),
+		MaxCodeSizeConfig:      nil,
+		GenCommittee:           nil,
+		RnetPort:               "",
+		FixedCommittee:         false,
+		FixedLeader:            false,
+		EnabledTPS:             false,
+	}
 )
 
 // TrustedCheckpoint represents a set of post-processed trie roots (CHT and
@@ -319,9 +435,9 @@ type ChainConfig struct {
 	EWASMBlock  *big.Int `json:"ewasmBlock,omitempty"`  // EWASM switch block (nil = no fork, 0 = already activated)
 
 	// Various consensus engines
-	colossusX   *colossusXConfig   `json:"colossusX,omitempty"`
-	Clique   *CliqueConfig   `json:"clique,omitempty"`
-	Istanbul *IstanbulConfig `json:"istanbul,omitempty"`
+	colossusX *colossusXConfig `json:"colossusX,omitempty"`
+	Clique    *CliqueConfig    `json:"clique,omitempty"`
+	Istanbul  *IstanbulConfig  `json:"istanbul,omitempty"`
 
 	HasPrivate             bool     `json:"hasPrivate"`   // Cypher flag
 	TransactionSizeLimit   uint64   `json:"txnSizeLimit"` // Cypher - transaction size limit
@@ -330,9 +446,11 @@ type ChainConfig struct {
 	// to track multiple changes to maxCodeSize
 	MaxCodeSizeConfig []MaxCodeConfigStruct `json:"maxCodeSizeConfig,omitempty"`
 
-	GenCommittee GenesisCommittee `json:"committee"      gencodec:"required"`
-	RnetPort     string           `json:"rnetport,omitempty"`
-	EnabledTPS   bool
+	GenCommittee   GenesisCommittee `json:"committee"      gencodec:"required"`
+	RnetPort       string           `json:"rnetport,omitempty"`
+	FixedCommittee bool             `json:"fixedCommittee,omitempty"`
+	FixedLeader    bool             `json:"fixedLeader,omitempty"`
+	EnabledTPS     bool
 }
 type GenesisCommittee map[int]common.Cnode
 
@@ -381,7 +499,7 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v PrivacyEnhancements: %v Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,

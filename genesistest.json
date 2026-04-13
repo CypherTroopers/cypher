@@ -9,39 +9,41 @@
     "constantinopleBlock": 0,
     "petersburgBlock": 0,
     "istanbulBlock": 0,
+    "fixedCommittee": true,
+    "fixedLeader": true,
     "committee": {
       "0": {
-        "address": ":7102",
+        "address": "161.97.184.220:7102",
         "coinbase": "2d409042e185a09e004d1db46cba78c760d3f3ec",
         "public": "573c62e06cf79a7bc8b5ed0e9aa22b4796ea3ef0221363621a16afad6f5ee006d7ad6bbf0ca5731c4b5d0678eef077a9aa10dbfecfefab76470d6fd5dbab5696"
       },
       "1": {
-        "address": ":7104",
+        "address": "161.97.184.220:7104",
         "coinbase": "5d40b443c478b7fd82e0b634987db8337dce6950",
         "public": "5805929c691a1dc54dafee566e951f92b9849504152de73657e7ef08b20ddc00f58f43c3f1216a1732b1deb98be9a8d3063405a04c51de8eff28ee230597b580"
       },
       "2": {
-        "address": ":7106",
+        "address": "161.97.184.220:7106",
         "coinbase": "3555d2aa567cda09cb0141ed1e01ed67a2965a14",
         "public": "6ba311b6129775d357ad68a1cc4738aefd7d221725bd9a31745cee9431e99209ee56632a47034729a5a5fae8f3241a2a31da6d48f4a1a776dd1712a16d3d608b"
       },
       "3": {
-        "address": ":7108",
+        "address": "161.97.184.220:7108",
         "coinbase": "2eecf241c6b3e7743fe4f5e2e35925c6ac15a038",
         "public": "7ff2e14ff3dd0b095491b35ceca4e322da2e5df0087a28b44724194cdf171206a78ac7a344384b94ac08c3039308d41a5d1a8dd79fa418743e3f80a1af834a13"
       },
       "4": {
-        "address": ":7110",
+        "address": "161.97.184.220:7110",
         "coinbase": "317afa51f4d3946fe3963c46fd257f1ed576c0b2",
         "public": "14480a3ee040262f754d9111bb76a17e453f204de22c132346dd7de63028150137351d6f37d7038ae90ad5489835788f95ff56a10d7b4aa0e03fc7835547b392"
       },
       "5": {
-        "address": ":7112",
+        "address": "161.97.184.220:7112",
         "coinbase": "26aece2c16b35c4840127b3a487c7ffdfab57e18",
         "public": "37db51d2acd462a4c782647976c2b6cede76bcffc589a911b78ad070d697000feafb818e4182bd874b786c971d597c70605fc5e90c9f5619615f3d447dc81d1d"
       },
       "6": {
-        "address": ":7114",
+        "address": "161.97.184.220:7114",
         "coinbase": "f8891c8a4fcd26117dd9ac8ab04401baf652fe99",
         "public": "0b3cc9caebe91e2bdd2e18c38191fdacc301418c40e1bd9b931e99811d8c0504a0079a779d72f2e47844fbcf0a6d87740c8d6211d0f2228e8b878cdc4ae31e13"
       }
@@ -49,7 +51,7 @@
   },
   "alloc": {
     "380Ae1a000eb03930bb2F64d4A75dfE54b3e7e18": {
-      "balance": "1000000000000000000000000"
+      "balance": "100000000000000000000000000"
     },
     "7d7cC2AbEB8256d11E9Ec63C13782E77300c7e30": {
       "balance": "1000000000000000000000000"
@@ -58,7 +60,7 @@
       "balance": "1000000000000000000000000"
     },
     "035c45516d62eeb6e6b5f2b18cdc78ea426e87cd": {
-      "balance": "1000000000000000000000000"
+      "balance": "1000000000000000000000"
     }
   },
   "difficulty": "0x44C",

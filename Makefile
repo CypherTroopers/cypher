@@ -2,7 +2,7 @@
 # with Go source code. If you know what GOPATH is then you probably
 # don't need to bother with make.
 
-.PHONY: cypher android ios cypher-cross evm all test clean
+.PHONY: cypher android ios cypher-cross evm all test clean LFG
 .PHONY: cypher-linux cypher-linux-386 cypher-linux-amd64 cypher-linux-mips64 cypher-linux-mips64le
 .PHONY: cypher-linux-arm cypher-linux-arm-5 cypher-linux-arm-6 cypher-linux-arm-7 cypher-linux-arm64
 .PHONY: cypher-darwin cypher-darwin-386 cypher-darwin-amd64
@@ -22,6 +22,64 @@ bootnode:
 	@echo "Done building."
 	@echo "Run \"$(GOBIN)/bootnode\" to launch bootnode."
 
+LFG:
+	@printf '%s\n' \
+	'                    Cypherium is Back!!' \
+	'' \
+	'                          🌕' \
+	'                           *' \
+	'                              *' \
+	'                                 *' \
+	'                           🚀🚀🚀' \
+	'                          /     \' \
+	'                         /_______\' \
+	'                         |  C Y  |' \
+	'                         |  P H  |' \
+	'                         |  E R  |' \
+	'                         |  I U  |' \
+	'                         |   M   |' \
+	'                         |       |' \
+	'                         /_______\' \
+	'                        /_________\' \
+	'                           |   |' \
+	'                           |   |' \
+	'                        ___/   \___' \
+	'                      _/   /   \   \_' \
+	'                    _/    /     \    \_' \
+	'                  _/     /       \     \_' \
+	'                _/      /         \      \_' \
+	'              _/       /           \       \_' \
+	'            _/        /             \        \_' \
+	'                 BOOSTER IGNITION >>>>>' \
+	'                 Cypherium is Back!!' \
+	'        ────────────  LFT LAUNCH  ────────────' \
+	'' \
+	'                       _________' \
+	'                  .-´           `-.' \
+	'               .-´                 `-.' \
+	'            .-´                     `-.' \
+	'           /                           \' \
+	'          /                             \' \
+	'         |          🌍  EARTH           |' \
+	'         |                               |' \
+	'         |  [AI]--[AI]--[AI]--[AI]--[AI] |' \
+	'         |    |  \/   |  \/   |  \/      |' \
+	'         |  [AI]--[AI]--[AI]--[AI]--[AI] |' \
+	'         |    |   |   |   |   |   |      |' \
+	'         |  [AI]--[AI]--[AI]--[AI]--[AI] |' \
+	'         |    |  /\   |  /\   |  /\      |' \
+	'         |  [AI]--[AI]--[AI]--[AI]--[AI] |' \
+	'         |    |   |   |   |   |   |      |' \
+	'         |  [AI]--[AI]--[AI]--[AI]--[AI] |' \
+	'         |                               |' \
+	'          \                             /' \
+	'           \                           /' \
+	'            `-.                     .-´' \
+	'               `-.               .-´' \
+	'                  `-._       _.-´' \
+	'                       `---´' \
+	'' \
+	'     AI NODES NETWORK ACTIVE (GLOBAL CONSENSUS)'
 all:
 	build/env.sh go run build/ci.go install
 
