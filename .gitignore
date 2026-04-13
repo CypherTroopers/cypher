@@ -1,0 +1,9 @@
+chaindb*/
+chaindbname*/
+build/bin/
+start-cypher*.sh
+pass.txt
+.env
+node_modules/
+package-lock.json
+package.json
