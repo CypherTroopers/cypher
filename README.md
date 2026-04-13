@@ -1,4 +1,7 @@
 ## Setup on PowerShell
+Here is two files that needed to make it run on my windows11 AIPC
+WINDOWS_BUILD.md
+build_windows.ps1
 
 Clone the repository and switch to the target branch:
 
