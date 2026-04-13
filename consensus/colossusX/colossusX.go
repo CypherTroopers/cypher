@@ -406,7 +406,7 @@ func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) erro
 		if err != nil {
 			logger.Error("Failed to generate mapped colossusX dataset", "err", err)
 
-			d.dataset = make([]uint32, dsize/2)
+			d.dataset = make([]uint32, dsize/4)
 			generateDataset(d.dataset, d.epoch, cache)
 		} else if d.mmap != nil && lockMmap {
 			if err := d.mmap.Lock(); err != nil {

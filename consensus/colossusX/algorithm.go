@@ -34,6 +34,7 @@ const (
 	cacheRounds        = 3   // Number of rounds in cache production
 	loopAccesses       = 128 // Number of accesses in colossusX loop
 	auditCellCount     = 16  // Number of sampled cells committed into the per-hash Merkle root
+	mixWordCount       = mixBytes / 4
 )
 
 // cacheSize returns the size of the colossusX verification cache that belongs to a certain
@@ -369,7 +370,12 @@ func generateDataset(dest []uint32, epoch uint64, cache []uint32) {
 				if swapped {
 					swap(item)
 				}
-				copy(dataset[index*mixBytes:], item)
+				offset := uint64(index) * uint64(mixBytes)
+				end := offset + uint64(len(item))
+				if end > uint64(len(dataset)) {
+					panic("colossusX dataset write out of bounds")
+				}
+				copy(dataset[int(offset):int(end)], item)
 
 				if status := atomic.AddUint32(&progress, 1); status%percent == 0 {
 					logger.Info("Generating DAG in progress", "percentage", uint64(status*100)/cells, "elapsed", common.PrettyDuration(time.Since(start)))
@@ -400,10 +406,14 @@ func colossusXhash(hash []byte, nonce uint64, size uint64, lookup func(index uin
 		mix[i] = binary.LittleEndian.Uint32(initialHash[i*4:])
 	}
 	accessLeaves := make([][]byte, 0, auditCellCount)
+	zeroCell := make([]uint32, mixWordCount)
 
 	for i := 0; i < loopAccesses; i++ {
 		parent := fnv(uint32(i), mix[i%hashWords]) % rows
 		cell := lookup(parent)
+		if len(cell) != len(zeroCell) {
+			cell = zeroCell
+		}
 		cellBytes := make([]byte, mixBytes)
 		for j := range cell {
 			binary.LittleEndian.PutUint32(cellBytes[j*4:], cell[j])
@@ -476,8 +486,12 @@ func colossusXlight(size uint64, cache []uint32, hash []byte, nonce uint64) ([]b
 // nonce.
 func colossusXfull(dataset []uint32, hash []byte, nonce uint64) ([]byte, []byte) {
 	lookup := func(index uint32) []uint32 {
-		offset := index * (mixBytes / 4)
-		return dataset[offset : offset+(mixBytes/4)]
+		offset := uint64(index) * uint64(mixWordCount)
+		end := offset + uint64(mixWordCount)
+		if end > uint64(len(dataset)) {
+			return nil
+		}
+		return dataset[int(offset):int(end)]
 	}
 	return colossusXhash(hash, nonce, uint64(len(dataset))*4, lookup)
 }
