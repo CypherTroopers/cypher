@@ -378,7 +378,8 @@ func generateDataset(dest []uint32, epoch uint64, cache []uint32) {
 
 				if status := atomic.AddUint32(&progress, 1); status%percent == 0 {
 					logger.Info("Generating DAG in progress", "percentage", (uint64(status)*100)/cells, "elapsed", common.PrettyDuration(time.Since(start)))
-			}
+							}
+				}
 		}(i)
 	}
 	// Wait for all the generators to finish and return
