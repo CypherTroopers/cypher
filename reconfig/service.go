@@ -318,8 +318,21 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	s.muCurrentView.Unlock()
 
 	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
-	if leaderIndex > 0 || (fixedMode && !noDone) {
-		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone)
+	forceFixedTimedKeyBlock := false
+	if fixedMode && noDone {
+		curKeyBlock := s.kbc.CurrentBlock()
+		if curKeyBlock != nil {
+			lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+			if time.Since(lastKeyTime) >= fixedModeKeyBlockInterval {
+				forceFixedTimedKeyBlock = true
+				log.Warn("Propose force fixed-mode timed keyblock", "elapsed", time.Since(lastKeyTime), "keyNumber", curKeyBlock.NumberU64(), "txNumber", s.bc.CurrentBlockN())
+			}
+		}
+	}
+	shouldProposeKeyBlock := leaderIndex > 0 || (fixedMode && (!noDone || forceFixedTimedKeyBlock))
+	if shouldProposeKeyBlock {
+		isDoneKeyBlock := !noDone || forceFixedTimedKeyBlock
+		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, isDoneKeyBlock)
 		if err == nil && keyblock != nil && mb != nil {
 			if bestCandi != nil {
 				extra = bestCandi.EncodeToBytes()
@@ -724,12 +737,19 @@ func (s *Service) setNextLeader(isDone bool) {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
 
+	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
 	if isDone {
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(0)
 	} else {
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(s.currentView.LeaderIndex)
 	}
-	s.currentView.NoDone = !isDone
+	if fixedMode && !isDone && !s.currentView.NoDone {
+		// Keep a pending fixed-mode keyblock trigger across timeout/view-change retries.
+		// Without this guard, timeout-driven setNextLeader(false) can flip NoDone back
+		// to true before the proposer emits the scheduled keyblock.
+	} else {
+		s.currentView.NoDone = !isDone
+	}
 	log.Info("setNextLeader", "isDone", isDone, "index", s.currentView.LeaderIndex)
 
 	s.waittingView.TxNumber = s.currentView.TxNumber + 1
