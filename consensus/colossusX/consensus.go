@@ -45,7 +45,8 @@ import (
 // error types into the pow package.
 var (
 	FrontierBlockReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Block reward in wei for successfully mining a block
-	ByzantiumBlockReward = big.NewInt(3e+18) // Block reward in wei for successfully mining a block upward from Byzantium
+	ByzantiumBlockReward = big.NewInt(3e+18)                                              // Block reward in wei for successfully mining a block upward from Byzantium
+	CommonNodePowReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Bonus reward in wei for accepted common-node PoW candidate
 
 	errLargeBlockTime    = errors.New("timestamp too big")
 	errZeroBlockTime     = errors.New("timestamp equals parent's")
@@ -519,6 +520,31 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 		reward.Add(reward, r)
 	}
 	state.AddBalance(header.Coinbase, reward)
+	rewardCommonNodePow(state, header)
+}
+
+func rewardCommonNodePow(state *state.StateDB, header *types.Header) {
+	if header.BlockType != types.Key_Block || len(header.KeyInfo) == 0 {
+		return
+	}
+	keyblock := types.DecodeToKeyBlock(header.KeyInfo)
+	if keyblock == nil {
+		return
+	}
+	rewardAddr := ""
+	switch keyblock.BlockType() {
+	case types.PowReconfig, types.PacePowReconfig:
+		rewardAddr = keyblock.InAddress()
+	case types.TimeReconfig, types.PaceReconfig:
+		// Keep reward criteria mode-agnostic: pay selected PoW miner if one is encoded in keyblock.
+		rewardAddr = keyblock.OutAddress(0)
+	default:
+		return
+	}
+	if rewardAddr == "" {
+		return
+	}
+	state.AddBalance(common.HexToAddress(rewardAddr), new(big.Int).Set(CommonNodePowReward))
 }
 
 // wrapper for accumulateRewards to be called by raft minter

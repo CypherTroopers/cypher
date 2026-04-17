@@ -123,7 +123,26 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	}
 
 	keyType := keyblock.BlockType()
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) &&
+	fixedMode := keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee)
+	if fixedMode && (keyType == types.TimeReconfig || keyType == types.PaceReconfig) {
+		hasFixedPowCarrier := keyblock.OutPubKey() != "" || keyblock.OutAddress(0) != ""
+		if hasFixedPowCarrier && bestCandi == nil {
+			return fmt.Errorf("keyblock verify failed, fixed mode requires best candidate when pow carrier fields are set")
+		}
+	}
+	if fixedMode && bestCandi != nil {
+		bestCandi.KeyCandidate.BlockType = keyType
+		if keyblock.Header().HashWithCandi() != bestCandi.KeyCandidate.HashWithCandi() {
+			return fmt.Errorf("keyblock verify failed,best candidate's hash is not equal me")
+		}
+		if keyblock.OutPubKey() != bestCandi.PubKey || keyblock.OutAddress(0) != bestCandi.Coinbase {
+			return fmt.Errorf("keyblock verify failed, fixed mode best candidate out info is not correct")
+		}
+		if err := keyS.engine.VerifyCandidate(keyS.kbc, bestCandi); err != nil {
+			return err
+		}
+	}
+	if fixedMode &&
 		(keyType == types.PowReconfig || keyType == types.PacePowReconfig) {
 		return fmt.Errorf("keyblock verify failed, pow reconfig is disabled when fixedLeader/fixedCommittee is enabled")
 	}
@@ -209,7 +228,8 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 // Try to change committee and proposal a new keyblock
 func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool) (*types.KeyBlock, *bftview.Committee, *types.Candidate, error) {
 	log.Info("tryProposalChangeCommittee", "tx number", keyS.bc.CurrentBlockN(), "isDone", isDone, "leaderIndex", leaderIndex)
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
+	fixedMode := keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee)
+	if fixedMode {
 		leaderIndex = 0
 	}
 	curKeyBlock := keyS.kbc.CurrentBlock()
@@ -229,20 +249,25 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 
 	var outerPublic, outerCoinBase string
 	best := keyS.getBestCandidate(false)
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
-		best = nil
-	}
 
 	var reconfigType uint8
 	if isDone {
 		if best != nil {
-			reconfigType = types.PowReconfig
+			if fixedMode {
+				reconfigType = types.TimeReconfig
+			} else {
+				reconfigType = types.PowReconfig
+			}
 		} else {
 			reconfigType = types.TimeReconfig
 		}
 	} else {
 		if best != nil {
-			reconfigType = types.PacePowReconfig
+			if fixedMode {
+				reconfigType = types.PaceReconfig
+			} else {
+				reconfigType = types.PacePowReconfig
+			}
 		} else {
 			reconfigType = types.PaceReconfig
 		}
@@ -269,8 +294,16 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 		}
 
 	} else { //exchange in internal
+		if fixedMode && best != nil {
+			ck := best.KeyCandidate
+			header.Time, header.Difficulty, header.MixDigest, header.Nonce = ck.Time, ck.Difficulty, ck.MixDigest, ck.Nonce
+			// In fixed mode committee stays unchanged, so carry selected PoW miner in out fields for verification/reward.
+			outerPublic, outerCoinBase = best.PubKey, best.Coinbase
+		}
 		mb.Add(nil, int(leaderIndex), "")
-		outerPublic, outerCoinBase = "", ""
+		if outerPublic == "" || outerCoinBase == "" {
+			outerPublic, outerCoinBase = "", ""
+		}
 	}
 
 	header.CommitteeHash = mb.RlpHash()
