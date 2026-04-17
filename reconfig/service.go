@@ -686,8 +686,11 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 		s.currentView.LeaderIndex = 0
 		// In fixed mode, keep a pending keyblock trigger (NoDone=false) across tx-block updates
 		// so the proposer can still emit a key block even while tx blocks keep arriving.
-		if !(fixedMode && !fromKeyBlock && !s.currentView.NoDone) {
+		preservePendingKeyBlock := fixedMode && !fromKeyBlock && !s.currentView.NoDone
+		if !preservePendingKeyBlock {
 			s.currentView.NoDone = true
+		} else {
+			log.Debug("updateCurrentView preserve fixed-mode keyblock trigger", "txNumber", curBlock.NumberU64(), "keyNumber", curKeyBlock.NumberU64())
 		}
 	}
 	log.Debug("updateCurrentView", "TxNumber", s.currentView.TxNumber, "KeyNumber", s.currentView.KeyNumber, "LeaderIndex", s.currentView.LeaderIndex, "NoDone", s.currentView.NoDone)
