@@ -50,7 +50,6 @@ import (
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/miner"
 	"github.com/cypherium/cypher/reconfig/bftview"
-	"golang.org/x/crypto/ed25519"
 
 	"github.com/cypherium/cypher/node"
 	"github.com/cypherium/cypher/p2p"
@@ -515,7 +514,7 @@ func (s *Ethereum) StopMining() {
 }
 */
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
-func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey ed25519.PublicKey) error {
+func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey []byte) error {
 	// If the miner was not running, initialize it
 	if !s.IsMining() {
 		s.lock.RLock()
@@ -551,7 +550,7 @@ func (s *Ethereum) ArchiveMode() bool                                { return s.
 func (s *Ethereum) BloomIndexer() *core.ChainIndexer                 { return s.bloomIndexer }
 func (s *Ethereum) CandidatePool() *core.CandidatePool               { return s.candidatePool }
 func (s *Ethereum) ExtIP() net.IP                                    { return s.extIP }
-func (s *Ethereum) PublicKey() ed25519.PublicKey                     { return s.miner.GetPubKey() }
+func (s *Ethereum) PublicKey() []byte                                { return s.miner.GetPubKey() }
 func (s *Ethereum) GetCalcGasLimit() func(block *types.Block) uint64 { return s.CalcGasLimit }
 
 // Protocols returns all the currently configured

@@ -8,8 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/crypto/ed25519"
-
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
@@ -75,7 +73,7 @@ type worker struct {
 	chain   *core.KeyBlockChain // todo: should be the key block
 	chainDb ethdb.Database
 
-	pubKey    ed25519.PublicKey
+	pubKey    []byte
 	coinBase  common.Address
 	currentMu sync.Mutex
 	current   *Work
@@ -322,7 +320,7 @@ func (self *worker) commitNewWork() {
 	}
 }
 
-func (self *worker) SetPubKey(pubKey ed25519.PublicKey) {
+func (self *worker) SetPubKey(pubKey []byte) {
 	self.pubKey = pubKey
 }
 

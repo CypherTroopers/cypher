@@ -26,10 +26,10 @@ Start the node:
 
 ## console command (mining)
 ```powershell
-personal.newAccountEd25519("your password")
+personal.newAccount("your password")
 ```
 ```powershell
-miner.start(1, "Ed25519 address", "your password")
+miner.start(1, "ECDSA address", "your password")
 ```
 
 

@@ -534,20 +534,27 @@ func zeroKey(k *ecdsa.PrivateKey) {
 	}
 }
 
-//--ed25519--------------------------------------------------------------------------
+//--ECDSA--------------------------------------------------------------------------
 
 func (ks *KeyStore) GetKeyPair(account accounts.Account, passphrase string) ([]byte, []byte, error) {
 	_, key, err := ks.getDecryptedKey(account, passphrase)
 	if err != nil {
 		return nil, nil, err
 	}
-	if key.PrivateKey25519 == nil {
-		return nil, nil, errors.New("the account can not decrypted by ed25519")
+	if key.PrivateKey == nil {
+		return nil, nil, errors.New("the account can not decrypted by ecdsa")
 
 	}
-	defer zeroKey25519(key.PrivateKey25519)
+	defer zeroKey(key.PrivateKey)
 
-	pubKey, priKey, err := crypto.EDDSAToBLS(key.PrivateKey25519)
+	privateKey := crypto.FromECDSA(key.PrivateKey)
+	defer func() {
+		for i := range privateKey {
+			privateKey[i] = 0
+		}
+	}()
+
+	pubKey, priKey, err := crypto.EDDSAToBLS(privateKey)
 	return pubKey, priKey, err
 }
 
