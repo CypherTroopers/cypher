@@ -301,13 +301,14 @@ func (s *PrivateAccountAPI) NewAccount(password string) (common.Address, error) 
 	return common.Address{}, err
 }
 
-// NewAccountEd25519 will create a new account and returns the address for the new account.
+// NewAccountEd25519 is kept for backward compatibility and now creates an ECDSA account.
 func (s *PrivateAccountAPI) NewAccountEd25519(password string) (common.Address, error) {
 	ks, err := fetchKeystore(s.am)
 	if err != nil {
 		return common.Address{}, err
 	}
-	acc, err := ks.NewAccount25519(password)
+	log.Warn("personal_newAccountEd25519 is deprecated; creating an ECDSA account instead")
+	acc, err := ks.NewAccount(password)
 	if err == nil {
 		log.Info("Your new key was generated", "address", acc.Address)
 		log.Warn("Please backup your key file!", "path", acc.URL.Path)

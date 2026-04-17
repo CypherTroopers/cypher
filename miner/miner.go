@@ -4,8 +4,6 @@ import (
 	"math/big"
 	"time"
 
-	"golang.org/x/crypto/ed25519"
-
 	"net"
 
 	"github.com/cypherium/cypher/accounts"
@@ -48,7 +46,7 @@ type Config struct {
 type Miner struct {
 	mux         *event.TypeMux
 	worker      *worker
-	pubKey      ed25519.PublicKey
+	pubKey      []byte
 	coinBase    common.Address
 	eth         Backend
 	engine      consensus.Engine
@@ -70,7 +68,7 @@ func New(eth Backend, config *params.ChainConfig, mux *event.TypeMux, engine con
 	return miner
 }
 
-func (self *Miner) Start(pubKey ed25519.PublicKey, eb common.Address) {
+func (self *Miner) Start(pubKey []byte, eb common.Address) {
 
 	self.SetPubKey(pubKey)
 	self.SetCoinbase(eb)
@@ -114,11 +112,11 @@ func (self *Miner) HashRate() uint64 {
 	return 0
 }
 
-func (self *Miner) GetPubKey() ed25519.PublicKey {
+func (self *Miner) GetPubKey() []byte {
 	return self.pubKey
 }
 
-func (self *Miner) SetPubKey(pubKey ed25519.PublicKey) {
+func (self *Miner) SetPubKey(pubKey []byte) {
 	self.pubKey = pubKey
 	self.worker.SetPubKey(pubKey)
 }

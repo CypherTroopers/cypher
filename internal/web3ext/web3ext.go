@@ -22,7 +22,7 @@ var Modules = map[string]string{
 	"admin":          AdminJs,
 	"chequebook":     ChequebookJs,
 	"clique":         CliqueJs,
-	"colossusX":         colossusXJs,
+	"colossusX":      colossusXJs,
 	"debug":          DebugJs,
 	"eth":            EthJs,
 	"miner":          MinerJs,
@@ -735,8 +735,13 @@ web3._extend({
 			params: 1
 		}),
 		new web3._extend.Method({
+			name: 'newAccount',
+			call: 'personal_newAccount',
+			params: 1
+		}),
+		new web3._extend.Method({
 			name: 'newAccountEd25519',
-			call: 'personal_newAccountEd25519',
+			call: 'personal_newAccount',
 			params: 1
 		}),
 		new web3._extend.Method({

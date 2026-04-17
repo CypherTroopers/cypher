@@ -42,7 +42,6 @@ import (
 	"github.com/cypherium/cypher/trie"
 	//"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
-	"golang.org/x/crypto/ed25519"
 )
 
 // PublicEthereumAPI provides an API to access Ethereum full node-related
@@ -152,10 +151,10 @@ func (api *PrivateMinerAPI) Start(threads *int) error {
 */
 func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password string) error {
 	var (
-		err    error
-		eb     common.Address
-		prvKey ed25519.PrivateKey
-		pubKey ed25519.PublicKey
+		err          error
+		eb           common.Address
+		blsPrivKey   []byte
+		blsPublicKey []byte
 	)
 
 	if api.e.IsMining() {
@@ -173,21 +172,21 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 		for _, account := range wallet.Accounts() {
 			if account.Address == eb {
 				//wallet.GetPubKey(account, passwd)
-				pubKey, prvKey, err = wallet.GetKeyPair(account, password)
+				blsPublicKey, blsPrivKey, err = wallet.GetKeyPair(account, password)
 				if err != nil {
-					log.Error("Cannot start reconfig without public key of coinbase", "err", err)
-					return fmt.Errorf("Coinbase missing public key: %v", err)
+					log.Error("Cannot start reconfig with non-ECDSA coinbase account", "err", err)
+					return fmt.Errorf("coinbase must be an ECDSA account: %v", err)
 				}
-				server.Public = common.HexString(pubKey)
-				server.Private = common.HexString(prvKey)
+				server.Public = common.HexString(blsPublicKey)
+				server.Private = common.HexString(blsPrivKey)
 				//log.Info("miner.start", "addr", eb, "pub", server.Public)
 			}
 		}
 	}
 
-	if pubKey == nil || prvKey == nil {
-		log.Error("Cannot start reconfig without correct public key")
-		return errors.New("missing public key")
+	if blsPublicKey == nil || blsPrivKey == nil {
+		log.Error("Cannot start reconfig without BLS key pair")
+		return errors.New("missing BLS key pair (ECDSA account required)")
 	}
 	log.Warn("pubKey", "pubKey", server.Public) //, "prvKey", server.Private)
 	log.Warn("exip", "ip", api.e.ExtIP(), "port", api.e.config.RnetPort)
@@ -209,7 +208,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	//	log.Info("Updated mining threads", "threads", *threads)
 	//	th.SetThreads(*threads)
 	//}
-	return api.e.StartMining(true, eb, pubKey)
+	return api.e.StartMining(true, eb, blsPublicKey)
 }
 
 // Stop terminates the miner, both at the consensus engine level as well as at
