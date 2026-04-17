@@ -681,9 +681,14 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 	s.currentView.KeyHash = curKeyBlock.Hash()
 	s.currentView.CommitteeHash = curKeyBlock.CommitteeHash()
 
+	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
 	if fromKeyBlock || curBlock.NumberU64() > curKeyBlock.T_Number() {
 		s.currentView.LeaderIndex = 0
-		s.currentView.NoDone = true
+		// In fixed mode, keep a pending keyblock trigger (NoDone=false) across tx-block updates
+		// so the proposer can still emit a key block even while tx blocks keep arriving.
+		if !(fixedMode && !fromKeyBlock && !s.currentView.NoDone) {
+			s.currentView.NoDone = true
+		}
 	}
 	log.Debug("updateCurrentView", "TxNumber", s.currentView.TxNumber, "KeyNumber", s.currentView.KeyNumber, "LeaderIndex", s.currentView.LeaderIndex, "NoDone", s.currentView.NoDone)
 	if fromKeyBlock || (s.currentView.TxNumber >= s.waittingView.TxNumber && s.currentView.KeyNumber >= s.waittingView.KeyNumber) || curBlock.BlockType() == types.Key_Block {
