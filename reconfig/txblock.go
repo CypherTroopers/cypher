@@ -80,10 +80,6 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	work := txS.createWork()
 
 	header := work.header
-	// commit state root after all state transitions.
-	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
-	header.Root = work.publicState.IntermediateRoot(txS.bc.Config().IsEIP158(header.Number))
-
 	header.BlockType = types.Key_Block
 	header.Difficulty = keyblock.Difficulty()
 	header.MixDigest = keyblock.MixDigest()
@@ -92,6 +88,11 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 
 	block := types.NewBlock(header, nil, nil, nil, new(trie.Trie))
 	block.SetKeyblock(keyblock)
+	// commit state root after all state transitions.
+	// Important: keyblock metadata must be set before reward accumulation so that
+	// rewardCommonNodePow can evaluate keyblock type/address deterministically.
+	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, block.Header0(), nil)
+	block.Header0().Root = work.publicState.IntermediateRoot(txS.bc.Config().IsEIP158(block.Number()))
 
 	log.Info("Generated next keyblock", "block num", block.Number())
 
