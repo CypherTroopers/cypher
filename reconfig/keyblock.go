@@ -453,15 +453,27 @@ func (keyS *keyService) getBestCandidate(refresh bool) *types.Candidate {
 		}
 		contents := keyS.candidatepool.Content()
 		if len(contents) > 0 {
-			best := contents[0]
-			if best.KeyCandidate.Number.Uint64() == kNumber {
-				if keyS.bestCandidate == nil {
-					keyS.bestCandidate = best
-				} else if best.KeyCandidate.Nonce.Uint64() < keyS.bestCandidate.KeyCandidate.Nonce.Uint64() {
-					keyS.bestCandidate = best
+			found := false
+			for _, cand := range contents {
+				if cand == nil || cand.KeyCandidate == nil {
+					continue
 				}
-			} else {
-				log.Warn("getBestCandidate", "have not get the candidate keyNumber", keyS.kbc.CurrentBlockN(), "KeyCandidate number", best.KeyCandidate.Number.Uint64())
+				if cand.KeyCandidate.Number.Uint64() != kNumber {
+					continue
+				}
+				if bftview.GetMemberIndex(cand.PubKey) >= 0 {
+					continue
+				}
+				if keyS.bestCandidate == nil || cand.KeyCandidate.Nonce.Uint64() < keyS.bestCandidate.KeyCandidate.Nonce.Uint64() {
+					keyS.bestCandidate = cand
+				}
+				found = true
+				// Content() is already nonce-ascending, so the first matched candidate
+				// is the best one for this key number.
+				break
+			}
+			if !found {
+				log.Warn("getBestCandidate", "have not get the candidate keyNumber", keyS.kbc.CurrentBlockN(), "candidateCount", len(contents))
 			}
 		}
 	} //end if refresh
