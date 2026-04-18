@@ -132,6 +132,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		if hasFixedPowCarrier && bestCandi == nil {
 			return fmt.Errorf("keyblock verify failed, fixed mode requires best candidate when pow carrier fields are set")
 		}
+		if !hasFixedPowCarrier && bestCandi != nil {
+			return fmt.Errorf("keyblock verify failed, fixed mode best candidate provided but pow carrier fields are empty")
+		}
 	}
 	if fixedMode && bestCandi != nil {
 		bestCandi.KeyCandidate.BlockType = keyType
@@ -351,7 +354,7 @@ func (keyS *keyService) getNextLeaderIndex(leaderIndex uint) uint {
 
 	for loopi := 0; loopi < 3; loopi++ {
 		if curblock.BlockType() == types.PaceReconfig || curblock.BlockType() == types.PacePowReconfig {
-			curblock := kbc.GetBlockByHash(curblock.ParentHash())
+			curblock = kbc.GetBlockByHash(curblock.ParentHash())
 			if curblock != nil {
 				badNodes[curblock.LeaderAddress()] = true
 			}
