@@ -75,6 +75,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 
 	var newNode *common.Cnode
 	if keyblock.HasNewNode() {
+		if bestCandi == nil {
+			return fmt.Errorf("keyblock verify failed, missing best candidate for pow reconfig block")
+		}
 		newNode = &common.Cnode{
 			Address:  net.IP(bestCandi.IP).String() + ":" + strconv.Itoa(bestCandi.Port),
 			CoinBase: keyblock.InAddress(),
@@ -190,6 +193,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 			return fmt.Errorf("keyblock verify failed, PowReconfig or PacePowReconfig should has outer")
 		}
 		outAddress := keyblock.OutAddress(0)
+		if outAddress == "" {
+			return fmt.Errorf("keyblock verify failed, outer address is empty")
+		}
 		isBadAddress := false
 		if outAddress[0] == '*' {
 			outAddress = outAddress[1:]
