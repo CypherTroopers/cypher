@@ -75,6 +75,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 
 	var newNode *common.Cnode
 	if keyblock.HasNewNode() {
+		if bestCandi == nil {
+			return fmt.Errorf("keyblock verify failed, missing best candidate for pow reconfig block")
+		}
 		newNode = &common.Cnode{
 			Address:  net.IP(bestCandi.IP).String() + ":" + strconv.Itoa(bestCandi.Port),
 			CoinBase: keyblock.InAddress(),
@@ -190,6 +193,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 			return fmt.Errorf("keyblock verify failed, PowReconfig or PacePowReconfig should has outer")
 		}
 		outAddress := keyblock.OutAddress(0)
+		if outAddress == "" {
+			return fmt.Errorf("keyblock verify failed, outer address is empty")
+		}
 		isBadAddress := false
 		if outAddress[0] == '*' {
 			outAddress = outAddress[1:]
@@ -447,15 +453,27 @@ func (keyS *keyService) getBestCandidate(refresh bool) *types.Candidate {
 		}
 		contents := keyS.candidatepool.Content()
 		if len(contents) > 0 {
-			best := contents[0]
-			if best.KeyCandidate.Number.Uint64() == kNumber {
-				if keyS.bestCandidate == nil {
-					keyS.bestCandidate = best
-				} else if best.KeyCandidate.Nonce.Uint64() < keyS.bestCandidate.KeyCandidate.Nonce.Uint64() {
-					keyS.bestCandidate = best
+			found := false
+			for _, cand := range contents {
+				if cand == nil || cand.KeyCandidate == nil {
+					continue
 				}
-			} else {
-				log.Warn("getBestCandidate", "have not get the candidate keyNumber", keyS.kbc.CurrentBlockN(), "KeyCandidate number", best.KeyCandidate.Number.Uint64())
+				if cand.KeyCandidate.Number.Uint64() != kNumber {
+					continue
+				}
+				if bftview.GetMemberIndex(cand.PubKey) >= 0 {
+					continue
+				}
+				if keyS.bestCandidate == nil || cand.KeyCandidate.Nonce.Uint64() < keyS.bestCandidate.KeyCandidate.Nonce.Uint64() {
+					keyS.bestCandidate = cand
+				}
+				found = true
+				// Content() is already nonce-ascending, so the first matched candidate
+				// is the best one for this key number.
+				break
+			}
+			if !found {
+				log.Warn("getBestCandidate", "have not get the candidate keyNumber", keyS.kbc.CurrentBlockN(), "candidateCount", len(contents))
 			}
 		}
 	} //end if refresh
