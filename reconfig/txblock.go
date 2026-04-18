@@ -134,7 +134,7 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 
 	log.Info("Generated next block", "block num", block.Number(), "num txes", txCount)
 
-	if err := txS.bc.CommitBlockWithState(false, work.publicState); err != nil {
+	if err := txS.bc.CommitBlockWithState(txS.bc.Config().IsEIP158(header.Number), work.publicState); err != nil {
 		panic(err)
 	}
 
