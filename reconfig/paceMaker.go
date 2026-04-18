@@ -31,6 +31,7 @@ import (
 
 var maxPaceMakerTime time.Time
 var fixedModeKeyBlockInterval = 10 * time.Minute
+var fixedModeTriggerThrottle = 2 * time.Second
 
 type paceMakerTimer struct {
 	startTime     time.Time
@@ -55,6 +56,7 @@ func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *Reconfig
 		service:       s,
 		txPool:        backend.TxPool(),
 		candidatepool: backend.CandidatePool(),
+		kbc:           backend.KeyBlockChain(),
 		startTime:     maxPaceMakerTime,
 		lastKeyTime:   time.Now(),
 		beStop:        true,
@@ -135,16 +137,11 @@ func (t *paceMakerTimer) loopTimer() {
 
 		now := time.Now()
 		if t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee) && bftview.IamMember() >= 0 {
-			t.mu.Lock()
-			lastKeyTime := t.lastKeyTime
-			if now.Sub(lastKeyTime) >= fixedModeKeyBlockInterval {
-				t.lastKeyTime = now
-				t.mu.Unlock()
-				log.Warn("paceMakerTimer fixed mode keyblock trigger", "elapsed", now.Sub(lastKeyTime))
+			if chainElapsed, localElapsed, shouldTrigger := t.shouldTriggerFixedModeKeyBlock(now); shouldTrigger {
+				log.Warn("paceMakerTimer fixed mode keyblock trigger", "chainElapsed", chainElapsed, "localElapsed", localElapsed)
 				t.setNextLeader(true)
 				continue
 			}
-			t.mu.Unlock()
 		}
 
 		diff := now.Sub(startTime)
@@ -166,6 +163,26 @@ func (t *paceMakerTimer) loopTimer() {
 			t.retryNumber++
 		}
 	}
+}
+
+func (t *paceMakerTimer) shouldTriggerFixedModeKeyBlock(now time.Time) (time.Duration, time.Duration, bool) {
+	keyblock := t.kbc.CurrentBlock()
+	if keyblock == nil {
+		return 0, 0, false
+	}
+	chainElapsed := now.Sub(time.Unix(int64(keyblock.Time()), 0))
+	if chainElapsed < fixedModeKeyBlockInterval {
+		return chainElapsed, 0, false
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	localElapsed := now.Sub(t.lastKeyTime)
+	if localElapsed < fixedModeTriggerThrottle {
+		return chainElapsed, localElapsed, false
+	}
+	t.lastKeyTime = now
+	return chainElapsed, localElapsed, true
 }
 
 func (t *paceMakerTimer) setNextLeader(isDone bool) {
