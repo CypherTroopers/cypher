@@ -234,8 +234,10 @@ func (self *worker) wait() {
 			}
 
 			if err := self.candidatePool.AddLocal(candidate); err != nil {
-				log.Error("Fail to add local candidate", "err", err)
-				if err != core.ErrCandidateExisted && err != core.ErrCandidateIsMember {
+				if err == core.ErrCandidateExisted || err == core.ErrCandidateIsMember {
+					log.Debug("Skip local candidate", "err", err)
+				} else {
+					log.Error("Fail to add local candidate", "err", err)
 					self.commitNewWork()
 				}
 			}

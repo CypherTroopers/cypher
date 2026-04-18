@@ -23,8 +23,8 @@ import (
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
-	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/bftview"
 )
 
 var (
@@ -170,10 +170,10 @@ func (t *candidateLookup) Add(c *types.Candidate) bool {
 
 		nonTrustedCount := 0
 		for _, member := range currentCommittee.List {
-            coinbaseAddr := common.HexToAddress(member.CoinBase)
-            if !trustedCoinbases[coinbaseAddr] {
-                nonTrustedCount++
-            }
+			coinbaseAddr := common.HexToAddress(member.CoinBase)
+			if !trustedCoinbases[coinbaseAddr] {
+				nonTrustedCount++
+			}
 		}
 
 		if nonTrustedCount >= params.NonTrustedCountThresold {
@@ -182,7 +182,7 @@ func (t *candidateLookup) Add(c *types.Candidate) bool {
 			return true
 		}
 	}
-	
+
 	if _, ok := t.all[c.Hash()]; ok {
 		return true // already exists
 	}
@@ -213,6 +213,17 @@ func (t *candidateLookup) Remove(c *types.Candidate) bool {
 
 		if v.PubKey == c.PubKey && bytes.Equal(v.KeyCandidate.Nonce[:], c.KeyCandidate.Nonce[:]) {
 			delete(t.all, k)
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveFromTemp deletes a candidate from temporary map by pubkey+nonce.
+func (t *candidateLookup) RemoveFromTemp(c *types.Candidate) bool {
+	for k, v := range t.temp {
+		if v.PubKey == c.PubKey && bytes.Equal(v.KeyCandidate.Nonce[:], c.KeyCandidate.Nonce[:]) {
+			delete(t.temp, k)
 			return true
 		}
 	}
@@ -273,6 +284,18 @@ func (t *candidateLookup) FoundCandidate(number *big.Int, pubKey string) bool {
 	}
 
 	return false
+}
+
+func (t *candidateLookup) GetCandidate(number *big.Int, pubKey string) *types.Candidate {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+
+	for _, candidate := range t.all {
+		if number.Cmp(candidate.KeyCandidate.Number) == 0 && pubKey == candidate.PubKey {
+			return candidate
+		}
+	}
+	return nil
 }
 
 func (t *candidateLookup) FoundCandidateByIp(ip string) (*types.Candidate, bool) {
@@ -407,9 +430,19 @@ func (cp *CandidatePool) AddLocal(candidate *types.Candidate) error {
 		return ErrCandidateNumberLow
 	}
 
-	if cp.FoundCandidate(candidate.KeyCandidate.Number, candidate.PubKey) {
-		log.Warn("Candidate Existed")
-		return ErrCandidateExisted
+	if existed := cp.candidates.GetCandidate(candidate.KeyCandidate.Number, candidate.PubKey); existed != nil {
+		if candidate.KeyCandidate.T_Number <= existed.KeyCandidate.T_Number {
+			log.Warn("Candidate Existed",
+				"candidate.t_number", candidate.KeyCandidate.T_Number,
+				"existing.t_number", existed.KeyCandidate.T_Number)
+			return ErrCandidateExisted
+		}
+		// Prefer the fresher candidate when tx number advanced.
+		cp.candidates.Remove(existed)
+		cp.candidates.RemoveFromTemp(existed)
+		log.Info("Replace local candidate with fresher tx number",
+			"old.t_number", existed.KeyCandidate.T_Number,
+			"new.t_number", candidate.KeyCandidate.T_Number)
 	}
 	log.Info("Now you will be waitting for at least 10-40 minutes to become leader or committee member.")
 	return cp.add(candidate, true, true)
