@@ -256,9 +256,9 @@ func (b *KeyBlock) TypeCheck(last_T_Number uint64) bool {
 	} else if keyType == PacePowReconfig {
 		return delta%params.KeyblockPerTxBlocks != 0
 	} else if keyType == TimeReconfig {
-		return delta%params.GapTxBlocks == 0
+		return delta%params.KeyblockPerTxBlocks == 0
 	} else if keyType == PaceReconfig {
-		return delta%params.GapTxBlocks != 0
+		return delta%params.KeyblockPerTxBlocks != 0
 	}
 	return false
 }
