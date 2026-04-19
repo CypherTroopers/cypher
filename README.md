@@ -32,7 +32,7 @@ personal.newAccount("your password")
 miner.start(1, "your address here", "your password")
 ```
  ```powershell
-eth.getBalance("your address")
+web3.fromWei(eth.getBalance("your address"), "ether")
 ```
 
 
