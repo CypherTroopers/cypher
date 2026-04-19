@@ -31,6 +31,9 @@ personal.newAccount("your password")
 ```powershell
 miner.start(1, "your address here", "your password")
 ```
+ ```powershell
+eth.getBalance("your address")
+```
 
 
 ## Setup linux 
