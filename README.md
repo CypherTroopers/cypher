@@ -29,7 +29,7 @@ Start the node:
 personal.newAccount("your password")
 ```
 ```powershell
-miner.start(1, "ECDSA address", "your password")
+miner.start(1, "your address here", "your password")
 ```
 
 
