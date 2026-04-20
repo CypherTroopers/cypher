@@ -83,6 +83,7 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	header := work.header
 	// commit state root after all state transitions.
 	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+	colossusX.ApplyKeyblockPowReward(work.publicState, keyblock)
 	header.Root = work.publicState.IntermediateRoot(false)
 
 	header.BlockType = types.Key_Block
@@ -130,7 +131,6 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 		header.KeyHash = txS.kbc.CurrentBlock().Hash()
 		// commit state root after all state transitions.
 		colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
-		colossusX.ApplyFixedModeKeyblockPowReward(txS.bc, work.publicState, header)
 		header.Root = work.publicState.IntermediateRoot(false)
 		header.BlockType = blockType
 
