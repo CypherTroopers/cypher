@@ -141,7 +141,7 @@ func calcKeyBlockDifficultyByzantium(time uint64, parent *types.KeyBlockHeader) 
 	return x
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////////////////
 // VerifyCandidate implements pow.Engine, checking whether the given candidate satisfies
 // the PoW difficulty requirements.
 func (colossusX *colossusX) VerifyCandidate(chain types.KeyChainReader, candidate *types.Candidate) error {
@@ -253,7 +253,7 @@ func (colossusX *colossusX) PowMode() uint {
 	return uint(colossusX.config.PowMode)
 }
 
-//----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------
 // Author implements consensus.Engine, returning the header's coinbase as the
 // proof-of-work verified author of the block.
 func (colossusX *colossusX) Author(header *types.Header) (common.Address, error) {
@@ -525,6 +525,41 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 // wrapper for accumulateRewards to be called by raft minter
 func AccumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, uncles []*types.Header) {
 	accumulateRewards(config, state, header, uncles)
+}
+
+// ApplyFixedModeKeyblockPowReward credits the keyblock reward to the PoW submitter
+// adopted by a fixed-mode time/pace keyblock.
+func ApplyFixedModeKeyblockPowReward(bc types.ChainReader, state vm.StateDB, header *types.Header) {
+	if bc == nil || state == nil || header == nil || header.Number == nil || header.Number.Sign() == 0 {
+		return
+	}
+	cfg := bc.Config()
+	if cfg == nil || (!cfg.FixedLeader && !cfg.FixedCommittee) {
+		return
+	}
+
+	pBlock := bc.GetBlock(header.ParentHash, header.Number.Uint64()-1)
+	if pBlock == nil {
+		log.Error("ApplyFixedModeKeyblockPowReward", "not found parent header hash", header.ParentHash)
+		return
+	}
+	if header.KeyHash == pBlock.KeyHash() {
+		return
+	}
+
+	kheader := bc.GetKeyChainReader().GetHeaderByHash(header.KeyHash)
+	if kheader == nil || kheader.HasNewNode() {
+		return
+	}
+	kblock := bc.GetKeyChainReader().GetBlock(header.KeyHash, kheader.NumberU64())
+	if kblock == nil {
+		return
+	}
+	submitter := strings.TrimPrefix(kblock.OutAddress(0), "*")
+	if submitter == "" {
+		return
+	}
+	state.AddBalance(common.HexToAddress(submitter), big.NewInt(params.KeyBlock_Reward))
 }
 
 func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header, blockReward uint64, beNewVer bool) {
