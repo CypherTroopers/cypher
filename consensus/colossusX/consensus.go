@@ -527,14 +527,13 @@ func AccumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 	accumulateRewards(config, state, header, uncles)
 }
 
-// ApplyFixedModeKeyblockPowReward credits the keyblock reward to the PoW submitter
-// adopted by a fixed-mode time/pace keyblock.
+// ApplyFixedModeKeyblockPowReward credits KeyBlock_Reward to keyblock outAddress
+// when the tx chain switches to a new keyblock (first tx block after keyblock change).
+//
+// NOTE: despite the historical function name, this now applies to any keyblock
+// that has a non-empty outAddress in the keyblock body.
 func ApplyFixedModeKeyblockPowReward(bc types.ChainReader, state vm.StateDB, header *types.Header) {
 	if bc == nil || state == nil || header == nil || header.Number == nil || header.Number.Sign() == 0 {
-		return
-	}
-	cfg := bc.Config()
-	if cfg == nil || (!cfg.FixedLeader && !cfg.FixedCommittee) {
 		return
 	}
 
@@ -548,7 +547,7 @@ func ApplyFixedModeKeyblockPowReward(bc types.ChainReader, state vm.StateDB, hea
 	}
 
 	kheader := bc.GetKeyChainReader().GetHeaderByHash(header.KeyHash)
-	if kheader == nil || kheader.HasNewNode() {
+	if kheader == nil {
 		return
 	}
 	kblock := bc.GetKeyChainReader().GetBlock(header.KeyHash, kheader.NumberU64())
