@@ -287,8 +287,6 @@ const (
 	slowPerAccountTierLarge  = 128
 	fastBlockMaxTxCount      = uint64(4000)
 	slowBlockMaxTxCount      = uint64(50000)
-	fastBlockMaxGasPerTx     = uint64(120000)
-	fastBlockMaxDataBytes    = 256
 	fastBlockGasTargetPct    = uint64(35)
 	slowBlockGasTargetPct    = uint64(98)
 )
@@ -353,33 +351,7 @@ func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
 }
 
 func fastEligibleTx(tx *types.Transaction) bool {
-	if tx == nil {
-		return false
-	}
-	if tx.RouteHint() == types.TxRouteSlow {
-		return false
-	}
-	if tx.To() == nil {
-		return false
-	}
-	if len(tx.Data()) > fastBlockMaxDataBytes {
-		return false
-	}
-	if tx.Gas() > fastBlockMaxGasPerTx {
-		return false
-	}
-	if len(tx.Data()) == 0 {
-		return true
-	}
-	// conservative allowlist for fast lane
-	if len(tx.Data()) >= 4 &&
-		tx.Data()[0] == 0xa9 &&
-		tx.Data()[1] == 0x05 &&
-		tx.Data()[2] == 0x9c &&
-		tx.Data()[3] == 0xbb {
-		return true
-	}
-	return false
+	return core.IsFastLaneEligible(tx)
 }
 
 func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8, perAccount int) AddressTxes {

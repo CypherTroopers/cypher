@@ -1992,6 +1992,20 @@ func (s *PublicTransactionPoolAPI) SendRawTransaction(ctx context.Context, encod
 	return SubmitTransaction(ctx, s.b, tx, true)
 }
 
+func (s *PublicTransactionPoolAPI) SendRawTransactionWithOpts(ctx context.Context, encodedTx hexutil.Bytes, opts SendTxOpts) (common.Hash, error) {
+	log.Info("SendRawTransactionWithOpts")
+	tx := new(types.Transaction)
+	if err := rlp.DecodeBytes(encodedTx, tx); err != nil {
+		return common.Hash{}, err
+	}
+	if opts.UseSlowLane {
+		tx = tx.WithRouteHint(types.TxRouteSlow)
+	} else {
+		tx = tx.WithRouteHint(types.TxRouteFast)
+	}
+	return SubmitTransaction(ctx, s.b, tx, true)
+}
+
 // Sign calculates an ECDSA signature for:
 // keccack256("\x19Ethereum Signed Message:\n" + len(message) + message).
 //

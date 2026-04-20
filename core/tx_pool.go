@@ -152,6 +152,39 @@ const (
 	txLaneFastMaxGasPerTx  = uint64(120000)
 )
 
+func IsFastLaneEligible(tx *types.Transaction) bool {
+	if tx == nil {
+		return false
+	}
+	switch tx.RouteHint() {
+	case types.TxRouteSlow:
+		return false
+	case types.TxRouteFast:
+		// keep checking hard safety bounds
+	}
+	if tx.To() == nil {
+		return false
+	}
+	if len(tx.Data()) > txLaneFastMaxDataBytes {
+		return false
+	}
+	if tx.Gas() > txLaneFastMaxGasPerTx {
+		return false
+	}
+	if len(tx.Data()) == 0 {
+		return true
+	}
+	// ERC20 transfer(address,uint256)
+	if len(tx.Data()) >= 4 &&
+		tx.Data()[0] == 0xa9 &&
+		tx.Data()[1] == 0x05 &&
+		tx.Data()[2] == 0x9c &&
+		tx.Data()[3] == 0xbb {
+		return true
+	}
+	return false
+}
+
 // blockChain provides the state of blockchain and current gas limit to do
 // some pre checks in tx pool and event subscribers.
 type blockChain interface {
@@ -596,28 +629,10 @@ func (pool *TxPool) local() map[common.Address]types.Transactions {
 // validateTx checks whether a transaction is valid according to the consensus
 
 func ClassifyTxLane(tx *types.Transaction) TxLane {
-	if tx == nil {
-		return TxLaneSlow
-	}
-
-	// Explicit routing wins.
-	switch tx.RouteHint() {
-	case types.TxRouteSlow:
-		return TxLaneSlow
-	case types.TxRouteFast:
+	if IsFastLaneEligible(tx) {
 		return TxLaneFast
 	}
-
-	if tx.To() == nil {
-		return TxLaneSlow
-	}
-	if len(tx.Data()) > txLaneFastMaxDataBytes {
-		return TxLaneSlow
-	}
-	if tx.Gas() > txLaneFastMaxGasPerTx {
-		return TxLaneSlow
-	}
-	return TxLaneFast
+	return TxLaneSlow
 }
 
 func (pool *TxPool) accountWindow(local bool) uint64 {
