@@ -21,15 +21,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cypherium/cypher/accounts"
+	"github.com/cypherium/cypher/accounts/abi"
+	"github.com/cypherium/cypher/accounts/keystore"
+	"github.com/davecgh/go-spew/spew"
 	"math/big"
 	"net"
 	"strings"
 	"sync/atomic"
 	"time"
-	"github.com/cypherium/cypher/accounts"
-	"github.com/cypherium/cypher/accounts/abi"
-	"github.com/cypherium/cypher/accounts/keystore"
-	"github.com/davecgh/go-spew/spew"
 
 	//"github.com/cypherium/cypher/accounts/scwallet"
 	"github.com/cypherium/cypher/common"
@@ -45,9 +45,9 @@ import (
 	"github.com/cypherium/cypher/p2p"
 	"github.com/cypherium/cypher/params"
 
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
-	"github.com/cypherium/cypher/reconfig/bftview"
 )
 
 type TransactionType uint8
@@ -624,16 +624,16 @@ func (s *PublicBlockChainAPI) KeyBlockNumber() hexutil.Uint64 {
 }
 
 func (s *PublicBlockChainAPI) RescueCommittee(args bftview.RescueCommitteeArgs) (bool, error) {
-    committee, keyBlockHash, err := s.b.RescueCommittee(args.ConfigPath)
-    if err != nil {
-        return false, err
-    }
+	committee, keyBlockHash, err := s.b.RescueCommittee(args.ConfigPath)
+	if err != nil {
+		return false, err
+	}
 	if (keyBlockHash == common.Hash{}) {
-        return false, errors.New("key block hash is empty (invalid config)")
-    }
-    keyblock := s.b.GetKeyBlockChain().GetBlockByHash(keyBlockHash)
-    bftview.SetRescueMode(keyblock.NumberU64(), keyblock.Hash(), committee)
-    return true, nil
+		return false, errors.New("key block hash is empty (invalid config)")
+	}
+	keyblock := s.b.GetKeyBlockChain().GetBlockByHash(keyBlockHash)
+	bftview.SetRescueMode(keyblock.NumberU64(), keyblock.Hash(), committee)
+	return true, nil
 }
 
 // GetBalance returns the amount of wei for the given address in the state of the
@@ -741,10 +741,10 @@ func (s *PublicBlockChainAPI) GetHeaderByHash(ctx context.Context, hash common.H
 }
 
 // GetBlockByNumber returns the requested canonical block.
-// * When blockNr is -1 the chain head is returned.
-// * When blockNr is -2 the pending chain head is returned.
-// * When fullTx is true all transactions in the block are returned, otherwise
-//   only the transaction hash is returned.
+//   - When blockNr is -1 the chain head is returned.
+//   - When blockNr is -2 the pending chain head is returned.
+//   - When fullTx is true all transactions in the block are returned, otherwise
+//     only the transaction hash is returned.
 func (s *PublicBlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
 	block, err := s.b.BlockByNumber(ctx, number)
 	if block != nil && err == nil {
@@ -871,6 +871,7 @@ func (s *PublicBlockChainAPI) GetCommitteeMember(ctx context.Context, blockNr rp
 	}
 	return nil, err
 }
+
 // GetCode returns the code stored at the given address in the state for the given block number.
 func (s *PublicBlockChainAPI) GetCode(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (hexutil.Bytes, error) {
 	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
@@ -1659,6 +1660,10 @@ type SendTxArgs struct {
 	Input *hexutil.Bytes `json:"input"`
 }
 
+type SendTxOpts struct {
+	UseSlowLane bool `json:"useSlowLane"`
+}
+
 // setDefaults is a helper function that fills in default values for unspecified tx fields.
 func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 	if args.GasPrice == nil {
@@ -1785,6 +1790,43 @@ func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args Sen
 
 	// Assemble the transaction and sign with the wallet
 	tx := args.toTransaction()
+
+	var chainID *big.Int
+	if config := s.b.ChainConfig(); config.IsEIP155(s.b.CurrentBlock().Number()) {
+		chainID = config.ChainID
+	}
+
+	signed, err := wallet.SignTx(account, tx, chainID)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return SubmitTransaction(ctx, s.b, signed, true)
+}
+
+func (s *PublicTransactionPoolAPI) SendTransactionWithOpts(ctx context.Context, args SendTxArgs, opts SendTxOpts) (common.Hash, error) {
+	// Look up the wallet containing the requested signer
+	account := accounts.Account{Address: args.From}
+
+	wallet, err := s.b.AccountManager().Find(account)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	if args.Nonce == nil {
+		s.nonceLock.LockAddr(args.From)
+		defer s.nonceLock.UnlockAddr(args.From)
+	}
+
+	if err := args.setDefaults(ctx, s.b); err != nil {
+		return common.Hash{}, err
+	}
+
+	tx := args.toTransaction()
+	if opts.UseSlowLane {
+		tx = tx.WithRouteHint(types.TxRouteSlow)
+	} else {
+		tx = tx.WithRouteHint(types.TxRouteFast)
+	}
 
 	var chainID *big.Int
 	if config := s.b.ChainConfig(); config.IsEIP155(s.b.CurrentBlock().Number()) {

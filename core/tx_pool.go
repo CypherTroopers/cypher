@@ -148,8 +148,8 @@ const (
 )
 
 const (
-	txLaneFastMaxDataBytes = 1024
-	txLaneFastMaxGasPerTx  = uint64(300000)
+	txLaneFastMaxDataBytes = 256
+	txLaneFastMaxGasPerTx  = uint64(120000)
 )
 
 // blockChain provides the state of blockchain and current gas limit to do
@@ -204,11 +204,11 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	AccountQueue: 4096,
 	GlobalQueue:  1000000,
 
-	RemoteAccountWindow: 1024,
-	LocalAccountWindow:  64,
-	FastPendingLifetime: 2 * time.Minute,
+	RemoteAccountWindow: 8,
+	LocalAccountWindow:  8,
+	FastPendingLifetime: 30 * time.Second,
 	SlowPendingLifetime: 10 * time.Minute,
-	FastQueuedLifetime:  5 * time.Minute,
+	FastQueuedLifetime:  2 * time.Minute,
 	SlowQueuedLifetime:  30 * time.Minute,
 
 	Lifetime: 3 * time.Hour,
@@ -599,6 +599,15 @@ func ClassifyTxLane(tx *types.Transaction) TxLane {
 	if tx == nil {
 		return TxLaneSlow
 	}
+
+	// Explicit routing wins.
+	switch tx.RouteHint() {
+	case types.TxRouteSlow:
+		return TxLaneSlow
+	case types.TxRouteFast:
+		return TxLaneFast
+	}
+
 	if tx.To() == nil {
 		return TxLaneSlow
 	}
