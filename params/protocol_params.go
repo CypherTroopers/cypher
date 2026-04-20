@@ -193,13 +193,13 @@ var (
 		common.HexToAddress("0x43eb8148fcfba29263d7955e9091b51970cb8c67"),
 	}
 	TrustedAddressList = []common.Address{
-		common.HexToAddress("0xDcA29085eE29eE2edEa08f37dd13C9535Df78A43"),
-		common.HexToAddress("0x75A16C415BB4D356753Fd552cDc73a0AC093D3ff"),
-		common.HexToAddress("0xFbC0890a03a9CD71fA8081EC6182387f510b9ce0"),
-		common.HexToAddress("0x4245EaACb645e356f905Ab239039652c8633b3e5"),
-		common.HexToAddress("0x6e15ae31fb30a62299321eb2CA4c66AaC2392582"),
-		common.HexToAddress("0xd23be2f0725C335ec557e9a00A6C046abCDb86aF"),
-		common.HexToAddress("0xd76Fa2503fDf33Db974a4936585bF21E3FA5c911"),
+		common.HexToAddress("0x3555d2c2af8ff75009f7dbfcf7de7ed80f68588d"),
+		common.HexToAddress("0x60746b20d36500f3353163226ad62bf7e92e1f3c"),
+		common.HexToAddress("0x01cbcb9b60e73f0244ea1debbee0fd1b8bb11b31"),
+		common.HexToAddress("0x4b91661f2659a62cb1a0ee54f6540c283d448a86"),
+		common.HexToAddress("0x9c01a453daf5c36951301ea26c1605ce7489b186"),
+		common.HexToAddress("0xf1cf67fd1669ddf1df76fd887b2f6da0d11b2cd9"),
+		common.HexToAddress("0x3abb765b281d2ef60aac35bc85b62692f89c7ee3"),
 	}
 )
 
