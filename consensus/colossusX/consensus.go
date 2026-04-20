@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math/big"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/cypherium/cypher/common/math"
@@ -45,7 +46,7 @@ import (
 // error types into the pow package.
 var (
 	FrontierBlockReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Block reward in wei for successfully mining a block
-	ByzantiumBlockReward = big.NewInt(3e+18) // Block reward in wei for successfully mining a block upward from Byzantium
+	ByzantiumBlockReward = big.NewInt(3e+18)                                              // Block reward in wei for successfully mining a block upward from Byzantium
 
 	errLargeBlockTime    = errors.New("timestamp too big")
 	errZeroBlockTime     = errors.New("timestamp equals parent's")
@@ -544,6 +545,11 @@ func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header
 	keyHash := pBlock.KeyHash()
 	if !beNewVer && header.KeyHash != keyHash {
 		kheader := bc.GetKeyChainReader().GetHeaderByHash(header.KeyHash)
+		if kheader == nil {
+			log.Error("RewardCommites", "not found key header", header.KeyHash)
+			return
+		}
+		kblock := bc.GetKeyChainReader().GetBlock(header.KeyHash, kheader.NumberU64())
 		if kheader.HasNewNode() {
 			kNumber := kheader.NumberU64()
 			cnodes := bc.GetKeyChainReader().GetCommitteeByNumber(kNumber)
@@ -553,6 +559,11 @@ func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header
 			}
 			c := &bftview.Committee{List: cnodes}
 			state.AddBalance(common.HexToAddress(c.In().CoinBase), big.NewInt(params.KeyBlock_Reward))
+		} else if bc.Config() != nil && (bc.Config().FixedLeader || bc.Config().FixedCommittee) && kblock != nil {
+			submitter := strings.TrimPrefix(kblock.OutAddress(0), "*")
+			if submitter != "" {
+				state.AddBalance(common.HexToAddress(submitter), big.NewInt(100000))
+			}
 		}
 	}
 
