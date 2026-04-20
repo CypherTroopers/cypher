@@ -47,6 +47,7 @@ import (
 var (
 	FrontierBlockReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Block reward in wei for successfully mining a block
 	ByzantiumBlockReward = big.NewInt(3e+18)                                              // Block reward in wei for successfully mining a block upward from Byzantium
+	CommonNodePowReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Bonus reward in wei for accepted common-node PoW candidate
 
 	errLargeBlockTime    = errors.New("timestamp too big")
 	errZeroBlockTime     = errors.New("timestamp equals parent's")
@@ -438,6 +439,9 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, totalGas uint64) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
+	if header.BlockType == types.Key_Block {
+		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
+	}
 
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 }
@@ -447,6 +451,9 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
+	if header.BlockType == types.Key_Block {
+		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
+	}
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 
 	// Header seems complete, assemble into a block and return
@@ -527,7 +534,7 @@ func AccumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 	accumulateRewards(config, state, header, uncles)
 }
 
-// ApplyFixedModeKeyblockPowReward credits KeyBlock_Reward to keyblock outAddress
+// ApplyFixedModeKeyblockPowReward credits CommonNodePowReward to keyblock outAddress
 // when the tx chain switches to a new keyblock (first tx block after keyblock change).
 //
 // NOTE: despite the historical function name, this now applies to any keyblock
@@ -558,7 +565,29 @@ func ApplyFixedModeKeyblockPowReward(bc types.ChainReader, state vm.StateDB, hea
 	if submitter == "" {
 		return
 	}
-	state.AddBalance(common.HexToAddress(submitter), big.NewInt(params.KeyBlock_Reward))
+	state.AddBalance(common.HexToAddress(submitter), new(big.Int).Set(CommonNodePowReward))
+}
+
+// ApplyKeyblockPowRewardByKeyInfo credits CommonNodePowReward to keyblock outAddress
+// at keyblock generation/finalization time.
+func ApplyKeyblockPowRewardByKeyInfo(state vm.StateDB, keyInfo []byte) {
+	if state == nil || len(keyInfo) == 0 {
+		return
+	}
+	keyblock := types.DecodeToKeyBlock(keyInfo)
+	ApplyKeyblockPowReward(state, keyblock)
+}
+
+// ApplyKeyblockPowReward credits CommonNodePowReward to keyblock outAddress.
+func ApplyKeyblockPowReward(state vm.StateDB, keyblock *types.KeyBlock) {
+	if state == nil || keyblock == nil {
+		return
+	}
+	submitter := strings.TrimPrefix(keyblock.OutAddress(0), "*")
+	if submitter == "" {
+		return
+	}
+	state.AddBalance(common.HexToAddress(submitter), new(big.Int).Set(CommonNodePowReward))
 }
 
 func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header, blockReward uint64, beNewVer bool) {
