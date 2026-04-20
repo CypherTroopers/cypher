@@ -39,8 +39,9 @@ import (
 const failedProposalRetry = 200 * time.Millisecond
 const hotstuffIdleSleep = 10 * time.Millisecond
 const tryProposeDebounce = 5 * time.Millisecond
-const slowBlockMinPending = 16
-const slowBlockMinInterval = 300 * time.Millisecond
+const fastBlockInterval = 1 * time.Second
+const slowBlockInterval = 1 * time.Minute
+const slowFallbackMinPending = 1
 
 type committeeInfo struct {
 	Committee *bftview.Committee
@@ -111,6 +112,8 @@ type Service struct {
 	runningState       int32
 	lastProposeTime    time.Time
 	lastSlowBlockTime  time.Time
+	lastFastBlockTime  time.Time
+	serviceStartTime   time.Time
 	tryProposeQueuedAt int64
 	pacetMakerTimer    *paceMakerTimer
 
@@ -122,6 +125,7 @@ type Service struct {
 
 func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *ReconfigBackend) *Service {
 	s := new(Service)
+	s.serviceStartTime = time.Now()
 	s.netService = newNetService(sName, sIp, chainConfig, backend, s)
 	s.txService = newTxService(s, backend, chainConfig)
 	s.keyService = newKeyService(s, backend, chainConfig)
@@ -377,8 +381,11 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 		log.Warn("tryProposalNewBlock", "error", err)
 		return err, nil, nil, nil
 	}
+	now := time.Now()
 	if blockType == types.SlowTx_Block {
-		s.lastSlowBlockTime = time.Now()
+		s.lastSlowBlockTime = now
+	} else if blockType == types.FastTx_Block {
+		s.lastFastBlockTime = now
 	}
 	proposeOK = true
 	return nil, nil, data, nil
@@ -414,6 +421,20 @@ func readableTxBlockType(blockType uint8) string {
 	}
 }
 
+func (s *Service) shouldEmitFastBlock(now time.Time) bool {
+	if s.lastFastBlockTime.IsZero() {
+		return true
+	}
+	return now.Sub(s.lastFastBlockTime) >= fastBlockInterval
+}
+
+func (s *Service) shouldEmitSlowBlock(now time.Time) bool {
+	if s.lastSlowBlockTime.IsZero() {
+		return true
+	}
+	return now.Sub(s.lastSlowBlockTime) >= slowBlockInterval
+}
+
 func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
 	fastAddrTxes, fastErr := s.txService.loadPendingAddressTxes(types.FastTx_Block)
 	if fastErr != nil {
@@ -434,35 +455,19 @@ func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
 
 func (s *Service) chooseTxBlockType() uint8 {
 	fastPending, slowPending := s.lanePendingCounts()
-	lastSlowAgo := time.Duration(0)
-	if !s.lastSlowBlockTime.IsZero() {
-		lastSlowAgo = time.Since(s.lastSlowBlockTime)
-	}
-
-	blockType := uint8(types.FastTx_Block)
+	now := time.Now()
 	switch {
-	case slowPending == 0:
-		blockType = types.FastTx_Block
-	case fastPending == 0:
-		blockType = types.SlowTx_Block
-	case slowPending == fastPending:
-		// All currently proposal-eligible heads are fast-lane transactions.
-		// Prefer fast blocks so simple transfers never get dragged into the slow path.
-		blockType = types.FastTx_Block
-	case slowPending >= slowBlockMinPending &&
-		(s.lastSlowBlockTime.IsZero() || time.Since(s.lastSlowBlockTime) >= slowBlockMinInterval):
-		blockType = types.SlowTx_Block
+	case fastPending > 0 && s.shouldEmitFastBlock(now):
+		return types.FastTx_Block
+	case slowPending > 0 && s.shouldEmitSlowBlock(now):
+		return types.SlowTx_Block
+	case fastPending > 0:
+		return types.FastTx_Block
+	case slowPending >= slowFallbackMinPending:
+		return types.SlowTx_Block
 	default:
-		blockType = types.FastTx_Block
+		return types.FastTx_Block
 	}
-
-	log.Debug("chooseTxBlockType",
-		"fastPending", fastPending,
-		"slowPending", slowPending,
-		"lastSlowAgo", lastSlowAgo,
-		"chosen", readableTxBlockType(blockType))
-
-	return blockType
 }
 
 // OnViewDone call by hotstuff

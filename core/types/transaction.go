@@ -40,14 +40,23 @@ var (
 )
 
 type Transaction struct {
-	data txdata    // Consensus contents of a transaction
-	time time.Time // Time first seen locally (spam avoidance)
+	data      txdata      // Consensus contents of a transaction
+	routeHint TxRouteHint // Non-consensus local route hint
+	time      time.Time   // Time first seen locally (spam avoidance)
 
 	// caches
 	hash atomic.Value
 	size atomic.Value
 	from atomic.Value
 }
+
+type TxRouteHint uint8
+
+const (
+	TxRouteAuto TxRouteHint = iota
+	TxRouteFast
+	TxRouteSlow
+)
 
 type txdata struct {
 	AccountNonce uint64          `json:"nonce"    gencodec:"required"`
@@ -182,6 +191,16 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 }
 
 func (tx *Transaction) Data() []byte       { return common.CopyBytes(tx.data.Payload) }
+func (tx *Transaction) RouteHint() TxRouteHint {
+	return tx.routeHint
+}
+
+func (tx *Transaction) WithRouteHint(hint TxRouteHint) *Transaction {
+	cpy := *tx
+	cpy.routeHint = hint
+	return &cpy
+}
+
 func (tx *Transaction) V() *big.Int        { return tx.data.V }
 func (tx *Transaction) Gas() uint64        { return tx.data.GasLimit }
 func (tx *Transaction) GasPrice() *big.Int { return new(big.Int).Set(tx.data.Price) }
