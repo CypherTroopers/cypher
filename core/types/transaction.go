@@ -40,9 +40,8 @@ var (
 )
 
 type Transaction struct {
-	data      txdata      // Consensus contents of a transaction
-	routeHint TxRouteHint // Non-consensus local route hint
-	time      time.Time   // Time first seen locally (spam avoidance)
+	data txdata    // Consensus / wire contents of a transaction
+	time time.Time // Time first seen locally (spam avoidance)
 
 	// caches
 	hash atomic.Value
@@ -65,6 +64,7 @@ type txdata struct {
 	Recipient    *common.Address `json:"to"       rlp:"nil"` // nil means contract creation
 	Amount       *big.Int        `json:"value"    gencodec:"required"`
 	Payload      []byte          `json:"input"    gencodec:"required"`
+	RouteHint    TxRouteHint     `json:"routeHint,omitempty"`
 
 	// Signature values
 	V *big.Int `json:"v" gencodec:"required"`
@@ -190,14 +190,14 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 	return nil
 }
 
-func (tx *Transaction) Data() []byte       { return common.CopyBytes(tx.data.Payload) }
+func (tx *Transaction) Data() []byte { return common.CopyBytes(tx.data.Payload) }
 func (tx *Transaction) RouteHint() TxRouteHint {
-	return tx.routeHint
+	return tx.data.RouteHint
 }
 
 func (tx *Transaction) WithRouteHint(hint TxRouteHint) *Transaction {
 	cpy := *tx
-	cpy.routeHint = hint
+	cpy.data.RouteHint = hint
 	return &cpy
 }
 
