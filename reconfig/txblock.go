@@ -279,17 +279,17 @@ const (
 	pendingTierMedium = 256
 	pendingTierLarge  = 1024
 
-	fastPerAccountTierSmall  = 16
-	slowPerAccountTierSmall  = 8
-	fastPerAccountTierMedium = 48
-	slowPerAccountTierMedium = 32
-	fastPerAccountTierLarge  = 192
+	fastPerAccountTierSmall  = 4
+	slowPerAccountTierSmall  = 16
+	fastPerAccountTierMedium = 8
+	slowPerAccountTierMedium = 48
+	fastPerAccountTierLarge  = 16
 	slowPerAccountTierLarge  = 128
-	fastBlockMaxTxCount      = uint64(20000)
-	slowBlockMaxTxCount      = uint64(40000)
-	fastBlockMaxGasPerTx     = uint64(300000)
-	fastBlockMaxDataBytes    = 1024
-	fastBlockGasTargetPct    = uint64(94)
+	fastBlockMaxTxCount      = uint64(4000)
+	slowBlockMaxTxCount      = uint64(50000)
+	fastBlockMaxGasPerTx     = uint64(120000)
+	fastBlockMaxDataBytes    = 256
+	fastBlockGasTargetPct    = uint64(35)
 	slowBlockGasTargetPct    = uint64(98)
 )
 
@@ -356,6 +356,9 @@ func fastEligibleTx(tx *types.Transaction) bool {
 	if tx == nil {
 		return false
 	}
+	if tx.RouteHint() == types.TxRouteSlow {
+		return false
+	}
 	if tx.To() == nil {
 		return false
 	}
@@ -365,7 +368,18 @@ func fastEligibleTx(tx *types.Transaction) bool {
 	if tx.Gas() > fastBlockMaxGasPerTx {
 		return false
 	}
-	return true
+	if len(tx.Data()) == 0 {
+		return true
+	}
+	// conservative allowlist for fast lane
+	if len(tx.Data()) >= 4 &&
+		tx.Data()[0] == 0xa9 &&
+		tx.Data()[1] == 0x05 &&
+		tx.Data()[2] == 0x9c &&
+		tx.Data()[3] == 0xbb {
+		return true
+	}
+	return false
 }
 
 func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8, perAccount int) AddressTxes {
