@@ -438,6 +438,9 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, totalGas uint64) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
+	if fullChain, ok := chain.(types.ChainReader); ok {
+		ApplyFixedModeKeyblockPowReward(fullChain, state, header)
+	}
 
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 }
@@ -447,6 +450,9 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
+	if fullChain, ok := chain.(types.ChainReader); ok {
+		ApplyFixedModeKeyblockPowReward(fullChain, state, header)
+	}
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 
 	// Header seems complete, assemble into a block and return
