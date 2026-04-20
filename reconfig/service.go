@@ -114,6 +114,7 @@ type Service struct {
 	lastSlowBlockTime  time.Time
 	lastFastBlockTime  time.Time
 	serviceStartTime   time.Time
+	lastCadenceWakeup  time.Time
 	tryProposeQueuedAt int64
 	pacetMakerTimer    *paceMakerTimer
 
@@ -545,6 +546,15 @@ func (s *Service) handleHotStuffMsg() {
 		data := s.hotstuffMsgQ.PopFront()
 		if data == nil {
 			time.Sleep(hotstuffIdleSleep)
+			now := time.Now()
+			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
+				if s.shouldEmitFastBlock(now) || s.shouldEmitSlowBlock(now) {
+					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
+						s.lastCadenceWakeup = now
+						s.triggerTryPropose(s.bc.CurrentBlockN())
+					}
+				}
+			}
 			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
 			continue
 		}
