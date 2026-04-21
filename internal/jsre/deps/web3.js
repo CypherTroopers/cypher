@@ -3850,8 +3850,10 @@ var outputBlockFormatter = function(block) {
      */
     var outputKeyBlockFormatter = function(block) {
       block.difficulty = utils.toBigNumber(block.difficulty);
-      if(block.number !== null)
-        block.number = utils.toBigNumber(block.number);
+      if(block.keyBlockNumber !== null)
+        block.keyBlockNumber = utils.toBigNumber(block.keyBlockNumber);
+      if(block.TxBlockNumber !== null)
+        block.TxBlockNumber = utils.toBigNumber(block.TxBlockNumber);
       return block;
     };
 
