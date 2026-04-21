@@ -17,6 +17,7 @@
 package reconfig
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -120,7 +121,7 @@ type Service struct {
 	muHotstuffProgress sync.Mutex
 	hotstuffProgressAt time.Time
 	lastProgressN      uint64
-	lastProgressViewID uint64
+	lastProgressViewID common.Hash
 	lastProgressRank   uint8
 
 	hotstuffMsgQ *common.Queue
@@ -616,9 +617,10 @@ func (s *Service) observeHotstuffProgress(msg *hotstuff.HotstuffMessage) {
 
 	s.muHotstuffProgress.Lock()
 	defer s.muHotstuffProgress.Unlock()
+	viewCompare := bytes.Compare(msg.ViewId[:], s.lastProgressViewID[:])
 	if msg.Number > s.lastProgressN ||
-		(msg.Number == s.lastProgressN && msg.ViewId > s.lastProgressViewID) ||
-		(msg.Number == s.lastProgressN && msg.ViewId == s.lastProgressViewID && rank > s.lastProgressRank) {
+		(msg.Number == s.lastProgressN && viewCompare > 0) ||
+		(msg.Number == s.lastProgressN && viewCompare == 0 && rank > s.lastProgressRank) {
 		s.lastProgressN = msg.Number
 		s.lastProgressViewID = msg.ViewId
 		s.lastProgressRank = rank
