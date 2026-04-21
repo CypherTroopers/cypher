@@ -41,6 +41,8 @@ type paceMakerTimer struct {
 	txPool        *core.TxPool
 	candidatepool *core.CandidatePool
 	retryNumber   int
+	ackMissCount  int
+	lastAckMissAt time.Time
 	config        *params.ChainConfig
 	kbc           *core.KeyBlockChain
 	mu            sync.Mutex
@@ -104,6 +106,8 @@ func (t *paceMakerTimer) stop() error {
 	defer t.mu.Unlock()
 	t.beStop = true
 	t.retryNumber = 0
+	t.ackMissCount = 0
+	t.lastAckMissAt = time.Time{}
 	t.startTime = maxPaceMakerTime
 	return nil
 }
@@ -121,6 +125,23 @@ func (t *paceMakerTimer) get() (time.Time, bool, bool, int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.startTime, t.beStop, t.beClose, t.retryNumber
+}
+
+func (t *paceMakerTimer) recordAckMiss(now time.Time) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.lastAckMissAt.IsZero() || now.Sub(t.lastAckMissAt) >= params.AckTimeout {
+		t.ackMissCount++
+		t.lastAckMissAt = now
+	}
+	return t.ackMissCount
+}
+
+func (t *paceMakerTimer) resetAckMissCount() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.ackMissCount = 0
+	t.lastAckMissAt = time.Time{}
 }
 
 // Loop for status action
@@ -152,12 +173,27 @@ func (t *paceMakerTimer) loopTimer() {
 
 		diff := now.Sub(startTime)
 		leaderSilentFor := now.Sub(t.service.LeaderAckTime())
+		progressSilentFor := now.Sub(t.service.HotstuffProgressTime())
+		fixedMode := t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee)
 		if leaderSilentFor > params.AckTimeout && bftview.IamMember() >= 0 {
-			log.Warn("paceMakerTimer Viewchange AckTimeout")
+			if progressSilentFor <= params.AckTimeout {
+				t.resetAckMissCount()
+				continue
+			}
+			if fixedMode {
+				missCount := t.recordAckMiss(now)
+				if missCount < 3 {
+					log.Warn("paceMakerTimer fixed mode suppress fallback", "ackMissCount", missCount, "ackSilentFor", leaderSilentFor, "progressSilentFor", progressSilentFor)
+					continue
+				}
+			}
+			log.Warn("paceMakerTimer Viewchange AckTimeout", "ackSilentFor", leaderSilentFor, "progressSilentFor", progressSilentFor)
 			t.setNextLeader(false)
 			t.service.ResetLeaderAckTime()
+			t.resetAckMissCount()
 		} else if diff > params.PaceMakerTimeout /**time.Duration(retryNumber+1)*/ && bftview.IamMember() >= 0 &&
-			!(t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee)) { //timeout
+			!fixedMode { //timeout
+			t.resetAckMissCount()
 			log.Warn("paceMakerTimer Viewchange PaceMakerTimeout Event is coming", "retryNumber", retryNumber)
 			/*
 				switchLen := bftview.GetServerCommitteeLen()/2 + 1
@@ -169,6 +205,8 @@ func (t *paceMakerTimer) loopTimer() {
 			*/
 			t.setNextLeader(false)
 			t.retryNumber++
+		} else if leaderSilentFor <= params.AckTimeout || progressSilentFor <= params.AckTimeout {
+			t.resetAckMissCount()
 		}
 	}
 }
