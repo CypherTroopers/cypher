@@ -66,6 +66,7 @@ type serviceI interface {
 	setNextLeader(isDone bool)
 	sendNewViewMsg(curN uint64)
 	LeaderAckTime() time.Time
+	HotstuffProgressTime() time.Time
 	ResetLeaderAckTime()
 	SwitchOK() bool
 }
@@ -143,7 +144,7 @@ func (backend *ReconfigBackend) Stop() error {
 	return nil
 }
 
-//------------------------------------------------------------------
+// ------------------------------------------------------------------
 func (backend *ReconfigBackend) MinerStart(config *common.NodeConfig) error {
 	backend.service.start(config)
 	log.Info("reconfig start")
@@ -156,7 +157,7 @@ func (backend *ReconfigBackend) MinerStop() error {
 	return nil
 }
 
-//ReconfigIsRunning call by api
+// ReconfigIsRunning call by api
 func (backend *ReconfigBackend) ServiceIsRunning() bool {
 	return backend.service.isRunning()
 }
