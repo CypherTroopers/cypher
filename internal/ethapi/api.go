@@ -1351,7 +1351,7 @@ func (s *PublicBlockChainAPI) rpcMarshalBlock(ctx context.Context, b *types.Bloc
 func RPCMarshalKeyBlock(b *types.KeyBlock) (map[string]interface{}, error) {
 	head := b.Header() // copies the header once
 	fields := map[string]interface{}{
-		"keyBlockNumber": (*hexutil.Big)(head.Number),
+		"keyBlockNumber": head.Number.Uint64(),
 		"difficulty":     (*hexutil.Big)(head.Difficulty),
 		"hash":           b.Hash(),
 		"parentHash":     head.ParentHash,
