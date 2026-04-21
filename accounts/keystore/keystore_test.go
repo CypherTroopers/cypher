@@ -360,6 +360,28 @@ func TestImportECDSA(t *testing.T) {
 	}
 }
 
+func TestGetKeyPairFromECDSAAccount(t *testing.T) {
+	dir, ks := tmpKeyStore(t, true)
+	defer os.RemoveAll(dir)
+
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("failed to generate ecdsa key: %v", err)
+	}
+	acc, err := ks.ImportECDSA(key, "pass")
+	if err != nil {
+		t.Fatalf("failed to import ecdsa key: %v", err)
+	}
+
+	pub, pri, err := ks.GetKeyPair(acc, "pass")
+	if err != nil {
+		t.Fatalf("GetKeyPair should support ecdsa accounts: %v", err)
+	}
+	if len(pub) == 0 || len(pri) == 0 {
+		t.Fatalf("expected non-empty bls keypair from ecdsa account")
+	}
+}
+
 // TestImportECDSA tests the import and export functionality of a keystore.
 func TestImportExport(t *testing.T) {
 	dir, ks := tmpKeyStore(t, true)

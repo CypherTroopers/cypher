@@ -563,6 +563,19 @@ func (ec *Client) getKeyBlock(ctx context.Context, method string, args ...interf
 		return nil, errors.New("not found")
 	}
 
+	var keyBlockMap map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keyBlockMap); err == nil {
+		if value, ok := keyBlockMap["keyBlockNumber"]; ok {
+			keyBlockMap["number"] = value
+		}
+		if value, ok := keyBlockMap["TxBlockNumber"]; ok {
+			keyBlockMap["t_Number"] = value
+		}
+		if remapped, err := json.Marshal(keyBlockMap); err == nil {
+			raw = remapped
+		}
+	}
+
 	// Decode header and body.
 	var head *types.KeyBlockHeader
 	if err := json.Unmarshal(raw, &head); err != nil {

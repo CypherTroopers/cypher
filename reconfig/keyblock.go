@@ -232,6 +232,21 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		if err != nil {
 			return err //fmt.Errorf("keyblock verify failed,candidate pow verification failed!")
 		}
+	} else if keyS.fixedModeEnabled() && (keyType == types.TimeReconfig || keyType == types.PaceReconfig) &&
+		keyblock.OutPubKey() != "" && keyblock.OutAddress(0) != "" {
+		if bestCandi == nil {
+			return fmt.Errorf("keyblock verify failed, fixed mode pow reward requires candidate")
+		}
+		bestCandi.KeyCandidate.BlockType = keyType
+		if keyblock.Header().HashWithCandi() != bestCandi.KeyCandidate.HashWithCandi() {
+			return fmt.Errorf("keyblock verify failed, fixed mode candidate hash mismatch")
+		}
+		if keyblock.OutPubKey() != bestCandi.PubKey || keyblock.OutAddress(0) != bestCandi.Coinbase {
+			return fmt.Errorf("keyblock verify failed, fixed mode candidate submitter mismatch")
+		}
+		if err := keyS.engine.VerifyCandidate(keyS.kbc, bestCandi); err != nil {
+			return err
+		}
 	} else if keyType == types.TimeReconfig {
 		//
 	} else if keyType == types.PaceReconfig {
@@ -308,6 +323,7 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 
 	var outerPublic, outerCoinBase string
 	best := keyS.getBestCandidate(false)
+	powSubmitter := best
 	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
 		best = nil
 	}
@@ -348,8 +364,12 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 		}
 
 	} else { //exchange in internal
+		if keyS.fixedModeEnabled() && powSubmitter != nil {
+			ck := powSubmitter.KeyCandidate
+			header.Time, header.Difficulty, header.MixDigest, header.Nonce = ck.Time, ck.Difficulty, ck.MixDigest, ck.Nonce
+			outerPublic, outerCoinBase = powSubmitter.PubKey, powSubmitter.Coinbase
+		}
 		mb.Add(nil, int(leaderIndex), "")
-		outerPublic, outerCoinBase = "", ""
 	}
 
 	header.CommitteeHash = mb.RlpHash()
@@ -358,6 +378,9 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
 	mb.Store(keyblock)
+	if keyS.fixedModeEnabled() {
+		return keyblock, mb, powSubmitter, nil
+	}
 	return keyblock, mb, best, nil
 }
 
