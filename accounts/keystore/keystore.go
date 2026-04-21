@@ -541,14 +541,20 @@ func (ks *KeyStore) GetKeyPair(account accounts.Account, passphrase string) ([]b
 	if err != nil {
 		return nil, nil, err
 	}
-	if key.PrivateKey25519 == nil {
-		return nil, nil, errors.New("the account can not decrypted by ed25519")
-
+	if key.PrivateKey25519 != nil {
+		defer zeroKey25519(key.PrivateKey25519)
+		return crypto.EDDSAToBLS(key.PrivateKey25519)
 	}
-	defer zeroKey25519(key.PrivateKey25519)
-
-	pubKey, priKey, err := crypto.EDDSAToBLS(key.PrivateKey25519)
-	return pubKey, priKey, err
+	if key.PrivateKey != nil {
+		ecdsaBytes := crypto.FromECDSA(key.PrivateKey)
+		defer func() {
+			for i := range ecdsaBytes {
+				ecdsaBytes[i] = 0
+			}
+		}()
+		return crypto.EDDSAToBLS(ecdsaBytes)
+	}
+	return nil, nil, errors.New("the account has neither ed25519 nor ecdsa private key")
 }
 
 func zeroKey25519(k ed25519.PrivateKey) {

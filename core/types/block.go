@@ -112,8 +112,10 @@ type headerMarshaling struct {
 }
 
 type SignInfo struct {
-	Signature  []byte `json:"signature"     gencodec:"required"`
-	Exceptions []byte `json:"exceptions"       gencodec:"required"`
+	Signature  []byte      `json:"signature"     gencodec:"required"`
+	Exceptions []byte      `json:"exceptions"       gencodec:"required"`
+	ViewID     common.Hash `json:"viewId"`
+	LeaderID   string      `json:"leaderId"`
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
@@ -132,6 +134,8 @@ func (h *Header) Hash() common.Hash {
 func (h *Header) SetSignInfoNull() {
 	h.SignInfo.Signature = nil
 	h.SignInfo.Exceptions = nil
+	h.SignInfo.ViewID = common.Hash{}
+	h.SignInfo.LeaderID = ""
 }
 
 var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
@@ -139,7 +143,7 @@ var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
 // Size returns the approximate memory used by all internal contents. It is used
 // to approximate and limit the memory consumption of various caches.
 func (h *Header) Size() common.StorageSize {
-	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions))
+	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions)+len(h.SignInfo.LeaderID)+common.HashLength)
 	return s
 }
 
@@ -376,7 +380,7 @@ func (b *Block) ReceiptHash() common.Hash { return b.header.ReceiptHash }
 func (b *Block) UncleHash() common.Hash   { return b.header.UncleHash }
 func (b *Block) Extra() []byte            { return common.CopyBytes(b.header.Extra) }
 
-//---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
 func (b *Block) KeyHash() common.Hash { return b.header.KeyHash }
 func (b *Block) KeyInfo() []byte      { return b.header.KeyInfo }
 func (b *Block) BlockType() uint8     { return b.header.BlockType }
@@ -463,9 +467,11 @@ func (b *Block) Hash() common.Hash {
 	return v
 }
 
-func (b *Block) SetSignature(sig []byte, exceptions []byte) {
+func (b *Block) SetSignature(sig []byte, exceptions []byte, viewID common.Hash, leaderID string) {
 	b.header.SignInfo.Signature = sig
 	b.header.SignInfo.Exceptions = exceptions
+	b.header.SignInfo.ViewID = viewID
+	b.header.SignInfo.LeaderID = leaderID
 }
 
 func (b *Block) SetKeyblock(keyblock *KeyBlock) {

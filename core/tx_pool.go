@@ -148,9 +148,42 @@ const (
 )
 
 const (
-	txLaneFastMaxDataBytes = 1024
-	txLaneFastMaxGasPerTx  = uint64(300000)
+	txLaneFastMaxDataBytes = 256
+	txLaneFastMaxGasPerTx  = uint64(120000)
 )
+
+func IsFastLaneEligible(tx *types.Transaction) bool {
+	if tx == nil {
+		return false
+	}
+	switch tx.RouteHint() {
+	case types.TxRouteSlow:
+		return false
+	case types.TxRouteFast:
+		// keep checking hard safety bounds
+	}
+	if tx.To() == nil {
+		return false
+	}
+	if len(tx.Data()) > txLaneFastMaxDataBytes {
+		return false
+	}
+	if tx.Gas() > txLaneFastMaxGasPerTx {
+		return false
+	}
+	if len(tx.Data()) == 0 {
+		return true
+	}
+	// ERC20 transfer(address,uint256)
+	if len(tx.Data()) >= 4 &&
+		tx.Data()[0] == 0xa9 &&
+		tx.Data()[1] == 0x05 &&
+		tx.Data()[2] == 0x9c &&
+		tx.Data()[3] == 0xbb {
+		return true
+	}
+	return false
+}
 
 // blockChain provides the state of blockchain and current gas limit to do
 // some pre checks in tx pool and event subscribers.
@@ -200,15 +233,15 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	PriceBump:  10,
 
 	AccountSlots: 1024,
-	GlobalSlots:  262144,
+	GlobalSlots:  1000000,
 	AccountQueue: 4096,
-	GlobalQueue:  262144,
+	GlobalQueue:  1000000,
 
-	RemoteAccountWindow: 1024,
-	LocalAccountWindow:  64,
-	FastPendingLifetime: 2 * time.Minute,
+	RemoteAccountWindow: 8,
+	LocalAccountWindow:  8,
+	FastPendingLifetime: 30 * time.Second,
 	SlowPendingLifetime: 10 * time.Minute,
-	FastQueuedLifetime:  5 * time.Minute,
+	FastQueuedLifetime:  2 * time.Minute,
 	SlowQueuedLifetime:  30 * time.Minute,
 
 	Lifetime: 3 * time.Hour,
@@ -596,19 +629,10 @@ func (pool *TxPool) local() map[common.Address]types.Transactions {
 // validateTx checks whether a transaction is valid according to the consensus
 
 func ClassifyTxLane(tx *types.Transaction) TxLane {
-	if tx == nil {
-		return TxLaneSlow
+	if IsFastLaneEligible(tx) {
+		return TxLaneFast
 	}
-	if tx.To() == nil {
-		return TxLaneSlow
-	}
-	if len(tx.Data()) > txLaneFastMaxDataBytes {
-		return TxLaneSlow
-	}
-	if tx.Gas() > txLaneFastMaxGasPerTx {
-		return TxLaneSlow
-	}
-	return TxLaneFast
+	return TxLaneSlow
 }
 
 func (pool *TxPool) accountWindow(local bool) uint64 {

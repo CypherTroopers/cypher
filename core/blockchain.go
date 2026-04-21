@@ -18,11 +18,12 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
-	mrand "math/rand"
+	"math/bits"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -213,6 +214,56 @@ type BlockChain struct {
 
 	keyBlockChain  *KeyBlockChain
 	ProcInsertDone func(*types.Block)
+}
+
+func signerCount(mask []byte) int {
+	count := 0
+	for _, b := range mask {
+		count += bits.OnesCount8(b)
+	}
+	return count
+}
+
+func hasContextSignInfo(si *types.SignInfo) bool {
+	if si == nil {
+		return false
+	}
+	return si.ViewID != (common.Hash{}) && si.LeaderID != ""
+}
+
+// preferCandidateOnEqualTD defines a deterministic canonical preference rule when TD/number are equal.
+// Priority:
+// 1) block carrying contextual sign metadata (ViewID + LeaderID)
+// 2) stronger QC mask (more signers)
+// 3) ViewID (lexicographic)
+// 4) LeaderID (lexicographic)
+// 5) block hash (lexicographic)
+func preferCandidateOnEqualTD(candidate *types.Block, current *types.Block) bool {
+	candidateSI := candidate.SignInfo()
+	currentSI := current.SignInfo()
+
+	candidateHasContext := hasContextSignInfo(candidateSI)
+	currentHasContext := hasContextSignInfo(currentSI)
+	if candidateHasContext != currentHasContext {
+		return candidateHasContext
+	}
+
+	candidateSigners := signerCount(candidateSI.Exceptions)
+	currentSigners := signerCount(currentSI.Exceptions)
+	if candidateSigners != currentSigners {
+		return candidateSigners > currentSigners
+	}
+
+	if cmp := bytes.Compare(candidateSI.ViewID[:], currentSI.ViewID[:]); cmp != 0 {
+		return cmp < 0
+	}
+	if candidateSI.LeaderID != currentSI.LeaderID {
+		return candidateSI.LeaderID < currentSI.LeaderID
+	}
+
+	candidateHash := candidate.Hash()
+	currentHash := current.Hash()
+	return bytes.Compare(candidateHash[:], currentHash[:]) < 0
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -1554,7 +1605,11 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 			if bc.shouldPreserve != nil {
 				currentPreserve, blockPreserve = bc.shouldPreserve(currentBlock), bc.shouldPreserve(block)
 			}
-			reorg = !currentPreserve && (blockPreserve || mrand.Float64() < 0.5)
+			if currentPreserve != blockPreserve {
+				reorg = !currentPreserve && blockPreserve
+			} else {
+				reorg = preferCandidateOnEqualTD(block, currentBlock)
+			}
 		}
 	}
 	if reorg {
@@ -1696,7 +1751,8 @@ func (bc *BlockChain) InsertBlock(block *types.Block) (int, error) {
 	defer bc.blockProcFeed.Send(false)
 	bc.wg.Add(1)
 	bc.chainmu.Lock()
-	n, err := bc.insertChain(types.Blocks{block}, true, false)
+	// Enforce BFT aggregated-signature verification on the local InsertBlock path too.
+	n, err := bc.insertChain(types.Blocks{block}, true, true)
 	bc.chainmu.Unlock()
 	bc.wg.Done()
 	return n, err

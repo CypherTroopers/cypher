@@ -83,6 +83,7 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	header := work.header
 	// commit state root after all state transitions.
 	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+	colossusX.ApplyKeyblockPowReward(work.publicState, keyblock)
 	header.Root = work.publicState.IntermediateRoot(false)
 
 	header.BlockType = types.Key_Block
@@ -127,10 +128,10 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 
 		header := work.header
 
+		header.KeyHash = txS.kbc.CurrentBlock().Hash()
 		// commit state root after all state transitions.
 		colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
 		header.Root = work.publicState.IntermediateRoot(false)
-		header.KeyHash = txS.kbc.CurrentBlock().Hash()
 		header.BlockType = blockType
 
 		// update block hash since it is now available, but was not when the
@@ -176,47 +177,47 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 		retErr = fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, kbc.CurrentBlock().Hash())
 		return retErr
 	}
-	if bftview.IamLeader(txS.s.GetCurrentView().LeaderIndex) {
-		return nil
-	}
 	err := bc.Engine().VerifyHeader(bc, header, false)
 	if err != nil {
 		retErr = fmt.Errorf("invalid header, error:%s", err.Error())
 		return retErr
 	}
 	err = bc.Validator().ValidateBody(txblock)
-	if err == types.ErrFutureBlock || err == types.ErrUnknownAncestor || err == types.ErrPrunedAncestor {
+	if err != nil {
 		retErr = fmt.Errorf("invalid body, error:%s", err.Error())
 		return retErr
 	}
-	/*
-		statedb, _, err := bc.State()
-		if err != nil {
-			retErr = fmt.Errorf("cannot get statedb, error:%s", err.Error())
-			return retErr
-		}
-		receipts, _, usedGas, err := bc.Processor.Process(txblock, statedb, vm.Config{})
-		if err != nil {
-			retErr = fmt.Errorf("cannot get receipts, error:%s", err.Error())
-			return retErr
-		}
-		err = bc.Validator.ValidateState(txblock, bc.GetBlockByHash(txblock.ParentHash()), statedb, receipts, usedGas)
-		if err != nil {
-			retErr = fmt.Errorf("Invalid state, error:%s", err.Error())
-			return retErr
-		}
-	*/
+	parent := bc.GetBlock(txblock.ParentHash(), txblock.NumberU64()-1)
+	if parent == nil {
+		retErr = fmt.Errorf("cannot get parent block, number:%d parent:%x", txblock.NumberU64()-1, txblock.ParentHash())
+		return retErr
+	}
+	statedb, err := bc.StateAt(parent.Root())
+	if err != nil {
+		retErr = fmt.Errorf("cannot get parent statedb, error:%s", err.Error())
+		return retErr
+	}
+	receipts, _, usedGas, err := bc.Processor().Process(txblock, statedb, vm.Config{})
+	if err != nil {
+		retErr = fmt.Errorf("cannot process block state, error:%s", err.Error())
+		return retErr
+	}
+	err = bc.Validator().ValidateState(txblock, statedb, receipts, usedGas)
+	if err != nil {
+		retErr = fmt.Errorf("invalid state, error:%s", err.Error())
+		return retErr
+	}
 	return nil
 }
 
 // New txBlock done, when consensus agreement completed
-func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte) error {
+func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte, viewID common.Hash, leaderID string) error {
 	log.Info("decideNewBlock", "TxBlock Number", block.NumberU64(), "txs", len(block.Transactions()))
 	bc := txS.bc
 	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return nil
 	}
-	block.SetSignature(sig, mask)
+	block.SetSignature(sig, mask, viewID, leaderID)
 	//	log.Info("decideNewBlock", "extra", block.Extra())
 	_, err := bc.InsertBlock(block)
 	if err != nil {
@@ -280,17 +281,15 @@ const (
 	pendingTierLarge  = 1024
 
 	fastPerAccountTierSmall  = 4
-	slowPerAccountTierSmall  = 8
-	fastPerAccountTierMedium = 16
-	slowPerAccountTierMedium = 32
-	fastPerAccountTierLarge  = 64
+	slowPerAccountTierSmall  = 16
+	fastPerAccountTierMedium = 8
+	slowPerAccountTierMedium = 48
+	fastPerAccountTierLarge  = 16
 	slowPerAccountTierLarge  = 128
-	fastBlockMaxTxCount      = uint64(20000)
-	slowBlockMaxTxCount      = uint64(40000)
-	fastBlockMaxGasPerTx  = uint64(300000)
-	fastBlockMaxDataBytes = 1024
-	fastBlockGasTargetPct = uint64(80)
-	slowBlockGasTargetPct = uint64(95)
+	fastBlockMaxTxCount      = uint64(4000)
+	slowBlockMaxTxCount      = uint64(50000)
+	fastBlockGasTargetPct    = uint64(35)
+	slowBlockGasTargetPct    = uint64(98)
 )
 
 const (
@@ -353,19 +352,7 @@ func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
 }
 
 func fastEligibleTx(tx *types.Transaction) bool {
-	if tx == nil {
-		return false
-	}
-	if tx.To() == nil {
-		return false
-	}
-	if len(tx.Data()) > fastBlockMaxDataBytes {
-		return false
-	}
-	if tx.Gas() > fastBlockMaxGasPerTx {
-		return false
-	}
-	return true
+	return core.IsFastLaneEligible(tx)
 }
 
 func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8, perAccount int) AddressTxes {

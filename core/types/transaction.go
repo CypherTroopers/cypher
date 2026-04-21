@@ -18,6 +18,7 @@ package types
 
 import (
 	"container/heap"
+	"encoding/json"
 	"errors"
 	"io"
 	"math/big"
@@ -40,14 +41,23 @@ var (
 )
 
 type Transaction struct {
-	data txdata    // Consensus contents of a transaction
-	time time.Time // Time first seen locally (spam avoidance)
+	data      txdata      // Consensus / wire contents of a transaction
+	routeHint TxRouteHint // Local routing hint (non-consensus / non-wire)
+	time      time.Time   // Time first seen locally (spam avoidance)
 
 	// caches
 	hash atomic.Value
 	size atomic.Value
 	from atomic.Value
 }
+
+type TxRouteHint uint8
+
+const (
+	TxRouteAuto TxRouteHint = iota
+	TxRouteFast
+	TxRouteSlow
+)
 
 type txdata struct {
 	AccountNonce uint64          `json:"nonce"    gencodec:"required"`
@@ -149,14 +159,40 @@ func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
 
 // MarshalJSON encodes the web3 RPC transaction format.
 func (tx *Transaction) MarshalJSON() ([]byte, error) {
+	type txJSON struct {
+		AccountNonce uint64          `json:"nonce"`
+		Price        *big.Int        `json:"gasPrice"`
+		GasLimit     uint64          `json:"gas"`
+		Recipient    *common.Address `json:"to"`
+		Amount       *big.Int        `json:"value"`
+		Payload      []byte          `json:"input"`
+		RouteHint    TxRouteHint     `json:"routeHint,omitempty"`
+		V            *big.Int        `json:"v"`
+		R            *big.Int        `json:"r"`
+		S            *big.Int        `json:"s"`
+		Hash         *common.Hash    `json:"hash"`
+	}
 	hash := tx.Hash()
-	data := tx.data
-	data.Hash = &hash
-	return data.MarshalJSON()
+	return json.Marshal(txJSON{
+		AccountNonce: tx.data.AccountNonce,
+		Price:        tx.data.Price,
+		GasLimit:     tx.data.GasLimit,
+		Recipient:    tx.data.Recipient,
+		Amount:       tx.data.Amount,
+		Payload:      tx.data.Payload,
+		RouteHint:    tx.routeHint,
+		V:            tx.data.V,
+		R:            tx.data.R,
+		S:            tx.data.S,
+		Hash:         &hash,
+	})
 }
 
 // UnmarshalJSON decodes the web3 RPC transaction format.
 func (tx *Transaction) UnmarshalJSON(input []byte) error {
+	type routeHintJSON struct {
+		RouteHint *TxRouteHint `json:"routeHint,omitempty"`
+	}
 	var dec txdata
 	if err := dec.UnmarshalJSON(input); err != nil {
 		return err
@@ -178,10 +214,24 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 		data: dec,
 		time: time.Now(),
 	}
+	var hint routeHintJSON
+	if err := json.Unmarshal(input, &hint); err == nil && hint.RouteHint != nil {
+		tx.routeHint = *hint.RouteHint
+	}
 	return nil
 }
 
-func (tx *Transaction) Data() []byte       { return common.CopyBytes(tx.data.Payload) }
+func (tx *Transaction) Data() []byte { return common.CopyBytes(tx.data.Payload) }
+func (tx *Transaction) RouteHint() TxRouteHint {
+	return tx.routeHint
+}
+
+func (tx *Transaction) WithRouteHint(hint TxRouteHint) *Transaction {
+	cpy := *tx
+	cpy.routeHint = hint
+	return &cpy
+}
+
 func (tx *Transaction) V() *big.Int        { return tx.data.V }
 func (tx *Transaction) Gas() uint64        { return tx.data.GasLimit }
 func (tx *Transaction) GasPrice() *big.Int { return new(big.Int).Set(tx.data.Price) }
