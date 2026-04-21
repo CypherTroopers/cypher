@@ -1351,16 +1351,16 @@ func (s *PublicBlockChainAPI) rpcMarshalBlock(ctx context.Context, b *types.Bloc
 func RPCMarshalKeyBlock(b *types.KeyBlock) (map[string]interface{}, error) {
 	head := b.Header() // copies the header once
 	fields := map[string]interface{}{
-		"number":        (*hexutil.Big)(head.Number),
-		"difficulty":    (*hexutil.Big)(head.Difficulty),
-		"hash":          b.Hash(),
-		"parentHash":    head.ParentHash,
-		"nonce":         head.Nonce,
-		"mixDigest":     head.MixDigest,
-		"timestamp":     head.Time,
-		"committeeHash": head.CommitteeHash,
-		"blockType":     head.BlockType,
-		"t_number":      head.T_Number,
+		"keyBlockNumber": (*hexutil.Big)(head.Number),
+		"difficulty":     (*hexutil.Big)(head.Difficulty),
+		"hash":           b.Hash(),
+		"parentHash":     head.ParentHash,
+		"nonce":          head.Nonce,
+		"mixDigest":      head.MixDigest,
+		"timestamp":      head.Time,
+		"committeeHash":  head.CommitteeHash,
+		"blockType":      head.BlockType,
+		"TxBlockNumber":  head.T_Number,
 	}
 
 	fields["inPubKey"] = b.InPubKey()
