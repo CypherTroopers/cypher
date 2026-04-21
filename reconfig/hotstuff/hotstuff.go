@@ -745,7 +745,7 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 
 	hsm.leaderView = v
 
-	threshold := v.threshold + 1
+	threshold := v.threshold
 	if threshold > len(v.groupPublicKey) {
 		threshold = len(v.groupPublicKey)
 	}
