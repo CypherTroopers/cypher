@@ -1,10 +1,10 @@
-
 // You should have received a copy of the GNU Lesser General Public License
 // along with the cypherBFT library. If not, see <http://www.gnu.org/licenses/>.
 
 package colossusX
 
 import (
+	"bytes"
 	crand "crypto/rand"
 	"math"
 	"math/big"
@@ -18,6 +18,11 @@ import (
 	"github.com/cypherium/cypher/log"
 )
 
+type sealedCandidate struct {
+	nonce  types.BlockNonce
+	digest common.Hash
+}
+
 // SealCandidate implements pow.Engine, attempting to find a nonce that satisfies
 // the candidate's difficulty requirements.
 func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-chan struct{}) (*types.Candidate, error) {
@@ -29,7 +34,7 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 	}
 	// Create a runner and the multiple search threads it directs
 	abort := make(chan struct{})
-	found := make(chan *types.Candidate)
+	found := make(chan *sealedCandidate)
 
 	colossusX.lock.Lock()
 	threads := colossusX.threads
@@ -63,7 +68,10 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 	case <-stop:
 		// Outside abort, stop all miner threads
 		close(abort)
-	case result = <-found:
+	case sealed := <-found:
+		candidate.KeyCandidate.Nonce = sealed.nonce
+		candidate.KeyCandidate.MixDigest = sealed.digest
+		result = candidate
 
 		// One of the threads found a block, abort all others
 		close(abort)
@@ -81,13 +89,18 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 
 // mineCandidate is the actual proof-of-work miner that searches for a nonce starting from
 // seed that results in correct final block difficulty.
-func (colossusX *colossusX) mineCandidate(candidate *types.Candidate, id int, seed uint64, abort chan struct{}, found chan *types.Candidate) {
+func (colossusX *colossusX) mineCandidate(candidate *types.Candidate, id int, seed uint64, abort chan struct{}, found chan *sealedCandidate) {
 	// Extract some data from the header
 	var (
 		hash   = candidate.HashNoNonce().Bytes()
 		target = new(big.Int).Div(maxUint256, candidate.KeyCandidate.Difficulty)
 		number = candidate.KeyCandidate.Number.Uint64()
 	)
+	cache := colossusX.cache(number)
+	size := datasetSize(number)
+	if colossusX.config.PowMode == ModeTest {
+		size = 32 * 1024
+	}
 	dataset, err := colossusX.dataset(number)
 	if err != nil {
 		log.Error("colossusX mining aborted: dataset initialization failed", "epoch", number/epochLength, "err", err)
@@ -98,6 +111,7 @@ func (colossusX *colossusX) mineCandidate(candidate *types.Candidate, id int, se
 		attempts = int64(0)
 		nonce    = seed
 	)
+	useLightOnly := false
 	log.Debug("mineCandidate", "seed", seed)
 	logger := log.New("miner", id)
 search:
@@ -118,18 +132,32 @@ search:
 			}
 			// Compute the PoW value of this nonce
 			digest, result := colossusXfull(dataset.dataset, hash, nonce)
+			if useLightOnly {
+				digest, result = colossusXlight(size, cache.cache, hash, nonce)
+			}
 
 			if new(big.Int).SetBytes(result).Cmp(target) <= 0 {
+				if !useLightOnly {
+					lightDigest, lightResult := colossusXlight(size, cache.cache, hash, nonce)
+					if !bytes.Equal(digest, lightDigest) || new(big.Int).SetBytes(lightResult).Cmp(target) > 0 {
+						useLightOnly = true
+						logger.Warn("colossusX full/light mismatch detected, switching to light mining", "nonce", nonce)
+						nonce++
+						continue
+					}
+					digest = lightDigest
+				}
 				foundedTime := time.Now().Unix()
 				foundedElapseTime := time.Duration(uint64(foundedTime)-candidate.KeyCandidate.Time) * time.Second
-				// Correct nonce found, create a new header with it
-				candidate.KeyCandidate.Nonce = types.EncodeNonce(nonce)
-				candidate.KeyCandidate.MixDigest = common.BytesToHash(digest)
-				log.Info("mineCandidate", "foundedElapseTime", foundedElapseTime, "nonce", candidate.KeyCandidate.Nonce, "digest", candidate.KeyCandidate.MixDigest)
+				sealed := &sealedCandidate{
+					nonce:  types.EncodeNonce(nonce),
+					digest: common.BytesToHash(digest),
+				}
+				log.Info("mineCandidate", "foundedElapseTime", foundedElapseTime, "nonce", sealed.nonce, "digest", sealed.digest)
 
 				// Seal and return a block (if still needed)
 				select {
-				case found <- candidate:
+				case found <- sealed:
 					log.Info("colossusX nonce found and reported", "attempts", nonce-seed, "nonce", nonce)
 				case <-abort:
 					logger.Trace("colossusX nonce found but discarded", "attempts", nonce-seed, "nonce", nonce)
@@ -142,4 +170,7 @@ search:
 	// Datasets are unmapped in a finalizer. Ensure that the dataset stays live
 	// during sealing so it's not unmapped while being read.
 	runtime.KeepAlive(dataset)
+	// Caches are unmapped in a finalizer. Ensure that the cache stays live
+	// during sealing so it's not unmapped while being read.
+	runtime.KeepAlive(cache)
 }

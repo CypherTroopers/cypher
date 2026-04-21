@@ -1,7 +1,7 @@
 package node
 
 import (
-	colossusx "github.com/cypherium/cypher/consensus/colossusx"
+	colossusx "github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/p2p"
 )
 

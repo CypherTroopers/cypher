@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math/big"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/cypherium/cypher/common/math"
@@ -45,7 +46,8 @@ import (
 // error types into the pow package.
 var (
 	FrontierBlockReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Block reward in wei for successfully mining a block
-	ByzantiumBlockReward = big.NewInt(3e+18) // Block reward in wei for successfully mining a block upward from Byzantium
+	ByzantiumBlockReward = big.NewInt(3e+18)                                              // Block reward in wei for successfully mining a block upward from Byzantium
+	CommonNodePowReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Bonus reward in wei for accepted common-node PoW candidate
 
 	errLargeBlockTime    = errors.New("timestamp too big")
 	errZeroBlockTime     = errors.New("timestamp equals parent's")
@@ -140,7 +142,7 @@ func calcKeyBlockDifficultyByzantium(time uint64, parent *types.KeyBlockHeader) 
 	return x
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////////////////
 // VerifyCandidate implements pow.Engine, checking whether the given candidate satisfies
 // the PoW difficulty requirements.
 func (colossusX *colossusX) VerifyCandidate(chain types.KeyChainReader, candidate *types.Candidate) error {
@@ -252,7 +254,7 @@ func (colossusX *colossusX) PowMode() uint {
 	return uint(colossusX.config.PowMode)
 }
 
-//----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------
 // Author implements consensus.Engine, returning the header's coinbase as the
 // proof-of-work verified author of the block.
 func (colossusX *colossusX) Author(header *types.Header) (common.Address, error) {
@@ -437,6 +439,9 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, totalGas uint64) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
+	if header.BlockType == types.Key_Block {
+		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
+	}
 
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 }
@@ -446,6 +451,9 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
+	if header.BlockType == types.Key_Block {
+		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
+	}
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 
 	// Header seems complete, assemble into a block and return
@@ -526,6 +534,62 @@ func AccumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 	accumulateRewards(config, state, header, uncles)
 }
 
+// ApplyFixedModeKeyblockPowReward credits CommonNodePowReward to keyblock outAddress
+// when the tx chain switches to a new keyblock (first tx block after keyblock change).
+//
+// NOTE: despite the historical function name, this now applies to any keyblock
+// that has a non-empty outAddress in the keyblock body.
+func ApplyFixedModeKeyblockPowReward(bc types.ChainReader, state vm.StateDB, header *types.Header) {
+	if bc == nil || state == nil || header == nil || header.Number == nil || header.Number.Sign() == 0 {
+		return
+	}
+
+	pBlock := bc.GetBlock(header.ParentHash, header.Number.Uint64()-1)
+	if pBlock == nil {
+		log.Error("ApplyFixedModeKeyblockPowReward", "not found parent header hash", header.ParentHash)
+		return
+	}
+	if header.KeyHash == pBlock.KeyHash() {
+		return
+	}
+
+	kheader := bc.GetKeyChainReader().GetHeaderByHash(header.KeyHash)
+	if kheader == nil {
+		return
+	}
+	kblock := bc.GetKeyChainReader().GetBlock(header.KeyHash, kheader.NumberU64())
+	if kblock == nil {
+		return
+	}
+	submitter := strings.TrimPrefix(kblock.OutAddress(0), "*")
+	if submitter == "" {
+		return
+	}
+	state.AddBalance(common.HexToAddress(submitter), new(big.Int).Set(CommonNodePowReward))
+}
+
+// ApplyKeyblockPowRewardByKeyInfo credits CommonNodePowReward to keyblock outAddress
+// at keyblock generation/finalization time.
+func ApplyKeyblockPowRewardByKeyInfo(state vm.StateDB, keyInfo []byte) {
+	if state == nil || len(keyInfo) == 0 {
+		return
+	}
+	keyblock := types.DecodeToKeyBlock(keyInfo)
+	ApplyKeyblockPowReward(state, keyblock)
+}
+
+// ApplyKeyblockPowReward credits CommonNodePowReward to keyblock outAddress.
+func ApplyKeyblockPowReward(state vm.StateDB, keyblock *types.KeyBlock) {
+	if state == nil || keyblock == nil {
+		return
+	}
+	submitter := strings.TrimPrefix(keyblock.OutAddress(0), "*")
+	if submitter == "" {
+		return
+	}
+	state.AddBalance(common.HexToAddress(submitter), new(big.Int).Set(CommonNodePowReward))
+}
+
 func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header, blockReward uint64, beNewVer bool) {
 	bRewardAll := false
 	//if header.BlockType == types.IsKeyBlockType {
@@ -544,6 +608,11 @@ func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header
 	keyHash := pBlock.KeyHash()
 	if !beNewVer && header.KeyHash != keyHash {
 		kheader := bc.GetKeyChainReader().GetHeaderByHash(header.KeyHash)
+		if kheader == nil {
+			log.Error("RewardCommites", "not found key header", header.KeyHash)
+			return
+		}
+		kblock := bc.GetKeyChainReader().GetBlock(header.KeyHash, kheader.NumberU64())
 		if kheader.HasNewNode() {
 			kNumber := kheader.NumberU64()
 			cnodes := bc.GetKeyChainReader().GetCommitteeByNumber(kNumber)
@@ -553,6 +622,11 @@ func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header
 			}
 			c := &bftview.Committee{List: cnodes}
 			state.AddBalance(common.HexToAddress(c.In().CoinBase), big.NewInt(params.KeyBlock_Reward))
+		} else if bc.Config() != nil && (bc.Config().FixedLeader || bc.Config().FixedCommittee) && kblock != nil {
+			submitter := strings.TrimPrefix(kblock.OutAddress(0), "*")
+			if submitter != "" {
+				state.AddBalance(common.HexToAddress(submitter), big.NewInt(100000))
+			}
 		}
 	}
 

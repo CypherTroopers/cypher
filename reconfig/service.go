@@ -38,9 +38,10 @@ import (
 
 const failedProposalRetry = 200 * time.Millisecond
 const hotstuffIdleSleep = 10 * time.Millisecond
-const tryProposeDebounce = 25 * time.Millisecond
-const slowBlockMinPending = 64
-const slowBlockMinInterval = 750 * time.Millisecond
+const tryProposeDebounce = 5 * time.Millisecond
+const fastBlockInterval = 1 * time.Second
+const slowBlockInterval = 1 * time.Minute
+const slowFallbackMinPending = 1
 
 type committeeInfo struct {
 	Committee *bftview.Committee
@@ -90,12 +91,13 @@ func (msg *networkMsg) GetCommittee() *bftview.Committee {
 
 // Service work for protcol
 type Service struct {
-	netService *netService
-	bc         *core.BlockChain
-	txService  *txService
-	kbc        *core.KeyBlockChain
-	keyService *keyService
-	txPool     *core.TxPool
+	netService  *netService
+	bc          *core.BlockChain
+	txService   *txService
+	kbc         *core.KeyBlockChain
+	keyService  *keyService
+	txPool      *core.TxPool
+	chainConfig *params.ChainConfig
 
 	protocolMng *hotstuff.HotstuffProtocolManager
 
@@ -110,6 +112,9 @@ type Service struct {
 	runningState       int32
 	lastProposeTime    time.Time
 	lastSlowBlockTime  time.Time
+	lastFastBlockTime  time.Time
+	serviceStartTime   time.Time
+	lastCadenceWakeup  time.Time
 	tryProposeQueuedAt int64
 	pacetMakerTimer    *paceMakerTimer
 
@@ -121,6 +126,7 @@ type Service struct {
 
 func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *ReconfigBackend) *Service {
 	s := new(Service)
+	s.serviceStartTime = time.Now()
 	s.netService = newNetService(sName, sIp, chainConfig, backend, s)
 	s.txService = newTxService(s, backend, chainConfig)
 	s.keyService = newKeyService(s, backend, chainConfig)
@@ -128,6 +134,7 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.bc = backend.BlockChain()
 	s.kbc = backend.KeyBlockChain()
 	s.txPool = backend.TxPool()
+	s.chainConfig = chainConfig
 
 	s.lastCmInfoMap = make(map[common.Hash]*cachedCommitteeInfo)
 
@@ -175,6 +182,17 @@ func (s *Service) OnNewView(data []byte, extraes [][]byte) error { //buf is snap
 func (s *Service) CurrentN() uint64 {
 	curView := s.GetCurrentView()
 	return curView.TxNumber + 1
+}
+
+func (s *Service) ChainID() uint64 {
+	if s.chainConfig != nil && s.chainConfig.ChainID != nil {
+		return s.chainConfig.ChainID.Uint64()
+	}
+	return 0
+}
+
+func (s *Service) UseContextSignatures() bool {
+	return true
 }
 
 // CurrentState call by hotstuff
@@ -364,8 +382,11 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 		log.Warn("tryProposalNewBlock", "error", err)
 		return err, nil, nil, nil
 	}
+	now := time.Now()
 	if blockType == types.SlowTx_Block {
-		s.lastSlowBlockTime = time.Now()
+		s.lastSlowBlockTime = now
+	} else if blockType == types.FastTx_Block {
+		s.lastFastBlockTime = now
 	}
 	proposeOK = true
 	return nil, nil, data, nil
@@ -401,6 +422,20 @@ func readableTxBlockType(blockType uint8) string {
 	}
 }
 
+func (s *Service) shouldEmitFastBlock(now time.Time) bool {
+	if s.lastFastBlockTime.IsZero() {
+		return true
+	}
+	return now.Sub(s.lastFastBlockTime) >= fastBlockInterval
+}
+
+func (s *Service) shouldEmitSlowBlock(now time.Time) bool {
+	if s.lastSlowBlockTime.IsZero() {
+		return true
+	}
+	return now.Sub(s.lastSlowBlockTime) >= slowBlockInterval
+}
+
 func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
 	fastAddrTxes, fastErr := s.txService.loadPendingAddressTxes(types.FastTx_Block)
 	if fastErr != nil {
@@ -421,35 +456,19 @@ func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
 
 func (s *Service) chooseTxBlockType() uint8 {
 	fastPending, slowPending := s.lanePendingCounts()
-	lastSlowAgo := time.Duration(0)
-	if !s.lastSlowBlockTime.IsZero() {
-		lastSlowAgo = time.Since(s.lastSlowBlockTime)
-	}
-
-	blockType := uint8(types.FastTx_Block)
+	now := time.Now()
 	switch {
-	case slowPending == 0:
-		blockType = types.FastTx_Block
-	case fastPending == 0:
-		blockType = types.SlowTx_Block
-	case slowPending == fastPending:
-		// All currently proposal-eligible heads are fast-lane transactions.
-		// Prefer fast blocks so simple transfers never get dragged into the slow path.
-		blockType = types.FastTx_Block
-	case slowPending >= slowBlockMinPending &&
-		(s.lastSlowBlockTime.IsZero() || time.Since(s.lastSlowBlockTime) >= slowBlockMinInterval):
-		blockType = types.SlowTx_Block
+	case fastPending > 0 && s.shouldEmitFastBlock(now):
+		return types.FastTx_Block
+	case slowPending > 0 && s.shouldEmitSlowBlock(now):
+		return types.SlowTx_Block
+	case fastPending > 0:
+		return types.FastTx_Block
+	case slowPending >= slowFallbackMinPending:
+		return types.SlowTx_Block
 	default:
-		blockType = types.FastTx_Block
+		return types.FastTx_Block
 	}
-
-	log.Debug("chooseTxBlockType",
-		"fastPending", fastPending,
-		"slowPending", slowPending,
-		"lastSlowAgo", lastSlowAgo,
-		"chosen", readableTxBlockType(blockType))
-
-	return blockType
 }
 
 // OnViewDone call by hotstuff
@@ -462,7 +481,7 @@ func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
 		return nil
 	}
 	block := types.DecodeToBlock(tSign.State)
-	err := s.txService.decideNewBlock(block, tSign.Sign, tSign.Mask)
+	err := s.txService.decideNewBlock(block, tSign.Sign, tSign.Mask, tSign.ViewID, tSign.LeaderID)
 	if err != nil {
 		return err
 	}
@@ -527,6 +546,15 @@ func (s *Service) handleHotStuffMsg() {
 		data := s.hotstuffMsgQ.PopFront()
 		if data == nil {
 			time.Sleep(hotstuffIdleSleep)
+			now := time.Now()
+			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
+				if s.shouldEmitFastBlock(now) || s.shouldEmitSlowBlock(now) {
+					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
+						s.lastCadenceWakeup = now
+						s.triggerTryPropose(s.bc.CurrentBlockN())
+					}
+				}
+			}
 			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
 			continue
 		}
