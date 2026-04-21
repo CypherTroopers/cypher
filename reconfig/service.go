@@ -566,6 +566,10 @@ func (s *Service) handleHotStuffMsg() {
 			continue
 		}
 		msg := data.(*hotstuffMsg)
+		if msg == nil || msg.hMsg == nil {
+			log.Warn("handleHotStuffMsg received nil message")
+			continue
+		}
 		msgCode := msg.hMsg.Code
 		s.observeHotstuffProgress(msg.hMsg)
 		if msgCode == hotstuff.MsgTryPropose {
