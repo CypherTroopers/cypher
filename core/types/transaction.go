@@ -160,30 +160,30 @@ func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
 // MarshalJSON encodes the web3 RPC transaction format.
 func (tx *Transaction) MarshalJSON() ([]byte, error) {
 	type txJSON struct {
-		AccountNonce uint64          `json:"nonce"`
-		Price        *big.Int        `json:"gasPrice"`
-		GasLimit     uint64          `json:"gas"`
+		AccountNonce hexutil.Uint64  `json:"nonce"`
+		Price        *hexutil.Big    `json:"gasPrice"`
+		GasLimit     hexutil.Uint64  `json:"gas"`
 		Recipient    *common.Address `json:"to"`
-		Amount       *big.Int        `json:"value"`
-		Payload      []byte          `json:"input"`
+		Amount       *hexutil.Big    `json:"value"`
+		Payload      hexutil.Bytes   `json:"input"`
 		RouteHint    TxRouteHint     `json:"routeHint,omitempty"`
-		V            *big.Int        `json:"v"`
-		R            *big.Int        `json:"r"`
-		S            *big.Int        `json:"s"`
+		V            *hexutil.Big    `json:"v"`
+		R            *hexutil.Big    `json:"r"`
+		S            *hexutil.Big    `json:"s"`
 		Hash         *common.Hash    `json:"hash"`
 	}
 	hash := tx.Hash()
 	return json.Marshal(txJSON{
-		AccountNonce: tx.data.AccountNonce,
-		Price:        tx.data.Price,
-		GasLimit:     tx.data.GasLimit,
+		AccountNonce: hexutil.Uint64(tx.data.AccountNonce),
+		Price:        (*hexutil.Big)(tx.data.Price),
+		GasLimit:     hexutil.Uint64(tx.data.GasLimit),
 		Recipient:    tx.data.Recipient,
-		Amount:       tx.data.Amount,
+		Amount:       (*hexutil.Big)(tx.data.Amount),
 		Payload:      tx.data.Payload,
 		RouteHint:    tx.routeHint,
-		V:            tx.data.V,
-		R:            tx.data.R,
-		S:            tx.data.S,
+		V:            (*hexutil.Big)(tx.data.V),
+		R:            (*hexutil.Big)(tx.data.R),
+		S:            (*hexutil.Big)(tx.data.S),
 		Hash:         &hash,
 	})
 }
