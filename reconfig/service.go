@@ -17,6 +17,7 @@
 package reconfig
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -117,6 +118,11 @@ type Service struct {
 	lastCadenceWakeup  time.Time
 	tryProposeQueuedAt int64
 	pacetMakerTimer    *paceMakerTimer
+	muHotstuffProgress sync.Mutex
+	hotstuffProgressAt time.Time
+	lastProgressN      uint64
+	lastProgressViewID common.Hash
+	lastProgressRank   uint8
 
 	hotstuffMsgQ *common.Queue
 	feed1        event.Feed
@@ -141,6 +147,7 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.msgCh1 = make(chan committeeMsg, 10)
 	s.msgSub1 = s.feed1.Subscribe(s.msgCh1)
 	s.hotstuffMsgQ = common.QueueNew()
+	s.hotstuffProgressAt = time.Now()
 
 	s.protocolMng = hotstuff.NewHotstuffProtocolManager(s, nil, nil)
 	s.pacetMakerTimer = newPaceMakerTimer(chainConfig, s, backend)
@@ -559,7 +566,12 @@ func (s *Service) handleHotStuffMsg() {
 			continue
 		}
 		msg := data.(*hotstuffMsg)
+		if msg == nil || msg.hMsg == nil {
+			log.Warn("handleHotStuffMsg received nil message")
+			continue
+		}
 		msgCode := msg.hMsg.Code
+		s.observeHotstuffProgress(msg.hMsg)
 		if msgCode == hotstuff.MsgTryPropose {
 			atomic.StoreInt64(&s.tryProposeQueuedAt, 0)
 		}
@@ -591,6 +603,39 @@ func (s *Service) handleHotStuffMsg() {
 			}(curN)
 		}
 	}
+}
+
+func (s *Service) observeHotstuffProgress(msg *hotstuff.HotstuffMessage) {
+	if msg == nil {
+		return
+	}
+	rank := uint8(0)
+	switch msg.Code {
+	case hotstuff.MsgPrepare:
+		rank = 1
+	case hotstuff.MsgDecide:
+		rank = 2
+	default:
+		return
+	}
+
+	s.muHotstuffProgress.Lock()
+	defer s.muHotstuffProgress.Unlock()
+	viewCompare := bytes.Compare(msg.ViewId[:], s.lastProgressViewID[:])
+	if msg.Number > s.lastProgressN ||
+		(msg.Number == s.lastProgressN && viewCompare > 0) ||
+		(msg.Number == s.lastProgressN && viewCompare == 0 && rank > s.lastProgressRank) {
+		s.lastProgressN = msg.Number
+		s.lastProgressViewID = msg.ViewId
+		s.lastProgressRank = rank
+		s.hotstuffProgressAt = time.Now()
+	}
+}
+
+func (s *Service) HotstuffProgressTime() time.Time {
+	s.muHotstuffProgress.Lock()
+	defer s.muHotstuffProgress.Unlock()
+	return s.hotstuffProgressAt
 }
 
 // -------------------------------------------------------------------------------------------------------------------------
