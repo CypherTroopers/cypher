@@ -72,7 +72,10 @@ const (
 
 // errPlainMessageTooLarge is returned if a decompressed message length exceeds
 // the allowed 24 bits (i.e. length >= 16MB).
-var errPlainMessageTooLarge = errors.New("message length >= 16MB")
+var (
+	errPlainMessageTooLarge = errors.New("message length >= 16MB")
+	errMessageFrameTooLarge = errors.New("message size overflows uint24")
+)
 
 // rlpx is the transport protocol used by actual (non-test) connections.
 // It wraps the frame encoder with locks and read/write deadlines.
@@ -601,10 +604,11 @@ func (rw *rlpxFrameRW) WriteMsg(msg Msg) error {
 	}
 	// write header
 	headbuf := make([]byte, 32)
-	fsize := uint32(len(ptype)) + msg.Size
-	if fsize > maxUint24 {
-		return errors.New("message size overflows uint24")
+	fsize64 := uint64(len(ptype)) + uint64(msg.Size)
+	if fsize64 > maxUint24 {
+		return errMessageFrameTooLarge
 	}
+	fsize := uint32(fsize64)
 	putInt24(fsize, headbuf) // TODO: check overflow
 	copy(headbuf[3:], zeroHeader)
 	rw.enc.XORKeyStream(headbuf[:16], headbuf[:16]) // first half is now encrypted
