@@ -72,7 +72,10 @@ const (
 
 // errPlainMessageTooLarge is returned if a decompressed message length exceeds
 // the allowed 24 bits (i.e. length >= 16MB).
-var errPlainMessageTooLarge = errors.New("message length >= 16MB")
+var (
+	errPlainMessageTooLarge = errors.New("message length >= 16MB")
+	errMessageFrameTooLarge = errors.New("message size overflows uint24")
+)
 
 // rlpx is the transport protocol used by actual (non-test) connections.
 // It wraps the frame encoder with locks and read/write deadlines.

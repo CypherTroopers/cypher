@@ -18,7 +18,9 @@ package forkid
 
 import (
 	"bytes"
+	"hash/crc32"
 	"math"
+	"math/big"
 	"testing"
 
 	"github.com/cypherium/cypher/common"
@@ -223,5 +225,35 @@ func TestEncoding(t *testing.T) {
 		if !bytes.Equal(have, tt.want) {
 			t.Errorf("test %d: RLP mismatch: have %x, want %x", i, have, tt.want)
 		}
+	}
+}
+
+func TestGatherForksIgnoresNonPositiveBlocks(t *testing.T) {
+	config := &params.ChainConfig{
+		ChainID:         big.NewInt(1),
+		HomesteadBlock:  big.NewInt(-1),
+		DAOForkBlock:    big.NewInt(0),
+		EIP150Block:     big.NewInt(8),
+		PetersburgBlock: big.NewInt(8), // duplicate values should be deduplicated
+	}
+	forks := gatherForks(config)
+	if len(forks) != 1 || forks[0] != 8 {
+		t.Fatalf("unexpected forks: %v", forks)
+	}
+}
+
+func TestGatherForksNilConfig(t *testing.T) {
+	if forks := gatherForks(nil); len(forks) != 0 {
+		t.Fatalf("unexpected forks for nil config: %v", forks)
+	}
+}
+
+func TestNewIDWithNilConfig(t *testing.T) {
+	genesis := common.HexToHash("0x01")
+	id := newID(nil, genesis, 12345)
+
+	want := ID{Hash: checksumToBytes(crc32.ChecksumIEEE(genesis[:])), Next: 0}
+	if id != want {
+		t.Fatalf("unexpected fork id: have %v, want %v", id, want)
 	}
 }
