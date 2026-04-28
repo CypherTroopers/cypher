@@ -84,6 +84,8 @@ func TestHexOrDecimal64(t *testing.T) {
 		// Invalid syntax:
 		{"abcdef", 0, false},
 		{"0xgg", 0, false},
+		{"+1", 0, false},
+		{"-0", 0, false},
 		// Doesn't fit into 64 bits:
 		{"18446744073709551617", 0, false},
 	}
@@ -113,4 +115,26 @@ func TestMustParseUint64Panic(t *testing.T) {
 		}
 	}()
 	MustParseUint64("ggg")
+}
+
+func TestGetRandIntArrayBounds(t *testing.T) {
+	if got := GetRandIntArray(0, 3); len(got) != 0 {
+		t.Fatalf("expected empty result for max=0, got len=%d", len(got))
+	}
+	if got := GetRandIntArray(5, 0); len(got) != 0 {
+		t.Fatalf("expected empty result for num=0, got len=%d", len(got))
+	}
+}
+
+func TestGetRandIntArrayCapsToMax(t *testing.T) {
+	max := 5
+	got := GetRandIntArray(max, max+10)
+	if len(got) != max {
+		t.Fatalf("expected len=%d, got %d", max, len(got))
+	}
+	for v := range got {
+		if v < 0 || v >= max {
+			t.Fatalf("out-of-range value %d", v)
+		}
+	}
 }
