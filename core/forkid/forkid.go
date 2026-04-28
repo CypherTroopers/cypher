@@ -215,6 +215,9 @@ func checksumToBytes(hash uint32) [4]byte {
 
 // gatherForks gathers all the known forks and creates a sorted list out of them.
 func gatherForks(config *params.ChainConfig) []uint64 {
+	if config == nil {
+		return nil
+	}
 	// Gather all the fork block numbers via reflection
 	kind := reflect.TypeOf(params.ChainConfig{})
 	conf := reflect.ValueOf(config).Elem()
@@ -231,7 +234,7 @@ func gatherForks(config *params.ChainConfig) []uint64 {
 		}
 		// Extract the fork rule block number and aggregate it
 		rule := conf.Field(i).Interface().(*big.Int)
-		if rule != nil {
+		if rule != nil && rule.Sign() > 0 {
 			forks = append(forks, rule.Uint64())
 		}
 	}
@@ -249,10 +252,6 @@ func gatherForks(config *params.ChainConfig) []uint64 {
 			forks = append(forks[:i], forks[i+1:]...)
 			i--
 		}
-	}
-	// Skip any forks in block 0, that's the genesis ruleset
-	if len(forks) > 0 && forks[0] == 0 {
-		forks = forks[1:]
 	}
 	return forks
 }

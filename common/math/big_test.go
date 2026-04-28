@@ -45,6 +45,9 @@ func TestHexOrDecimal256(t *testing.T) {
 		// Invalid syntax:
 		{"abcdef", nil, false},
 		{"0xgg", nil, false},
+		{"-1", nil, false},
+		{"-0", nil, false},
+		{"+1", nil, false},
 		// Larger than 256 bits:
 		{"115792089237316195423570985008687907853269984665640564039457584007913129639936", nil, false},
 	}
@@ -58,6 +61,18 @@ func TestHexOrDecimal256(t *testing.T) {
 		if test.num != nil && (*big.Int)(&num).Cmp(test.num) != 0 {
 			t.Errorf("ParseBig(%q) -> %d, want %d", test.input, (*big.Int)(&num), test.num)
 		}
+	}
+}
+
+func TestParseBig256RejectsNegative(t *testing.T) {
+	if _, ok := ParseBig256("-1"); ok {
+		t.Fatal("expected ParseBig256 to reject negative values")
+	}
+	if _, ok := ParseBig256("-0"); ok {
+		t.Fatal("expected ParseBig256 to reject sign-prefixed zero values")
+	}
+	if _, ok := ParseBig256("+1"); ok {
+		t.Fatal("expected ParseBig256 to reject plus-prefixed values")
 	}
 }
 
@@ -229,6 +244,7 @@ func TestBigEndianByteAt(t *testing.T) {
 		exp byte
 	}{
 		{"00", 0, 0x00},
+		{"00", -1, 0x00},
 		{"01", 1, 0x00},
 		{"00", 1, 0x00},
 		{"01", 0, 0x01},
@@ -254,6 +270,7 @@ func TestLittleEndianByteAt(t *testing.T) {
 		exp byte
 	}{
 		{"00", 0, 0x00},
+		{"00", -1, 0x00},
 		{"01", 1, 0x00},
 		{"00", 1, 0x00},
 		{"01", 0, 0x00},
@@ -278,6 +295,18 @@ func TestLittleEndianByteAt(t *testing.T) {
 			t.Fatalf("Expected  [%v] %v:th byte to be %v, was %v.", test.x, test.y, test.exp, actual)
 		}
 
+	}
+}
+
+func TestExpDoesNotMutateBase(t *testing.T) {
+	base := big.NewInt(3)
+	exponent := big.NewInt(5)
+	originalBase := new(big.Int).Set(base)
+
+	_ = Exp(base, exponent)
+
+	if base.Cmp(originalBase) != 0 {
+		t.Fatalf("Exp mutated base: have %v, want %v", base, originalBase)
 	}
 }
 
