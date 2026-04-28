@@ -73,6 +73,9 @@ func ParseBig256(s string) (*big.Int, bool) {
 	if s == "" {
 		return new(big.Int), true
 	}
+	if s[0] == '+' || s[0] == '-' {
+		return nil, false
+	}
 	var bigint *big.Int
 	var ok bool
 	if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
@@ -80,7 +83,7 @@ func ParseBig256(s string) (*big.Int, bool) {
 	} else {
 		bigint, ok = new(big.Int).SetString(s, 10)
 	}
-	if ok && bigint.BitLen() > 256 {
+	if ok && (bigint.Sign() < 0 || bigint.BitLen() > 256) {
 		bigint, ok = nil, false
 	}
 	return bigint, ok
@@ -160,7 +163,7 @@ func bigEndianByteAt(bigint *big.Int, n int) byte {
 // n==0 returns the MSB
 // Example: bigint '5', padlength 32, n=31 => 5
 func Byte(bigint *big.Int, padlength, n int) byte {
-	if n >= padlength {
+	if n < 0 || n >= padlength {
 		return byte(0)
 	}
 	return bigEndianByteAt(bigint, padlength-1-n)
@@ -211,13 +214,14 @@ func S256(x *big.Int) *big.Int {
 // Courtesy @karalabe and @chfast
 func Exp(base, exponent *big.Int) *big.Int {
 	result := big.NewInt(1)
+	baseCopy := new(big.Int).Set(base)
 
 	for _, word := range exponent.Bits() {
 		for i := 0; i < wordBits; i++ {
 			if word&1 == 1 {
-				U256(result.Mul(result, base))
+				U256(result.Mul(result, baseCopy))
 			}
-			U256(base.Mul(base, base))
+			U256(baseCopy.Mul(baseCopy, baseCopy))
 			word >>= 1
 		}
 	}
