@@ -65,6 +65,9 @@ func ParseUint64(s string) (uint64, bool) {
 	if s == "" {
 		return 0, true
 	}
+	if s[0] == '+' || s[0] == '-' {
+		return 0, false
+	}
 	if len(s) >= 2 && (s[:2] == "0x" || s[:2] == "0X") {
 		v, err := strconv.ParseUint(s[2:], 16, 64)
 		return v, err == nil
@@ -102,18 +105,16 @@ func SafeMul(x, y uint64) (uint64, bool) {
 
 // GetRandIntArray returns int array with no repeat
 func GetRandIntArray(max int, num int) map[int]bool {
-	if num > max-1 {
-		num = max - 1
-	}
 	a := make(map[int]bool)
-	rand.Seed(time.Now().UnixNano())
-	maxLoop := num * 10
-	for i := 0; i < maxLoop; i++ {
-		a[rand.Intn(max)] = true
-		if len(a) == num {
-			break
-		}
+	if max <= 0 || num <= 0 {
+		return a
 	}
-
+	if num > max {
+		num = max
+	}
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for _, v := range r.Perm(max)[:num] {
+		a[v] = true
+	}
 	return a
 }

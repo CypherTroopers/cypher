@@ -57,3 +57,44 @@ func TestIterator(t *testing.T) {
 		t.Errorf("count wrong, expected %d got %d", i, exp)
 	}
 }
+
+func TestIteratorStopsOnMalformedElement(t *testing.T) {
+	// List with one valid single-byte item (0x01) and one malformed item header (0x81)
+	// missing its payload byte.
+	it, err := NewListIterator([]byte{0xC2, 0x01, 0x81})
+	if err != nil {
+		t.Fatalf("unexpected iterator creation error: %v", err)
+	}
+	if !it.Next() {
+		t.Fatal("expected first element to be readable")
+	}
+	if got := it.Value(); len(got) != 1 || got[0] != 0x01 {
+		t.Fatalf("unexpected first value: %x", got)
+	}
+	// Next must stop and surface the decode error.
+	if it.Next() {
+		t.Fatal("expected malformed element to stop iteration")
+	}
+	if it.Err() == nil {
+		t.Fatal("expected iteration error for malformed element")
+	}
+}
+
+func TestIteratorValueClearedAtEnd(t *testing.T) {
+	it, err := NewListIterator([]byte{0xC1, 0x01})
+	if err != nil {
+		t.Fatalf("unexpected iterator creation error: %v", err)
+	}
+	if !it.Next() {
+		t.Fatal("expected one element")
+	}
+	if got := it.Value(); len(got) != 1 || got[0] != 0x01 {
+		t.Fatalf("unexpected first value: %x", got)
+	}
+	if it.Next() {
+		t.Fatal("iterator should be exhausted")
+	}
+	if got := it.Value(); got != nil {
+		t.Fatalf("expected nil value after exhaustion, got %x", got)
+	}
+}
