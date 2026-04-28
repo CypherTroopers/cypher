@@ -41,12 +41,19 @@ func NewListIterator(data RawValue) (*listIterator, error) {
 // Next forwards the iterator one step, returns true if it was not at end yet
 func (it *listIterator) Next() bool {
 	if len(it.data) == 0 {
+		it.next = nil
+		it.err = nil
 		return false
 	}
 	_, t, c, err := readKind(it.data)
+	if err != nil {
+		it.next = nil
+		it.err = err
+		return false
+	}
 	it.next = it.data[:t+c]
 	it.data = it.data[t+c:]
-	it.err = err
+	it.err = nil
 	return true
 }
 
