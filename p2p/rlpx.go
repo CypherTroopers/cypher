@@ -605,8 +605,8 @@ func (rw *rlpxFrameRW) WriteMsg(msg Msg) error {
 	// write header
 	headbuf := make([]byte, 32)
 	fsize64 := uint64(len(ptype)) + uint64(msg.Size)
-	if fsize64 > maxUint24 {
-		return errMessageFrameTooLarge
+	if fsize64 > uint64(maxUint24) {
+		return errors.New("message size overflows uint24")
 	}
 	fsize := uint32(fsize64)
 	putInt24(fsize, headbuf) // TODO: check overflow

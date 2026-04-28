@@ -388,8 +388,8 @@ func TestRLPXFrameRWRejectsFrameSizeOverflow(t *testing.T) {
 		Size:    math.MaxUint32,
 		Payload: bytes.NewReader(nil),
 	}
-	if err := rw.WriteMsg(msg); err != errMessageFrameTooLarge {
-		t.Fatalf("expected %v, got %v", errMessageFrameTooLarge, err)
+	if err := rw.WriteMsg(msg); err == nil || err.Error() != "message size overflows uint24" {
+		t.Fatalf("expected overflow error, got %v", err)
 	}
 }
 
