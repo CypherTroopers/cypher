@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net"
 	"reflect"
 	"strings"
@@ -372,6 +373,23 @@ func TestRLPXFrameRW(t *testing.T) {
 		if !bytes.Equal(payload, wantPayload) {
 			t.Fatalf("msg payload mismatch:\ngot  %x\nwant %x", payload, wantPayload)
 		}
+	}
+}
+
+func TestRLPXFrameRWRejectsFrameSizeOverflow(t *testing.T) {
+	rw := newRLPXFrameRW(new(bytes.Buffer), secrets{
+		AES:        crypto.Keccak256(),
+		MAC:        crypto.Keccak256(),
+		IngressMAC: fakeHash(make([]byte, 32)),
+		EgressMAC:  fakeHash(make([]byte, 32)),
+	})
+	msg := Msg{
+		Code:    1,
+		Size:    math.MaxUint32,
+		Payload: bytes.NewReader(nil),
+	}
+	if err := rw.WriteMsg(msg); err == nil || err.Error() != "message size overflows uint24" {
+		t.Fatalf("expected overflow error, got %v", err)
 	}
 }
 
