@@ -1,4 +1,4 @@
-{
+{ 
   "config": {
     "chainId": 123678,
     "homesteadBlock": 0,
@@ -9,8 +9,7 @@
     "constantinopleBlock": 0,
     "petersburgBlock": 0,
     "istanbulBlock": 0,
-    "fixedCommittee": true,
-    "fixedLeader": true,
+
     "committee": {
       "0": {
         "address": "149.102.156.210:7102",
@@ -61,6 +60,27 @@
     },
     "035c45516d62eeb6e6b5f2b18cdc78ea426e87cd": {
       "balance": "1000000000000000000000"
+    },
+    "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d": {
+      "balance": "5000000000000000000000000"
+    },
+    "60746B20D36500f3353163226Ad62bF7E92e1F3C": {
+      "balance": "5000000000000000000000000"
+    },
+    "01cBCB9b60E73f0244eA1deBbEe0FD1b8BB11B31": {
+      "balance": "5000000000000000000000000"
+    },
+    "4b91661f2659A62cB1A0EE54f6540c283D448a86": {
+      "balance": "5000000000000000000000000"
+    },
+    "9c01A453dAF5c36951301ea26C1605cE7489B186": {
+      "balance": "5000000000000000000000000"
+    },
+    "f1cf67fD1669dDf1dF76FD887B2f6da0d11b2cd9": {
+      "balance": "5000000000000000000000000"
+    },
+    "3abb765B281d2Ef60aAC35Bc85B62692f89c7Ee3": {
+      "balance": "5000000000000000000000000"
     }
   },
   "difficulty": "0x44C",
