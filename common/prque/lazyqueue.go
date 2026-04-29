@@ -89,7 +89,9 @@ func (q *LazyQueue) Push(data interface{}) {
 
 // Update updates the upper priority estimate for the item with the given queue index
 func (q *LazyQueue) Update(index int) {
-	q.Push(q.Remove(index))
+	if item := q.Remove(index); item != nil {
+		q.Push(item)
+	}
 }
 
 // Pop removes and returns the item with the greatest actual priority
@@ -154,7 +156,11 @@ func (q *LazyQueue) Remove(index int) interface{} {
 	if index < 0 {
 		return nil
 	}
-	return heap.Remove(q.queue[index&1^q.indexOffset], index>>1).(*item).value
+	queue := q.queue[index&1^q.indexOffset]
+	if (index >> 1) >= queue.Len() {
+		return nil
+	}
+	return heap.Remove(queue, index>>1).(*item).value
 }
 
 // Empty checks whether the priority queue is empty.
@@ -169,6 +175,9 @@ func (q *LazyQueue) Size() int {
 
 // setIndex0 translates internal queue item index to the virtual index space of LazyQueue
 func (q *LazyQueue) setIndex0(data interface{}, index int) {
+	if q.setIndex == nil {
+		return
+	}
 	if index == -1 {
 		q.setIndex(data, -1)
 	} else {
@@ -178,5 +187,8 @@ func (q *LazyQueue) setIndex0(data interface{}, index int) {
 
 // setIndex1 translates internal queue item index to the virtual index space of LazyQueue
 func (q *LazyQueue) setIndex1(data interface{}, index int) {
+	if q.setIndex == nil {
+		return
+	}
 	q.setIndex(data, index+index+1)
 }
