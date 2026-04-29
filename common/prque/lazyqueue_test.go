@@ -122,3 +122,43 @@ func TestLazyQueue(t *testing.T) {
 
 	close(stopCh)
 }
+
+func TestLazyQueueRemoveOutOfRange(t *testing.T) {
+	clock := &mclock.Simulated{}
+	q := NewLazyQueue(testSetIndex, testPriority, testMaxPriority, clock, testQueueRefresh)
+
+	item := &lazyItem{p: 1, index: -1}
+	q.Push(item)
+
+	if got := q.Remove(100); got != nil {
+		t.Fatalf("expected nil for out-of-range remove, got %#v", got)
+	}
+	if q.Size() != 1 {
+		t.Fatalf("queue size changed after out-of-range remove, got %d", q.Size())
+	}
+}
+
+func TestLazyQueueUpdateOutOfRange(t *testing.T) {
+	clock := &mclock.Simulated{}
+	q := NewLazyQueue(testSetIndex, testPriority, testMaxPriority, clock, testQueueRefresh)
+
+	item := &lazyItem{p: 1, index: -1}
+	q.Push(item)
+	q.Update(100) // must be a no-op
+
+	if q.Size() != 1 {
+		t.Fatalf("queue size changed after out-of-range update, got %d", q.Size())
+	}
+}
+
+func TestLazyQueueNilSetIndexCallback(t *testing.T) {
+	clock := &mclock.Simulated{}
+	q := NewLazyQueue(nil, testPriority, testMaxPriority, clock, testQueueRefresh)
+
+	item := &lazyItem{p: 7}
+	q.Push(item)
+
+	if got := q.PopItem(); got != item {
+		t.Fatalf("unexpected popped item: have %#v, want %#v", got, item)
+	}
+}
