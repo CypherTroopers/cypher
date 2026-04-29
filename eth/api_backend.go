@@ -121,21 +121,6 @@ func (b *EthAPIBackend) RescueCommittee(configPath string) (*bftview.Committee, 
 		return nil, common.Hash{}, errors.New("keynumber not in trusted heights")
 	}
 
-	// Verify that all CoinBase addresses are in the trusted list
-	trustedSet := make(map[common.Address]bool)
-	for _, addr := range params.TrustedAddressList {
-		trustedSet[addr] = true
-	}
-
-	// Check each committee member's coinbase address
-	for _, cnode := range config.Committee {
-		// Convert CoinBase string to common.Address (case-insensitive)
-		coinbaseAddr := common.HexToAddress(cnode.CoinBase)
-		if !trustedSet[coinbaseAddr] {
-			return nil, common.Hash{}, fmt.Errorf("coinbase address %s is not in trusted list", cnode.CoinBase)
-		}
-	}
-	log.Info("equal all trustAdress!")
 	keyblock := b.eth.keyBlockChain.GetBlockByNumber(config.KeyBlockNumber)
 	if keyblock == nil {
 		return nil, common.Hash{}, errors.New("key block not found")
