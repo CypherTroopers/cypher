@@ -84,7 +84,7 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	// commit state root after all state transitions.
 	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
 	colossusX.ApplyKeyblockPowReward(work.publicState, keyblock)
-	header.Root = work.publicState.IntermediateRoot(false)
+	header.Root = work.publicState.IntermediateRoot(txS.bc.Config().IsEIP158(header.Number))
 
 	header.BlockType = types.Key_Block
 	header.Difficulty = keyblock.Difficulty()
@@ -136,7 +136,7 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 			totalGas += publicReceipts[i].GasUsed * committedTxes[i].GasPrice().Uint64()
 		}
 		colossusX.RewardCommites(txS.bc, work.publicState, header, totalGas, true)
-		header.Root = work.publicState.IntermediateRoot(false)
+		header.Root = work.publicState.IntermediateRoot(txS.bc.Config().IsEIP158(header.Number))
 		header.BlockType = blockType
 
 		// update block hash since it is now available, but was not when the
