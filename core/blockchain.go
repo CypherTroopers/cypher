@@ -1714,15 +1714,6 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 	var (
 		block, prev *types.Block
 	)
-	for i, block := range chain {
-		if params.IsBadBlock(block.NumberU64(), block.Hash()) {
-			if err := bc.emergencyRollback(params.Roll139976backTarget); err != nil {
-				return i, err
-			}
-			rawdb.DeleteBlock(bc.db, block.Hash(), block.NumberU64())
-			return i, errors.New("bad block rolled back")
-		}
-	}
 	// Do a sanity check that the provided chain is actually ordered and linked
 	for i := 1; i < len(chain); i++ {
 		block = chain[i]

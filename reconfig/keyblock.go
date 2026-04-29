@@ -77,6 +77,15 @@ func (keyS *keyService) fixedModeEnabled() bool {
 	return keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee)
 }
 
+func (keyS *keyService) isCommitteeEligible(coinbase string) bool {
+	statedb, err := keyS.bc.State()
+	if err != nil {
+		log.Error("isCommitteeEligible: failed to load state", "coinbase", coinbase, "err", err)
+		return false
+	}
+	return statedb.GetBalance(common.HexToAddress(coinbase)).Cmp(params.MinCommitteeBalanceWei) >= 0
+}
+
 func (keyS *keyService) promoteFallbackLeader(current uint) {
 	if !keyS.fixedModeEnabled() {
 		return
@@ -220,7 +229,12 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 			return fmt.Errorf("keyblock verify failed,best candidate's hash is not equal me")
 		}
 		if keyblock.InPubKey() != bestCandi.PubKey || keyblock.InAddress() != bestCandi.Coinbase {
-			return fmt.Errorf("keyblock verify failed, best candidate in info is not correct")
+			// PoW candidate can be rewarded without committee admission if it does not
+			// satisfy committee-eligibility balance. In this case, out fields should
+			// carry the candidate identity while committee "in" remains unchanged.
+			if keyblock.OutPubKey() != bestCandi.PubKey || keyblock.OutAddress(0) != bestCandi.Coinbase {
+				return fmt.Errorf("keyblock verify failed, best candidate in/out info is not correct")
+			}
 		}
 
 		best := keyS.getBestCandidate(false)
@@ -347,20 +361,28 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	if reconfigType == types.PowReconfig || reconfigType == types.PacePowReconfig {
 		ck := best.KeyCandidate
 		header.Time, header.Difficulty, header.MixDigest, header.Nonce = ck.Time, ck.Difficulty, ck.MixDigest, ck.Nonce
-		newNode := &common.Cnode{
-			Address:  net.IP(best.IP).String() + ":" + strconv.Itoa(best.Port),
-			CoinBase: best.Coinbase,
-			Public:   best.PubKey,
-		}
-
 		badAddress := keyS.getBadAddress()
-		outer := mb.Add(newNode, int(leaderIndex), badAddress)
-		if outer == nil { //not new add
-			return nil, nil, nil, fmt.Errorf("not new best candidate")
-		}
-		outerPublic, outerCoinBase = outer.Public, outer.CoinBase
-		if badAddress != "" && outerCoinBase == badAddress {
-			outerCoinBase = "*" + outerCoinBase
+		if keyS.isCommitteeEligible(best.Coinbase) {
+			newNode := &common.Cnode{
+				Address:  net.IP(best.IP).String() + ":" + strconv.Itoa(best.Port),
+				CoinBase: best.Coinbase,
+				Public:   best.PubKey,
+			}
+			outer := mb.Add(newNode, int(leaderIndex), badAddress)
+			if outer == nil { //not new add
+				return nil, nil, nil, fmt.Errorf("not new best candidate")
+			}
+			outerPublic, outerCoinBase = outer.Public, outer.CoinBase
+			if badAddress != "" && outerCoinBase == badAddress {
+				outerCoinBase = "*" + outerCoinBase
+			}
+		} else {
+			// Candidate is PoW-eligible but not committee-eligible: keep committee
+			// membership unchanged and store candidate in out fields for reward path.
+			mb.Add(nil, int(leaderIndex), "")
+			outerPublic, outerCoinBase = best.PubKey, best.Coinbase
+			log.Info("tryProposalChangeCommittee: pow-only candidate (no committee join)",
+				"coinbase", best.Coinbase, "requiredWei", params.MinCommitteeBalanceWei.String())
 		}
 
 	} else { //exchange in internal
@@ -452,6 +474,20 @@ func (keyS *keyService) getBadAddress() string {
 	if mb == nil {
 		return ""
 	}
+
+	if statedb, err := keyS.bc.State(); err == nil {
+		for _, member := range mb.List {
+			coinbase := common.HexToAddress(member.CoinBase)
+			if statedb.GetBalance(coinbase).Cmp(params.MinCommitteeBalanceWei) < 0 {
+				log.Warn("Committee member selected for forced leave due to insufficient balance",
+					"coinbase", member.CoinBase, "requiredWei", params.MinCommitteeBalanceWei.String())
+				return member.CoinBase
+			}
+		}
+	} else {
+		log.Error("Failed to load state while checking committee member balances", "err", err)
+	}
+
 	cmLen := len(mb.List)
 	exps := make(map[int]int)
 
