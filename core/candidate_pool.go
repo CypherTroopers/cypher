@@ -24,7 +24,6 @@ import (
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/reconfig/bftview"
-	"github.com/cypherium/cypher/params"
 )
 
 var (
@@ -53,8 +52,8 @@ func newCandidateLookup(cph Backend) *candidateLookup {
 }
 
 // Flatten creates a candinonce-sorted slice of cands based on the loosely
-//// sorted internal representation. The result of the sorting is cached in case
-//// it's requested again before any modifications are made to the contents.
+// // sorted internal representation. The result of the sorting is cached in case
+// // it's requested again before any modifications are made to the contents.
 func (t *candidateLookup) Flatten() types.CandsByNonce {
 	// If the sorting was not cached yet, create and cache it
 	candidates := make(types.CandsByNonce, 0)
@@ -161,28 +160,6 @@ func (t *candidateLookup) Add(c *types.Candidate) bool {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	currentCommittee := bftview.GetCurrentMember()
-	if currentCommittee != nil {
-		trustedCoinbases := make(map[common.Address]bool, len(params.TrustedAddressList))
-		for _, addr := range params.TrustedAddressList {
-			trustedCoinbases[addr] = true
-		}
-
-		nonTrustedCount := 0
-		for _, member := range currentCommittee.List {
-            coinbaseAddr := common.HexToAddress(member.CoinBase)
-            if !trustedCoinbases[coinbaseAddr] {
-                nonTrustedCount++
-            }
-		}
-
-		if nonTrustedCount >= params.NonTrustedCountThresold {
-			log.Warn("Non-trusted committee members exceed threshold, rejecting candidate",
-				"candidate", c.PubKey, "nonTrustedCount", nonTrustedCount)
-			return true
-		}
-	}
-	
 	if _, ok := t.all[c.Hash()]; ok {
 		return true // already exists
 	}
@@ -298,7 +275,7 @@ type ExternalIpConfig struct {
 	ExternalIP string
 }
 
-///////////////////////////////////////////////
+// /////////////////////////////////////////////
 type CandidatePool struct {
 	candidates     *candidateLookup
 	mu             sync.Mutex

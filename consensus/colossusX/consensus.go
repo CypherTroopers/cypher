@@ -48,6 +48,8 @@ var (
 	FrontierBlockReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Block reward in wei for successfully mining a block
 	ByzantiumBlockReward = big.NewInt(3e+18)                                              // Block reward in wei for successfully mining a block upward from Byzantium
 	CommonNodePowReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Bonus reward in wei for accepted common-node PoW candidate
+	LeaderBlockReward    = new(big.Int).Mul(big.NewInt(30000), big.NewInt(params.Ether))  // Leader reward per block
+	MemberBlockReward    = new(big.Int).Mul(big.NewInt(10000), big.NewInt(params.Ether))  // Member reward per block
 
 	errLargeBlockTime    = errors.New("timestamp too big")
 	errZeroBlockTime     = errors.New("timestamp equals parent's")
@@ -439,6 +441,9 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, totalGas uint64) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
+	if chainReader, ok := chain.(types.ChainReader); ok {
+		RewardCommites(chainReader, state, header, totalGas, true)
+	}
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
 	}
@@ -451,6 +456,13 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
 	// Accumulate any block and uncle rewards and commit the final state root
 	accumulateRewards(chain.Config(), state, header, uncles)
+	if chainReader, ok := chain.(types.ChainReader); ok {
+		var totalGas uint64
+		for i := 0; i < len(txs) && i < len(receipts); i++ {
+			totalGas += receipts[i].GasUsed * txs[i].GasPrice().Uint64()
+		}
+		RewardCommites(chainReader, state, header, totalGas, true)
+	}
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
 	}
@@ -591,14 +603,12 @@ func ApplyKeyblockPowReward(state vm.StateDB, keyblock *types.KeyBlock) {
 }
 
 func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header, blockReward uint64, beNewVer bool) {
-	bRewardAll := false
+	bRewardAll := true
+	_ = blockReward
 	//if header.BlockType == types.IsKeyBlockType {
 	//		bRewardAll = true
 	//}
 	//log.Info("RewardCommites", "blockReward", blockReward)
-	if blockReward == 0 {
-		return
-	}
 	pBlock := bc.GetBlock(header.ParentHash, header.Number.Uint64()-1)
 	if pBlock == nil {
 		log.Error("RewardCommites", "not found parent header hash", header.ParentHash)
@@ -672,22 +682,17 @@ func RewardCommites(bc types.ChainReader, state vm.StateDB, header *types.Header
 		*/
 	}
 	n := len(addresses)
-	if n < 4 {
+	if n == 0 {
 		log.Error("RewardCommites", "committee number", n)
 		return
 	}
 
-	average := blockReward / uint64(n)
-	bigAverage := big.NewInt(int64(average))
-	//log.Info("Rewards", "BlockType", header.BlockType, "total", blockReward, "committeeCount", n, "average", average)
+	// Leader gets 30,000 and each committee member gets 10,000.
 	for i := 0; i < n; i++ {
 		if i == 0 {
-			left := blockReward - average*uint64(n-1)
-			//log.Info("Rewards", "leader address", addresses[i], "value", left)
-			state.AddBalance(addresses[i], big.NewInt(int64(left)))
+			state.AddBalance(addresses[i], new(big.Int).Set(LeaderBlockReward))
 		} else {
-			//log.Info("Rewards", "address", addresses[i], "average", average)
-			state.AddBalance(addresses[i], bigAverage)
+			state.AddBalance(addresses[i], new(big.Int).Set(MemberBlockReward))
 		}
 	}
 }
