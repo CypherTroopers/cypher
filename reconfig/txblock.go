@@ -131,6 +131,11 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 		header.KeyHash = txS.kbc.CurrentBlock().Hash()
 		// commit state root after all state transitions.
 		colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+		var totalGas uint64
+		for i := 0; i < len(committedTxes) && i < len(publicReceipts); i++ {
+			totalGas += publicReceipts[i].GasUsed * committedTxes[i].GasPrice().Uint64()
+		}
+		colossusX.RewardCommites(txS.bc, work.publicState, header, totalGas, true)
 		header.Root = work.publicState.IntermediateRoot(false)
 		header.BlockType = blockType
 
