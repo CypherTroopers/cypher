@@ -158,13 +158,13 @@ func (t *paceMakerTimer) loopTimer() {
 		}
 
 		now := time.Now()
-		if t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee) && bftview.IamMember() >= 0 {
+		if bftview.IamMember() >= 0 {
 			t.mu.Lock()
 			lastKeyTime := t.lastKeyTime
 			if now.Sub(lastKeyTime) >= fixedModeKeyBlockInterval {
 				t.lastKeyTime = now
 				t.mu.Unlock()
-				log.Warn("paceMakerTimer fixed mode keyblock trigger", "elapsed", now.Sub(lastKeyTime))
+				log.Warn("paceMakerTimer periodic keyblock trigger", "elapsed", now.Sub(lastKeyTime), "interval", fixedModeKeyBlockInterval)
 				t.setNextLeader(true)
 				continue
 			}
