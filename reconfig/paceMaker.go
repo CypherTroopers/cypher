@@ -153,10 +153,6 @@ func (t *paceMakerTimer) loopTimer() {
 			return
 		}
 
-		if beStop || startTime == maxPaceMakerTime {
-			continue
-		}
-
 		now := time.Now()
 		if bftview.IamMember() >= 0 {
 			t.mu.Lock()
@@ -169,6 +165,10 @@ func (t *paceMakerTimer) loopTimer() {
 				continue
 			}
 			t.mu.Unlock()
+		}
+
+		if beStop || startTime == maxPaceMakerTime {
+			continue
 		}
 
 		diff := now.Sub(startTime)
