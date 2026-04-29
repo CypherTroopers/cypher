@@ -555,7 +555,8 @@ func (s *Service) handleHotStuffMsg() {
 			time.Sleep(hotstuffIdleSleep)
 			now := time.Now()
 			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
-				if s.shouldEmitFastBlock(now) || s.shouldEmitSlowBlock(now) {
+				pending, _ := s.txPool.Stats()
+				if pending > 0 && (s.shouldEmitFastBlock(now) || s.shouldEmitSlowBlock(now)) {
 					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
 						s.lastCadenceWakeup = now
 						s.triggerTryPropose(s.bc.CurrentBlockN())

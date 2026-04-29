@@ -153,10 +153,6 @@ func (t *paceMakerTimer) loopTimer() {
 			return
 		}
 
-		if beStop || startTime == maxPaceMakerTime {
-			continue
-		}
-
 		now := time.Now()
 		if bftview.IamMember() >= 0 {
 			t.mu.Lock()
@@ -171,9 +167,20 @@ func (t *paceMakerTimer) loopTimer() {
 			t.mu.Unlock()
 		}
 
+		if beStop || startTime == maxPaceMakerTime {
+			continue
+		}
+
 		diff := now.Sub(startTime)
 		leaderSilentFor := now.Sub(t.service.LeaderAckTime())
 		progressSilentFor := now.Sub(t.service.HotstuffProgressTime())
+		pending, _ := t.txPool.Stats()
+		noPendingTx := pending == 0
+		sinceLastKey := now.Sub(t.lastKeyTime)
+		if noPendingTx && sinceLastKey < fixedModeKeyBlockInterval {
+			t.resetAckMissCount()
+			continue
+		}
 		fixedMode := t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee)
 		if leaderSilentFor > params.AckTimeout && bftview.IamMember() >= 0 {
 			if progressSilentFor <= params.AckTimeout {
