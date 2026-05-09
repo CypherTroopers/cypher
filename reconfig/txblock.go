@@ -596,41 +596,11 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 				continue
 			}
 		}
-		if to := tx.To(); to != nil {
-			bannedTx := false
-			for _, banned := range params.BlackAddressList {
-				if *to == banned {
-					log.Warn("Discarding transaction to banned address",
-						"hash", tx.Hash(),
-						"to", banned.Hex())
-					applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
-					bannedTx = true
-					break
-				}
-			}
-			if bannedTx {
-				continue
-			}
-		}
 		// Check sender
 		from, err := types.Sender(signer, tx)
 		if err != nil {
 			log.Warn("Discarding transaction with invalid sender", "hash", tx.Hash(), "err", err)
 			applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
-			continue
-		}
-		bannedFrom := false
-		for _, banned := range params.BlackAddressList {
-			if from == banned {
-				log.Warn("Discarding transaction from banned address",
-					"hash", tx.Hash(),
-					"from", banned.Hex())
-				applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
-				bannedFrom = true
-				break
-			}
-		}
-		if bannedFrom {
 			continue
 		}
 		if err := precheckTxForProposal(env.publicState, env.header, tx, from); err != nil {
