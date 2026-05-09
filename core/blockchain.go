@@ -1663,38 +1663,6 @@ func (bc *BlockChain) addFutureBlock(block *types.Block) error {
 	return nil
 }
 
-// core/blockchain.go
-func (bc *BlockChain) emergencyRollback(targetNumber uint64) error {
-	currentHeader := bc.CurrentHeader()
-	if currentHeader.Number.Uint64() <= targetNumber {
-		return nil
-	}
-
-	batch := bc.db.NewBatch()
-
-	for n := currentHeader.Number.Uint64(); n > targetNumber; n-- {
-		hash := rawdb.ReadCanonicalHash(bc.db, n)
-		if hash != (common.Hash{}) {
-			rawdb.DeleteBlock(batch, hash, n)
-			rawdb.DeleteCanonicalHash(batch, n)
-		}
-	}
-
-	targetHash := rawdb.ReadCanonicalHash(bc.db, targetNumber)
-	rawdb.WriteHeadBlockHash(batch, targetHash)
-	rawdb.WriteHeadHeaderHash(batch, targetHash)
-
-	if err := batch.Write(); err != nil {
-		return err
-	}
-
-	bc.currentBlock.Store(bc.GetBlockByHash(targetHash))
-	bc.hc.SetCurrentHeader(bc.GetHeaderByHash(targetHash))
-
-	log.Info("Emergency rollback executed", "target", targetNumber)
-	return nil
-}
-
 // InsertChain attempts to insert the given batch of blocks in to the canonical
 // chain or, otherwise, create a fork. If an error is returned it will return
 // the index number of the failing block as well an error describing what went
@@ -1714,15 +1682,6 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 	var (
 		block, prev *types.Block
 	)
-	for i, block := range chain {
-		if params.IsBadBlock(block.NumberU64(), block.Hash()) {
-			if err := bc.emergencyRollback(params.Roll139976backTarget); err != nil {
-				return i, err
-			}
-			rawdb.DeleteBlock(bc.db, block.Hash(), block.NumberU64())
-			return i, errors.New("bad block rolled back")
-		}
-	}
 	// Do a sanity check that the provided chain is actually ordered and linked
 	for i := 1; i < len(chain); i++ {
 		block = chain[i]
