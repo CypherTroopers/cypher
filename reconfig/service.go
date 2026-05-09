@@ -351,7 +351,16 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	s.muCurrentView.Unlock()
 
 	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
-	if leaderIndex > 0 || (fixedMode && !noDone) {
+	keyProposal := leaderIndex > 0
+	if fixedMode {
+		// In fixed mode, a fallback leader may be selected from local ack/progress
+		// observations. Do not let that alone force the service into the keyblock
+		// proposal path; otherwise a transient fallback view can starve tx block
+		// proposals. Fixed mode keyblocks should only be proposed after an explicit
+		// keyblock trigger has marked the current view as not done.
+		keyProposal = !noDone
+	}
+	if keyProposal {
 		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone)
 		if err == nil && keyblock != nil && mb != nil {
 			if bestCandi != nil {
@@ -359,13 +368,19 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 			}
 			data, err := s.txService.tryProposalNewKeyBlock(keyblock)
 			if err != nil {
-				log.Warn("tryProposalNewBlock", "error", err)
+				log.Warn("tryProposalNewKeyBlock", "error", err)
+				if fixedMode {
+					s.abortFixedModeKeyProposal("assemble failed", err)
+				}
 				return err, nil, nil, nil
 			}
 			proposeOK = true
 			return nil, nil, data, extra
 		} else {
 			log.Error("tryProposalChangeCommittee failed", "error", err)
+			if fixedMode {
+				s.abortFixedModeKeyProposal("change committee failed", err)
+			}
 			return fmt.Errorf("tryProposalChangeCommittee failed"), nil, nil, nil
 		}
 	}
@@ -397,6 +412,27 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	}
 	proposeOK = true
 	return nil, nil, data, nil
+}
+
+func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+
+	if s.keyService == nil || !s.keyService.fixedModeEnabled() || s.currentView.NoDone {
+		return
+	}
+	log.Warn("fixed-mode keyblock proposal aborted; returning to tx proposal view",
+		"reason", reason,
+		"err", err,
+		"txNumber", s.currentView.TxNumber,
+		"keyNumber", s.currentView.KeyNumber,
+		"leaderIndex", s.currentView.LeaderIndex)
+	s.currentView.NoDone = true
+	// A failed fixed-mode keyblock proposal should not leave the service waiting
+	// for a keyblock that was never committed. Reset the waiting watermark so the
+	// next successful tx/key block can advance the view normally.
+	s.waittingView.TxNumber = s.currentView.TxNumber
+	s.waittingView.KeyNumber = s.currentView.KeyNumber
 }
 
 func (s *Service) triggerTryPropose(lastN uint64) {

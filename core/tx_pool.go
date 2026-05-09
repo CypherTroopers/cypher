@@ -796,13 +796,6 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 // be added to the allowlist, preventing any associated transaction from being dropped
 // out of the pool due to pricing constraints.
 func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err error) {
-	if to := tx.To(); to != nil {
-		for _, banned := range params.BlackAddressList {
-			if *to == banned {
-				return false, fmt.Errorf("transaction to banned address %s", banned.Hex())
-			}
-		}
-	}
 	// If the transaction is already known, discard it
 	hash := tx.Hash()
 	if pool.all.Get(hash) != nil {
@@ -819,14 +812,6 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		log.Trace("Discarding invalid transaction", "hash", hash, "err", err)
 		invalidTxMeter.Mark(1)
 		return false, err
-	}
-	// Reject transactions from blacklisted addresses
-	from, _ := types.Sender(pool.signer, tx)
-	for _, banned := range params.BlackAddressList {
-		if from == banned {
-			log.Trace("Discarding transaction from banned address", "hash", hash, "from", from.Hex())
-			return false, fmt.Errorf("transaction from banned address %s", from.Hex())
-		}
 	}
 	// If the transaction pool is full, discard underpriced transactions
 	if uint64(pool.all.Slots()+numSlots(tx)) > pool.config.GlobalSlots+pool.config.GlobalQueue {
