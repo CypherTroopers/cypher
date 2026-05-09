@@ -19,8 +19,6 @@ package params
 import (
 	"math/big"
 	"time"
-
-	"github.com/cypherium/cypher/common"
 )
 
 const (
@@ -165,20 +163,6 @@ const (
 	CypherMaxPayloadBufferSize uint64 = 128
 )
 
-var BadBlockHash = []common.Hash{
-	common.HexToHash("0x7434dbe3c3c6d5eb1f15004c35cd85dc7cf3aa0d0cbee1752d597d7cce6c333e"),
-	common.HexToHash("0xecf9006a84f035706f955c276de0191f63d0d869f2fa17b456e0190089b361e1"),
-}
-
-// core/constants.go 新增常量定义
-const (
-	BadBlockNumber          = 139977
-	Roll139976ParentHash    = "0xd77e54ac71f75fddcd81678a0bd0dbb6ee1d64c6a7b4a4821e1ebce04b2e3f07" // 原139976的hash
-	Roll139976backTarget    = 139976
-	BadKeyBlockNumber       = 131881
-	NonTrustedCountThresold = 3
-)
-
 // Gas discount table for BLS12-381 G1 and G2 multi exponentiation operations
 var Bls12381MultiExpDiscountTable = [128]uint64{1200, 888, 764, 641, 594, 547, 500, 453, 438, 423, 408, 394, 379, 364, 349, 334, 330, 326, 322, 318, 314, 310, 306, 302, 298, 294, 289, 285, 281, 277, 273, 269, 268, 266, 265, 263, 262, 260, 259, 257, 256, 254, 253, 251, 250, 248, 247, 245, 244, 242, 241, 239, 238, 236, 235, 233, 232, 231, 229, 228, 226, 225, 223, 222, 221, 220, 219, 219, 218, 217, 216, 216, 215, 214, 213, 213, 212, 211, 211, 210, 209, 208, 208, 207, 206, 205, 205, 204, 203, 202, 202, 201, 200, 199, 199, 198, 197, 196, 196, 195, 194, 193, 193, 192, 191, 191, 190, 189, 188, 188, 187, 186, 185, 185, 184, 183, 182, 182, 181, 180, 179, 179, 178, 177, 176, 176, 175, 174}
 
@@ -187,20 +171,6 @@ var (
 	GenesisDifficulty      = big.NewInt(131072) // Difficulty of the Genesis block.
 	MinimumDifficulty      = big.NewInt(131072) // The minimum that the difficulty may ever be.
 	DurationLimit          = big.NewInt(13)     // The decision boundary on the blocktime duration used to determine whether difficulty should go up or not.
-	BlackAddressList       = []common.Address{
-		common.HexToAddress("0x5561dcdc624eeb569e42698017b632a49a177fee"),
-		common.HexToAddress("0xdc97e8ca50691596039e7428f6ce5d5cc43c6d17"),
-		common.HexToAddress("0x43eb8148fcfba29263d7955e9091b51970cb8c67"),
-	}
-	TrustedAddressList = []common.Address{
-		common.HexToAddress("0x3555d2c2af8ff75009f7dbfcf7de7ed80f68588d"),
-		common.HexToAddress("0x60746b20d36500f3353163226ad62bf7e92e1f3c"),
-		common.HexToAddress("0x01cbcb9b60e73f0244ea1debbee0fd1b8bb11b31"),
-		common.HexToAddress("0x4b91661f2659a62cb1a0ee54f6540c283d448a86"),
-		common.HexToAddress("0x9c01a453daf5c36951301ea26c1605ce7489b186"),
-		common.HexToAddress("0xf1cf67fd1669ddf1df76fd887b2f6da0d11b2cd9"),
-		common.HexToAddress("0x3abb765b281d2ef60aac35bc85b62692f89c7ee3"),
-	}
 )
 
 func GetMaximumExtraDataSize(isCypher bool) uint64 {
@@ -209,16 +179,4 @@ func GetMaximumExtraDataSize(isCypher bool) uint64 {
 	} else {
 		return MaximumExtraDataSize
 	}
-}
-
-func IsBadBlock(number uint64, hash common.Hash) bool {
-	if number != BadBlockNumber {
-		return false
-	}
-	for _, badHash := range BadBlockHash {
-		if hash == badHash {
-			return true
-		}
-	}
-	return false
 }
