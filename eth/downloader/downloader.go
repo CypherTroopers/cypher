@@ -1538,15 +1538,6 @@ func (d *Downloader) processHeaders(origin uint64, pivot uint64, td *big.Int) er
 					limit = len(headers)
 				}
 				chunk := headers[:limit]
-				for _, header := range chunk {
-					if header.Number.Uint64() == params.BadBlockNumber {
-						correctParent := d.blockchain.GetBlockByNumber(params.Roll139976backTarget)
-						if correctParent == nil || correctParent.Hash() != common.HexToHash(params.Roll139976ParentHash) {
-							rollbackErr = fmt.Errorf("local parent block %d is corrupted", params.Roll139976backTarget)
-							return rollbackErr
-						}
-					}
-				}
 				// In case of header only syncing, validate the chunk immediately
 				if mode == FastSync || mode == LightSync {
 					// If we're importing pure headers, verify based on their recentness
