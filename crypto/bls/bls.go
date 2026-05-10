@@ -2,15 +2,20 @@ package bls
 
 /*
 #cgo CFLAGS:-DMCLBN_FP_UNIT_SIZE=4 -Iinclude
-#cgo LDFLAGS: -Llib -lbls256 -lmcl
+#cgo !windows LDFLAGS: -Llib -lbls256 -lmcl
+#cgo windows LDFLAGS: -Llib/win -lbls256 -lmcl
 
 #cgo bn256 CFLAGS:-DMCLBN_FP_UNIT_SIZE=4 -Iinclude
-#cgo bn256 LDFLAGS: -Llib -lbls256 -lmcl
+#cgo bn256,!windows LDFLAGS: -Llib -lbls256 -lmcl
+#cgo bn256,windows LDFLAGS: -Llib/win -lbls256 -lmcl
 #cgo bn384 CFLAGS:-DMCLBN_FP_UNIT_SIZE=6 -Iinclude
-#cgo bn384 LDFLAGS: -Llib -lbls384 -lmcl
+#cgo bn384,!windows LDFLAGS: -Llib -lbls384 -lmcl
+#cgo bn384,windows LDFLAGS: -Llib/win -lbls384 -lmcl
 #cgo bn384_256 CFLAGS:-DMCLBN_FP_UNIT_SIZE=6 -DMCLBN_FR_UNIT_SIZE=4 -Iinclude
-#cgo bn384_256 LDFLAGS: -Llib -lbls384_256 -lmcl
-#cgo LDFLAGS:-L/usr/local/opt/openssl/lib -lcrypto -lgmp -lgmpxx -lstdc++
+#cgo bn384_256,!windows LDFLAGS: -Llib -lbls384_256 -lmcl
+#cgo bn384_256,windows LDFLAGS: -Llib/win -lbls384_256 -lmcl
+#cgo !windows LDFLAGS:-L/usr/local/opt/openssl/lib -lcrypto -lgmp -lgmpxx -lstdc++
+#cgo windows LDFLAGS:-lcrypto -Wl,-Bstatic -lgmpxx -lgmp -lstdc++ -Wl,-Bdynamic
 
 #cgo bn256_swapg CFLAGS:-DMCLBN_FP_UNIT_SIZE=4 -DBLS_SWAP_G
 #cgo bn256_swapg LDFLAGS:-lbls256
@@ -18,7 +23,8 @@ package bls
 #cgo bn384_swapg LDFLAGS:-lbls384
 #cgo bn384_256_swapg CFLAGS:-DMCLBN_FP_UNIT_SIZE=6 -DMCLBN_FR_UNIT_SIZE=4 -DBLS_SWAP_G
 #cgo bn384_256_swapg LDFLAGS:-lbls384_256
-#cgo LDFLAGS:-lcrypto -lgmp -lgmpxx -lstdc++
+#cgo !windows LDFLAGS:-lcrypto -lgmp -lgmpxx -lstdc++
+#cgo windows LDFLAGS:-lcrypto -Wl,-Bstatic -lgmpxx -lgmp -lstdc++ -Wl,-Bdynamic
 typedef unsigned int (*ReadRandFunc)(void *, void *, unsigned int);
 int wrapReadRandCgo(void *self, void *buf, unsigned int n);
 #include <bls/bls.h>
