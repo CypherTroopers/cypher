@@ -285,12 +285,14 @@ func makeExtraData(extra []byte, hasPrivate bool) []byte {
 func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, config *Config) consensus.Engine {
 	s := config.colossusX
 	engine := colossusX.New(colossusX.Config{
-		CacheDir:       stack.ResolvePath(s.CacheDir),
-		CachesInMem:    s.CachesInMem,
-		CachesOnDisk:   s.CachesOnDisk,
-		DatasetDir:     s.DatasetDir,
-		DatasetsInMem:  s.DatasetsInMem,
-		DatasetsOnDisk: s.DatasetsOnDisk,
+		CacheDir:         stack.ResolvePath(s.CacheDir),
+		CachesInMem:      s.CachesInMem,
+		CachesOnDisk:     s.CachesOnDisk,
+		CachesLockMmap:   s.CachesLockMmap,
+		DatasetDir:       s.DatasetDir,
+		DatasetsInMem:    s.DatasetsInMem,
+		DatasetsOnDisk:   s.DatasetsOnDisk,
+		DatasetsLockMmap: s.DatasetsLockMmap,
 	})
 	//	engine := colossusX.NewNormal()
 	engine.SetThreads(-1) // Disable CPU mining
@@ -514,7 +516,19 @@ func (s *Ethereum) StopMining() {
 }
 */
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
-func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey []byte) error {
+
+func (s *Ethereum) setMiningThreads(threads int) {
+	type threaded interface {
+		SetThreads(threads int)
+	}
+	if th, ok := s.engine.(threaded); ok {
+		log.Info("Updated mining threads", "threads", threads)
+		th.SetThreads(threads)
+	}
+}
+
+func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey []byte, threads int) error {
+	s.setMiningThreads(threads)
 	// If the miner was not running, initialize it
 	if !s.IsMining() {
 		s.lock.RLock()
@@ -528,6 +542,7 @@ func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey []byte) err
 }
 
 func (s *Ethereum) StopMining() {
+	s.setMiningThreads(-1)
 	s.miner.Stop()
 }
 

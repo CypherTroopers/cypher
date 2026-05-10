@@ -158,7 +158,12 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	)
 
 	if api.e.IsMining() {
-		return fmt.Errorf("Miner is running...")
+		miningThreads := api.e.config.Miner.Threads
+		if threads != nil {
+			miningThreads = *threads
+		}
+		api.e.setMiningThreads(miningThreads)
+		return nil
 	}
 	//log.Info("miner.start", "threads", threads, "addr", addr, "passwd", password)
 
@@ -194,21 +199,13 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	server.Port = api.e.config.RnetPort
 	server.Coinbase = eb.Hex()
 	api.e.reconfig.MinerStart(server)
-	// Start the miner and return
-	// Set the number of threads if the seal engine supports it
-	//if threads == nil {
-	//	threads = new(int)
-	//} else if *threads == 0 {
-	//	*threads = -1 // Disable the miner from within
-	//}
-	//type threaded interface {
-	//	SetThreads(threads int)
-	//}
-	//if th, ok := api.e.engine.(threaded); ok {
-	//	log.Info("Updated mining threads", "threads", *threads)
-	//	th.SetThreads(*threads)
-	//}
-	return api.e.StartMining(true, eb, blsPublicKey)
+	// Start the miner and return. If the RPC call does not provide a thread
+	// count, use the CLI/TOML miner configuration.
+	miningThreads := api.e.config.Miner.Threads
+	if threads != nil {
+		miningThreads = *threads
+	}
+	return api.e.StartMining(true, eb, blsPublicKey, miningThreads)
 }
 
 // Stop terminates the miner, both at the consensus engine level as well as at
