@@ -1434,6 +1434,13 @@ func SetExternalIp(ctx *cli.Context, cfg *node.Config, cphcg *eth.Config) {
 }
 
 func setMiner(ctx *cli.Context, cfg *miner.Config) {
+	if ctx.GlobalIsSet(LegacyMinerThreadsFlag.Name) {
+		cfg.Threads = ctx.GlobalInt(LegacyMinerThreadsFlag.Name)
+		log.Warn("The flag --minerthreads is deprecated and will be removed in the future, please use --miner.threads")
+	}
+	if ctx.GlobalIsSet(MinerThreadsFlag.Name) {
+		cfg.Threads = ctx.GlobalInt(MinerThreadsFlag.Name)
+	}
 	if ctx.GlobalIsSet(MinerNotifyFlag.Name) {
 		cfg.Notify = strings.Split(ctx.GlobalString(MinerNotifyFlag.Name), ",")
 	}
