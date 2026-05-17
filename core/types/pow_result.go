@@ -16,7 +16,7 @@ type PoWResult struct {
 	Time       uint64
 
 	IP       []byte
-	Port     int
+	Port     uint64
 	PubKey   string
 	Coinbase string
 
@@ -35,7 +35,7 @@ func NewPoWResultFromCandidate(candidate *Candidate) *PoWResult {
 		Number:     candidate.KeyCandidate.Number.Uint64(),
 		TNumber:    candidate.KeyCandidate.T_Number,
 		Time:       candidate.KeyCandidate.Time,
-		Port:       candidate.Port,
+		Port:       uint64(candidate.Port),
 		PubKey:     candidate.PubKey,
 		Coinbase:   candidate.Coinbase,
 		Nonce:      candidate.KeyCandidate.Nonce,
@@ -53,7 +53,7 @@ func (r *PoWResult) ToCandidate() *Candidate {
 	if r == nil {
 		return nil
 	}
-	candidate := NewCandidate(r.ParentHash, big.NewInt(0), r.Number, r.TNumber, nil, r.IP, r.PubKey, r.Coinbase, r.Port)
+	candidate := NewCandidate(r.ParentHash, big.NewInt(0), r.Number, r.TNumber, nil, r.IP, r.PubKey, r.Coinbase, int(r.Port))
 	candidate.KeyCandidate.Time = r.Time
 	candidate.KeyCandidate.Nonce = r.Nonce
 	candidate.KeyCandidate.MixDigest = r.MixDigest
