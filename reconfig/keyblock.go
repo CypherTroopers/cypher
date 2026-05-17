@@ -139,6 +139,14 @@ func (keyS *keyService) syncPrimaryLeaderLocked(mb *bftview.Committee) {
 	}
 }
 
+func verifyKeyBlockMinInterval(keyblock, curKeyblock *types.KeyBlock) error {
+	minNextKeyTime := curKeyblock.Time() + uint64(params.KeyBlockMinInterval/time.Second)
+	if keyblock.Time() < minNextKeyTime {
+		return fmt.Errorf("verifyKeyBlock,timestamp too early, min:%d, got:%d", minNextKeyTime, keyblock.Time())
+	}
+	return nil
+}
+
 // Verify keyblock
 func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *types.Candidate) error { //
 	log.Info("@verifyKeyBlock", "number", keyblock.NumberU64())
@@ -151,6 +159,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		if keyblock.ParentHash() != curKeyblock.Hash() {
 			//log.Error("verifyKeyBlock", "Non contiguous consensus prevhash", keyblock.ParentHash(), "currenthash", curKeyblock.Hash())
 			return fmt.Errorf("verifyKeyBlock,Non contiguous key block's hash")
+		}
+		if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
+			return err
 		}
 		return nil
 	}
@@ -187,6 +198,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	if keyblock.ParentHash() != curKeyblock.Hash() {
 		//log.Error("verifyKeyBlock", "Non contiguous consensus prevhash", keyblock.ParentHash(), "currenthash", curKeyblock.Hash())
 		return fmt.Errorf("verifyKeyBlock,Non contiguous key block's hash")
+	}
+	if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
+		return err
 	}
 	if keyblock.T_Number() != keyS.bc.CurrentBlockN() {
 		return fmt.Errorf("verifyKeyBlock, T_Number is not current, cur tx number:%d, k_t_number:%d", keyS.bc.CurrentBlockN(), keyblock.T_Number())
