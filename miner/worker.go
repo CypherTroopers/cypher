@@ -293,9 +293,9 @@ func (self *worker) commitNewWork() {
 		}
 	}
 	tstamp := tstart.Unix()
-	kstamp := int64(keyBlock.Time())
-	if kstamp >= tstamp {
-		tstamp = kstamp + 1
+	minKeyBlockTime := int64(keyBlock.Time()) + int64(params.KeyBlockMinInterval/time.Second)
+	if minKeyBlockTime > tstamp {
+		tstamp = minKeyBlockTime
 	}
 	// this will ensure we're not going off too far in the future
 	if now := time.Now().Unix(); tstamp > now+1 {
@@ -306,6 +306,7 @@ func (self *worker) commitNewWork() {
 
 	port, _ := strconv.Atoi(self.config.RnetPort)
 	candidate := types.NewCandidate(keyBlock.Hash(), nil, keyBlock.Number().Uint64()+uint64(1), txBlock.NumberU64(), nil, self.IP, common.HexString(self.pubKey), self.coinBase.String(), port)
+	candidate.KeyCandidate.Time = uint64(tstamp)
 	committeeSize := len(self.eth.KeyBlockChain().CurrentCommittee())
 
 	if err := self.engine.PrepareCandidate(self.chain, candidate, committeeSize); err != nil {

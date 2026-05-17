@@ -360,7 +360,18 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 		// keyblock trigger has marked the current view as not done.
 		keyProposal = !noDone
 	}
-	if keyProposal {
+	keyBlockIntervalElapsed := true
+	if curKeyblock := s.kbc.CurrentBlock(); curKeyblock != nil {
+		lastKeyTime := time.Unix(int64(curKeyblock.Time()), 0)
+		keyBlockIntervalElapsed = time.Since(lastKeyTime) >= params.KeyBlockMinInterval
+		if keyProposal && !keyBlockIntervalElapsed {
+			log.Debug("Propose keyblock suppressed by minimum interval",
+				"elapsed", time.Since(lastKeyTime),
+				"minimum", params.KeyBlockMinInterval,
+				"lastKeyTime", lastKeyTime)
+		}
+	}
+	if keyProposal && keyBlockIntervalElapsed {
 		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone)
 		if err == nil && keyblock != nil && mb != nil {
 			if bestCandi != nil {
