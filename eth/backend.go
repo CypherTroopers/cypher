@@ -235,6 +235,11 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if eth.protocolManager, err = NewProtocolManager(chainConfig, checkpoint, config.SyncMode, config.NetworkId, eth.eventMux, eth.txPool, eth.engine, eth.blockchain, chainDb, cacheLimit, config.Whitelist, eth.candidatePool); err != nil {
 		return nil, err
 	}
+	if chainConfig != nil && (chainConfig.FixedLeader || chainConfig.FixedCommittee) {
+		if err := eth.candidatePool.StartPoWResultUDP(chainConfig.RnetPort); err != nil {
+			return nil, err
+		}
+	}
 
 	//eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock)
 	eth.miner = miner.New(eth, chainConfig, eth.EventMux(), eth.engine, extIP)
@@ -592,6 +597,7 @@ func (s *Ethereum) Start() error {
 func (s *Ethereum) Stop() error {
 	// Stop all the peer-related stuff first.
 	s.protocolManager.Stop()
+	s.candidatePool.StopPoWResultUDP()
 
 	// Then stop everything else.
 	s.bloomIndexer.Close()

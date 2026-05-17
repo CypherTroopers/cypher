@@ -99,6 +99,8 @@ type ProtocolManager struct {
 	wg        sync.WaitGroup
 	peerWG    sync.WaitGroup
 
+	chainConfig *params.ChainConfig
+
 	// Test fields or hooks
 	broadcastTxAnnouncesOnly bool // Testing field, disable transaction propagation
 }
@@ -117,6 +119,7 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 		chaindb:       chaindb,
 		peers:         newPeerSet(),
 		whitelist:     whitelist,
+		chainConfig:   config,
 		txsyncCh:      make(chan *txsync),
 		quitSync:      make(chan struct{}),
 	}
@@ -946,6 +949,10 @@ func (pm *ProtocolManager) txBroadcastLoop() {
 }
 
 func (pm *ProtocolManager) BroadcastCandidate(candidate *types.Candidate) {
+	if pm.chainConfig != nil && (pm.chainConfig.FixedLeader || pm.chainConfig.FixedCommittee) {
+		log.Trace("Skip candidate p2p broadcast in fixed mode", "candidate.hash", candidate.Hash())
+		return
+	}
 	// Broadcast pow candidate to a batch of peers not knowing about it
 	peers := pm.peers.PeersWithoutCandidate(candidate.Hash())
 	for _, peer := range peers {
