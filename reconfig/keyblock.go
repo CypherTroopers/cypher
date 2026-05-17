@@ -8,8 +8,7 @@
 //
 // The cypherBFT library is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-// GNU Lesser General Public License for more details.
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more details.
 //
 // You should have received a copy of the GNU Lesser General Public License
 // along with the cypherBFT library. If not, see <http://www.gnu.org/licenses/>.
@@ -336,7 +335,7 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	}
 
 	var outerPublic, outerCoinBase string
-	best := keyS.getBestCandidate(false)
+	best := keyS.getBestCandidate(keyS.fixedModeEnabled())
 	powSubmitter := best
 	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
 		best = nil
