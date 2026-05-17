@@ -4,9 +4,11 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/reconfig/bftview"
@@ -26,8 +28,45 @@ func PoWResultUDPPort(rnetPort string) (int, error) {
 	return port + 1, nil
 }
 
+func appendPoWResultUDPAddr(addrs []net.UDPAddr, seen map[string]struct{}, addr net.UDPAddr) []net.UDPAddr {
+	key := addr.String()
+	if _, ok := seen[key]; ok {
+		return addrs
+	}
+	seen[key] = struct{}{}
+	return append(addrs, addr)
+}
+
+func powResultUDPAddrFromCommitteeNode(node common.Cnode, fallbackPort int) (*net.UDPAddr, error) {
+	address := strings.TrimSpace(node.Address)
+	if address == "" {
+		return nil, errors.New("empty committee node address")
+	}
+
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return net.ResolveUDPAddr("udp4", net.JoinHostPort(address, strconv.Itoa(fallbackPort)))
+	}
+
+	rnetPort, err := strconv.Atoi(portText)
+	if err != nil {
+		return nil, err
+	}
+	return net.ResolveUDPAddr("udp4", net.JoinHostPort(host, strconv.Itoa(rnetPort+1)))
+}
+
+func sendPoWResultUDP(payload []byte, addr net.UDPAddr) error {
+	conn, err := net.DialUDP("udp4", nil, &addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	_, err = conn.Write(payload)
+	return err
+}
+
 // BroadcastPoWResultUDP broadcasts a mined PoW result to validators over UDP.
-func BroadcastPoWResultUDP(rnetPort string, result *types.PoWResult) error {
+func BroadcastPoWResultUDP(rnetPort string, validators []common.Cnode, result *types.PoWResult) error {
 	if result == nil {
 		return errors.New("nil pow result")
 	}
@@ -43,21 +82,31 @@ func BroadcastPoWResultUDP(rnetPort string, result *types.PoWResult) error {
 		return errors.New("pow result UDP payload too large")
 	}
 
-	var firstErr error
-	for _, ip := range []net.IP{net.IPv4bcast, net.IPv4(127, 0, 0, 1)} {
-		addr := &net.UDPAddr{IP: ip, Port: port}
-		conn, err := net.DialUDP("udp4", nil, addr)
+	seen := make(map[string]struct{})
+	addrs := make([]net.UDPAddr, 0, len(validators)+2)
+	for _, validator := range validators {
+		addr, err := powResultUDPAddrFromCommitteeNode(validator, port)
 		if err != nil {
+			log.Warn("Failed to resolve fixed-mode PoW result validator UDP address", "address", validator.Address, "err", err)
+			continue
+		}
+		addrs = appendPoWResultUDPAddr(addrs, seen, *addr)
+	}
+
+	// Keep localhost for same-host tests and broadcast as a best-effort fallback.
+	addrs = appendPoWResultUDPAddr(addrs, seen, net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
+	addrs = appendPoWResultUDPAddr(addrs, seen, net.UDPAddr{IP: net.IPv4bcast, Port: port})
+
+	var firstErr error
+	for _, addr := range addrs {
+		if err := sendPoWResultUDP(payload, addr); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
+			log.Warn("Failed to send fixed-mode PoW result UDP", "addr", addr.String(), "err", err)
 			continue
 		}
-		_, err = conn.Write(payload)
-		conn.Close()
-		if err != nil && firstErr == nil {
-			firstErr = err
-		}
+		log.Debug("Sent fixed-mode PoW result UDP", "addr", addr.String())
 	}
 	return firstErr
 }
