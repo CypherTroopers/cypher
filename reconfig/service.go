@@ -319,17 +319,18 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 
 	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
 	forceFixedTimedKeyBlock := false
-	if fixedMode && noDone {
-		curKeyBlock := s.kbc.CurrentBlock()
-		if curKeyBlock != nil {
-			lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
-			if time.Since(lastKeyTime) >= fixedModeKeyBlockInterval {
-				forceFixedTimedKeyBlock = true
-				log.Warn("Propose force fixed-mode timed keyblock", "elapsed", time.Since(lastKeyTime), "keyNumber", curKeyBlock.NumberU64(), "txNumber", s.bc.CurrentBlockN())
-			}
+	keyBlockIntervalElapsed := false
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock != nil {
+		lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+		elapsed := time.Since(lastKeyTime)
+		keyBlockIntervalElapsed = elapsed >= params.KeyBlockMinInterval
+		if fixedMode && noDone && elapsed >= fixedModeKeyBlockInterval {
+			forceFixedTimedKeyBlock = true
+			log.Warn("Propose force fixed-mode timed keyblock", "elapsed", elapsed, "keyNumber", curKeyBlock.NumberU64(), "txNumber", s.bc.CurrentBlockN())
 		}
 	}
-	shouldProposeKeyBlock := leaderIndex > 0 || (fixedMode && (!noDone || forceFixedTimedKeyBlock))
+	shouldProposeKeyBlock := keyBlockIntervalElapsed && (leaderIndex > 0 || (fixedMode && (!noDone || forceFixedTimedKeyBlock)))
 	if shouldProposeKeyBlock {
 		isDoneKeyBlock := !noDone || forceFixedTimedKeyBlock
 		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, isDoneKeyBlock)
