@@ -286,6 +286,7 @@ type CandidatePool struct {
 	mux            *event.TypeMux
 	db             ethdb.Database
 	CheckMinerPort func(addr string, blockN uint64, keyblockN uint64)
+	powResultUDP  *powResultUDPServer
 }
 
 // Backend wraps all methods required for candidate pool.
