@@ -235,6 +235,13 @@ func (self *worker) wait() {
 				continue
 			}
 
+			if self.config != nil && (self.config.FixedLeader || self.config.FixedCommittee) {
+				if err := core.BroadcastPoWResultUDP(self.config.RnetPort, types.NewPoWResultFromCandidate(candidate)); err != nil {
+					log.Error("Fail to broadcast fixed-mode PoW result", "err", err)
+				}
+				continue
+			}
+
 			if err := self.candidatePool.AddLocal(candidate); err != nil {
 				log.Error("Fail to add local candidate", "err", err)
 				if err != core.ErrCandidateExisted && err != core.ErrCandidateIsMember {
