@@ -232,7 +232,8 @@ func (self *worker) wait() {
 			}
 
 			if self.config != nil && (self.config.FixedLeader || self.config.FixedCommittee) {
-				if err := core.BroadcastPoWResultUDP(self.config.RnetPort, types.NewPoWResultFromCandidate(candidate)); err != nil {
+				validators := self.eth.KeyBlockChain().CurrentCommittee()
+				if err := core.BroadcastPoWResultUDP(self.config.RnetPort, validators, types.NewPoWResultFromCandidate(candidate)); err != nil {
 					log.Error("Fail to broadcast fixed-mode PoW result", "err", err)
 				}
 				continue
