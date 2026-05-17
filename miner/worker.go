@@ -193,20 +193,16 @@ func (self *worker) autoCommit() {
 		select {
 		case <-self.keyHeadCh:
 			if bftview.IamMember() < 0 {
-				self.commitNewWork()
+				shouldStart := atomic.LoadInt32(&self.shouldStart) == 1
 				self.stop()
 
-				shouldStart := atomic.LoadInt32(&self.shouldStart) == 1
 				if shouldStart {
 					if !self.isRunning() {
 						log.Info("Restore,Ready to start pow work")
 						self.start() //now action
 					}
-
 				} else {
-					if !shouldStart {
-						log.Info("User has not permitted  to start")
-					}
+					log.Info("User has not permitted  to start")
 				}
 			}
 
@@ -302,13 +298,10 @@ func (self *worker) commitNewWork() {
 	tstamp := tstart.Unix()
 	minKeyBlockTime := int64(keyBlock.Time()) + int64(params.KeyBlockMinInterval/time.Second)
 	if minKeyBlockTime > tstamp {
+		// Keep the candidate/keyblock timestamp valid, but do not delay PoW work.
+		// Common miners must start mining immediately after a new keyblock so their
+		// UDP PoWResult can reach validators before the next keyblock proposal.
 		tstamp = minKeyBlockTime
-	}
-	// this will ensure we're not going off too far in the future
-	if now := time.Now().Unix(); tstamp > now+1 {
-		wait := time.Duration(tstamp-now) * time.Second
-		log.Info("Mining too far in the future", "wait", common.PrettyDuration(wait))
-		time.Sleep(wait)
 	}
 
 	port, _ := strconv.Atoi(self.config.RnetPort)
