@@ -37,7 +37,10 @@ func appendPoWResultUDPAddr(addrs []net.UDPAddr, seen map[string]struct{}, addr 
 	return append(addrs, addr)
 }
 
-func powResultUDPAddrFromCommitteeNode(node common.Cnode, fallbackPort int) (*net.UDPAddr, error) {
+func powResultUDPAddrFromCommitteeNode(node *common.Cnode, fallbackPort int) (*net.UDPAddr, error) {
+	if node == nil {
+		return nil, errors.New("nil committee node")
+	}
 	address := strings.TrimSpace(node.Address)
 	if address == "" {
 		return nil, errors.New("empty committee node address")
@@ -66,7 +69,7 @@ func sendPoWResultUDP(payload []byte, addr net.UDPAddr) error {
 }
 
 // BroadcastPoWResultUDP broadcasts a mined PoW result to validators over UDP.
-func BroadcastPoWResultUDP(rnetPort string, validators []common.Cnode, result *types.PoWResult) error {
+func BroadcastPoWResultUDP(rnetPort string, validators []*common.Cnode, result *types.PoWResult) error {
 	if result == nil {
 		return errors.New("nil pow result")
 	}
@@ -87,7 +90,11 @@ func BroadcastPoWResultUDP(rnetPort string, validators []common.Cnode, result *t
 	for _, validator := range validators {
 		addr, err := powResultUDPAddrFromCommitteeNode(validator, port)
 		if err != nil {
-			log.Warn("Failed to resolve fixed-mode PoW result validator UDP address", "address", validator.Address, "err", err)
+			address := ""
+			if validator != nil {
+				address = validator.Address
+			}
+			log.Warn("Failed to resolve fixed-mode PoW result validator UDP address", "address", address, "err", err)
 			continue
 		}
 		addrs = appendPoWResultUDPAddr(addrs, seen, *addr)
@@ -143,7 +150,7 @@ func (cp *CandidatePool) StartPoWResultUDP(rnetPort string) error {
 	return nil
 }
 
-// StopPoWResultUDP stops the fixed-mode PoW result UDP listener, if present.
+// StopPoWResultUDP stops the fixed-mode UDP listener, if present.
 func (cp *CandidatePool) StopPoWResultUDP() {
 	cp.mu.Lock()
 	server := cp.powResultUDP
