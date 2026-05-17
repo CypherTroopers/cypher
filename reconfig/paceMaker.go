@@ -29,7 +29,6 @@ import (
 )
 
 var maxPaceMakerTime time.Time
-var fixedModeKeyBlockInterval = 10 * time.Minute
 var paceMakerPollInterval = 10 * time.Millisecond
 
 type paceMakerTimer struct {
@@ -161,7 +160,7 @@ func (t *paceMakerTimer) loopTimer() {
 		if t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee) && bftview.IamMember() >= 0 {
 			t.mu.Lock()
 			lastKeyTime := t.lastKeyTime
-			if now.Sub(lastKeyTime) >= fixedModeKeyBlockInterval {
+			if now.Sub(lastKeyTime) >= params.KeyBlockMinInterval {
 				t.lastKeyTime = now
 				t.mu.Unlock()
 				log.Warn("paceMakerTimer fixed mode keyblock trigger", "elapsed", now.Sub(lastKeyTime))
