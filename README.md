@@ -38,10 +38,18 @@ Windows
 ```
 .\build\bin\cypher.exe attach ipc:\\.\pipe\cypher.ipc
 ```
-console command Linux/Windows
+## console command Linux/Windows
+1. Generate a wallet
  ```
 personal.newAccount("your password")
  ```
+2.Start mining
  ```
-miner.start(1, "your address here", "your password")
+miner.start(1, "0x your address here", "your password")
  ```
+3.Check the wallet balance
+ ```
+web3.fromWei(eth.getBalance("your address"), "ether")
+```
+For other console commands, please refer to the section near the bottom of the page below:
+https://github.com/cypherium/cypher
