@@ -4,6 +4,7 @@
 ```bash
 git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
+git fetch --all
  ```
 linux
  ```
