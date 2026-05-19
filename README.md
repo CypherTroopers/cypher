@@ -118,18 +118,19 @@ clone cypher repo..."
 ```
 mkdir -p "$GOPATH/src/github.com/cypherium"
 cd "$GOPATH/src/github.com/cypherium"
-
-if [ ! -d cypher ]; then
-  git clone https://github.com/CypherTroopers/cypher.git
-fi
-
+```
+```
+git clone https://github.com/CypherTroopers/cypher.git
+cd cypher
+```
+```
 cd cypher
 git fetch --all
 git checkout colossusX_dev_test
 cp -f ./crypto/bls/lib/linux/* ./crypto/bls/lib/
 ```
 
- clone GOPATH dependencies..."
+ clone GOPATH dependencies
 ```
 mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
 cd "$GOPATH/src/github.com/VictoriaMetrics"
