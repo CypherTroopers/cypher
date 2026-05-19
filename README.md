@@ -188,7 +188,7 @@ init chain data..."
 ```
 ./build/bin/cypher --datadir chaindbname init ./genesistest.json
 ```
-create start script and register pm2
+create start script and register pm2&strat Pm2
 ```
 cat <<'EOS' > start-cypher.sh
 #!/usr/bin/env bash
