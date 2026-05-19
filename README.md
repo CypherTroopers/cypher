@@ -85,6 +85,7 @@ wget https://go.dev/dl/go1.26.2.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
 sudo tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz
 ```
+```
 go version || true
 go env -w GO111MODULE=off
 ```
