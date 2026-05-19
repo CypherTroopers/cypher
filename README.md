@@ -1,7 +1,4 @@
-# cypher-deploy
-This is the bulk setup .sh script.
 
-If you get an error, follow the error message, then run the .sh script again.
 ## Setup Linux/Windows
 
 ```bash
