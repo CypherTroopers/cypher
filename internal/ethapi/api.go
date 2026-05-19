@@ -1339,6 +1339,9 @@ func (s *PublicBlockChainAPI) rpcMarshalBlock(ctx context.Context, b *types.Bloc
 	if err != nil {
 		return nil, err
 	}
+	if keyblock, keyErr := s.b.KeyBlockByHash(ctx, b.KeyHash()); keyErr == nil && keyblock != nil {
+		fields["miner"] = keyblock.OutAddress(1)
+	}
 	if inclTx {
 		fields["totalDifficulty"] = (*hexutil.Big)(s.b.GetTd(ctx, b.Hash()))
 	}
