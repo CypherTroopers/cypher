@@ -16,8 +16,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: go/src/github.com/cypherium/cypher
 
       - uses: actions/setup-go@v5
         with:
@@ -34,6 +32,12 @@ jobs:
             mingw-w64-x86_64-gmp
             mingw-w64-x86_64-openssl
             make
+
+      - name: Move repo into GOPATH
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\Users\runneradmin\go\src\github.com\cypherium | Out-Null
+          Copy-Item $env:GITHUB_WORKSPACE C:\Users\runneradmin\go\src\github.com\cypherium\cypher -Recurse -Force
 
       - name: Build cypher.exe
         shell: pwsh
