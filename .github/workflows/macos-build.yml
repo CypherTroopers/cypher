@@ -31,6 +31,15 @@ jobs:
           go-version: '1.24.1'
           cache: false
 
+
+      - name: Setup macOS native libs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          brew update
+          brew install openssl@3 gmp
+
       - name: Build cypher (darwin ${{ matrix.goarch }})
         working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
         shell: bash
@@ -93,6 +102,13 @@ jobs:
           DATE=$(date +%Y%m%d)
 
           go env -w GO111MODULE=off
+
+          OPENSSL_PREFIX=$(brew --prefix openssl@3)
+          GMP_PREFIX=$(brew --prefix gmp)
+          export CGO_CFLAGS="-I$OPENSSL_PREFIX/include -I$GMP_PREFIX/include"
+          export CGO_CXXFLAGS="$CGO_CFLAGS"
+          export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
+          export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
 
           GOOS=darwin GOARCH=${{ matrix.goarch }} go build -trimpath -v \
             -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE" \
