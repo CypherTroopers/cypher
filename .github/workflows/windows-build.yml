@@ -7,8 +7,17 @@ jobs:
   build-windows:
     runs-on: windows-latest
 
+    env:
+      GOPATH: C:\Users\runneradmin\go
+      GO111MODULE: off
+      CGO_ENABLED: 1
+      CC: C:\msys64\mingw64\bin\gcc.exe
+      CXX: C:\msys64\mingw64\bin\g++.exe
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: go/src/github.com/cypherium/cypher
 
       - uses: actions/setup-go@v5
         with:
@@ -26,19 +35,11 @@ jobs:
             mingw-w64-x86_64-openssl
             make
 
-      - name: Copy BLS libs
-        shell: pwsh
-        run: |
-          Copy-Item .\crypto\bls\lib\win\* .\crypto\bls\lib\ -Force
-
       - name: Build cypher.exe
         shell: pwsh
+        working-directory: C:\Users\runneradmin\go\src\github.com\cypherium\cypher
         run: |
-          $env:GO111MODULE="off"
-          $env:GOPATH="$env:USERPROFILE\go"
-          $env:CGO_ENABLED="1"
-          $env:CC="C:\msys64\mingw64\bin\gcc.exe"
-          $env:CXX="C:\msys64\mingw64\bin\g++.exe"
+          Copy-Item .\crypto\bls\lib\win\* .\crypto\bls\lib\ -Force
           go env -w GO111MODULE=off
           go run build\ci.go install .\cmd\cypher
 
@@ -46,4 +47,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cypher-windows
-          path: build/bin/cypher.exe
+          path: C:\Users\runneradmin\go\src\github.com\cypherium\cypher\build\bin\cypher.exe
