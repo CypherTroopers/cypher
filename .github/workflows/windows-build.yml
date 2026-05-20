@@ -11,8 +11,8 @@ jobs:
       GOPATH: ${{ github.workspace }}\go
       GO111MODULE: off
       CGO_ENABLED: 1
-      CC: C:\msys64\mingw64\bin\gcc.exe
-      CXX: C:\msys64\mingw64\bin\g++.exe
+      CC: gcc
+      CXX: g++
 
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +29,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
+          path-type: inherit
           install: >-
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-gmp
@@ -36,12 +37,12 @@ jobs:
             make
 
       - name: Build cypher.exe
-        shell: pwsh
+        shell: msys2 {0}
         working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
         run: |
-          Copy-Item .\crypto\bls\lib\win\* .\crypto\bls\lib\ -Force
+          cp crypto/bls/lib/win/* crypto/bls/lib/
           go env -w GO111MODULE=off
-          go run build\ci.go install .\cmd\cypher
+          go run build/ci.go install ./cmd/cypher
 
       - name: Upload cypher.exe
         uses: actions/upload-artifact@v4
