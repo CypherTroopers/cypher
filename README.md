@@ -6,10 +6,7 @@ git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
 git fetch --all
  ```
-linux
- ```
-git checkout colossusX_dev_test_linux
- ```
+
 Windows powershell
 ```
 git switch colossusX_dev_test_powershell
