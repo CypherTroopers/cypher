@@ -3,6 +3,9 @@ name: Windows Build
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     runs-on: windows-2022
@@ -107,6 +110,17 @@ jobs:
           cp /mingw64/bin/libwinpthread-1.dll build/bin/ || true
 
           ./build/bin/cypher.exe version
+
+      - name: Commit built Windows binary
+        shell: msys2 {0}
+        working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add build/bin/cypher.exe build/bin/*.dll
+          git commit -m "Update Windows binary" || echo "No changes to commit"
+          git push origin HEAD:colossusX_dev_test
 
       - name: Upload cypher-windows
         uses: actions/upload-artifact@v4
