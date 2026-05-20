@@ -35,16 +35,7 @@ cd cypher
 
 ## start mining (console)Linux/Windows/mac
 
-Linux/mac(Apple Silicon Mac)
- ```
-./build/bin/cypher attach ipc:./chaindbname/cypher.ipc
- ```
-Windows
-```
-.\build\bin\cypher.exe attach ipc:\\.\pipe\cypher.ipc
-```
-
-## console command Linux/Windows
+## console command Linux/Windows/mac
 1. Generate a wallet
  ```
 personal.newAccount("your password")
