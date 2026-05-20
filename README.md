@@ -50,3 +50,14 @@ web3.fromWei(eth.getBalance("your address"), "ether")
 ```
 For other console commands, please refer to the section near the bottom of the page below:
 https://github.com/cypherium/cypher
+
+##  If the node is running in the background, you can enter the console from the cypher directory using the following commands.
+
+Linux/macOS Apple Silicon Mac
+```
+./build/bin/cypher attach ipc:./chaindbname/cypher.ipc
+```
+Windows
+```
+.\build\bin\cypher.exe attach ipc:\\.\pipe\cypher.ipc
+```
