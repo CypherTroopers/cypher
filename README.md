@@ -5,7 +5,7 @@
 git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
  ```
-init genesistest.json　## Linux/Windows
+init genesistest.json　***Linux/Windows***
 ```
 ./build/bin/cypher --datadir chaindbname init ./genesistest.json
 ```
