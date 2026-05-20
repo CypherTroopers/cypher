@@ -9,6 +9,10 @@ permissions:
 jobs:
   build-macos:
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
 
     env:
       GOPATH: ${{ github.workspace }}/go
@@ -27,7 +31,7 @@ jobs:
           go-version: '1.24.1'
           cache: false
 
-      - name: Build cypher (darwin amd64)
+      - name: Build cypher (darwin ${{ matrix.goarch }})
         working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
         shell: bash
         run: |
@@ -75,6 +79,7 @@ jobs:
 
           cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
 
+          mkdir -p crypto/bls/lib/darwin
           cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
           cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
           cp crypto/bls/lib/darwin/* crypto/bls/lib/
@@ -84,12 +89,12 @@ jobs:
 
           go env -w GO111MODULE=off
 
-          GOOS=darwin GOARCH=amd64 go build -trimpath -v \
+          GOOS=darwin GOARCH=${{ matrix.goarch }} go build -trimpath -v \
             -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE" \
-            -o build/bin/cypher \
+            -o "build/bin/cypher-darwin-${{ matrix.goarch }}" \
             ./cmd/cypher
 
-          ./build/bin/cypher version || true
+          file "build/bin/cypher-darwin-${{ matrix.goarch }}"
 
       - name: Commit built macOS binary
         working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
@@ -98,12 +103,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add build/bin/cypher
-          git commit -m "Update macOS binary" || echo "No changes to commit"
+          git add build/bin/cypher-darwin-${{ matrix.goarch }}
+          git commit -m "Update macOS binary (${{ matrix.goarch }})" || echo "No changes to commit"
           git push origin HEAD:colossusX_dev_test
 
       - name: Upload cypher-macos
         uses: actions/upload-artifact@v4
         with:
-          name: cypher-macos-amd64
-          path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher
+          name: cypher-macos-${{ matrix.goarch }}
+          path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-darwin-${{ matrix.goarch }}
