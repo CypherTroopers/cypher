@@ -1,13 +1,21 @@
 
-## Setup Linux/Windows
+## Setup Linux/Windows/mac
 
 ```bash
 git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
  ```
-init genesistest.json　***Linux/Windows***
+init genesistest.json　***Linux***
 ```
 ./build/bin/cypher --datadir chaindbname init ./genesistest.json
+```
+init genesistest.json　***Windows***
+```
+./build/bin/cypher.exe --datadir chaindbname init ./genesistest.json
+```
+init genesistest.json　***mac(Apple Silicon Mac)***
+```
+./build/bin/cypher-darwin-arm64 --datadir chaindbname init ./genesistest.json
 ```
 Start node ***Linux***
 ```
