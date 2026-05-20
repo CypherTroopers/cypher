@@ -11,7 +11,7 @@ Windows powershell
 ```
 git switch colossusX_dev_test_powershell
 ```
-init genesistest.json
+init genesistest.json　Linux/Windows
 ```
 ./build/bin/cypher --datadir chaindbname init ./genesistest.json
 ```
