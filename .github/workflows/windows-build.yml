@@ -41,8 +41,18 @@ jobs:
         working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
         run: |
           cp crypto/bls/lib/win/* crypto/bls/lib/
+
+          COMMIT=$(git rev-parse HEAD)
+          DATE=$(date +%Y%m%d)
+
           go env -w GO111MODULE=off
-          go run build/ci.go install ./cmd/cypher
+
+          go install -trimpath -v \
+            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
+            ./cmd/cypher
+
+          mkdir -p build/bin
+          cp "$GOPATH/bin/cypher.exe" build/bin/cypher.exe
 
       - name: Upload cypher.exe
         uses: actions/upload-artifact@v4
