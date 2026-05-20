@@ -44,6 +44,8 @@ jobs:
           mkdir -p "$GOPATH/src/github.com/go-sourcemap"
           mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
           mkdir -p "$GOPATH/src/github.com/go-ole"
+          mkdir -p "$GOPATH/src/github.com/ebitengine"
+          mkdir -p "$GOPATH/src/github.com/tklauser"
 
           git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
           git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
@@ -60,6 +62,9 @@ jobs:
           git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
           git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
           git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
+          git clone --depth 1 https://github.com/ebitengine/purego.git "$GOPATH/src/github.com/ebitengine/purego"
+          git clone --depth 1 https://github.com/tklauser/go-sysconf.git "$GOPATH/src/github.com/tklauser/go-sysconf"
+          git clone --depth 1 https://github.com/tklauser/numcpus.git "$GOPATH/src/github.com/tklauser/numcpus"
 
           rm -rf "$GOPATH/src/github.com/herumi"
           mkdir -p "$GOPATH/src/github.com/herumi"
