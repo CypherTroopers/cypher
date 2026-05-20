@@ -55,7 +55,15 @@ jobs:
           git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
           git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
           git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
-          git clone --depth 1 https://github.com/dlclark/regexp2.git "$GOPATH/src/github.com/dlclark/regexp2"
+
+          cd "$GOPATH/src/github.com/dlclark"
+          if [ ! -d regexp2 ]; then
+            git clone https://github.com/dlclark/regexp2.git
+          fi
+          cd regexp2
+          git fetch --tags
+          git checkout v1.1.8
+
           git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
           git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
           git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
