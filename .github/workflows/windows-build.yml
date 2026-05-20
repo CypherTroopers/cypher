@@ -8,7 +8,7 @@ jobs:
     runs-on: windows-latest
 
     env:
-      GOPATH: C:\Users\runneradmin\go
+      GOPATH: ${{ github.workspace }}\go
       GO111MODULE: off
       CGO_ENABLED: 1
       CC: C:\msys64\mingw64\bin\gcc.exe
@@ -16,6 +16,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: go/src/github.com/cypherium/cypher
 
       - uses: actions/setup-go@v5
         with:
@@ -33,15 +35,9 @@ jobs:
             mingw-w64-x86_64-openssl
             make
 
-      - name: Move repo into GOPATH
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force C:\Users\runneradmin\go\src\github.com\cypherium | Out-Null
-          Copy-Item $env:GITHUB_WORKSPACE C:\Users\runneradmin\go\src\github.com\cypherium\cypher -Recurse -Force
-
       - name: Build cypher.exe
         shell: pwsh
-        working-directory: C:\Users\runneradmin\go\src\github.com\cypherium\cypher
+        working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
         run: |
           Copy-Item .\crypto\bls\lib\win\* .\crypto\bls\lib\ -Force
           go env -w GO111MODULE=off
@@ -51,4 +47,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cypher-windows
-          path: C:\Users\runneradmin\go\src\github.com\cypherium\cypher\build\bin\cypher.exe
+          path: ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\cypher.exe
