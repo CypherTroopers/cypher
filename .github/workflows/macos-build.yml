@@ -8,11 +8,17 @@ permissions:
 
 jobs:
   build-macos:
-    runs-on: macos-14
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
-        goarch: [amd64, arm64]
+        include:
+          - runner: macos-13
+            goarch: amd64
+          - runner: macos-14
+            goarch: arm64
+
+    runs-on: ${{ matrix.runner }}
 
     env:
       GOPATH: ${{ github.workspace }}/go
