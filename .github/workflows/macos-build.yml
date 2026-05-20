@@ -1,0 +1,109 @@
+name: macOS Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+
+    env:
+      GOPATH: ${{ github.workspace }}/go
+      GO111MODULE: off
+      CGO_ENABLED: 1
+      CC: clang
+      CXX: clang++
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: go/src/github.com/cypherium/cypher
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.1'
+          cache: false
+
+      - name: Build cypher (darwin amd64)
+        working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
+          mkdir -p "$GOPATH/src/github.com/shirou"
+          mkdir -p "$GOPATH/src/golang.org/x"
+          mkdir -p "$GOPATH/src/github.com/dlclark"
+          mkdir -p "$GOPATH/src/github.com/go-sourcemap"
+          mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
+          mkdir -p "$GOPATH/src/github.com/go-ole"
+
+          git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
+          git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
+          git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
+
+          cd "$GOPATH/src/github.com/dlclark"
+          if [ ! -d regexp2 ]; then
+            git clone https://github.com/dlclark/regexp2.git
+          fi
+          cd regexp2
+          git fetch --tags
+          git checkout v1.1.8
+
+          git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
+          git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
+          git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
+
+          rm -rf "$GOPATH/src/github.com/herumi"
+          mkdir -p "$GOPATH/src/github.com/herumi"
+          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
+          cd "$GOPATH/src/github.com/herumi/bls"
+          git submodule update --init --recursive
+
+          cd "$GOPATH/src/github.com/herumi/bls/mcl"
+          make clean || true
+          rm -f src/bint_switch.hpp src/llvm_proto.hpp
+          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
+          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
+
+          cd "$GOPATH/src/github.com/herumi/bls"
+          rm -f obj/*.d obj/*.o lib/libbls256.a
+          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+
+          cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
+
+          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
+          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
+          cp crypto/bls/lib/darwin/* crypto/bls/lib/
+
+          COMMIT=$(git rev-parse HEAD)
+          DATE=$(date +%Y%m%d)
+
+          go env -w GO111MODULE=off
+
+          GOOS=darwin GOARCH=amd64 go build -trimpath -v \
+            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE" \
+            -o build/bin/cypher \
+            ./cmd/cypher
+
+          ./build/bin/cypher version || true
+
+      - name: Commit built macOS binary
+        working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add build/bin/cypher
+          git commit -m "Update macOS binary" || echo "No changes to commit"
+          git push origin HEAD:colossusX_dev_test
+
+      - name: Upload cypher-macos
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypher-macos-amd64
+          path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher
