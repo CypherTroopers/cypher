@@ -42,10 +42,17 @@ jobs:
         run: |
           cp crypto/bls/lib/win/* crypto/bls/lib/
 
+          go env -w GO111MODULE=off
+
+          go get github.com/VictoriaMetrics/fastcache
+          go get github.com/shirou/gopsutil/cpu
+          go get github.com/shirou/gopsutil/mem
+          go get golang.org/x/sys/cpu
+          go get github.com/dlclark/regexp2
+          go get github.com/go-sourcemap/sourcemap
+
           COMMIT=$(git rev-parse HEAD)
           DATE=$(date +%Y%m%d)
-
-          go env -w GO111MODULE=off
 
           go install -trimpath -v \
             -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
