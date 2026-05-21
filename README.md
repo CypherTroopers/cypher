@@ -52,6 +52,11 @@ For other console commands, please refer to the section near the bottom of the p
 https://github.com/cypherium/cypher
 
 ##  If the node is running in the background, you can enter the console from the cypher directory using the following commands.
+### Linux / macOS / PowerShell
+Move to the cypher directory.
+```bash
+cd ~/cypher
+```
 
 Linux
 ```
