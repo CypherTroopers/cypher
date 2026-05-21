@@ -6,6 +6,7 @@ git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
  ```
 ##start node 
+
 ***Linux***
 ```
 chmod +x start-cypher.sh
