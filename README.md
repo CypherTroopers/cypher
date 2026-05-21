@@ -32,9 +32,14 @@ personal.newAccount("your password")
  ```
 miner.start(1, "0x your address here", "your password")
  ```
-3.Check the wallet balance
+3.You can specify the wallet address that will receive the mining rewards.
+If you do not specify one, the rewards will be sent to the address that started mining.
+```
+miner.setEtherbase("0x your address here")
+```
+4.Check the wallet balance
  ```
-web3.fromWei(eth.getBalance("your address"), "ether")
+web3.fromWei(eth.getBalance("0x your address"), "ether")
 ```
 For other console commands, please refer to the section near the bottom of the page below:
 https://github.com/cypherium/cypher
