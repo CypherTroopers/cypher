@@ -5,7 +5,7 @@
 git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
  ```
-##start node 
+## start node 
 
 ***Linux***
 ```
