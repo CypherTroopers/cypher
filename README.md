@@ -53,9 +53,13 @@ https://github.com/cypherium/cypher
 
 ##  If the node is running in the background, you can enter the console from the cypher directory using the following commands.
 
-Linux/macOS Apple Silicon Mac
+Linux
 ```
 ./build/bin/cypher attach ipc:./chaindbname/cypher.ipc
+```
+Apple Silicon Mac
+```
+./build/bin/cypher-darwin-arm64 attach ipc:./chaindbname/cypher.ipc
 ```
 Windows
 ```
