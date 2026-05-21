@@ -2,6 +2,8 @@
 
 $ErrorActionPreference = "Stop"
 
+Write-Host "==> Init genesis"
+.\build\bin\cypher.exe --datadir chaindbname init .\genesistest.json
 
 Write-Host "==> Get public IP"
 $PUBLIC_IP = (Invoke-RestMethod -Uri "https://api4.ipify.org").Trim()
