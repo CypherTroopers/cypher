@@ -17,7 +17,8 @@ powershell -ExecutionPolicy Bypass -File .\colossusX_windows.ps1
 ```
 ***mac(Apple Silicon Mac)***
 ```
-
+chmod +x start-cypher-mac.sh
+./colossusX_mac.sh
 ```
 
 ## start mining (console)Linux/Windows/mac
