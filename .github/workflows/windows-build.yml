@@ -135,7 +135,6 @@ jobs:
           git add build/bin/cypher.exe build/bin/*.dll
           git commit -m "Update Windows binary" || echo "No changes to commit"
 
-          git pull --rebase origin EVM_caucun_PoW_Test
           git push origin HEAD:EVM_caucun_PoW_Test
 
       - name: Upload cypher-windows
