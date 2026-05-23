@@ -18,6 +18,13 @@ jobs:
       CXX: g++
 
     steps:
+      - name: Enable Git long paths
+        shell: powershell
+        run: |
+          git config --system core.longpaths true
+          git config --global core.longpaths true
+          git config --show-origin --get-all core.longpaths
+
       - uses: actions/checkout@v4
         with:
           path: go/src/github.com/cypherium/cypher
