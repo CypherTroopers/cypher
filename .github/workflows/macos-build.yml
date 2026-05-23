@@ -30,13 +30,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: EVM_caucun_PoW_Test
           path: go/src/github.com/cypherium/cypher
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24.1'
+          go-version: '1.26.2'
           cache: false
-
 
       - name: Setup macOS native libs
         shell: bash
@@ -127,12 +131,15 @@ jobs:
         working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
         shell: bash
         run: |
+          set -euo pipefail
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add build/bin/cypher-darwin-${{ matrix.goarch }}
           git commit -m "Update macOS binary (${{ matrix.goarch }})" || echo "No changes to commit"
-          git push origin HEAD:colossusX_dev_test
+
+          git push origin HEAD:EVM_caucun_PoW_Test
 
       - name: Upload cypher-macos
         uses: actions/upload-artifact@v4
