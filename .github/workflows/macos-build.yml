@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: EVM_caucun_PoW_Test
+          ref: EVM_Cancun_PoW
           path: go/src/github.com/cypherium/cypher
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -139,7 +139,7 @@ jobs:
           git add build/bin/cypher-darwin-${{ matrix.goarch }}
           git commit -m "Update macOS binary (${{ matrix.goarch }})" || echo "No changes to commit"
 
-          git push origin HEAD:EVM_caucun_PoW_Test
+          git push origin HEAD:EVM_Cancun_PoW
 
       - name: Upload cypher-macos
         uses: actions/upload-artifact@v4
