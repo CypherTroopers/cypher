@@ -3,3 +3,10 @@ chaindb/
 chaindb*/
 chaindbname/
 chaindbname*/
+
+# Local chain databases
+chaindb*
+chaindb*/
+
+# Local start scripts
+start-cypher*.sh

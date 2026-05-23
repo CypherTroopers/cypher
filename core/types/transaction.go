@@ -372,7 +372,7 @@ func (tx *Transaction) Hash() common.Hash {
 	if tx.Type() == LegacyTxType {
 		v = rlpHash(tx)
 	} else if enc, err := tx.MarshalBinary(); err == nil {
-		v = rlpHash(enc)
+		v = crypto.Keccak256Hash(enc)
 	}
 	tx.hash.Store(v)
 	return v
