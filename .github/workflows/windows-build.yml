@@ -18,9 +18,20 @@ jobs:
       CXX: g++
 
     steps:
+      - name: Enable Git long paths
+        shell: powershell
+        run: |
+          git config --system core.longpaths true
+          git config --global core.longpaths true
+          git config --show-origin --get-all core.longpaths
+
       - uses: actions/checkout@v4
         with:
           path: go/src/github.com/cypherium/cypher
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
 
       - uses: actions/setup-go@v5
         with:
