@@ -64,6 +64,15 @@ var (
 	// than required to start the invocation.
 	ErrIntrinsicGas = errors.New("intrinsic gas too low")
 
+	// ErrGasFeeCapTooLow is returned if maxFeePerGas is lower than block baseFee.
+	ErrGasFeeCapTooLow = errors.New("max fee per gas less than block base fee")
+
+	// ErrGasTipAboveFeeCap is returned if maxPriorityFeePerGas exceeds maxFeePerGas.
+	ErrGasTipAboveFeeCap = errors.New("max priority fee per gas higher than max fee per gas")
+
+	// ErrBlobFeeCapTooLow is returned if maxFeePerBlobGas is lower than blob base fee.
+	ErrBlobFeeCapTooLow = errors.New("max fee per blob gas less than blob base fee")
+
 	// ErrAbortBlocksProcessing is returned if bc.insertChain is interrupted under raft mode
 	ErrAbortBlocksProcessing = errors.New("abort during blocks processing")
 )

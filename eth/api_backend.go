@@ -362,6 +362,22 @@ func (b *EthAPIBackend) SuggestPrice(ctx context.Context) (*big.Int, error) {
 	return b.gpo.SuggestPrice(ctx)
 }
 
+// SuggestGasTipCap returns a best-effort priority fee suggestion for EIP-1559 RPCs.
+func (b *EthAPIBackend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	fallback := big.NewInt(params.GWei)
+	price, err := b.gpo.SuggestPrice(ctx)
+	if err != nil || price == nil || price.Sign() <= 0 {
+		return fallback, nil
+	}
+	if head := b.CurrentHeader(); head != nil && head.BaseFee != nil {
+		tip := new(big.Int).Sub(price, head.BaseFee)
+		if tip.Sign() > 0 {
+			return tip, nil
+		}
+	}
+	return new(big.Int).Set(price), nil
+}
+
 func (b *EthAPIBackend) ChainDb() ethdb.Database {
 	return b.eth.ChainDb()
 }

@@ -93,6 +93,9 @@ type StateDB struct {
 
 	preimages map[common.Hash][]byte
 
+	transientStorage transientStorage
+	createdContracts map[common.Address]struct{}
+
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
 	journal        *journal
@@ -128,6 +131,8 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		stateObjectsDirty:   make(map[common.Address]struct{}),
 		logs:                make(map[common.Hash][]*types.Log),
 		preimages:           make(map[common.Hash][]byte),
+		transientStorage:    newTransientStorage(),
+		createdContracts:    make(map[common.Address]struct{}),
 		journal:             newJournal(),
 	}
 	if sdb.snaps != nil {
@@ -168,6 +173,8 @@ func (s *StateDB) Reset(root common.Hash) error {
 	s.logs = make(map[common.Hash][]*types.Log)
 	s.logSize = 0
 	s.preimages = make(map[common.Hash][]byte)
+	s.transientStorage = newTransientStorage()
+	s.createdContracts = make(map[common.Address]struct{})
 	s.clearJournalAndRefund()
 
 	if s.snaps != nil {
@@ -599,8 +606,8 @@ func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) 
 // CreateAccount is called during the EVM CREATE operation. The situation might arise that
 // a contract does the following:
 //
-//   1. sends funds to sha(account ++ (nonce + 1))
-//   2. tx_create(sha(account ++ nonce)) (note that this gets the address of 1)
+//  1. sends funds to sha(account ++ (nonce + 1))
+//  2. tx_create(sha(account ++ nonce)) (note that this gets the address of 1)
 //
 // Carrying over the balance ensures that Ether doesn't disappear.
 func (s *StateDB) CreateAccount(addr common.Address) {
@@ -608,6 +615,17 @@ func (s *StateDB) CreateAccount(addr common.Address) {
 	if prev != nil {
 		newObj.setBalance(prev.data.Balance)
 	}
+}
+
+func (s *StateDB) CreateContract(addr common.Address) {
+	_, prev := s.createdContracts[addr]
+	s.journal.append(createContractChange{account: &addr, prev: prev})
+	s.createdContracts[addr] = struct{}{}
+}
+
+func (s *StateDB) CreatedContract(addr common.Address) bool {
+	_, ok := s.createdContracts[addr]
+	return ok
 }
 
 func (db *StateDB) ForEachStorage(addr common.Address, cb func(key, value common.Hash) bool) error {
@@ -653,6 +671,8 @@ func (s *StateDB) Copy() *StateDB {
 		logs:                make(map[common.Hash][]*types.Log, len(s.logs)),
 		logSize:             s.logSize,
 		preimages:           make(map[common.Hash][]byte, len(s.preimages)),
+		transientStorage:    newTransientStorage(),
+		createdContracts:    make(map[common.Address]struct{}, len(s.createdContracts)),
 		journal:             newJournal(),
 	}
 	// Copy the dirty states, logs, and preimages
@@ -696,6 +716,15 @@ func (s *StateDB) Copy() *StateDB {
 	}
 	for hash, preimage := range s.preimages {
 		state.preimages[hash] = preimage
+	}
+	for addr, slots := range s.transientStorage {
+		state.transientStorage[addr] = make(map[common.Hash]common.Hash, len(slots))
+		for key, value := range slots {
+			state.transientStorage[addr][key] = value
+		}
+	}
+	for addr := range s.createdContracts {
+		state.createdContracts[addr] = struct{}{}
 	}
 	return state
 }
@@ -795,9 +824,28 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 // Prepare sets the current transaction hash and index and block hash which is
 // used when the EVM emits new state logs.
 func (s *StateDB) Prepare(thash, bhash common.Hash, ti int) {
+	s.transientStorage = newTransientStorage()
+	s.createdContracts = make(map[common.Address]struct{})
 	s.thash = thash
 	s.bhash = bhash
 	s.txIndex = ti
+}
+
+func (s *StateDB) SetTransientState(addr common.Address, key, value common.Hash) {
+	prev := s.GetTransientState(addr, key)
+	if prev == value {
+		return
+	}
+	s.journal.append(transientStorageChange{account: &addr, key: key, prevalue: prev})
+	s.setTransientState(addr, key, value)
+}
+
+func (s *StateDB) setTransientState(addr common.Address, key, value common.Hash) {
+	s.transientStorage.Set(addr, key, value)
+}
+
+func (s *StateDB) GetTransientState(addr common.Address, key common.Hash) common.Hash {
+	return s.transientStorage.Get(addr, key)
 }
 
 func (s *StateDB) clearJournalAndRefund() {

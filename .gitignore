@@ -1,17 +1,5 @@
-# env
-.env
-
-# chaindb
+# Cypherium local chain databases
+chaindb/
 chaindb*/
 chaindbname/
-
-# node
-node_modules/
-package-lock.json
-package.json
-
-# scripts
-start-cypher*.sh
-
-# backup
-*.bak
+chaindbname*/
