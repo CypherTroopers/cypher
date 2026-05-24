@@ -8,17 +8,23 @@ cd cypher
 ## start node 
 
 ***Linux***
-```
+```bash
 chmod +x colossusX_linux.sh
+chmod +x ./build/bin/cypher-linux-amd64
 ./colossusX_linux.sh
 ```
+
 ***Windows***
-```
+```powershell
+Unblock-File .\colossusX_windows.ps1
+Unblock-File .\build\bin\cypher.exe
 powershell -ExecutionPolicy Bypass -File .\colossusX_windows.ps1
 ```
+
 ***mac(Apple Silicon Mac)***
-```
+```bash
 chmod +x colossusX_mac.sh
+chmod +x ./build/bin/cypher-darwin-arm64
 ./colossusX_mac.sh
 ```
 
