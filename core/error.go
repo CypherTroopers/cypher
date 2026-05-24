@@ -73,6 +73,12 @@ var (
 	// ErrBlobFeeCapTooLow is returned if maxFeePerBlobGas is lower than blob base fee.
 	ErrBlobFeeCapTooLow = errors.New("max fee per blob gas less than blob base fee")
 
+	// ErrTipVeryHigh is returned if maxPriorityFeePerGas exceeds 2^256-1.
+	ErrTipVeryHigh = errors.New("max priority fee per gas higher than 2^256-1")
+
+	// ErrFeeCapVeryHigh is returned if maxFeePerGas exceeds 2^256-1.
+	ErrFeeCapVeryHigh = errors.New("max fee per gas higher than 2^256-1")
+
 	// ErrAbortBlocksProcessing is returned if bc.insertChain is interrupted under raft mode
 	ErrAbortBlocksProcessing = errors.New("abort during blocks processing")
 )

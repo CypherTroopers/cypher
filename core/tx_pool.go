@@ -435,6 +435,12 @@ func (pool *TxPool) currentBaseFee() *big.Int {
 }
 
 func validate1559FeeCaps(tx *types.Transaction, baseFee *big.Int) error {
+	if tx.GasFeeCap().BitLen() > 256 {
+		return ErrFeeCapVeryHigh
+	}
+	if tx.GasTipCap().BitLen() > 256 {
+		return ErrTipVeryHigh
+	}
 	if tx.GasTipCap().Cmp(tx.GasFeeCap()) > 0 {
 		return ErrGasTipAboveFeeCap
 	}
