@@ -55,6 +55,13 @@ const slowBlockDrainInterval = 250 * time.Millisecond
 const slowBlockStrongDrainInterval = 100 * time.Millisecond
 const slowBlockEmergencyDrainInterval = 70 * time.Millisecond
 
+// Phase 7A: lane pressure scheduler.
+// If slow lane backlog is much larger than fast lane, keep draining slow lane.
+// This avoids heavy/data/deploy transactions sitting behind fast native/small txs.
+const slowPressureRatio = 2
+const slowPressureMinPending = 512
+const slowEmergencyForcePending = 8192
+
 type committeeInfo struct {
 	Committee *bftview.Committee
 	KeyHash   common.Hash
@@ -522,22 +529,47 @@ func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
 	return fastPending, slowPending
 }
 
+func slowLanePressureHigh(fastPending int, slowPending int) bool {
+	if slowPending < slowPressureMinPending {
+		return false
+	}
+	if fastPending <= 0 {
+		return true
+	}
+	return slowPending >= fastPending*slowPressureRatio
+}
+
+func slowLaneEmergency(slowPending int) bool {
+	return slowPending >= slowEmergencyForcePending
+}
+
 func (s *Service) chooseTxBlockType() uint8 {
 	fastPending, slowPending := s.lanePendingCounts()
 	now := time.Now()
 
-	// If slow backlog is large, prioritize slow drain before fast blocks.
-	// This prevents heavy/deploy/data backlog from sitting in txpool for minutes.
-	slowDrainReady := slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending)
+	fastReady := fastPending > 0 && s.shouldEmitFastBlock(now)
+	slowReady := slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending)
 
+	// Emergency slow backlog:
+	// Do not allow fast lane to keep stealing proposal opportunities.
+	// This still creates normal SlowTx_Block, so block verification compatibility is kept.
+	if slowLaneEmergency(slowPending) {
+		return types.SlowTx_Block
+	}
+
+	// Strong slow pressure:
+	// Prefer slow if its adaptive interval is ready.
+	if slowLanePressureHigh(fastPending, slowPending) && slowReady {
+		return types.SlowTx_Block
+	}
+
+	// Normal cadence.
 	switch {
-	case slowPending >= slowIntervalStrongPendingThreshold && slowDrainReady:
-		return types.SlowTx_Block
-	case fastPending > 0 && s.shouldEmitFastBlock(now):
+	case fastReady:
 		return types.FastTx_Block
-	case slowDrainReady:
+	case slowReady:
 		return types.SlowTx_Block
-	case fastPending > 0:
+	case fastPending > 0 && !slowLanePressureHigh(fastPending, slowPending):
 		return types.FastTx_Block
 	case slowPending >= slowFallbackMinPending:
 		return types.SlowTx_Block
