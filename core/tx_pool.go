@@ -132,6 +132,19 @@ func (class TxResourceClass) String() string {
 	}
 }
 
+type txReadyKey struct {
+	lane  TxLane
+	class TxResourceClass
+}
+
+type pendingReadyIndex struct {
+	version      uint64
+	byKey        map[txReadyKey][]common.Address
+	fastPending  int
+	slowPending  int
+	classPending map[TxResourceClass]int
+}
+
 var txClassFastSelectors = map[[4]byte]bool{
 	[4]byte{0xa9, 0x05, 0x9c, 0xbb}: true, // ERC20 transfer(address,uint256)
 	[4]byte{0x09, 0x5e, 0xa7, 0xb3}: true, // ERC20 approve(address,uint256)
@@ -378,6 +391,9 @@ type TxPool struct {
 	all     *txLookup
 	priced  *txPricedList
 	seen    map[common.Hash]time.Time
+
+	pendingIndexVersion uint64
+	pendingIndex        *pendingReadyIndex
 
 	chainHeadCh       chan ChainHeadEvent
 	chainHeadSub      event.Subscription
@@ -652,6 +668,82 @@ func (pool *TxPool) noteSeen(hash common.Hash) {
 	}
 }
 
+func (pool *TxPool) markPendingIndexDirty() {
+	pool.pendingIndexVersion++
+}
+
+func (pool *TxPool) rebuildPendingIndexLocked() {
+	if pool.pendingIndex != nil && pool.pendingIndex.version == pool.pendingIndexVersion {
+		return
+	}
+
+	idx := &pendingReadyIndex{
+		version:      pool.pendingIndexVersion,
+		byKey:        make(map[txReadyKey][]common.Address),
+		classPending: make(map[TxResourceClass]int),
+	}
+
+	for addr, list := range pool.pending {
+		if list == nil || list.Len() == 0 {
+			continue
+		}
+
+		seenForAccount := make(map[txReadyKey]struct{})
+		for _, tx := range list.txs.flatten() {
+			lane := ClassifyTxLane(tx)
+			class := ClassifyTxResource(tx)
+
+			idx.classPending[class]++
+			if lane == TxLaneFast {
+				idx.fastPending++
+			} else {
+				idx.slowPending++
+			}
+
+			key := txReadyKey{lane: lane, class: class}
+			if _, exists := seenForAccount[key]; exists {
+				continue
+			}
+			idx.byKey[key] = append(idx.byKey[key], addr)
+			seenForAccount[key] = struct{}{}
+		}
+	}
+
+	pool.pendingIndex = idx
+}
+
+func (pool *TxPool) pendingCandidateAddrsLocked(lane TxLane, classes []TxResourceClass) []common.Address {
+	pool.rebuildPendingIndexLocked()
+
+	seen := make(map[common.Address]struct{})
+	candidates := make([]common.Address, 0)
+
+	appendUnique := func(addrs []common.Address) {
+		for _, addr := range addrs {
+			if _, ok := seen[addr]; ok {
+				continue
+			}
+			seen[addr] = struct{}{}
+			candidates = append(candidates, addr)
+		}
+	}
+
+	if len(classes) == 0 {
+		for key, addrs := range pool.pendingIndex.byKey {
+			if key.lane == lane {
+				appendUnique(addrs)
+			}
+		}
+		return candidates
+	}
+
+	for _, class := range classes {
+		appendUnique(pool.pendingIndex.byKey[txReadyKey{lane: lane, class: class}])
+	}
+
+	return candidates
+}
+
 func (pool *TxPool) PendingByLane(lane TxLane) (map[common.Address]types.Transactions, error) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -686,14 +778,18 @@ func (pool *TxPool) PendingByLaneAndClassesLimited(lane TxLane, maxTx int, perAc
 	}
 	useClassFilter := len(allowed) > 0
 
+	candidates := pool.pendingCandidateAddrsLocked(lane, classes)
+
 	pending := make(map[common.Address]types.Transactions)
 	remainingGas := gasTarget
 	totalPicked := 0
 
-	for addr, list := range pool.pending {
-		// Use the internal sorted cache and only copy selected txs into dst.
-		// list.Flatten() copies the whole account list; list.txs.flatten()
-		// avoids that extra full-list copy while pool.mu is held.
+	for _, addr := range candidates {
+		list := pool.pending[addr]
+		if list == nil || list.Len() == 0 {
+			continue
+		}
+
 		src := list.txs.flatten()
 		if len(src) == 0 {
 			continue
@@ -724,6 +820,7 @@ func (pool *TxPool) PendingByLaneAndClassesLimited(lane TxLane, maxTx int, perAc
 				}
 				remainingGas -= tx.Gas()
 			}
+
 			dst = append(dst, tx)
 			totalPicked++
 
@@ -756,19 +853,14 @@ func (pool *TxPool) PendingClassStats() (fastPending int, slowPending int, class
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
-	classPending = make(map[TxResourceClass]int)
-	for _, list := range pool.pending {
-		for _, tx := range list.Flatten() {
-			class := ClassifyTxResource(tx)
-			classPending[class]++
-			if ClassifyTxLane(tx) == TxLaneFast {
-				fastPending++
-			} else {
-				slowPending++
-			}
-		}
+	pool.rebuildPendingIndexLocked()
+
+	classPending = make(map[TxResourceClass]int, len(pool.pendingIndex.classPending))
+	for class, count := range pool.pendingIndex.classPending {
+		classPending[class] = count
 	}
-	return fastPending, slowPending, classPending
+
+	return pool.pendingIndex.fastPending, pool.pendingIndex.slowPending, classPending
 }
 
 func (pool *TxPool) evictStaleTransactionsLocked(now time.Time) {
@@ -911,6 +1003,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		pool.all.Add(tx, isLocal)
 		pool.priced.Put(tx)
 		pool.noteSeen(hash)
+		pool.markPendingIndexDirty()
 		pool.journalTx(from, tx)
 		pool.queueTxEvent(tx)
 		log.Trace("Pooled new executable transaction", "hash", hash, "from", from, "to", tx.To())
@@ -995,6 +1088,7 @@ func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.T
 	}
 	pool.pendingNonces.set(addr, tx.Nonce()+1)
 	pool.beats[addr] = time.Now()
+	pool.markPendingIndexDirty()
 	return true
 }
 
@@ -1117,6 +1211,7 @@ func (pool *TxPool) removeTx(hash common.Hash, outofbound bool) {
 		return
 	}
 	addr, _ := types.Sender(pool.signer, tx)
+	pool.markPendingIndexDirty()
 	pool.all.Remove(hash)
 	delete(pool.seen, hash)
 	if outofbound {
@@ -1350,6 +1445,7 @@ func (pool *TxPool) Reset(oldHead, newHead *types.Header) {
 	log.Debug("Reinjecting stale transactions", "count", len(reinject))
 	senderCacher.recover(pool.signer, reinject)
 	pool.addTxsLocked(reinject, false)
+	pool.markPendingIndexDirty()
 	next := new(big.Int).Add(newHead.Number, big.NewInt(1))
 	pool.istanbul = pool.chainconfig.IsIstanbul(next)
 }
@@ -1377,6 +1473,7 @@ func (pool *TxPool) ResetHead(newHead *types.Header) {
 		highestPending := list.LastElement()
 		pool.pendingNonces.set(addr, highestPending.Nonce()+1)
 	}
+	pool.markPendingIndexDirty()
 	if len(promoted) > 0 {
 		go pool.txFeed.Send(NewTxsEvent{promoted})
 	}
@@ -1510,6 +1607,9 @@ func (pool *TxPool) truncatePending() {
 			}
 		}
 	}
+	if pendingBeforeCap != pending {
+		pool.markPendingIndexDirty()
+	}
 	pendingRateLimitMeter.Mark(int64(pendingBeforeCap - pending))
 }
 
@@ -1588,6 +1688,7 @@ func (pool *TxPool) demoteUnexecutables() {
 			delete(pool.pending, addr)
 		}
 	}
+	pool.markPendingIndexDirty()
 }
 
 func (pool *TxPool) PendingCount() int {
