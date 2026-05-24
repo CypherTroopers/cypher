@@ -3,6 +3,12 @@ name: macOS Build
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - EVM_Cancun_PoW
+    paths-ignore:
+      - 'build/bin/cypher-darwin-*'
+
 permissions:
   contents: write
 
@@ -13,7 +19,7 @@ jobs:
       max-parallel: 1
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-15-intel
             goarch: amd64
           - runner: macos-14
             goarch: arm64
@@ -88,6 +94,7 @@ jobs:
           rm -rf "$GOPATH/src/github.com/herumi"
           mkdir -p "$GOPATH/src/github.com/herumi"
           git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
+
           cd "$GOPATH/src/github.com/herumi/bls"
           git submodule update --init --recursive
 
@@ -115,6 +122,7 @@ jobs:
 
           OPENSSL_PREFIX=$(brew --prefix openssl@3)
           GMP_PREFIX=$(brew --prefix gmp)
+
           export CGO_CFLAGS="-I$OPENSSL_PREFIX/include -I$GMP_PREFIX/include"
           export CGO_CXXFLAGS="$CGO_CFLAGS"
           export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
