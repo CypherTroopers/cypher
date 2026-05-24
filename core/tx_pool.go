@@ -100,8 +100,8 @@ const (
 )
 
 const (
-	txLaneFastMaxDataBytes = 256
-	txLaneFastMaxGasPerTx  = uint64(120000)
+	txLaneFastMaxDataBytes = 1024
+	txLaneFastMaxGasPerTx  = uint64(300000)
 )
 
 func IsFastLaneEligible(tx *types.Transaction) bool {

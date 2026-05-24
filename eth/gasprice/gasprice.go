@@ -187,6 +187,11 @@ func (gpo *Oracle) getBlockPrices(ctx context.Context, signer types.Signer, bloc
 
 	var prices []*big.Int
 	for _, tx := range txs {
+		// Exclude contract creation transactions from price sampling so
+		// deploy bursts don't inflate suggested fees for regular traffic.
+		if tx.To() == nil {
+			continue
+		}
 		sender, err := types.Sender(signer, tx)
 		if err == nil && sender != block.Coinbase() {
 			prices = append(prices, tx.GasPrice())
