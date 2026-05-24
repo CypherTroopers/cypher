@@ -68,7 +68,7 @@ cd ~/cypher
 
 Linux
 ```
-./build/bin/cypher attach ipc:./chaindbname/cypher.ipc
+./build/bin/cypher-linux-amd64 attach ipc:./chaindbname/cypher.ipc
 ```
 Apple Silicon Mac
 ```
