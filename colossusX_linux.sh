@@ -2,7 +2,7 @@
 set -euo pipefail
 
 echo "==> Init genesis"
-./build/bin/cypher --datadir chaindbname init ./genesistest.json
+./build/bin/cypher-linux-amd64 --datadir chaindbname init ./genesistest.json
 
 echo "==> Start Cypher node"
 ./build/bin/cypher \
