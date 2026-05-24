@@ -92,7 +92,9 @@ func fixedBaseFeePerGas() *big.Int {
 }
 
 func fixedGasPricePerGas() *big.Int {
-	return new(big.Int).Mul(big.NewInt(10), big.NewInt(params.GWei))
+	// Keep public eth_gasPrice stable for normal wallet transfers.
+	// Normal transfer fee: 21000 gas * 1 gwei = 0.000021.
+	return new(big.Int).Set(big.NewInt(params.GWei))
 }
 
 func fixedMaxPriorityFeePerGas() *big.Int {
