@@ -527,7 +527,22 @@ func (txS *txService) loadPendingAddressTxes(blockType uint8) (AddressTxes, erro
 	if isFastBlockType(blockType) {
 		lane = core.TxLaneFast
 	}
-	return txS.txPool.PendingByLaneAndClasses(lane, pendingClassesForBlockType(blockType)...)
+
+	pendingTotal, _ := txS.txPool.Stats()
+	perAccountLimit := blockProposalLimit(blockType, pendingTotal)
+	maxTx := int(blockMaxTxCount(blockType))
+	gasTarget := uint64(0)
+	if head := txS.bc.CurrentBlock(); head != nil && head.Header() != nil {
+		gasTarget = blockGasTarget(blockType, head.Header().GasLimit)
+	}
+
+	return txS.txPool.PendingByLaneAndClassesLimited(
+		lane,
+		maxTx,
+		perAccountLimit,
+		gasTarget,
+		pendingClassesForBlockType(blockType)...,
+	)
 }
 
 func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) *types.TransactionsByPriceAndNonce {
@@ -535,14 +550,15 @@ func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) 
 	pendingTotal, _ := txS.txPool.Stats()
 	perAccountLimit := blockProposalLimit(blockType, pendingTotal)
 	availableTxs := countAddressTxes(addrTxes)
-	addrTxes = selectTxsForBlockType(addrTxes, blockType, perAccountLimit)
-	addrTxes = limitAddressTxes(addrTxes, perAccountLimit)
+
 	log.Debug("tx proposal scheduler",
 		"blockType", readableTxBlockType(blockType),
 		"pendingTotal", pendingTotal,
 		"availableTxs", availableTxs,
 		"accounts", len(addrTxes),
-		"perAccountLimit", perAccountLimit)
+		"perAccountLimit", perAccountLimit,
+		"maxTx", blockMaxTxCount(blockType),
+		"gasTargetPct", blockGasTarget(blockType, txS.bc.CurrentBlock().Header().GasLimit))
 	return types.NewTransactionsByPriceAndNonce(txS.config, txS.bc.CurrentBlock().Number(), addrTxes)
 }
 

@@ -673,6 +673,10 @@ func (pool *TxPool) PendingByLane(lane TxLane) (map[common.Address]types.Transac
 }
 
 func (pool *TxPool) PendingByLaneAndClasses(lane TxLane, classes ...TxResourceClass) (map[common.Address]types.Transactions, error) {
+	return pool.PendingByLaneAndClassesLimited(lane, 0, 0, 0, classes...)
+}
+
+func (pool *TxPool) PendingByLaneAndClassesLimited(lane TxLane, maxTx int, perAccountLimit int, gasTarget uint64, classes ...TxResourceClass) (map[common.Address]types.Transactions, error) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 
@@ -683,9 +687,30 @@ func (pool *TxPool) PendingByLaneAndClasses(lane TxLane, classes ...TxResourceCl
 	useClassFilter := len(allowed) > 0
 
 	pending := make(map[common.Address]types.Transactions)
+	remainingGas := gasTarget
+	totalPicked := 0
+
 	for addr, list := range pool.pending {
-		src := list.Flatten()
-		dst := make(types.Transactions, 0, len(src))
+		// Use the internal sorted cache and only copy selected txs into dst.
+		// list.Flatten() copies the whole account list; list.txs.flatten()
+		// avoids that extra full-list copy while pool.mu is held.
+		src := list.txs.flatten()
+		if len(src) == 0 {
+			continue
+		}
+
+		dstCap := len(src)
+		if perAccountLimit > 0 && dstCap > perAccountLimit {
+			dstCap = perAccountLimit
+		}
+		if maxTx > 0 && dstCap > maxTx-totalPicked {
+			dstCap = maxTx - totalPicked
+		}
+		if dstCap <= 0 {
+			break
+		}
+
+		dst := make(types.Transactions, 0, dstCap)
 		for _, tx := range src {
 			if ClassifyTxLane(tx) != lane {
 				break
@@ -693,12 +718,37 @@ func (pool *TxPool) PendingByLaneAndClasses(lane TxLane, classes ...TxResourceCl
 			if useClassFilter && !allowed[ClassifyTxResource(tx)] {
 				continue
 			}
+			if gasTarget > 0 {
+				if tx.Gas() > remainingGas {
+					continue
+				}
+				remainingGas -= tx.Gas()
+			}
 			dst = append(dst, tx)
+			totalPicked++
+
+			if perAccountLimit > 0 && len(dst) >= perAccountLimit {
+				break
+			}
+			if maxTx > 0 && totalPicked >= maxTx {
+				break
+			}
+			if gasTarget > 0 && remainingGas == 0 {
+				break
+			}
 		}
+
 		if len(dst) > 0 {
 			pending[addr] = dst
 		}
+		if maxTx > 0 && totalPicked >= maxTx {
+			break
+		}
+		if gasTarget > 0 && remainingGas == 0 {
+			break
+		}
 	}
+
 	return pending, nil
 }
 
