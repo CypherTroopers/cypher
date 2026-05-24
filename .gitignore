@@ -10,3 +10,8 @@ chaindb*/
 
 # Local start scripts
 start-cypher*.sh
+
+# Build outputs
+
+# Local build binaries
+build/bin/
