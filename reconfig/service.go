@@ -37,11 +37,11 @@ import (
 	"github.com/cypherium/cypher/rnet/network"
 )
 
-const failedProposalRetry = 200 * time.Millisecond
-const hotstuffIdleSleep = 10 * time.Millisecond
-const tryProposeDebounce = 5 * time.Millisecond
-const fastBlockInterval = 1 * time.Second
-const slowBlockInterval = 1 * time.Minute
+const failedProposalRetry = 20 * time.Millisecond
+const hotstuffIdleSleep = 1 * time.Millisecond
+const tryProposeDebounce = 1 * time.Millisecond
+const fastBlockInterval = 70 * time.Millisecond
+const slowBlockInterval = 1 * time.Second
 const slowFallbackMinPending = 1
 
 type committeeInfo struct {
@@ -603,7 +603,7 @@ func (s *Service) handleHotStuffMsg() {
 			now := time.Now()
 			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
 				if s.shouldEmitFastBlock(now) || s.shouldEmitSlowBlock(now) {
-					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
+					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 5*time.Millisecond {
 						s.lastCadenceWakeup = now
 						s.triggerTryPropose(s.bc.CurrentBlockN())
 					}

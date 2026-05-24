@@ -177,8 +177,8 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	AccountQueue: 4096,
 	GlobalQueue:  1000000,
 
-	RemoteAccountWindow: 8,
-	LocalAccountWindow:  8,
+	RemoteAccountWindow: 1024,
+	LocalAccountWindow:  1024,
 	FastPendingLifetime: 30 * time.Second,
 	SlowPendingLifetime: 10 * time.Minute,
 	FastQueuedLifetime:  2 * time.Minute,

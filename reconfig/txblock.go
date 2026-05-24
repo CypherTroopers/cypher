@@ -281,11 +281,11 @@ const (
 	pendingTierLarge  = 1024
 
 	fastPerAccountTierSmall  = 4
-	slowPerAccountTierSmall  = 16
+	slowPerAccountTierSmall  = 64
 	fastPerAccountTierMedium = 8
-	slowPerAccountTierMedium = 48
+	slowPerAccountTierMedium = 128
 	fastPerAccountTierLarge  = 16
-	slowPerAccountTierLarge  = 128
+	slowPerAccountTierLarge  = 512
 	fastBlockMaxTxCount      = uint64(4000)
 	slowBlockMaxTxCount      = uint64(50000)
 	fastBlockGasTargetPct    = uint64(35)

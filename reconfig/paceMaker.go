@@ -29,7 +29,7 @@ import (
 )
 
 var maxPaceMakerTime time.Time
-var paceMakerPollInterval = 10 * time.Millisecond
+var paceMakerPollInterval = 1 * time.Millisecond
 
 type paceMakerTimer struct {
 	startTime     time.Time
