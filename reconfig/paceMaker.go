@@ -63,7 +63,7 @@ func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *Reconfig
 		config:        config,
 	}
 
-	t.txsCh = make(chan core.NewTxsEvent, 128)
+	t.txsCh = make(chan core.NewTxsEvent, 8192)
 	t.txsSub = backend.TxPool().SubscribeNewTxsEvent(t.txsCh)
 	go t.txsEventLoop()
 

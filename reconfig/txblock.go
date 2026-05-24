@@ -280,16 +280,24 @@ const (
 	pendingTierMedium = 256
 	pendingTierLarge  = 1024
 
-	fastPerAccountTierSmall  = 4
+	fastPerAccountTierSmall  = 64
 	slowPerAccountTierSmall  = 64
-	fastPerAccountTierMedium = 8
+	fastPerAccountTierMedium = 128
 	slowPerAccountTierMedium = 128
-	fastPerAccountTierLarge  = 16
+	fastPerAccountTierLarge  = 512
 	slowPerAccountTierLarge  = 512
 	fastBlockMaxTxCount      = uint64(4000)
 	slowBlockMaxTxCount      = uint64(50000)
-	fastBlockGasTargetPct    = uint64(35)
+	fastBlockGasTargetPct    = uint64(80)
 	slowBlockGasTargetPct    = uint64(98)
+
+	deployBlockGasTargetPct = uint64(10)
+	heavyBlockGasTargetPct  = uint64(5)
+	dexBlockGasTargetPct    = uint64(50)
+
+	deployBlockMaxTxCount = uint64(4)
+	heavyBlockMaxTxCount  = uint64(8)
+	dexBlockMaxTxCount    = uint64(10000)
 )
 
 const (
@@ -461,14 +469,17 @@ func (txS *txService) createWork(blockType uint8) *work {
 		panic(fmt.Sprint("failed to get parent state: ", err))
 	}
 
+	gasTarget := blockGasTarget(blockType, header.GasLimit)
+
 	return &work{
-		config:      txS.config,
-		publicState: publicState,
-		header:      header,
-		txPool:      txS.txPool,
-		maxTxCount:  blockMaxTxCount(blockType),
-		gasTarget:   blockGasTarget(blockType, header.GasLimit),
-		blockType:   blockType,
+		config:         txS.config,
+		publicState:    publicState,
+		header:         header,
+		txPool:         txS.txPool,
+		maxTxCount:     blockMaxTxCount(blockType),
+		gasTarget:      gasTarget,
+		resourceBudget: newTxResourceBudget(blockType, gasTarget),
+		blockType:      blockType,
 	}
 }
 
@@ -552,16 +563,74 @@ func (txS *txService) firePendingBlockEvents(logs []*types.Log) {
 	}()
 }
 
+type txResourceBudget struct {
+	gasCaps map[core.TxResourceClass]uint64
+	txCaps  map[core.TxResourceClass]uint64
+
+	gasUsed map[core.TxResourceClass]uint64
+	txUsed  map[core.TxResourceClass]uint64
+}
+
+func newTxResourceBudget(blockType uint8, gasTarget uint64) *txResourceBudget {
+	b := &txResourceBudget{
+		gasCaps: make(map[core.TxResourceClass]uint64),
+		txCaps:  make(map[core.TxResourceClass]uint64),
+		gasUsed: make(map[core.TxResourceClass]uint64),
+		txUsed:  make(map[core.TxResourceClass]uint64),
+	}
+
+	if gasTarget > 0 {
+		b.gasCaps[core.TxClassDeploy] = gasTarget * deployBlockGasTargetPct / 100
+		b.gasCaps[core.TxClassHeavy] = gasTarget * heavyBlockGasTargetPct / 100
+		b.gasCaps[core.TxClassDex] = gasTarget * dexBlockGasTargetPct / 100
+	}
+
+	b.txCaps[core.TxClassDeploy] = deployBlockMaxTxCount
+	b.txCaps[core.TxClassHeavy] = heavyBlockMaxTxCount
+	b.txCaps[core.TxClassDex] = dexBlockMaxTxCount
+
+	return b
+}
+
+func (b *txResourceBudget) CanInclude(class core.TxResourceClass, requestedGas uint64) bool {
+	if b == nil {
+		return true
+	}
+
+	if maxTx, ok := b.txCaps[class]; ok && maxTx > 0 && b.txUsed[class] >= maxTx {
+		return false
+	}
+
+	if maxGas, ok := b.gasCaps[class]; ok && maxGas > 0 {
+		// Always allow the first tx of a capped class. This prevents a single
+		// large deploy/heavy tx from being starved forever.
+		if b.txUsed[class] > 0 && b.gasUsed[class]+requestedGas > maxGas {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (b *txResourceBudget) Record(class core.TxResourceClass, gasUsed uint64) {
+	if b == nil {
+		return
+	}
+	b.txUsed[class]++
+	b.gasUsed[class] += gasUsed
+}
+
 // Current state information for building the next block
 type work struct {
-	config      *params.ChainConfig
-	publicState *state.StateDB
-	Block       *types.Block
-	header      *types.Header
-	txPool      *core.TxPool
-	maxTxCount  uint64
-	gasTarget   uint64
-	blockType   uint8
+	config         *params.ChainConfig
+	publicState    *state.StateDB
+	Block          *types.Block
+	header         *types.Header
+	txPool         *core.TxPool
+	maxTxCount     uint64
+	gasTarget      uint64
+	resourceBudget *txResourceBudget
+	blockType      uint8
 }
 
 func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc *core.BlockChain) (types.Transactions, types.Receipts, []*types.Log, types.Transactions) {
@@ -596,6 +665,13 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 				continue
 			}
 		}
+		resourceClass := core.ClassifyTxResource(tx)
+		if env.resourceBudget != nil && !env.resourceBudget.CanInclude(resourceClass, tx.Gas()) {
+			log.Debug("Skipping tx above resource class budget", "hash", tx.Hash(), "class", resourceClass, "gas", tx.Gas(), "blockType", env.blockType)
+			txes.Pop()
+			continue
+		}
+
 		// Check sender
 		from, err := types.Sender(signer, tx)
 		if err != nil {
@@ -620,6 +696,9 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		default:
 			txCount++
 			committedTxes = append(committedTxes, tx)
+			if env.resourceBudget != nil {
+				env.resourceBudget.Record(resourceClass, publicReceipt.GasUsed)
+			}
 
 			publicReceipts = append(publicReceipts, publicReceipt)
 			allLogs = append(allLogs, publicReceipt.Logs...)

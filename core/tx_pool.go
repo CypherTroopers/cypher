@@ -99,6 +99,86 @@ const (
 	TxLaneSlow
 )
 
+type TxResourceClass uint8
+
+const (
+	TxClassNative TxResourceClass = iota
+	TxClassERC20
+	TxClassSmallCall
+	TxClassDex
+	TxClassDeploy
+	TxClassHeavy
+	TxClassData
+)
+
+var txClassFastSelectors = map[[4]byte]bool{
+	[4]byte{0xa9, 0x05, 0x9c, 0xbb}: true, // ERC20 transfer(address,uint256)
+	[4]byte{0x09, 0x5e, 0xa7, 0xb3}: true, // ERC20 approve(address,uint256)
+}
+
+var txClassDexSelectors = map[[4]byte]bool{
+	[4]byte{0x38, 0xed, 0x17, 0x39}: true, // swapExactTokensForTokens
+	[4]byte{0x7f, 0xf3, 0x6a, 0xb5}: true, // swapExactETHForTokens
+	[4]byte{0x18, 0xcb, 0xaf, 0xe5}: true, // swapExactTokensForETH
+	[4]byte{0x04, 0xe4, 0x5a, 0xaf}: true, // exactInputSingle
+	[4]byte{0xc0, 0x4b, 0x8d, 0x59}: true, // exactInput
+	[4]byte{0xac, 0x96, 0x50, 0xd8}: true, // multicall(bytes[])
+}
+
+func txMethodSelector(tx *types.Transaction) ([4]byte, bool) {
+	var selector [4]byte
+	if tx == nil || len(tx.Data()) < 4 {
+		return selector, false
+	}
+	copy(selector[:], tx.Data()[:4])
+	return selector, true
+}
+
+func ClassifyTxResource(tx *types.Transaction) TxResourceClass {
+	if tx == nil {
+		return TxClassHeavy
+	}
+
+	dataLen := len(tx.Data())
+
+	// Contract creation / deployment path.
+	if tx.To() == nil {
+		if tx.Gas() > 3000000 || dataLen > 24*1024 {
+			return TxClassHeavy
+		}
+		return TxClassDeploy
+	}
+
+	// Native transfer.
+	if dataLen == 0 {
+		return TxClassNative
+	}
+
+	// Very large calldata or very high gas tx should not compete with normal txs.
+	if dataLen > 16*1024 || tx.Gas() > 1000000 {
+		return TxClassHeavy
+	}
+
+	if selector, ok := txMethodSelector(tx); ok {
+		if txClassDexSelectors[selector] {
+			return TxClassDex
+		}
+		if txClassFastSelectors[selector] {
+			return TxClassERC20
+		}
+	}
+
+	// Small generic contract calls.
+	if dataLen <= 256 && tx.Gas() <= 150000 {
+		return TxClassSmallCall
+	}
+	if dataLen <= 1024 && tx.Gas() <= 300000 {
+		return TxClassSmallCall
+	}
+
+	return TxClassHeavy
+}
+
 const (
 	txLaneFastMaxDataBytes = 1024
 	txLaneFastMaxGasPerTx  = uint64(300000)
@@ -128,7 +208,8 @@ func IsFastLaneEligible(tx *types.Transaction) bool {
 	if len(tx.Data()) >= 4 && tx.Data()[0] == 0xa9 && tx.Data()[1] == 0x05 && tx.Data()[2] == 0x9c && tx.Data()[3] == 0xbb {
 		return true
 	}
-	return false
+
+	return ClassifyTxResource(tx) == TxClassSmallCall
 }
 
 type blockChain interface {
@@ -560,6 +641,36 @@ func (pool *TxPool) PendingByLane(lane TxLane) (map[common.Address]types.Transac
 		for _, tx := range src {
 			if ClassifyTxLane(tx) != lane {
 				break
+			}
+			dst = append(dst, tx)
+		}
+		if len(dst) > 0 {
+			pending[addr] = dst
+		}
+	}
+	return pending, nil
+}
+
+func (pool *TxPool) PendingByLaneAndClasses(lane TxLane, classes ...TxResourceClass) (map[common.Address]types.Transactions, error) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	allowed := make(map[TxResourceClass]bool, len(classes))
+	for _, class := range classes {
+		allowed[class] = true
+	}
+	useClassFilter := len(allowed) > 0
+
+	pending := make(map[common.Address]types.Transactions)
+	for addr, list := range pool.pending {
+		src := list.Flatten()
+		dst := make(types.Transactions, 0, len(src))
+		for _, tx := range src {
+			if ClassifyTxLane(tx) != lane {
+				break
+			}
+			if useClassFilter && !allowed[ClassifyTxResource(tx)] {
+				continue
 			}
 			dst = append(dst, tx)
 		}
