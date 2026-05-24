@@ -491,20 +491,10 @@ func (s *Service) shouldEmitSlowBlock(now time.Time) bool {
 }
 
 func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
-	fastAddrTxes, fastErr := s.txService.loadPendingAddressTxes(types.FastTx_Block)
-	if fastErr != nil {
-		log.Warn("Failed to load fast-lane pending txs", "err", fastErr)
-	} else {
-		fastPending = countAddressTxes(fastAddrTxes)
+	if s.txPool == nil {
+		return 0, 0
 	}
-
-	slowAddrTxes, slowErr := s.txService.loadPendingAddressTxes(types.SlowTx_Block)
-	if slowErr != nil {
-		log.Warn("Failed to load slow-lane pending txs", "err", slowErr)
-	} else {
-		slowPending = countAddressTxes(slowAddrTxes)
-	}
-
+	fastPending, slowPending, _ = s.txPool.PendingClassStats()
 	return fastPending, slowPending
 }
 

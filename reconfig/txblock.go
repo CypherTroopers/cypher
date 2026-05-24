@@ -293,10 +293,12 @@ const (
 
 	deployBlockGasTargetPct = uint64(10)
 	heavyBlockGasTargetPct  = uint64(5)
+	dataBlockGasTargetPct   = uint64(5)
 	dexBlockGasTargetPct    = uint64(50)
 
 	deployBlockMaxTxCount = uint64(4)
 	heavyBlockMaxTxCount  = uint64(8)
+	dataBlockMaxTxCount   = uint64(8)
 	dexBlockMaxTxCount    = uint64(10000)
 )
 
@@ -364,9 +366,12 @@ func fastEligibleTx(tx *types.Transaction) bool {
 }
 
 func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8, perAccount int) AddressTxes {
-	selected := make(AddressTxes, len(addrTxes))
 	fastPath := isFastBlockType(blockType)
+	if !fastPath && perAccount <= 0 {
+		return addrTxes
+	}
 
+	selected := make(AddressTxes, len(addrTxes))
 	for addr, txs := range addrTxes {
 		picked := make(types.Transactions, 0, len(txs))
 		for _, tx := range txs {
@@ -500,12 +505,29 @@ func blockGasTarget(blockType uint8, gasLimit uint64) uint64 {
 	return gasLimit * slowBlockGasTargetPct / 100
 }
 
+func pendingClassesForBlockType(blockType uint8) []core.TxResourceClass {
+	if isFastBlockType(blockType) {
+		return []core.TxResourceClass{
+			core.TxClassNative,
+			core.TxClassERC20,
+			core.TxClassSmallCall,
+		}
+	}
+
+	return []core.TxResourceClass{
+		core.TxClassDex,
+		core.TxClassDeploy,
+		core.TxClassHeavy,
+		core.TxClassData,
+	}
+}
+
 func (txS *txService) loadPendingAddressTxes(blockType uint8) (AddressTxes, error) {
 	lane := core.TxLaneSlow
 	if isFastBlockType(blockType) {
 		lane = core.TxLaneFast
 	}
-	return txS.txPool.PendingByLane(lane)
+	return txS.txPool.PendingByLaneAndClasses(lane, pendingClassesForBlockType(blockType)...)
 }
 
 func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) *types.TransactionsByPriceAndNonce {
@@ -582,11 +604,13 @@ func newTxResourceBudget(blockType uint8, gasTarget uint64) *txResourceBudget {
 	if gasTarget > 0 {
 		b.gasCaps[core.TxClassDeploy] = gasTarget * deployBlockGasTargetPct / 100
 		b.gasCaps[core.TxClassHeavy] = gasTarget * heavyBlockGasTargetPct / 100
+		b.gasCaps[core.TxClassData] = gasTarget * dataBlockGasTargetPct / 100
 		b.gasCaps[core.TxClassDex] = gasTarget * dexBlockGasTargetPct / 100
 	}
 
 	b.txCaps[core.TxClassDeploy] = deployBlockMaxTxCount
 	b.txCaps[core.TxClassHeavy] = heavyBlockMaxTxCount
+	b.txCaps[core.TxClassData] = dataBlockMaxTxCount
 	b.txCaps[core.TxClassDex] = dexBlockMaxTxCount
 
 	return b

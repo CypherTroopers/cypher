@@ -111,6 +111,27 @@ const (
 	TxClassData
 )
 
+func (class TxResourceClass) String() string {
+	switch class {
+	case TxClassNative:
+		return "native"
+	case TxClassERC20:
+		return "erc20"
+	case TxClassSmallCall:
+		return "small_call"
+	case TxClassDex:
+		return "dex"
+	case TxClassDeploy:
+		return "deploy"
+	case TxClassHeavy:
+		return "heavy"
+	case TxClassData:
+		return "data"
+	default:
+		return "unknown"
+	}
+}
+
 var txClassFastSelectors = map[[4]byte]bool{
 	[4]byte{0xa9, 0x05, 0x9c, 0xbb}: true, // ERC20 transfer(address,uint256)
 	[4]byte{0x09, 0x5e, 0xa7, 0xb3}: true, // ERC20 approve(address,uint256)
@@ -154,8 +175,11 @@ func ClassifyTxResource(tx *types.Transaction) TxResourceClass {
 		return TxClassNative
 	}
 
-	// Very large calldata or very high gas tx should not compete with normal txs.
-	if dataLen > 16*1024 || tx.Gas() > 1000000 {
+	// Very large calldata should be isolated from normal execution-heavy txs.
+	if dataLen > 16*1024 {
+		return TxClassData
+	}
+	if tx.Gas() > 1000000 {
 		return TxClassHeavy
 	}
 
@@ -205,11 +229,8 @@ func IsFastLaneEligible(tx *types.Transaction) bool {
 	if len(tx.Data()) == 0 {
 		return true
 	}
-	if len(tx.Data()) >= 4 && tx.Data()[0] == 0xa9 && tx.Data()[1] == 0x05 && tx.Data()[2] == 0x9c && tx.Data()[3] == 0xbb {
-		return true
-	}
-
-	return ClassifyTxResource(tx) == TxClassSmallCall
+	class := ClassifyTxResource(tx)
+	return class == TxClassERC20 || class == TxClassSmallCall
 }
 
 type blockChain interface {
@@ -679,6 +700,25 @@ func (pool *TxPool) PendingByLaneAndClasses(lane TxLane, classes ...TxResourceCl
 		}
 	}
 	return pending, nil
+}
+
+func (pool *TxPool) PendingClassStats() (fastPending int, slowPending int, classPending map[TxResourceClass]int) {
+	pool.mu.Lock()
+	defer pool.mu.Unlock()
+
+	classPending = make(map[TxResourceClass]int)
+	for _, list := range pool.pending {
+		for _, tx := range list.Flatten() {
+			class := ClassifyTxResource(tx)
+			classPending[class]++
+			if ClassifyTxLane(tx) == TxLaneFast {
+				fastPending++
+			} else {
+				slowPending++
+			}
+		}
+	}
+	return fastPending, slowPending, classPending
 }
 
 func (pool *TxPool) evictStaleTransactionsLocked(now time.Time) {
