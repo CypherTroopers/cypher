@@ -3,9 +3,15 @@ name: Windows Build
 on:
   workflow_dispatch:
 
+  push:
+    branches:
+      - EVM_Cancun_PoW
+    paths-ignore:
+      - 'build/bin/cypher.exe'
+      - 'build/bin/*.dll'
+
 permissions:
   contents: write
-
 jobs:
   build-windows:
     runs-on: windows-2022
