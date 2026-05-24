@@ -44,6 +44,17 @@ const fastBlockInterval = 70 * time.Millisecond
 const slowBlockInterval = 1 * time.Second
 const slowFallbackMinPending = 1
 
+// Adaptive slow-block cadence.
+// Heavy/deploy/data/dex transactions live in the slow lane.
+// When slow pending grows, slow blocks must be emitted faster to drain backlog.
+const slowIntervalDrainPendingThreshold = 512
+const slowIntervalStrongPendingThreshold = 2048
+const slowIntervalEmergencyPendingThreshold = 8192
+
+const slowBlockDrainInterval = 250 * time.Millisecond
+const slowBlockStrongDrainInterval = 100 * time.Millisecond
+const slowBlockEmergencyDrainInterval = 70 * time.Millisecond
+
 type committeeInfo struct {
 	Committee *bftview.Committee
 	KeyHash   common.Hash
@@ -483,11 +494,24 @@ func (s *Service) shouldEmitFastBlock(now time.Time) bool {
 	return now.Sub(s.lastFastBlockTime) >= fastBlockInterval
 }
 
-func (s *Service) shouldEmitSlowBlock(now time.Time) bool {
+func adaptiveSlowBlockInterval(slowPending int) time.Duration {
+	switch {
+	case slowPending >= slowIntervalEmergencyPendingThreshold:
+		return slowBlockEmergencyDrainInterval
+	case slowPending >= slowIntervalStrongPendingThreshold:
+		return slowBlockStrongDrainInterval
+	case slowPending >= slowIntervalDrainPendingThreshold:
+		return slowBlockDrainInterval
+	default:
+		return slowBlockInterval
+	}
+}
+
+func (s *Service) shouldEmitSlowBlock(now time.Time, slowPending int) bool {
 	if s.lastSlowBlockTime.IsZero() {
 		return true
 	}
-	return now.Sub(s.lastSlowBlockTime) >= slowBlockInterval
+	return now.Sub(s.lastSlowBlockTime) >= adaptiveSlowBlockInterval(slowPending)
 }
 
 func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
@@ -501,10 +525,17 @@ func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
 func (s *Service) chooseTxBlockType() uint8 {
 	fastPending, slowPending := s.lanePendingCounts()
 	now := time.Now()
+
+	// If slow backlog is large, prioritize slow drain before fast blocks.
+	// This prevents heavy/deploy/data backlog from sitting in txpool for minutes.
+	slowDrainReady := slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending)
+
 	switch {
+	case slowPending >= slowIntervalStrongPendingThreshold && slowDrainReady:
+		return types.SlowTx_Block
 	case fastPending > 0 && s.shouldEmitFastBlock(now):
 		return types.FastTx_Block
-	case slowPending > 0 && s.shouldEmitSlowBlock(now):
+	case slowDrainReady:
 		return types.SlowTx_Block
 	case fastPending > 0:
 		return types.FastTx_Block
@@ -592,7 +623,8 @@ func (s *Service) handleHotStuffMsg() {
 			time.Sleep(hotstuffIdleSleep)
 			now := time.Now()
 			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
-				if s.shouldEmitFastBlock(now) || s.shouldEmitSlowBlock(now) {
+				fastPending, slowPending := s.lanePendingCounts()
+				if (fastPending > 0 && s.shouldEmitFastBlock(now)) || (slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending)) {
 					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 5*time.Millisecond {
 						s.lastCadenceWakeup = now
 						s.triggerTryPropose(s.bc.CurrentBlockN())

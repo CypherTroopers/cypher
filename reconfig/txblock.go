@@ -296,10 +296,45 @@ const (
 	dataBlockGasTargetPct   = uint64(5)
 	dexBlockGasTargetPct    = uint64(50)
 
+	// Backlog drain mode.
+	// Normal quota protects small/native traffic from heavy/deploy/data bursts.
+	// When executable txpool backlog is high, slow blocks should drain more
+	// heavy classes instead of leaving pending executable txs for minutes.
+	backlogDrainPendingThreshold          = 512
+	backlogStrongDrainPendingThreshold    = 2048
+	backlogEmergencyDrainPendingThreshold = 8192
+
+	deployDrainGasTargetPct = uint64(20)
+	heavyDrainGasTargetPct  = uint64(15)
+	dataDrainGasTargetPct   = uint64(15)
+	dexDrainGasTargetPct    = uint64(60)
+
+	deployStrongDrainGasTargetPct = uint64(30)
+	heavyStrongDrainGasTargetPct  = uint64(25)
+	dataStrongDrainGasTargetPct   = uint64(25)
+	dexStrongDrainGasTargetPct    = uint64(70)
+
+	deployEmergencyDrainGasTargetPct = uint64(45)
+	heavyEmergencyDrainGasTargetPct  = uint64(40)
+	dataEmergencyDrainGasTargetPct   = uint64(40)
+	dexEmergencyDrainGasTargetPct    = uint64(80)
+
 	deployBlockMaxTxCount = uint64(4)
 	heavyBlockMaxTxCount  = uint64(8)
 	dataBlockMaxTxCount   = uint64(8)
 	dexBlockMaxTxCount    = uint64(10000)
+
+	deployDrainMaxTxCount = uint64(16)
+	heavyDrainMaxTxCount  = uint64(32)
+	dataDrainMaxTxCount   = uint64(32)
+
+	deployStrongDrainMaxTxCount = uint64(32)
+	heavyStrongDrainMaxTxCount  = uint64(64)
+	dataStrongDrainMaxTxCount   = uint64(64)
+
+	deployEmergencyDrainMaxTxCount = uint64(64)
+	heavyEmergencyDrainMaxTxCount  = uint64(128)
+	dataEmergencyDrainMaxTxCount   = uint64(128)
 )
 
 const (
@@ -475,6 +510,7 @@ func (txS *txService) createWork(blockType uint8) *work {
 	}
 
 	gasTarget := blockGasTarget(blockType, header.GasLimit)
+	pendingTotal, _ := txS.txPool.Stats()
 
 	return &work{
 		config:         txS.config,
@@ -483,7 +519,7 @@ func (txS *txService) createWork(blockType uint8) *work {
 		txPool:         txS.txPool,
 		maxTxCount:     blockMaxTxCount(blockType),
 		gasTarget:      gasTarget,
-		resourceBudget: newTxResourceBudget(blockType, gasTarget),
+		resourceBudget: newTxResourceBudget(blockType, gasTarget, pendingTotal),
 		blockType:      blockType,
 	}
 }
@@ -609,7 +645,7 @@ type txResourceBudget struct {
 	txUsed  map[core.TxResourceClass]uint64
 }
 
-func newTxResourceBudget(blockType uint8, gasTarget uint64) *txResourceBudget {
+func newTxResourceBudget(blockType uint8, gasTarget uint64, pendingTotal int) *txResourceBudget {
 	b := &txResourceBudget{
 		gasCaps: make(map[core.TxResourceClass]uint64),
 		txCaps:  make(map[core.TxResourceClass]uint64),
@@ -617,17 +653,78 @@ func newTxResourceBudget(blockType uint8, gasTarget uint64) *txResourceBudget {
 		txUsed:  make(map[core.TxResourceClass]uint64),
 	}
 
-	if gasTarget > 0 {
-		b.gasCaps[core.TxClassDeploy] = gasTarget * deployBlockGasTargetPct / 100
-		b.gasCaps[core.TxClassHeavy] = gasTarget * heavyBlockGasTargetPct / 100
-		b.gasCaps[core.TxClassData] = gasTarget * dataBlockGasTargetPct / 100
-		b.gasCaps[core.TxClassDex] = gasTarget * dexBlockGasTargetPct / 100
+	drainLevel := 0
+	if !isFastBlockType(blockType) {
+		switch {
+		case pendingTotal >= backlogEmergencyDrainPendingThreshold:
+			drainLevel = 3
+		case pendingTotal >= backlogStrongDrainPendingThreshold:
+			drainLevel = 2
+		case pendingTotal >= backlogDrainPendingThreshold:
+			drainLevel = 1
+		}
 	}
 
-	b.txCaps[core.TxClassDeploy] = deployBlockMaxTxCount
-	b.txCaps[core.TxClassHeavy] = heavyBlockMaxTxCount
-	b.txCaps[core.TxClassData] = dataBlockMaxTxCount
+	deployGasPct := deployBlockGasTargetPct
+	heavyGasPct := heavyBlockGasTargetPct
+	dataGasPct := dataBlockGasTargetPct
+	dexGasPct := dexBlockGasTargetPct
+
+	deployMaxTx := deployBlockMaxTxCount
+	heavyMaxTx := heavyBlockMaxTxCount
+	dataMaxTx := dataBlockMaxTxCount
+
+	switch drainLevel {
+	case 1:
+		deployGasPct = deployDrainGasTargetPct
+		heavyGasPct = heavyDrainGasTargetPct
+		dataGasPct = dataDrainGasTargetPct
+		dexGasPct = dexDrainGasTargetPct
+		deployMaxTx = deployDrainMaxTxCount
+		heavyMaxTx = heavyDrainMaxTxCount
+		dataMaxTx = dataDrainMaxTxCount
+	case 2:
+		deployGasPct = deployStrongDrainGasTargetPct
+		heavyGasPct = heavyStrongDrainGasTargetPct
+		dataGasPct = dataStrongDrainGasTargetPct
+		dexGasPct = dexStrongDrainGasTargetPct
+		deployMaxTx = deployStrongDrainMaxTxCount
+		heavyMaxTx = heavyStrongDrainMaxTxCount
+		dataMaxTx = dataStrongDrainMaxTxCount
+	case 3:
+		deployGasPct = deployEmergencyDrainGasTargetPct
+		heavyGasPct = heavyEmergencyDrainGasTargetPct
+		dataGasPct = dataEmergencyDrainGasTargetPct
+		dexGasPct = dexEmergencyDrainGasTargetPct
+		deployMaxTx = deployEmergencyDrainMaxTxCount
+		heavyMaxTx = heavyEmergencyDrainMaxTxCount
+		dataMaxTx = dataEmergencyDrainMaxTxCount
+	}
+
+	if gasTarget > 0 {
+		b.gasCaps[core.TxClassDeploy] = gasTarget * deployGasPct / 100
+		b.gasCaps[core.TxClassHeavy] = gasTarget * heavyGasPct / 100
+		b.gasCaps[core.TxClassData] = gasTarget * dataGasPct / 100
+		b.gasCaps[core.TxClassDex] = gasTarget * dexGasPct / 100
+	}
+
+	b.txCaps[core.TxClassDeploy] = deployMaxTx
+	b.txCaps[core.TxClassHeavy] = heavyMaxTx
+	b.txCaps[core.TxClassData] = dataMaxTx
 	b.txCaps[core.TxClassDex] = dexBlockMaxTxCount
+
+	if drainLevel > 0 {
+		log.Debug("tx resource budget drain mode",
+			"pendingTotal", pendingTotal,
+			"drainLevel", drainLevel,
+			"deployGasPct", deployGasPct,
+			"heavyGasPct", heavyGasPct,
+			"dataGasPct", dataGasPct,
+			"dexGasPct", dexGasPct,
+			"deployMaxTx", deployMaxTx,
+			"heavyMaxTx", heavyMaxTx,
+			"dataMaxTx", dataMaxTx)
+	}
 
 	return b
 }
