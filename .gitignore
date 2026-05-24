@@ -10,6 +10,3 @@ chaindb*/
 
 # Local start scripts
 start-cypher*.sh
-
-build/
-.github/
