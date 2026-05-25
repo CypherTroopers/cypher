@@ -235,13 +235,8 @@ func (b *KeyBlock) InPubKey() string      { return b.inPubKey }
 func (b *KeyBlock) InAddress() string     { return b.inAddress }
 func (b *KeyBlock) OutPubKey() string     { return b.outPubKey }
 func (b *KeyBlock) OutAddress(flag int) string {
-	if flag == 1 {
-		if b.outAddress == "" {
-			return b.leaderAddress
-		}
-		if b.outAddress[0] == '*' {
-			return b.outAddress[1:]
-		}
+	if flag == 1 && b.outAddress != "" && b.outAddress[0] == '*' {
+		return b.outAddress[1:]
 	}
 	return b.outAddress
 }
