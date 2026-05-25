@@ -137,6 +137,15 @@ type txReadyKey struct {
 	class TxResourceClass
 }
 
+const (
+	// Phase 7B: candidate scan limit.
+	// With 100k+ wallets, building a full candidate account list for every
+	// proposal is too expensive. Limit the number of account candidates scanned
+	// per proposal and let subsequent proposals drain the rest.
+	fastPendingCandidateScanLimit = 8192
+	slowPendingCandidateScanLimit = 8192
+)
+
 type pendingReadyIndex struct {
 	version      uint64
 	byKey        map[txReadyKey][]common.Address
@@ -712,33 +721,51 @@ func (pool *TxPool) rebuildPendingIndexLocked() {
 	pool.pendingIndex = idx
 }
 
-func (pool *TxPool) pendingCandidateAddrsLocked(lane TxLane, classes []TxResourceClass) []common.Address {
+func pendingCandidateScanLimit(lane TxLane) int {
+	if lane == TxLaneFast {
+		return fastPendingCandidateScanLimit
+	}
+	return slowPendingCandidateScanLimit
+}
+
+func (pool *TxPool) pendingCandidateAddrsLocked(lane TxLane, classes []TxResourceClass, limit int) []common.Address {
 	pool.rebuildPendingIndexLocked()
 
 	seen := make(map[common.Address]struct{})
 	candidates := make([]common.Address, 0)
+	if limit > 0 {
+		candidates = make([]common.Address, 0, limit)
+	}
 
-	appendUnique := func(addrs []common.Address) {
+	appendUnique := func(addrs []common.Address) bool {
 		for _, addr := range addrs {
 			if _, ok := seen[addr]; ok {
 				continue
 			}
 			seen[addr] = struct{}{}
 			candidates = append(candidates, addr)
+			if limit > 0 && len(candidates) >= limit {
+				return true
+			}
 		}
+		return false
 	}
 
 	if len(classes) == 0 {
 		for key, addrs := range pool.pendingIndex.byKey {
 			if key.lane == lane {
-				appendUnique(addrs)
+				if appendUnique(addrs) {
+					return candidates
+				}
 			}
 		}
 		return candidates
 	}
 
 	for _, class := range classes {
-		appendUnique(pool.pendingIndex.byKey[txReadyKey{lane: lane, class: class}])
+		if appendUnique(pool.pendingIndex.byKey[txReadyKey{lane: lane, class: class}]) {
+			return candidates
+		}
 	}
 
 	return candidates
@@ -778,7 +805,7 @@ func (pool *TxPool) PendingByLaneAndClassesLimited(lane TxLane, maxTx int, perAc
 	}
 	useClassFilter := len(allowed) > 0
 
-	candidates := pool.pendingCandidateAddrsLocked(lane, classes)
+	candidates := pool.pendingCandidateAddrsLocked(lane, classes, pendingCandidateScanLimit(lane))
 
 	pending := make(map[common.Address]types.Transactions)
 	remainingGas := gasTarget
