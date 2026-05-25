@@ -337,11 +337,6 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	var outerPublic, outerCoinBase string
 	best := keyS.getBestCandidate(keyS.fixedModeEnabled())
 	powSubmitter := best
-	log.Info("fixed-mode candidate lookup for reward",
-		"fixedMode", keyS.fixedModeEnabled(),
-		"hasBest", best != nil,
-		"currentKeyNumber", keyS.kbc.CurrentBlockN(),
-		"expectedCandidateNumber", keyS.kbc.CurrentBlockN()+1)
 	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
 		best = nil
 	}
