@@ -585,12 +585,32 @@ func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) 
 	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes, time.Now())
 	pendingTotal, _ := txS.txPool.Stats()
 	perAccountLimit := blockProposalLimit(blockType, pendingTotal)
+
+	availableBeforeFilter := countAddressTxes(allAddrTxes)
 	availableTxs := countAddressTxes(addrTxes)
+
+	// Safety fallback:
+	// If txpool returned executable candidates but proposedChain filtered all of them,
+	// the proposedChain cache may be stale from proposals that were not finally committed.
+	// In that case, clear proposedChain to current head and use the raw txpool candidates.
+	if availableBeforeFilter > 0 && availableTxs == 0 {
+		log.Warn("proposedChain filtered all txpool candidates; clearing stale proposed cache",
+			"blockType", readableTxBlockType(blockType),
+			"pendingTotal", pendingTotal,
+			"availableBeforeFilter", availableBeforeFilter,
+			"accountsBeforeFilter", len(allAddrTxes),
+			"currentBlock", txS.bc.CurrentBlockN())
+
+		txS.proposedChain.clear(txS.bc.CurrentBlock())
+		addrTxes = allAddrTxes
+		availableTxs = availableBeforeFilter
+	}
 
 	log.Debug("tx proposal scheduler",
 		"blockType", readableTxBlockType(blockType),
 		"pendingTotal", pendingTotal,
 		"availableTxs", availableTxs,
+		"availableBeforeFilter", availableBeforeFilter,
 		"accounts", len(addrTxes),
 		"perAccountLimit", perAccountLimit,
 		"maxTx", blockMaxTxCount(blockType),

@@ -401,8 +401,9 @@ type TxPool struct {
 	priced  *txPricedList
 	seen    map[common.Hash]time.Time
 
-	pendingIndexVersion uint64
-	pendingIndex        *pendingReadyIndex
+	pendingIndexVersion    uint64
+	pendingIndex           *pendingReadyIndex
+	pendingCandidateCursor map[txReadyKey]int
 
 	chainHeadCh       chan ChainHeadEvent
 	chainHeadSub      event.Subscription
@@ -728,8 +729,122 @@ func pendingCandidateScanLimit(lane TxLane) int {
 	return slowPendingCandidateScanLimit
 }
 
+func candidateClassQuota(totalLimit int, keyCount int) int {
+	if totalLimit <= 0 || keyCount <= 0 {
+		return 0
+	}
+	quota := totalLimit / keyCount
+	if totalLimit%keyCount != 0 {
+		quota++
+	}
+	if quota <= 0 {
+		quota = 1
+	}
+	return quota
+}
+
+func (pool *TxPool) pendingCandidateKeysLocked(lane TxLane, classes []TxResourceClass) []txReadyKey {
+	if pool.pendingIndex == nil {
+		return nil
+	}
+
+	keys := make([]txReadyKey, 0)
+
+	if len(classes) > 0 {
+		for _, class := range classes {
+			key := txReadyKey{lane: lane, class: class}
+			if len(pool.pendingIndex.byKey[key]) > 0 {
+				keys = append(keys, key)
+			}
+		}
+		return keys
+	}
+
+	for key, addrs := range pool.pendingIndex.byKey {
+		if key.lane == lane && len(addrs) > 0 {
+			keys = append(keys, key)
+		}
+	}
+
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].lane != keys[j].lane {
+			return keys[i].lane < keys[j].lane
+		}
+		return keys[i].class < keys[j].class
+	})
+
+	return keys
+}
+
+func (pool *TxPool) appendRotatedCandidatesLocked(
+	key txReadyKey,
+	limit int,
+	seen map[common.Address]struct{},
+	candidates []common.Address,
+) []common.Address {
+	if pool.pendingIndex == nil {
+		return candidates
+	}
+
+	addrs := pool.pendingIndex.byKey[key]
+	if len(addrs) == 0 {
+		if pool.pendingCandidateCursor != nil {
+			delete(pool.pendingCandidateCursor, key)
+		}
+		return candidates
+	}
+
+	if pool.pendingCandidateCursor == nil {
+		pool.pendingCandidateCursor = make(map[txReadyKey]int)
+	}
+
+	start := pool.pendingCandidateCursor[key]
+	if start < 0 || start >= len(addrs) {
+		start = 0
+	}
+
+	pickedForKey := 0
+	scanned := 0
+
+	for scanned < len(addrs) {
+		if limit > 0 && len(candidates) >= limit {
+			break
+		}
+		if limit > 0 && pickedForKey >= limit {
+			break
+		}
+
+		idx := (start + scanned) % len(addrs)
+		addr := addrs[idx]
+		scanned++
+
+		if _, ok := seen[addr]; ok {
+			continue
+		}
+
+		seen[addr] = struct{}{}
+		candidates = append(candidates, addr)
+		pickedForKey++
+	}
+
+	if scanned > 0 {
+		pool.pendingCandidateCursor[key] = (start + scanned) % len(addrs)
+	}
+
+	return candidates
+}
+
 func (pool *TxPool) pendingCandidateAddrsLocked(lane TxLane, classes []TxResourceClass, limit int) []common.Address {
 	pool.rebuildPendingIndexLocked()
+
+	if pool.pendingIndex == nil {
+		return nil
+	}
+
+	keys := pool.pendingCandidateKeysLocked(lane, classes)
+	if len(keys) == 0 {
+		return nil
+	}
 
 	seen := make(map[common.Address]struct{})
 	candidates := make([]common.Address, 0)
@@ -737,35 +852,28 @@ func (pool *TxPool) pendingCandidateAddrsLocked(lane TxLane, classes []TxResourc
 		candidates = make([]common.Address, 0, limit)
 	}
 
-	appendUnique := func(addrs []common.Address) bool {
-		for _, addr := range addrs {
-			if _, ok := seen[addr]; ok {
-				continue
-			}
-			seen[addr] = struct{}{}
-			candidates = append(candidates, addr)
-			if limit > 0 && len(candidates) >= limit {
-				return true
-			}
-		}
-		return false
-	}
-
-	if len(classes) == 0 {
-		for key, addrs := range pool.pendingIndex.byKey {
-			if key.lane == lane {
-				if appendUnique(addrs) {
-					return candidates
-				}
-			}
-		}
-		return candidates
-	}
-
-	for _, class := range classes {
-		if appendUnique(pool.pendingIndex.byKey[txReadyKey{lane: lane, class: class}]) {
+	// First pass: give each lane/class key a fair slice of the scan budget.
+	// This prevents native from always consuming the entire fast-lane scan limit
+	// before small_call gets a chance, and also helps dex/data/deploy/heavy fairness.
+	perKeyLimit := candidateClassQuota(limit, len(keys))
+	for _, key := range keys {
+		if limit > 0 && len(candidates) >= limit {
 			return candidates
 		}
+		candidates = pool.appendRotatedCandidatesLocked(key, perKeyLimit, seen, candidates)
+	}
+
+	// Second pass: if some classes had fewer accounts, fill the remaining budget
+	// from all keys again using their advanced cursors.
+	for _, key := range keys {
+		if limit > 0 && len(candidates) >= limit {
+			break
+		}
+		remaining := 0
+		if limit > 0 {
+			remaining = limit - len(candidates)
+		}
+		candidates = pool.appendRotatedCandidatesLocked(key, remaining, seen, candidates)
 	}
 
 	return candidates

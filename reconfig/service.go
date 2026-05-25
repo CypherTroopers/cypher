@@ -656,8 +656,31 @@ func (s *Service) handleHotStuffMsg() {
 			now := time.Now()
 			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
 				fastPending, slowPending := s.lanePendingCounts()
-				if (fastPending > 0 && s.shouldEmitFastBlock(now)) || (slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending)) {
-					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 5*time.Millisecond {
+				pendingTotal, _ := s.txPool.Stats()
+
+				cadenceReady := false
+
+				if pendingTotal > 0 {
+					// Strong liveness fallback:
+					// If txpool has pending txs, always wake proposal periodically.
+					// This prevents executable pending txs from waiting for an unrelated
+					// wallet tx to refresh proposal/index/wakeup state.
+					cadenceReady = true
+
+					if fastPending == 0 && slowPending == 0 {
+						log.Warn("tx proposal liveness fallback wakeup",
+							"pendingTotal", pendingTotal,
+							"fastPending", fastPending,
+							"slowPending", slowPending,
+							"currentBlock", s.bc.CurrentBlockN())
+					}
+				} else {
+					cadenceReady = (fastPending > 0 && s.shouldEmitFastBlock(now)) ||
+						(slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending))
+				}
+
+				if cadenceReady {
+					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
 						s.lastCadenceWakeup = now
 						s.triggerTryPropose(s.bc.CurrentBlockN())
 					}
