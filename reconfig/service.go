@@ -464,6 +464,45 @@ func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
 	s.waittingView.KeyNumber = s.currentView.KeyNumber
 }
 
+func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
+	if pendingTotal <= 0 || s.keyService == nil || !s.keyService.fixedModeEnabled() {
+		return
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return
+	}
+
+	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+	if time.Since(lastKeyTime) >= params.KeyBlockMinInterval {
+		return
+	}
+
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+
+	if !s.currentView.NoDone {
+		leaderIndex := s.keyService.getPrimaryLeaderIndex()
+		if mb := bftview.GetCurrentMember(); mb != nil && len(mb.List) > 0 && leaderIndex >= uint(len(mb.List)) {
+			leaderIndex = 0
+		}
+
+		log.Warn("fixed-mode pending txs while keyblock interval not elapsed; forcing tx proposal view",
+			"pendingTotal", pendingTotal,
+			"elapsed", time.Since(lastKeyTime),
+			"minimum", params.KeyBlockMinInterval,
+			"txNumber", s.currentView.TxNumber,
+			"keyNumber", s.currentView.KeyNumber,
+			"oldLeaderIndex", s.currentView.LeaderIndex,
+			"newLeaderIndex", leaderIndex)
+
+		s.currentView.NoDone = true
+		s.currentView.LeaderIndex = leaderIndex
+		s.waittingView.TxNumber = s.currentView.TxNumber
+		s.waittingView.KeyNumber = s.currentView.KeyNumber
+	}
+}
+
 func (s *Service) triggerTryPropose(lastN uint64) {
 	if atomic.LoadInt32(&s.runningState) != 1 {
 		return
@@ -654,17 +693,24 @@ func (s *Service) handleHotStuffMsg() {
 		if data == nil {
 			time.Sleep(hotstuffIdleSleep)
 			now := time.Now()
-			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
-				fastPending, slowPending := s.lanePendingCounts()
-				pendingTotal, _ := s.txPool.Stats()
 
+			fastPending, slowPending := s.lanePendingCounts()
+			pendingTotal := 0
+			if s.txPool != nil {
+				pendingTotal, _ = s.txPool.Stats()
+			}
+
+			// Fixed-mode liveness repair must run before IamLeader check.
+			// If currentView is stuck in keyblock-wait state, IamLeader may be false
+			// or tx proposal may be suppressed until the next 10-minute keyblock.
+			s.repairFixedModeTxProposalViewIfPending(pendingTotal)
+
+			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
 				cadenceReady := false
 
 				if pendingTotal > 0 {
 					// Strong liveness fallback:
 					// If txpool has pending txs, always wake proposal periodically.
-					// This prevents executable pending txs from waiting for an unrelated
-					// wallet tx to refresh proposal/index/wakeup state.
 					cadenceReady = true
 
 					if fastPending == 0 && slowPending == 0 {
