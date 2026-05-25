@@ -486,7 +486,7 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 	// do not force fixed mode back into tx proposal view. In fixed mode,
 	// keyblock proposal is selected by !NoDone, and forcing NoDone=true here
 	// can delay or suppress TimeReconfig keyblocks carrying the miner reward.
-	if s.getBestCandidate(true) != nil {
+	if s.getBestCandidate(false) != nil {
 		log.Debug("skip fixed-mode tx proposal view repair; candidate reward pending",
 			"pendingTotal", pendingTotal,
 			"elapsed", elapsed,

@@ -392,14 +392,6 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 		"hasPowSubmitter", powSubmitter != nil,
 		"outerCoinBase", outerCoinBase)
 
-	log.Info("fixed-mode pow submitter status",
-
-		"fixedMode", keyS.fixedModeEnabled(),
-
-		"hasPowSubmitter", powSubmitter != nil,
-
-		"outerCoinBase", outerCoinBase)
-
 	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)

@@ -476,21 +476,7 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 	now := time.Now()
 	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
 	elapsed := now.Sub(lastKeyTime)
-
-	// If keyblock interval has elapsed, do not interfere with normal keyblock proposal.
 	if elapsed >= params.KeyBlockMinInterval {
-		return
-	}
-
-	// If there is a common-miner candidate waiting for keyblock reward,
-	// do not force fixed mode back into tx proposal view. In fixed mode,
-	// keyblock proposal is selected by !NoDone, and forcing NoDone=true here
-	// can delay or suppress TimeReconfig keyblocks carrying the miner reward.
-	if s.getBestCandidate(true) != nil {
-		log.Debug("skip fixed-mode tx proposal view repair; candidate reward pending",
-			"pendingTotal", pendingTotal,
-			"elapsed", elapsed,
-			"minimum", params.KeyBlockMinInterval)
 		return
 	}
 
@@ -503,23 +489,15 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 		lastTxProposal = s.lastSlowBlockTime
 	}
 	if !lastTxProposal.IsZero() && now.Sub(lastTxProposal) < 2*time.Second {
-		s.muCurrentView.Lock()
-		txNumber := s.currentView.TxNumber
-		keyNumber := s.currentView.KeyNumber
-		leaderIndex := s.currentView.LeaderIndex
-		noDone := s.currentView.NoDone
-		s.muCurrentView.Unlock()
-
 		log.Debug("skip fixed-mode tx proposal view repair; recent tx proposal in flight",
 			"pendingTotal", pendingTotal,
 			"sinceLastTxProposal", now.Sub(lastTxProposal),
 			"elapsed", elapsed,
 			"minimum", params.KeyBlockMinInterval,
-			"txNumber", txNumber,
-			"keyNumber", keyNumber,
-			"leaderIndex", leaderIndex,
-			"noDone", noDone)
-
+			"txNumber", s.currentView.TxNumber,
+			"keyNumber", s.currentView.KeyNumber,
+			"leaderIndex", s.currentView.LeaderIndex,
+			"noDone", s.currentView.NoDone)
 		return
 	}
 
