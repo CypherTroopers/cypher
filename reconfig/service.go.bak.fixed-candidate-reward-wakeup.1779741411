@@ -389,16 +389,6 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 				"lastKeyTime", lastKeyTime)
 		}
 	}
-
-	if fixedMode && !keyProposal && keyBlockIntervalElapsed && s.getBestCandidate(true) != nil {
-		keyProposal = true
-		log.Warn("fixed-mode candidate reward keyblock proposal forced",
-			"noDone", noDone,
-			"leaderIndex", leaderIndex,
-			"currentTx", s.bc.CurrentBlockN(),
-			"currentKey", s.kbc.CurrentBlockN())
-	}
-
 	if keyProposal && keyBlockIntervalElapsed {
 		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone)
 		if err == nil && keyblock != nil && mb != nil {
@@ -472,24 +462,6 @@ func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
 	// next successful tx/key block can advance the view normally.
 	s.waittingView.TxNumber = s.currentView.TxNumber
 	s.waittingView.KeyNumber = s.currentView.KeyNumber
-}
-
-func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
-	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
-		return false
-	}
-	curKeyBlock := s.kbc.CurrentBlock()
-	if curKeyBlock == nil {
-		return false
-	}
-
-	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
-	elapsed := now.Sub(lastKeyTime)
-	if elapsed < params.KeyBlockMinInterval {
-		return false
-	}
-
-	return s.getBestCandidate(true) != nil
 }
 
 func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
@@ -772,7 +744,6 @@ func (s *Service) handleHotStuffMsg() {
 			if s.txPool != nil {
 				pendingTotal, _ = s.txPool.Stats()
 			}
-			candidateRewardReady := s.fixedModeCandidateRewardReady(now)
 
 			// Fixed-mode liveness repair must run before IamLeader check.
 			// If currentView is stuck in keyblock-wait state, IamLeader may be false
@@ -782,12 +753,7 @@ func (s *Service) handleHotStuffMsg() {
 			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
 				cadenceReady := false
 
-				if candidateRewardReady {
-					// Candidate-only liveness:
-					// If txpool is empty but a common-miner PoW candidate is ready
-					// after KeyBlockMinInterval, wake keyblock proposal.
-					cadenceReady = true
-				} else if pendingTotal > 0 {
+				if pendingTotal > 0 {
 					// Strong liveness fallback:
 					// If txpool has pending txs, always wake proposal periodically.
 					cadenceReady = true
@@ -807,17 +773,7 @@ func (s *Service) handleHotStuffMsg() {
 				if cadenceReady {
 					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
 						s.lastCadenceWakeup = now
-						if candidateRewardReady {
-							log.Warn("fixed-mode candidate reward new-view wakeup",
-								"currentBlock", s.bc.CurrentBlockN(),
-								"currentKey", s.kbc.CurrentBlockN(),
-								"pendingTotal", pendingTotal,
-								"fastPending", fastPending,
-								"slowPending", slowPending)
-							s.sendNewViewMsg(s.bc.CurrentBlockN())
-						} else {
-							s.triggerTryPropose(s.bc.CurrentBlockN())
-						}
+						s.triggerTryPropose(s.bc.CurrentBlockN())
 					}
 				}
 			}

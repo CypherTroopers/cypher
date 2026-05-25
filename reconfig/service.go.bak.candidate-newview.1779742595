@@ -808,16 +808,14 @@ func (s *Service) handleHotStuffMsg() {
 					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
 						s.lastCadenceWakeup = now
 						if candidateRewardReady {
-							log.Warn("fixed-mode candidate reward new-view wakeup",
+							log.Warn("fixed-mode candidate reward proposal wakeup",
 								"currentBlock", s.bc.CurrentBlockN(),
 								"currentKey", s.kbc.CurrentBlockN(),
 								"pendingTotal", pendingTotal,
 								"fastPending", fastPending,
 								"slowPending", slowPending)
-							s.sendNewViewMsg(s.bc.CurrentBlockN())
-						} else {
-							s.triggerTryPropose(s.bc.CurrentBlockN())
 						}
+						s.triggerTryPropose(s.bc.CurrentBlockN())
 					}
 				}
 			}
