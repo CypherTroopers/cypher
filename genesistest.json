@@ -75,7 +75,8 @@
         "block": 0,
         "size": 128
       }
-    ]
+    ],
+    "txnSizeLimit": 128
   },
   "alloc": {
     "380Ae1a000eb03930bb2F64d4A75dfE54b3e7e18": {
