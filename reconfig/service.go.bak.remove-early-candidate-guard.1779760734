@@ -523,6 +523,18 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 		return
 	}
 
+	// If there is a common-miner candidate waiting for keyblock reward,
+	// do not force fixed mode back into tx proposal view. In fixed mode,
+	// keyblock proposal is selected by !NoDone, and forcing NoDone=true here
+	// can delay or suppress TimeReconfig keyblocks carrying the miner reward.
+	if s.getBestCandidate(true) != nil {
+		log.Debug("skip fixed-mode tx proposal view repair; candidate reward pending",
+			"pendingTotal", pendingTotal,
+			"elapsed", elapsed,
+			"minimum", params.KeyBlockMinInterval)
+		return
+	}
+
 	// Do not repair immediately after a tx block proposal was generated.
 	// The proposal may still be in HotStuff consensus. Touching currentView /
 	// waittingView while a tx block is in-flight can make the next view wait

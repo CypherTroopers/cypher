@@ -127,21 +127,20 @@ type Service struct {
 	lastReqCmNumber uint64
 	muCurrentView   sync.Mutex
 
-	replicaView               *bftview.View
-	runningState              int32
-	lastProposeTime           time.Time
-	lastSlowBlockTime         time.Time
-	lastFastBlockTime         time.Time
-	serviceStartTime          time.Time
-	lastCadenceWakeup         time.Time
-	lastFixedKeyNewViewWakeup time.Time
-	tryProposeQueuedAt        int64
-	pacetMakerTimer           *paceMakerTimer
-	muHotstuffProgress        sync.Mutex
-	hotstuffProgressAt        time.Time
-	lastProgressN             uint64
-	lastProgressViewID        common.Hash
-	lastProgressRank          uint8
+	replicaView        *bftview.View
+	runningState       int32
+	lastProposeTime    time.Time
+	lastSlowBlockTime  time.Time
+	lastFastBlockTime  time.Time
+	serviceStartTime   time.Time
+	lastCadenceWakeup  time.Time
+	tryProposeQueuedAt int64
+	pacetMakerTimer    *paceMakerTimer
+	muHotstuffProgress sync.Mutex
+	hotstuffProgressAt time.Time
+	lastProgressN      uint64
+	lastProgressViewID common.Hash
+	lastProgressRank   uint8
 
 	hotstuffMsgQ *common.Queue
 	feed1        event.Feed
@@ -475,18 +474,6 @@ func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
 	s.waittingView.KeyNumber = s.currentView.KeyNumber
 }
 
-func (s *Service) fixedModeKeyblockIntervalElapsed(now time.Time) bool {
-	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
-		return false
-	}
-	curKeyBlock := s.kbc.CurrentBlock()
-	if curKeyBlock == nil {
-		return false
-	}
-	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
-	return now.Sub(lastKeyTime) >= params.KeyBlockMinInterval
-}
-
 func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
 	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
 		return false
@@ -520,6 +507,18 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 
 	// If keyblock interval has elapsed, do not interfere with normal keyblock proposal.
 	if elapsed >= params.KeyBlockMinInterval {
+		return
+	}
+
+	// If there is a common-miner candidate waiting for keyblock reward,
+	// do not force fixed mode back into tx proposal view. In fixed mode,
+	// keyblock proposal is selected by !NoDone, and forcing NoDone=true here
+	// can delay or suppress TimeReconfig keyblocks carrying the miner reward.
+	if s.getBestCandidate(true) != nil {
+		log.Debug("skip fixed-mode tx proposal view repair; candidate reward pending",
+			"pendingTotal", pendingTotal,
+			"elapsed", elapsed,
+			"minimum", params.KeyBlockMinInterval)
 		return
 	}
 
@@ -774,28 +773,6 @@ func (s *Service) handleHotStuffMsg() {
 				pendingTotal, _ = s.txPool.Stats()
 			}
 			candidateRewardReady := s.fixedModeCandidateRewardReady(now)
-
-			// Fixed-mode keyblock liveness:
-			// This must run on every committee member, not only the leader.
-			// Each member needs to send MsgNewView to the current leader; otherwise
-			// the leader only receives its own new-view vote and stays in PhasePrepare.
-			if s.fixedModeKeyblockIntervalElapsed(now) {
-				if s.lastFixedKeyNewViewWakeup.IsZero() || now.Sub(s.lastFixedKeyNewViewWakeup) >= 2*time.Second {
-					s.lastFixedKeyNewViewWakeup = now
-					curView := s.GetCurrentView()
-					log.Warn("fixed-mode keyblock start-new-view wakeup",
-						"currentBlock", s.bc.CurrentBlockN(),
-						"currentKey", s.kbc.CurrentBlockN(),
-						"leaderIndex", curView.LeaderIndex,
-						"noDone", curView.NoDone,
-						"isLeader", bftview.IamLeader(curView.LeaderIndex),
-						"candidateReady", candidateRewardReady,
-						"pendingTotal", pendingTotal,
-						"fastPending", fastPending,
-						"slowPending", slowPending)
-					s.sendNewViewMsg(s.bc.CurrentBlockN())
-				}
-			}
 
 			// Fixed-mode liveness repair must run before IamLeader check.
 			// If currentView is stuck in keyblock-wait state, IamLeader may be false
