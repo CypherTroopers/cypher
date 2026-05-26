@@ -1239,7 +1239,7 @@ func (s *Service) procBlockDone(block *types.Block) {
 
 	s.pacetMakerTimer.procBlockDone(block, keyblock, beKeyBlock)
 	s.netService.procBlockDone(block.NumberU64(), keyblock.NumberU64())
-	if keyblock != nil {
+	if beKeyBlock && keyblock != nil {
 		s.kbc.PostBlock(keyblock)
 	}
 }
