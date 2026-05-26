@@ -19,7 +19,7 @@ echo "==> REStart Cypher node"
   --http.corsdomain "*" \
   --port 6000 \
   --datadir chaindbname \
-  --networkid 123678 \
+  --networkid 1236789 \
   --gcmode archive \
   --bootnodes enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@158.220.101.48:6000 \
   console
