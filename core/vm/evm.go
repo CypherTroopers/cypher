@@ -284,7 +284,12 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	}
 	start := time.Now()
 	ret, err := run(evm, contract, nil, false)
-	maxCodeSizeExceeded := evm.chainRules.IsEIP158 && len(ret) > params.MaxCodeSize
+
+	maxCodeSize := params.MaxCodeSize
+	if evm.chainConfig != nil && evm.Context.BlockNumber != nil {
+		maxCodeSize = evm.chainConfig.GetMaxCodeSize(evm.Context.BlockNumber)
+	}
+	maxCodeSizeExceeded := evm.chainRules.IsEIP158 && len(ret) > maxCodeSize
 	if err == nil && !maxCodeSizeExceeded {
 		createDataGas := uint64(len(ret)) * params.CreateDataGas
 		if contract.UseGas(createDataGas) {

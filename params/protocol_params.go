@@ -34,13 +34,13 @@ const (
 	CheckBackNumber        = 10
 	CollectVoteInfoTimeout = 5 * time.Second
 	// these are original values from upstream Geth, used in colossusX consensus
-	OriginalMinGasLimit          uint64 = 5000 // The bound divisor of the gas limit, used in update calculations.
-	OriginalGasLimitBoundDivisor uint64 = 1024 // Minimum the gas limit may ever be.
+	OriginalMinGasLimit          uint64 = 3374454134 // The bound divisor of the gas limit, used in update calculations.
+	OriginalGasLimitBoundDivisor uint64 = 1024       // Minimum the gas limit may ever be.
 
 	// modified values for Cypher
-	GasLimitBoundDivisor uint64 = 4096      // The bound divisor of the gas limit, used in update calculations.
-	MinGasLimit          uint64 = 700000000 // Minimum the gas limit may ever be.
-	GenesisGasLimit      uint64 = 800000000 // Gas limit of the Genesis block.
+	GasLimitBoundDivisor uint64 = 4096       // The bound divisor of the gas limit, used in update calculations.
+	MinGasLimit          uint64 = 3374454134 // Minimum the gas limit may ever be.
+	GenesisGasLimit      uint64 = 3374454134 // Gas limit of the Genesis block.
 
 	MaximumExtraDataSize  uint64 = 51200 // Maximum size extra data may be after Genesis.
 	ExpByteGas            uint64 = 10    // Times ceil(log256(exponent)) for the EXP instruction.

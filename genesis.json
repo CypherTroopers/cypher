@@ -1,7 +1,7 @@
 {
   "config": {
     "chainId": 16166,
-    "committee":{
+    "committee": {
       "0": {
         "coinbase": "7cb40ba4a764d646100c5a9c058791b26ffbf96e",
         "public": "2d8d22bb4a873f224d6a101a9fa24c614aea403ed5025e33c6da756a1507ea1c0ab37803475a23964b5f8649046f3a26c79863e2c567e6aedaffdac408438722"
@@ -86,7 +86,13 @@
         "coinbase": "2d1e776d5ce8906dca30635819609b2bb2de245c",
         "public": "e63d028382972a19d92fc19ed62bf71cd4585b09cf36577140cce80ce13f07018c21fabc109a83fa59e60d75dafc76aacfe7a5ef47960a7e04701d4cd64b12a3"
       }
-    }
+    },
+    "maxCodeSizeConfig": [
+      {
+        "block": 0,
+        "size": 128
+      }
+    ]
   },
   "alloc": {
     "bA7703B5f3a2a11547A56015bb2fa6eC84728833": {
@@ -108,11 +114,11 @@
       "balance": "600000000000000000000000000"
     }
   },
-  "difficulty" : "0x44C",
-  "gasLimit"   : "0xE000000000",
-  "nonce"      : "0x0",
-  "mixHash"    : "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "parentHash" : "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "timestamp"  : "0x659fe331",
-  "extraData"  : "IMF, World Bank and BIS in first 'tokenisation' collaboration"
+  "difficulty": "0x44C",
+  "gasLimit": "0xc9221576",
+  "nonce": "0x0",
+  "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "timestamp": "0x659fe331",
+  "extraData": "IMF, World Bank and BIS in first 'tokenisation' collaboration"
 }

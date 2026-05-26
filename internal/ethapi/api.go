@@ -1823,7 +1823,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 		"logsBloom":         receipt.Bloom,
 	}
 
-	fields["status"] = hexutil.Uint(0x01)
+	fields["status"] = hexutil.Uint(receipt.Status)
 
 	if receipt.Logs == nil {
 		fields["logs"] = [][]*types.Log{}

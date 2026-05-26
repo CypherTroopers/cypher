@@ -69,7 +69,13 @@
         "coinbase": "3abb765B281d2Ef60aAC35Bc85B62692f89c7Ee3",
         "public": "bbf99348f4f81b296d0fceeb3d7f1b25ad4d3f50eb44baffa80a290d1a56a0177394455ce8d8a69452b453e5de5568df58f68077d57e7ff54df0aa4ade7d0e14"
       }
-    }
+    },
+    "maxCodeSizeConfig": [
+      {
+        "block": 0,
+        "size": 128
+      }
+    ]
   },
   "alloc": {
     "380Ae1a000eb03930bb2F64d4A75dfE54b3e7e18": {
@@ -86,7 +92,7 @@
     }
   },
   "difficulty": "0x44C",
-  "gasLimit": "0xE0000000",
+  "gasLimit": "0xc9221576",
   "baseFeePerGas": "0x3b9aca00",
   "nonce": "0x0",
   "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
