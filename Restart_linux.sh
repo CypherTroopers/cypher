@@ -3,7 +3,7 @@ set -euo pipefail
 
 echo "==> REStart Cypher node"
 ./build/bin/cypher-linux-amd64 \
-  --verbosity 4 \
+  --verbosity 1 \
   --rnetport 7200 \
   --syncmode full \
   --nat extip:$(curl -4 -s ifconfig.io) \
