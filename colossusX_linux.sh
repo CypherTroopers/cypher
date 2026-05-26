@@ -5,7 +5,7 @@ echo "==> Init genesis"
 ./build/bin/cypher-linux-amd64 --datadir chaindbname init ./genesistest.json
 
 echo "==> Start Cypher node"
-./build/bin/cypher \
+./build/bin/cypher-linux-amd64 \
   --verbosity 1 \
   --rnetport 7200 \
   --syncmode full \
