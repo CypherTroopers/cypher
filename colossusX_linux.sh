@@ -3,6 +3,12 @@ set -euo pipefail
 
 DATADIR="chaindbname"
 
+echo "==> Init genesis"
+
+./build/bin/cypher-linux-amd64 \
+  --datadir "${DATADIR}" \
+  init ./genesistest.json
+
 echo "==> Write static/trusted peers"
 
 mkdir -p "./${DATADIR}/cypher"
@@ -21,7 +27,7 @@ EOF
 
 cp "./${DATADIR}/cypher/static-nodes.json" "./${DATADIR}/cypher/trusted-nodes.json"
 
-echo "==> REStart Cypher node"
+echo "==> Start Cypher node"
 
 ./build/bin/cypher-linux-amd64 \
   --verbosity 4 \
