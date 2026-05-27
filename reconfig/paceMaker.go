@@ -272,7 +272,21 @@ func (t *paceMakerTimer) procBlockDone(curBlock *types.Block, curKeyBlock *types
 
 		n := curBlock.NumberU64() - curKeyBlock.T_Number()
 		if n > 0 && n%params.KeyblockPerTxBlocks == 0 {
-			t.setNextLeader(true)
+			lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+			elapsed := time.Since(lastKeyTime)
+
+			if elapsed >= params.KeyBlockMinInterval {
+				t.setNextLeader(true)
+			} else {
+				log.Warn("360tx reached before keyblock min interval; keep tx proposal",
+					"txNumber", curBlock.NumberU64(),
+					"keyNumber", curKeyBlock.NumberU64(),
+					"txSinceKey", n,
+					"elapsed", elapsed,
+					"minimum", params.KeyBlockMinInterval)
+
+				t.triggerTryPropose()
+			}
 		}
 
 		//if curBlock.NumberU64()%20 == 0 {

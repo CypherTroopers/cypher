@@ -62,6 +62,8 @@ const slowPressureRatio = 2
 const slowPressureMinPending = 512
 const slowEmergencyForcePending = 8192
 
+const startNewViewDedupWindow = 2 * time.Second
+
 type committeeInfo struct {
 	Committee *bftview.Committee
 	KeyHash   common.Hash
@@ -136,6 +138,9 @@ type Service struct {
 	lastCadenceWakeup         time.Time
 	lastFixedKeyNewViewWakeup time.Time
 	tryProposeQueuedAt        int64
+	muStartNewView            sync.Mutex
+	lastStartNewViewN         uint64
+	lastStartNewViewAt        time.Time
 	pacetMakerTimer           *paceMakerTimer
 	muHotstuffProgress        sync.Mutex
 	hotstuffProgressAt        time.Time
@@ -830,7 +835,7 @@ func (s *Service) handleHotStuffMsg() {
 				if cadenceReady {
 					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
 						s.lastCadenceWakeup = now
-						if candidateRewardReady {
+						if candidateRewardReady && pendingTotal == 0 {
 							log.Warn("fixed-mode candidate reward new-view wakeup",
 								"currentBlock", s.bc.CurrentBlockN(),
 								"currentKey", s.kbc.CurrentBlockN(),
@@ -839,6 +844,14 @@ func (s *Service) handleHotStuffMsg() {
 								"slowPending", slowPending)
 							s.sendNewViewMsg(s.bc.CurrentBlockN())
 						} else {
+							if candidateRewardReady && pendingTotal > 0 {
+								log.Warn("fixed-mode candidate reward delayed because txpool has pending txs",
+									"currentBlock", s.bc.CurrentBlockN(),
+									"currentKey", s.kbc.CurrentBlockN(),
+									"pendingTotal", pendingTotal,
+									"fastPending", fastPending,
+									"slowPending", slowPending)
+							}
 							s.triggerTryPropose(s.bc.CurrentBlockN())
 						}
 					}
@@ -1171,6 +1184,20 @@ func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
 
 // Send new view when new block done
 func (s *Service) sendNewViewMsg(curN uint64) {
+	now := time.Now()
+
+	s.muStartNewView.Lock()
+	if curN == s.lastStartNewViewN && !s.lastStartNewViewAt.IsZero() && now.Sub(s.lastStartNewViewAt) < startNewViewDedupWindow {
+		s.muStartNewView.Unlock()
+		log.Debug("suppress duplicate start-new-view",
+			"curN", curN,
+			"since", now.Sub(s.lastStartNewViewAt))
+		return
+	}
+	s.lastStartNewViewN = curN
+	s.lastStartNewViewAt = now
+	s.muStartNewView.Unlock()
+
 	if bftview.IamMember() >= 0 && curN >= s.bc.CurrentBlockN() {
 		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
 	}
