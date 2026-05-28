@@ -7,6 +7,7 @@ on:
     branches:
       - EVM_Cancun_PoW
     paths-ignore:
+      - 'README.md'
       - 'build/bin/cypher-linux-*'
       - 'build/bin/cypher-darwin-*'
       - 'build/bin/cypher.exe'
