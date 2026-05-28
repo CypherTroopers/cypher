@@ -798,7 +798,21 @@ func (s *Service) handleHotStuffMsg() {
 						"pendingTotal", pendingTotal,
 						"fastPending", fastPending,
 						"slowPending", slowPending)
-					s.sendNewViewMsg(s.bc.CurrentBlockN())
+					if bftview.IamLeader(curView.LeaderIndex) {
+						// force keyblock view before leader try-propose.
+						// In fixed mode Propose() uses !NoDone to select keyblock proposal.
+						s.setNextLeader(true)
+						log.Warn("fixed-mode keyblock due leader try-propose",
+							"currentBlock", s.bc.CurrentBlockN(),
+							"currentKey", s.kbc.CurrentBlockN(),
+							"leaderIndex", curView.LeaderIndex,
+							"noDone", curView.NoDone,
+							"candidateReady", candidateRewardReady,
+							"pendingTotal", pendingTotal)
+						s.triggerTryPropose(s.bc.CurrentBlockN())
+					} else {
+						s.sendNewViewMsg(s.bc.CurrentBlockN())
+					}
 				}
 			}
 
@@ -842,7 +856,7 @@ func (s *Service) handleHotStuffMsg() {
 								"pendingTotal", pendingTotal,
 								"fastPending", fastPending,
 								"slowPending", slowPending)
-							s.sendNewViewMsg(s.bc.CurrentBlockN())
+							s.triggerTryPropose(s.bc.CurrentBlockN())
 						} else {
 							if candidateRewardReady && pendingTotal > 0 {
 								log.Warn("fixed-mode candidate reward delayed because txpool has pending txs",
