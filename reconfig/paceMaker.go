@@ -29,22 +29,23 @@ import (
 )
 
 var maxPaceMakerTime time.Time
-var paceMakerPollInterval = 10 * time.Millisecond
+var paceMakerPollInterval = 1 * time.Millisecond
 
 type paceMakerTimer struct {
-	startTime     time.Time
-	lastKeyTime   time.Time
-	beStop        bool
-	beClose       bool
-	service       serviceI
-	txPool        *core.TxPool
-	candidatepool *core.CandidatePool
-	retryNumber   int
-	ackMissCount  int
-	lastAckMissAt time.Time
-	config        *params.ChainConfig
-	kbc           *core.KeyBlockChain
-	mu            sync.Mutex
+	startTime        time.Time
+	lastKeyTime      time.Time
+	beStop           bool
+	beClose          bool
+	service          serviceI
+	txPool           *core.TxPool
+	candidatepool    *core.CandidatePool
+	retryNumber      int
+	ackMissCount     int
+	lastAckMissAt    time.Time
+	lastKeyTriggerAt time.Time
+	config           *params.ChainConfig
+	kbc              *core.KeyBlockChain
+	mu               sync.Mutex
 
 	txsCh  chan core.NewTxsEvent
 	txsSub event.Subscription
@@ -63,7 +64,7 @@ func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *Reconfig
 		config:        config,
 	}
 
-	t.txsCh = make(chan core.NewTxsEvent, 128)
+	t.txsCh = make(chan core.NewTxsEvent, 8192)
 	t.txsSub = backend.TxPool().SubscribeNewTxsEvent(t.txsCh)
 	go t.txsEventLoop()
 
@@ -161,10 +162,16 @@ func (t *paceMakerTimer) loopTimer() {
 			t.mu.Lock()
 			lastKeyTime := t.lastKeyTime
 			if now.Sub(lastKeyTime) >= params.KeyBlockMinInterval {
-				t.lastKeyTime = now
+				// Do not move lastKeyTime before the keyblock is actually committed.
+				// Otherwise a failed/empty proposal at 10 minutes pushes the next trigger to 20 minutes.
+				if t.lastKeyTriggerAt.IsZero() || now.Sub(t.lastKeyTriggerAt) >= 2*time.Second {
+					t.lastKeyTriggerAt = now
+					t.mu.Unlock()
+					log.Warn("paceMakerTimer fixed mode keyblock trigger", "elapsed", now.Sub(lastKeyTime))
+					t.setNextLeader(true)
+					continue
+				}
 				t.mu.Unlock()
-				log.Warn("paceMakerTimer fixed mode keyblock trigger", "elapsed", now.Sub(lastKeyTime))
-				t.setNextLeader(true)
 				continue
 			}
 			t.mu.Unlock()
@@ -239,6 +246,7 @@ func (t *paceMakerTimer) procBlockDone(curBlock *types.Block, curKeyBlock *types
 	if isKeyBlock {
 		t.mu.Lock()
 		t.lastKeyTime = time.Now()
+		t.lastKeyTriggerAt = time.Time{}
 		lastKeyTime := t.lastKeyTime
 		t.mu.Unlock()
 		log.Debug("paceMakerTimer keyblock done", "lastKeyTime", lastKeyTime)
@@ -262,10 +270,8 @@ func (t *paceMakerTimer) procBlockDone(curBlock *types.Block, curKeyBlock *types
 			}
 		}
 
-		n := curBlock.NumberU64() - curKeyBlock.T_Number()
-		if n > 0 && n%params.KeyblockPerTxBlocks == 0 {
-			t.setNextLeader(true)
-		}
+		// 360-TX keyblock trigger removed.
+		// KeyBlock generation is controlled by time-based fixed-mode KeyBlockMinInterval.
 
 		//if curBlock.NumberU64()%20 == 0 {
 		//log.Info("Goroutine", "num", runtime.NumGoroutine())

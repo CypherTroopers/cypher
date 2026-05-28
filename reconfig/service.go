@@ -37,12 +37,32 @@ import (
 	"github.com/cypherium/cypher/rnet/network"
 )
 
-const failedProposalRetry = 200 * time.Millisecond
-const hotstuffIdleSleep = 10 * time.Millisecond
-const tryProposeDebounce = 5 * time.Millisecond
-const fastBlockInterval = 1 * time.Second
-const slowBlockInterval = 1 * time.Minute
+const failedProposalRetry = 20 * time.Millisecond
+const hotstuffIdleSleep = 1 * time.Millisecond
+const tryProposeDebounce = 1 * time.Millisecond
+const fastBlockInterval = 70 * time.Millisecond
+const slowBlockInterval = 1 * time.Second
 const slowFallbackMinPending = 1
+
+// Adaptive slow-block cadence.
+// Heavy/deploy/data/dex transactions live in the slow lane.
+// When slow pending grows, slow blocks must be emitted faster to drain backlog.
+const slowIntervalDrainPendingThreshold = 512
+const slowIntervalStrongPendingThreshold = 2048
+const slowIntervalEmergencyPendingThreshold = 8192
+
+const slowBlockDrainInterval = 250 * time.Millisecond
+const slowBlockStrongDrainInterval = 100 * time.Millisecond
+const slowBlockEmergencyDrainInterval = 70 * time.Millisecond
+
+// Phase 7A: lane pressure scheduler.
+// If slow lane backlog is much larger than fast lane, keep draining slow lane.
+// This avoids heavy/data/deploy transactions sitting behind fast native/small txs.
+const slowPressureRatio = 2
+const slowPressureMinPending = 512
+const slowEmergencyForcePending = 8192
+
+const startNewViewDedupWindow = 2 * time.Second
 
 type committeeInfo struct {
 	Committee *bftview.Committee
@@ -109,20 +129,24 @@ type Service struct {
 	lastReqCmNumber uint64
 	muCurrentView   sync.Mutex
 
-	replicaView        *bftview.View
-	runningState       int32
-	lastProposeTime    time.Time
-	lastSlowBlockTime  time.Time
-	lastFastBlockTime  time.Time
-	serviceStartTime   time.Time
-	lastCadenceWakeup  time.Time
-	tryProposeQueuedAt int64
-	pacetMakerTimer    *paceMakerTimer
-	muHotstuffProgress sync.Mutex
-	hotstuffProgressAt time.Time
-	lastProgressN      uint64
-	lastProgressViewID common.Hash
-	lastProgressRank   uint8
+	replicaView               *bftview.View
+	runningState              int32
+	lastProposeTime           time.Time
+	lastSlowBlockTime         time.Time
+	lastFastBlockTime         time.Time
+	serviceStartTime          time.Time
+	lastCadenceWakeup         time.Time
+	lastFixedKeyNewViewWakeup time.Time
+	tryProposeQueuedAt        int64
+	muStartNewView            sync.Mutex
+	lastStartNewViewN         uint64
+	lastStartNewViewAt        time.Time
+	pacetMakerTimer           *paceMakerTimer
+	muHotstuffProgress        sync.Mutex
+	hotstuffProgressAt        time.Time
+	lastProgressN             uint64
+	lastProgressViewID        common.Hash
+	lastProgressRank          uint8
 
 	hotstuffMsgQ *common.Queue
 	feed1        event.Feed
@@ -371,6 +395,16 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 				"lastKeyTime", lastKeyTime)
 		}
 	}
+
+	if fixedMode && !keyProposal && keyBlockIntervalElapsed && s.getBestCandidate(true) != nil {
+		keyProposal = true
+		log.Warn("fixed-mode candidate reward keyblock proposal forced",
+			"noDone", noDone,
+			"leaderIndex", leaderIndex,
+			"currentTx", s.bc.CurrentBlockN(),
+			"currentKey", s.kbc.CurrentBlockN())
+	}
+
 	if keyProposal && keyBlockIntervalElapsed {
 		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone)
 		if err == nil && keyblock != nil && mb != nil {
@@ -446,6 +480,108 @@ func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
 	s.waittingView.KeyNumber = s.currentView.KeyNumber
 }
 
+func (s *Service) fixedModeKeyblockIntervalElapsed(now time.Time) bool {
+	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
+		return false
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return false
+	}
+	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+	return now.Sub(lastKeyTime) >= params.KeyBlockMinInterval
+}
+
+func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
+	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
+		return false
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return false
+	}
+
+	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+	elapsed := now.Sub(lastKeyTime)
+	if elapsed < params.KeyBlockMinInterval {
+		return false
+	}
+
+	return s.getBestCandidate(true) != nil
+}
+
+func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
+	if pendingTotal <= 0 || s.keyService == nil || !s.keyService.fixedModeEnabled() {
+		return
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return
+	}
+
+	now := time.Now()
+	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+	elapsed := now.Sub(lastKeyTime)
+
+	// If keyblock interval has elapsed, do not interfere with normal keyblock proposal.
+	if elapsed >= params.KeyBlockMinInterval {
+		return
+	}
+
+	// Do not repair immediately after a tx block proposal was generated.
+	// The proposal may still be in HotStuff consensus. Touching currentView /
+	// waittingView while a tx block is in-flight can make the next view wait
+	// for the wrong watermark.
+	lastTxProposal := s.lastFastBlockTime
+	if s.lastSlowBlockTime.After(lastTxProposal) {
+		lastTxProposal = s.lastSlowBlockTime
+	}
+	if !lastTxProposal.IsZero() && now.Sub(lastTxProposal) < 2*time.Second {
+		s.muCurrentView.Lock()
+		txNumber := s.currentView.TxNumber
+		keyNumber := s.currentView.KeyNumber
+		leaderIndex := s.currentView.LeaderIndex
+		noDone := s.currentView.NoDone
+		s.muCurrentView.Unlock()
+
+		log.Debug("skip fixed-mode tx proposal view repair; recent tx proposal in flight",
+			"pendingTotal", pendingTotal,
+			"sinceLastTxProposal", now.Sub(lastTxProposal),
+			"elapsed", elapsed,
+			"minimum", params.KeyBlockMinInterval,
+			"txNumber", txNumber,
+			"keyNumber", keyNumber,
+			"leaderIndex", leaderIndex,
+			"noDone", noDone)
+
+		return
+	}
+
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+
+	if !s.currentView.NoDone {
+		leaderIndex := s.keyService.getPrimaryLeaderIndex()
+		if mb := bftview.GetCurrentMember(); mb != nil && len(mb.List) > 0 && leaderIndex >= uint(len(mb.List)) {
+			leaderIndex = 0
+		}
+
+		log.Warn("fixed-mode pending txs while keyblock interval not elapsed; forcing tx proposal view",
+			"pendingTotal", pendingTotal,
+			"elapsed", elapsed,
+			"minimum", params.KeyBlockMinInterval,
+			"txNumber", s.currentView.TxNumber,
+			"keyNumber", s.currentView.KeyNumber,
+			"oldLeaderIndex", s.currentView.LeaderIndex,
+			"newLeaderIndex", leaderIndex)
+
+		s.currentView.NoDone = true
+		s.currentView.LeaderIndex = leaderIndex
+		s.waittingView.TxNumber = s.currentView.TxNumber
+		s.waittingView.KeyNumber = s.currentView.KeyNumber
+	}
+}
+
 func (s *Service) triggerTryPropose(lastN uint64) {
 	if atomic.LoadInt32(&s.runningState) != 1 {
 		return
@@ -483,40 +619,75 @@ func (s *Service) shouldEmitFastBlock(now time.Time) bool {
 	return now.Sub(s.lastFastBlockTime) >= fastBlockInterval
 }
 
-func (s *Service) shouldEmitSlowBlock(now time.Time) bool {
+func adaptiveSlowBlockInterval(slowPending int) time.Duration {
+	switch {
+	case slowPending >= slowIntervalEmergencyPendingThreshold:
+		return slowBlockEmergencyDrainInterval
+	case slowPending >= slowIntervalStrongPendingThreshold:
+		return slowBlockStrongDrainInterval
+	case slowPending >= slowIntervalDrainPendingThreshold:
+		return slowBlockDrainInterval
+	default:
+		return slowBlockInterval
+	}
+}
+
+func (s *Service) shouldEmitSlowBlock(now time.Time, slowPending int) bool {
 	if s.lastSlowBlockTime.IsZero() {
 		return true
 	}
-	return now.Sub(s.lastSlowBlockTime) >= slowBlockInterval
+	return now.Sub(s.lastSlowBlockTime) >= adaptiveSlowBlockInterval(slowPending)
 }
 
 func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
-	fastAddrTxes, fastErr := s.txService.loadPendingAddressTxes(types.FastTx_Block)
-	if fastErr != nil {
-		log.Warn("Failed to load fast-lane pending txs", "err", fastErr)
-	} else {
-		fastPending = countAddressTxes(fastAddrTxes)
+	if s.txPool == nil {
+		return 0, 0
 	}
-
-	slowAddrTxes, slowErr := s.txService.loadPendingAddressTxes(types.SlowTx_Block)
-	if slowErr != nil {
-		log.Warn("Failed to load slow-lane pending txs", "err", slowErr)
-	} else {
-		slowPending = countAddressTxes(slowAddrTxes)
-	}
-
+	fastPending, slowPending, _ = s.txPool.PendingClassStats()
 	return fastPending, slowPending
+}
+
+func slowLanePressureHigh(fastPending int, slowPending int) bool {
+	if slowPending < slowPressureMinPending {
+		return false
+	}
+	if fastPending <= 0 {
+		return true
+	}
+	return slowPending >= fastPending*slowPressureRatio
+}
+
+func slowLaneEmergency(slowPending int) bool {
+	return slowPending >= slowEmergencyForcePending
 }
 
 func (s *Service) chooseTxBlockType() uint8 {
 	fastPending, slowPending := s.lanePendingCounts()
 	now := time.Now()
-	switch {
-	case fastPending > 0 && s.shouldEmitFastBlock(now):
-		return types.FastTx_Block
-	case slowPending > 0 && s.shouldEmitSlowBlock(now):
+
+	fastReady := fastPending > 0 && s.shouldEmitFastBlock(now)
+	slowReady := slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending)
+
+	// Emergency slow backlog:
+	// Do not allow fast lane to keep stealing proposal opportunities.
+	// This still creates normal SlowTx_Block, so block verification compatibility is kept.
+	if slowLaneEmergency(slowPending) {
 		return types.SlowTx_Block
-	case fastPending > 0:
+	}
+
+	// Strong slow pressure:
+	// Prefer slow if its adaptive interval is ready.
+	if slowLanePressureHigh(fastPending, slowPending) && slowReady {
+		return types.SlowTx_Block
+	}
+
+	// Normal cadence.
+	switch {
+	case fastReady:
+		return types.FastTx_Block
+	case slowReady:
+		return types.SlowTx_Block
+	case fastPending > 0 && !slowLanePressureHigh(fastPending, slowPending):
 		return types.FastTx_Block
 	case slowPending >= slowFallbackMinPending:
 		return types.SlowTx_Block
@@ -601,11 +772,102 @@ func (s *Service) handleHotStuffMsg() {
 		if data == nil {
 			time.Sleep(hotstuffIdleSleep)
 			now := time.Now()
+
+			fastPending, slowPending := s.lanePendingCounts()
+			pendingTotal := 0
+			if s.txPool != nil {
+				pendingTotal, _ = s.txPool.Stats()
+			}
+			candidateRewardReady := s.fixedModeCandidateRewardReady(now)
+
+			// Fixed-mode keyblock liveness:
+			// This must run on every committee member, not only the leader.
+			// Each member needs to send MsgNewView to the current leader; otherwise
+			// the leader only receives its own new-view vote and stays in PhasePrepare.
+			if s.fixedModeKeyblockIntervalElapsed(now) {
+				if s.lastFixedKeyNewViewWakeup.IsZero() || now.Sub(s.lastFixedKeyNewViewWakeup) >= 2*time.Second {
+					s.lastFixedKeyNewViewWakeup = now
+					curView := s.GetCurrentView()
+					log.Warn("fixed-mode keyblock start-new-view wakeup",
+						"currentBlock", s.bc.CurrentBlockN(),
+						"currentKey", s.kbc.CurrentBlockN(),
+						"leaderIndex", curView.LeaderIndex,
+						"noDone", curView.NoDone,
+						"isLeader", bftview.IamLeader(curView.LeaderIndex),
+						"candidateReady", candidateRewardReady,
+						"pendingTotal", pendingTotal,
+						"fastPending", fastPending,
+						"slowPending", slowPending)
+					if bftview.IamLeader(curView.LeaderIndex) {
+						// force keyblock view before leader try-propose.
+						// In fixed mode Propose() uses !NoDone to select keyblock proposal.
+						s.setNextLeader(true)
+						log.Warn("fixed-mode keyblock due leader try-propose",
+							"currentBlock", s.bc.CurrentBlockN(),
+							"currentKey", s.kbc.CurrentBlockN(),
+							"leaderIndex", curView.LeaderIndex,
+							"noDone", curView.NoDone,
+							"candidateReady", candidateRewardReady,
+							"pendingTotal", pendingTotal)
+						s.triggerTryPropose(s.bc.CurrentBlockN())
+					} else {
+						s.sendNewViewMsg(s.bc.CurrentBlockN())
+					}
+				}
+			}
+
+			// Fixed-mode liveness repair must run before IamLeader check.
+			// If currentView is stuck in keyblock-wait state, IamLeader may be false
+			// or tx proposal may be suppressed until the next 10-minute keyblock.
+			s.repairFixedModeTxProposalViewIfPending(pendingTotal)
+
 			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
-				if s.shouldEmitFastBlock(now) || s.shouldEmitSlowBlock(now) {
+				cadenceReady := false
+
+				if candidateRewardReady {
+					// Candidate-only liveness:
+					// If txpool is empty but a common-miner PoW candidate is ready
+					// after KeyBlockMinInterval, wake keyblock proposal.
+					cadenceReady = true
+				} else if pendingTotal > 0 {
+					// Strong liveness fallback:
+					// If txpool has pending txs, always wake proposal periodically.
+					cadenceReady = true
+
+					if fastPending == 0 && slowPending == 0 {
+						log.Warn("tx proposal liveness fallback wakeup",
+							"pendingTotal", pendingTotal,
+							"fastPending", fastPending,
+							"slowPending", slowPending,
+							"currentBlock", s.bc.CurrentBlockN())
+					}
+				} else {
+					cadenceReady = (fastPending > 0 && s.shouldEmitFastBlock(now)) ||
+						(slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending))
+				}
+
+				if cadenceReady {
 					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
 						s.lastCadenceWakeup = now
-						s.triggerTryPropose(s.bc.CurrentBlockN())
+						if candidateRewardReady && pendingTotal == 0 {
+							log.Warn("fixed-mode candidate reward new-view wakeup",
+								"currentBlock", s.bc.CurrentBlockN(),
+								"currentKey", s.kbc.CurrentBlockN(),
+								"pendingTotal", pendingTotal,
+								"fastPending", fastPending,
+								"slowPending", slowPending)
+							s.triggerTryPropose(s.bc.CurrentBlockN())
+						} else {
+							if candidateRewardReady && pendingTotal > 0 {
+								log.Warn("fixed-mode candidate reward delayed because txpool has pending txs",
+									"currentBlock", s.bc.CurrentBlockN(),
+									"currentKey", s.kbc.CurrentBlockN(),
+									"pendingTotal", pendingTotal,
+									"fastPending", fastPending,
+									"slowPending", slowPending)
+							}
+							s.triggerTryPropose(s.bc.CurrentBlockN())
+						}
 					}
 				}
 			}
@@ -936,6 +1198,20 @@ func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
 
 // Send new view when new block done
 func (s *Service) sendNewViewMsg(curN uint64) {
+	now := time.Now()
+
+	s.muStartNewView.Lock()
+	if curN == s.lastStartNewViewN && !s.lastStartNewViewAt.IsZero() && now.Sub(s.lastStartNewViewAt) < startNewViewDedupWindow {
+		s.muStartNewView.Unlock()
+		log.Debug("suppress duplicate start-new-view",
+			"curN", curN,
+			"since", now.Sub(s.lastStartNewViewAt))
+		return
+	}
+	s.lastStartNewViewN = curN
+	s.lastStartNewViewAt = now
+	s.muStartNewView.Unlock()
+
 	if bftview.IamMember() >= 0 && curN >= s.bc.CurrentBlockN() {
 		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
 	}
@@ -1004,7 +1280,7 @@ func (s *Service) procBlockDone(block *types.Block) {
 
 	s.pacetMakerTimer.procBlockDone(block, keyblock, beKeyBlock)
 	s.netService.procBlockDone(block.NumberU64(), keyblock.NumberU64())
-	if keyblock != nil {
+	if beKeyBlock && keyblock != nil {
 		s.kbc.PostBlock(keyblock)
 	}
 }

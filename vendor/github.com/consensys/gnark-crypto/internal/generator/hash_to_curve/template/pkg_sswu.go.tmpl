@@ -1,0 +1,333 @@
+{{define "pkg_sswu"}}
+{{$isogenyNeeded := notNil .Isogeny}}
+{{$CoordType := .Point.CoordType}}
+{{$CurveName := .Point.PointName}}
+{{$CurveTitle := toTitle $CurveName}}
+{{$TowerDegree := .Field.Degree}}
+{{$AffineType := print $CurveTitle "Affine"}}
+{{$IsG1 := eq $CurveTitle "G1"}}
+{{$CurveIndex := select $IsG1 "2" "1"}}
+{{$package := select (eq $TowerDegree 1) "fptower" "fp"}}
+{{$sswuCurveACoeff := select $isogenyNeeded "This is meant to produce an error. Since most likely A = 0, there is opportunity for optimizations that need to be looked at." "sswuIsoCurveCoeffA"}}
+{{$sswuCurveBCoeff := select $isogenyNeeded "bCurveConf" "sswuIsoCurveCoeffB"}}
+
+
+// Note: This only works for simple extensions
+
+{{ if $isogenyNeeded }}
+var (
+    {{$CurveName}}sswuCurveACoeff = {{$CoordType}} {{asElement .A}}
+    {{$CurveName}}sswuCurveBCoeff = {{$CoordType}} {{asElement .B}}
+)
+
+var {{$CurveName}}sswuCurveZ = {{$CoordType}} {{asElement .Z}}
+
+// {{$CurveTitle}}SSWUCurveCoefficients returns the coefficients of the SSWU curve.
+func {{$CurveTitle}}SSWUIsogenyCurveCoefficients() (A {{$CoordType}}, B {{$CoordType}}) {
+    return {{$CurveName}}sswuCurveACoeff, {{$CurveName}}sswuCurveBCoeff
+}
+
+// {{$CurveTitle}}SSWUIsogenyZ returns the recommended Z value of the SSWU curve.
+//
+// See https://www.rfc-editor.org/rfc/rfc9380.html#weierstrass
+func {{$CurveTitle}}SSWUIsogenyZ() {{$CoordType}} {
+    return {{$CurveName}}sswuCurveZ
+}
+
+var (
+    {{$CurveName}}IsogenyXNumeratorMap = []{{$CoordType}} {
+            {{- range $c := .Isogeny.XMap.Num}}
+            {{ asElement $c}},
+            {{- end}}
+        }
+    {{$CurveName}}IsogenyXDenominatorMap = []{{$CoordType}} {
+            {{- range $c := .Isogeny.XMap.Den}}
+                {{ asElement $c}},
+            {{- end}}
+        }
+    {{$CurveName}}IsogenyYNumeratorMap = []{{$CoordType}} {
+            {{- range $c := .Isogeny.YMap.Num}}
+                {{ asElement $c}},
+            {{- end}}
+        }
+    {{$CurveName}}IsogenyYDenominatorMap = []{{$CoordType}} {
+            {{- range $c := .Isogeny.YMap.Den}}
+                {{ asElement $c}},
+            {{- end}}
+        }
+)
+
+// {{$CurveTitle}}IsogenyMap returns the isogeny map for the curve.
+// The isogeny map is a list of polynomial coefficients for the x and y coordinate computation.
+// The order of the coefficients is as follows:
+// - x numerator, x denominator, y numerator, y denominator.
+func {{$CurveTitle}}IsogenyMap() [4][]{{$CoordType}} {
+    return [4][]{{$CoordType}}{
+        {{$CurveName}}IsogenyXNumeratorMap,
+        {{$CurveName}}IsogenyXDenominatorMap,
+        {{$CurveName}}IsogenyYNumeratorMap,
+        {{$CurveName}}IsogenyYDenominatorMap,
+    }
+}
+
+func {{$CurveName}}IsogenyXNumerator(dst *{{$CoordType}}, x *{{$CoordType}}) {
+    {{$CurveName}}EvalPolynomial(dst, false, {{$CurveName}}IsogenyXNumeratorMap, x)
+}
+
+func {{$CurveName}}IsogenyXDenominator(dst *{{$CoordType}}, x *{{$CoordType}}) {
+    {{$CurveName}}EvalPolynomial(dst, true, {{$CurveName}}IsogenyXDenominatorMap, x)
+}
+
+func {{$CurveName}}IsogenyYNumerator(dst *{{$CoordType}}, x *{{$CoordType}}, y *{{$CoordType}}) {
+    var _dst {{$CoordType}}
+    {{$CurveName}}EvalPolynomial(&_dst, false, {{$CurveName}}IsogenyYNumeratorMap, x)
+    dst.Mul(&_dst, y)
+}
+
+func {{$CurveName}}IsogenyYDenominator(dst *{{$CoordType}}, x *{{$CoordType}}) {
+    {{$CurveName}}EvalPolynomial(dst, true, {{$CurveName}}IsogenyYDenominatorMap, x)
+}
+
+// {{ $CurveTitle }} computes the isogeny map of the curve element, given by its coordinates pX and pY.
+// It mutates the coordinates pX and pY to the new coordinates of the isogeny map.
+func {{$CurveTitle}}Isogeny(pX, pY *{{$CoordType}}) {
+
+	den := make([]{{$CoordType}}, 2)
+
+    {{$CurveName}}IsogenyYDenominator(&den[1], pX)
+    {{$CurveName}}IsogenyXDenominator(&den[0], pX)
+
+    {{$CurveName}}IsogenyYNumerator(pY, pX, pY)
+    {{$CurveName}}IsogenyXNumerator(pX, pX)
+
+	{{if eq $CoordType "fptower.E2"}}
+        den = {{$package}}.BatchInvertE2(den)
+	{{- else if eq $CoordType "fptower.E4"}}
+        den = {{$package}}.BatchInvertE4(den)
+	{{- else}}
+        den = {{$package}}.BatchInvert(den)
+	{{- end}}
+
+	pX.Mul(pX, &den[0])
+	pY.Mul(pY, &den[1])
+}
+
+{{ end }}
+
+{{ $cInts := index .PrecomputedParams 0 }}
+
+{{ $c1Int := index $cInts 0}}
+{{ $c1IntBytes := printList (bytes $c1Int ) }}
+
+// {{$CurveTitle}}SqrtRatio computes the square root of u/v and returns 0 iff u/v was indeed a quadratic residue.
+// If not, we get sqrt(Z * u / v). Recall that Z is non-residue.
+// If v = 0, u/v is meaningless and the output is unspecified, without raising an error.
+// The main idea is that since the computation of the square root involves taking large powers of u/v, the inversion of v can be avoided
+func {{$CurveTitle}}SqrtRatio(z *{{$CoordType}}, u *{{$CoordType}}, v *{{$CoordType}}) uint64 {
+{{ if eq (mod .FieldSizeMod256 4) 3 }} // https://www.rfc-editor.org/rfc/rfc9380.html#name-optimized-sqrt_ratio-for-q- (3 mod 4)
+	var tv1 {{$CoordType}}
+	tv1.Square(v)   // 1. tv1 = v²
+	var tv2 {{$CoordType}}
+	tv2.Mul(u, v)   // 2. tv2 = u * v
+	tv1.Mul(&tv1, &tv2) // 3. tv1 = tv1 * tv2
+
+	var y1 {{$CoordType}}
+	{
+	var c1 big.Int
+	// c1 = {{ $c1Int }}
+	c1.SetBytes([]byte{ {{ $c1IntBytes }} })    // c1 = (q - 3) / 4     # Integer arithmetic
+
+	y1.Exp(tv1, &c1)    // 4. y1 = tv1ᶜ¹
+	}
+
+	y1.Mul(&y1, &tv2)   // 5. y1 = y1 * tv2
+
+	var y2 {{$CoordType}}
+    // c2 = sqrt(-Z)
+	tv3 := {{$CoordType}} {{ asElement (index .PrecomputedParams 1)}}
+	y2.Mul(&y1, &tv3)   // 6. y2 = y1 * c2
+	tv3.Square(&y1) // 7. tv3 = y1²
+	tv3.Mul(&tv3, v)    // 8. tv3 = tv3 * v
+    isQNr := tv3.NotEqual(u)    // 9. isQR = tv3 == u
+    z.Select(int(isQNr), &y1, &y2)  // 10. y = CMOV(y2, y1, isQR)
+    return isQNr
+}
+
+{{ end }}
+
+{{ if eq (mod .FieldSizeMod256 8) 5 }} // https://www.rfc-editor.org/rfc/rfc9380.html#name-optimized-sqrt_ratio-for-q-5 (mod 8)
+
+    var tv1, tv2 {{$CoordType}}
+    tv1.Square(v)   // 1. tv1 = v²
+    tv2.Mul(&tv1, v)    // 2. tv2 = tv1 * v
+    tv1.Square(&tv1)    // 3. tv1 = tv1²
+    tv2.Mul(&tv2, u)    // 4. tv2 = tv2 * u
+    tv1.Mul(&tv1, &tv2) // 5. tv1 = tv1 * tv2
+
+    var c1 big.Int
+	// c1 = (q - 5) / 8 = {{ $c1Int }}
+    c1.SetBytes([]byte { {{ $c1IntBytes }} })
+    var y1 {{$CoordType}}
+    y1.Exp(tv1, &c1)    // 6. y1 = tv1ᶜ¹
+    y1.Mul(&y1, &tv2)   // 7. y1 = y1 * tv2
+    // c2 = sqrt(-1)
+	c2 := {{$CoordType}} {{asElement (index .PrecomputedParams 1)}}
+	tv1.Mul(&y1, &c2)  // 8. tv1 = y1 * c2
+    tv2.Square(&tv1)    // 9. tv2 = tv1²
+    tv2.Mul(&tv2, v)    // 10. tv2 = tv2 * v
+    // 11. e1 = tv2 == u
+	y1.Select(int(tv2.NotEqual(u)), &tv1, &y1)  // 12. y1 = CMOV(y1, tv1, e1)
+    tv2.Square(&y1) // 13. tv2 = y1²
+    tv2.Mul(&tv2, v)    // 14. tv2 = tv2 * v
+    isQNr := tv2.NotEqual(u)    // 15. isQR = tv2 == u
+    // c3 = sqrt(Z / c2)
+	y2 := {{$CoordType}} {{asElement (index .PrecomputedParams 2)}}
+	y2.Mul(&y1, &y2)    // 16. y2 = y1 * c3
+    tv1.Mul(&y2, &c2)   // 17. tv1 = y2 * c2
+    tv2.Square(&tv1)    // 18. tv2 = tv1²
+    tv2.Mul(&tv2, v)    // 19. tv2 = tv2 * v
+    var tv3 {{$CoordType}}
+    // Z = [{{printList .Z}}]
+    {{$CurveTitle}}MulByZ(&tv3, u)   // 20. tv3 = Z * u
+	// 21. e2 = tv2 == tv3
+	y2.Select(int(tv2.NotEqual(&tv3)), &tv1, &y2)   // 22. y2 = CMOV(y2, tv1, e2)
+	z.Select(int(isQNr), &y1, &y2)  // 23. y = CMOV(y2, y1, isQR)
+    return isQNr
+}
+
+{{ end }}
+
+{{ if eq (mod .FieldSizeMod256 8) 1 }}// https://www.rfc-editor.org/rfc/rfc9380.html#name-sqrt_ratio-for-any-field
+
+{{ $c2Int := index $cInts 1}}
+{{ $c2IntBytes := printList (bytes $c2Int ) }}
+
+{{ $c3Int := index $cInts 2}}
+{{ $c3IntBytes := printList (bytes $c3Int ) }}
+
+{{ $c4Int := index $cInts 3}}
+{{ $c4IntBytes := printList (bytes $c4Int ) }}
+
+{{ $c5Int := index $cInts 4}}
+{{ $c5IntBytes := printList (bytes $c5Int ) }}
+
+   tv1 := {{$CoordType}} {{asElement (index .PrecomputedParams 1) }}    //tv1 = c6
+
+   var tv2, tv3, tv4, tv5 {{$CoordType}}
+   var exp big.Int
+   // c4 = {{ $c4Int }} = 2{{supScr $c1Int}} - 1
+   // q is odd so c1 is at least 1.
+   exp.SetBytes([]byte { {{ $c4IntBytes }} })
+
+   tv2.Exp(*v, &exp)    // 2. tv2 = vᶜ⁴
+   tv3.Square(&tv2)  // 3. tv3 = tv2²
+   tv3.Mul(&tv3, v) // 4. tv3 = tv3 * v
+   tv5.Mul(u, &tv3) // 5. tv5 = u * tv3
+
+// c3 = {{ $c3Int }}
+   exp.SetBytes([]byte { {{ $c3IntBytes }} })
+
+   tv5.Exp(tv5, &exp)   // 6. tv5 = tv5ᶜ³
+   tv5.Mul(&tv5, &tv2)  // 7. tv5 = tv5 * tv2
+   tv2.Mul(&tv5, v) // 8. tv2 = tv5 * v
+   tv3.Mul(&tv5, u) // 9. tv3 = tv5 * u
+   tv4.Mul(&tv3, &tv2)  // 10. tv4 = tv3 * tv2
+
+// c5 = {{ $c5Int }}
+   exp.SetBytes([]byte { {{ $c5IntBytes }} })
+   tv5.Exp(tv4, &exp)   // 11. tv5 = tv4ᶜ⁵
+   isQNr := {{$CurveName}}NotOne(&tv5)  // 12. isQR = tv5 == 1
+   c7 := {{$CoordType}} {{asElement (index .PrecomputedParams 2) }}
+   tv2.Mul(&tv3, &c7)   // 13. tv2 = tv3 * c7
+   tv5.Mul(&tv4, &tv1)  // 14. tv5 = tv4 * tv1
+   tv3.Select(int(isQNr), &tv3, &tv2)   // 15. tv3 = CMOV(tv2, tv3, isQR)
+    tv4.Select(int(isQNr), &tv4, &tv5)  // 16. tv4 = CMOV(tv5, tv4, isQR)
+   exp.Lsh( big.NewInt(1), {{ $c1Int }} - 2)    // 18, 19: tv5 = 2ⁱ⁻² for i = c1
+
+   for i := {{ $c1Int }}; i >= 2; i -- {    // 17. for i in (c1, c1 - 1, ..., 2):
+
+	  tv5.Exp(tv4, &exp)    // 20.    tv5 = tv4ᵗᵛ⁵
+      nE1 := {{$CurveName}}NotOne(&tv5) // 21.    e1 = tv5 == 1
+      tv2.Mul(&tv3, &tv1)   // 22.    tv2 = tv3 * tv1
+      tv1.Mul(&tv1, &tv1)   // 23.    tv1 = tv1 * tv1    Why not write square?
+      tv5.Mul(&tv4, &tv1)   // 24.    tv5 = tv4 * tv1
+	  tv3.Select(int(nE1), &tv3, &tv2)  // 25.    tv3 = CMOV(tv2, tv3, e1)
+	  tv4.Select(int(nE1), &tv4, &tv5)  // 26.    tv4 = CMOV(tv5, tv4, e1)
+
+	  if i > 2 {
+        exp.Rsh(&exp, 1)    // 18, 19. tv5 = 2ⁱ⁻²
+	  }
+   }
+
+   *z = tv3
+   return isQNr
+}
+
+func {{$CurveName}}NotOne(x *{{$CoordType}}) uint64 {
+    {{if eq $TowerDegree 1 }}
+	    var one {{$CoordType}}
+		return one.SetOne().NotEqual(x)
+    {{else}}
+        //Assuming hash is implemented for G1 and that the curve is over Fp
+	    var one fp.Element
+        return one.SetOne().NotEqual(&x.{{.FieldCoordName}}0) {{range $i := interval 1 $TowerDegree}} | G1NotZero(&x.{{$.FieldCoordName}}{{$i}}) {{end}}
+    {{end}}
+}
+{{ end }}
+
+// {{$CurveTitle}}MulByZ multiplies x by [{{printList .Z}}] and stores the result in z
+func {{$CurveTitle}}MulByZ(z *{{$CoordType}}, x *{{$CoordType}}) {
+
+{{ if eq $TowerDegree 1 }}
+
+    {{ $Z := index .Z 0}}
+
+    {{ $ZBitsHi2Lo := reverse (bits $Z) }}
+    {{ $op := "Add"}}
+    {{- if lt $Z 0 }}
+        {{ $op = "Sub" }}
+        var res {{$CoordType}}
+        res.Neg(x)
+    {{- end }}
+    {{- if gt $Z 0 }}
+        res := *x
+    {{- end }}
+
+	{{if ge (len $ZBitsHi2Lo) 2 }}
+        res.Double(&res)
+
+        {{- range $bit := noFirst (noLast $ZBitsHi2Lo) }}
+            {{- if $bit }}
+                res.{{$op}}(&res, x)
+            {{- end }}
+			res.Double(&res)
+        {{- end }}
+
+        {{- if last $ZBitsHi2Lo }}
+            res.{{$op}}(&res, x)
+        {{- end }}
+
+	{{end}}
+
+    *z = res {{ else }}
+    z.Mul(x, &{{$CoordType}} {{asElement .Z }})
+
+{{ end }}}
+
+
+func {{$CurveName}}EvalPolynomial(z *{{$CoordType}}, monic bool, coefficients []{{$CoordType}}, x *{{$CoordType}}) {
+    dst := coefficients[len(coefficients) - 1]
+
+    if monic {
+        dst.Add(&dst, x)
+    }
+
+    for i := len(coefficients) - 2; i >= 0; i-- {
+        dst.Mul(&dst, x)
+        dst.Add(&dst, &coefficients[i])
+    }
+
+    z.Set(&dst)
+}
+
+{{end}}

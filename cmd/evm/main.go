@@ -159,6 +159,21 @@ var stateTransitionCommand = cli.Command{
 	},
 }
 
+var blockBuilderCommand = cli.Command{
+	Name:    "block-builder",
+	Aliases: []string{"b11r"},
+	Usage:   "builds a block from header and txs rlp",
+	Action:  t8ntool.BuildBlock,
+	Flags: []cli.Flag{
+		t8ntool.OutputBasedir,
+		t8ntool.InputHeaderFlag,
+		t8ntool.InputTxsRlpFlag,
+		t8ntool.InputOmmersFlag,
+		t8ntool.OutputBlockFlag,
+		t8ntool.SealCliqueFlag,
+	},
+}
+
 func init() {
 	app.Flags = []cli.Flag{
 		BenchFlag,
@@ -192,6 +207,7 @@ func init() {
 		runCommand,
 		stateTestCommand,
 		stateTransitionCommand,
+		blockBuilderCommand,
 	}
 	cli.CommandHelpTemplate = flags.OriginCommandHelpTemplate
 }

@@ -23,6 +23,7 @@ import (
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
+	"github.com/cypherium/cypher/params"
 )
 
 // ChainContext supports retrieving headers and consensus parameters from the
@@ -35,8 +36,18 @@ type ChainContext interface {
 	GetHeader(common.Hash, uint64) *types.Header
 }
 
+type blobHashesMessage interface {
+	BlobHashes() []common.Hash
+}
+
 // NewEVMContext creates a new context for use in the EVM.
 func NewEVMContext(msg Message, header *types.Header, chain ChainContext, author *common.Address) vm.Context {
+	return NewEVMContextWithConfig(nil, msg, header, chain, author)
+}
+
+// NewEVMContextWithConfig creates a new context for use in the EVM and passes
+// chain config into modern fork helpers such as BLOBBASEFEE.
+func NewEVMContextWithConfig(config *params.ChainConfig, msg Message, header *types.Header, chain ChainContext, author *common.Address) vm.Context {
 	// If we don't have an explicit author (i.e. not mining), extract from the header
 	var beneficiary common.Address
 	if author == nil {
@@ -44,6 +55,18 @@ func NewEVMContext(msg Message, header *types.Header, chain ChainContext, author
 	} else {
 		beneficiary = *author
 	}
+	var baseFee *big.Int
+	if header.BaseFee != nil && header.BaseFee.Sign() > 0 {
+		baseFee = new(big.Int).Set(header.BaseFee)
+	}
+	if (baseFee == nil || baseFee.Sign() == 0) && config != nil && config.IsLondon(header.Number) {
+		baseFee = big.NewInt(params.GWei)
+	}
+	var blobHashes []common.Hash
+	if blobMsg, ok := msg.(blobHashesMessage); ok {
+		blobHashes = blobMsg.BlobHashes()
+	}
+	blobBaseFee := params.CalcBlobBaseFeeAtTime(config, header.Time, header.ExcessBlobGas)
 	return vm.Context{
 		CanTransfer: CanTransfer,
 		Transfer:    Transfer,
@@ -53,6 +76,9 @@ func NewEVMContext(msg Message, header *types.Header, chain ChainContext, author
 		BlockNumber: new(big.Int).Set(header.Number),
 		Time:        new(big.Int).SetUint64(header.Time),
 		Difficulty:  new(big.Int).Set(header.Difficulty),
+		BaseFee:     baseFee,
+		BlobBaseFee: blobBaseFee,
+		BlobHashes:  blobHashes,
 		GasLimit:    header.GasLimit,
 		GasPrice:    new(big.Int).Set(msg.GasPrice()),
 	}
@@ -61,7 +87,7 @@ func NewEVMContext(msg Message, header *types.Header, chain ChainContext, author
 // GetHashFn returns a GetHashFunc which retrieves header hashes by number
 func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash {
 	// Cache will initially contain [refHash.parent],
-	// Then fill up with [refHash.p, refHash.pp, refHash.ppp, ...]
+	// Then fill up with [refHash.p, refHash.ppp, ...]
 	var cache []common.Hash
 
 	return func(n uint64) common.Hash {

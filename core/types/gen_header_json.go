@@ -31,6 +31,7 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		Extra       hexutil.Bytes  `json:"extraData"        gencodec:"required"`
 		MixDigest   common.Hash    `json:"mixHash"`
 		Nonce       BlockNonce     `json:"nonce"`
+		BaseFee     *hexutil.Big   `json:"baseFeePerGas,omitempty"`
 		BlockType   uint8          `json:"blockType"      gencodec:"required"`
 		KeyHash     common.Hash    `json:"keyHash"       gencodec:"required"`
 		Hash        common.Hash    `json:"hash"`
@@ -51,6 +52,7 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.Extra = h.Extra
 	enc.MixDigest = h.MixDigest
 	enc.Nonce = h.Nonce
+	enc.BaseFee = (*hexutil.Big)(h.BaseFee)
 	enc.BlockType = h.BlockType
 	enc.KeyHash = h.KeyHash
 	enc.Hash = h.Hash()
@@ -75,6 +77,7 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		Extra       *hexutil.Bytes  `json:"extraData"        gencodec:"required"`
 		MixDigest   *common.Hash    `json:"mixHash"`
 		Nonce       *BlockNonce     `json:"nonce"`
+		BaseFee     *hexutil.Big    `json:"baseFeePerGas,omitempty"`
 		BlockType   uint8           `json:"blockType"      gencodec:"required"`
 		KeyHash     *common.Hash    `json:"keyHash"       gencodec:"required"`
 	}
@@ -139,6 +142,9 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 	}
 	if dec.Nonce != nil {
 		h.Nonce = *dec.Nonce
+	}
+	if dec.BaseFee != nil {
+		h.BaseFee = (*big.Int)(dec.BaseFee)
 	}
 	h.BlockType = dec.BlockType
 	if dec.KeyHash != nil {

@@ -102,6 +102,14 @@ func NewEVMInterpreter(evm *EVM, cfg Config) *EVMInterpreter {
 		switch {
 		case evm.chainRules.IsYoloV1:
 			jt = yoloV1InstructionSet
+		case evm.chainRules.IsCancun:
+			jt = cancunInstructionSet
+		case evm.chainRules.IsShanghai:
+			jt = shanghaiInstructionSet
+		case evm.chainRules.IsLondon:
+			jt = londonInstructionSet
+		case evm.chainRules.IsBerlin:
+			jt = berlinInstructionSet
 		case evm.chainRules.IsIstanbul:
 			jt = istanbulInstructionSet
 		case evm.chainRules.IsConstantinople:

@@ -98,6 +98,10 @@ type (
 		prev        bool // whether account had already suicided
 		prevbalance *big.Int
 	}
+	createContractChange struct {
+		account *common.Address
+		prev    bool
+	}
 
 	// Changes to individual accounts.
 	balanceChange struct {
@@ -109,6 +113,10 @@ type (
 		prev    uint64
 	}
 	storageChange struct {
+		account       *common.Address
+		key, prevalue common.Hash
+	}
+	transientStorageChange struct {
 		account       *common.Address
 		key, prevalue common.Hash
 	}
@@ -164,6 +172,18 @@ func (ch suicideChange) dirtied() *common.Address {
 	return ch.account
 }
 
+func (ch createContractChange) revert(s *StateDB) {
+	if ch.prev {
+		s.createdContracts[*ch.account] = struct{}{}
+		return
+	}
+	delete(s.createdContracts, *ch.account)
+}
+
+func (ch createContractChange) dirtied() *common.Address {
+	return nil
+}
+
 var ripemd = common.HexToAddress("0000000000000000000000000000000000000003")
 
 func (ch touchChange) revert(s *StateDB) {
@@ -203,6 +223,14 @@ func (ch storageChange) revert(s *StateDB) {
 
 func (ch storageChange) dirtied() *common.Address {
 	return ch.account
+}
+
+func (ch transientStorageChange) revert(s *StateDB) {
+	s.setTransientState(*ch.account, ch.key, ch.prevalue)
+}
+
+func (ch transientStorageChange) dirtied() *common.Address {
+	return nil
 }
 
 func (ch refundChange) revert(s *StateDB) {

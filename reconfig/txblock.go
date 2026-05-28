@@ -280,16 +280,61 @@ const (
 	pendingTierMedium = 256
 	pendingTierLarge  = 1024
 
-	fastPerAccountTierSmall  = 4
-	slowPerAccountTierSmall  = 16
-	fastPerAccountTierMedium = 8
-	slowPerAccountTierMedium = 48
-	fastPerAccountTierLarge  = 16
-	slowPerAccountTierLarge  = 128
+	fastPerAccountTierSmall  = 64
+	slowPerAccountTierSmall  = 64
+	fastPerAccountTierMedium = 128
+	slowPerAccountTierMedium = 128
+	fastPerAccountTierLarge  = 512
+	slowPerAccountTierLarge  = 512
 	fastBlockMaxTxCount      = uint64(4000)
 	slowBlockMaxTxCount      = uint64(50000)
-	fastBlockGasTargetPct    = uint64(35)
+	fastBlockGasTargetPct    = uint64(80)
 	slowBlockGasTargetPct    = uint64(98)
+
+	deployBlockGasTargetPct = uint64(10)
+	heavyBlockGasTargetPct  = uint64(5)
+	dataBlockGasTargetPct   = uint64(5)
+	dexBlockGasTargetPct    = uint64(50)
+
+	// Backlog drain mode.
+	// Normal quota protects small/native traffic from heavy/deploy/data bursts.
+	// When executable txpool backlog is high, slow blocks should drain more
+	// heavy classes instead of leaving pending executable txs for minutes.
+	backlogDrainPendingThreshold          = 512
+	backlogStrongDrainPendingThreshold    = 2048
+	backlogEmergencyDrainPendingThreshold = 8192
+
+	deployDrainGasTargetPct = uint64(20)
+	heavyDrainGasTargetPct  = uint64(15)
+	dataDrainGasTargetPct   = uint64(15)
+	dexDrainGasTargetPct    = uint64(60)
+
+	deployStrongDrainGasTargetPct = uint64(30)
+	heavyStrongDrainGasTargetPct  = uint64(25)
+	dataStrongDrainGasTargetPct   = uint64(25)
+	dexStrongDrainGasTargetPct    = uint64(70)
+
+	deployEmergencyDrainGasTargetPct = uint64(45)
+	heavyEmergencyDrainGasTargetPct  = uint64(40)
+	dataEmergencyDrainGasTargetPct   = uint64(40)
+	dexEmergencyDrainGasTargetPct    = uint64(80)
+
+	deployBlockMaxTxCount = uint64(4)
+	heavyBlockMaxTxCount  = uint64(8)
+	dataBlockMaxTxCount   = uint64(8)
+	dexBlockMaxTxCount    = uint64(10000)
+
+	deployDrainMaxTxCount = uint64(16)
+	heavyDrainMaxTxCount  = uint64(32)
+	dataDrainMaxTxCount   = uint64(32)
+
+	deployStrongDrainMaxTxCount = uint64(32)
+	heavyStrongDrainMaxTxCount  = uint64(64)
+	dataStrongDrainMaxTxCount   = uint64(64)
+
+	deployEmergencyDrainMaxTxCount = uint64(64)
+	heavyEmergencyDrainMaxTxCount  = uint64(128)
+	dataEmergencyDrainMaxTxCount   = uint64(128)
 )
 
 const (
@@ -356,9 +401,12 @@ func fastEligibleTx(tx *types.Transaction) bool {
 }
 
 func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8, perAccount int) AddressTxes {
-	selected := make(AddressTxes, len(addrTxes))
 	fastPath := isFastBlockType(blockType)
+	if !fastPath && perAccount <= 0 {
+		return addrTxes
+	}
 
+	selected := make(AddressTxes, len(addrTxes))
 	for addr, txs := range addrTxes {
 		picked := make(types.Transactions, 0, len(txs))
 		for _, tx := range txs {
@@ -461,14 +509,18 @@ func (txS *txService) createWork(blockType uint8) *work {
 		panic(fmt.Sprint("failed to get parent state: ", err))
 	}
 
+	gasTarget := blockGasTarget(blockType, header.GasLimit)
+	pendingTotal, _ := txS.txPool.Stats()
+
 	return &work{
-		config:      txS.config,
-		publicState: publicState,
-		header:      header,
-		txPool:      txS.txPool,
-		maxTxCount:  blockMaxTxCount(blockType),
-		gasTarget:   blockGasTarget(blockType, header.GasLimit),
-		blockType:   blockType,
+		config:         txS.config,
+		publicState:    publicState,
+		header:         header,
+		txPool:         txS.txPool,
+		maxTxCount:     blockMaxTxCount(blockType),
+		gasTarget:      gasTarget,
+		resourceBudget: newTxResourceBudget(blockType, gasTarget, pendingTotal),
+		blockType:      blockType,
 	}
 }
 
@@ -489,27 +541,80 @@ func blockGasTarget(blockType uint8, gasLimit uint64) uint64 {
 	return gasLimit * slowBlockGasTargetPct / 100
 }
 
+func pendingClassesForBlockType(blockType uint8) []core.TxResourceClass {
+	if isFastBlockType(blockType) {
+		return []core.TxResourceClass{
+			core.TxClassNative,
+			core.TxClassERC20,
+			core.TxClassSmallCall,
+		}
+	}
+
+	return []core.TxResourceClass{
+		core.TxClassDex,
+		core.TxClassDeploy,
+		core.TxClassHeavy,
+		core.TxClassData,
+	}
+}
+
 func (txS *txService) loadPendingAddressTxes(blockType uint8) (AddressTxes, error) {
 	lane := core.TxLaneSlow
 	if isFastBlockType(blockType) {
 		lane = core.TxLaneFast
 	}
-	return txS.txPool.PendingByLane(lane)
+
+	pendingTotal, _ := txS.txPool.Stats()
+	perAccountLimit := blockProposalLimit(blockType, pendingTotal)
+	maxTx := int(blockMaxTxCount(blockType))
+	gasTarget := uint64(0)
+	if head := txS.bc.CurrentBlock(); head != nil && head.Header() != nil {
+		gasTarget = blockGasTarget(blockType, head.Header().GasLimit)
+	}
+
+	return txS.txPool.PendingByLaneAndClassesLimited(
+		lane,
+		maxTx,
+		perAccountLimit,
+		gasTarget,
+		pendingClassesForBlockType(blockType)...,
+	)
 }
 
 func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) *types.TransactionsByPriceAndNonce {
 	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes, time.Now())
 	pendingTotal, _ := txS.txPool.Stats()
 	perAccountLimit := blockProposalLimit(blockType, pendingTotal)
+
+	availableBeforeFilter := countAddressTxes(allAddrTxes)
 	availableTxs := countAddressTxes(addrTxes)
-	addrTxes = selectTxsForBlockType(addrTxes, blockType, perAccountLimit)
-	addrTxes = limitAddressTxes(addrTxes, perAccountLimit)
+
+	// Safety fallback:
+	// If txpool returned executable candidates but proposedChain filtered all of them,
+	// the proposedChain cache may be stale from proposals that were not finally committed.
+	// In that case, clear proposedChain to current head and use the raw txpool candidates.
+	if availableBeforeFilter > 0 && availableTxs == 0 {
+		log.Warn("proposedChain filtered all txpool candidates; clearing stale proposed cache",
+			"blockType", readableTxBlockType(blockType),
+			"pendingTotal", pendingTotal,
+			"availableBeforeFilter", availableBeforeFilter,
+			"accountsBeforeFilter", len(allAddrTxes),
+			"currentBlock", txS.bc.CurrentBlockN())
+
+		txS.proposedChain.clear(txS.bc.CurrentBlock())
+		addrTxes = allAddrTxes
+		availableTxs = availableBeforeFilter
+	}
+
 	log.Debug("tx proposal scheduler",
 		"blockType", readableTxBlockType(blockType),
 		"pendingTotal", pendingTotal,
 		"availableTxs", availableTxs,
+		"availableBeforeFilter", availableBeforeFilter,
 		"accounts", len(addrTxes),
-		"perAccountLimit", perAccountLimit)
+		"perAccountLimit", perAccountLimit,
+		"maxTx", blockMaxTxCount(blockType),
+		"gasTargetPct", blockGasTarget(blockType, txS.bc.CurrentBlock().Header().GasLimit))
 	return types.NewTransactionsByPriceAndNonce(txS.config, txS.bc.CurrentBlock().Number(), addrTxes)
 }
 
@@ -552,16 +657,137 @@ func (txS *txService) firePendingBlockEvents(logs []*types.Log) {
 	}()
 }
 
+type txResourceBudget struct {
+	gasCaps map[core.TxResourceClass]uint64
+	txCaps  map[core.TxResourceClass]uint64
+
+	gasUsed map[core.TxResourceClass]uint64
+	txUsed  map[core.TxResourceClass]uint64
+}
+
+func newTxResourceBudget(blockType uint8, gasTarget uint64, pendingTotal int) *txResourceBudget {
+	b := &txResourceBudget{
+		gasCaps: make(map[core.TxResourceClass]uint64),
+		txCaps:  make(map[core.TxResourceClass]uint64),
+		gasUsed: make(map[core.TxResourceClass]uint64),
+		txUsed:  make(map[core.TxResourceClass]uint64),
+	}
+
+	drainLevel := 0
+	if !isFastBlockType(blockType) {
+		switch {
+		case pendingTotal >= backlogEmergencyDrainPendingThreshold:
+			drainLevel = 3
+		case pendingTotal >= backlogStrongDrainPendingThreshold:
+			drainLevel = 2
+		case pendingTotal >= backlogDrainPendingThreshold:
+			drainLevel = 1
+		}
+	}
+
+	deployGasPct := deployBlockGasTargetPct
+	heavyGasPct := heavyBlockGasTargetPct
+	dataGasPct := dataBlockGasTargetPct
+	dexGasPct := dexBlockGasTargetPct
+
+	deployMaxTx := deployBlockMaxTxCount
+	heavyMaxTx := heavyBlockMaxTxCount
+	dataMaxTx := dataBlockMaxTxCount
+
+	switch drainLevel {
+	case 1:
+		deployGasPct = deployDrainGasTargetPct
+		heavyGasPct = heavyDrainGasTargetPct
+		dataGasPct = dataDrainGasTargetPct
+		dexGasPct = dexDrainGasTargetPct
+		deployMaxTx = deployDrainMaxTxCount
+		heavyMaxTx = heavyDrainMaxTxCount
+		dataMaxTx = dataDrainMaxTxCount
+	case 2:
+		deployGasPct = deployStrongDrainGasTargetPct
+		heavyGasPct = heavyStrongDrainGasTargetPct
+		dataGasPct = dataStrongDrainGasTargetPct
+		dexGasPct = dexStrongDrainGasTargetPct
+		deployMaxTx = deployStrongDrainMaxTxCount
+		heavyMaxTx = heavyStrongDrainMaxTxCount
+		dataMaxTx = dataStrongDrainMaxTxCount
+	case 3:
+		deployGasPct = deployEmergencyDrainGasTargetPct
+		heavyGasPct = heavyEmergencyDrainGasTargetPct
+		dataGasPct = dataEmergencyDrainGasTargetPct
+		dexGasPct = dexEmergencyDrainGasTargetPct
+		deployMaxTx = deployEmergencyDrainMaxTxCount
+		heavyMaxTx = heavyEmergencyDrainMaxTxCount
+		dataMaxTx = dataEmergencyDrainMaxTxCount
+	}
+
+	if gasTarget > 0 {
+		b.gasCaps[core.TxClassDeploy] = gasTarget * deployGasPct / 100
+		b.gasCaps[core.TxClassHeavy] = gasTarget * heavyGasPct / 100
+		b.gasCaps[core.TxClassData] = gasTarget * dataGasPct / 100
+		b.gasCaps[core.TxClassDex] = gasTarget * dexGasPct / 100
+	}
+
+	b.txCaps[core.TxClassDeploy] = deployMaxTx
+	b.txCaps[core.TxClassHeavy] = heavyMaxTx
+	b.txCaps[core.TxClassData] = dataMaxTx
+	b.txCaps[core.TxClassDex] = dexBlockMaxTxCount
+
+	if drainLevel > 0 {
+		log.Debug("tx resource budget drain mode",
+			"pendingTotal", pendingTotal,
+			"drainLevel", drainLevel,
+			"deployGasPct", deployGasPct,
+			"heavyGasPct", heavyGasPct,
+			"dataGasPct", dataGasPct,
+			"dexGasPct", dexGasPct,
+			"deployMaxTx", deployMaxTx,
+			"heavyMaxTx", heavyMaxTx,
+			"dataMaxTx", dataMaxTx)
+	}
+
+	return b
+}
+
+func (b *txResourceBudget) CanInclude(class core.TxResourceClass, requestedGas uint64) bool {
+	if b == nil {
+		return true
+	}
+
+	if maxTx, ok := b.txCaps[class]; ok && maxTx > 0 && b.txUsed[class] >= maxTx {
+		return false
+	}
+
+	if maxGas, ok := b.gasCaps[class]; ok && maxGas > 0 {
+		// Always allow the first tx of a capped class. This prevents a single
+		// large deploy/heavy tx from being starved forever.
+		if b.txUsed[class] > 0 && b.gasUsed[class]+requestedGas > maxGas {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (b *txResourceBudget) Record(class core.TxResourceClass, gasUsed uint64) {
+	if b == nil {
+		return
+	}
+	b.txUsed[class]++
+	b.gasUsed[class] += gasUsed
+}
+
 // Current state information for building the next block
 type work struct {
-	config      *params.ChainConfig
-	publicState *state.StateDB
-	Block       *types.Block
-	header      *types.Header
-	txPool      *core.TxPool
-	maxTxCount  uint64
-	gasTarget   uint64
-	blockType   uint8
+	config         *params.ChainConfig
+	publicState    *state.StateDB
+	Block          *types.Block
+	header         *types.Header
+	txPool         *core.TxPool
+	maxTxCount     uint64
+	gasTarget      uint64
+	resourceBudget *txResourceBudget
+	blockType      uint8
 }
 
 func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc *core.BlockChain) (types.Transactions, types.Receipts, []*types.Log, types.Transactions) {
@@ -596,6 +822,13 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 				continue
 			}
 		}
+		resourceClass := core.ClassifyTxResource(tx)
+		if env.resourceBudget != nil && !env.resourceBudget.CanInclude(resourceClass, tx.Gas()) {
+			log.Debug("Skipping tx above resource class budget", "hash", tx.Hash(), "class", resourceClass, "gas", tx.Gas(), "blockType", env.blockType)
+			txes.Pop()
+			continue
+		}
+
 		// Check sender
 		from, err := types.Sender(signer, tx)
 		if err != nil {
@@ -620,6 +853,9 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		default:
 			txCount++
 			committedTxes = append(committedTxes, tx)
+			if env.resourceBudget != nil {
+				env.resourceBudget.Record(resourceClass, publicReceipt.GasUsed)
+			}
 
 			publicReceipts = append(publicReceipts, publicReceipt)
 			allLogs = append(allLogs, publicReceipt.Logs...)

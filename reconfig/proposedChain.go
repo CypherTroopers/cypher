@@ -1,16 +1,16 @@
 package reconfig
 
 import (
-	"time"
 	mapset "github.com/deckarep/golang-set"
 	"gopkg.in/oleiade/lane.v1"
+	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 )
 
-const proposedTxTTL = 1500 * time.Millisecond
+const proposedTxTTL = 500 * time.Millisecond
 
 type proposedChain struct {
 	head               *types.Block
@@ -160,19 +160,25 @@ func (chain *proposedChain) cleanupExpiredProposedTxes(now time.Time) {
 
 func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes, now time.Time) AddressTxes {
 	chain.cleanupExpiredProposedTxes(now)
-	newMap := make(AddressTxes)
 
+	// PendingByLane already returns a fresh map. Reuse that map and compact
+	// each tx slice in-place instead of allocating another AddressTxes map and
+	// filtered slice for every account.
 	for addr, txes := range addrTxes {
-		filteredTxes := make(types.Transactions, 0)
+		writeIndex := 0
 		for _, tx := range txes {
-			if _, blocked := chain.proposedTxes[tx.Hash()]; !blocked {
-				filteredTxes = append(filteredTxes, tx)
+			if _, blocked := chain.proposedTxes[tx.Hash()]; blocked {
+				continue
 			}
+			txes[writeIndex] = tx
+			writeIndex++
 		}
-		if len(filteredTxes) > 0 {
-			newMap[addr] = filteredTxes
+		if writeIndex == 0 {
+			delete(addrTxes, addr)
+			continue
 		}
+		addrTxes[addr] = txes[:writeIndex]
 	}
 
-	return newMap
+	return addrTxes
 }

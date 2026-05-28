@@ -80,9 +80,14 @@ func NewOracle(backend OracleBackend, params Config) *Oracle {
 	}
 }
 
-// SuggestPrice returns a gasprice so that newly created transaction can
-// have a very high chance to be included in the following blocks.
+// SuggestPrice returns a stable default gas price.
+// Cypherium stress tests may include high gas-price heavy/deploy/data txs.
+// The public eth_gasPrice value must not be inflated by those test or heavy
+// transactions, otherwise normal wallet transfers become 10x more expensive.
+// Keep normal transfer fee stable: 21000 gas * 1 gwei = 0.000021.
 func (gpo *Oracle) SuggestPrice(ctx context.Context) (*big.Int, error) {
+	return new(big.Int).Set(big.NewInt(params.GWei)), nil
+
 	head, _ := gpo.backend.HeaderByNumber(ctx, rpc.LatestBlockNumber)
 	headHash := head.Hash()
 
@@ -187,6 +192,11 @@ func (gpo *Oracle) getBlockPrices(ctx context.Context, signer types.Signer, bloc
 
 	var prices []*big.Int
 	for _, tx := range txs {
+		// Exclude contract creation transactions from price sampling so
+		// deploy bursts don't inflate suggested fees for regular traffic.
+		if tx.To() == nil {
+			continue
+		}
 		sender, err := types.Sender(signer, tx)
 		if err == nil && sender != block.Coinbase() {
 			prices = append(prices, tx.GasPrice())

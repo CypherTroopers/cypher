@@ -26,6 +26,8 @@ import (
 // StateDB is an EVM database for full state querying.
 type StateDB interface {
 	CreateAccount(common.Address)
+	CreateContract(common.Address)
+	CreatedContract(common.Address) bool
 
 	SubBalance(common.Address, *big.Int)
 	AddBalance(common.Address, *big.Int)
@@ -46,6 +48,8 @@ type StateDB interface {
 	GetCommittedState(common.Address, common.Hash) common.Hash
 	GetState(common.Address, common.Hash) common.Hash
 	SetState(common.Address, common.Hash, common.Hash)
+	GetTransientState(common.Address, common.Hash) common.Hash
+	SetTransientState(common.Address, common.Hash, common.Hash)
 
 	Suicide(common.Address) bool
 	HasSuicided(common.Address) bool
@@ -62,6 +66,13 @@ type StateDB interface {
 
 	AddLog(*types.Log)
 	AddPreimage(common.Hash, []byte)
+
+	// Access list methods are used by Berlin+ warm/cold gas accounting.
+	PrepareAccessList(sender common.Address, dst *common.Address, precompiles []common.Address, list types.AccessList)
+	AddAddressToAccessList(addr common.Address)
+	AddSlotToAccessList(addr common.Address, slot common.Hash)
+	AddressInAccessList(addr common.Address) bool
+	SlotInAccessList(addr common.Address, slot common.Hash) (addressOk bool, slotOk bool)
 
 	ForEachStorage(common.Address, func(common.Hash, common.Hash) bool) error
 }

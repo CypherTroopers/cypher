@@ -18,8 +18,8 @@ package core
 
 import (
 	"fmt"
-	"github.com/cypherium/cypher/common"
 
+	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
@@ -69,6 +69,9 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	*/
 	if hash := types.DeriveSha(block.Transactions(), new(trie.Trie)); hash != header.TxHash {
 		return fmt.Errorf("transaction root hash mismatch: have %x, want %x", hash, header.TxHash)
+	}
+	if err := ValidateBlockBlobBody(v.config, header, block.Transactions()); err != nil {
+		return err
 	}
 	if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
 		if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {

@@ -499,7 +499,50 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Engine: %v}",
+
+	var (
+		berlinBlock       *big.Int
+		londonBlock       *big.Int
+		arrowGlacierBlock *big.Int
+		grayGlacierBlock  *big.Int
+		shanghaiTime      *uint64
+		cancunTime        *uint64
+		pragueTime        *uint64
+		osakaTime         *uint64
+		blobSchedule      *BlobScheduleConfig
+	)
+	if modern := c.ModernForkConfig(); modern != nil {
+		berlinBlock = modern.BerlinBlock
+		londonBlock = modern.LondonBlock
+		arrowGlacierBlock = modern.ArrowGlacierBlock
+		grayGlacierBlock = modern.GrayGlacierBlock
+		shanghaiTime = modern.ShanghaiTime
+		cancunTime = modern.CancunTime
+		pragueTime = modern.PragueTime
+		osakaTime = modern.OsakaTime
+		blobSchedule = modern.BlobSchedule
+	}
+
+	formatUint64Ptr := func(v *uint64) interface{} {
+		if v == nil {
+			return nil
+		}
+		return *v
+	}
+	formatBlobConfig := func(v *BlobConfig) interface{} {
+		if v == nil {
+			return nil
+		}
+		return fmt.Sprintf("{Target:%d Max:%d BaseFeeUpdateFraction:%d}", v.Target, v.Max, v.BaseFeeUpdateFraction)
+	}
+	formatBlobSchedule := func(v *BlobScheduleConfig) interface{} {
+		if v == nil {
+			return nil
+		}
+		return fmt.Sprintf("{Cancun:%v Prague:%v Osaka:%v}", formatBlobConfig(v.Cancun), formatBlobConfig(v.Prague), formatBlobConfig(v.Osaka))
+	}
+
+	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Berlin: %v London: %v ArrowGlacier: %v GrayGlacier: %v ShanghaiTime: %v CancunTime: %v PragueTime: %v OsakaTime: %v BlobSchedule: %v Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -516,6 +559,15 @@ func (c *ChainConfig) String() string {
 		c.IstanbulBlock,
 		c.MuirGlacierBlock,
 		c.YoloV1Block,
+		berlinBlock,
+		londonBlock,
+		arrowGlacierBlock,
+		grayGlacierBlock,
+		formatUint64Ptr(shanghaiTime),
+		formatUint64Ptr(cancunTime),
+		formatUint64Ptr(pragueTime),
+		formatUint64Ptr(osakaTime),
+		formatBlobSchedule(blobSchedule),
 		engine,
 	)
 }
@@ -810,6 +862,8 @@ type Rules struct {
 	ChainID                                                 *big.Int
 	IsHomestead, IsEIP150, IsEIP155, IsEIP158               bool
 	IsByzantium, IsConstantinople, IsPetersburg, IsIstanbul bool
+	IsBerlin, IsLondon                                      bool
+	IsShanghai, IsCancun, IsPrague, IsOsaka                 bool
 	IsYoloV1                                                bool
 }
 

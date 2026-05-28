@@ -34,8 +34,8 @@ import (
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/params"
-	"github.com/cypherium/cypher/rpc"
 	"github.com/cypherium/cypher/reconfig/bftview"
+	"github.com/cypherium/cypher/rpc"
 )
 
 // Backend interface provides the common API services (that are provided by

@@ -94,10 +94,21 @@ type Header struct {
 	Extra       []byte         `json:"extraData"        gencodec:"required"`
 	MixDigest   common.Hash    `json:"mixHash"`
 	Nonce       BlockNonce     `json:"nonce"`
-	BlockType   uint8          `json:"blockType"      gencodec:"required"`
-	KeyHash     common.Hash    `json:"keyHash"       gencodec:"required"`
-	KeyInfo     []byte         `json:"keyInfo"       gencodec:"required"`
-	SignInfo    SignInfo
+
+	// Modern EVM header fields.
+	// Do not use rlp:"optional" here because this Cypherium codebase uses an
+	// older RLP package that does not understand the optional tag.
+	BaseFee          *big.Int    `json:"baseFeePerGas"`
+	WithdrawalsHash  common.Hash `json:"withdrawalsRoot"`
+	BlobGasUsed      uint64      `json:"blobGasUsed"`
+	ExcessBlobGas    uint64      `json:"excessBlobGas"`
+	ParentBeaconRoot common.Hash `json:"parentBeaconBlockRoot"`
+	RequestsHash     common.Hash `json:"requestsHash"`
+
+	BlockType uint8       `json:"blockType"      gencodec:"required"`
+	KeyHash   common.Hash `json:"keyHash"       gencodec:"required"`
+	KeyInfo   []byte      `json:"keyInfo"       gencodec:"required"`
+	SignInfo  SignInfo
 }
 
 // field type overrides for gencodec
@@ -108,6 +119,7 @@ type headerMarshaling struct {
 	GasUsed    hexutil.Uint64
 	Time       hexutil.Uint64
 	Extra      hexutil.Bytes
+	BaseFee    *hexutil.Big
 	Hash       common.Hash `json:"hash"` // adds call to Hash() in MarshalJSON
 }
 
@@ -128,9 +140,13 @@ func (h *Header) Hash() common.Hash {
 	if cpy.Number = new(big.Int); h.Number != nil {
 		cpy.Number.Set(h.Number)
 	}
+	if h.BaseFee != nil {
+		cpy.BaseFee = new(big.Int).Set(h.BaseFee)
+	}
 	cpy.SetSignInfoNull()
 	return rlpHash(cpy)
 }
+
 func (h *Header) SetSignInfoNull() {
 	h.SignInfo.Signature = nil
 	h.SignInfo.Exceptions = nil
@@ -144,6 +160,9 @@ var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
 // to approximate and limit the memory consumption of various caches.
 func (h *Header) Size() common.StorageSize {
 	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions)+len(h.SignInfo.LeaderID)+common.HashLength)
+	if h.BaseFee != nil {
+		s += common.StorageSize(h.BaseFee.BitLen() / 8)
+	}
 	return s
 }
 
@@ -158,6 +177,11 @@ func (h *Header) SanityCheck() error {
 	if h.Difficulty != nil {
 		if diffLen := h.Difficulty.BitLen(); diffLen > 80 {
 			return fmt.Errorf("too large block difficulty: bitlen %d", diffLen)
+		}
+	}
+	if h.BaseFee != nil {
+		if baseFeeLen := h.BaseFee.BitLen(); baseFeeLen > 256 {
+			return fmt.Errorf("too large baseFee: bitlen %d", baseFeeLen)
 		}
 	}
 	if eLen := len(h.Extra); eLen > 100*1024 {
@@ -309,9 +333,24 @@ func CopyHeader(h *Header) *Header {
 	if cpy.Number = new(big.Int); h.Number != nil {
 		cpy.Number.Set(h.Number)
 	}
+	if h.BaseFee != nil {
+		cpy.BaseFee = new(big.Int).Set(h.BaseFee)
+	}
 	if len(h.Extra) > 0 {
 		cpy.Extra = make([]byte, len(h.Extra))
 		copy(cpy.Extra, h.Extra)
+	}
+	if len(h.KeyInfo) > 0 {
+		cpy.KeyInfo = make([]byte, len(h.KeyInfo))
+		copy(cpy.KeyInfo, h.KeyInfo)
+	}
+	if len(h.SignInfo.Signature) > 0 {
+		cpy.SignInfo.Signature = make([]byte, len(h.SignInfo.Signature))
+		copy(cpy.SignInfo.Signature, h.SignInfo.Signature)
+	}
+	if len(h.SignInfo.Exceptions) > 0 {
+		cpy.SignInfo.Exceptions = make([]byte, len(h.SignInfo.Exceptions))
+		copy(cpy.SignInfo.Exceptions, h.SignInfo.Exceptions)
 	}
 	return &cpy
 }
@@ -365,7 +404,15 @@ func (b *Block) Number() *big.Int     { return new(big.Int).Set(b.header.Number)
 func (b *Block) GasLimit() uint64     { return b.header.GasLimit }
 func (b *Block) GasUsed() uint64      { return b.header.GasUsed }
 func (b *Block) Difficulty() *big.Int { return new(big.Int).Set(b.header.Difficulty) }
-func (b *Block) Time() uint64         { return b.header.Time }
+
+func (b *Block) BaseFee() *big.Int {
+	if b.header.BaseFee == nil {
+		return nil
+	}
+	return new(big.Int).Set(b.header.BaseFee)
+}
+
+func (b *Block) Time() uint64 { return b.header.Time }
 
 func (b *Block) NumberU64() uint64      { return b.header.Number.Uint64() }
 func (b *Block) MixDigest() common.Hash { return b.header.MixDigest }
@@ -427,10 +474,10 @@ func CalcUncleHash(uncles []*Header) common.Hash {
 // WithSeal returns a new block with the data from b but the header replaced with
 // the sealed one.
 func (b *Block) WithSeal(header *Header) *Block {
-	cpy := *header
+	cpy := CopyHeader(header)
 
 	return &Block{
-		header:       &cpy,
+		header:       cpy,
 		transactions: b.transactions,
 		uncles:       b.uncles,
 	}

@@ -150,7 +150,7 @@ func (api *PrivateMinerAPI) Start(threads *int) error {
 }
 
 */
-func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password string) error {
+func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password string) (string, error) {
 	var (
 		err    error
 		eb     common.Address
@@ -159,7 +159,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	)
 
 	if api.e.IsMining() {
-		return fmt.Errorf("Miner is running...")
+		return "Mining is already in progress", nil
 	}
 	//log.Info("miner.start", "threads", threads, "addr", addr, "passwd", password)
 
@@ -176,7 +176,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 				pubKey, prvKey, err = wallet.GetKeyPair(account, password)
 				if err != nil {
 					log.Error("Cannot start reconfig without public key of coinbase", "err", err)
-					return fmt.Errorf("Coinbase missing public key: %v", err)
+					return "", fmt.Errorf("Coinbase missing public key: %v", err)
 				}
 				server.Public = common.HexString(pubKey)
 				server.Private = common.HexString(prvKey)
@@ -187,7 +187,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 
 	if pubKey == nil || prvKey == nil {
 		log.Error("Cannot start reconfig without correct public key")
-		return errors.New("missing public key")
+		return "", errors.New("missing public key")
 	}
 	log.Warn("pubKey", "pubKey", server.Public) //, "prvKey", server.Private)
 	log.Warn("exip", "ip", api.e.ExtIP(), "port", api.e.config.RnetPort)
@@ -209,7 +209,10 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	//	log.Info("Updated mining threads", "threads", *threads)
 	//	th.SetThreads(*threads)
 	//}
-	return api.e.StartMining(true, eb, pubKey)
+	if err := api.e.StartMining(true, eb, pubKey); err != nil {
+		return "", err
+	}
+	return "Mining started", nil
 }
 
 // Stop terminates the miner, both at the consensus engine level as well as at

@@ -40,7 +40,7 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-//SignatureLength indicates the byte length required to carry a signature with recovery id.
+// SignatureLength indicates the byte length required to carry a signature with recovery id.
 const SignatureLength = 64 + 1 // 64 bytes ECDSA signature + 1 byte recovery id
 
 // RecoveryIDOffset points to the byte offset within the signature that contains the recovery id.
@@ -298,11 +298,13 @@ func NewSeed(s [32]byte) *Seed {
 	return seed
 }
 func (s *Seed) Read(buf []byte) (int, error) {
-	n := len(buf)
-	for i := 0; i < n; i++ {
-		buf[i] = s.data[i]
+	if len(s.data) == 0 {
+		return 0, io.ErrUnexpectedEOF
 	}
-	return n, nil
+	for i := range buf {
+		buf[i] = s.data[i%len(s.data)]
+	}
+	return len(buf), nil
 }
 
 func EDDSAToBLS(pri []byte) (pubByte []byte, priByte []byte, err error) {
