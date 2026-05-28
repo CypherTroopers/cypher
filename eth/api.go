@@ -26,7 +26,7 @@ import (
 	"net"
 	"os"
 
-	//	"runtime"
+	"runtime"
 	"strings"
 
 	"github.com/cypherium/cypher/common"
@@ -151,6 +151,15 @@ func (api *PrivateMinerAPI) Start(threads *int) error {
 
 */
 func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password string) (string, error) {
+	miningThreads := runtime.NumCPU()
+	if threads != nil {
+		miningThreads = *threads
+	}
+	if api.e.IsMining() {
+		api.e.setMiningThreads(miningThreads)
+		return "Mining threads updated", nil
+	}
+
 	var (
 		err    error
 		eb     common.Address
@@ -158,10 +167,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 		pubKey ed25519.PublicKey
 	)
 
-	if api.e.IsMining() {
-		return "Mining is already in progress", nil
-	}
-	//log.Info("miner.start", "threads", threads, "addr", addr, "passwd", password)
+	//log.Info("miner.start", "threads", miningThreads, "addr", addr, "passwd", password)
 
 	server := &common.NodeConfig{}
 
@@ -209,7 +215,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	//	log.Info("Updated mining threads", "threads", *threads)
 	//	th.SetThreads(*threads)
 	//}
-	if err := api.e.StartMining(true, eb, pubKey); err != nil {
+	if err := api.e.StartMining(miningThreads, true, eb, pubKey); err != nil {
 		return "", err
 	}
 	return "Mining started", nil
