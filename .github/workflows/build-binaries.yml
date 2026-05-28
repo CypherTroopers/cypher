@@ -1,461 +1,459 @@
 name: Build Binaries
 
 on:
-  workflow_dispatch:
+workflow_dispatch:
 
-  push:
-    branches:
-      - EVM_Cancun_PoW
-    paths-ignore:
-      - 'build/bin/cypher-linux-*'
-      - 'build/bin/cypher-darwin-*'
-      - 'build/bin/cypher.exe'
-      - 'build/bin/*.dll'
+push:
+branches:
+- EVM_Cancun_PoW
+paths-ignore:
+- 'build/bin/cypher-linux-*'
+- 'build/bin/cypher-darwin-*'
+- 'build/bin/cypher.exe'
+- 'build/bin/*.dll'
 
 permissions:
-  contents: write
+contents: write
 
 concurrency:
-  group: build-binaries-${{ github.ref }}
-  cancel-in-progress: false
+group: build-binaries-${{ github.ref }}
+cancel-in-progress: false
 
 jobs:
-  build-macos-arm64:
-    name: Build macOS Apple Silicon
-    runs-on: macos-latest
-
-    env:
-      GOPATH: ${{ github.workspace }}/go
-      GO111MODULE: off
-      CGO_ENABLED: 1
-      CC: clang
-      CXX: clang++
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: EVM_Cancun_PoW
-          path: go/src/github.com/cypherium/cypher
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.2'
-          cache: false
-
-      - name: Setup macOS native libs
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          brew update
-          brew install openssl@3 gmp
-
-      - name: Build cypher darwin arm64
-        working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
-          mkdir -p "$GOPATH/src/github.com/shirou"
-          mkdir -p "$GOPATH/src/golang.org/x"
-          mkdir -p "$GOPATH/src/github.com/dlclark"
-          mkdir -p "$GOPATH/src/github.com/go-sourcemap"
-          mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
-          mkdir -p "$GOPATH/src/github.com/go-ole"
-          mkdir -p "$GOPATH/src/github.com/ebitengine"
-          mkdir -p "$GOPATH/src/github.com/tklauser"
-
-          git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
-          git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
-          git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
-
-          cd "$GOPATH/src/github.com/dlclark"
-          if [ ! -d regexp2 ]; then
-            git clone https://github.com/dlclark/regexp2.git
-          fi
-          cd regexp2
-          git fetch --tags
-          git checkout v1.1.8
-
-          git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
-          git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
-          git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
-          git clone --depth 1 https://github.com/ebitengine/purego.git "$GOPATH/src/github.com/ebitengine/purego"
-          git clone --depth 1 https://github.com/tklauser/go-sysconf.git "$GOPATH/src/github.com/tklauser/go-sysconf"
-          git clone --depth 1 https://github.com/tklauser/numcpus.git "$GOPATH/src/github.com/tklauser/numcpus"
-
-          rm -rf "$GOPATH/src/github.com/herumi"
-          mkdir -p "$GOPATH/src/github.com/herumi"
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          git submodule update --init --recursive
-
-          cd "$GOPATH/src/github.com/herumi/bls/mcl"
-          make clean || true
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
-
-          cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
-
-          mkdir -p crypto/bls/lib/darwin
-          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
-          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
-          cp crypto/bls/lib/darwin/* crypto/bls/lib/
-
-          COMMIT=$(git rev-parse HEAD)
-          DATE=$(date +%Y%m%d)
-
-          go env -w GO111MODULE=off
-
-          OPENSSL_PREFIX=$(brew --prefix openssl@3)
-          GMP_PREFIX=$(brew --prefix gmp)
-
-          export CGO_CFLAGS="-I$OPENSSL_PREFIX/include -I$GMP_PREFIX/include"
-          export CGO_CXXFLAGS="$CGO_CFLAGS"
-          export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
-          export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
-
-          GOOS=darwin GOARCH=arm64 go build -trimpath -v \
-            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE" \
-            -o "build/bin/cypher-darwin-arm64" \
-            ./cmd/cypher
-
-          file build/bin/cypher-darwin-arm64
-
-      - name: Upload macOS binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypher-macos-arm64
-          path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-darwin-arm64
-
-  build-linux-amd64:
-    name: Build Linux amd64
-    runs-on: ubuntu-latest
-
-    env:
-      GOPATH: ${{ github.workspace }}/go
-      GO111MODULE: off
-      CGO_ENABLED: 1
-      CC: gcc
-      CXX: g++
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: EVM_Cancun_PoW
-          path: go/src/github.com/cypherium/cypher
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.2'
-          cache: false
-
-      - name: Setup Linux native libs
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            gcc \
-            g++ \
-            make \
-            git \
-            python3 \
-            pkg-config \
-            libssl-dev \
-            libgmp-dev
-
-      - name: Build cypher linux amd64
-        working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
-          mkdir -p "$GOPATH/src/github.com/shirou"
-          mkdir -p "$GOPATH/src/golang.org/x"
-          mkdir -p "$GOPATH/src/github.com/dlclark"
-          mkdir -p "$GOPATH/src/github.com/go-sourcemap"
-          mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
-          mkdir -p "$GOPATH/src/github.com/go-ole"
-          mkdir -p "$GOPATH/src/github.com/ebitengine"
-          mkdir -p "$GOPATH/src/github.com/tklauser"
-
-          git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
-          git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
-          git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
-
-          cd "$GOPATH/src/github.com/dlclark"
-          if [ ! -d regexp2 ]; then
-            git clone https://github.com/dlclark/regexp2.git
-          fi
-          cd regexp2
-          git fetch --tags
-          git checkout v1.1.8
-
-          git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
-          git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
-          git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
-          git clone --depth 1 https://github.com/ebitengine/purego.git "$GOPATH/src/github.com/ebitengine/purego"
-          git clone --depth 1 https://github.com/tklauser/go-sysconf.git "$GOPATH/src/github.com/tklauser/go-sysconf"
-          git clone --depth 1 https://github.com/tklauser/numcpus.git "$GOPATH/src/github.com/tklauser/numcpus"
-
-          rm -rf "$GOPATH/src/github.com/herumi"
-          mkdir -p "$GOPATH/src/github.com/herumi"
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          git submodule update --init --recursive
-
-          cd "$GOPATH/src/github.com/herumi/bls/mcl"
-          make clean || true
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
-
-          cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
-
-          mkdir -p crypto/bls/lib/linux
-          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/linux/libbls256.a
-          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/linux/libmcl.a
-          cp crypto/bls/lib/linux/* crypto/bls/lib/
-
-          COMMIT=$(git rev-parse HEAD)
-          DATE=$(date +%Y%m%d)
-
-          go env -w GO111MODULE=off
-
-          export CGO_CFLAGS="-I/usr/include"
-          export CGO_CXXFLAGS="$CGO_CFLAGS"
-          export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu"
-
-          GOOS=linux GOARCH=amd64 go build -trimpath -v \
-            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE" \
-            -o "build/bin/cypher-linux-amd64" \
-            ./cmd/cypher
-
-          file build/bin/cypher-linux-amd64
-
-      - name: Upload Linux binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypher-linux-amd64
-          path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-linux-amd64
-
-  build-windows:
-    name: Build Windows
-    runs-on: windows-2022
-
-    env:
-      GOPATH: ${{ github.workspace }}\go
-      GO111MODULE: off
-      CGO_ENABLED: 1
-      CC: gcc
-      CXX: g++
-
-    steps:
-      - name: Enable Git long paths
-        shell: powershell
-        run: |
-          git config --system core.longpaths true
-          git config --global core.longpaths true
-          git config --show-origin --get-all core.longpaths
-
-      - uses: actions/checkout@v4
-        with:
-          ref: EVM_Cancun_PoW
-          path: go/src/github.com/cypherium/cypher
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.2'
-          cache: false
-
-      - name: Setup MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: false
-          path-type: inherit
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-gmp
-            mingw-w64-x86_64-openssl
-            make
-            git
-            python
-
-      - name: Build cypher.exe
-        shell: msys2 {0}
-        working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
-        run: |
-          set -e
-
-          mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
-          mkdir -p "$GOPATH/src/github.com/shirou"
-          mkdir -p "$GOPATH/src/golang.org/x"
-          mkdir -p "$GOPATH/src/github.com/dlclark"
-          mkdir -p "$GOPATH/src/github.com/go-sourcemap"
-          mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
-          mkdir -p "$GOPATH/src/github.com/go-ole"
-
-          git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
-          git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
-          git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
-
-          cd "$GOPATH/src/github.com/dlclark"
-          if [ ! -d regexp2 ]; then
-            git clone https://github.com/dlclark/regexp2.git
-          fi
-          cd regexp2
-          git fetch --tags
-          git checkout v1.1.8
-
-          git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
-          git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
-          git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
-
-          rm -rf "$GOPATH/src/github.com/herumi"
-          mkdir -p "$GOPATH/src/github.com/herumi"
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          git submodule update --init --recursive
-
-          cd "$GOPATH/src/github.com/herumi/bls/mcl"
-          make clean || true
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
-
-          cd "${{ github.workspace }}\go\src\github.com\cypherium\cypher"
-
-          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/win/libbls256.a
-          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/win/libmcl.a
-          cp crypto/bls/lib/win/* crypto/bls/lib/
-
-          COMMIT=$(git rev-parse HEAD)
-          DATE=$(date +%Y%m%d)
-
-          go env -w GO111MODULE=off
-
-          go build -trimpath -v \
-            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
-            -o build/bin/cypher.exe \
-            ./cmd/cypher
-
-          cp /mingw64/bin/libcrypto-3-x64.dll build/bin/ || true
-          cp /mingw64/bin/libgmp-10.dll build/bin/ || true
-          cp /mingw64/bin/libstdc++-6.dll build/bin/ || true
-          cp /mingw64/bin/libgcc_s_seh-1.dll build/bin/ || true
-          cp /mingw64/bin/libwinpthread-1.dll build/bin/ || true
-
-          ./build/bin/cypher.exe version
-
-      - name: Upload Windows binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypher-windows
-          path: |
-            ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\cypher.exe
-            ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\*.dll
-
-  commit-binaries:
-    name: Commit binaries
-    runs-on: ubuntu-latest
-    needs:
-      - build-macos-arm64
-      - build-linux-amd64
-      - build-windows
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: EVM_Cancun_PoW
-
-      - name: Download macOS binary
-        uses: actions/download-artifact@v4
-        with:
-          name: cypher-macos-arm64
-          path: artifacts/macos
-
-      - name: Download Linux binary
-        uses: actions/download-artifact@v4
-        with:
-          name: cypher-linux-amd64
-          path: artifacts/linux
-
-      - name: Download Windows binary
-        uses: actions/download-artifact@v4
-        with:
-          name: cypher-windows
-          path: artifacts/windows
-
-      - name: Copy binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p build/bin
-
-          find artifacts/macos -type f -name 'cypher-darwin-arm64' -exec cp {} build/bin/ \;
-          find artifacts/linux -type f -name 'cypher-linux-amd64' -exec cp {} build/bin/ \;
-          find artifacts/windows -type f -name 'cypher.exe' -exec cp {} build/bin/ \;
-          find artifacts/windows -type f -name '*.dll' -exec cp {} build/bin/ \;
-
-          ls -lah build/bin/
-
-      - name: Commit built binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add build/bin/cypher-darwin-arm64
-          git add build/bin/cypher-linux-amd64
-          git add build/bin/cypher.exe
-
-          find build/bin -maxdepth 1 -name '*.dll' -print0 | xargs -0 -r git add
-
-          if git diff --cached --quiet; then
-            echo "No binary changes to commit"
-            exit 0
-          fi
-
-          git commit -m "Update macOS Linux and Windows binaries"
-
-          git fetch origin EVM_Cancun_PoW
-          git rebase origin/EVM_Cancun_PoW
-
-          git push origin HEAD:EVM_Cancun_PoW
+build-macos-arm64:
+name: Build macOS Apple Silicon
+runs-on: macos-latest
+
+env:
+  GOPATH: ${{ github.workspace }}/go
+  GO111MODULE: 'off'
+  CGO_ENABLED: '1'
+  CC: clang
+  CXX: clang++
+
+steps:
+  - uses: actions/checkout@v4
+    with:
+      ref: EVM_Cancun_PoW
+      path: go/src/github.com/cypherium/cypher
+      sparse-checkout-cone-mode: false
+      sparse-checkout: |
+        /*
+        !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
+
+  - uses: actions/setup-go@v5
+    with:
+      go-version: '1.26.2'
+      cache: false
+
+  - name: Setup macOS native libs
+    shell: bash
+    run: |
+      set -euo pipefail
+
+      brew update
+      brew install openssl@3 gmp cmake
+
+  - name: Build cypher darwin arm64
+    working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
+    shell: bash
+    run: |
+      set -euo pipefail
+
+      export PATH="$(go env GOROOT)/bin:/usr/local/bin:$PATH"
+      export GO111MODULE=off
+      export GOOS=darwin
+      export GOARCH=arm64
+
+      mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
+      cd "$GOPATH/src/github.com/VictoriaMetrics"
+      [ -d fastcache ] || git clone https://github.com/VictoriaMetrics/fastcache.git
+
+      mkdir -p "$GOPATH/src/github.com/shirou"
+      cd "$GOPATH/src/github.com/shirou"
+      [ -d gopsutil ] || git clone https://github.com/shirou/gopsutil.git
+
+      mkdir -p "$GOPATH/src/github.com/go-sourcemap"
+      cd "$GOPATH/src/github.com/go-sourcemap"
+      [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
+
+      mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
+      cd "$GOPATH/src/github.com/yusufpapurcu"
+      [ -d wmi ] || git clone https://github.com/yusufpapurcu/wmi.git
+
+      mkdir -p "$GOPATH/src/github.com/go-ole"
+      cd "$GOPATH/src/github.com/go-ole"
+      [ -d go-ole ] || git clone https://github.com/go-ole/go-ole.git
+
+      mkdir -p "$GOPATH/src/github.com/ebitengine"
+      cd "$GOPATH/src/github.com/ebitengine"
+      [ -d purego ] || git clone https://github.com/ebitengine/purego.git
+
+      mkdir -p "$GOPATH/src/github.com/tklauser"
+      cd "$GOPATH/src/github.com/tklauser"
+      [ -d go-sysconf ] || git clone https://github.com/tklauser/go-sysconf.git
+      [ -d numcpus ] || git clone https://github.com/tklauser/numcpus.git
+
+      mkdir -p "$GOPATH/src/golang.org/x"
+      cd "$GOPATH/src/golang.org/x"
+      [ -d sys ] || git clone https://go.googlesource.com/sys
+
+      cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
+
+      cp -f ./crypto/bls/lib/darwin/* ./crypto/bls/lib/
+
+      python3 - <<'PY'
+      from pathlib import Path
+
+      p = Path("vendor/gopkg.in/olebedev/go-duktape.v3/duk_logging.c")
+
+      if p.exists():
+          s = p.read_text()
+          s = s.replace("duk_uint8_t date_buf[32]", "duk_uint8_t date_buf[64]")
+          s = s.replace("snprintf((char *) date_buf, sizeof(date_buf),, ", "snprintf((char *) date_buf, sizeof(date_buf), ")
+          s = s.replace('sprintf((char *) date_buf, "', 'snprintf((char *) date_buf, sizeof(date_buf), "')
+          p.write_text(s)
+      PY
+
+      go env -w GO111MODULE=off
+
+      OPENSSL_PREFIX=$(brew --prefix openssl@3)
+      GMP_PREFIX=$(brew --prefix gmp)
+
+      export CGO_CFLAGS="-I$OPENSSL_PREFIX/include -I$GMP_PREFIX/include"
+      export CGO_CXXFLAGS="$CGO_CFLAGS"
+      export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
+      export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
+
+      make clean
+      make cypher
+
+      cp -f build/bin/cypher build/bin/cypher-darwin-arm64
+      chmod +x build/bin/cypher-darwin-arm64
+
+      file build/bin/cypher-darwin-arm64
+
+  - name: Upload macOS binary
+    uses: actions/upload-artifact@v4
+    with:
+      name: cypher-macos-arm64
+      path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-darwin-arm64
+
+build-linux-amd64:
+name: Build Linux amd64
+runs-on: ubuntu-latest
+
+env:
+  GOPATH: ${{ github.workspace }}/go
+  GO111MODULE: 'off'
+  CGO_ENABLED: '1'
+  CC: gcc
+  CXX: g++
+
+steps:
+  - uses: actions/checkout@v4
+    with:
+      ref: EVM_Cancun_PoW
+      path: go/src/github.com/cypherium/cypher
+      sparse-checkout-cone-mode: false
+      sparse-checkout: |
+        /*
+        !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
+
+  - uses: actions/setup-go@v5
+    with:
+      go-version: '1.26.2'
+      cache: false
+
+  - name: Setup Linux native libs
+    shell: bash
+    run: |
+      set -euo pipefail
+
+      sudo apt-get update
+      sudo apt-get install -y \
+        build-essential \
+        gcc \
+        g++ \
+        make \
+        git \
+        python3 \
+        cmake \
+        pkg-config \
+        libssl-dev \
+        libgmp-dev \
+        bzip2 \
+        m4 \
+        curl \
+        libc6-dev \
+        wget \
+        texinfo
+
+  - name: Build cypher linux amd64
+    working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
+    shell: bash
+    run: |
+      set -euo pipefail
+
+      export PATH="$(go env GOROOT)/bin:/usr/local/bin:$PATH"
+      export GO111MODULE=off
+      export GOOS=linux
+      export GOARCH=amd64
+
+      mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
+      cd "$GOPATH/src/github.com/VictoriaMetrics"
+      [ -d fastcache ] || git clone https://github.com/VictoriaMetrics/fastcache.git
+
+      mkdir -p "$GOPATH/src/github.com/shirou"
+      cd "$GOPATH/src/github.com/shirou"
+      [ -d gopsutil ] || git clone https://github.com/shirou/gopsutil.git
+
+      mkdir -p "$GOPATH/src/github.com/go-sourcemap"
+      cd "$GOPATH/src/github.com/go-sourcemap"
+      [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
+
+      mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
+      cd "$GOPATH/src/github.com/yusufpapurcu"
+      [ -d wmi ] || git clone https://github.com/yusufpapurcu/wmi.git
+
+      mkdir -p "$GOPATH/src/github.com/go-ole"
+      cd "$GOPATH/src/github.com/go-ole"
+      [ -d go-ole ] || git clone https://github.com/go-ole/go-ole.git
+
+      mkdir -p "$GOPATH/src/github.com/ebitengine"
+      cd "$GOPATH/src/github.com/ebitengine"
+      [ -d purego ] || git clone https://github.com/ebitengine/purego.git
+
+      mkdir -p "$GOPATH/src/github.com/tklauser"
+      cd "$GOPATH/src/github.com/tklauser"
+      [ -d go-sysconf ] || git clone https://github.com/tklauser/go-sysconf.git
+      [ -d numcpus ] || git clone https://github.com/tklauser/numcpus.git
+
+      mkdir -p "$GOPATH/src/golang.org/x"
+      cd "$GOPATH/src/golang.org/x"
+      [ -d sys ] || git clone https://go.googlesource.com/sys
+
+      cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
+
+      cp -f ./crypto/bls/lib/linux/* ./crypto/bls/lib/
+
+      python3 - <<'PY'
+      from pathlib import Path
+
+      p = Path("vendor/gopkg.in/olebedev/go-duktape.v3/duk_logging.c")
+
+      if p.exists():
+          s = p.read_text()
+          s = s.replace("duk_uint8_t date_buf[32]", "duk_uint8_t date_buf[64]")
+          s = s.replace("snprintf((char *) date_buf, sizeof(date_buf),, ", "snprintf((char *) date_buf, sizeof(date_buf), ")
+          s = s.replace('sprintf((char *) date_buf, "', 'snprintf((char *) date_buf, sizeof(date_buf), "')
+          p.write_text(s)
+      PY
+
+      go env -w GO111MODULE=off
+
+      export CGO_CFLAGS="-I/usr/include"
+      export CGO_CXXFLAGS="$CGO_CFLAGS"
+      export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu"
+
+      make clean
+      make cypher
+
+      cp -f build/bin/cypher build/bin/cypher-linux-amd64
+      chmod +x build/bin/cypher-linux-amd64
+
+      file build/bin/cypher-linux-amd64
+
+  - name: Upload Linux binary
+    uses: actions/upload-artifact@v4
+    with:
+      name: cypher-linux-amd64
+      path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-linux-amd64
+
+build-windows:
+name: Build Windows
+runs-on: windows-2022
+
+env:
+  GOPATH: ${{ github.workspace }}\go
+  GO111MODULE: 'off'
+  CGO_ENABLED: '1'
+  CC: gcc
+  CXX: g++
+
+steps:
+  - name: Enable Git long paths
+    shell: powershell
+    run: |
+      git config --system core.longpaths true
+      git config --global core.longpaths true
+      git config --show-origin --get-all core.longpaths
+
+  - uses: actions/checkout@v4
+    with:
+      ref: EVM_Cancun_PoW
+      path: go/src/github.com/cypherium/cypher
+      sparse-checkout-cone-mode: false
+      sparse-checkout: |
+        /*
+        !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
+
+  - uses: actions/setup-go@v5
+    with:
+      go-version: '1.26.2'
+      cache: false
+
+  - name: Setup MSYS2
+    uses: msys2/setup-msys2@v2
+    with:
+      msystem: MINGW64
+      update: false
+      path-type: inherit
+      install: >-
+        mingw-w64-x86_64-gcc
+        mingw-w64-x86_64-gmp
+        mingw-w64-x86_64-openssl
+        make
+        git
+        python
+
+  - name: Build cypher.exe
+    shell: msys2 {0}
+    working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
+    run: |
+      set -e
+
+      mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
+      mkdir -p "$GOPATH/src/github.com/shirou"
+      mkdir -p "$GOPATH/src/golang.org/x"
+      mkdir -p "$GOPATH/src/github.com/go-sourcemap"
+      mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
+      mkdir -p "$GOPATH/src/github.com/go-ole"
+
+      git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
+      git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
+      git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
+
+      git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
+      git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
+      git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
+
+      rm -rf "$GOPATH/src/github.com/herumi"
+      mkdir -p "$GOPATH/src/github.com/herumi"
+      git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
+
+      cd "$GOPATH/src/github.com/herumi/bls"
+      git submodule update --init --recursive
+
+      cd "$GOPATH/src/github.com/herumi/bls/mcl"
+      make clean || true
+      rm -f src/bint_switch.hpp src/llvm_proto.hpp
+      python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
+      make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
+
+      cd "$GOPATH/src/github.com/herumi/bls"
+      rm -f obj/*.d obj/*.o lib/libbls256.a
+      make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+
+      cd "${{ github.workspace }}\go\src\github.com\cypherium\cypher"
+
+      cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/win/libbls256.a
+      cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/win/libmcl.a
+      cp crypto/bls/lib/win/* crypto/bls/lib/
+
+      COMMIT=$(git rev-parse HEAD)
+      DATE=$(date +%Y%m%d)
+
+      go env -w GO111MODULE=off
+
+      go build -trimpath -v \
+        -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
+        -o build/bin/cypher.exe \
+        ./cmd/cypher
+
+      cp /mingw64/bin/libcrypto-3-x64.dll build/bin/ || true
+      cp /mingw64/bin/libgmp-10.dll build/bin/ || true
+      cp /mingw64/bin/libstdc++-6.dll build/bin/ || true
+      cp /mingw64/bin/libgcc_s_seh-1.dll build/bin/ || true
+      cp /mingw64/bin/libwinpthread-1.dll build/bin/ || true
+
+      ./build/bin/cypher.exe version
+
+  - name: Upload Windows binary
+    uses: actions/upload-artifact@v4
+    with:
+      name: cypher-windows
+      path: |
+        ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\cypher.exe
+        ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\*.dll
+
+commit-binaries:
+name: Commit binaries
+runs-on: ubuntu-latest
+needs:
+- build-macos-arm64
+- build-linux-amd64
+- build-windows
+
+steps:
+  - uses: actions/checkout@v4
+    with:
+      ref: EVM_Cancun_PoW
+
+  - name: Download macOS binary
+    uses: actions/download-artifact@v4
+    with:
+      name: cypher-macos-arm64
+      path: artifacts/macos
+
+  - name: Download Linux binary
+    uses: actions/download-artifact@v4
+    with:
+      name: cypher-linux-amd64
+      path: artifacts/linux
+
+  - name: Download Windows binary
+    uses: actions/download-artifact@v4
+    with:
+      name: cypher-windows
+      path: artifacts/windows
+
+  - name: Copy binaries
+    shell: bash
+    run: |
+      set -euo pipefail
+
+      mkdir -p build/bin
+
+      find artifacts/macos -type f -name 'cypher-darwin-arm64' -exec cp {} build/bin/ \;
+      find artifacts/linux -type f -name 'cypher-linux-amd64' -exec cp {} build/bin/ \;
+      find artifacts/windows -type f -name 'cypher.exe' -exec cp {} build/bin/ \;
+      find artifacts/windows -type f -name '*.dll' -exec cp {} build/bin/ \;
+
+      ls -lah build/bin/
+
+  - name: Commit built binaries
+    shell: bash
+    run: |
+      set -euo pipefail
+
+      git config user.name "github-actions[bot]"
+      git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      git add build/bin/cypher-darwin-arm64
+      git add build/bin/cypher-linux-amd64
+      git add build/bin/cypher.exe
+
+      find build/bin -maxdepth 1 -name '*.dll' -print0 | xargs -0 -r git add
+
+      if git diff --cached --quiet; then
+        echo "No binary changes to commit"
+        exit 0
+      fi
+
+      git commit -m "Update macOS Linux and Windows binaries"
+
+      git fetch origin EVM_Cancun_PoW
+      git rebase origin/EVM_Cancun_PoW
+
+      git push origin HEAD:EVM_Cancun_PoW
