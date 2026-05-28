@@ -98,9 +98,29 @@ jobs:
           cd "$GOPATH/src/golang.org/x"
           [ -d sys ] || git clone https://go.googlesource.com/sys
 
+          rm -rf "$GOPATH/src/github.com/herumi"
+          mkdir -p "$GOPATH/src/github.com/herumi"
+          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
+
+          cd "$GOPATH/src/github.com/herumi/bls"
+          git submodule update --init --recursive
+
+          cd "$GOPATH/src/github.com/herumi/bls/mcl"
+          make clean || true
+          rm -f src/bint_switch.hpp src/llvm_proto.hpp
+          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
+          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
+
+          cd "$GOPATH/src/github.com/herumi/bls"
+          rm -f obj/*.d obj/*.o lib/libbls256.a
+          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+
           cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
 
-          cp -f ./crypto/bls/lib/darwin/* ./crypto/bls/lib/
+          mkdir -p crypto/bls/lib/darwin
+          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
+          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
+          cp crypto/bls/lib/darwin/* crypto/bls/lib/
 
           python3 - <<'PY'
           from pathlib import Path
