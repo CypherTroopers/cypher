@@ -520,7 +520,20 @@ func (s *Ethereum) StopMining() {
 }
 */
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
-func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey ed25519.PublicKey) error {
+
+func (s *Ethereum) setMiningThreads(threads int) {
+	type threaded interface {
+		SetThreads(threads int)
+	}
+	if th, ok := s.engine.(threaded); ok {
+		log.Info("Updated mining threads", "threads", threads)
+		th.SetThreads(threads)
+	}
+}
+
+func (s *Ethereum) StartMining(threads int, local bool, eb common.Address, pubKey ed25519.PublicKey) error {
+	s.setMiningThreads(threads)
+
 	// If the miner was not running, initialize it
 	if !s.IsMining() {
 		s.lock.RLock()
