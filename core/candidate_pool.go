@@ -52,8 +52,8 @@ func newCandidateLookup(cph Backend) *candidateLookup {
 }
 
 // Flatten creates a candinonce-sorted slice of cands based on the loosely
-//// sorted internal representation. The result of the sorting is cached in case
-//// it's requested again before any modifications are made to the contents.
+// // sorted internal representation. The result of the sorting is cached in case
+// // it's requested again before any modifications are made to the contents.
 func (t *candidateLookup) Flatten() types.CandsByNonce {
 	// If the sorting was not cached yet, create and cache it
 	candidates := make(types.CandsByNonce, 0)
@@ -113,7 +113,7 @@ func (t *candidateLookup) Content() []*types.Candidate {
 	if sortedCandidates, bestCandidate, err = t.PrepareStageSort(types.DeterminByMinNonce); err != nil {
 		return nil
 	}
-	log.Info("Content", "sortedCandidates", sortedCandidates, "bestCandidate nonce", bestCandidate.KeyCandidate.Nonce.Uint64())
+	log.Debug("Content", "sortedCandidates", sortedCandidates, "bestCandidate nonce", bestCandidate.KeyCandidate.Nonce.Uint64())
 	return sortedCandidates
 }
 
@@ -275,7 +275,7 @@ type ExternalIpConfig struct {
 	ExternalIP string
 }
 
-///////////////////////////////////////////////
+// /////////////////////////////////////////////
 type CandidatePool struct {
 	candidates     *candidateLookup
 	mu             sync.Mutex
@@ -286,7 +286,7 @@ type CandidatePool struct {
 	mux            *event.TypeMux
 	db             ethdb.Database
 	CheckMinerPort func(addr string, blockN uint64, keyblockN uint64)
-	powResultUDP  *powResultUDPServer
+	powResultUDP   *powResultUDPServer
 }
 
 // Backend wraps all methods required for candidate pool.

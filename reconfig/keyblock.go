@@ -337,6 +337,11 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	var outerPublic, outerCoinBase string
 	best := keyS.getBestCandidate(keyS.fixedModeEnabled())
 	powSubmitter := best
+	log.Info("fixed-mode candidate lookup for reward",
+		"fixedMode", keyS.fixedModeEnabled(),
+		"hasBest", best != nil,
+		"currentKeyNumber", keyS.kbc.CurrentBlockN(),
+		"expectedCandidateNumber", keyS.kbc.CurrentBlockN()+1)
 	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
 		best = nil
 	}
@@ -387,6 +392,11 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 
 	header.CommitteeHash = mb.RlpHash()
 	header.T_Number = keyS.bc.CurrentBlockN()
+	log.Info("fixed-mode pow submitter status",
+		"fixedMode", keyS.fixedModeEnabled(),
+		"hasPowSubmitter", powSubmitter != nil,
+		"outerCoinBase", outerCoinBase)
+
 	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
@@ -538,15 +548,37 @@ func (keyS *keyService) getBestCandidate(refresh bool) *types.Candidate {
 		}
 		contents := keyS.candidatepool.Content()
 		if len(contents) > 0 {
-			best := contents[0]
-			if best.KeyCandidate.Number.Uint64() == kNumber {
-				if keyS.bestCandidate == nil {
-					keyS.bestCandidate = best
-				} else if best.KeyCandidate.Nonce.Uint64() < keyS.bestCandidate.KeyCandidate.Nonce.Uint64() {
-					keyS.bestCandidate = best
+			found := false
+
+			for _, cand := range contents {
+				if cand == nil || cand.KeyCandidate == nil {
+					continue
 				}
-			} else {
-				log.Warn("getBestCandidate", "have not get the candidate keyNumber", keyS.kbc.CurrentBlockN(), "KeyCandidate number", best.KeyCandidate.Number.Uint64())
+
+				if cand.KeyCandidate.Number.Uint64() != kNumber {
+					log.Warn("getBestCandidate skip unmatched candidate",
+						"currentKeyNumber", keyS.kbc.CurrentBlockN(),
+						"expectedCandidateNumber", kNumber,
+						"candidateNumber", cand.KeyCandidate.Number.Uint64(),
+						"nonce", cand.KeyCandidate.Nonce.Uint64(),
+						"pubkey", cand.PubKey,
+					)
+					continue
+				}
+
+				found = true
+				if keyS.bestCandidate == nil ||
+					cand.KeyCandidate.Nonce.Uint64() < keyS.bestCandidate.KeyCandidate.Nonce.Uint64() {
+					keyS.bestCandidate = cand
+				}
+			}
+
+			if !found {
+				log.Warn("getBestCandidate no candidate for expected key number",
+					"currentKeyNumber", keyS.kbc.CurrentBlockN(),
+					"expectedCandidateNumber", kNumber,
+					"candidateCount", len(contents),
+				)
 			}
 		}
 	} //end if refresh

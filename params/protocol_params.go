@@ -23,24 +23,23 @@ import (
 
 const (
 	DisableGAS             = false
-	KeyblockPerTxBlocks    = 360
 	MaxTxCountPerBlock     = 1024
 	AckTimeout             = 20 * time.Second
 	HeatBeatTimeout        = 10 * time.Second
-	PaceMakerTimeout       = 3 * time.Minute
+	PaceMakerTimeout       = 30 * time.Second
 	KeyBlockTimeout        = 20 * time.Minute
 	KeyBlockMinInterval    = 10 * time.Minute
 	KeyBlock_Reward        = 1e+18 // Block reward in wei for successfully mining a block
 	CheckBackNumber        = 10
 	CollectVoteInfoTimeout = 5 * time.Second
 	// these are original values from upstream Geth, used in colossusX consensus
-	OriginalMinGasLimit          uint64 = 5000 // The bound divisor of the gas limit, used in update calculations.
-	OriginalGasLimitBoundDivisor uint64 = 1024 // Minimum the gas limit may ever be.
+	OriginalMinGasLimit          uint64 = 3374454134 // The bound divisor of the gas limit, used in update calculations.
+	OriginalGasLimitBoundDivisor uint64 = 1024       // Minimum the gas limit may ever be.
 
 	// modified values for Cypher
-	GasLimitBoundDivisor uint64 = 4096      // The bound divisor of the gas limit, used in update calculations.
-	MinGasLimit          uint64 = 700000000 // Minimum the gas limit may ever be.
-	GenesisGasLimit      uint64 = 800000000 // Gas limit of the Genesis block.
+	GasLimitBoundDivisor uint64 = 4096       // The bound divisor of the gas limit, used in update calculations.
+	MinGasLimit          uint64 = 3374454134 // Minimum the gas limit may ever be.
+	GenesisGasLimit      uint64 = 3374454134 // Gas limit of the Genesis block.
 
 	MaximumExtraDataSize  uint64 = 51200 // Maximum size extra data may be after Genesis.
 	ExpByteGas            uint64 = 10    // Times ceil(log256(exponent)) for the EXP instruction.

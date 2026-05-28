@@ -108,7 +108,7 @@ func calcKeyBlockDifficultyByzantium(time uint64, parent *types.KeyBlockHeader) 
 	x.Div(x, big9)
 	x.Sub(big1, x)
 
-	// max((2 if len(parent_uncles) else 1) - (block_timestamp - parent_timestamp) // 9, -99)
+	// max((2 if len(parent_uncles) else 1) - (block_timestamp - parent.timestamp) // 9, -99)
 	if x.Cmp(bigMinus99) < 0 {
 		x.Set(bigMinus99)
 	}
@@ -223,7 +223,7 @@ func calcCandidateDifficulty(time uint64, parent *types.KeyBlockHeader, committe
 	x.Div(x, big.NewInt(50))
 	x.Sub(big1, x)
 
-	// max(1 - (block_timestamp - parent_timestamp) // 10, -99)
+	// max(1 - (block_timestamp - parent.timestamp) // 10, -99)
 	if x.Cmp(bigMinus99) < 0 {
 		x.Set(bigMinus99)
 	}
@@ -399,6 +399,9 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 	// Verify that the gasUsed is <= gasLimit
 	if header.GasUsed > header.GasLimit {
 		return fmt.Errorf("invalid gasUsed: have %d, gasLimit %d", header.GasUsed, header.GasLimit)
+	}
+	if err := verifyModernHeaderFields(chain.Config(), header, parent); err != nil {
+		return err
 	}
 
 	// Verify that the gas limit remains within allowed bounds

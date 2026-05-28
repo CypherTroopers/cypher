@@ -1,0 +1,18 @@
+linters:
+  disable-all: true
+  enable:
+    - gofmt
+    - staticcheck
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - misspell
+linters-settings:
+  gosec:
+    excludes:
+      - G115 # Conversions from int -> uint etc.
+issues:
+  exclude-generated: disable
+run:
+  issues-exit-code: 1

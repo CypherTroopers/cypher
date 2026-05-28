@@ -5,8 +5,9 @@ on:
 
   push:
     branches:
-      - colossusX_dev_test
+      - EVM_Cancun_PoW
     paths-ignore:
+      - 'README.md'
       - 'build/bin/cypher-linux-*'
       - 'build/bin/cypher-darwin-*'
       - 'build/bin/cypher.exe'
@@ -26,15 +27,15 @@ jobs:
 
     env:
       GOPATH: ${{ github.workspace }}/go
-      GO111MODULE: off
-      CGO_ENABLED: 1
+      GO111MODULE: 'off'
+      CGO_ENABLED: '1'
       CC: clang
       CXX: clang++
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: EVM_Cancun_PoW
           path: go/src/github.com/cypherium/cypher
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -52,7 +53,7 @@ jobs:
           set -euo pipefail
 
           brew update
-          brew install openssl@3 gmp
+          brew install openssl@3 gmp cmake
 
       - name: Build cypher darwin arm64
         working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
@@ -60,34 +61,43 @@ jobs:
         run: |
           set -euo pipefail
 
+          export PATH="$(go env GOROOT)/bin:/usr/local/bin:$PATH"
+          export GO111MODULE=off
+          export GOOS=darwin
+          export GOARCH=arm64
+
           mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
+          cd "$GOPATH/src/github.com/VictoriaMetrics"
+          [ -d fastcache ] || git clone https://github.com/VictoriaMetrics/fastcache.git
+
           mkdir -p "$GOPATH/src/github.com/shirou"
-          mkdir -p "$GOPATH/src/golang.org/x"
-          mkdir -p "$GOPATH/src/github.com/dlclark"
+          cd "$GOPATH/src/github.com/shirou"
+          [ -d gopsutil ] || git clone https://github.com/shirou/gopsutil.git
+
           mkdir -p "$GOPATH/src/github.com/go-sourcemap"
+          cd "$GOPATH/src/github.com/go-sourcemap"
+          [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
+
           mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
+          cd "$GOPATH/src/github.com/yusufpapurcu"
+          [ -d wmi ] || git clone https://github.com/yusufpapurcu/wmi.git
+
           mkdir -p "$GOPATH/src/github.com/go-ole"
+          cd "$GOPATH/src/github.com/go-ole"
+          [ -d go-ole ] || git clone https://github.com/go-ole/go-ole.git
+
           mkdir -p "$GOPATH/src/github.com/ebitengine"
+          cd "$GOPATH/src/github.com/ebitengine"
+          [ -d purego ] || git clone https://github.com/ebitengine/purego.git
+
           mkdir -p "$GOPATH/src/github.com/tklauser"
+          cd "$GOPATH/src/github.com/tklauser"
+          [ -d go-sysconf ] || git clone https://github.com/tklauser/go-sysconf.git
+          [ -d numcpus ] || git clone https://github.com/tklauser/numcpus.git
 
-          git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
-          git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
-          git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
-
-          cd "$GOPATH/src/github.com/dlclark"
-          if [ ! -d regexp2 ]; then
-            git clone https://github.com/dlclark/regexp2.git
-          fi
-          cd regexp2
-          git fetch --tags
-          git checkout v1.1.8
-
-          git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
-          git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
-          git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
-          git clone --depth 1 https://github.com/ebitengine/purego.git "$GOPATH/src/github.com/ebitengine/purego"
-          git clone --depth 1 https://github.com/tklauser/go-sysconf.git "$GOPATH/src/github.com/tklauser/go-sysconf"
-          git clone --depth 1 https://github.com/tklauser/numcpus.git "$GOPATH/src/github.com/tklauser/numcpus"
+          mkdir -p "$GOPATH/src/golang.org/x"
+          cd "$GOPATH/src/golang.org/x"
+          [ -d sys ] || git clone https://go.googlesource.com/sys
 
           rm -rf "$GOPATH/src/github.com/herumi"
           mkdir -p "$GOPATH/src/github.com/herumi"
@@ -113,8 +123,18 @@ jobs:
           cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
           cp crypto/bls/lib/darwin/* crypto/bls/lib/
 
-          COMMIT=$(git rev-parse HEAD)
-          DATE=$(date +%Y%m%d)
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("vendor/gopkg.in/olebedev/go-duktape.v3/duk_logging.c")
+
+          if p.exists():
+              s = p.read_text()
+              s = s.replace("duk_uint8_t date_buf[32]", "duk_uint8_t date_buf[64]")
+              s = s.replace("snprintf((char *) date_buf, sizeof(date_buf),, ", "snprintf((char *) date_buf, sizeof(date_buf), ")
+              s = s.replace('sprintf((char *) date_buf, "', 'snprintf((char *) date_buf, sizeof(date_buf), "')
+              p.write_text(s)
+          PY
 
           go env -w GO111MODULE=off
 
@@ -126,10 +146,11 @@ jobs:
           export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
           export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
 
-          GOOS=darwin GOARCH=arm64 go build -trimpath -v \
-            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE" \
-            -o "build/bin/cypher-darwin-arm64" \
-            ./cmd/cypher
+          make clean
+          make cypher
+
+          cp -f build/bin/cypher build/bin/cypher-darwin-arm64
+          chmod +x build/bin/cypher-darwin-arm64
 
           file build/bin/cypher-darwin-arm64
 
@@ -145,15 +166,15 @@ jobs:
 
     env:
       GOPATH: ${{ github.workspace }}/go
-      GO111MODULE: off
-      CGO_ENABLED: 1
+      GO111MODULE: 'off'
+      CGO_ENABLED: '1'
       CC: gcc
       CXX: g++
 
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: EVM_Cancun_PoW
           path: go/src/github.com/cypherium/cypher
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -178,9 +199,16 @@ jobs:
             make \
             git \
             python3 \
+            cmake \
             pkg-config \
             libssl-dev \
-            libgmp-dev
+            libgmp-dev \
+            bzip2 \
+            m4 \
+            curl \
+            libc6-dev \
+            wget \
+            texinfo
 
       - name: Build cypher linux amd64
         working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
@@ -188,61 +216,60 @@ jobs:
         run: |
           set -euo pipefail
 
+          export PATH="$(go env GOROOT)/bin:/usr/local/bin:$PATH"
+          export GO111MODULE=off
+          export GOOS=linux
+          export GOARCH=amd64
+
           mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
+          cd "$GOPATH/src/github.com/VictoriaMetrics"
+          [ -d fastcache ] || git clone https://github.com/VictoriaMetrics/fastcache.git
+
           mkdir -p "$GOPATH/src/github.com/shirou"
-          mkdir -p "$GOPATH/src/golang.org/x"
-          mkdir -p "$GOPATH/src/github.com/dlclark"
+          cd "$GOPATH/src/github.com/shirou"
+          [ -d gopsutil ] || git clone https://github.com/shirou/gopsutil.git
+
           mkdir -p "$GOPATH/src/github.com/go-sourcemap"
+          cd "$GOPATH/src/github.com/go-sourcemap"
+          [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
+
           mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
+          cd "$GOPATH/src/github.com/yusufpapurcu"
+          [ -d wmi ] || git clone https://github.com/yusufpapurcu/wmi.git
+
           mkdir -p "$GOPATH/src/github.com/go-ole"
+          cd "$GOPATH/src/github.com/go-ole"
+          [ -d go-ole ] || git clone https://github.com/go-ole/go-ole.git
+
           mkdir -p "$GOPATH/src/github.com/ebitengine"
+          cd "$GOPATH/src/github.com/ebitengine"
+          [ -d purego ] || git clone https://github.com/ebitengine/purego.git
+
           mkdir -p "$GOPATH/src/github.com/tklauser"
+          cd "$GOPATH/src/github.com/tklauser"
+          [ -d go-sysconf ] || git clone https://github.com/tklauser/go-sysconf.git
+          [ -d numcpus ] || git clone https://github.com/tklauser/numcpus.git
 
-          git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
-          git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
-          git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
-
-          cd "$GOPATH/src/github.com/dlclark"
-          if [ ! -d regexp2 ]; then
-            git clone https://github.com/dlclark/regexp2.git
-          fi
-          cd regexp2
-          git fetch --tags
-          git checkout v1.1.8
-
-          git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
-          git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
-          git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
-          git clone --depth 1 https://github.com/ebitengine/purego.git "$GOPATH/src/github.com/ebitengine/purego"
-          git clone --depth 1 https://github.com/tklauser/go-sysconf.git "$GOPATH/src/github.com/tklauser/go-sysconf"
-          git clone --depth 1 https://github.com/tklauser/numcpus.git "$GOPATH/src/github.com/tklauser/numcpus"
-
-          rm -rf "$GOPATH/src/github.com/herumi"
-          mkdir -p "$GOPATH/src/github.com/herumi"
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          git submodule update --init --recursive
-
-          cd "$GOPATH/src/github.com/herumi/bls/mcl"
-          make clean || true
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+          mkdir -p "$GOPATH/src/golang.org/x"
+          cd "$GOPATH/src/golang.org/x"
+          [ -d sys ] || git clone https://go.googlesource.com/sys
 
           cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
 
-          mkdir -p crypto/bls/lib/linux
-          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/linux/libbls256.a
-          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/linux/libmcl.a
-          cp crypto/bls/lib/linux/* crypto/bls/lib/
+          cp -f ./crypto/bls/lib/linux/* ./crypto/bls/lib/
 
-          COMMIT=$(git rev-parse HEAD)
-          DATE=$(date +%Y%m%d)
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("vendor/gopkg.in/olebedev/go-duktape.v3/duk_logging.c")
+
+          if p.exists():
+              s = p.read_text()
+              s = s.replace("duk_uint8_t date_buf[32]", "duk_uint8_t date_buf[64]")
+              s = s.replace("snprintf((char *) date_buf, sizeof(date_buf),, ", "snprintf((char *) date_buf, sizeof(date_buf), ")
+              s = s.replace('sprintf((char *) date_buf, "', 'snprintf((char *) date_buf, sizeof(date_buf), "')
+              p.write_text(s)
+          PY
 
           go env -w GO111MODULE=off
 
@@ -250,10 +277,11 @@ jobs:
           export CGO_CXXFLAGS="$CGO_CFLAGS"
           export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu"
 
-          GOOS=linux GOARCH=amd64 go build -trimpath -v \
-            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE" \
-            -o "build/bin/cypher-linux-amd64" \
-            ./cmd/cypher
+          make clean
+          make cypher
+
+          cp -f build/bin/cypher build/bin/cypher-linux-amd64
+          chmod +x build/bin/cypher-linux-amd64
 
           file build/bin/cypher-linux-amd64
 
@@ -269,8 +297,8 @@ jobs:
 
     env:
       GOPATH: ${{ github.workspace }}\go
-      GO111MODULE: off
-      CGO_ENABLED: 1
+      GO111MODULE: 'off'
+      CGO_ENABLED: '1'
       CC: gcc
       CXX: g++
 
@@ -284,7 +312,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: EVM_Cancun_PoW
           path: go/src/github.com/cypherium/cypher
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -319,7 +347,6 @@ jobs:
           mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
           mkdir -p "$GOPATH/src/github.com/shirou"
           mkdir -p "$GOPATH/src/golang.org/x"
-          mkdir -p "$GOPATH/src/github.com/dlclark"
           mkdir -p "$GOPATH/src/github.com/go-sourcemap"
           mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
           mkdir -p "$GOPATH/src/github.com/go-ole"
@@ -327,14 +354,6 @@ jobs:
           git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
           git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
           git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
-
-          cd "$GOPATH/src/github.com/dlclark"
-          if [ ! -d regexp2 ]; then
-            git clone https://github.com/dlclark/regexp2.git
-          fi
-          cd regexp2
-          git fetch --tags
-          git checkout v1.1.8
 
           git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
           git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
@@ -400,7 +419,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: EVM_Cancun_PoW
 
       - name: Download macOS binary
         uses: actions/download-artifact@v4
@@ -455,7 +474,7 @@ jobs:
 
           git commit -m "Update macOS Linux and Windows binaries"
 
-          git fetch origin colossusX_dev_test
-          git rebase origin/colossusX_dev_test
+          git fetch origin EVM_Cancun_PoW
+          git rebase origin/EVM_Cancun_PoW
 
-          git push origin HEAD:colossusX_dev_test
+          git push origin HEAD:EVM_Cancun_PoW

@@ -235,8 +235,13 @@ func (b *KeyBlock) InPubKey() string      { return b.inPubKey }
 func (b *KeyBlock) InAddress() string     { return b.inAddress }
 func (b *KeyBlock) OutPubKey() string     { return b.outPubKey }
 func (b *KeyBlock) OutAddress(flag int) string {
-	if flag == 1 && b.outAddress != "" && b.outAddress[0] == '*' {
-		return b.outAddress[1:]
+	if flag == 1 {
+		if b.outAddress == "" {
+			return b.leaderAddress
+		}
+		if b.outAddress[0] == '*' {
+			return b.outAddress[1:]
+		}
 	}
 	return b.outAddress
 }
@@ -244,14 +249,8 @@ func (b *KeyBlock) HasNewNode() bool {
 	return b.header.BlockType == PowReconfig || b.header.BlockType == PacePowReconfig
 }
 func (b *KeyBlock) TypeCheck(last_T_Number uint64) bool {
-	/*
-		keyType := b.BlockType()
-		if keyType == PowReconfig && (b.T_Number()-last_T_Number)%params.KeyblockPerTxBlocks != 0 {
-			return false
-		} else if keyType == TimeReconfig && (b.T_Number()-last_T_Number)%params.GapTxBlocks != 0 {
-			return false
-		}
-	*/
+	// Legacy tx-count based keyblock type checks were removed.
+	// KeyBlock cadence is controlled by time-based fixed-mode triggers.
 	return true
 }
 
