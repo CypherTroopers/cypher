@@ -293,7 +293,7 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	Journal:   "transactions.rlp",
 	Rejournal: time.Hour,
 
-	PriceLimit: 1,
+	PriceLimit: params.GWei,
 	PriceBump:  10,
 
 	AccountSlots: 1024,
@@ -499,9 +499,6 @@ func (pool *TxPool) loop() {
 		case <-evict.C:
 			pool.mu.Lock()
 			for addr := range pool.queue {
-				if pool.locals.contains(addr) {
-					continue
-				}
 				if time.Since(pool.beats[addr]) > pool.config.Lifetime {
 					list := pool.queue[addr].Flatten()
 					for _, tx := range list {
@@ -1001,10 +998,7 @@ func (pool *TxPool) PendingClassStats() (fastPending int, slowPending int, class
 func (pool *TxPool) evictStaleTransactionsLocked(now time.Time) {
 	var evictedPending int
 	var evictedQueued int
-	for addr, list := range pool.pending {
-		if pool.locals.contains(addr) {
-			continue
-		}
+	for _, list := range pool.pending {
 		for _, tx := range list.Flatten() {
 			seenAt, ok := pool.seen[tx.Hash()]
 			if !ok {
@@ -1017,10 +1011,7 @@ func (pool *TxPool) evictStaleTransactionsLocked(now time.Time) {
 			}
 		}
 	}
-	for addr, list := range pool.queue {
-		if pool.locals.contains(addr) {
-			continue
-		}
+	for _, list := range pool.queue {
 		for _, tx := range list.Flatten() {
 			seenAt, ok := pool.seen[tx.Hash()]
 			if !ok {
@@ -1063,7 +1054,7 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	if err := validate1559FeeCaps(tx, pool.currentBaseFee()); err != nil {
 		return err
 	}
-	if !local && tx.GasPriceIntCmp(pool.gasPrice) < 0 {
+	if tx.GasPriceIntCmp(pool.gasPrice) < 0 {
 		return ErrUnderpriced
 	}
 	if pool.currentState.GetNonce(from) > tx.Nonce() {
@@ -1657,17 +1648,14 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		}
 		log.Trace("Promoted queued transactions", "count", len(promoted))
 		queuedGauge.Dec(int64(len(readies)))
-		var caps types.Transactions
-		if !pool.locals.contains(addr) {
-			caps = list.Cap(int(pool.config.AccountQueue))
-			for _, tx := range caps {
-				hash := tx.Hash()
-				pool.all.Remove(hash)
-				delete(pool.seen, hash)
-				log.Trace("Removed cap-exceeding queued transaction", "hash", hash)
-			}
-			queuedRateLimitMeter.Mark(int64(len(caps)))
+		caps := list.Cap(int(pool.config.AccountQueue))
+		for _, tx := range caps {
+			hash := tx.Hash()
+			pool.all.Remove(hash)
+			delete(pool.seen, hash)
+			log.Trace("Removed cap-exceeding queued transaction", "hash", hash)
 		}
+		queuedRateLimitMeter.Mark(int64(len(caps)))
 		pool.priced.Removed(len(forwards) + len(drops) + len(windowDrops) + len(caps))
 		queuedGauge.Dec(int64(len(forwards) + len(drops) + len(windowDrops) + len(caps)))
 		if pool.locals.contains(addr) {
@@ -1692,7 +1680,7 @@ func (pool *TxPool) truncatePending() {
 	pendingBeforeCap := pending
 	spammers := prque.New(nil)
 	for addr, list := range pool.pending {
-		if !pool.locals.contains(addr) && uint64(list.Len()) > pool.config.AccountSlots {
+		if uint64(list.Len()) > pool.config.AccountSlots {
 			spammers.Push(addr, int64(list.Len()))
 		}
 	}
@@ -1758,9 +1746,7 @@ func (pool *TxPool) truncateQueue() {
 	}
 	addresses := make(addressesByHeartbeat, 0, len(pool.queue))
 	for addr := range pool.queue {
-		if !pool.locals.contains(addr) {
-			addresses = append(addresses, addressByHeartbeat{addr, pool.beats[addr]})
-		}
+		addresses = append(addresses, addressByHeartbeat{addr, pool.beats[addr]})
 	}
 	sort.Sort(addresses)
 	for drop := queued - pool.config.GlobalQueue; drop > 0 && len(addresses) > 0; {
