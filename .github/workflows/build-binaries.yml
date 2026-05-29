@@ -8,6 +8,7 @@ on:
       - colossusX_dev_test
     paths-ignore:
       - 'README.md'
+      - 'build/bin/cypher'
       - 'build/bin/cypher-linux-*'
       - 'build/bin/cypher-darwin-*'
       - 'build/bin/cypher.exe'
@@ -281,15 +282,20 @@ jobs:
           make cypher
 
           cp -f build/bin/cypher build/bin/cypher-linux-amd64
+
+          chmod +x build/bin/cypher
           chmod +x build/bin/cypher-linux-amd64
 
+          file build/bin/cypher
           file build/bin/cypher-linux-amd64
 
-      - name: Upload Linux binary
+      - name: Upload Linux binaries
         uses: actions/upload-artifact@v4
         with:
           name: cypher-linux-amd64
-          path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-linux-amd64
+          path: |
+            ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher
+            ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-linux-amd64
 
   build-windows:
     name: Build Windows
@@ -427,7 +433,7 @@ jobs:
           name: cypher-macos-arm64
           path: artifacts/macos
 
-      - name: Download Linux binary
+      - name: Download Linux binaries
         uses: actions/download-artifact@v4
         with:
           name: cypher-linux-amd64
@@ -447,9 +453,16 @@ jobs:
           mkdir -p build/bin
 
           find artifacts/macos -type f -name 'cypher-darwin-arm64' -exec cp {} build/bin/ \;
+
+          find artifacts/linux -type f -name 'cypher' -exec cp {} build/bin/ \;
           find artifacts/linux -type f -name 'cypher-linux-amd64' -exec cp {} build/bin/ \;
+
           find artifacts/windows -type f -name 'cypher.exe' -exec cp {} build/bin/ \;
           find artifacts/windows -type f -name '*.dll' -exec cp {} build/bin/ \;
+
+          chmod +x build/bin/cypher
+          chmod +x build/bin/cypher-linux-amd64
+          chmod +x build/bin/cypher-darwin-arm64
 
           ls -lah build/bin/
 
@@ -461,11 +474,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add build/bin/cypher-darwin-arm64
-          git add build/bin/cypher-linux-amd64
+          chmod +x build/bin/cypher
+          chmod +x build/bin/cypher-linux-amd64
+          chmod +x build/bin/cypher-darwin-arm64
+
+          git add --chmod=+x build/bin/cypher
+          git add --chmod=+x build/bin/cypher-linux-amd64
+          git add --chmod=+x build/bin/cypher-darwin-arm64
           git add build/bin/cypher.exe
 
           find build/bin -maxdepth 1 -name '*.dll' -print0 | xargs -0 -r git add
+
+          git ls-files -s \
+            build/bin/cypher \
+            build/bin/cypher-linux-amd64 \
+            build/bin/cypher-darwin-arm64
 
           if git diff --cached --quiet; then
             echo "No binary changes to commit"
