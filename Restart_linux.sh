@@ -8,7 +8,7 @@ BOOTNODES="enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23
 echo "==> Restart Cypher node"
 
 ./build/bin/cypher-linux-amd64 \
-  --verbosity 4 \
+  --verbosity 1 \
   --rnetport 7200 \
   --syncmode full \
   --nat extip:$(curl -4 -s ifconfig.io) \
