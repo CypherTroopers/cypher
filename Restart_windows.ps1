@@ -14,15 +14,12 @@ $BOOTNODES = @(
   "enode://7eb6bd844e05f64114ea6e6f06ae04e075df0a8a6d783620344f3535df2f2115ad2ad09dab69cf3515ee2d0ac50379c0825a0abfa5a50216d8e4b97823acbd67@185.217.125.128:6006"
 ) -join ","
 
-Write-Host "==> Get public IP"
-$PUBLIC_IP = (Invoke-RestMethod -Uri "https://api4.ipify.org").Trim()
 
 Write-Host "==> Restart Cypher node"
 .\build\bin\cypher.exe `
   --verbosity 1 `
   --rnetport 7200 `
   --syncmode full `
-  --nat "extip:$PUBLIC_IP" `
   --ws `
   --ws.addr 0.0.0.0 `
   --ws.port 9251 `
