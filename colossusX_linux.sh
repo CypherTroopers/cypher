@@ -3,17 +3,30 @@ set -euo pipefail
 
 DATADIR="chaindbname"
 
-echo "==> Init genesis"
+PEER_DIR="./${DATADIR}/cypher"
+CHAINDATA_DIR="${PEER_DIR}/chaindata"
+STATIC_NODES_FILE="${PEER_DIR}/static-nodes.toml"
+TRUSTED_NODES_FILE="${PEER_DIR}/trusted-nodes.toml"
 
-./build/bin/cypher-linux-amd64 \
-  --datadir "${DATADIR}" \
-  init ./genesistest.json
+if [ ! -d "${CHAINDATA_DIR}" ]; then
+  echo "==> Chaindata not found: ${CHAINDATA_DIR}"
+  echo "==> Init genesis"
 
-echo "==> Write static/trusted peers"
+  ./build/bin/cypher-linux-amd64 \
+    --datadir "${DATADIR}" \
+    init ./genesistest.json
+else
+  echo "==> Existing chaindata detected: ${CHAINDATA_DIR}"
+  echo "==> Skip init genesis"
+fi
 
-mkdir -p "./${DATADIR}/cypher"
+mkdir -p "${PEER_DIR}"
 
-cat > "./${DATADIR}/cypher/static-nodes.toml" <<'EOF'
+if [ ! -f "${STATIC_NODES_FILE}" ]; then
+  echo "==> static-nodes.toml not found"
+  echo "==> Write static peers: ${STATIC_NODES_FILE}"
+
+  cat > "${STATIC_NODES_FILE}" <<'EOF'
 nodes = [
   "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@185.217.125.128:6000",
   "enode://0c8a37a7803c358d8ae68784ef247a0c8b4df542d925b23491dd92f4c2172a146a124171ec5bbdcc2e5932e4cead917505ce3b5dbd72155a78e830ebd8e37b07@185.217.125.128:6001",
@@ -25,15 +38,36 @@ nodes = [
 ]
 EOF
 
-cp "./${DATADIR}/cypher/static-nodes.toml" "./${DATADIR}/cypher/trusted-nodes.toml"
+else
+  echo "==> Existing static-nodes.toml detected: ${STATIC_NODES_FILE}"
+  echo "==> Skip static-nodes.toml generation"
+fi
 
+if [ ! -f "${TRUSTED_NODES_FILE}" ]; then
+  echo "==> trusted-nodes.toml not found"
+  echo "==> Copy static-nodes.toml to trusted-nodes.toml"
+
+  cp "${STATIC_NODES_FILE}" "${TRUSTED_NODES_FILE}"
+else
+  echo "==> Existing trusted-nodes.toml detected: ${TRUSTED_NODES_FILE}"
+  echo "==> Skip trusted-nodes.toml generation"
+fi
+
+PUBLIC_IP="$(curl -4 -s ifconfig.io || true)"
+
+if [ -z "${PUBLIC_IP}" ]; then
+  echo "ERROR: Failed to detect public IPv4 address"
+  exit 1
+fi
+
+echo "==> Public IP: ${PUBLIC_IP}"
 echo "==> Start Cypher node"
 
 ./build/bin/cypher-linux-amd64 \
   --verbosity 1 \
   --rnetport 7200 \
   --syncmode full \
-  --nat extip:$(curl -4 -s ifconfig.io) \
+  --nat "extip:${PUBLIC_IP}" \
   --ws \
   --ws.addr 0.0.0.0 \
   --ws.port 9251 \
