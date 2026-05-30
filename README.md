@@ -49,21 +49,6 @@ web3.fromWei(eth.getBalance("0x your address"), "ether")
 ```
 For other console commands, please refer to the section near the bottom of the page below:
 https://github.com/cypherium/cypher
-## Node restart command
-***Linux***
-```
-chmod +x Restart_linux.sh
-./Restart_linux.sh
-```
-***Windows***
-```
-powershell -ExecutionPolicy Bypass -File .\Restart_windows.ps1
-```
-***mac(Apple Silicon Mac)***
-```
-chmod +x Restart_mac.sh
-./Restart_mac.sh
-```
 
 ##  If the node is running in the background, you can enter the console from the cypher directory using the following commands.
 ### Linux / macOS / PowerShell
