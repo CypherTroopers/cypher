@@ -17,15 +17,12 @@ $BOOTNODES = @(
 Write-Host "==> Init genesis"
 .\build\bin\cypher.exe --datadir $DATADIR init .\genesistest.json
 
-Write-Host "==> Get public IP"
-$PUBLIC_IP = (Invoke-RestMethod -Uri "https://api4.ipify.org").Trim()
 
 Write-Host "==> Start Cypher node"
 .\build\bin\cypher.exe `
   --verbosity 1 `
   --rnetport 7200 `
   --syncmode full `
-  --nat "extip:$PUBLIC_IP" `
   --ws `
   --ws.addr 0.0.0.0 `
   --ws.port 9251 `
