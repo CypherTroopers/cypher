@@ -3,6 +3,12 @@ If you want to continue development locally, you need to work with GO111MODULE=o
 You will also need to install several required tools.
 For Windows, Mac, and Linux setup steps, please refer to:
 ***.github/workflows/build-binaries.yml***
+EVM Prague and Osaka pipelines are partially prepared.
+
+## If you upgrade them, please add the required files to the params directory.
+Refer to ***params/modern_config.go***and***params/config.go***
+If the added files still contain PoS-related settings, please comment out the PoS-related code.
+
 
 ## Setup Linux/Windows/mac
 
