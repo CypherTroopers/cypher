@@ -1,3 +1,8 @@
+## For Devs 
+If you want to continue development locally, you need to work with GO111MODULE=off because this project does not use Go modules.
+You will also need to install several required tools.
+For Windows, Mac, and Linux setup steps, please refer to:
+***.github/workflows/build-binaries.yml***
 
 ## Setup Linux/Windows/mac
 
