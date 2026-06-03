@@ -91,7 +91,7 @@
     "txnSizeLimit": 128,
 
     "commonApprovalEnabled": true,
-    "commonApprovalThreshold": 1,
+    "commonApprovalThreshold": 0,
     "commonCommittee": {
       "0": {
         "address": "158.220.101.48:7155",
