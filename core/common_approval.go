@@ -13,6 +13,11 @@ import (
 )
 
 const (
+	// CommonApprovalBootstrapIndex is the genesis commonCommittee member that must
+	// always stay active as the network's last-resort tx-block approver. Even when
+	// dynamic common committee selection is added later, this member is preserved.
+	CommonApprovalBootstrapIndex = 0
+
 	// CommonApprovalMinCommitteeSize allows the network to start with a single
 	// common miner right after launch. When more common miners are selected, the
 	// threshold automatically follows HotStuff's 2f+1 style calculation.
@@ -24,26 +29,54 @@ const (
 	CommonApprovalMaxCommitteeSize = 7
 )
 
+// BootstrapCommonApprover returns genesistest.json commonCommittee[0]. This node
+// is the permanent safety approver: it must stay in the active common committee
+// and remains the fallback when no dynamic common miners are eligible.
+func BootstrapCommonApprover(config *params.ChainConfig) (*common.Cnode, bool) {
+	if config == nil || len(config.CommonCommittee) == 0 {
+		return nil, false
+	}
+	node, ok := config.CommonCommittee[CommonApprovalBootstrapIndex]
+	if !ok {
+		return nil, false
+	}
+	return &node, true
+}
+
 // OrderedCommonCommittee returns the active common approval committee in
 // deterministic genesis-index order. It is deliberately separate from
 // GenCommittee: the fixed validator committee remains the finality layer, while
 // CommonCommittee is the tx-block approval layer.
+//
+// Safety rule: commonCommittee[0] from genesistest.json is always included first.
+// If dynamic committee selection is added later and produces no eligible common
+// miners, this bootstrap node alone remains the active committee/leader.
 func OrderedCommonCommittee(config *params.ChainConfig) []*common.Cnode {
 	if config == nil || len(config.CommonCommittee) == 0 {
 		return nil
 	}
+
+	nodes := make([]*common.Cnode, 0, len(config.CommonCommittee))
+	included := make(map[int]struct{})
+
+	if bootstrap, ok := BootstrapCommonApprover(config); ok && bootstrap != nil {
+		nodes = append(nodes, bootstrap)
+		included[CommonApprovalBootstrapIndex] = struct{}{}
+	}
+
 	keys := make([]int, 0, len(config.CommonCommittee))
 	for k := range config.CommonCommittee {
+		if _, ok := included[k]; ok {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Ints(keys)
 
-	if len(keys) > CommonApprovalMaxCommitteeSize {
-		keys = keys[:CommonApprovalMaxCommitteeSize]
-	}
-
-	nodes := make([]*common.Cnode, 0, len(keys))
 	for _, k := range keys {
+		if len(nodes) >= CommonApprovalMaxCommitteeSize {
+			break
+		}
 		node := config.CommonCommittee[k]
 		nodes = append(nodes, &node)
 	}
@@ -54,12 +87,15 @@ func ValidateCommonApprovalCommittee(config *params.ChainConfig) error {
 	if config == nil || !config.CommonApprovalEnabled {
 		return nil
 	}
-	size := len(config.CommonCommittee)
+	if _, ok := BootstrapCommonApprover(config); !ok {
+		return fmt.Errorf("common approval enabled but bootstrap commonCommittee[%d] is missing", CommonApprovalBootstrapIndex)
+	}
+	size := len(OrderedCommonCommittee(config))
 	if size < CommonApprovalMinCommitteeSize {
-		return fmt.Errorf("common approval enabled but commonCommittee has %d member(s), minimum is %d", size, CommonApprovalMinCommitteeSize)
+		return fmt.Errorf("common approval enabled but commonCommittee has %d active member(s), minimum is %d", size, CommonApprovalMinCommitteeSize)
 	}
 	if size > CommonApprovalMaxCommitteeSize {
-		return fmt.Errorf("common approval commonCommittee has %d member(s), maximum active size is %d", size, CommonApprovalMaxCommitteeSize)
+		return fmt.Errorf("common approval commonCommittee has %d active member(s), maximum active size is %d", size, CommonApprovalMaxCommitteeSize)
 	}
 	return nil
 }
