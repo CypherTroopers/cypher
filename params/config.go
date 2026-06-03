@@ -446,11 +446,14 @@ type ChainConfig struct {
 	// to track multiple changes to maxCodeSize
 	MaxCodeSizeConfig []MaxCodeConfigStruct `json:"maxCodeSizeConfig,omitempty"`
 
-	GenCommittee   GenesisCommittee `json:"committee"      gencodec:"required"`
-	RnetPort       string           `json:"rnetport,omitempty"`
-	FixedCommittee bool             `json:"fixedCommittee,omitempty"`
-	FixedLeader    bool             `json:"fixedLeader,omitempty"`
-	EnabledTPS     bool
+	GenCommittee            GenesisCommittee `json:"committee"      gencodec:"required"`
+	CommonCommittee         GenesisCommittee `json:"commonCommittee,omitempty"`
+	CommonApprovalEnabled   bool             `json:"commonApprovalEnabled,omitempty"`
+	CommonApprovalThreshold uint64           `json:"commonApprovalThreshold,omitempty"`
+	RnetPort                string           `json:"rnetport,omitempty"`
+	FixedCommittee          bool             `json:"fixedCommittee,omitempty"`
+	FixedLeader             bool             `json:"fixedLeader,omitempty"`
+	EnabledTPS              bool
 }
 type GenesisCommittee map[int]common.Cnode
 

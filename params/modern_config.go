@@ -166,16 +166,19 @@ type chainConfigJSON struct {
 	Clique    *CliqueConfig    `json:"clique,omitempty"`
 	Istanbul  *IstanbulConfig  `json:"istanbul,omitempty"`
 
-	HasPrivate             bool                  `json:"hasPrivate"`
-	TransactionSizeLimit   uint64                `json:"txnSizeLimit"`
-	MaxCodeSize            uint64                `json:"maxCodeSize"`
-	MaxCodeSizeChangeBlock *big.Int              `json:"maxCodeSizeChangeBlock,omitempty"`
-	MaxCodeSizeConfig      []MaxCodeConfigStruct `json:"maxCodeSizeConfig,omitempty"`
-	GenCommittee           GenesisCommittee      `json:"committee"`
-	RnetPort               string                `json:"rnetport,omitempty"`
-	FixedCommittee         bool                  `json:"fixedCommittee,omitempty"`
-	FixedLeader            bool                  `json:"fixedLeader,omitempty"`
-	EnabledTPS             bool                  `json:"enabledTPS,omitempty"`
+	HasPrivate              bool                  `json:"hasPrivate"`
+	TransactionSizeLimit    uint64                `json:"txnSizeLimit"`
+	MaxCodeSize             uint64                `json:"maxCodeSize"`
+	MaxCodeSizeChangeBlock  *big.Int              `json:"maxCodeSizeChangeBlock,omitempty"`
+	MaxCodeSizeConfig       []MaxCodeConfigStruct `json:"maxCodeSizeConfig,omitempty"`
+	GenCommittee            GenesisCommittee      `json:"committee"`
+	CommonCommittee         GenesisCommittee      `json:"commonCommittee,omitempty"`
+	CommonApprovalEnabled   bool                  `json:"commonApprovalEnabled,omitempty"`
+	CommonApprovalThreshold uint64                `json:"commonApprovalThreshold,omitempty"`
+	RnetPort                string                `json:"rnetport,omitempty"`
+	FixedCommittee          bool                  `json:"fixedCommittee,omitempty"`
+	FixedLeader             bool                  `json:"fixedLeader,omitempty"`
+	EnabledTPS              bool                  `json:"enabledTPS,omitempty"`
 }
 
 func (c *ChainConfig) UnmarshalJSON(input []byte) error {
@@ -207,6 +210,9 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 	c.MaxCodeSizeChangeBlock = dec.MaxCodeSizeChangeBlock
 	c.MaxCodeSizeConfig = dec.MaxCodeSizeConfig
 	c.GenCommittee = dec.GenCommittee
+	c.CommonCommittee = dec.CommonCommittee
+	c.CommonApprovalEnabled = dec.CommonApprovalEnabled
+	c.CommonApprovalThreshold = dec.CommonApprovalThreshold
 	c.RnetPort = dec.RnetPort
 	c.FixedCommittee = dec.FixedCommittee
 	c.FixedLeader = dec.FixedLeader
@@ -227,34 +233,37 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 
 func (c *ChainConfig) MarshalJSON() ([]byte, error) {
 	enc := chainConfigJSON{
-		ChainID:                c.ChainID,
-		HomesteadBlock:         c.HomesteadBlock,
-		DAOForkBlock:           c.DAOForkBlock,
-		DAOForkSupport:         c.DAOForkSupport,
-		EIP150Block:            c.EIP150Block,
-		EIP150Hash:             c.EIP150Hash,
-		EIP155Block:            c.EIP155Block,
-		EIP158Block:            c.EIP158Block,
-		ByzantiumBlock:         c.ByzantiumBlock,
-		ConstantinopleBlock:    c.ConstantinopleBlock,
-		PetersburgBlock:        c.PetersburgBlock,
-		IstanbulBlock:          c.IstanbulBlock,
-		MuirGlacierBlock:       c.MuirGlacierBlock,
-		YoloV1Block:            c.YoloV1Block,
-		EWASMBlock:             c.EWASMBlock,
-		ColossusX:              c.colossusX,
-		Clique:                 c.Clique,
-		Istanbul:               c.Istanbul,
-		HasPrivate:             c.HasPrivate,
-		TransactionSizeLimit:   c.TransactionSizeLimit,
-		MaxCodeSize:            c.MaxCodeSize,
-		MaxCodeSizeChangeBlock: c.MaxCodeSizeChangeBlock,
-		MaxCodeSizeConfig:      c.MaxCodeSizeConfig,
-		GenCommittee:           c.GenCommittee,
-		RnetPort:               c.RnetPort,
-		FixedCommittee:         c.FixedCommittee,
-		FixedLeader:            c.FixedLeader,
-		EnabledTPS:             c.EnabledTPS,
+		ChainID:                 c.ChainID,
+		HomesteadBlock:          c.HomesteadBlock,
+		DAOForkBlock:            c.DAOForkBlock,
+		DAOForkSupport:          c.DAOForkSupport,
+		EIP150Block:             c.EIP150Block,
+		EIP150Hash:              c.EIP150Hash,
+		EIP155Block:             c.EIP155Block,
+		EIP158Block:             c.EIP158Block,
+		ByzantiumBlock:          c.ByzantiumBlock,
+		ConstantinopleBlock:     c.ConstantinopleBlock,
+		PetersburgBlock:         c.PetersburgBlock,
+		IstanbulBlock:           c.IstanbulBlock,
+		MuirGlacierBlock:        c.MuirGlacierBlock,
+		YoloV1Block:             c.YoloV1Block,
+		EWASMBlock:              c.EWASMBlock,
+		ColossusX:               c.colossusX,
+		Clique:                  c.Clique,
+		Istanbul:                c.Istanbul,
+		HasPrivate:              c.HasPrivate,
+		TransactionSizeLimit:    c.TransactionSizeLimit,
+		MaxCodeSize:             c.MaxCodeSize,
+		MaxCodeSizeChangeBlock:  c.MaxCodeSizeChangeBlock,
+		MaxCodeSizeConfig:       c.MaxCodeSizeConfig,
+		GenCommittee:            c.GenCommittee,
+		CommonCommittee:         c.CommonCommittee,
+		CommonApprovalEnabled:   c.CommonApprovalEnabled,
+		CommonApprovalThreshold: c.CommonApprovalThreshold,
+		RnetPort:                c.RnetPort,
+		FixedCommittee:          c.FixedCommittee,
+		FixedLeader:             c.FixedLeader,
+		EnabledTPS:              c.EnabledTPS,
 	}
 	if cfg := c.ModernForkConfig(); cfg != nil {
 		enc.BerlinBlock = cfg.BerlinBlock

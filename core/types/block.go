@@ -128,6 +128,16 @@ type SignInfo struct {
 	Exceptions []byte      `json:"exceptions"       gencodec:"required"`
 	ViewID     common.Hash `json:"viewId"`
 	LeaderID   string      `json:"leaderId"`
+
+	// CommonApproval* is a second QC attached to tx blocks. The normal
+	// Signature/Exceptions fields remain the fixed validator HotStuff QC.
+	// CommonApproval is signed by the configured commonCommittee over the same
+	// block payload with SignInfo nulled, so it does not change Header.Hash().
+	CommonApprovalSignature     []byte      `json:"commonApprovalSignature,omitempty"`
+	CommonApprovalExceptions    []byte      `json:"commonApprovalExceptions,omitempty"`
+	CommonApprovalViewID        common.Hash `json:"commonApprovalViewId"`
+	CommonApprovalLeaderID      string      `json:"commonApprovalLeaderId,omitempty"`
+	CommonApprovalCommitteeHash common.Hash `json:"commonApprovalCommitteeHash"`
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
@@ -147,11 +157,20 @@ func (h *Header) Hash() common.Hash {
 	return rlpHash(cpy)
 }
 
-func (h *Header) SetSignInfoNull() {
+func (h *Header) SetValidatorSignInfoNull() {
 	h.SignInfo.Signature = nil
 	h.SignInfo.Exceptions = nil
 	h.SignInfo.ViewID = common.Hash{}
 	h.SignInfo.LeaderID = ""
+}
+
+func (h *Header) SetSignInfoNull() {
+	h.SetValidatorSignInfoNull()
+	h.SignInfo.CommonApprovalSignature = nil
+	h.SignInfo.CommonApprovalExceptions = nil
+	h.SignInfo.CommonApprovalViewID = common.Hash{}
+	h.SignInfo.CommonApprovalLeaderID = ""
+	h.SignInfo.CommonApprovalCommitteeHash = common.Hash{}
 }
 
 var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
@@ -159,7 +178,7 @@ var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
 // Size returns the approximate memory used by all internal contents. It is used
 // to approximate and limit the memory consumption of various caches.
 func (h *Header) Size() common.StorageSize {
-	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions)+len(h.SignInfo.LeaderID)+common.HashLength)
+	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions)+len(h.SignInfo.LeaderID)+len(h.SignInfo.CommonApprovalSignature)+len(h.SignInfo.CommonApprovalExceptions)+len(h.SignInfo.CommonApprovalLeaderID)+common.HashLength*3)
 	if h.BaseFee != nil {
 		s += common.StorageSize(h.BaseFee.BitLen() / 8)
 	}
@@ -352,6 +371,14 @@ func CopyHeader(h *Header) *Header {
 		cpy.SignInfo.Exceptions = make([]byte, len(h.SignInfo.Exceptions))
 		copy(cpy.SignInfo.Exceptions, h.SignInfo.Exceptions)
 	}
+	if len(h.SignInfo.CommonApprovalSignature) > 0 {
+		cpy.SignInfo.CommonApprovalSignature = make([]byte, len(h.SignInfo.CommonApprovalSignature))
+		copy(cpy.SignInfo.CommonApprovalSignature, h.SignInfo.CommonApprovalSignature)
+	}
+	if len(h.SignInfo.CommonApprovalExceptions) > 0 {
+		cpy.SignInfo.CommonApprovalExceptions = make([]byte, len(h.SignInfo.CommonApprovalExceptions))
+		copy(cpy.SignInfo.CommonApprovalExceptions, h.SignInfo.CommonApprovalExceptions)
+	}
 	return &cpy
 }
 
@@ -497,7 +524,19 @@ func (b *Block) WithBody(transactions []*Transaction, uncles []*Header) *Block {
 	return block
 }
 
+// CopyOrg returns the payload used by validator HotStuff signatures. It strips
+// only the validator QC fields while preserving CommonApproval fields, because
+// validator HotStuff finalizes the exact tx block candidate after common approval
+// has been attached.
 func (b *Block) CopyOrg() *Block {
+	block := b.WithBody(b.Transactions(), b.Uncles())
+	block.header.SetValidatorSignInfoNull()
+	return block
+}
+
+// CopyNoSignInfo returns the payload used by CommonApproval. It strips both the
+// validator QC and CommonApproval QC fields.
+func (b *Block) CopyNoSignInfo() *Block {
 	block := b.WithBody(b.Transactions(), b.Uncles())
 	block.header.SetSignInfoNull()
 	return block
@@ -519,6 +558,14 @@ func (b *Block) SetSignature(sig []byte, exceptions []byte, viewID common.Hash, 
 	b.header.SignInfo.Exceptions = exceptions
 	b.header.SignInfo.ViewID = viewID
 	b.header.SignInfo.LeaderID = leaderID
+}
+
+func (b *Block) SetCommonApproval(sig []byte, exceptions []byte, viewID common.Hash, leaderID string, committeeHash common.Hash) {
+	b.header.SignInfo.CommonApprovalSignature = sig
+	b.header.SignInfo.CommonApprovalExceptions = exceptions
+	b.header.SignInfo.CommonApprovalViewID = viewID
+	b.header.SignInfo.CommonApprovalLeaderID = leaderID
+	b.header.SignInfo.CommonApprovalCommitteeHash = committeeHash
 }
 
 func (b *Block) SetKeyblock(keyblock *KeyBlock) {

@@ -312,6 +312,10 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new blo
 			log.Error("verify txblock", "number", block.NumberU64(), "err", err)
 			return err
 		}
+		if err := core.VerifyCommonApproval(s.chainConfig, block); err != nil {
+			log.Error("verify common approval", "number", block.NumberU64(), "err", err)
+			return err
+		}
 		if block.BlockType() == types.Key_Block {
 			kblock := types.DecodeToKeyBlock(block.KeyInfo())
 			if kblock == nil {
@@ -447,6 +451,11 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	}
 	if err != nil {
 		log.Warn("tryProposalNewBlock", "error", err)
+		return err, nil, nil, nil
+	}
+	data, err = s.attachCommonApprovalToEncodedBlock(data)
+	if err != nil {
+		log.Warn("attachCommonApproval", "error", err)
 		return err, nil, nil, nil
 	}
 	now := time.Now()

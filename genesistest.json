@@ -88,7 +88,17 @@
       }
     ],
 
-    "txnSizeLimit": 128
+    "txnSizeLimit": 128,
+
+    "commonApprovalEnabled": true,
+    "commonApprovalThreshold": 1,
+    "commonCommittee": {
+      "0": {
+        "address": "185.217.125.128:7102",
+        "coinbase": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+        "public": "3912d236e16d97b70244a6c3f0693c8ff855bca8771b521bb3af948f0c682a15a8ca1a90265f7db37dacd2621e389c1cc8526eca9efd31a66e6ce6debdb1560b"
+      }
+    }
   },
 
   "alloc": {
