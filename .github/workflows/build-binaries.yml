@@ -5,7 +5,7 @@ on:
 
   push:
     branches:
-      - colossusX_dev_test
+      - colossusX_dev_test_commonApproval
     paths-ignore:
       - 'README.md'
       - 'build/bin/cypher'
@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: colossusX_dev_test_commonApproval
           path: go/src/github.com/cypherium/cypher
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -175,7 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: colossusX_dev_test_commonApproval
           path: go/src/github.com/cypherium/cypher
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -318,7 +318,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: colossusX_dev_test_commonApproval
           path: go/src/github.com/cypherium/cypher
           sparse-checkout-cone-mode: false
           sparse-checkout: |
@@ -425,7 +425,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: colossusX_dev_test_commonApproval
 
       - name: Download macOS binary
         uses: actions/download-artifact@v4
@@ -497,56 +497,7 @@ jobs:
 
           git commit -m "Update macOS Linux and Windows binaries"
 
-          git fetch origin colossusX_dev_test
-          git rebase origin/colossusX_dev_test
+          git fetch origin colossusX_dev_test_commonApproval
+          git rebase origin/colossusX_dev_test_commonApproval
 
-          git push origin HEAD:colossusX_dev_test
-
-      - name: Checkout ColossusX-Miner repo
-        uses: actions/checkout@v4
-        with:
-          repository: CypherTroopers/ColossusX-Miner
-          ref: main
-          token: ${{ secrets.COLOSSUSX_MINER_PAT }}
-          path: ColossusX-Miner
-          fetch-depth: 0
-
-      - name: Sync binaries to ColossusX-Miner
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          TARGET="${{ github.workspace }}/ColossusX-Miner"
-          SRC="${{ github.workspace }}/build/bin"
-
-          rm -rf "$TARGET/build/bin"
-          mkdir -p "$TARGET/build/bin"
-
-          cp -f "$SRC/cypher" "$TARGET/build/bin/" || true
-          cp -f "$SRC/cypher-linux-amd64" "$TARGET/build/bin/" || true
-          cp -f "$SRC/cypher-darwin-arm64" "$TARGET/build/bin/" || true
-          cp -f "$SRC/cypher.exe" "$TARGET/build/bin/" || true
-          find "$SRC" -maxdepth 1 -name '*.dll' -exec cp -f {} "$TARGET/build/bin/" \;
-
-          cp -f "${{ github.workspace }}/genesistest.json" "$TARGET/genesistest.json"
-
-          cd "$TARGET"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          [ -f build/bin/cypher ] && chmod +x build/bin/cypher
-          [ -f build/bin/cypher-linux-amd64 ] && chmod +x build/bin/cypher-linux-amd64
-          [ -f build/bin/cypher-darwin-arm64 ] && chmod +x build/bin/cypher-darwin-arm64
-
-          git add -A build/bin genesistest.json
-
-          if git diff --cached --quiet; then
-            echo "No ColossusX-Miner binary changes to commit"
-            exit 0
-          fi
-
-          git commit -m "Update ColossusX miner binaries"
-          git fetch origin main
-          git rebase origin/main
-          git push origin HEAD:main
+          git push origin HEAD:colossusX_dev_test_commonApproval
