@@ -9,6 +9,7 @@ import (
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/internal/ethapi"
 	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rpc"
 )
 
@@ -68,6 +69,7 @@ func addCommonApprovalRPCFields(fields map[string]interface{}, block *types.Bloc
 	nodes := core.OrderedCommonCommittee(config)
 	committeeMembers := make([]common.Address, 0, len(nodes))
 	approvedMembers := make([]common.Address, 0, len(nodes))
+	commonLeaderAddress := common.Address{}
 
 	for i, node := range nodes {
 		if node == nil {
@@ -77,6 +79,10 @@ func addCommonApprovalRPCFields(fields map[string]interface{}, block *types.Bloc
 		memberAddress := common.HexToAddress(node.CoinBase)
 		committeeMembers = append(committeeMembers, memberAddress)
 
+		if node.Address != "" && node.Public != "" && bftview.GetNodeID(node.Address, node.Public) == signInfo.CommonApprovalLeaderID {
+			commonLeaderAddress = memberAddress
+		}
+
 		if len(signInfo.CommonApprovalExceptions) > i/8 {
 			if (signInfo.CommonApprovalExceptions[i/8] & (1 << uint(i%8))) != 0 {
 				approvedMembers = append(approvedMembers, memberAddress)
@@ -84,8 +90,7 @@ func addCommonApprovalRPCFields(fields map[string]interface{}, block *types.Bloc
 		}
 	}
 
-	var commonLeaderAddress common.Address
-	if len(nodes) > 0 && nodes[0] != nil {
+	if commonLeaderAddress == (common.Address{}) && len(nodes) > 0 && nodes[0] != nil {
 		commonLeaderAddress = common.HexToAddress(nodes[0].CoinBase)
 	}
 
