@@ -94,9 +94,9 @@
     "commonApprovalThreshold": 1,
     "commonCommittee": {
       "0": {
-        "address": "158.220.101.48:7102",
-        "coinbase": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
-        "public": "3912d236e16d97b70244a6c3f0693c8ff855bca8771b521bb3af948f0c682a15a8ca1a90265f7db37dacd2621e389c1cc8526eca9efd31a66e6ce6debdb1560b"
+        "address": "158.220.101.48:7155",
+        "coinbase": "EB8c07DeF4c5A2541dE730B027376E1068AA861a",
+        "public": "740b0e8bfe1e3505aafb9c69969d6f3e7d52c23edf9218d926bbbb702f15c5fa7f9fce106edc0d2b4a4611540b55362fec3be443463106a1145e56671278993f"
       }
     }
   },
