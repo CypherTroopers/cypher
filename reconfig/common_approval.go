@@ -21,7 +21,7 @@ const (
 )
 
 const (
-	commonApprovalRequest uint8 = iota + 1
+	commonApprovalRequest uint32 = iota + 1
 	commonApprovalVote
 	commonApprovalResponse
 )
@@ -36,13 +36,15 @@ type commonApprovalViewData struct {
 }
 
 type commonApprovalMsg struct {
-	Type             uint8
+	// Keep scalar fields protobuf-compatible for rnet's encoder.
+	// uint8/int are not supported by the current encoder path.
+	Type             uint32
 	ValidatorAddress string
 	BlockData        []byte
 	ViewID           common.Hash
 	LeaderID         string
 	CommitteeHash    common.Hash
-	SignerIndex      int
+	SignerIndex      uint32
 	Signature        []byte
 	Mask             []byte
 	Error            string
@@ -313,7 +315,7 @@ func (s *Service) handleCommonApprovalVoteRequest(req *commonApprovalMsg) {
 		ViewID:        req.ViewID,
 		LeaderID:      req.LeaderID,
 		CommitteeHash: req.CommitteeHash,
-		SignerIndex:   index,
+		SignerIndex:   uint32(index),
 		Signature:     sig,
 	}
 	leaderAddr := ""
@@ -341,7 +343,7 @@ func (s *Service) handleCommonApprovalVote(vote *commonApprovalMsg) {
 		if session.votes == nil {
 			session.votes = make(map[int][]byte)
 		}
-		session.votes[vote.SignerIndex] = vote.Signature
+		session.votes[int(vote.SignerIndex)] = vote.Signature
 		resp = s.tryBuildCommonApprovalResponse(session)
 	}
 	commonApprovalRuntime.Unlock()
@@ -407,7 +409,8 @@ func (s *Service) verifyCommonApprovalVote(session *commonApprovalLeaderSession,
 		return false
 	}
 	nodes := core.OrderedCommonCommittee(s.chainConfig)
-	if vote.SignerIndex < 0 || vote.SignerIndex >= len(nodes) {
+	index := int(vote.SignerIndex)
+	if index < 0 || index >= len(nodes) {
 		return false
 	}
 	payload := session.block.CopyNoSignInfo().EncodeToBytes()
@@ -415,7 +418,7 @@ func (s *Service) verifyCommonApprovalVote(session *commonApprovalLeaderSession,
 		return false
 	}
 	mask := make([]byte, (len(nodes)+7)/8)
-	mask[vote.SignerIndex/8] |= 1 << uint(vote.SignerIndex%8)
+	mask[index/8] |= 1 << uint(index%8)
 	pubs, err := core.CommonApprovalPublicKeys(nodes)
 	if err != nil {
 		log.Warn("common approval public key load failed", "err", err)
