@@ -17,6 +17,8 @@
 package core
 
 import (
+	"math/big"
+
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/consensus/misc"
@@ -27,6 +29,17 @@ import (
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 )
+
+var commonApprovalSignerReward = mustCommonApprovalSignerReward()
+
+func mustCommonApprovalSignerReward() *big.Int {
+	// 1000 native coins with 18 decimals.
+	reward, ok := new(big.Int).SetString("1000000000000000000000", 10)
+	if !ok {
+		panic("invalid common approval signer reward")
+	}
+	return reward
+}
 
 // StateProcessor is a basic Processor, which takes care of transitioning
 // state from one point to another.
@@ -43,7 +56,6 @@ func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consen
 	return &StateProcessor{
 		config: config,
 		bc:     bc,
-		engine: engine,
 	}
 }
 
@@ -84,17 +96,84 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	}
 
-	// Do not apply CommonApproval signer rewards in the same tx block.
-	// CommonApproval is attached after the block body/state root is created.
-	// If validators apply rewards here while verifying the already-signed block,
-	// their recomputed state root diverges from the leader's proposed state root.
-	// Signer rewards must be paid by a deterministic later settlement path, such
-	// as the next key block or a following reward block.
+	// Settle CommonApproval signer rewards only at a key-block boundary.
+	// KeyBlock itself does not carry EVM state, so the settlement is applied in
+	// the first tx block that points to the new KeyHash. The settlement scans only
+	// already-finalized tx blocks from the previous KeyHash period, so leader and
+	// validator nodes recompute the same state root.
+	p.applyCommonApprovalRewardsAtKeySwitch(block, statedb)
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), totalGas)
 
 	return receipts, allLogs, *usedGas, nil
+}
+
+func (p *StateProcessor) applyCommonApprovalRewardsAtKeySwitch(block *types.Block, statedb *state.StateDB) {
+	if p == nil || p.config == nil || !p.config.CommonApprovalEnabled || p.bc == nil || block == nil || statedb == nil {
+		return
+	}
+	if block.NumberU64() == 0 {
+		return
+	}
+	parent := p.bc.GetBlock(block.ParentHash(), block.NumberU64()-1)
+	if parent == nil {
+		return
+	}
+	settledKeyHash := parent.KeyHash()
+	if block.KeyHash() == settledKeyHash {
+		return
+	}
+
+	nodes := OrderedCommonCommittee(p.config)
+	if len(nodes) == 0 {
+		return
+	}
+	committeeHash := CommonApprovalCommitteeHash(p.config)
+	counts := make(map[common.Address]uint64)
+
+	for b := parent; b != nil && b.KeyHash() == settledKeyHash; {
+		p.collectCommonApprovalRewardCounts(b, nodes, committeeHash, counts)
+		if b.NumberU64() == 0 {
+			break
+		}
+		b = p.bc.GetBlock(b.ParentHash(), b.NumberU64()-1)
+	}
+
+	for addr, count := range counts {
+		if count == 0 {
+			continue
+		}
+		amount := new(big.Int).Mul(new(big.Int).SetUint64(count), commonApprovalSignerReward)
+		statedb.AddBalance(addr, amount)
+		log.Info("common approval keyblock reward settled", "settledKeyHash", settledKeyHash, "coinbase", addr, "signedTxBlocks", count, "amount", amount)
+	}
+}
+
+func (p *StateProcessor) collectCommonApprovalRewardCounts(block *types.Block, nodes []*common.Cnode, committeeHash common.Hash, counts map[common.Address]uint64) {
+	if block == nil || counts == nil || block.BlockType() == types.Key_Block {
+		return
+	}
+	signInfo := block.SignInfo()
+	if signInfo == nil || len(signInfo.CommonApprovalSignature) == 0 || len(signInfo.CommonApprovalExceptions) == 0 {
+		return
+	}
+	if signInfo.CommonApprovalCommitteeHash != committeeHash {
+		log.Warn("skip common approval reward: committee hash mismatch", "block", block.NumberU64(), "have", signInfo.CommonApprovalCommitteeHash.Hex(), "want", committeeHash.Hex())
+		return
+	}
+	for i, node := range nodes {
+		if node == nil || node.CoinBase == "" {
+			continue
+		}
+		if len(signInfo.CommonApprovalExceptions) <= i/8 {
+			continue
+		}
+		if (signInfo.CommonApprovalExceptions[i/8] & (1 << uint(i%8))) == 0 {
+			continue
+		}
+		counts[common.HexToAddress(node.CoinBase)]++
+	}
 }
 
 // ApplyTransaction attempts to apply a transaction to the given state database
