@@ -51,6 +51,10 @@ func (s *PublicReconfigAPI) Id(enodeId string) string {
 	return bftview.GetServerInfo(bftview.PublicKey) + "\n" + coinbase.String()
 }
 
+func (s *PublicReconfigAPI) CommonMinerStatus() []CommonMinerStatus {
+	return snapshotCommonMinerStatuses()
+}
+
 func (s *PublicReconfigAPI) Members(ctx context.Context, blockNr rpc.BlockNumber) ([]*common.Cnode, error) {
 	if blockNr == rpc.LatestBlockNumber {
 		return s.reconfig.KeyBlockChain().CurrentCommittee(), nil
