@@ -35,6 +35,7 @@ import (
 
 type serviceCallback interface {
 	networkMsgAck(si *network.ServerIdentity, msg *networkMsg)
+	commonApprovalMsgAck(si *network.ServerIdentity, msg *commonApprovalMsg)
 }
 
 const Gossip_MSG = 8
@@ -85,6 +86,7 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 	registerService := func(c *rnet.Context) (rnet.Service, error) {
 		s := &netService{ServiceProcessor: rnet.NewServiceProcessor(c)}
 		s.RegisterProcessorFunc(network.RegisterMessage(&networkMsg{}), s.handleNetworkMsgAck)
+		s.RegisterProcessorFunc(network.RegisterMessage(&commonApprovalMsg{}), s.handleCommonApprovalMsgAck)
 		s.RegisterProcessorFunc(network.RegisterMessage(&heartBeatMsg{}), s.handleHeartBeatMsgAck)
 		s.RegisterProcessorFunc(network.RegisterMessage(&checkMinerMsg{}), s.handleCheckMinerMsgAck)
 
@@ -141,6 +143,18 @@ func (s *netService) handleCheckMinerMsgAck(env *network.Envelope) {
 	} else {
 		s.candidatepool.CheckMinerMsgAck(address, msg.BlockN, msg.KeyblockN)
 	}
+}
+
+func (s *netService) handleCommonApprovalMsgAck(env *network.Envelope) {
+	msg, ok := env.Msg.(*commonApprovalMsg)
+	if !ok {
+		log.Error("handleCommonApprovalMsgAck failed to cast")
+		return
+	}
+	si := env.ServerIdentity
+	address := si.Address.String()
+	s.getAckInfo(address).ackTm = time.Now()
+	s.backend.commonApprovalMsgAck(si, msg)
 }
 
 //----------------------------------------------------------------------------------------------------
