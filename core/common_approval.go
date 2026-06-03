@@ -134,6 +134,24 @@ func CommonApprovalThreshold(config *params.ChainConfig, committeeSize int) int 
 	return threshold
 }
 
+// CommonApprovalBootstrapSigned checks whether the permanent bootstrap approver
+// signed the CommonApprovalQC. Since OrderedCommonCommittee always places
+// genesis commonCommittee[0] at active index 0, mask bit 0 is the bootstrap
+// safety approver.
+func CommonApprovalBootstrapSigned(mask []byte) bool {
+	return len(mask) > 0 && (mask[0]&0x01) != 0
+}
+
+// CommonApprovalEffectiveThreshold returns the normal committee threshold unless
+// the permanent bootstrap approver signed. In that emergency/safety path, the
+// bootstrap signature alone is enough to make a tx block progress on testnet.
+func CommonApprovalEffectiveThreshold(config *params.ChainConfig, committeeSize int, mask []byte) int {
+	if CommonApprovalBootstrapSigned(mask) {
+		return 1
+	}
+	return CommonApprovalThreshold(config, committeeSize)
+}
+
 func CommonApprovalPublicKeys(nodes []*common.Cnode) ([]*bls.PublicKey, error) {
 	pubs := make([]*bls.PublicKey, 0, len(nodes))
 	for i, node := range nodes {
@@ -178,7 +196,7 @@ func VerifyCommonApproval(config *params.ChainConfig, block *types.Block) error 
 	if payload == nil {
 		return types.ErrEncodeRLP
 	}
-	threshold := CommonApprovalThreshold(config, len(pubs))
+	threshold := CommonApprovalEffectiveThreshold(config, len(pubs), si.CommonApprovalExceptions)
 	chainID := uint64(0)
 	if config.ChainID != nil {
 		chainID = config.ChainID.Uint64()
