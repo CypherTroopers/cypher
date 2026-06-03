@@ -36,6 +36,7 @@ import (
 type serviceCallback interface {
 	networkMsgAck(si *network.ServerIdentity, msg *networkMsg)
 	commonApprovalMsgAck(si *network.ServerIdentity, msg *commonApprovalMsg)
+	commonMinerHeartbeatMsgAck(si *network.ServerIdentity, msg *commonMinerHeartbeatMsg)
 }
 
 const Gossip_MSG = 8
@@ -80,6 +81,7 @@ type netService struct {
 	candidatepool *core.CandidatePool
 	bc            *core.BlockChain
 	kbc           *core.KeyBlockChain
+	chainConfig   *params.ChainConfig
 }
 
 func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *ReconfigBackend, callback serviceCallback) *netService {
@@ -87,6 +89,7 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 		s := &netService{ServiceProcessor: rnet.NewServiceProcessor(c)}
 		s.RegisterProcessorFunc(network.RegisterMessage(&networkMsg{}), s.handleNetworkMsgAck)
 		s.RegisterProcessorFunc(network.RegisterMessage(&commonApprovalMsg{}), s.handleCommonApprovalMsgAck)
+		s.RegisterProcessorFunc(network.RegisterMessage(&commonMinerHeartbeatMsg{}), s.handleCommonMinerHeartbeatMsgAck)
 		s.RegisterProcessorFunc(network.RegisterMessage(&heartBeatMsg{}), s.handleHeartBeatMsgAck)
 		s.RegisterProcessorFunc(network.RegisterMessage(&checkMinerMsg{}), s.handleCheckMinerMsgAck)
 
@@ -107,6 +110,7 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 	s.candidatepool = backend.CandidatePool()
 	s.bc = backend.BlockChain()
 	s.kbc = backend.KeyBlockChain()
+	s.chainConfig = chainConfig
 
 	return s
 }
@@ -115,6 +119,7 @@ func (s *netService) StartStop(isStart bool) {
 	if isStart {
 		s.server.Start()
 		go s.heartBeat_Loop()
+		go s.commonMinerHeartbeatLoop()
 	} else { //stop
 		s.isStoping = true
 		//..............................
@@ -155,6 +160,18 @@ func (s *netService) handleCommonApprovalMsgAck(env *network.Envelope) {
 	address := si.Address.String()
 	s.getAckInfo(address).ackTm = time.Now()
 	s.backend.commonApprovalMsgAck(si, msg)
+}
+
+func (s *netService) handleCommonMinerHeartbeatMsgAck(env *network.Envelope) {
+	msg, ok := env.Msg.(*commonMinerHeartbeatMsg)
+	if !ok {
+		log.Error("handleCommonMinerHeartbeatMsgAck failed to cast")
+		return
+	}
+	si := env.ServerIdentity
+	address := si.Address.String()
+	s.getAckInfo(address).ackTm = time.Now()
+	s.backend.commonMinerHeartbeatMsgAck(si, msg)
 }
 
 //----------------------------------------------------------------------------------------------------
