@@ -56,6 +56,7 @@ func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consen
 	return &StateProcessor{
 		config: config,
 		bc:     bc,
+		engine: engine,
 	}
 }
 
