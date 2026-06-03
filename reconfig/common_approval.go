@@ -58,10 +58,10 @@ func (s *Service) attachCommonApproval(block *types.Block) error {
 	if !core.CommonApprovalRequired(s.chainConfig, block) {
 		return nil
 	}
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
-	if len(nodes) == 0 {
-		return fmt.Errorf("common approval enabled but commonCommittee is empty")
+	if err := core.ValidateCommonApprovalCommittee(s.chainConfig); err != nil {
+		return err
 	}
+	nodes := core.OrderedCommonCommittee(s.chainConfig)
 
 	selfPub := bftview.GetServerInfo(bftview.PublicKey)
 	if selfPub == "" {
@@ -77,7 +77,7 @@ func (s *Service) attachCommonApproval(block *types.Block) error {
 		}
 	}
 	if selfIndex < 0 || selfNode == nil {
-		return fmt.Errorf("common approval failed: local node is not in commonCommittee")
+		return fmt.Errorf("common approval failed: local node is not in active commonCommittee")
 	}
 
 	payload := block.CopyNoSignInfo().EncodeToBytes()
