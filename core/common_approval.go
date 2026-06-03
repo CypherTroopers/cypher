@@ -12,10 +12,22 @@ import (
 	"github.com/cypherium/cypher/reconfig/hotstuff"
 )
 
-// OrderedCommonCommittee returns the common approval committee in deterministic
-// genesis-index order. It is deliberately separate from GenCommittee: the fixed
-// validator committee remains the finality layer, while CommonCommittee is the
-// tx-block approval layer.
+const (
+	// CommonApprovalMinCommitteeSize allows the network to start with a single
+	// common miner right after launch. When more common miners are selected, the
+	// threshold automatically follows HotStuff's 2f+1 style calculation.
+	CommonApprovalMinCommitteeSize = 1
+
+	// CommonApprovalMaxCommitteeSize keeps the active common approval HotStuff set
+	// small enough for low-latency tx-block approval. The wider common-miner pool
+	// can be larger, but only up to seven nodes should be active approvers at once.
+	CommonApprovalMaxCommitteeSize = 7
+)
+
+// OrderedCommonCommittee returns the active common approval committee in
+// deterministic genesis-index order. It is deliberately separate from
+// GenCommittee: the fixed validator committee remains the finality layer, while
+// CommonCommittee is the tx-block approval layer.
 func OrderedCommonCommittee(config *params.ChainConfig) []*common.Cnode {
 	if config == nil || len(config.CommonCommittee) == 0 {
 		return nil
@@ -26,12 +38,30 @@ func OrderedCommonCommittee(config *params.ChainConfig) []*common.Cnode {
 	}
 	sort.Ints(keys)
 
+	if len(keys) > CommonApprovalMaxCommitteeSize {
+		keys = keys[:CommonApprovalMaxCommitteeSize]
+	}
+
 	nodes := make([]*common.Cnode, 0, len(keys))
 	for _, k := range keys {
 		node := config.CommonCommittee[k]
 		nodes = append(nodes, &node)
 	}
 	return nodes
+}
+
+func ValidateCommonApprovalCommittee(config *params.ChainConfig) error {
+	if config == nil || !config.CommonApprovalEnabled {
+		return nil
+	}
+	size := len(config.CommonCommittee)
+	if size < CommonApprovalMinCommitteeSize {
+		return fmt.Errorf("common approval enabled but commonCommittee has %d member(s), minimum is %d", size, CommonApprovalMinCommitteeSize)
+	}
+	if size > CommonApprovalMaxCommitteeSize {
+		return fmt.Errorf("common approval commonCommittee has %d member(s), maximum active size is %d", size, CommonApprovalMaxCommitteeSize)
+	}
+	return nil
 }
 
 func CommonApprovalCommitteeHash(config *params.ChainConfig) common.Hash {
@@ -51,6 +81,10 @@ func CommonApprovalThreshold(config *params.ChainConfig, committeeSize int) int 
 	if committeeSize <= 0 {
 		return 0
 	}
+	if committeeSize > CommonApprovalMaxCommitteeSize {
+		committeeSize = CommonApprovalMaxCommitteeSize
+	}
+
 	threshold := hotstuff.CalcThreshold(committeeSize)
 	if config != nil && config.CommonApprovalThreshold > 0 {
 		threshold = int(config.CommonApprovalThreshold)
@@ -83,10 +117,10 @@ func VerifyCommonApproval(config *params.ChainConfig, block *types.Block) error 
 	if !CommonApprovalRequired(config, block) {
 		return nil
 	}
-	nodes := OrderedCommonCommittee(config)
-	if len(nodes) == 0 {
-		return fmt.Errorf("common approval enabled but commonCommittee is empty")
+	if err := ValidateCommonApprovalCommittee(config); err != nil {
+		return err
 	}
+	nodes := OrderedCommonCommittee(config)
 	pubs, err := CommonApprovalPublicKeys(nodes)
 	if err != nil {
 		return err
