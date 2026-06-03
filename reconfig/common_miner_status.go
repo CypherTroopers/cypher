@@ -149,6 +149,12 @@ func (s *netService) commonMinerHeartbeatLoop() {
 			time.Sleep(2 * time.Second)
 			continue
 		}
+		// Validator HotStuff members are the fixed finality layer, not common miners.
+		// They must not pollute common miner uptime/candidate status.
+		if bftview.IamMember() >= 0 && !s.isConfiguredCommonApprover() {
+			time.Sleep(10 * time.Second)
+			continue
+		}
 		public := bftview.GetServerInfo(bftview.PublicKey)
 		coinbase := bftview.GetServerCoinBase().String()
 		if public == "" || coinbase == "" {
@@ -167,6 +173,23 @@ func (s *netService) commonMinerHeartbeatLoop() {
 		s.sendCommonMinerHeartbeat(msg)
 		time.Sleep(10 * time.Second)
 	}
+}
+
+func (s *netService) isConfiguredCommonApprover() bool {
+	if s == nil || s.chainConfig == nil {
+		return false
+	}
+	public := bftview.GetServerInfo(bftview.PublicKey)
+	address := bftview.GetServerAddress()
+	for _, node := range s.chainConfig.CommonCommittee {
+		if node.Public != "" && node.Public == public {
+			return true
+		}
+		if node.Address != "" && node.Address == address {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *netService) recordLocalCommonMinerHeartbeat(msg *commonMinerHeartbeatMsg) {
