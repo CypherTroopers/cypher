@@ -98,10 +98,12 @@ func (s *Service) attachCommonApprovalToEncodedBlock(data []byte) ([]byte, error
 	return block.EncodeToBytes(), nil
 }
 
-// attachCommonApproval asks the active common-approval leader to approve the tx
-// block. The common leader validates the tx block, collects votes from the active
-// common committee and returns a CommonApprovalQC. Validator HotStuff then
-// finalizes only the tx block carrying that QC.
+// attachCommonApproval asks an active common-approval leader to approve the tx
+// block. If the primary common leader is down, the validator leader falls back to
+// the next common committee member in deterministic genesis order. The common
+// leader validates the tx block, collects votes from the active common committee
+// and returns a CommonApprovalQC. Validator HotStuff then finalizes only the tx
+// block carrying that QC.
 func (s *Service) attachCommonApproval(block *types.Block) error {
 	if !core.CommonApprovalRequired(s.chainConfig, block) {
 		return nil
@@ -114,12 +116,32 @@ func (s *Service) requestCommonApproval(block *types.Block) error {
 		return err
 	}
 	nodes := core.OrderedCommonCommittee(s.chainConfig)
-	if len(nodes) == 0 || nodes[0] == nil || nodes[0].Address == "" {
-		return fmt.Errorf("common approval failed: active common leader is empty")
+	if len(nodes) == 0 {
+		return fmt.Errorf("common approval failed: active common committee is empty")
 	}
-
-	leader := nodes[0]
 	committeeHash := core.CommonApprovalCommitteeHash(s.chainConfig)
+
+	var lastErr error
+	for i, leader := range nodes {
+		if leader == nil || leader.Address == "" || leader.Public == "" {
+			lastErr = fmt.Errorf("common approval leader candidate %d is invalid", i)
+			log.Warn("common approval leader candidate skipped", "index", i, "err", lastErr)
+			continue
+		}
+		if err := s.requestCommonApprovalFromLeader(block, leader, i, len(nodes), committeeHash); err != nil {
+			lastErr = err
+			log.Warn("common approval leader attempt failed", "index", i, "leader", leader.Address, "block", block.NumberU64(), "err", err)
+			continue
+		}
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no usable common approval leader")
+	}
+	return fmt.Errorf("common approval failed: all common leaders failed: %v", lastErr)
+}
+
+func (s *Service) requestCommonApprovalFromLeader(block *types.Block, leader *common.Cnode, leaderIndex int, leaderCount int, committeeHash common.Hash) error {
 	leaderID := bftview.GetNodeID(leader.Address, leader.Public)
 	viewID := s.commonApprovalViewID(block, committeeHash)
 	payload := block.CopyNoSignInfo().EncodeToBytes()
@@ -127,7 +149,7 @@ func (s *Service) requestCommonApproval(block *types.Block) error {
 		return types.ErrEncodeRLP
 	}
 
-	respCh := make(chan *commonApprovalMsg, 1)
+	respCh := make(chan *commonApprovalMsg, 4)
 	commonApprovalRuntime.Lock()
 	commonApprovalRuntime.responses[viewID] = respCh
 	commonApprovalRuntime.Unlock()
@@ -145,7 +167,7 @@ func (s *Service) requestCommonApproval(block *types.Block) error {
 		LeaderID:         leaderID,
 		CommitteeHash:    committeeHash,
 	}
-	log.Info("common approval request", "view", viewID.Hex(), "leader", leader.Address, "block", block.NumberU64())
+	log.Info("common approval request", "view", viewID.Hex(), "leader", leader.Address, "leaderIndex", leaderIndex, "leaderCount", leaderCount, "block", block.NumberU64())
 
 	if s.isSelfAddress(leader.Address) {
 		go s.handleCommonApprovalMsg(req)
@@ -153,25 +175,32 @@ func (s *Service) requestCommonApproval(block *types.Block) error {
 		s.sendCommonApprovalRaw(leader.Address, req)
 	}
 
-	select {
-	case resp := <-respCh:
-		if resp == nil {
-			return fmt.Errorf("common approval failed: empty response")
+	timer := time.NewTimer(commonApprovalResponseTimeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case resp := <-respCh:
+			if resp == nil {
+				log.Warn("common approval ignored empty response", "view", viewID.Hex(), "leader", leader.Address)
+				continue
+			}
+			if resp.CommitteeHash != committeeHash || resp.ViewID != viewID || resp.LeaderID != leaderID {
+				log.Warn("common approval ignored stale response", "view", viewID.Hex(), "leader", leader.Address, "respLeader", resp.LeaderID)
+				continue
+			}
+			if resp.Error != "" {
+				return fmt.Errorf("common approval failed from leader %s: %s", leader.Address, resp.Error)
+			}
+			block.SetCommonApproval(resp.Signature, resp.Mask, resp.ViewID, resp.LeaderID, resp.CommitteeHash)
+			if err := core.VerifyCommonApproval(s.chainConfig, block); err != nil {
+				return err
+			}
+			log.Info("common approval attached", "view", viewID.Hex(), "leader", leader.Address, "leaderIndex", leaderIndex, "block", block.NumberU64())
+			return nil
+		case <-timer.C:
+			return fmt.Errorf("common approval timeout waiting for common leader %s", leader.Address)
 		}
-		if resp.Error != "" {
-			return fmt.Errorf("common approval failed: %s", resp.Error)
-		}
-		if resp.CommitteeHash != committeeHash || resp.ViewID != viewID || resp.LeaderID != leaderID {
-			return fmt.Errorf("common approval failed: response context mismatch")
-		}
-		block.SetCommonApproval(resp.Signature, resp.Mask, resp.ViewID, resp.LeaderID, resp.CommitteeHash)
-		if err := core.VerifyCommonApproval(s.chainConfig, block); err != nil {
-			return err
-		}
-		log.Info("common approval attached", "view", viewID.Hex(), "block", block.NumberU64())
-		return nil
-	case <-time.After(commonApprovalResponseTimeout):
-		return fmt.Errorf("common approval timeout waiting for common leader %s", leader.Address)
 	}
 }
 
@@ -318,11 +347,9 @@ func (s *Service) handleCommonApprovalVoteRequest(req *commonApprovalMsg) {
 		SignerIndex:   uint32(index),
 		Signature:     sig,
 	}
-	leaderAddr := ""
-	if nodes := core.OrderedCommonCommittee(s.chainConfig); len(nodes) > 0 && nodes[0] != nil {
-		leaderAddr = nodes[0].Address
-	}
+	leaderAddr := s.commonApprovalLeaderAddress(req.LeaderID)
 	if leaderAddr == "" {
+		log.Warn("common approval vote has no active leader", "view", req.ViewID.Hex(), "leaderID", req.LeaderID)
 		return
 	}
 	if s.isSelfAddress(leaderAddr) {
@@ -514,13 +541,40 @@ func (s *Service) deliverCommonApprovalResponse(resp *commonApprovalMsg) {
 	s.sendCommonApprovalRaw(resp.ValidatorAddress, resp)
 }
 
-func (s *Service) isCommonApprovalLeader(leaderID string) bool {
+func (s *Service) commonApprovalLeaderAddress(leaderID string) string {
+	if leaderID == "" {
+		return ""
+	}
 	nodes := core.OrderedCommonCommittee(s.chainConfig)
-	if len(nodes) == 0 || nodes[0] == nil {
+	for _, node := range nodes {
+		if node == nil || node.Address == "" || node.Public == "" {
+			continue
+		}
+		if bftview.GetNodeID(node.Address, node.Public) == leaderID {
+			return node.Address
+		}
+	}
+	return ""
+}
+
+func (s *Service) isCommonApprovalLeader(leaderID string) bool {
+	if leaderID == "" {
 		return false
 	}
 	selfPub := bftview.GetServerInfo(bftview.PublicKey)
-	return nodes[0].Public == selfPub && bftview.GetNodeID(nodes[0].Address, nodes[0].Public) == leaderID
+	if selfPub == "" {
+		return false
+	}
+	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	for _, node := range nodes {
+		if node == nil || node.Public != selfPub {
+			continue
+		}
+		if bftview.GetNodeID(node.Address, node.Public) == leaderID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) sendCommonApprovalRaw(address string, msg *commonApprovalMsg) error {
