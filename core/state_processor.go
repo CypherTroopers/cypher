@@ -17,6 +17,8 @@
 package core
 
 import (
+	"math/big"
+
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/consensus/misc"
@@ -27,6 +29,17 @@ import (
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 )
+
+var commonApprovalSignerReward = mustCommonApprovalSignerReward()
+
+func mustCommonApprovalSignerReward() *big.Int {
+	// 1000 native coins with 18 decimals.
+	reward, ok := new(big.Int).SetString("1000000000000000000000", 10)
+	if !ok {
+		panic("invalid common approval signer reward")
+	}
+	return reward
+}
 
 // StateProcessor is a basic Processor, which takes care of transitioning
 // state from one point to another.
@@ -83,10 +96,39 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		totalGas += receipt.GasUsed * tx.GasPrice().Uint64()
 
 	}
+	applyCommonApprovalRewards(p.config, block, statedb)
+
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), totalGas)
 
 	return receipts, allLogs, *usedGas, nil
+}
+
+func applyCommonApprovalRewards(config *params.ChainConfig, block *types.Block, statedb *state.StateDB) {
+	if !CommonApprovalRequired(config, block) || statedb == nil {
+		return
+	}
+	signInfo := block.SignInfo()
+	if signInfo == nil || len(signInfo.CommonApprovalSignature) == 0 || len(signInfo.CommonApprovalExceptions) == 0 {
+		return
+	}
+
+	nodes := OrderedCommonCommittee(config)
+	for i, node := range nodes {
+		if node == nil || node.CoinBase == "" {
+			continue
+		}
+		if len(signInfo.CommonApprovalExceptions) <= i/8 {
+			continue
+		}
+		if (signInfo.CommonApprovalExceptions[i/8] & (1 << uint(i%8))) == 0 {
+			continue
+		}
+
+		addr := common.HexToAddress(node.CoinBase)
+		statedb.AddBalance(addr, commonApprovalSignerReward)
+		log.Info("common approval signer reward", "block", block.NumberU64(), "member", i, "coinbase", addr, "amount", commonApprovalSignerReward)
+	}
 }
 
 // ApplyTransaction attempts to apply a transaction to the given state database
