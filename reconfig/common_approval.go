@@ -141,7 +141,7 @@ func (s *Service) requestCommonApproval(block *types.Block) error {
 	return fmt.Errorf("common approval failed: all common leaders failed: %v", lastErr)
 }
 
-func (s *Service) requestCommonApprovalFromLeader(block *types.Block, leader *common.Cnode, leaderIndex int, leaderCount int, committeeHash common.Hash) error {
+func (s *Service) requestCommonApprovalFromLeader(block *types.Block, leader *common.Cnode, leaderIndex int, commonCommitteeSize int, committeeHash common.Hash) error {
 	leaderID := bftview.GetNodeID(leader.Address, leader.Public)
 	viewID := s.commonApprovalViewID(block, committeeHash)
 	payload := block.CopyNoSignInfo().EncodeToBytes()
@@ -167,7 +167,7 @@ func (s *Service) requestCommonApprovalFromLeader(block *types.Block, leader *co
 		LeaderID:         leaderID,
 		CommitteeHash:    committeeHash,
 	}
-	log.Info("common approval request", "view", viewID.Hex(), "leader", leader.Address, "leaderIndex", leaderIndex, "leaderCount", leaderCount, "block", block.NumberU64())
+	log.Info("common approval request", "view", viewID.Hex(), "leader", leader.Address, "leaderIndex", leaderIndex, "CommonCommitteeSize", commonCommitteeSize, "block", block.NumberU64())
 
 	if s.isSelfAddress(leader.Address) {
 		go s.handleCommonApprovalMsg(req)

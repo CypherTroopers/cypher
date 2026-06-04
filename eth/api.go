@@ -77,31 +77,110 @@ func (api *PublicEthereumAPI) ChainId() hexutil.Uint64 {
 	return (hexutil.Uint64)(chainID.Uint64())
 }
 
-func (api *PublicEthereumAPI) Status() string {
-	var s string
+func validatorStatusRole() string {
 	i := bftview.IamMember()
-
 	if i >= 0 {
 		if i == 0 {
-			s = "I'm leader."
-		} else {
-			s = "I'm committee member."
+			return "I'm leader."
 		}
-	} else {
-		s += "I'm common node."
+		return "I'm committee member."
+	}
+	return ""
+}
 
+func commonApprovalNodeMatches(node *common.Cnode, selfAddress string, selfCoinbase string, selfPublic string) bool {
+	if node == nil {
+		return false
 	}
-	if api.e.IsMining() {
-		s += "is Running."
+	if selfAddress != "" && node.Address == selfAddress {
+		return true
+	}
+	if selfCoinbase != "" {
+		self := common.HexToAddress(selfCoinbase)
+		if self != (common.Address{}) && common.HexToAddress(node.CoinBase) == self {
+			return true
+		}
+	}
+	if selfPublic != "" && strings.EqualFold(node.Public, selfPublic) {
+		return true
+	}
+	return false
+}
+
+func commonApprovalStatusRole(e *Ethereum) string {
+	if e == nil || e.blockchain == nil || e.keyBlockChain == nil {
+		return "I'm common node."
+	}
+
+	keyblock := e.keyBlockChain.CurrentBlock()
+	nodes := core.OrderedCommonCommitteeForKeyBlock(e.blockchain.Config(), keyblock)
+	if len(nodes) == 0 {
+		return "I'm common node."
+	}
+
+	selfAddress := ""
+	if e.config != nil && e.ExtIP() != nil {
+		selfAddress = fmt.Sprintf("%s:%d", e.ExtIP().String(), e.config.RnetPort)
+	}
+
+	selfCoinbase := e.etherbase.Hex()
+
+	selfPublic := ""
+	if pub := e.PublicKey(); len(pub) > 0 {
+		selfPublic = common.HexString(pub)
+	}
+
+	for i, node := range nodes {
+		if commonApprovalNodeMatches(node, selfAddress, selfCoinbase, selfPublic) {
+			if i == 0 {
+				return "I'm common committee leader node."
+			}
+			return "I'm common committee node."
+		}
+	}
+
+	return "I'm common node."
+}
+
+func ethereumStatus(e *Ethereum, includeService bool) string {
+	roles := make([]string, 0, 2)
+
+	validatorRole := validatorStatusRole()
+	if validatorRole != "" {
+		roles = append(roles, validatorRole)
+	}
+
+	commonRole := commonApprovalStatusRole(e)
+	if validatorRole == "" || commonRole != "I'm common node." {
+		roles = append(roles, commonRole)
+	}
+
+	if len(roles) == 0 {
+		roles = append(roles, "I'm common node.")
+	}
+
+	status := strings.Join(roles, " ")
+
+	running := e != nil && (e.IsMining() || e.ServiceIsRunning())
+	if running {
+		status += " is Running."
 	} else {
-		s += "Stopped."
+		status += " Stopped."
 	}
-	if api.e.ServiceIsRunning() {
-		s += "&& in service."
-	} else {
-		s += "&& not in service."
+
+	if includeService {
+		if e != nil && e.ServiceIsRunning() {
+			status += " && in service."
+		} else {
+			status += " && not in service."
+		}
 	}
-	return s
+
+	return status
+}
+
+func (api *PublicEthereumAPI) Status() string {
+	return ethereumStatus(api.e, true)
 }
 func (api *PublicEthereumAPI) CommitteeMembers(ctx context.Context, blockNr rpc.BlockNumber) ([]*common.Cnode, error) {
 
@@ -235,24 +314,7 @@ func (api *PrivateMinerAPI) Stop() {
 }
 
 func (api *PrivateMinerAPI) Status() string {
-	var s string
-	i := bftview.IamMember()
-	if i >= 0 {
-		if i == 0 {
-			s = "I'm leader."
-		} else {
-			s = "I'm committee member."
-		}
-	} else {
-		s += "I'm common node."
-	}
-	running := api.e.IsMining() || api.e.ServiceIsRunning()
-	if running {
-		s += "is Running."
-	} else {
-		s += "Stopped."
-	}
-	return s
+	return ethereumStatus(api.e, false)
 }
 
 // SetExtra sets the extra data string that is included when this miner mines a block.
