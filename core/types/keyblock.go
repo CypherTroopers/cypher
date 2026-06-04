@@ -280,8 +280,6 @@ func (b *KeyBlock) CommonApprovalRewards() []CommonApprovalReward {
 
 func (b *KeyBlock) SetCommonApprovalRewards(rewards []CommonApprovalReward) {
 	b.commonApprovalRewards = copyCommonApprovalRewards(rewards)
-	b.hash.Store(common.Hash{})
-	b.size.Store(nil)
 }
 
 // Body returns the non-header content of the block.
