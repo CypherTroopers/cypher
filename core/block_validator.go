@@ -177,7 +177,8 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 	if !hotstuff.VerifySignatureWithContext(si.Signature, si.Exceptions, buf, pubs, threshold, chainID, hotstuff.MsgVotePrepare, si.ViewID, si.LeaderID) {
 		return types.ErrInvalidSignature
 	}
-	if err := VerifyCommonApproval(v.config, block); err != nil {
+	keyblock := v.bc.keyBlockChain.GetBlockByHash(block.KeyHash())
+	if err := VerifyCommonApprovalForKeyBlock(v.config, block, keyblock); err != nil {
 		return err
 	}
 	return nil

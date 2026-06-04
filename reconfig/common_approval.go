@@ -112,14 +112,14 @@ func (s *Service) attachCommonApproval(block *types.Block) error {
 }
 
 func (s *Service) requestCommonApproval(block *types.Block) error {
-	if err := core.ValidateCommonApprovalCommittee(s.chainConfig); err != nil {
+	if err := s.validateCommonApprovalCommitteeForBlock(block); err != nil {
 		return err
 	}
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	nodes := s.orderedCommonCommitteeForBlock(block)
 	if len(nodes) == 0 {
 		return fmt.Errorf("common approval failed: active common committee is empty")
 	}
-	committeeHash := core.CommonApprovalCommitteeHash(s.chainConfig)
+	committeeHash := s.commonApprovalCommitteeHashForBlock(block)
 
 	var lastErr error
 	for i, leader := range nodes {
@@ -193,7 +193,7 @@ func (s *Service) requestCommonApprovalFromLeader(block *types.Block, leader *co
 				return fmt.Errorf("common approval failed from leader %s: %s", leader.Address, resp.Error)
 			}
 			block.SetCommonApproval(resp.Signature, resp.Mask, resp.ViewID, resp.LeaderID, resp.CommitteeHash)
-			if err := core.VerifyCommonApproval(s.chainConfig, block); err != nil {
+			if err := s.verifyCommonApprovalForBlock(block); err != nil {
 				return err
 			}
 			log.Info("common approval attached", "view", viewID.Hex(), "leader", leader.Address, "leaderIndex", leaderIndex, "block", block.NumberU64())
@@ -228,7 +228,11 @@ func (s *Service) handleCommonApprovalMsg(msg *commonApprovalMsg) {
 }
 
 func (s *Service) routeCommonApprovalRequest(req *commonApprovalMsg) {
-	if s.isCommonApprovalLeader(req.LeaderID) {
+	if req == nil {
+		return
+	}
+	block := types.DecodeToBlock(req.BlockData)
+	if block != nil && s.isCommonApprovalLeaderForBlock(block, req.LeaderID) {
 		s.handleCommonApprovalRequest(req)
 		return
 	}
@@ -244,11 +248,11 @@ func (s *Service) handleCommonApprovalRequest(req *commonApprovalMsg) {
 		s.sendCommonApprovalResponse(req, nil, nil, "cannot decode tx block")
 		return
 	}
-	if !s.isCommonApprovalLeader(req.LeaderID) {
+	if !s.isCommonApprovalLeaderForBlock(block, req.LeaderID) {
 		s.sendCommonApprovalResponse(req, nil, nil, "receiver is not active common leader")
 		return
 	}
-	if req.CommitteeHash != core.CommonApprovalCommitteeHash(s.chainConfig) {
+	if req.CommitteeHash != s.commonApprovalCommitteeHashForBlock(block) {
 		s.sendCommonApprovalResponse(req, nil, nil, "common committee hash mismatch")
 		return
 	}
@@ -313,7 +317,14 @@ func (s *Service) handleCommonApprovalRequest(req *commonApprovalMsg) {
 }
 
 func (s *Service) broadcastCommonApprovalVoteRequest(req *commonApprovalMsg) {
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	if req == nil {
+		return
+	}
+	block := types.DecodeToBlock(req.BlockData)
+	if block == nil {
+		return
+	}
+	nodes := s.orderedCommonCommitteeForBlock(block)
 	for _, node := range nodes {
 		if node == nil || node.Address == "" || s.isSelfAddress(node.Address) {
 			continue
@@ -347,7 +358,7 @@ func (s *Service) handleCommonApprovalVoteRequest(req *commonApprovalMsg) {
 		SignerIndex:   uint32(index),
 		Signature:     sig,
 	}
-	leaderAddr := s.commonApprovalLeaderAddress(req.LeaderID)
+	leaderAddr := s.commonApprovalLeaderAddressForBlock(block, req.LeaderID)
 	if leaderAddr == "" {
 		log.Warn("common approval vote has no active leader", "view", req.ViewID.Hex(), "leaderID", req.LeaderID)
 		return
@@ -403,13 +414,13 @@ func (s *Service) signCommonApproval(block *types.Block, viewID common.Hash, lea
 	if block == nil {
 		return nil, -1, fmt.Errorf("nil block")
 	}
-	if committeeHash != core.CommonApprovalCommitteeHash(s.chainConfig) {
+	if committeeHash != s.commonApprovalCommitteeHashForBlock(block) {
 		return nil, -1, fmt.Errorf("common committee hash mismatch")
 	}
 	if viewID != s.commonApprovalViewID(block, committeeHash) {
 		return nil, -1, fmt.Errorf("common approval view mismatch")
 	}
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	nodes := s.orderedCommonCommitteeForBlock(block)
 	selfPub := bftview.GetServerInfo(bftview.PublicKey)
 	if selfPub == "" {
 		return nil, -1, fmt.Errorf("local BLS public key is empty")
@@ -435,7 +446,7 @@ func (s *Service) verifyCommonApprovalVote(session *commonApprovalLeaderSession,
 	if session == nil || vote == nil || vote.Signature == nil {
 		return false
 	}
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	nodes := s.orderedCommonCommitteeForBlock(session.block)
 	index := int(vote.SignerIndex)
 	if index < 0 || index >= len(nodes) {
 		return false
@@ -459,7 +470,7 @@ func (s *Service) verifyCommonApprovalVote(session *commonApprovalLeaderSession,
 }
 
 func (s *Service) commonApprovalSessionThreshold(session *commonApprovalLeaderSession) int {
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	nodes := s.orderedCommonCommitteeForBlock(session.block)
 
 	if session != nil {
 		if _, ok := session.votes[core.CommonApprovalBootstrapIndex]; ok {
@@ -474,7 +485,7 @@ func (s *Service) tryBuildCommonApprovalResponse(session *commonApprovalLeaderSe
 	if session == nil {
 		return nil
 	}
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	nodes := s.orderedCommonCommitteeForBlock(session.block)
 	threshold := s.commonApprovalSessionThreshold(session)
 	if len(session.votes) < threshold {
 		return nil
@@ -491,7 +502,7 @@ func (s *Service) tryBuildCommonApprovalResponse(session *commonApprovalLeaderSe
 		BlockData:        session.block.EncodeToBytes(),
 		ViewID:           session.viewID,
 		LeaderID:         session.leaderID,
-		CommitteeHash:    core.CommonApprovalCommitteeHash(s.chainConfig),
+		CommitteeHash:    s.commonApprovalCommitteeHashForBlock(session.block),
 		Signature:        sig,
 		Mask:             mask,
 	}
@@ -554,11 +565,11 @@ func (s *Service) deliverCommonApprovalResponse(resp *commonApprovalMsg) {
 	s.sendCommonApprovalRaw(resp.ValidatorAddress, resp)
 }
 
-func (s *Service) commonApprovalLeaderAddress(leaderID string) string {
+func (s *Service) commonApprovalLeaderAddressForBlock(block *types.Block, leaderID string) string {
 	if leaderID == "" {
 		return ""
 	}
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	nodes := s.orderedCommonCommitteeForBlock(block)
 	for _, node := range nodes {
 		if node == nil || node.Address == "" || node.Public == "" {
 			continue
@@ -570,7 +581,11 @@ func (s *Service) commonApprovalLeaderAddress(leaderID string) string {
 	return ""
 }
 
-func (s *Service) isCommonApprovalLeader(leaderID string) bool {
+func (s *Service) commonApprovalLeaderAddress(leaderID string) string {
+	return s.commonApprovalLeaderAddressForBlock(nil, leaderID)
+}
+
+func (s *Service) isCommonApprovalLeaderForBlock(block *types.Block, leaderID string) bool {
 	if leaderID == "" {
 		return false
 	}
@@ -578,7 +593,7 @@ func (s *Service) isCommonApprovalLeader(leaderID string) bool {
 	if selfPub == "" {
 		return false
 	}
-	nodes := core.OrderedCommonCommittee(s.chainConfig)
+	nodes := s.orderedCommonCommitteeForBlock(block)
 	for _, node := range nodes {
 		if node == nil || node.Public != selfPub {
 			continue
@@ -588,6 +603,10 @@ func (s *Service) isCommonApprovalLeader(leaderID string) bool {
 		}
 	}
 	return false
+}
+
+func (s *Service) isCommonApprovalLeader(leaderID string) bool {
+	return s.isCommonApprovalLeaderForBlock(nil, leaderID)
 }
 
 func (s *Service) sendCommonApprovalRaw(address string, msg *commonApprovalMsg) error {
