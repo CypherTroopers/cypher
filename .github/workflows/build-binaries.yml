@@ -147,7 +147,6 @@ jobs:
           export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
           export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
 
-          make clean
           make cypher
 
           cp -f build/bin/cypher build/bin/cypher-darwin-arm64
