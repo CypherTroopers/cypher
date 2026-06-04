@@ -5,7 +5,7 @@ on:
 
   push:
     branches:
-      - colossusX_dev_test
+      - '**'
     paths-ignore:
       - 'README.md'
       - 'build/bin/cypher'
@@ -36,12 +36,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: ${{ github.ref }}
           path: go/src/github.com/cypherium/cypher
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
 
       - uses: actions/setup-go@v5
         with:
@@ -74,6 +70,10 @@ jobs:
           mkdir -p "$GOPATH/src/github.com/shirou"
           cd "$GOPATH/src/github.com/shirou"
           [ -d gopsutil ] || git clone https://github.com/shirou/gopsutil.git
+
+          mkdir -p "$GOPATH/src/github.com/dlclark"
+          cd "$GOPATH/src/github.com/dlclark"
+          [ -d regexp2 ] || git clone https://github.com/dlclark/regexp2.git
 
           mkdir -p "$GOPATH/src/github.com/go-sourcemap"
           cd "$GOPATH/src/github.com/go-sourcemap"
@@ -108,7 +108,6 @@ jobs:
           git submodule update --init --recursive
 
           cd "$GOPATH/src/github.com/herumi/bls/mcl"
-          make clean || true
           rm -f src/bint_switch.hpp src/llvm_proto.hpp
           python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
           make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
@@ -147,7 +146,6 @@ jobs:
           export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
           export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
 
-          make clean
           make cypher
 
           cp -f build/bin/cypher build/bin/cypher-darwin-arm64
@@ -175,52 +173,98 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: ${{ github.ref }}
           path: go/src/github.com/cypherium/cypher
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.2'
-          cache: false
-
-      - name: Setup Linux native libs
+      - name: Update and clean packages
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
+
+          sudo apt update
+          sudo apt upgrade -y
+          sudo apt full-upgrade -y
+          sudo apt autoremove -y
+          sudo apt autoclean -y
+
+      - name: Install Go 1.26.2 manually
+        shell: bash
+        run: |
+          set -e
+
+          wget https://go.dev/dl/go1.26.2.linux-amd64.tar.gz
+          sudo rm -rf /usr/local/go
+          sudo tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz
+
+          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
+
+          /usr/local/go/bin/go version
+
+      - name: Configure Go environment
+        shell: bash
+        run: |
+          set -e
+
+          echo "GOPATH=${GITHUB_WORKSPACE}/go" >> "$GITHUB_ENV"
+          echo "GO111MODULE=off" >> "$GITHUB_ENV"
+          echo "CGO_ENABLED=1" >> "$GITHUB_ENV"
+          echo "CC=gcc" >> "$GITHUB_ENV"
+          echo "CXX=g++" >> "$GITHUB_ENV"
+
+          /usr/local/go/bin/go env -w GO111MODULE=off
+
+      - name: Install required development packages
+        shell: bash
+        run: |
+          set -e
 
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            gcc \
-            g++ \
-            make \
-            git \
-            python3 \
-            cmake \
-            pkg-config \
-            libssl-dev \
-            libgmp-dev \
-            bzip2 \
-            m4 \
-            curl \
-            libc6-dev \
-            wget \
-            texinfo
+          sudo apt-get install -y gcc cmake libssl-dev openssl libgmp-dev \
+            bzip2 m4 build-essential git curl libc-dev \
+            wget texinfo nodejs npm pcscd
+
+      - name: Build and install GMP 6.1.2
+        shell: bash
+        run: |
+          set -e
+
+          wget -4 https://ftp.gnu.org/gnu/gmp/gmp-6.1.2.tar.bz2
+          tar -xjf gmp-6.1.2.tar.bz2
+
+          cd gmp-6.1.2
+
+          ./configure \
+            --prefix=/usr \
+            --enable-cxx \
+            --disable-static \
+            --docdir=/usr/share/doc/gmp-6.1.2
+
+          make
+          make check || echo "※ Some tests may fail and can be ignored."
+          make html
+          sudo make install
+          sudo make install-html
+
+          cd ..
+
+          sudo cp -rf /usr/lib/libgmp* /usr/local/lib/ || true
 
       - name: Build cypher linux amd64
         working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          export PATH="$(go env GOROOT)/bin:/usr/local/bin:$PATH"
+          export PATH="/usr/local/go/bin:$PATH"
+          export GOPATH="${GITHUB_WORKSPACE}/go"
           export GO111MODULE=off
           export GOOS=linux
           export GOARCH=amd64
+          export CGO_ENABLED=1
+          export CC=gcc
+          export CXX=g++
+
+          cp ./crypto/bls/lib/linux/* ./crypto/bls/lib/
 
           mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
           cd "$GOPATH/src/github.com/VictoriaMetrics"
@@ -230,21 +274,13 @@ jobs:
           cd "$GOPATH/src/github.com/shirou"
           [ -d gopsutil ] || git clone https://github.com/shirou/gopsutil.git
 
+          mkdir -p "$GOPATH/src/github.com/dlclark"
+          cd "$GOPATH/src/github.com/dlclark"
+          [ -d regexp2 ] || git clone https://github.com/dlclark/regexp2.git
+
           mkdir -p "$GOPATH/src/github.com/go-sourcemap"
           cd "$GOPATH/src/github.com/go-sourcemap"
           [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
-
-          mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
-          cd "$GOPATH/src/github.com/yusufpapurcu"
-          [ -d wmi ] || git clone https://github.com/yusufpapurcu/wmi.git
-
-          mkdir -p "$GOPATH/src/github.com/go-ole"
-          cd "$GOPATH/src/github.com/go-ole"
-          [ -d go-ole ] || git clone https://github.com/go-ole/go-ole.git
-
-          mkdir -p "$GOPATH/src/github.com/ebitengine"
-          cd "$GOPATH/src/github.com/ebitengine"
-          [ -d purego ] || git clone https://github.com/ebitengine/purego.git
 
           mkdir -p "$GOPATH/src/github.com/tklauser"
           cd "$GOPATH/src/github.com/tklauser"
@@ -255,30 +291,15 @@ jobs:
           cd "$GOPATH/src/golang.org/x"
           [ -d sys ] || git clone https://go.googlesource.com/sys
 
-          cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
+          cd "${GITHUB_WORKSPACE}/go/src/github.com/cypherium/cypher"
 
-          cp -f ./crypto/bls/lib/linux/* ./crypto/bls/lib/
+          DUK_LOGGING_PATH="$GOPATH/src/github.com/cypherium/cypher/vendor/gopkg.in/olebedev/go-duktape.v3/duk_logging.c"
 
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("vendor/gopkg.in/olebedev/go-duktape.v3/duk_logging.c")
-
-          if p.exists():
-              s = p.read_text()
-              s = s.replace("duk_uint8_t date_buf[32]", "duk_uint8_t date_buf[64]")
-              s = s.replace("snprintf((char *) date_buf, sizeof(date_buf),, ", "snprintf((char *) date_buf, sizeof(date_buf), ")
-              s = s.replace('sprintf((char *) date_buf, "', 'snprintf((char *) date_buf, sizeof(date_buf), "')
-              p.write_text(s)
-          PY
+          sed -i 's/duk_uint8_t date_buf\[32\]/duk_uint8_t date_buf[64]/' "$DUK_LOGGING_PATH"
+          sed -i 's/sprintf((char *) date_buf/snprintf((char *) date_buf, sizeof(date_buf),/' "$DUK_LOGGING_PATH"
 
           go env -w GO111MODULE=off
 
-          export CGO_CFLAGS="-I/usr/include"
-          export CGO_CXXFLAGS="$CGO_CFLAGS"
-          export CGO_LDFLAGS="-L/usr/lib/x86_64-linux-gnu"
-
-          make clean
           make cypher
 
           cp -f build/bin/cypher build/bin/cypher-linux-amd64
@@ -318,12 +339,8 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: ${{ github.ref }}
           path: go/src/github.com/cypherium/cypher
-          sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/vendor/github.com/consensys/gnark-crypto/internal/generator/addchain/
 
       - uses: actions/setup-go@v5
         with:
@@ -356,6 +373,7 @@ jobs:
           mkdir -p "$GOPATH/src/github.com/go-sourcemap"
           mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
           mkdir -p "$GOPATH/src/github.com/go-ole"
+          mkdir -p "$GOPATH/src/github.com/dlclark"
 
           git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
           git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
@@ -364,6 +382,7 @@ jobs:
           git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
           git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
           git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
+          git clone --depth 1 https://github.com/dlclark/regexp2.git "$GOPATH/src/github.com/dlclark/regexp2"
 
           rm -rf "$GOPATH/src/github.com/herumi"
           mkdir -p "$GOPATH/src/github.com/herumi"
@@ -373,7 +392,6 @@ jobs:
           git submodule update --init --recursive
 
           cd "$GOPATH/src/github.com/herumi/bls/mcl"
-          make clean || true
           rm -f src/bint_switch.hpp src/llvm_proto.hpp
           python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
           make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
@@ -425,7 +443,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: colossusX_dev_test
+          ref: ${{ github.ref }}
+          fetch-depth: 0
 
       - name: Download macOS binary
         uses: actions/download-artifact@v4
@@ -471,6 +490,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          TARGET_BRANCH="${GITHUB_REF_NAME}"
+
+          echo "Target branch: $TARGET_BRANCH"
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
@@ -497,10 +520,10 @@ jobs:
 
           git commit -m "Update macOS Linux and Windows binaries"
 
-          git fetch origin colossusX_dev_test
-          git rebase origin/colossusX_dev_test
+          git fetch origin "$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
+          git rebase "origin/$TARGET_BRANCH"
 
-          git push origin HEAD:colossusX_dev_test
+          git push origin HEAD:"$TARGET_BRANCH"
 
       - name: Checkout ColossusX-Miner repo
         uses: actions/checkout@v4
