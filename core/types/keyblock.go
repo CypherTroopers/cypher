@@ -75,6 +75,7 @@ type keyBlockBodyMarshaling struct {
 	OutPubKey             string
 	OutAddress            string
 	CommonApprovalRewards []CommonApprovalReward
+	ActiveCommonCommittee []CommonApprovalCommitteeMember
 }
 
 type CommonApprovalReward struct {
@@ -82,14 +83,24 @@ type CommonApprovalReward struct {
 	SignedTxBlocks uint64 `json:"signedTxBlocks" gencodec:"required"`
 }
 
+// CommonApprovalCommitteeMember is the KeyBlock-recorded active common approval
+// committee member. The committee is written into the KeyBlock before it is used
+// by CommonApproval, so all validators derive the same committee from chain data.
+type CommonApprovalCommitteeMember struct {
+	Address  string `json:"address"  gencodec:"required"`
+	CoinBase string `json:"coinbase" gencodec:"required"`
+	Public   string `json:"public"   gencodec:"required"`
+}
+
 type KeyBlockBody struct {
-	LeaderPubKey          string                 `json:"leaderPubKey"           gencodec:"required"`
-	LeaderAddress         string                 `json:"leaderAddress"           gencodec:"required"`
-	InPubKey              string                 `json:"inPubKey"            	gencodec:"required"`
-	InAddress             string                 `json:"inAddress"            gencodec:"required"`
-	OutPubKey             string                 `json:"outPubKey"            	gencodec:"required"`
-	OutAddress            string                 `json:"outAddress"           gencodec:"required"`
-	CommonApprovalRewards []CommonApprovalReward `json:"commonApprovalRewards" gencodec:"required"`
+	LeaderPubKey          string                         `json:"leaderPubKey"           gencodec:"required"`
+	LeaderAddress         string                         `json:"leaderAddress"           gencodec:"required"`
+	InPubKey              string                         `json:"inPubKey"            	gencodec:"required"`
+	InAddress             string                         `json:"inAddress"            gencodec:"required"`
+	OutPubKey             string                         `json:"outPubKey"            	gencodec:"required"`
+	OutAddress            string                         `json:"outAddress"           gencodec:"required"`
+	CommonApprovalRewards []CommonApprovalReward         `json:"commonApprovalRewards" gencodec:"required"`
+	ActiveCommonCommittee []CommonApprovalCommitteeMember `json:"activeCommonCommittee" gencodec:"required"`
 }
 
 // Block represents an entire block in the Cypherium blockchain.
@@ -102,6 +113,7 @@ type KeyBlock struct {
 	outPubKey             string
 	outAddress            string
 	commonApprovalRewards []CommonApprovalReward
+	activeCommonCommittee []CommonApprovalCommitteeMember
 	// caches
 	hash atomic.Value
 	size atomic.Value
@@ -120,13 +132,14 @@ type KeyBlocks []*KeyBlock
 
 type extKeyblock struct {
 	Header                *KeyBlockHeader
-	LeaderPubKey          string                 `json:"leaderPubKey"           gencodec:"required"`
-	LeaderAddress         string                 `json:"leaderAddress"           gencodec:"required"`
-	InPubKey              string                 `json:"inPubKey"               gencodec:"required"`
-	InAddress             string                 `json:"inAddress"            gencodec:"required"`
-	OutPubKey             string                 `json:"outPubKey"              gencodec:"required"`
-	OutAddress            string                 `json:"outAddress"            gencodec:"required"`
-	CommonApprovalRewards []CommonApprovalReward `json:"commonApprovalRewards" gencodec:"required"`
+	LeaderPubKey          string                         `json:"leaderPubKey"           gencodec:"required"`
+	LeaderAddress         string                         `json:"leaderAddress"           gencodec:"required"`
+	InPubKey              string                         `json:"inPubKey"               gencodec:"required"`
+	InAddress             string                         `json:"inAddress"            gencodec:"required"`
+	OutPubKey             string                         `json:"outPubKey"              gencodec:"required"`
+	OutAddress            string                         `json:"outAddress"            gencodec:"required"`
+	CommonApprovalRewards []CommonApprovalReward         `json:"commonApprovalRewards" gencodec:"required"`
+	ActiveCommonCommittee []CommonApprovalCommitteeMember `json:"activeCommonCommittee" gencodec:"required"`
 }
 
 // NewBlock creates a new block. The input data is copied,
@@ -171,6 +184,15 @@ func copyCommonApprovalRewards(in []CommonApprovalReward) []CommonApprovalReward
 	return out
 }
 
+func copyCommonApprovalCommittee(in []CommonApprovalCommitteeMember) []CommonApprovalCommitteeMember {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]CommonApprovalCommitteeMember, len(in))
+	copy(out, in)
+	return out
+}
+
 // DecodeRLP decodes the Cypherium
 func (b *KeyBlock) DecodeRLP(s *rlp.Stream) error {
 	var eb extKeyblock
@@ -183,6 +205,7 @@ func (b *KeyBlock) DecodeRLP(s *rlp.Stream) error {
 	b.leaderPubKey, b.leaderAddress = eb.LeaderPubKey, eb.LeaderAddress
 	b.inPubKey, b.inAddress, b.outPubKey, b.outAddress = eb.InPubKey, eb.InAddress, eb.OutPubKey, eb.OutAddress
 	b.commonApprovalRewards = copyCommonApprovalRewards(eb.CommonApprovalRewards)
+	b.activeCommonCommittee = copyCommonApprovalCommittee(eb.ActiveCommonCommittee)
 	b.size.Store(common.StorageSize(rlp.ListSize(size)))
 	return nil
 }
@@ -199,6 +222,7 @@ func (b *KeyBlock) EncodeRLP(w io.Writer) error {
 		LeaderPubKey:          b.leaderPubKey,
 		LeaderAddress:         b.leaderAddress,
 		CommonApprovalRewards: copyCommonApprovalRewards(b.commonApprovalRewards),
+		ActiveCommonCommittee: copyCommonApprovalCommittee(b.activeCommonCommittee),
 	})
 }
 
@@ -282,6 +306,14 @@ func (b *KeyBlock) SetCommonApprovalRewards(rewards []CommonApprovalReward) {
 	b.commonApprovalRewards = copyCommonApprovalRewards(rewards)
 }
 
+func (b *KeyBlock) ActiveCommonCommittee() []CommonApprovalCommitteeMember {
+	return copyCommonApprovalCommittee(b.activeCommonCommittee)
+}
+
+func (b *KeyBlock) SetActiveCommonCommittee(committee []CommonApprovalCommitteeMember) {
+	b.activeCommonCommittee = copyCommonApprovalCommittee(committee)
+}
+
 // Body returns the non-header content of the block.
 func (b *KeyBlock) Body() *KeyBlockBody {
 	keyBody := &KeyBlockBody{}
@@ -293,6 +325,7 @@ func (b *KeyBlock) Body() *KeyBlockBody {
 	keyBody.OutPubKey = b.outPubKey
 	keyBody.OutAddress = b.outAddress
 	keyBody.CommonApprovalRewards = copyCommonApprovalRewards(b.commonApprovalRewards)
+	keyBody.ActiveCommonCommittee = copyCommonApprovalCommittee(b.activeCommonCommittee)
 	return keyBody
 }
 
@@ -320,6 +353,7 @@ func (b *KeyBlock) WithBody(inPubKey string, inAddress string, outPubKey string,
 	block.outPubKey = outPubKey
 	block.outAddress = outAddress
 	block.commonApprovalRewards = copyCommonApprovalRewards(b.commonApprovalRewards)
+	block.activeCommonCommittee = copyCommonApprovalCommittee(b.activeCommonCommittee)
 	return block
 }
 
@@ -334,6 +368,7 @@ func (b *KeyBlock) CopyMe() *KeyBlock {
 	block.outPubKey = b.outPubKey
 	block.outAddress = b.outAddress
 	block.commonApprovalRewards = copyCommonApprovalRewards(b.commonApprovalRewards)
+	block.activeCommonCommittee = copyCommonApprovalCommittee(b.activeCommonCommittee)
 	return block
 }
 
