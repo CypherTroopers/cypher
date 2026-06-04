@@ -420,15 +420,29 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	if activeCommonCommittee, err := keyS.buildActiveCommonCommitteeSummary(); err != nil {
 		return nil, nil, nil, err
 	} else {
+		activeCommonCommitteeHash := commonApprovalCommitteeHashFromMembers(activeCommonCommittee)
 		keyblock.SetActiveCommonCommittee(activeCommonCommittee)
-		log.Info("active common committee summary attached", "keyBlock", header.Number.Uint64(), "members", activeCommonCommittee)
+		keyblock.SetActiveCommonCommitteeHash(activeCommonCommitteeHash)
+		log.Info("active common committee summary attached", "keyBlock", header.Number.Uint64(), "hash", activeCommonCommitteeHash, "members", activeCommonCommittee)
 	}
-	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
+	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "activeCommonCommitteeHash", keyblock.ActiveCommonCommitteeHash(), "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
 	mb.Store(keyblock)
 	if keyS.fixedModeEnabled() {
 		return keyblock, mb, powSubmitter, nil
 	}
 	return keyblock, mb, best, nil
+}
+
+func commonApprovalCommitteeHashFromMembers(members []types.CommonApprovalCommitteeMember) common.Hash {
+	nodes := make([]*common.Cnode, 0, len(members))
+	for _, member := range members {
+		nodes = append(nodes, &common.Cnode{
+			Address:  member.Address,
+			CoinBase: member.CoinBase,
+			Public:   member.Public,
+		})
+	}
+	return core.CommonApprovalCommitteeHashFromNodes(nodes)
 }
 
 func (keyS *keyService) getNextLeaderIndex(leaderIndex uint) uint {
