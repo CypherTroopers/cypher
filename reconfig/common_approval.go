@@ -65,7 +65,7 @@ var commonApprovalRuntime = struct {
 	sessions  map[common.Hash]*commonApprovalLeaderSession
 }{
 	responses: make(map[common.Hash]chan *commonApprovalMsg),
-	sessions:  make(map[common.Hash]*commonApprovalMsg),
+	sessions:  make(map[common.Hash]*commonApprovalLeaderSession),
 }
 
 func (s *Service) commonApprovalViewID(block *types.Block, committeeHash common.Hash) common.Hash {
