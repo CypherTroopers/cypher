@@ -2,9 +2,10 @@
 set -euo pipefail
 
 KEYBLOCK_GO="reconfig/keyblock.go"
+TXBLOCK_GO="reconfig/txblock.go"
 CONSENSUS_GO="consensus/colossusX/consensus.go"
 
-if [[ ! -f "$KEYBLOCK_GO" || ! -f "$CONSENSUS_GO" ]]; then
+if [[ ! -f "$KEYBLOCK_GO" || ! -f "$TXBLOCK_GO" || ! -f "$CONSENSUS_GO" ]]; then
   echo "Run this script from repository root" >&2
   exit 1
 fi
@@ -66,25 +67,39 @@ if old in text and new not in text:
 
 keyblock.write_text(text)
 
+# The Key_Block tx-block proposal path builds its root manually, without going
+# through consensus.FinalizeAndAssemble. It must therefore apply exactly the same
+# CommonApproval signer reward as validators apply during verification.
+txblock = Path("reconfig/txblock.go")
+text = txblock.read_text()
+old = '''	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+	colossusX.ApplyKeyblockPowReward(work.publicState, keyblock)
+	header.Root = work.publicState.IntermediateRoot(false)'''
+new = '''	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+	colossusX.ApplyKeyblockPowReward(work.publicState, keyblock)
+	colossusX.ApplyCommonApprovalSignerRewards(work.publicState, keyblock)
+	header.Root = work.publicState.IntermediateRoot(false)'''
+if old in text and new not in text:
+    text = text.replace(old, new, 1)
+txblock.write_text(text)
+
 consensus = Path("consensus/colossusX/consensus.go")
 text = consensus.read_text()
 
-# IMPORTANT: undo the previous unsafe wiring. ApplyKeyblockPowRewardByKeyInfo can
-# be reached from tx-block verification paths, so CommonApproval signer rewards
-# must not be added there.
-unsafe = '''	keyblock := types.DecodeToKeyBlock(keyInfo)
+# Keep ApplyKeyblockPowRewardByKeyInfo limited to legacy/common PoW reward only.
+# It is used from existing paths and should not hide CommonApproval reward side effects.
+unsafe_func = '''	keyblock := types.DecodeToKeyBlock(keyInfo)
 	ApplyKeyblockPowReward(state, keyblock)
 	ApplyCommonApprovalSignerRewards(state, keyblock)
 }'''
-safe = '''	keyblock := types.DecodeToKeyBlock(keyInfo)
+safe_func = '''	keyblock := types.DecodeToKeyBlock(keyInfo)
 	ApplyKeyblockPowReward(state, keyblock)
 }'''
-if unsafe in text:
-    text = text.replace(unsafe, safe, 1)
+text = text.replace(unsafe_func, safe_func)
 
-# Apply CommonApproval signer rewards only inside the explicit Key_Block
-# finalization branches, reading the KeyBlock reward summary already embedded in
-# header.KeyInfo. This keeps tx-block verification roots unchanged.
+# Validators/importers verify Key_Block tx-blocks through consensus finalization.
+# Match the proposal path above by applying CommonApproval signer rewards only in
+# the explicit Key_Block branches.
 old = '''	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
 	}'''
@@ -99,6 +114,6 @@ if old in text and new not in text:
 consensus.write_text(text)
 PY
 
-gofmt -w "$KEYBLOCK_GO" "$CONSENSUS_GO" reconfig/common_approval_rewards.go consensus/colossusX/rewards.go core/types/keyblock.go
+gofmt -w "$KEYBLOCK_GO" "$TXBLOCK_GO" "$CONSENSUS_GO" reconfig/common_approval_rewards.go consensus/colossusX/rewards.go core/types/keyblock.go
 
-echo "CommonApproval KeyBlock reward wiring applied safely."
+echo "CommonApproval KeyBlock reward summary and payout wiring applied."
