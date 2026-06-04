@@ -29,6 +29,29 @@ const (
 	CommonApprovalMaxCommitteeSize = 7
 )
 
+func normalizeCommonApprovalNode(node *common.Cnode) *common.Cnode {
+	if node == nil {
+		return nil
+	}
+	return &common.Cnode{
+		Address:  node.Address,
+		CoinBase: common.HexToAddress(node.CoinBase).Hex(),
+		Public:   node.Public,
+	}
+}
+
+func normalizeCommonApprovalNodes(nodes []*common.Cnode) []*common.Cnode {
+	normalized := make([]*common.Cnode, 0, len(nodes))
+	for _, node := range nodes {
+		normalized = append(normalized, normalizeCommonApprovalNode(node))
+	}
+	return normalized
+}
+
+func commonApprovalCommitteeHashFromNodes(nodes []*common.Cnode) common.Hash {
+	return (&bftview.Committee{List: normalizeCommonApprovalNodes(nodes)}).RlpHash()
+}
+
 // BootstrapCommonApprover returns genesistest.json commonCommittee[0]. This node
 // is the permanent safety approver: it must stay in the active common committee
 // and remains the fallback when no dynamic common miners are eligible.
@@ -40,7 +63,7 @@ func BootstrapCommonApprover(config *params.ChainConfig) (*common.Cnode, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &node, true
+	return normalizeCommonApprovalNode(&node), true
 }
 
 // OrderedCommonCommittee returns the genesis/config fallback common approval
@@ -74,7 +97,7 @@ func OrderedCommonCommittee(config *params.ChainConfig) []*common.Cnode {
 			break
 		}
 		node := config.CommonCommittee[k]
-		nodes = append(nodes, &node)
+		nodes = append(nodes, normalizeCommonApprovalNode(&node))
 	}
 	return nodes
 }
@@ -92,11 +115,11 @@ func commonApprovalNodesFromKeyBlock(config *params.ChainConfig, keyblock *types
 		if member.Address == "" || member.CoinBase == "" || member.Public == "" {
 			return nil, false
 		}
-		node := &common.Cnode{
+		node := normalizeCommonApprovalNode(&common.Cnode{
 			Address:  member.Address,
-			CoinBase: common.HexToAddress(member.CoinBase).Hex(),
+			CoinBase: member.CoinBase,
 			Public:   member.Public,
-		}
+		})
 		nodes = append(nodes, node)
 	}
 	if err := ValidateCommonApprovalNodes(config, nodes); err != nil {
@@ -121,6 +144,7 @@ func ValidateCommonApprovalNodes(config *params.ChainConfig, nodes []*common.Cno
 	if config == nil || !config.CommonApprovalEnabled {
 		return nil
 	}
+	nodes = normalizeCommonApprovalNodes(nodes)
 	if len(nodes) < CommonApprovalMinCommitteeSize {
 		return fmt.Errorf("common approval enabled but active committee has %d member(s), minimum is %d", len(nodes), CommonApprovalMinCommitteeSize)
 	}
@@ -162,11 +186,11 @@ func ValidateCommonApprovalCommitteeForKeyBlock(config *params.ChainConfig, keyb
 }
 
 func CommonApprovalCommitteeHash(config *params.ChainConfig) common.Hash {
-	return (&bftview.Committee{List: OrderedCommonCommittee(config)}).RlpHash()
+	return commonApprovalCommitteeHashFromNodes(OrderedCommonCommittee(config))
 }
 
 func CommonApprovalCommitteeHashForKeyBlock(config *params.ChainConfig, keyblock *types.KeyBlock) common.Hash {
-	return (&bftview.Committee{List: OrderedCommonCommitteeForKeyBlock(config, keyblock)}).RlpHash()
+	return commonApprovalCommitteeHashFromNodes(OrderedCommonCommitteeForKeyBlock(config, keyblock))
 }
 
 func CommonApprovalRequired(config *params.ChainConfig, block *types.Block) bool {
@@ -218,6 +242,7 @@ func CommonApprovalEffectiveThreshold(config *params.ChainConfig, committeeSize 
 }
 
 func CommonApprovalPublicKeys(nodes []*common.Cnode) ([]*bls.PublicKey, error) {
+	nodes = normalizeCommonApprovalNodes(nodes)
 	pubs := make([]*bls.PublicKey, 0, len(nodes))
 	for i, node := range nodes {
 		if node == nil || node.Public == "" {
@@ -256,7 +281,7 @@ func VerifyCommonApprovalForKeyBlock(config *params.ChainConfig, block *types.Bl
 	if si.CommonApprovalViewID == (common.Hash{}) || si.CommonApprovalLeaderID == "" {
 		return fmt.Errorf("common approval context is empty")
 	}
-	committeeHash := CommonApprovalCommitteeHashForKeyBlock(config, keyblock)
+	committeeHash := commonApprovalCommitteeHashFromNodes(nodes)
 	if si.CommonApprovalCommitteeHash != committeeHash {
 		return fmt.Errorf("common approval committee hash mismatch: have %s want %s", si.CommonApprovalCommitteeHash.Hex(), committeeHash.Hex())
 	}
