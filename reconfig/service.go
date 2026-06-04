@@ -312,7 +312,7 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new blo
 			log.Error("verify txblock", "number", block.NumberU64(), "err", err)
 			return err
 		}
-		if err := core.VerifyCommonApproval(s.chainConfig, block); err != nil {
+		if err := s.verifyCommonApprovalForBlock(block); err != nil {
 			log.Error("verify common approval", "number", block.NumberU64(), "err", err)
 			return err
 		}
