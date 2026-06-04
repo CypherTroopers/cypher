@@ -398,7 +398,7 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 	}
 	// Verify that the gasUsed is <= gasLimit
 	if header.GasUsed > header.GasLimit {
-		return fmt.Errorf("invalid gasUsed: have %d, gasLimit %d", header.GasUsed, header.GasLimit)
+		return fmt.Errorf("invalid gasUsed: have %d, gasLimit %d", header.GasUsed)
 	}
 	if err := verifyModernHeaderFields(chain.Config(), header, parent); err != nil {
 		return err
@@ -444,6 +444,11 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 	accumulateRewards(chain.Config(), state, header, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
+		if bc, ok := chain.(types.ChainReader); ok {
+			ApplyCommonApprovalKeyblockRewards(bc, state, header)
+		} else {
+			log.Warn("common approval signer rewards skipped: chain reader does not expose block history")
+		}
 	}
 
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
@@ -456,6 +461,11 @@ func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReade
 	accumulateRewards(chain.Config(), state, header, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
+		if bc, ok := chain.(types.ChainReader); ok {
+			ApplyCommonApprovalKeyblockRewards(bc, state, header)
+		} else {
+			log.Warn("common approval signer rewards skipped: chain reader does not expose block history")
+		}
 	}
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 
