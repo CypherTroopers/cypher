@@ -583,7 +583,7 @@ func SM2P12Decrypt(fileName string, pwd string) (*sm2.Certificate, *sm2.PrivateK
 				PublicKey: *sm2pub,
 				D:         k.D,
 			}
-			if !k.IsOnCurve(k.X,k.Y) {
+			if !k.IsOnCurve(k.X, k.Y) {
 				return nil, nil, errors.New("error while validating SM2 private key: %v")
 			}
 			return cer[0], sm2Pri, nil
@@ -591,5 +591,5 @@ func SM2P12Decrypt(fileName string, pwd string) (*sm2.Certificate, *sm2.PrivateK
 	default:
 		return nil, nil, errors.New("unexpected type for p12 private key")
 	}
-	return nil,nil,nil
+	return nil, nil, nil
 }

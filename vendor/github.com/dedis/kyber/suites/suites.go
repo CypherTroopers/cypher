@@ -4,9 +4,9 @@
 // have access to "curve25519" and the NIST suites (i.e. "P256"),
 // one needs to call the "go" tool with the tag "vartime", such as:
 //
-//   go build -tags vartime
-//   go install -tags vartime
-//   go test -tags vartime
+//	go build -tags vartime
+//	go install -tags vartime
+//	go test -tags vartime
 package suites
 
 import (
@@ -28,7 +28,6 @@ type Suite interface {
 var suites = map[string]Suite{}
 
 // register is called by suites to make themselves known to Kyber.
-//
 func register(s Suite) {
 	suites[strings.ToLower(s.String())] = s
 }

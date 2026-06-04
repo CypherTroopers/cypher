@@ -89,8 +89,8 @@ func VolumeName(name string) MountOption {
 //
 // Such file names are:
 //
-//     ._*
-//     .DS_Store
+//	._*
+//	.DS_Store
 //
 // OS X only.  Others ignore this option.
 func NoAppleDouble() MountOption {

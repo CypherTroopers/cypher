@@ -22,7 +22,7 @@ func (es *Curve) MakeKey() (err error) {
 }
 
 // if you only need to verify the signature, you only need the public key. Generally, the verifier does not have a private key
-//pub32 must be longer than 32 and only the first 32 bytes are fetched
+// pub32 must be longer than 32 and only the first 32 bytes are fetched
 func (es *Curve) SetPublic(pub32 []byte) error {
 	if len(pub32) < PubPriKeySize {
 		return errors.New("public key length require at least 32 bytes")

@@ -142,7 +142,6 @@ const macSize = 16
 // to anyone unable to decrypt the message.
 // The provided kyber.Suite must support
 // uniform-representation encoding of public keys for this to work.
-//
 func Encrypt(suite Suite, message []byte,
 	anonymitySet Set, hide bool) []byte {
 
@@ -181,7 +180,6 @@ func Encrypt(suite Suite, message []byte,
 // As a side-effect, this verification also ensures plaintext-awareness:
 // that is, it is infeasible for a sender to construct any ciphertext
 // that will be accepted by the receiver without knowing the plaintext.
-//
 func Decrypt(suite Suite, ciphertext []byte, anonymitySet Set,
 	mine int, privateKey kyber.Scalar, hide bool) ([]byte, error) {
 

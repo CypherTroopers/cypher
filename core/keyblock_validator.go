@@ -19,10 +19,10 @@ func NewKeyBlockValidator(config *params.ChainConfig, blockchain *KeyBlockChain)
 	return validator
 }
 
-//ValidateKeyBlock,verify new keyblock
-//All node rotations:1.Normal reconfig,witness=prvCommittee+new leader(input[0]);2.viewchange ,witness=prvCommittee
-//2f+1 fixed，f node rotations:1.Normal reconfig,witness=prvCommittee;2.viewchange ,witness=prvCommittee
-//Manual reconfig:witness= input
+// ValidateKeyBlock,verify new keyblock
+// All node rotations:1.Normal reconfig,witness=prvCommittee+new leader(input[0]);2.viewchange ,witness=prvCommittee
+// 2f+1 fixed，f node rotations:1.Normal reconfig,witness=prvCommittee;2.viewchange ,witness=prvCommittee
+// Manual reconfig:witness= input
 func (kbv *KeyBlockValidator) ValidateKeyBlock(block *types.KeyBlock) error {
 	blockNumber := block.NumberU64()
 	if kbv.kbc.HasBlock(block.Hash(), blockNumber) {

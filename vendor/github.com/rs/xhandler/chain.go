@@ -71,7 +71,8 @@ func (c Chain) Handler(xh HandlerC) http.Handler {
 // HandlerFC is a helper to provide a function (HandlerFuncC) to Handler().
 //
 // HandlerFC is equivalent to:
-//  c.Handler(xhandler.HandlerFuncC(xhc))
+//
+//	c.Handler(xhandler.HandlerFuncC(xhc))
 func (c Chain) HandlerFC(xhf HandlerFuncC) http.Handler {
 	ctx := context.Background()
 	return c.HandlerCtx(ctx, HandlerFuncC(xhf))
@@ -115,7 +116,8 @@ func (c Chain) HandlerC(xh HandlerC) HandlerC {
 // the chain and returns a HandlerC instance.
 //
 // HandlerCF is equivalent to:
-//  c.HandlerC(xhandler.HandlerFuncC(xhc))
+//
+//	c.HandlerC(xhandler.HandlerFuncC(xhc))
 func (c Chain) HandlerCF(xhc HandlerFuncC) HandlerC {
 	return c.HandlerC(HandlerFuncC(xhc))
 }

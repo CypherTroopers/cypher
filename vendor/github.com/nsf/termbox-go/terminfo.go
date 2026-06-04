@@ -1,4 +1,6 @@
+//go:build !windows
 // +build !windows
+
 // This file contains a simple and incomplete implementation of the terminfo
 // database. Information was taken from the ncurses manpages term(5) and
 // terminfo(5). Currently, only the string capabilities for special keys and for

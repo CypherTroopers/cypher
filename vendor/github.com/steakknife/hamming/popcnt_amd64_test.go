@@ -7,6 +7,7 @@
 //
 // MIT license
 //
+//go:build amd64 || amd64p32 || !purego
 // +build amd64 amd64p32 !purego
 
 package hamming

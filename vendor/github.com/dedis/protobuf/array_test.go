@@ -1,11 +1,11 @@
 package protobuf
 
 import (
-	"fmt"
-	"testing"
-	"reflect"
 	"encoding/hex"
+	"fmt"
 	"github.com/stretchr/testify/require"
+	"reflect"
+	"testing"
 )
 
 type ArrayTest0 struct {
@@ -20,12 +20,11 @@ type ArrayTest2 struct {
 	A []int32
 }
 
-type ArrayTest3 struct{
+type ArrayTest3 struct {
 	A int
 }
 
-
-func TestArray(t *testing.T){
+func TestArray(t *testing.T) {
 
 	fmt.Println("TestArray:")
 
@@ -46,7 +45,6 @@ func TestArray(t *testing.T){
 	t.Log(hex.Dump(buf1))
 	t.Log(hex.Dump(buf2))
 	t.Log(hex.Dump(buf3))
-
 
 	b0 := ArrayTest0{}
 	b1 := ArrayTest1{}

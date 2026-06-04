@@ -92,10 +92,10 @@ func nameTag(langN, scrN, regN namer, x interface{}) string {
 // offsets for a string in data. For example, consider a header that defines
 // strings for the languages de, el, en, fi, and nl:
 //
-// 		header{
-// 			data: "GermanGreekEnglishDutch",
-//  		index: []uint16{ 0, 6, 11, 18, 18, 23 },
-// 		}
+//			header{
+//				data: "GermanGreekEnglishDutch",
+//	 		index: []uint16{ 0, 6, 11, 18, 18, 23 },
+//			}
 //
 // For a language with index i, the string is defined by
 // data[index[i]:index[i+1]]. So the number of elements in index is always one
@@ -203,11 +203,13 @@ func supportedRegions() []language.Region {
 // tagIndex holds a concatenated lists of subtags of length 2 to 4, one string
 // for each length, which can be used in combination with binary search to get
 // the index associated with a tag.
-// For example, a tagIndex{
-//   "arenesfrruzh",  // 6 2-byte tags.
-//   "barwae",        // 2 3-byte tags.
-//   "",
-// }
+//
+//	For example, a tagIndex{
+//	  "arenesfrruzh",  // 6 2-byte tags.
+//	  "barwae",        // 2 3-byte tags.
+//	  "",
+//	}
+//
 // would mean that the 2-byte tag "fr" had an index of 3, and the 3-byte tag
 // "wae" had an index of 7.
 type tagIndex [3]string

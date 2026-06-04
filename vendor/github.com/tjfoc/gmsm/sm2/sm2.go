@@ -268,7 +268,7 @@ func Verify(pub *PublicKey, hash []byte, r, s *big.Int) bool {
 
 func Sm2Sign(priv *PrivateKey, msg, uid []byte) (r, s *big.Int, err error) {
 	if len(uid) == 0 {
-		uid=default_uid
+		uid = default_uid
 	}
 	za, err := ZA(&priv.PublicKey, uid)
 	if err != nil {
@@ -325,7 +325,7 @@ func Sm2Verify(pub *PublicKey, msg, uid []byte, r, s *big.Int) bool {
 		return false
 	}
 	if len(uid) == 0 {
-		uid=default_uid
+		uid = default_uid
 	}
 	za, err := ZA(pub, uid)
 	if err != nil {
@@ -516,7 +516,7 @@ func keXHat(x *big.Int) (xul *big.Int) {
 // thisIsA: 如果是A调用，文档中的协商第三步，设置为true，否则设置为false
 //
 // 返回 k 为klen长度的字节串
-func keyExchange(klen int, ida, idb []byte, pri *PrivateKey, pub *PublicKey,rpri *PrivateKey, rpub *PublicKey, thisISA bool) (k,s1,s2 []byte, err error) {
+func keyExchange(klen int, ida, idb []byte, pri *PrivateKey, pub *PublicKey, rpri *PrivateKey, rpub *PublicKey, thisISA bool) (k, s1, s2 []byte, err error) {
 	curve := P256Sm2()
 	N := curve.Params().N
 	x2hat := keXHat(rpri.PublicKey.X)
@@ -554,16 +554,16 @@ func keyExchange(klen int, ida, idb []byte, pri *PrivateKey, pub *PublicKey,rpri
 		err = errors.New("kdf: zero key")
 		return
 	}
-	h1:=BytesCombine(vx.Bytes(),za,zb,rpub.X.Bytes(),rpub.Y.Bytes(),rpri.X.Bytes(),rpri.Y.Bytes())
+	h1 := BytesCombine(vx.Bytes(), za, zb, rpub.X.Bytes(), rpub.Y.Bytes(), rpri.X.Bytes(), rpri.Y.Bytes())
 	if !thisISA {
-		h1 =BytesCombine(vx.Bytes(),za,zb,rpri.X.Bytes(),rpri.Y.Bytes(),rpub.X.Bytes(),rpub.Y.Bytes())
+		h1 = BytesCombine(vx.Bytes(), za, zb, rpri.X.Bytes(), rpri.Y.Bytes(), rpub.X.Bytes(), rpub.Y.Bytes())
 	}
-    hash:=sm3.Sm3Sum(h1)
-	h2:=BytesCombine([]byte{0x02},vy.Bytes(),hash)
-	S1:=sm3.Sm3Sum(h2)
-	h3:=BytesCombine([]byte{0x03},vy.Bytes(),hash)
-	S2:=sm3.Sm3Sum(h3)
-	return k, S1,S2,nil
+	hash := sm3.Sm3Sum(h1)
+	h2 := BytesCombine([]byte{0x02}, vy.Bytes(), hash)
+	S1 := sm3.Sm3Sum(h2)
+	h3 := BytesCombine([]byte{0x03}, vy.Bytes(), hash)
+	S2 := sm3.Sm3Sum(h3)
+	return k, S1, S2, nil
 }
 func BytesCombine(pBytes ...[]byte) []byte {
 	len := len(pBytes)
@@ -574,14 +574,15 @@ func BytesCombine(pBytes ...[]byte) []byte {
 	sep := []byte("")
 	return bytes.Join(s, sep)
 }
+
 // KeyExchangeB 协商第二部，用户B调用， 返回共享密钥k
-func KeyExchangeB(klen int, ida, idb []byte, priB *PrivateKey, pubA *PublicKey,rpri *PrivateKey, rpubA *PublicKey) (k,s1,s2[]byte, err error) {
-	return keyExchange(klen, ida, idb, priB, pubA,rpri, rpubA, false)
+func KeyExchangeB(klen int, ida, idb []byte, priB *PrivateKey, pubA *PublicKey, rpri *PrivateKey, rpubA *PublicKey) (k, s1, s2 []byte, err error) {
+	return keyExchange(klen, ida, idb, priB, pubA, rpri, rpubA, false)
 }
 
 // KeyExchangeA 协商第二部，用户A调用，返回共享密钥k
-func KeyExchangeA(klen int, ida, idb []byte, priA *PrivateKey, pubB *PublicKey,rpri *PrivateKey, rpubB *PublicKey) (k,s1,s2[]byte, err error) {
-	return keyExchange(klen, ida, idb, priA, pubB,rpri, rpubB, true)
+func KeyExchangeA(klen int, ida, idb []byte, priA *PrivateKey, pubB *PublicKey, rpri *PrivateKey, rpubB *PublicKey) (k, s1, s2 []byte, err error) {
+	return keyExchange(klen, ida, idb, priA, pubB, rpri, rpubB, true)
 }
 
 type zr struct {

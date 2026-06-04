@@ -1,4 +1,5 @@
-//+build generate
+//go:build generate
+// +build generate
 
 //go:generate go run gen.go -out encodeblock_amd64.s -stubs encodeblock_amd64.go
 

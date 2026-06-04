@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build s390x && !gccgo && !appengine
 // +build s390x,!gccgo,!appengine
 
 package chacha20
@@ -18,6 +19,7 @@ func hasVectorFacility() bool
 // xorKeyStreamVX is an assembly implementation of XORKeyStream. It must only
 // be called when the vector facility is available.
 // Implementation in asm_s390x.s.
+//
 //go:noescape
 func xorKeyStreamVX(dst, src []byte, key *[8]uint32, nonce *[3]uint32, counter *uint32, buf *[256]byte, len *int)
 
