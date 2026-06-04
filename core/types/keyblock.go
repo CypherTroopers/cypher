@@ -93,13 +93,13 @@ type CommonApprovalCommitteeMember struct {
 }
 
 type KeyBlockBody struct {
-	LeaderPubKey          string                         `json:"leaderPubKey"           gencodec:"required"`
-	LeaderAddress         string                         `json:"leaderAddress"           gencodec:"required"`
-	InPubKey              string                         `json:"inPubKey"            	gencodec:"required"`
-	InAddress             string                         `json:"inAddress"            gencodec:"required"`
-	OutPubKey             string                         `json:"outPubKey"            	gencodec:"required"`
-	OutAddress            string                         `json:"outAddress"           gencodec:"required"`
-	CommonApprovalRewards []CommonApprovalReward         `json:"commonApprovalRewards" gencodec:"required"`
+	LeaderPubKey          string                          `json:"leaderPubKey"           gencodec:"required"`
+	LeaderAddress         string                          `json:"leaderAddress"           gencodec:"required"`
+	InPubKey              string                          `json:"inPubKey"            	gencodec:"required"`
+	InAddress             string                          `json:"inAddress"            gencodec:"required"`
+	OutPubKey             string                          `json:"outPubKey"            	gencodec:"required"`
+	OutAddress            string                          `json:"outAddress"           gencodec:"required"`
+	CommonApprovalRewards []CommonApprovalReward          `json:"commonApprovalRewards" gencodec:"required"`
 	ActiveCommonCommittee []CommonApprovalCommitteeMember `json:"activeCommonCommittee" gencodec:"required"`
 }
 
@@ -132,13 +132,13 @@ type KeyBlocks []*KeyBlock
 
 type extKeyblock struct {
 	Header                *KeyBlockHeader
-	LeaderPubKey          string                         `json:"leaderPubKey"           gencodec:"required"`
-	LeaderAddress         string                         `json:"leaderAddress"           gencodec:"required"`
-	InPubKey              string                         `json:"inPubKey"               gencodec:"required"`
-	InAddress             string                         `json:"inAddress"            gencodec:"required"`
-	OutPubKey             string                         `json:"outPubKey"              gencodec:"required"`
-	OutAddress            string                         `json:"outAddress"            gencodec:"required"`
-	CommonApprovalRewards []CommonApprovalReward         `json:"commonApprovalRewards" gencodec:"required"`
+	LeaderPubKey          string                          `json:"leaderPubKey"           gencodec:"required"`
+	LeaderAddress         string                          `json:"leaderAddress"           gencodec:"required"`
+	InPubKey              string                          `json:"inPubKey"               gencodec:"required"`
+	InAddress             string                          `json:"inAddress"            gencodec:"required"`
+	OutPubKey             string                          `json:"outPubKey"              gencodec:"required"`
+	OutAddress            string                          `json:"outAddress"            gencodec:"required"`
+	CommonApprovalRewards []CommonApprovalReward          `json:"commonApprovalRewards" gencodec:"required"`
 	ActiveCommonCommittee []CommonApprovalCommitteeMember `json:"activeCommonCommittee" gencodec:"required"`
 }
 

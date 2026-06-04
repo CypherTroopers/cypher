@@ -165,6 +165,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
 			return err
 		}
+		if err := keyS.verifyActiveCommonCommitteeSummary(keyblock); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -220,6 +223,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		return fmt.Errorf("verifyKeyBlock, check failed, current keynumber:%d,keyblock T_Number:%d", kbc.CurrentBlockN(), keyblock.T_Number())
 	}
 	if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
+		return err
+	}
+	if err := keyS.verifyActiveCommonCommitteeSummary(keyblock); err != nil {
 		return err
 	}
 
@@ -410,6 +416,12 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	} else {
 		keyblock.SetCommonApprovalRewards(rewards)
 		log.Info("common approval reward summary attached", "keyBlock", header.Number.Uint64(), "fromTx", curKeyBlock.T_Number()+1, "toTx", header.T_Number, "rewards", rewards)
+	}
+	if activeCommonCommittee, err := keyS.buildActiveCommonCommitteeSummary(); err != nil {
+		return nil, nil, nil, err
+	} else {
+		keyblock.SetActiveCommonCommittee(activeCommonCommittee)
+		log.Info("active common committee summary attached", "keyBlock", header.Number.Uint64(), "members", activeCommonCommittee)
 	}
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
 	mb.Store(keyblock)
