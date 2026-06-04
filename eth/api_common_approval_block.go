@@ -46,17 +46,22 @@ func (api *PublicEthereumAPI) rpcMarshalBlockWithCommonApproval(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	if keyblock, keyErr := api.e.APIBackend.KeyBlockByHash(ctx, block.KeyHash()); keyErr == nil && keyblock != nil {
-		fields["miner"] = common.HexToAddress(keyblock.OutAddress(1))
+
+	var keyblock *types.KeyBlock
+	if kb, keyErr := api.e.APIBackend.KeyBlockByHash(ctx, block.KeyHash()); keyErr == nil && kb != nil {
+		keyblock = kb
+		fields["miner"] = common.HexToAddress(kb.OutAddress(1))
 	}
-	addCommonApprovalRPCFields(fields, block, api.e.APIBackend.ChainConfig())
+
+	addCommonApprovalRPCFields(fields, block, api.e.APIBackend.ChainConfig(), keyblock)
+
 	if inclTx {
 		fields["totalDifficulty"] = (*hexutil.Big)(api.e.APIBackend.GetTd(ctx, block.Hash()))
 	}
 	return fields, nil
 }
 
-func addCommonApprovalRPCFields(fields map[string]interface{}, block *types.Block, config *params.ChainConfig) {
+func addCommonApprovalRPCFields(fields map[string]interface{}, block *types.Block, config *params.ChainConfig, keyblock *types.KeyBlock) {
 	if fields == nil || block == nil {
 		return
 	}
@@ -66,7 +71,7 @@ func addCommonApprovalRPCFields(fields map[string]interface{}, block *types.Bloc
 		return
 	}
 
-	nodes := core.OrderedCommonCommittee(config)
+	nodes := core.OrderedCommonCommitteeForKeyBlock(config, keyblock)
 	committeeMembers := make([]common.Address, 0, len(nodes))
 	approvedMembers := make([]common.Address, 0, len(nodes))
 	commonLeaderAddress := common.Address{}
@@ -105,7 +110,7 @@ func addCommonApprovalRPCFields(fields map[string]interface{}, block *types.Bloc
 		"mask":                   hexutil.Bytes(signInfo.CommonApprovalExceptions),
 		"viewId":                 signInfo.CommonApprovalViewID,
 		"committeeHash":          signInfo.CommonApprovalCommitteeHash,
-		"threshold":              core.CommonApprovalThreshold(config, len(nodes)),
+		"threshold":              core.CommonApprovalEffectiveThreshold(config, len(nodes), signInfo.CommonApprovalExceptions),
 		"commonLeaderAddress":    commonLeaderAddress,
 		"commonCommitteeMembers": committeeMembers,
 		"approvedMembers":        approvedMembers,
