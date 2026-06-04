@@ -788,18 +788,24 @@ func (s *Service) handleHotStuffMsg() {
 				pendingTotal, _ = s.txPool.Stats()
 			}
 			candidateRewardReady := s.fixedModeCandidateRewardReady(now)
+			keyblockIntervalElapsed := s.fixedModeKeyblockIntervalElapsed(now)
 
 			// Fixed-mode keyblock liveness:
 			// This must run on every committee member, not only the leader.
-			// Each member needs to send MsgNewView to the current leader; otherwise
-			// the leader only receives its own new-view vote and stays in PhasePrepare.
-			if s.fixedModeKeyblockIntervalElapsed(now) {
+			// Every member must first switch to the same keyblock view (NoDone=false)
+			// before sending MsgNewView. If only the leader flips NoDone, replicas vote
+			// for a different view hash and the leader never reaches the new-view quorum.
+			if keyblockIntervalElapsed {
 				if s.lastFixedKeyNewViewWakeup.IsZero() || now.Sub(s.lastFixedKeyNewViewWakeup) >= 2*time.Second {
 					s.lastFixedKeyNewViewWakeup = now
+					oldView := *s.GetCurrentView()
+					s.setNextLeader(true)
 					curView := s.GetCurrentView()
 					log.Warn("fixed-mode keyblock start-new-view wakeup",
 						"currentBlock", s.bc.CurrentBlockN(),
 						"currentKey", s.kbc.CurrentBlockN(),
+						"oldLeaderIndex", oldView.LeaderIndex,
+						"oldNoDone", oldView.NoDone,
 						"leaderIndex", curView.LeaderIndex,
 						"noDone", curView.NoDone,
 						"isLeader", bftview.IamLeader(curView.LeaderIndex),
@@ -807,22 +813,14 @@ func (s *Service) handleHotStuffMsg() {
 						"pendingTotal", pendingTotal,
 						"fastPending", fastPending,
 						"slowPending", slowPending)
-					if bftview.IamLeader(curView.LeaderIndex) {
-						// force keyblock view before leader try-propose.
-						// In fixed mode Propose() uses !NoDone to select keyblock proposal.
-						s.setNextLeader(true)
-						log.Warn("fixed-mode keyblock due leader try-propose",
-							"currentBlock", s.bc.CurrentBlockN(),
-							"currentKey", s.kbc.CurrentBlockN(),
-							"leaderIndex", curView.LeaderIndex,
-							"noDone", curView.NoDone,
-							"candidateReady", candidateRewardReady,
-							"pendingTotal", pendingTotal)
-						s.triggerTryPropose(s.bc.CurrentBlockN())
-					} else {
-						s.sendNewViewMsg(s.bc.CurrentBlockN())
-					}
+					s.sendNewViewMsg(s.bc.CurrentBlockN())
 				}
+
+				// Keyblock interval has priority over tx/candidate liveness wakeups.
+				// Let MsgStartNewView drive HotStuff to PhaseTryPropose instead of
+				// enqueueing MsgTryPropose against a stale or nil leader view.
+				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+				continue
 			}
 
 			// Fixed-mode liveness repair must run before IamLeader check.
