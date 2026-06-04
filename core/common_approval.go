@@ -291,6 +291,9 @@ func VerifyCommonApprovalForKeyBlock(config *params.ChainConfig, block *types.Bl
 		return fmt.Errorf("common approval context is empty")
 	}
 	committeeHash := commonApprovalCommitteeHashFromNodes(nodes)
+	if keyblock != nil && keyblock.ActiveCommonCommitteeHash() != (common.Hash{}) && keyblock.ActiveCommonCommitteeHash() != committeeHash {
+		return fmt.Errorf("active common committee hash mismatch: header %s body %s", keyblock.ActiveCommonCommitteeHash().Hex(), committeeHash.Hex())
+	}
 	if si.CommonApprovalCommitteeHash != committeeHash {
 		return fmt.Errorf("common approval committee hash mismatch: have %s want %s", si.CommonApprovalCommitteeHash.Hex(), committeeHash.Hex())
 	}
