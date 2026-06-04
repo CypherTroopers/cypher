@@ -813,7 +813,6 @@ func WriteKeyBlock(db ethdb.KeyValueWriter, block *types.KeyBlock) {
 // ReadKeyBlock retrieves an entire key block corresponding to the hash, assembling it
 // back from the stored header and body. If either the header or body could not
 // be retrieved nil is returned.
-//
 func ReadKeyBlock(db ethdb.Reader, hash common.Hash, number uint64) *types.KeyBlock {
 	header := ReadKeyHeader(db, hash, number)
 	if header == nil {
@@ -823,8 +822,17 @@ func ReadKeyBlock(db ethdb.Reader, hash common.Hash, number uint64) *types.KeyBl
 	if body == nil {
 		return nil
 	}
-	b := types.NewKeyBlockWithHeader(header).WithBody(body.InPubKey, body.InAddress, body.OutPubKey, body.OutAddress, body.LeaderPubKey, body.LeaderAddress).CopyMe()
-	return b
+	b := types.NewKeyBlockWithHeader(header).WithBody(
+		body.InPubKey,
+		body.InAddress,
+		body.OutPubKey,
+		body.OutAddress,
+		body.LeaderPubKey,
+		body.LeaderAddress,
+	)
+	b.SetCommonApprovalRewards(body.CommonApprovalRewards)
+	b.SetActiveCommonCommittee(body.ActiveCommonCommittee)
+	return b.CopyMe()
 }
 
 // DeleteKeyBlock removes all key block data associated with a hash.
