@@ -16,8 +16,11 @@ from pathlib import Path
 keyblock = Path("reconfig/keyblock.go")
 text = keyblock.read_text()
 
-# Verify reward summary on received keyblocks.
+# Verify reward summary and ActiveCommonCommittee structure on received self-proposed keyblocks.
 old = '''	if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
+			return err
+		}
+		if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
 			return err
 		}
 		return nil
@@ -28,13 +31,38 @@ new = '''	if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil
 		if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
 			return err
 		}
+		if err := keyS.verifyActiveCommonCommitteeSummary(keyblock); err != nil {
+			return err
+		}
 		return nil
 	}'''
 if old in text and new not in text:
     text = text.replace(old, new, 1)
+else:
+    old = '''	if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
+			return err
+		}
+		return nil
+	}'''
+    new = '''	if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
+			return err
+		}
+		if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
+			return err
+		}
+		if err := keyS.verifyActiveCommonCommitteeSummary(keyblock); err != nil {
+			return err
+		}
+		return nil
+	}'''
+    if old in text and new not in text:
+        text = text.replace(old, new, 1)
 
 old = '''	if !keyblock.TypeCheck(kbc.CurrentBlock().T_Number()) {
 		return fmt.Errorf("verifyKeyBlock, check failed, current keynumber:%d,keyblock T_Number:%d", kbc.CurrentBlockN(), keyblock.T_Number())
+	}
+	if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
+		return err
 	}
 
 	keyType := keyblock.BlockType()'''
@@ -44,14 +72,42 @@ new = '''	if !keyblock.TypeCheck(kbc.CurrentBlock().T_Number()) {
 	if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
 		return err
 	}
+	if err := keyS.verifyActiveCommonCommitteeSummary(keyblock); err != nil {
+		return err
+	}
 
 	keyType := keyblock.BlockType()'''
 if old in text and new not in text:
     text = text.replace(old, new, 1)
+else:
+    old = '''	if !keyblock.TypeCheck(kbc.CurrentBlock().T_Number()) {
+		return fmt.Errorf("verifyKeyBlock, check failed, current keynumber:%d,keyblock T_Number:%d", kbc.CurrentBlockN(), keyblock.T_Number())
+	}
 
-# Attach reward summary when proposing a KeyBlock.
+	keyType := keyblock.BlockType()'''
+    new = '''	if !keyblock.TypeCheck(kbc.CurrentBlock().T_Number()) {
+		return fmt.Errorf("verifyKeyBlock, check failed, current keynumber:%d,keyblock T_Number:%d", kbc.CurrentBlockN(), keyblock.T_Number())
+	}
+	if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
+		return err
+	}
+	if err := keyS.verifyActiveCommonCommitteeSummary(keyblock); err != nil {
+		return err
+	}
+
+	keyType := keyblock.BlockType()'''
+    if old in text and new not in text:
+        text = text.replace(old, new, 1)
+
+# Attach reward summary and ActiveCommonCommittee when proposing a KeyBlock.
 old = '''	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
+	if rewards, err := keyS.buildCommonApprovalRewardSummary(curKeyBlock.T_Number()+1, header.T_Number); err != nil {
+		return nil, nil, nil, err
+	} else {
+		keyblock.SetCommonApprovalRewards(rewards)
+		log.Info("common approval reward summary attached", "keyBlock", header.Number.Uint64(), "fromTx", curKeyBlock.T_Number()+1, "toTx", header.T_Number, "rewards", rewards)
+	}
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)'''
 new = '''	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
@@ -61,9 +117,36 @@ new = '''	keyblock := types.NewKeyBlock(header)
 		keyblock.SetCommonApprovalRewards(rewards)
 		log.Info("common approval reward summary attached", "keyBlock", header.Number.Uint64(), "fromTx", curKeyBlock.T_Number()+1, "toTx", header.T_Number, "rewards", rewards)
 	}
+	if activeCommonCommittee, err := keyS.buildActiveCommonCommitteeSummary(); err != nil {
+		return nil, nil, nil, err
+	} else {
+		keyblock.SetActiveCommonCommittee(activeCommonCommittee)
+		log.Info("active common committee summary attached", "keyBlock", header.Number.Uint64(), "members", activeCommonCommittee)
+	}
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)'''
 if old in text and new not in text:
     text = text.replace(old, new, 1)
+else:
+    old = '''	keyblock := types.NewKeyBlock(header)
+	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
+	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)'''
+    new = '''	keyblock := types.NewKeyBlock(header)
+	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
+	if rewards, err := keyS.buildCommonApprovalRewardSummary(curKeyBlock.T_Number()+1, header.T_Number); err != nil {
+		return nil, nil, nil, err
+	} else {
+		keyblock.SetCommonApprovalRewards(rewards)
+		log.Info("common approval reward summary attached", "keyBlock", header.Number.Uint64(), "fromTx", curKeyBlock.T_Number()+1, "toTx", header.T_Number, "rewards", rewards)
+	}
+	if activeCommonCommittee, err := keyS.buildActiveCommonCommitteeSummary(); err != nil {
+		return nil, nil, nil, err
+	} else {
+		keyblock.SetActiveCommonCommittee(activeCommonCommittee)
+		log.Info("active common committee summary attached", "keyBlock", header.Number.Uint64(), "members", activeCommonCommittee)
+	}
+	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)'''
+    if old in text and new not in text:
+        text = text.replace(old, new, 1)
 
 keyblock.write_text(text)
 
@@ -114,6 +197,6 @@ if old in text and new not in text:
 consensus.write_text(text)
 PY
 
-gofmt -w "$KEYBLOCK_GO" "$TXBLOCK_GO" "$CONSENSUS_GO" reconfig/common_approval_rewards.go consensus/colossusX/rewards.go core/types/keyblock.go
+gofmt -w "$KEYBLOCK_GO" "$TXBLOCK_GO" "$CONSENSUS_GO" reconfig/common_approval_rewards.go reconfig/active_common_committee.go consensus/colossusX/rewards.go core/types/keyblock.go
 
-echo "CommonApproval KeyBlock reward summary and payout wiring applied."
+echo "CommonApproval KeyBlock reward summary, payout, and active common committee summary wiring applied."
