@@ -1,21 +1,17 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"math/big"
+	"net"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
-
-	"golang.org/x/crypto/ed25519"
-
-	"bytes"
-	//	"net"
-	"sort"
 	"time"
 
-	"strconv"
-
-	"net"
+	"golang.org/x/crypto/ed25519"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
@@ -55,7 +51,7 @@ func newCandidateLookup(cph Backend) *candidateLookup {
 // // sorted internal representation. The result of the sorting is cached in case
 // // it's requested again before any modifications are made to the contents.
 func (t *candidateLookup) Flatten() types.CandsByNonce {
-	// If the sorting was not cached yet, create and cache it
+	// If we're running a fake PoW, accept any seal as valid
 	candidates := make(types.CandsByNonce, 0)
 	for _, cand := range t.all {
 		if bftview.GetMemberIndex(cand.PubKey) < 0 {
@@ -287,6 +283,7 @@ type CandidatePool struct {
 	db             ethdb.Database
 	CheckMinerPort func(addr string, blockN uint64, keyblockN uint64)
 	powResultUDP   *powResultUDPServer
+	commonMiners   *commonMinerRegistry
 }
 
 // Backend wraps all methods required for candidate pool.
@@ -299,10 +296,11 @@ type Backend interface {
 
 func NewCandidatePool(cph Backend, mux *event.TypeMux, db ethdb.Database) *CandidatePool {
 	cp := &CandidatePool{
-		db:         db,
-		candidates: newCandidateLookup(cph),
-		mux:        mux,
-		backend:    cph,
+		db:           db,
+		candidates:   newCandidateLookup(cph),
+		commonMiners: newCommonMinerRegistry(),
+		mux:          mux,
+		backend:      cph,
 	}
 	go cp.loop()
 	return cp
@@ -359,6 +357,10 @@ func (cp *CandidatePool) CheckMinerMsgAck(address string, blockN uint64, keybloc
 	ip := address[:lastIndex]
 	//log.Debug("CheckMinerMsgAck", "ip", ip)
 	if candidate, isExist := cp.candidates.FoundCandidateByIp(ip); isExist == true {
+		if cp.commonMiners != nil {
+			cp.commonMiners.RecordAckedCandidate(candidate, blockN, keyblockN)
+			log.Debug("common miner candidate recorded", "address", address, "coinbase", candidate.Coinbase, "pubkey", candidate.PubKey, "block", blockN, "keyBlock", keyblockN)
+		}
 		if exists := cp.candidates.Add(candidate); !exists {
 			log.Debug("CheckMinerMsgAck broadcast", "candidate.number", candidate.KeyCandidate.Number, "hash", candidate.Hash())
 			// Broadcast to p2p network
@@ -375,6 +377,13 @@ func (cp *CandidatePool) CheckMinerMsgAck(address string, blockN uint64, keybloc
 
 func (cp *CandidatePool) Content() []*types.Candidate {
 	return cp.candidates.Content()
+}
+
+func (cp *CandidatePool) CommonMinerSnapshot() []CommonMinerRecord {
+	if cp == nil || cp.commonMiners == nil {
+		return nil
+	}
+	return cp.commonMiners.Snapshot()
 }
 
 func (cp *CandidatePool) AddLocal(candidate *types.Candidate) error {
