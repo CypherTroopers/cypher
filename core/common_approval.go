@@ -43,14 +43,10 @@ func BootstrapCommonApprover(config *params.ChainConfig) (*common.Cnode, bool) {
 	return &node, true
 }
 
-// OrderedCommonCommittee returns the active common approval committee in
-// deterministic genesis-index order. It is deliberately separate from
-// GenCommittee: the fixed validator committee remains the finality layer, while
-// CommonCommittee is the tx-block approval layer.
-//
-// Safety rule: commonCommittee[0] from genesistest.json is always included first.
-// If dynamic committee selection is added later and produces no eligible common
-// miners, this bootstrap node alone remains the active committee/leader.
+// OrderedCommonCommittee returns the genesis/config fallback common approval
+// committee in deterministic genesis-index order. The production active committee
+// path is OrderedCommonCommitteeForKeyBlock: it reads the KeyBlock-recorded
+// ActiveCommonCommittee so all nodes use chain data instead of local observation.
 func OrderedCommonCommittee(config *params.ChainConfig) []*common.Cnode {
 	if config == nil || len(config.CommonCommittee) == 0 {
 		return nil
@@ -83,25 +79,94 @@ func OrderedCommonCommittee(config *params.ChainConfig) []*common.Cnode {
 	return nodes
 }
 
-func ValidateCommonApprovalCommittee(config *params.ChainConfig) error {
+func commonApprovalNodesFromKeyBlock(config *params.ChainConfig, keyblock *types.KeyBlock) ([]*common.Cnode, bool) {
+	if keyblock == nil {
+		return nil, false
+	}
+	members := keyblock.ActiveCommonCommittee()
+	if len(members) == 0 {
+		return nil, false
+	}
+	nodes := make([]*common.Cnode, 0, len(members))
+	for _, member := range members {
+		if member.Address == "" || member.CoinBase == "" || member.Public == "" {
+			return nil, false
+		}
+		node := &common.Cnode{
+			Address:  member.Address,
+			CoinBase: common.HexToAddress(member.CoinBase).Hex(),
+			Public:   member.Public,
+		}
+		nodes = append(nodes, node)
+	}
+	if err := ValidateCommonApprovalNodes(config, nodes); err != nil {
+		return nil, false
+	}
+	return nodes, true
+}
+
+// OrderedCommonCommitteeForKeyBlock returns the committee that must be used for
+// tx-block CommonApproval under keyblock.Hash(). If the KeyBlock does not contain
+// ActiveCommonCommittee (for genesis or pre-upgrade data), it falls back to the
+// genesis/config commonCommittee. New production KeyBlocks should always carry
+// ActiveCommonCommittee.
+func OrderedCommonCommitteeForKeyBlock(config *params.ChainConfig, keyblock *types.KeyBlock) []*common.Cnode {
+	if nodes, ok := commonApprovalNodesFromKeyBlock(config, keyblock); ok {
+		return nodes
+	}
+	return OrderedCommonCommittee(config)
+}
+
+func ValidateCommonApprovalNodes(config *params.ChainConfig, nodes []*common.Cnode) error {
 	if config == nil || !config.CommonApprovalEnabled {
 		return nil
 	}
-	if _, ok := BootstrapCommonApprover(config); !ok {
+	if len(nodes) < CommonApprovalMinCommitteeSize {
+		return fmt.Errorf("common approval enabled but active committee has %d member(s), minimum is %d", len(nodes), CommonApprovalMinCommitteeSize)
+	}
+	if len(nodes) > CommonApprovalMaxCommitteeSize {
+		return fmt.Errorf("common approval active committee has %d member(s), maximum active size is %d", len(nodes), CommonApprovalMaxCommitteeSize)
+	}
+	bootstrap, ok := BootstrapCommonApprover(config)
+	if !ok || bootstrap == nil {
 		return fmt.Errorf("common approval enabled but bootstrap commonCommittee[%d] is missing", CommonApprovalBootstrapIndex)
 	}
-	size := len(OrderedCommonCommittee(config))
-	if size < CommonApprovalMinCommitteeSize {
-		return fmt.Errorf("common approval enabled but commonCommittee has %d active member(s), minimum is %d", size, CommonApprovalMinCommitteeSize)
+	if nodes[0] == nil || nodes[0].Address != bootstrap.Address || common.HexToAddress(nodes[0].CoinBase) != common.HexToAddress(bootstrap.CoinBase) || nodes[0].Public != bootstrap.Public {
+		return fmt.Errorf("common approval bootstrap member mismatch")
 	}
-	if size > CommonApprovalMaxCommitteeSize {
-		return fmt.Errorf("common approval commonCommittee has %d active member(s), maximum active size is %d", size, CommonApprovalMaxCommitteeSize)
+	seenPublic := make(map[string]struct{})
+	seenCoinbase := make(map[common.Address]struct{})
+	for i, node := range nodes {
+		if node == nil || node.Address == "" || node.CoinBase == "" || node.Public == "" {
+			return fmt.Errorf("common approval committee member %d is invalid", i)
+		}
+		if _, ok := seenPublic[node.Public]; ok {
+			return fmt.Errorf("common approval committee member %d duplicate public key", i)
+		}
+		coinbase := common.HexToAddress(node.CoinBase)
+		if _, ok := seenCoinbase[coinbase]; ok {
+			return fmt.Errorf("common approval committee member %d duplicate coinbase", i)
+		}
+		seenPublic[node.Public] = struct{}{}
+		seenCoinbase[coinbase] = struct{}{}
 	}
 	return nil
 }
 
+func ValidateCommonApprovalCommittee(config *params.ChainConfig) error {
+	return ValidateCommonApprovalNodes(config, OrderedCommonCommittee(config))
+}
+
+func ValidateCommonApprovalCommitteeForKeyBlock(config *params.ChainConfig, keyblock *types.KeyBlock) error {
+	return ValidateCommonApprovalNodes(config, OrderedCommonCommitteeForKeyBlock(config, keyblock))
+}
+
 func CommonApprovalCommitteeHash(config *params.ChainConfig) common.Hash {
 	return (&bftview.Committee{List: OrderedCommonCommittee(config)}).RlpHash()
+}
+
+func CommonApprovalCommitteeHashForKeyBlock(config *params.ChainConfig, keyblock *types.KeyBlock) common.Hash {
+	return (&bftview.Committee{List: OrderedCommonCommitteeForKeyBlock(config, keyblock)}).RlpHash()
 }
 
 func CommonApprovalRequired(config *params.ChainConfig, block *types.Block) bool {
@@ -135,16 +200,16 @@ func CommonApprovalThreshold(config *params.ChainConfig, committeeSize int) int 
 }
 
 // CommonApprovalBootstrapSigned checks whether the permanent bootstrap approver
-// signed the CommonApprovalQC. Since OrderedCommonCommittee always places
-// genesis commonCommittee[0] at active index 0, mask bit 0 is the bootstrap
-// safety approver.
+// signed the CommonApprovalQC. Since active common committees always place
+// genesis commonCommittee[0] at index 0, mask bit 0 is the bootstrap safety
+// approver.
 func CommonApprovalBootstrapSigned(mask []byte) bool {
 	return len(mask) > 0 && (mask[0]&0x01) != 0
 }
 
 // CommonApprovalEffectiveThreshold returns the normal committee threshold unless
 // the permanent bootstrap approver signed. In that emergency/safety path, the
-// bootstrap signature alone is enough to make a tx block progress on testnet.
+// bootstrap signature alone is enough to make a tx block progress.
 func CommonApprovalEffectiveThreshold(config *params.ChainConfig, committeeSize int, mask []byte) int {
 	if CommonApprovalBootstrapSigned(mask) {
 		return 1
@@ -168,13 +233,17 @@ func CommonApprovalPublicKeys(nodes []*common.Cnode) ([]*bls.PublicKey, error) {
 }
 
 func VerifyCommonApproval(config *params.ChainConfig, block *types.Block) error {
+	return VerifyCommonApprovalForKeyBlock(config, block, nil)
+}
+
+func VerifyCommonApprovalForKeyBlock(config *params.ChainConfig, block *types.Block, keyblock *types.KeyBlock) error {
 	if !CommonApprovalRequired(config, block) {
 		return nil
 	}
-	if err := ValidateCommonApprovalCommittee(config); err != nil {
+	nodes := OrderedCommonCommitteeForKeyBlock(config, keyblock)
+	if err := ValidateCommonApprovalNodes(config, nodes); err != nil {
 		return err
 	}
-	nodes := OrderedCommonCommittee(config)
 	pubs, err := CommonApprovalPublicKeys(nodes)
 	if err != nil {
 		return err
@@ -187,7 +256,7 @@ func VerifyCommonApproval(config *params.ChainConfig, block *types.Block) error 
 	if si.CommonApprovalViewID == (common.Hash{}) || si.CommonApprovalLeaderID == "" {
 		return fmt.Errorf("common approval context is empty")
 	}
-	committeeHash := CommonApprovalCommitteeHash(config)
+	committeeHash := CommonApprovalCommitteeHashForKeyBlock(config, keyblock)
 	if si.CommonApprovalCommitteeHash != committeeHash {
 		return fmt.Errorf("common approval committee hash mismatch: have %s want %s", si.CommonApprovalCommitteeHash.Hex(), committeeHash.Hex())
 	}
