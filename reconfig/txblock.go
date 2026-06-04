@@ -84,6 +84,7 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	// commit state root after all state transitions.
 	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
 	colossusX.ApplyKeyblockPowReward(work.publicState, keyblock)
+	colossusX.ApplyCommonApprovalSignerRewards(work.publicState, keyblock)
 	header.Root = work.publicState.IntermediateRoot(false)
 
 	header.BlockType = types.Key_Block

@@ -444,6 +444,8 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 	accumulateRewards(chain.Config(), state, header, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
+		keyblock := types.DecodeToKeyBlock(header.KeyInfo)
+		ApplyCommonApprovalSignerRewards(state, keyblock)
 	}
 
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
@@ -456,6 +458,8 @@ func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReade
 	accumulateRewards(chain.Config(), state, header, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
+		keyblock := types.DecodeToKeyBlock(header.KeyInfo)
+		ApplyCommonApprovalSignerRewards(state, keyblock)
 	}
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 

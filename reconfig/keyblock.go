@@ -162,6 +162,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
 			return err
 		}
+		if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -215,6 +218,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 
 	if !keyblock.TypeCheck(kbc.CurrentBlock().T_Number()) {
 		return fmt.Errorf("verifyKeyBlock, check failed, current keynumber:%d,keyblock T_Number:%d", kbc.CurrentBlockN(), keyblock.T_Number())
+	}
+	if err := keyS.verifyCommonApprovalRewardSummary(keyblock, curKeyblock.T_Number()+1, keyblock.T_Number()); err != nil {
+		return err
 	}
 
 	keyType := keyblock.BlockType()
@@ -399,6 +405,12 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 
 	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
+	if rewards, err := keyS.buildCommonApprovalRewardSummary(curKeyBlock.T_Number()+1, header.T_Number); err != nil {
+		return nil, nil, nil, err
+	} else {
+		keyblock.SetCommonApprovalRewards(rewards)
+		log.Info("common approval reward summary attached", "keyBlock", header.Number.Uint64(), "fromTx", curKeyBlock.T_Number()+1, "toTx", header.T_Number, "rewards", rewards)
+	}
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
 	mb.Store(keyblock)
 	if keyS.fixedModeEnabled() {

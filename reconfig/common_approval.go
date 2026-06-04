@@ -458,12 +458,24 @@ func (s *Service) verifyCommonApprovalVote(session *commonApprovalLeaderSession,
 	return hotstuff.VerifySignatureWithContext(vote.Signature, mask, payload, pubs, 1, chainID, hotstuff.MsgVotePrepare, session.viewID, session.leaderID)
 }
 
+func (s *Service) commonApprovalSessionThreshold(session *commonApprovalLeaderSession) int {
+	nodes := core.OrderedCommonCommittee(s.chainConfig)
+
+	if session != nil {
+		if _, ok := session.votes[core.CommonApprovalBootstrapIndex]; ok {
+			return 1
+		}
+	}
+
+	return core.CommonApprovalThreshold(s.chainConfig, len(nodes))
+}
+
 func (s *Service) tryBuildCommonApprovalResponse(session *commonApprovalLeaderSession) *commonApprovalMsg {
 	if session == nil {
 		return nil
 	}
 	nodes := core.OrderedCommonCommittee(s.chainConfig)
-	threshold := core.CommonApprovalThreshold(s.chainConfig, len(nodes))
+	threshold := s.commonApprovalSessionThreshold(session)
 	if len(session.votes) < threshold {
 		return nil
 	}
@@ -472,6 +484,7 @@ func (s *Service) tryBuildCommonApprovalResponse(session *commonApprovalLeaderSe
 		log.Warn("common approval aggregate failed", "err", err)
 		return nil
 	}
+	log.Info("common approval response built", "view", session.viewID.Hex(), "block", session.block.NumberU64(), "votes", len(session.votes), "threshold", threshold, "mask", fmt.Sprintf("0x%x", mask))
 	return &commonApprovalMsg{
 		Type:             commonApprovalResponse,
 		ValidatorAddress: session.validatorAddress,
