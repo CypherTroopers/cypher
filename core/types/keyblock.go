@@ -68,32 +68,40 @@ func (h *KeyBlockHeader) HasNewNode() bool {
 
 //go:generate gencodec -type KeyBlockBody -field-override keyBlockBodyMarshaling -out gen_key_body_json.go
 type keyBlockBodyMarshaling struct {
-	LeaderPubKey  string
-	LeaderAddress string
-	InPubKey      string
-	InAddress     string
-	OutPubKey     string
-	OutAddress    string
+	LeaderPubKey          string
+	LeaderAddress         string
+	InPubKey              string
+	InAddress             string
+	OutPubKey             string
+	OutAddress            string
+	CommonApprovalRewards []CommonApprovalReward
+}
+
+type CommonApprovalReward struct {
+	CoinBase       string `json:"coinbase"       gencodec:"required"`
+	SignedTxBlocks uint64 `json:"signedTxBlocks" gencodec:"required"`
 }
 
 type KeyBlockBody struct {
-	LeaderPubKey  string `json:"leaderPubKey"           gencodec:"required"`
-	LeaderAddress string `json:"leaderAddress"           gencodec:"required"`
-	InPubKey      string `json:"inPubKey"            	gencodec:"required"`
-	InAddress     string `json:"inAddress"            gencodec:"required"`
-	OutPubKey     string `json:"outPubKey"            	gencodec:"required"`
-	OutAddress    string `json:"outAddress"            gencodec:"required"`
+	LeaderPubKey          string                 `json:"leaderPubKey"           gencodec:"required"`
+	LeaderAddress         string                 `json:"leaderAddress"           gencodec:"required"`
+	InPubKey              string                 `json:"inPubKey"            	gencodec:"required"`
+	InAddress             string                 `json:"inAddress"            gencodec:"required"`
+	OutPubKey             string                 `json:"outPubKey"            	gencodec:"required"`
+	OutAddress            string                 `json:"outAddress"           gencodec:"required"`
+	CommonApprovalRewards []CommonApprovalReward `json:"commonApprovalRewards" gencodec:"required"`
 }
 
 // Block represents an entire block in the Cypherium blockchain.
 type KeyBlock struct {
-	header        *KeyBlockHeader
-	leaderPubKey  string
-	leaderAddress string
-	inPubKey      string
-	inAddress     string
-	outPubKey     string
-	outAddress    string
+	header                *KeyBlockHeader
+	leaderPubKey          string
+	leaderAddress         string
+	inPubKey              string
+	inAddress             string
+	outPubKey             string
+	outAddress            string
+	commonApprovalRewards []CommonApprovalReward
 	// caches
 	hash atomic.Value
 	size atomic.Value
@@ -111,13 +119,14 @@ type KeyBlock struct {
 type KeyBlocks []*KeyBlock
 
 type extKeyblock struct {
-	Header        *KeyBlockHeader
-	LeaderPubKey  string `json:"leaderPubKey"           gencodec:"required"`
-	LeaderAddress string `json:"leaderAddress"           gencodec:"required"`
-	InPubKey      string `json:"inPubKey"               gencodec:"required"`
-	InAddress     string `json:"inAddress"            gencodec:"required"`
-	OutPubKey     string `json:"outPubKey"              gencodec:"required"`
-	OutAddress    string `json:"outAddress"            gencodec:"required"`
+	Header                *KeyBlockHeader
+	LeaderPubKey          string                 `json:"leaderPubKey"           gencodec:"required"`
+	LeaderAddress         string                 `json:"leaderAddress"           gencodec:"required"`
+	InPubKey              string                 `json:"inPubKey"               gencodec:"required"`
+	InAddress             string                 `json:"inAddress"            gencodec:"required"`
+	OutPubKey             string                 `json:"outPubKey"              gencodec:"required"`
+	OutAddress            string                 `json:"outAddress"            gencodec:"required"`
+	CommonApprovalRewards []CommonApprovalReward `json:"commonApprovalRewards" gencodec:"required"`
 }
 
 // NewBlock creates a new block. The input data is copied,
@@ -153,6 +162,15 @@ func CopyKeyBlockHeader(h *KeyBlockHeader) *KeyBlockHeader {
 	return &cpy
 }
 
+func copyCommonApprovalRewards(in []CommonApprovalReward) []CommonApprovalReward {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]CommonApprovalReward, len(in))
+	copy(out, in)
+	return out
+}
+
 // DecodeRLP decodes the Cypherium
 func (b *KeyBlock) DecodeRLP(s *rlp.Stream) error {
 	var eb extKeyblock
@@ -164,6 +182,7 @@ func (b *KeyBlock) DecodeRLP(s *rlp.Stream) error {
 	b.header = eb.Header
 	b.leaderPubKey, b.leaderAddress = eb.LeaderPubKey, eb.LeaderAddress
 	b.inPubKey, b.inAddress, b.outPubKey, b.outAddress = eb.InPubKey, eb.InAddress, eb.OutPubKey, eb.OutAddress
+	b.commonApprovalRewards = copyCommonApprovalRewards(eb.CommonApprovalRewards)
 	b.size.Store(common.StorageSize(rlp.ListSize(size)))
 	return nil
 }
@@ -172,13 +191,14 @@ func (b *KeyBlock) DecodeRLP(s *rlp.Stream) error {
 func (b *KeyBlock) EncodeRLP(w io.Writer) error {
 	//if b.IsForkVer2()
 	return rlp.Encode(w, extKeyblock{
-		Header:        b.header,
-		InPubKey:      b.inPubKey,
-		InAddress:     b.inAddress,
-		OutPubKey:     b.outPubKey,
-		OutAddress:    b.outAddress,
-		LeaderPubKey:  b.leaderPubKey,
-		LeaderAddress: b.leaderAddress,
+		Header:                b.header,
+		InPubKey:              b.inPubKey,
+		InAddress:             b.inAddress,
+		OutPubKey:             b.outPubKey,
+		OutAddress:            b.outAddress,
+		LeaderPubKey:          b.leaderPubKey,
+		LeaderAddress:         b.leaderAddress,
+		CommonApprovalRewards: copyCommonApprovalRewards(b.commonApprovalRewards),
 	})
 }
 
@@ -254,6 +274,16 @@ func (b *KeyBlock) TypeCheck(last_T_Number uint64) bool {
 	return true
 }
 
+func (b *KeyBlock) CommonApprovalRewards() []CommonApprovalReward {
+	return copyCommonApprovalRewards(b.commonApprovalRewards)
+}
+
+func (b *KeyBlock) SetCommonApprovalRewards(rewards []CommonApprovalReward) {
+	b.commonApprovalRewards = copyCommonApprovalRewards(rewards)
+	b.hash.Store(common.Hash{})
+	b.size.Store(nil)
+}
+
 // Body returns the non-header content of the block.
 func (b *KeyBlock) Body() *KeyBlockBody {
 	keyBody := &KeyBlockBody{}
@@ -264,6 +294,7 @@ func (b *KeyBlock) Body() *KeyBlockBody {
 	keyBody.InAddress = b.inAddress
 	keyBody.OutPubKey = b.outPubKey
 	keyBody.OutAddress = b.outAddress
+	keyBody.CommonApprovalRewards = copyCommonApprovalRewards(b.commonApprovalRewards)
 	return keyBody
 }
 
@@ -290,6 +321,7 @@ func (b *KeyBlock) WithBody(inPubKey string, inAddress string, outPubKey string,
 	block.inAddress = inAddress
 	block.outPubKey = outPubKey
 	block.outAddress = outAddress
+	block.commonApprovalRewards = copyCommonApprovalRewards(b.commonApprovalRewards)
 	return block
 }
 
@@ -303,6 +335,7 @@ func (b *KeyBlock) CopyMe() *KeyBlock {
 	block.inAddress = b.inAddress
 	block.outPubKey = b.outPubKey
 	block.outAddress = b.outAddress
+	block.commonApprovalRewards = copyCommonApprovalRewards(b.commonApprovalRewards)
 	return block
 }
 
