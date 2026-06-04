@@ -798,9 +798,13 @@ func (s *Service) handleHotStuffMsg() {
 			if keyblockIntervalElapsed {
 				if s.lastFixedKeyNewViewWakeup.IsZero() || now.Sub(s.lastFixedKeyNewViewWakeup) >= 2*time.Second {
 					s.lastFixedKeyNewViewWakeup = now
+
 					oldView := *s.GetCurrentView()
-					s.setNextLeader(true)
+					if oldView.NoDone {
+						s.setNextLeader(true)
+					}
 					curView := s.GetCurrentView()
+
 					log.Warn("fixed-mode keyblock start-new-view wakeup",
 						"currentBlock", s.bc.CurrentBlockN(),
 						"currentKey", s.kbc.CurrentBlockN(),
