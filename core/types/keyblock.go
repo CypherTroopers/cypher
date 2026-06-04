@@ -33,8 +33,9 @@ type KeyBlockHeader struct {
 	MixDigest common.Hash `json:"mixHash"          gencodec:"required"`
 	Nonce     BlockNonce  `json:"nonce"            gencodec:"required"`
 
-	CommitteeHash common.Hash `json:"committeeHash"       gencodec:"required"`
-	T_Number      uint64      `json:"t_Number"  gencodec:"required"`
+	CommitteeHash             common.Hash `json:"committeeHash"       gencodec:"required"`
+	ActiveCommonCommitteeHash common.Hash `json:"activeCommonCommitteeHash" gencodec:"required"`
+	T_Number                  uint64      `json:"t_Number"  gencodec:"required"`
 }
 
 // Hash returns the hash of the key header, which is simply the keccak256 hash of its
@@ -268,8 +269,14 @@ func (b *KeyBlock) SetBlockType(blockType uint8) { b.header.BlockType = blockTyp
 
 func (b *KeyBlock) CommitteeHash() common.Hash        { return b.header.CommitteeHash }
 func (b *KeyBlock) SetCommitteeHash(hash common.Hash) { b.header.CommitteeHash = hash }
-func GetCommitteeHash(x interface{}) common.Hash      { return rlpHash(x) }
-func (b *KeyBlock) T_Number() uint64                  { return b.header.T_Number }
+func (b *KeyBlock) ActiveCommonCommitteeHash() common.Hash {
+	return b.header.ActiveCommonCommitteeHash
+}
+func (b *KeyBlock) SetActiveCommonCommitteeHash(hash common.Hash) {
+	b.header.ActiveCommonCommitteeHash = hash
+}
+func GetCommitteeHash(x interface{}) common.Hash { return rlpHash(x) }
+func (b *KeyBlock) T_Number() uint64             { return b.header.T_Number }
 
 func (b *KeyBlock) Header() *KeyBlockHeader { return CopyKeyBlockHeader(b.header) }
 
