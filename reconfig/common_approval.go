@@ -65,7 +65,7 @@ var commonApprovalRuntime = struct {
 	sessions  map[common.Hash]*commonApprovalLeaderSession
 }{
 	responses: make(map[common.Hash]chan *commonApprovalMsg),
-	sessions:  make(map[common.Hash]*commonApprovalLeaderSession),
+	sessions:  make(map[common.Hash]*commonApprovalMsg),
 }
 
 func (s *Service) commonApprovalViewID(block *types.Block, committeeHash common.Hash) common.Hash {
@@ -119,7 +119,7 @@ func (s *Service) requestCommonApproval(block *types.Block) error {
 	if len(nodes) == 0 {
 		return fmt.Errorf("common approval failed: active common committee is empty")
 	}
-	committeeHash := s.commonApprovalCommitteeHashForBlock(block)
+	committeeHash := core.CommonApprovalCommitteeHashFromNodes(nodes)
 
 	var lastErr error
 	for i, leader := range nodes {
@@ -252,7 +252,8 @@ func (s *Service) handleCommonApprovalRequest(req *commonApprovalMsg) {
 		s.sendCommonApprovalResponse(req, nil, nil, "receiver is not active common leader")
 		return
 	}
-	if req.CommitteeHash != s.commonApprovalCommitteeHashForBlock(block) {
+	nodes := s.orderedCommonCommitteeForBlock(block)
+	if req.CommitteeHash != core.CommonApprovalCommitteeHashFromNodes(nodes) {
 		s.sendCommonApprovalResponse(req, nil, nil, "common committee hash mismatch")
 		return
 	}
@@ -414,13 +415,13 @@ func (s *Service) signCommonApproval(block *types.Block, viewID common.Hash, lea
 	if block == nil {
 		return nil, -1, fmt.Errorf("nil block")
 	}
-	if committeeHash != s.commonApprovalCommitteeHashForBlock(block) {
+	nodes := s.orderedCommonCommitteeForBlock(block)
+	if committeeHash != core.CommonApprovalCommitteeHashFromNodes(nodes) {
 		return nil, -1, fmt.Errorf("common committee hash mismatch")
 	}
 	if viewID != s.commonApprovalViewID(block, committeeHash) {
 		return nil, -1, fmt.Errorf("common approval view mismatch")
 	}
-	nodes := s.orderedCommonCommitteeForBlock(block)
 	selfPub := bftview.GetServerInfo(bftview.PublicKey)
 	if selfPub == "" {
 		return nil, -1, fmt.Errorf("local BLS public key is empty")
@@ -502,7 +503,7 @@ func (s *Service) tryBuildCommonApprovalResponse(session *commonApprovalLeaderSe
 		BlockData:        session.block.EncodeToBytes(),
 		ViewID:           session.viewID,
 		LeaderID:         session.leaderID,
-		CommitteeHash:    s.commonApprovalCommitteeHashForBlock(session.block),
+		CommitteeHash:    core.CommonApprovalCommitteeHashFromNodes(nodes),
 		Signature:        sig,
 		Mask:             mask,
 	}
