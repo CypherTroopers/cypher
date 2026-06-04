@@ -52,6 +52,15 @@ func commonApprovalCommitteeHashFromNodes(nodes []*common.Cnode) common.Hash {
 	return (&bftview.Committee{List: normalizeCommonApprovalNodes(nodes)}).RlpHash()
 }
 
+// CommonApprovalCommitteeHashFromNodes returns the deterministic committee hash
+// for an already selected active common approval committee. Callers that already
+// selected the KeyBlock snapshot committee should use this instead of resolving
+// the KeyBlock again, otherwise the request path and verification path can drift
+// if one side sees a cached/fallback committee.
+func CommonApprovalCommitteeHashFromNodes(nodes []*common.Cnode) common.Hash {
+	return commonApprovalCommitteeHashFromNodes(nodes)
+}
+
 // BootstrapCommonApprover returns genesistest.json commonCommittee[0]. This node
 // is the permanent safety approver: it must stay in the active common committee
 // and remains the fallback when no dynamic common miners are eligible.
