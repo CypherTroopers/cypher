@@ -285,8 +285,8 @@ func (colossusX *colossusX) VerifyHeader(chain consensus.ChainHeaderReader, head
 }
 
 // VerifyHeaders is similar to VerifyHeader, but verifies a batch of headers
-// concurrently. The method returns a quit channel to abort the operations and
-// a results channel to retrieve the async verifications.
+// concurrently. The method returns a quit channel to abort the operations
+// and a results channel to retrieve the async verifications.
 func (colossusX *colossusX) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {
 	// If we're running a full engine faking, accept any input as valid
 	if colossusX.config.PowMode == ModeFullFake || len(headers) == 0 {
@@ -444,11 +444,6 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 	accumulateRewards(chain.Config(), state, header, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
-		if bc, ok := chain.(types.ChainReader); ok {
-			ApplyCommonApprovalKeyblockRewards(bc, state, header)
-		} else {
-			log.Warn("common approval signer rewards skipped: chain reader does not expose block history")
-		}
 	}
 
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
@@ -461,11 +456,6 @@ func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReade
 	accumulateRewards(chain.Config(), state, header, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
-		if bc, ok := chain.(types.ChainReader); ok {
-			ApplyCommonApprovalKeyblockRewards(bc, state, header)
-		} else {
-			log.Warn("common approval signer rewards skipped: chain reader does not expose block history")
-		}
 	}
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 
@@ -473,15 +463,13 @@ func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReade
 	return types.NewBlock(header, txs, uncles, receipts, new(trie.Trie)), nil
 }
 
-// CalcDifficulty is the difficulty adjustment algorithm. It returns
-// the difficulty that a new block should have when created at time
+// CalcDifficulty is the difficulty adjustment algorithm. It returns the difficulty that a new block should have when created at time
 // given the parent block's time and difficulty.
 func (colossusX *colossusX) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) *big.Int {
 	return CalcDifficulty(chain.Config(), time, parent)
 }
 
-// CalcDifficulty is the difficulty adjustment algorithm. It returns
-// the difficulty that a new block should have when created at time
+// CalcDifficulty is the difficulty adjustment algorithm. It returns the difficulty that a new block should have when created at time
 // given the parent block's time and difficulty.
 func CalcDifficulty(config *params.ChainConfig, time uint64, parent *types.Header) *big.Int {
 	return calcDifficultyFrontier(time, parent)
