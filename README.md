@@ -58,3 +58,13 @@ This creates a Dual HotStuff structure where validator stability is preserved, w
 * KeyBlock = the team roster for that period
 * TxBlock = the actual transaction block
 * Common Approval Proof = the field team’s approval stamp
+
+
+## Common Approval rewards are paid only to the committee members whose signatures are included in the approval mask
+
+If the normal threshold is reached within the collection window, all signers(MAX7 commmon commitee) included in the mask receive the TxBlock approval reward.
+
+If the normal threshold is not reached within 100ms, the current Common Committee leader may create a fallback approval with its own signature. In that case, only the leader receives the TxBlock approval reward.
+
+If the Common leader is unavailable, the bootstrap approver at index 0 can be used as an emergency fallback. In that case, only the bootstrap approver receives the reward.
+
