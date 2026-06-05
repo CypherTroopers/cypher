@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	commonApprovalVoteTimeout     = 500 * time.Millisecond
+	commonApprovalVoteTimeout     = 100 * time.Millisecond
 	commonApprovalResponseTimeout = 2 * time.Second
 )
 
@@ -295,7 +295,7 @@ func (s *Service) handleCommonApprovalRequest(req *commonApprovalMsg) {
 
 	s.broadcastCommonApprovalVoteRequest(req)
 	commonApprovalRuntime.Lock()
-	resp := s.tryBuildCommonApprovalResponse(session)
+	resp := s.tryBuildCommonApprovalResponse(session, false)
 	commonApprovalRuntime.Unlock()
 	if resp != nil {
 		s.deliverCommonApprovalResponse(resp)
@@ -307,7 +307,7 @@ func (s *Service) handleCommonApprovalRequest(req *commonApprovalMsg) {
 		s.deliverCommonApprovalResponse(resp)
 	case <-time.After(commonApprovalVoteTimeout):
 		commonApprovalRuntime.Lock()
-		resp := s.tryBuildCommonApprovalResponse(session)
+		resp := s.tryBuildCommonApprovalResponse(session, true)
 		commonApprovalRuntime.Unlock()
 		if resp != nil {
 			s.deliverCommonApprovalResponse(resp)
@@ -383,7 +383,7 @@ func (s *Service) handleCommonApprovalVote(vote *commonApprovalMsg) {
 			session.votes = make(map[int][]byte)
 		}
 		session.votes[int(vote.SignerIndex)] = vote.Signature
-		resp = s.tryBuildCommonApprovalResponse(session)
+		resp = s.tryBuildCommonApprovalResponse(session, false)
 	}
 	commonApprovalRuntime.Unlock()
 	if session == nil || resp == nil {
@@ -482,13 +482,24 @@ func (s *Service) commonApprovalSessionThreshold(session *commonApprovalLeaderSe
 	return core.CommonApprovalThreshold(s.chainConfig, len(nodes))
 }
 
-func (s *Service) tryBuildCommonApprovalResponse(session *commonApprovalLeaderSession) *commonApprovalMsg {
+func commonApprovalVoteSetReady(voteCount, committeeSize, threshold int, allowPartial bool) bool {
+	if voteCount <= 0 || committeeSize <= 0 || threshold <= 0 || voteCount < threshold {
+		return false
+	}
+	return allowPartial || voteCount >= committeeSize
+}
+
+func (s *Service) tryBuildCommonApprovalResponse(session *commonApprovalLeaderSession, allowPartial bool) *commonApprovalMsg {
 	if session == nil {
 		return nil
 	}
 	nodes := s.orderedCommonCommitteeForBlock(session.block)
 	threshold := s.commonApprovalSessionThreshold(session)
-	if len(session.votes) < threshold {
+	// Once the safety threshold is reached, keep collecting until every active
+	// member has voted or the vote timeout expires. This prevents the bootstrap
+	// leader's threshold-one self vote from finalizing mask 0x01 before healthy
+	// dynamic committee members can vote and earn their signer reward.
+	if !commonApprovalVoteSetReady(len(session.votes), len(nodes), threshold, allowPartial) {
 		return nil
 	}
 	sig, mask, err := aggregateCommonApprovalSignatures(session.votes, len(nodes))
