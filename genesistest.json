@@ -1,6 +1,6 @@
 {
   "config": {
-    "chainId": 1919454,
+    "chainId": 10101919,
     "homesteadBlock": 0,
     "eip150Block": 0,
     "eip155Block": 0,
@@ -39,43 +39,43 @@
 
     "committee": {
       "0": {
-        "address": "185.217.125.128:7102",
+        "address": "158.220.101.48:7102",
         "coinbase": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
         "public": "3912d236e16d97b70244a6c3f0693c8ff855bca8771b521bb3af948f0c682a15a8ca1a90265f7db37dacd2621e389c1cc8526eca9efd31a66e6ce6debdb1560b"
       },
 
       "1": {
-        "address": "185.217.125.128:7104",
+        "address": "158.220.101.48:7104",
         "coinbase": "60746B20D36500f3353163226Ad62bF7E92e1F3C",
         "public": "e79f42fc639c2bb3fb489641d4643aed30f3095948283362a11f35074175081632e251cad8e718bbbfa22ce58720968a092ae9d326df681ccc9efb1828ab380a"
       },
 
       "2": {
-        "address": "185.217.125.128:7106",
+        "address": "158.220.101.48:7106",
         "coinbase": "01cBCB9b60E73f0244eA1deBbEe0FD1b8BB11B31",
         "public": "c5248a6fdfe58a4b442293c84dcb2d08d2d6c6cdaf2cd42732723ca238b0c2198f9e047170bef68af6b690327b6bbab8af258eba20db0679ddc897f0ea108388"
       },
 
       "3": {
-        "address": "185.217.125.128:7108",
+        "address": "158.220.101.48:7108",
         "coinbase": "4b91661f2659A62cB1A0EE54f6540c283D448a86",
         "public": "e1f5313fea570fbef1013335a91afc186a35aca491a08bcaedc3566c18beac1f969ee7303de787b2861c5bc4a874b2887bd027f2562b9807bac7c171098a308b"
       },
 
       "4": {
-        "address": "185.217.125.128:7110",
+        "address": "158.220.101.48:7110",
         "coinbase": "9c01A453dAF5c36951301ea26C1605cE7489B186",
         "public": "48a16b06d3771797644cce84d1bb0bfba9525ff6b19fab48cb29f7b108a8971a35630a7c0355fe69f95263faaf48a4ed515028b20e7bc6b306448cddeb3ea61e"
       },
 
       "5": {
-        "address": "185.217.125.128:7112",
+        "address": "158.220.101.48:7112",
         "coinbase": "f1cf67fD1669dDf1dF76FD887B2f6da0d11b2cd9",
         "public": "0ea28b3fad0c3ef992e8d51fa2e0b158c0ba1101629e4516f999f66c672222257d3d4b0e20024fdcc1d09100c2d040c006cd32dbb7ccb416c7dc5a03af9c8d02"
       },
 
       "6": {
-        "address": "185.217.125.128:7114",
+        "address": "158.220.101.48:7114",
         "coinbase": "3abb765B281d2Ef60aAC35Bc85B62692f89c7Ee3",
         "public": "bbf99348f4f81b296d0fceeb3d7f1b25ad4d3f50eb44baffa80a290d1a56a0177394455ce8d8a69452b453e5de5568df58f68077d57e7ff54df0aa4ade7d0e14"
       }
