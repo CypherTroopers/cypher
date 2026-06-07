@@ -153,7 +153,7 @@ func (b *EthAPIBackend) BlockByNumber(ctx context.Context, number rpc.BlockNumbe
 		return block, nil
 	}
 
-	// Otherwise resolve and return the block
+	// Otherwise resolve the block number and return the block
 	if number == rpc.LatestBlockNumber {
 		return b.eth.blockchain.CurrentBlock(), nil
 	}
@@ -311,7 +311,7 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction,
 	if err != nil {
 		return err
 	}
-	core.RecordCommonRPCAdmission(signedTx.Hash(), bftview.GetServerCoinBase())
+	core.RecordCommonRPCAdmission(signedTx.Hash(), bftview.GetServerCoinBase(), b.ChainConfig().ChainID)
 	return nil
 }
 
