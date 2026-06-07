@@ -20,6 +20,7 @@ package reconfig
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"sync"
 	"time"
 
@@ -100,6 +101,81 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	return block.EncodeToBytes(), nil
 }
 
+func txEffectiveGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
+	if baseFee == nil || baseFee.Sign() == 0 {
+		return new(big.Int).Set(tx.GasPrice())
+	}
+	gasFeeCap := tx.GasFeeCap()
+	gasTipCap := tx.GasTipCap()
+	if gasFeeCap == nil {
+		gasFeeCap = tx.GasPrice()
+	}
+	if gasTipCap == nil {
+		gasTipCap = tx.GasPrice()
+	}
+	tip := new(big.Int).Sub(gasFeeCap, baseFee)
+	if tip.Sign() < 0 {
+		tip.SetInt64(0)
+	}
+	if tip.Cmp(gasTipCap) > 0 {
+		tip.Set(gasTipCap)
+	}
+	return new(big.Int).Add(baseFee, tip)
+}
+
+func commonAdmissionMinerByTx(admissions []*types.CommonTxAdmission) map[common.Hash]common.Address {
+	indexed := make(map[common.Hash]common.Address, len(admissions))
+	for _, admission := range admissions {
+		if admission == nil || admission.TxHash == (common.Hash{}) || admission.Miner == (common.Address{}) {
+			continue
+		}
+		if _, exists := indexed[admission.TxHash]; !exists {
+			indexed[admission.TxHash] = admission.Miner
+		}
+	}
+	return indexed
+}
+
+func buildCommonTxRewards(txs types.Transactions, receipts types.Receipts, admissions []*types.CommonTxAdmission, baseFee *big.Int) []*types.CommonTxReward {
+	minerByTx := commonAdmissionMinerByTx(admissions)
+	if len(minerByTx) == 0 {
+		return nil
+	}
+	rewards := make([]*types.CommonTxReward, 0, len(minerByTx))
+	for i, tx := range txs {
+		if tx == nil || i >= len(receipts) || receipts[i] == nil {
+			continue
+		}
+		txHash := tx.Hash()
+		miner, ok := minerByTx[txHash]
+		if !ok {
+			continue
+		}
+		actualFee := new(big.Int).Mul(new(big.Int).SetUint64(receipts[i].GasUsed), txEffectiveGasPrice(tx, baseFee))
+		reward := new(big.Int).Div(actualFee, big.NewInt(5))
+		burn := new(big.Int).Sub(actualFee, reward)
+		rewards = append(rewards, &types.CommonTxReward{
+			TxHash: txHash,
+			Miner:  miner,
+			Reward: reward,
+			Burn:   burn,
+		})
+	}
+	return rewards
+}
+
+func applyCommonTxRewards(st *state.StateDB, rewards []*types.CommonTxReward) {
+	if st == nil {
+		return
+	}
+	for _, reward := range rewards {
+		if reward == nil || reward.Miner == (common.Address{}) || reward.Reward == nil || reward.Reward.Sign() <= 0 {
+			continue
+		}
+		st.AddBalance(reward.Miner, reward.Reward)
+	}
+}
+
 // Try proposal new txBlock for current txs
 func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 	allAddrTxes, err := txS.loadPendingAddressTxes(blockType)
@@ -127,23 +203,32 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 		//txS.firePendingBlockEvents(logs)
 
 		header := work.header
-
 		header.KeyHash = txS.kbc.CurrentBlock().Hash()
-		// commit state root after all state transitions.
+		header.BlockType = blockType
+
+		keyBlockNumber := uint64(0)
+		if currentKey := txS.kbc.CurrentBlock(); currentKey != nil {
+			keyBlockNumber = currentKey.NumberU64()
+		}
+		commonAdmissions := core.BuildCommonTxAdmissions(committedTxes, keyBlockNumber, header.Number.Uint64(), header.Time)
+		commonRewards := buildCommonTxRewards(committedTxes, publicReceipts, commonAdmissions, header.BaseFee)
+		applyCommonTxRewards(work.publicState, commonRewards)
+
+		// commit state root after all state transitions and Common RPC reward settlement.
 		colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
 		header.Root = work.publicState.IntermediateRoot(false)
-		header.BlockType = blockType
+
+		block := types.NewBlock(header, committedTxes, nil, publicReceipts, new(trie.Trie))
+		block.AttachCommonTxData(commonAdmissions, commonRewards)
 
 		// update block hash since it is now available, but was not when the
 		// receipt/log of individual transactions were created:
-		headerHash := header.Hash()
+		headerHash := block.Hash()
 		for _, l := range logs {
 			l.BlockHash = headerHash
 		}
 
-		block := types.NewBlock(header, committedTxes, nil, publicReceipts, new(trie.Trie))
-
-		log.Info("Generated next block", "block num", block.Number(), "num txes", txCount)
+		log.Info("Generated next block", "block num", block.Number(), "num txes", txCount, "commonAdmissions", len(commonAdmissions), "commonRewards", len(commonRewards))
 
 		txS.proposedChain.extend(block)
 
@@ -177,7 +262,7 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 		retErr = fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, kbc.CurrentBlock().Hash())
 		return retErr
 	}
-	err := bc.Engine().VerifyHeader(bc, header, false)
+	err = bc.Engine().VerifyHeader(bc, header, false)
 	if err != nil {
 		retErr = fmt.Errorf("invalid header, error:%s", err.Error())
 		return retErr
@@ -233,6 +318,7 @@ func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte
 func (txS *txService) procBlockDone(newBlock *types.Block) {
 	log.Info("chainBlockEvent...", "number", newBlock.NumberU64())
 	txS.txPool.RemoveBatch(newBlock.Transactions())
+	core.DropCommonRPCAdmissions(newBlock.Transactions())
 
 	if txS.s.isRunning() {
 		txS.updateChainPerNewHead(newBlock)
