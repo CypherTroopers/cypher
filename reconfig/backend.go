@@ -71,6 +71,36 @@ type serviceI interface {
 	SwitchOK() bool
 }
 
+func signCommonRPCAdmission(am *accounts.Manager, admission *types.CommonTxAdmission) error {
+	if am == nil || admission == nil {
+		return accounts.ErrUnknownAccount
+	}
+	account := accounts.Account{Address: admission.Miner}
+	wallet, err := am.Find(account)
+	if err != nil {
+		return err
+	}
+	payload := types.CommonTxAdmissionSigningPayload(admission)
+	if len(payload) == 0 {
+		return accounts.ErrUnknownAccount
+	}
+	sig, err := wallet.SignData(account, accounts.MimetypeDataWithValidator, payload)
+	if err != nil {
+		return err
+	}
+	admission.Signature = sig
+	return types.VerifyCommonTxAdmissionSignature(admission)
+}
+
+type RescueConfig struct {
+	KeyBlockNumber uint64          `json:"keyBlockNumer"`
+	Committee      []*common.Cnode `json:"committee"`
+}
+
+type RescueCommitteeArgs struct {
+	ConfigPath string `json:"configPath"`
+}
+
 func New(stack *node.Node, chainConfig *params.ChainConfig, e Backend) (*ReconfigBackend, error) {
 	backend := &ReconfigBackend{
 		eventMux:         stack.EventMux(),
@@ -84,6 +114,9 @@ func New(stack *node.Node, chainConfig *params.ChainConfig, e Backend) (*Reconfi
 		candidatePool:    e.CandidatePool(),
 		engine:           e.Engine(),
 	}
+	core.SetCommonRPCAdmissionSigner(func(admission *types.CommonTxAdmission) error {
+		return signCommonRPCAdmission(backend.accountManager, admission)
+	})
 	sIp := e.ExtIP().String() + ":" + chainConfig.RnetPort
 	//backend.minter = newMinter(chainConfig, backend, blockTime)
 	backend.service = newService("cypherBFTService", sIp, chainConfig, backend)
@@ -124,20 +157,16 @@ func (backend *ReconfigBackend) ConsensusServicePendingLogsFeed() *event.Feed {
 
 // node.Lifecycle interface methods:
 
-// Start implements node.Service, starting the background data propagation thread
-// of the protocol.
 func (backend *ReconfigBackend) Start() error {
 	return nil
 }
 
-// Stop implements node.Service, stopping the background data propagation thread
-// of the protocol.
 func (backend *ReconfigBackend) Stop() error {
 	backend.service.stop()
 	backend.blockchain.Stop()
 	backend.eventMux.Stop()
 
-	// handles gracefully if freezedb process is already stopped
+	// handles gracefully if freezedb processes are already stopped
 	backend.chainDb.Close()
 
 	log.Info("Raft stopped")
