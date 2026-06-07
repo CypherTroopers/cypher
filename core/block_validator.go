@@ -70,6 +70,12 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	if hash := types.DeriveSha(block.Transactions(), new(trie.Trie)); hash != header.TxHash {
 		return fmt.Errorf("transaction root hash mismatch: have %x, want %x", hash, header.TxHash)
 	}
+	if hash := types.DeriveCommonTxAdmissionRoot(block.CommonTxAdmissions()); hash != header.CommonTxAdmissionRoot {
+		return fmt.Errorf("common tx admission root mismatch: have %x, want %x", hash, header.CommonTxAdmissionRoot)
+	}
+	if hash := types.DeriveCommonTxRewardRoot(block.CommonTxRewards()); hash != header.CommonTxRewardRoot {
+		return fmt.Errorf("common tx reward root mismatch: have %x, want %x", hash, header.CommonTxRewardRoot)
+	}
 	if err := ValidateBlockBlobBody(v.config, header, block.Transactions()); err != nil {
 		return err
 	}
