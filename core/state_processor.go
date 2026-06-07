@@ -17,6 +17,9 @@
 package core
 
 import (
+	"fmt"
+	"math/big"
+
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/consensus/misc"
@@ -47,6 +50,71 @@ func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consen
 	}
 }
 
+func effectiveTxGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
+	if baseFee == nil || baseFee.Sign() == 0 {
+		return new(big.Int).Set(tx.GasPrice())
+	}
+	gasFeeCap := tx.GasFeeCap()
+	gasTipCap := tx.GasTipCap()
+	if gasFeeCap == nil {
+		gasFeeCap = tx.GasPrice()
+	}
+	if gasTipCap == nil {
+		gasTipCap = tx.GasPrice()
+	}
+	tip := new(big.Int).Sub(gasFeeCap, baseFee)
+	if tip.Sign() < 0 {
+		tip.SetInt64(0)
+	}
+	if tip.Cmp(gasTipCap) > 0 {
+		tip.Set(gasTipCap)
+	}
+	return new(big.Int).Add(baseFee, tip)
+}
+
+func buildCommonRewardIndex(rewards []*types.CommonTxReward) (map[common.Hash]*types.CommonTxReward, error) {
+	indexed := make(map[common.Hash]*types.CommonTxReward, len(rewards))
+	for _, reward := range rewards {
+		if reward == nil {
+			continue
+		}
+		if reward.Reward == nil || reward.Burn == nil {
+			return nil, fmt.Errorf("invalid common tx reward for %s: nil amount", reward.TxHash)
+		}
+		if reward.Reward.Sign() < 0 || reward.Burn.Sign() < 0 {
+			return nil, fmt.Errorf("invalid common tx reward for %s: negative amount", reward.TxHash)
+		}
+		if _, exists := indexed[reward.TxHash]; exists {
+			return nil, fmt.Errorf("duplicate common tx reward for %s", reward.TxHash)
+		}
+		indexed[reward.TxHash] = reward
+	}
+	return indexed, nil
+}
+
+func settleCommonRPCReward(statedb *state.StateDB, reward *types.CommonTxReward, tx *types.Transaction, gasUsed uint64, baseFee *big.Int) error {
+	if reward == nil {
+		return nil
+	}
+	actualFee := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), effectiveTxGasPrice(tx, baseFee))
+	expectedReward := new(big.Int).Div(actualFee, big.NewInt(5))
+	expectedBurn := new(big.Int).Sub(actualFee, expectedReward)
+	if reward.Reward.Cmp(expectedReward) != 0 {
+		return fmt.Errorf("invalid common tx reward for %s: have %s want %s", tx.Hash(), reward.Reward, expectedReward)
+	}
+	if reward.Burn.Cmp(expectedBurn) != 0 {
+		return fmt.Errorf("invalid common tx burn for %s: have %s want %s", tx.Hash(), reward.Burn, expectedBurn)
+	}
+	if reward.Miner == (common.Address{}) && expectedReward.Sign() > 0 {
+		return fmt.Errorf("invalid common tx reward for %s: empty miner", tx.Hash())
+	}
+	if expectedReward.Sign() > 0 {
+		statedb.AddBalance(reward.Miner, expectedReward)
+	}
+	// Burn is represented by intentionally not crediting the remaining fee to any account.
+	return nil
+}
+
 // Process processes the state changes according to the Ethereum rules by running
 // the transaction messages using the statedb and applying any rewards to both
 // the processor (coinbase) and any included uncles.
@@ -65,6 +133,13 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if err := ValidateBlockBlobGas(p.config, header, block.Transactions()); err != nil {
 		return nil, nil, 0, err
 	}
+	if root := types.DeriveCommonTxRewardRoot(block.CommonTxRewards()); root != header.CommonTxRewardRoot {
+		return nil, nil, 0, fmt.Errorf("common tx reward root mismatch: have %s want %s", root, header.CommonTxRewardRoot)
+	}
+	rewardByTx, err := buildCommonRewardIndex(block.CommonTxRewards())
+	if err != nil {
+		return nil, nil, 0, err
+	}
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
@@ -81,7 +156,17 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
 		totalGas += receipt.GasUsed * tx.GasPrice().Uint64()
-
+		if reward := rewardByTx[tx.Hash()]; reward != nil {
+			if err := settleCommonRPCReward(statedb, reward, tx, receipt.GasUsed, header.BaseFee); err != nil {
+				return nil, nil, 0, err
+			}
+			delete(rewardByTx, tx.Hash())
+		}
+	}
+	if len(rewardByTx) > 0 {
+		for hash := range rewardByTx {
+			return nil, nil, 0, fmt.Errorf("common tx reward references tx not included in block: %s", hash)
+		}
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), totalGas)
