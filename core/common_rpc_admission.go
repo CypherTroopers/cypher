@@ -158,7 +158,7 @@ func CommonRPCAdmissionMiner(txHash common.Hash) (common.Address, bool) {
 }
 
 // BuildCommonTxAdmissions converts recorded tx admissions into signed block-body data.
-func BuildCommonTxAdmissions(txs types.Transactions, chainID *big.Int, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) []*types.CommonTxAdmission {
+func BuildCommonTxAdmissions(txs types.Transactions, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) []*types.CommonTxAdmission {
 	admissions := make([]*types.CommonTxAdmission, 0)
 	for _, tx := range txs {
 		if tx == nil {
@@ -174,11 +174,7 @@ func BuildCommonTxAdmissions(txs types.Transactions, chainID *big.Int, keyBlockN
 			continue
 		}
 		sealed := copyCommonRPCAdmission(admission)
-		if sealed.ChainID == nil {
-			sealed.ChainID = copyAdmissionChainID(chainID)
-		}
 		if len(sealed.Signature) != crypto.SignatureLength {
-			sealed.ChainID = copyAdmissionChainID(chainID)
 			sealed.KeyBlockNumber = keyBlockNumber
 			sealed.TxBlockNumber = txBlockNumber
 			sealed.Timestamp = timestamp
@@ -187,10 +183,6 @@ func BuildCommonTxAdmissions(txs types.Transactions, chainID *big.Int, keyBlockN
 				log.Warn("Failed to sign common RPC admission", "tx", txHash, "miner", sealed.Miner, "err", err)
 				continue
 			}
-		}
-		if chainID != nil && (sealed.ChainID == nil || sealed.ChainID.Cmp(chainID) != 0) {
-			log.Warn("Skip common RPC admission with wrong chain id", "tx", txHash, "miner", sealed.Miner, "have", sealed.ChainID, "want", chainID)
-			continue
 		}
 		if err := types.VerifyCommonTxAdmissionSignature(sealed); err != nil {
 			log.Warn("Invalid common RPC admission signature", "tx", txHash, "miner", sealed.Miner, "err", err)
