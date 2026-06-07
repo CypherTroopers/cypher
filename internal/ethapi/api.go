@@ -646,7 +646,7 @@ func (s *PrivateAccountAPI) Sign(ctx context.Context, data hexutil.Bytes, addr c
 // Note, the signature must conform to the secp256k1 curve R, S and V values, where
 // the V value must be 27 or 28 for legacy reasons.
 //
-// https://github.com/cypherium/cypher/wiki/Management-APIs#personal_ecRecover
+// https://github.com/ethereum/wiki/wiki/JSON-RPC#personal_ecRecover
 func (s *PrivateAccountAPI) EcRecover(ctx context.Context, data, sig hexutil.Bytes) (common.Address, error) {
 	if len(sig) != crypto.SignatureLength {
 		return common.Address{}, fmt.Errorf("signature must be %d bytes long", crypto.SignatureLength)
@@ -979,7 +979,7 @@ func (s *PublicBlockChainAPI) GetUncleCountByBlockNumber(ctx context.Context, bl
 	if block, _ := s.b.BlockByNumber(ctx, blockNr); block != nil {
 		n := hexutil.Uint(len(block.Uncles()))
 		return &n
-	}
+}
 	return nil
 }
 
@@ -988,7 +988,7 @@ func (s *PublicBlockChainAPI) GetUncleCountByBlockHash(ctx context.Context, bloc
 	if block, _ := s.b.BlockByHash(ctx, blockHash); block != nil {
 		n := hexutil.Uint(len(block.Uncles()))
 		return &n
-	}
+}
 	return nil
 }
 func (s *PublicBlockChainAPI) GetCommitteeMember(ctx context.Context, blockNr rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
@@ -1258,7 +1258,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 		}
 		hi = block.GasLimit()
 	}
-	// Recap the highest gas limit with account's available balance.
+	// Recap the highest gas allowance with account's available balance.
 	if args.GasPrice != nil && args.GasPrice.ToInt().BitLen() != 0 {
 		state, _, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 		if err != nil {
@@ -1544,6 +1544,7 @@ type RPCTransaction struct {
 	Gas                 hexutil.Uint64    `json:"gas"`
 	GasPrice            *hexutil.Big      `json:"gasPrice"`
 	Hash                common.Hash       `json:"hash"`
+	TransactionHash     common.Hash       `json:"transactionHash"`
 	Input               hexutil.Bytes     `json:"input"`
 	Nonce               hexutil.Uint64    `json:"nonce"`
 	To                  *common.Address   `json:"to"`
@@ -1559,6 +1560,17 @@ type RPCTransaction struct {
 	V                   *hexutil.Big      `json:"v"`
 	R                   *hexutil.Big      `json:"r"`
 	S                   *hexutil.Big      `json:"s"`
+
+	CommonTxAdmissionRoot           *common.Hash    `json:"commonTxAdmissionRoot,omitempty"`
+	CommonTxRewardRoot              *common.Hash    `json:"commonTxRewardRoot,omitempty"`
+	CommonRpcMiner                  *common.Address `json:"commonRpcMiner,omitempty"`
+	CommonRpcReward                 *hexutil.Big    `json:"commonRpcReward,omitempty"`
+	CommonRpcBurn                   *hexutil.Big    `json:"commonRpcBurn,omitempty"`
+	CommonTxAdmissionChainID        *hexutil.Big    `json:"commonTxAdmissionChainId,omitempty"`
+	CommonTxAdmissionKeyBlockNumber *hexutil.Uint64 `json:"commonTxAdmissionKeyBlockNumber,omitempty"`
+	CommonTxAdmissionTxBlockNumber  *hexutil.Uint64 `json:"commonTxAdmissionTxBlockNumber,omitempty"`
+	CommonTxAdmissionTimestamp      *hexutil.Uint64 `json:"commonTxAdmissionTimestamp,omitempty"`
+	CommonTxAdmissionSignature      hexutil.Bytes   `json:"commonTxAdmissionSignature,omitempty"`
 }
 
 func rpcTransactionSigner(tx *types.Transaction) types.Signer {
@@ -1571,6 +1583,105 @@ func rpcTransactionSigner(tx *types.Transaction) types.Signer {
 	return types.HomesteadSigner{}
 }
 
+func fillCommonRPCTransactionFields(result *RPCTransaction, block *types.Block, txHash common.Hash) {
+	if result == nil || block == nil {
+		return
+	}
+
+	header := block.Header()
+	admissionRoot := header.CommonTxAdmissionRoot
+	rewardRoot := header.CommonTxRewardRoot
+
+	result.CommonTxAdmissionRoot = &admissionRoot
+	result.CommonTxRewardRoot = &rewardRoot
+
+	for _, admission := range block.CommonTxAdmissions() {
+		if admission == nil || admission.TxHash != txHash {
+			continue
+		}
+
+		miner := admission.Miner
+		keyBlockNumber := hexutil.Uint64(admission.KeyBlockNumber)
+		txBlockNumber := hexutil.Uint64(admission.TxBlockNumber)
+		timestamp := hexutil.Uint64(admission.Timestamp)
+
+		result.CommonRpcMiner = &miner
+		if admission.ChainID != nil {
+			result.CommonTxAdmissionChainID = (*hexutil.Big)(new(big.Int).Set(admission.ChainID))
+		}
+		result.CommonTxAdmissionKeyBlockNumber = &keyBlockNumber
+		result.CommonTxAdmissionTxBlockNumber = &txBlockNumber
+		result.CommonTxAdmissionTimestamp = &timestamp
+		result.CommonTxAdmissionSignature = hexutil.Bytes(admission.Signature)
+
+		break
+	}
+
+	for _, reward := range block.CommonTxRewards() {
+		if reward == nil || reward.TxHash != txHash {
+			continue
+		}
+
+		miner := reward.Miner
+		result.CommonRpcMiner = &miner
+
+		if reward.Reward != nil {
+			result.CommonRpcReward = (*hexutil.Big)(new(big.Int).Set(reward.Reward))
+		}
+		if reward.Burn != nil {
+			result.CommonRpcBurn = (*hexutil.Big)(new(big.Int).Set(reward.Burn))
+		}
+
+		break
+	}
+}
+
+func addCommonRPCReceiptFields(fields map[string]interface{}, block *types.Block, txHash common.Hash) {
+	if fields == nil || block == nil {
+		return
+	}
+
+	header := block.Header()
+	fields["commonTxAdmissionRoot"] = header.CommonTxAdmissionRoot
+	fields["commonTxRewardRoot"] = header.CommonTxRewardRoot
+
+	for _, admission := range block.CommonTxAdmissions() {
+		if admission == nil || admission.TxHash != txHash {
+			continue
+		}
+
+		fields["commonRpcMiner"] = admission.Miner
+
+		if admission.ChainID != nil {
+			fields["commonTxAdmissionChainId"] = (*hexutil.Big)(new(big.Int).Set(admission.ChainID))
+		}
+
+		fields["commonTxAdmissionKeyBlockNumber"] = hexutil.Uint64(admission.KeyBlockNumber)
+		fields["commonTxAdmissionTxBlockNumber"] = hexutil.Uint64(admission.TxBlockNumber)
+		fields["commonTxAdmissionTimestamp"] = hexutil.Uint64(admission.Timestamp)
+		fields["commonTxAdmissionSignature"] = hexutil.Bytes(admission.Signature)
+
+		break
+	}
+
+	for _, reward := range block.CommonTxRewards() {
+		if reward == nil || reward.TxHash != txHash {
+			continue
+		}
+
+		fields["commonRpcMiner"] = reward.Miner
+
+		if reward.Reward != nil {
+			fields["commonRpcReward"] = (*hexutil.Big)(new(big.Int).Set(reward.Reward))
+		}
+		if reward.Burn != nil {
+			fields["commonRpcBurn"] = (*hexutil.Big)(new(big.Int).Set(reward.Burn))
+		}
+
+		break
+	}
+}
+
 // newRPCTransaction returns a transaction that will serialize to the RPC
 // representation, with the given location metadata set (if available).
 func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber uint64, index uint64) *RPCTransaction {
@@ -1580,18 +1691,19 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 	txType := hexutil.Uint64(tx.Type())
 
 	result := &RPCTransaction{
-		From:     from,
-		Gas:      hexutil.Uint64(tx.Gas()),
-		GasPrice: (*hexutil.Big)(tx.GasPrice()),
-		Hash:     tx.Hash(),
-		Input:    hexutil.Bytes(tx.Data()),
-		Nonce:    hexutil.Uint64(tx.Nonce()),
-		To:       tx.To(),
-		Type:     txType,
-		Value:    (*hexutil.Big)(tx.Value()),
-		V:        (*hexutil.Big)(v),
-		R:        (*hexutil.Big)(r),
-		S:        (*hexutil.Big)(s),
+		From:            from,
+		Gas:             hexutil.Uint64(tx.Gas()),
+		GasPrice:        (*hexutil.Big)(tx.GasPrice()),
+		Hash:            tx.Hash(),
+		TransactionHash: tx.Hash(),
+		Input:           hexutil.Bytes(tx.Data()),
+		Nonce:           hexutil.Uint64(tx.Nonce()),
+		To:              tx.To(),
+		Type:            txType,
+		Value:           (*hexutil.Big)(tx.Value()),
+		V:               (*hexutil.Big)(v),
+		R:               (*hexutil.Big)(r),
+		S:               (*hexutil.Big)(s),
 	}
 	if chainID := tx.ChainId(); chainID != nil && (tx.Type() != types.LegacyTxType || tx.Protected()) {
 		result.ChainID = (*hexutil.Big)(new(big.Int).Set(chainID))
@@ -1632,7 +1744,10 @@ func newRPCTransactionFromBlockIndex(b *types.Block, index uint64) *RPCTransacti
 	if index >= uint64(len(txs)) {
 		return nil
 	}
-	return newRPCTransaction(txs[index], b.Hash(), b.NumberU64(), index)
+	tx := txs[index]
+	result := newRPCTransaction(tx, b.Hash(), b.NumberU64(), index)
+	fillCommonRPCTransactionFields(result, b, tx.Hash())
+	return result
 }
 
 // newRPCRawTransactionFromBlockIndex returns the bytes of a transaction given a block and a transaction index.
@@ -1676,7 +1791,7 @@ func (s *PublicTransactionPoolAPI) GetBlockTransactionCountByNumber(ctx context.
 	if block, _ := s.b.BlockByNumber(ctx, blockNr); block != nil {
 		n := hexutil.Uint(len(block.Transactions()))
 		return &n
-	}
+}
 	return nil
 }
 
@@ -1685,7 +1800,7 @@ func (s *PublicTransactionPoolAPI) GetBlockTransactionCountByHash(ctx context.Co
 	if block, _ := s.b.BlockByHash(ctx, blockHash); block != nil {
 		n := hexutil.Uint(len(block.Transactions()))
 		return &n
-	}
+}
 	return nil
 }
 
@@ -1748,7 +1863,11 @@ func (s *PublicTransactionPoolAPI) GetTransactionByHash(ctx context.Context, has
 		return nil, err
 	}
 	if tx != nil {
-		return newRPCTransaction(tx, blockHash, blockNumber, index), nil
+		result := newRPCTransaction(tx, blockHash, blockNumber, index)
+		if block, blockErr := s.b.BlockByHash(ctx, blockHash); blockErr == nil && block != nil {
+			fillCommonRPCTransactionFields(result, block, hash)
+		}
+		return result, nil
 	}
 	// No finalized transaction, try to retrieve it from the pool
 	if tx := s.b.GetPoolTransaction(hash); tx != nil {
@@ -1782,6 +1901,9 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	if err != nil {
 		return nil, nil
 	}
+	if tx == nil || blockHash == (common.Hash{}) {
+		return nil, nil
+	}
 	receipts, err := s.b.GetReceipts(ctx, blockHash)
 	if err != nil {
 		return nil, err
@@ -1791,13 +1913,15 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	}
 	receipt := receipts[index]
 
+	block, _ := s.b.BlockByHash(ctx, blockHash)
+
 	signer := rpcTransactionSigner(tx)
 	from, _ := types.Sender(signer, tx)
 
 	effectiveGasPrice := new(big.Int).Set(tx.GasPrice())
 	if tx.Type() == types.DynamicFeeTxType {
 		baseFee := fixedBaseFeePerGas()
-		if block, err := s.b.BlockByHash(ctx, blockHash); err == nil && block != nil {
+		if block != nil {
 			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil && headerBaseFee.Sign() > 0 {
 				baseFee = new(big.Int).Set(headerBaseFee)
 			}
@@ -1832,6 +1956,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	if receipt.ContractAddress != (common.Address{}) {
 		fields["contractAddress"] = receipt.ContractAddress
 	}
+	addCommonRPCReceiptFields(fields, block, hash)
 	return fields, nil
 }
 
