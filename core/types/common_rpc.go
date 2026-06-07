@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	commonTxAdmissionSignatureDomain = "CPH_COMMON_TX_ADMISSION_SIGNATURE_V1"
-	commonTxAdmissionWinnerDomain    = "CPH_COMMON_TX_ADMISSION_WINNER_V1"
+	commonTxAdmissionSignatureDomain = "CPH_COMMON_TX_ADMISSION_SIGNATURE_V2"
+	commonTxAdmissionWinnerDomain    = "CPH_COMMON_TX_ADMISSION_WINNER_V2"
 )
 
 // CommonTxAdmissionSigningPayload returns the canonical payload signed by the
@@ -23,6 +23,7 @@ func CommonTxAdmissionSigningPayload(admission *CommonTxAdmission) []byte {
 	}
 	payload, err := rlp.EncodeToBytes([]interface{}{
 		[]byte(commonTxAdmissionSignatureDomain),
+		admission.ChainID,
 		admission.TxHash,
 		admission.Miner,
 		admission.KeyBlockNumber,
@@ -63,6 +64,7 @@ func CommonTxAdmissionWinnerHash(admission *CommonTxAdmission) common.Hash {
 	}
 	return blake3RLPHash([]interface{}{
 		[]byte(commonTxAdmissionWinnerDomain),
+		admission.ChainID,
 		admission.TxHash,
 		admission.Miner,
 		admission.KeyBlockNumber,
@@ -86,6 +88,9 @@ func IsBetterCommonTxAdmission(candidate, current *CommonTxAdmission) bool {
 func VerifyCommonTxAdmissionSignature(admission *CommonTxAdmission) error {
 	if admission == nil {
 		return fmt.Errorf("nil common tx admission")
+	}
+	if admission.ChainID == nil || admission.ChainID.Sign() <= 0 {
+		return fmt.Errorf("common tx admission for %s has invalid chain id", admission.TxHash)
 	}
 	if admission.TxHash == (common.Hash{}) {
 		return fmt.Errorf("common tx admission has empty tx hash")
