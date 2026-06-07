@@ -48,7 +48,7 @@ const (
 	estHeaderRlpSize  = 500             // Approximate size of an RLP encoded block header
 
 	// txChanSize is the size of channel listening to NewTxsEvent.
-	// The number is referenced from the size of tx pool.
+	// The number is referenced from the size of the tx pool.
 	txChanSize = 4096
 )
 
@@ -172,20 +172,10 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 	}
 	inserter := func(blocks types.Blocks) (int, error) {
 		// If sync hasn't reached the checkpoint yet, deny importing weird blocks.
-		//
-		// Ideally we would also compare the head block's timestamp and similarly reject
-		// the propagated block if the head is too old. Unfortunately there is a corner
-		// case when starting new networks, where the genesis might be ancient (0 unix)
-		// which would prevent full nodes from accepting it.
 		if manager.blockchain.CurrentBlock().NumberU64() < manager.checkpointNumber {
 			log.Warn("Unsynced yet, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
 			return 0, nil
 		}
-		// If fast sync is running, deny importing weird blocks. This is a problematic
-		// clause when starting up a new network, because fast-syncing miners might not
-		// accept each others' blocks until a restart. Unfortunately we haven't figured
-		// out a way yet where nodes can decide unilaterally whether the network is new
-		// or not. This should be fixed if we figure out a solution.
 		if atomic.LoadUint32(&manager.fastSync) == 1 {
 			log.Warn("Fast syncing, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
 			return 0, nil
@@ -207,6 +197,7 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 	}
 	manager.txFetcher = fetcher.NewTxFetcher(txpool.Has, txpool.AddRemotes, fetchTx)
 
+	core.SetCommonRPCAdmissionRelay(manager.BroadcastCommonTxAdmissions)
 	manager.chainSync = newChainSyncer(manager)
 
 	return manager, nil
@@ -836,6 +827,10 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			p.MarkCandidate(candidate.Hash())
 			pm.eventMux.Post(core.RemoteCandidateEvent{Candidate: &candidate})
 		}
+
+	case msg.Code == CommonTxAdmissionMsg:
+		return pm.handleCommonTxAdmissionMsg(p, msg)
+
 	default:
 		return errResp(ErrInvalidMsgCode, "%v", msg.Code)
 	}
@@ -986,7 +981,7 @@ type NodeInfo struct {
 	Difficulty *big.Int            `json:"difficulty"` // Total difficulty of the host's blockchain
 	Genesis    common.Hash         `json:"genesis"`    // SHA3 hash of the host's genesis block
 	Config     *params.ChainConfig `json:"config"`     // Chain configuration for the fork rules
-	Head       common.Hash         `json:"head"`       // SHA3 hash of the host's best owned block
+	Head       common.Hash         `json:"head"`
 }
 
 // NodeInfo retrieves some protocol metadata about the running host node.
