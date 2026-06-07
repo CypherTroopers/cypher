@@ -9,12 +9,12 @@ import (
 	"github.com/cypherium/cypher/core/types"
 )
 
-type PublicTransactionPoolAPIWithCommonReceipt struct {
-	*PublicTransactionPoolAPI
+type PublicTransactionReceiptAPI struct {
+	b Backend
 }
 
-func NewPublicTransactionPoolAPIWithCommonReceipt(b Backend, nonceLock *AddrLocker) *PublicTransactionPoolAPIWithCommonReceipt {
-	return &PublicTransactionPoolAPIWithCommonReceipt{PublicTransactionPoolAPI: NewPublicTransactionPoolAPI(b, nonceLock)}
+func NewPublicTransactionReceiptAPI(b Backend) *PublicTransactionReceiptAPI {
+	return &PublicTransactionReceiptAPI{b: b}
 }
 
 func commonTxRewardForHash(block *types.Block, txHash common.Hash) *types.CommonTxReward {
@@ -29,7 +29,7 @@ func commonTxRewardForHash(block *types.Block, txHash common.Hash) *types.Common
 	return nil
 }
 
-func (s *PublicTransactionPoolAPIWithCommonReceipt) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
+func (s *PublicTransactionReceiptAPI) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
 	tx, blockHash, blockNumber, index, err := s.b.GetTransaction(ctx, hash)
 	if err != nil {
 		return nil, nil
