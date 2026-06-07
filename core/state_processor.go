@@ -72,7 +72,7 @@ func effectiveTxGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
 	return new(big.Int).Add(baseFee, tip)
 }
 
-func buildCommonAdmissionIndex(admissions []*types.CommonTxAdmission) (map[common.Hash]common.Address, error) {
+func buildCommonAdmissionIndex(admissions []*types.CommonTxAdmission, chainID *big.Int) (map[common.Hash]common.Address, error) {
 	indexed := make(map[common.Hash]common.Address, len(admissions))
 	for _, admission := range admissions {
 		if admission == nil {
@@ -83,6 +83,9 @@ func buildCommonAdmissionIndex(admissions []*types.CommonTxAdmission) (map[commo
 		}
 		if admission.Miner == (common.Address{}) {
 			return nil, fmt.Errorf("invalid common tx admission for %s: empty miner", admission.TxHash)
+		}
+		if chainID == nil || admission.ChainID == nil || admission.ChainID.Cmp(chainID) != 0 {
+			return nil, fmt.Errorf("invalid common tx admission chain id for %s: have %v want %v", admission.TxHash, admission.ChainID, chainID)
 		}
 		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
 			return nil, err
@@ -171,7 +174,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if root := types.DeriveCommonTxRewardRoot(block.CommonTxRewards()); root != header.CommonTxRewardRoot {
 		return nil, nil, 0, fmt.Errorf("common tx reward root mismatch: have %s want %s", root, header.CommonTxRewardRoot)
 	}
-	admissionByTx, err := buildCommonAdmissionIndex(block.CommonTxAdmissions())
+	admissionByTx, err := buildCommonAdmissionIndex(block.CommonTxAdmissions(), p.config.ChainID)
 	if err != nil {
 		return nil, nil, 0, err
 	}
