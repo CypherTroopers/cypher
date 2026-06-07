@@ -76,6 +76,9 @@ func (api *PublicEthereumAPI) ChainId() hexutil.Uint64 {
 	chainID := api.e.blockchain.Config().ChainID
 	return (hexutil.Uint64)(chainID.Uint64())
 }
+
+// addCommonRPCFields appends Cypherium common RPC admission/reward fields to
+// eth_getTransactionByHash / eth_getTransactionReceipt responses.
 func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash common.Hash) {
 	if fields == nil || block == nil {
 		return
@@ -283,6 +286,7 @@ func (api *PublicEthereumAPI) GetTransactionReceipt(ctx context.Context, hash co
 
 	return fields, nil
 }
+
 func (api *PublicEthereumAPI) Status() string {
 	var s string
 	i := bftview.IamMember()
@@ -309,8 +313,8 @@ func (api *PublicEthereumAPI) Status() string {
 	}
 	return s
 }
-func (api *PublicEthereumAPI) CommitteeMembers(ctx context.Context, blockNr rpc.BlockNumber) ([]*common.Cnode, error) {
 
+func (api *PublicEthereumAPI) CommitteeMembers(ctx context.Context, blockNr rpc.BlockNumber) ([]*common.Cnode, error) {
 	c, err := api.e.APIBackend.CommitteeMembers(ctx, blockNr)
 	return c, err
 }
@@ -407,20 +411,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	server.Port = api.e.config.RnetPort
 	server.Coinbase = eb.Hex()
 	api.e.reconfig.MinerStart(server)
-	// Start the miner and return
-	// Set the number of threads if the seal engine supports it
-	//if threads == nil {
-	//	threads = new(int)
-	//} else if *threads == 0 {
-	//	*threads = -1 // Disable the miner from within
-	//}
-	//type threaded interface {
-	//	SetThreads(threads int)
-	//}
-	//if th, ok := api.e.engine.(threaded); ok {
-	//	log.Info("Updated mining threads", "threads", *threads)
-	//	th.SetThreads(*threads)
-	//}
+
 	if err := api.e.StartMining(miningThreads, true, eb, pubKey); err != nil {
 		return "", err
 	}
@@ -561,7 +552,7 @@ func (api *PrivateAdminAPI) ExportChain(file string, first *uint64, last *uint64
 		// since the 'file' may point to arbitrary paths on the drive
 		return false, errors.New("location would overwrite an existing file")
 	}
-	// Make sure we can create the file to export into
+
 	out, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 	if err != nil {
 		return false, err
@@ -574,7 +565,6 @@ func (api *PrivateAdminAPI) ExportChain(file string, first *uint64, last *uint64
 		defer writer.(*gzip.Writer).Close()
 	}
 
-	// Export the blockchain
 	if first != nil {
 		if err := api.eth.BlockChain().ExportN(writer, *first, *last); err != nil {
 			return false, err
@@ -597,7 +587,6 @@ func hasAllBlocks(chain *core.BlockChain, bs []*types.Block) bool {
 
 // ImportChain imports a blockchain from a local file.
 func (api *PrivateAdminAPI) ImportChain(file string) (bool, error) {
-	// Make sure the can access the file to import
 	in, err := os.Open(file)
 	if err != nil {
 		return false, err
@@ -611,12 +600,10 @@ func (api *PrivateAdminAPI) ImportChain(file string) (bool, error) {
 		}
 	}
 
-	// Run actual the import in pre-configured batches
 	stream := rlp.NewStream(reader, 0)
 
 	blocks, index := make([]*types.Block, 0, 2500), 0
 	for batch := 0; ; batch++ {
-		// Load a batch of blocks from the input file
 		for len(blocks) < cap(blocks) {
 			block := new(types.Block)
 			if err := stream.Decode(block); err == io.EOF {
@@ -635,7 +622,7 @@ func (api *PrivateAdminAPI) ImportChain(file string) (bool, error) {
 			blocks = blocks[:0]
 			continue
 		}
-		// Import the batch and reset the buffer
+
 		if _, err := api.eth.BlockChain().InsertChain(blocks); err != nil {
 			return false, fmt.Errorf("batch %d: failed to insert: %v", batch, err)
 		}
@@ -659,9 +646,6 @@ func NewPublicDebugAPI(eth *Ethereum) *PublicDebugAPI {
 // DumpBlock retrieves the entire state of the database at a given block.
 func (api *PublicDebugAPI) DumpBlock(blockNr rpc.BlockNumber) (state.Dump, error) {
 	if blockNr == rpc.PendingBlockNumber {
-		// If we're dumping the pending state, we need to request
-		// both the pending block as well as the pending state from
-		// the miner and operate on those
 		_, stateDb := api.eth.miner.Pending()
 		return stateDb.RawDump(false, false, true), nil
 	}
@@ -720,7 +704,7 @@ func (api *PrivateDebugAPI) GetBadBlocks(ctx context.Context) ([]*BadBlockArgs, 
 			Hash: block.Hash(),
 		}
 		if rlpBytes, err := rlp.EncodeToBytes(block); err != nil {
-			results[i].RLP = err.Error() // Hacky, but hey, it works
+			results[i].RLP = err.Error()
 		} else {
 			results[i].RLP = fmt.Sprintf("0x%x", rlpBytes)
 		}
@@ -741,9 +725,6 @@ func (api *PublicDebugAPI) AccountRange(blockNrOrHash rpc.BlockNumberOrHash, sta
 
 	if number, ok := blockNrOrHash.Number(); ok {
 		if number == rpc.PendingBlockNumber {
-			// If we're dumping the pending state, we need to request
-			// both the pending block as well as the pending state from
-			// the miner and operate on those
 			_, stateDb = api.eth.miner.Pending()
 		} else {
 			var block *types.Block
@@ -780,7 +761,7 @@ func (api *PublicDebugAPI) AccountRange(blockNrOrHash rpc.BlockNumberOrHash, sta
 // StorageRangeResult is the result of a debug_storageRangeAt API call.
 type StorageRangeResult struct {
 	Storage storageMap   `json:"storage"`
-	NextKey *common.Hash `json:"nextKey"` // nil if Storage includes the last key in the trie.
+	NextKey *common.Hash `json:"nextKey"`
 }
 
 type storageMap map[common.Hash]storageEntry
@@ -818,7 +799,6 @@ func storageRangeAt(st state.Trie, start []byte, maxResult int) (StorageRangeRes
 		}
 		result.Storage[common.BytesToHash(it.Key)] = e
 	}
-	// Add the 'next key' so clients can continue downloading.
 	if it.Next() {
 		next := common.BytesToHash(it.Key)
 		result.NextKey = &next
