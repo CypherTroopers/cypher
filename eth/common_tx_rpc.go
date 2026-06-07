@@ -9,16 +9,6 @@ import (
 	"github.com/cypherium/cypher/core/types"
 )
 
-func commonRPCTransactionSigner(tx *types.Transaction) types.Signer {
-	if tx.Type() != types.LegacyTxType {
-		return types.LatestSignerForChainID(tx.ChainId())
-	}
-	if tx.Protected() {
-		return types.NewEIP155Signer(tx.ChainId())
-	}
-	return types.HomesteadSigner{}
-}
-
 func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash common.Hash) {
 	if fields == nil || block == nil {
 		return
@@ -57,7 +47,11 @@ func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash 
 }
 
 func (api *PublicEthereumAPI) rpcTransactionFields(tx *types.Transaction, block *types.Block, blockHash common.Hash, blockNumber uint64, index uint64) map[string]interface{} {
-	signer := commonRPCTransactionSigner(tx)
+	header := api.e.blockchain.CurrentHeader()
+	if block != nil {
+		header = block.Header()
+	}
+	signer := types.MakeSignerAutoJudgement(api.e.blockchain.Config(), header.Number, tx.V())
 	from, _ := types.Sender(signer, tx)
 	v, r, s := tx.RawSignatureValues()
 	fields := map[string]interface{}{
@@ -147,7 +141,7 @@ func (api *PublicEthereumAPI) GetTransactionReceipt(ctx context.Context, hash co
 		return nil, nil
 	}
 
-	signer := commonRPCTransactionSigner(tx)
+	signer := types.MakeSignerAutoJudgement(api.e.blockchain.Config(), block.Header().Number, tx.V())
 	from, _ := types.Sender(signer, tx)
 	effectiveGasPrice := new(big.Int).Set(tx.GasPrice())
 	if tx.Type() == types.DynamicFeeTxType {
