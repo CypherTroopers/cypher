@@ -72,11 +72,34 @@ func effectiveTxGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
 	return new(big.Int).Add(baseFee, tip)
 }
 
+func buildCommonAdmissionIndex(admissions []*types.CommonTxAdmission) (map[common.Hash]common.Address, error) {
+	indexed := make(map[common.Hash]common.Address, len(admissions))
+	for _, admission := range admissions {
+		if admission == nil {
+			continue
+		}
+		if admission.TxHash == (common.Hash{}) {
+			return nil, fmt.Errorf("invalid common tx admission: empty tx hash")
+		}
+		if admission.Miner == (common.Address{}) {
+			return nil, fmt.Errorf("invalid common tx admission for %s: empty miner", admission.TxHash)
+		}
+		if _, exists := indexed[admission.TxHash]; exists {
+			return nil, fmt.Errorf("duplicate common tx admission for %s", admission.TxHash)
+		}
+		indexed[admission.TxHash] = admission.Miner
+	}
+	return indexed, nil
+}
+
 func buildCommonRewardIndex(rewards []*types.CommonTxReward) (map[common.Hash]*types.CommonTxReward, error) {
 	indexed := make(map[common.Hash]*types.CommonTxReward, len(rewards))
 	for _, reward := range rewards {
 		if reward == nil {
 			continue
+		}
+		if reward.TxHash == (common.Hash{}) {
+			return nil, fmt.Errorf("invalid common tx reward: empty tx hash")
 		}
 		if reward.Reward == nil || reward.Burn == nil {
 			return nil, fmt.Errorf("invalid common tx reward for %s: nil amount", reward.TxHash)
@@ -92,9 +115,18 @@ func buildCommonRewardIndex(rewards []*types.CommonTxReward) (map[common.Hash]*t
 	return indexed, nil
 }
 
-func settleCommonRPCReward(statedb *state.StateDB, reward *types.CommonTxReward, tx *types.Transaction, gasUsed uint64, baseFee *big.Int) error {
+func settleCommonRPCReward(statedb *state.StateDB, reward *types.CommonTxReward, expectedMiner common.Address, tx *types.Transaction, gasUsed uint64, baseFee *big.Int) error {
 	if reward == nil {
-		return nil
+		return fmt.Errorf("missing common tx reward for admitted tx %s", tx.Hash())
+	}
+	if expectedMiner == (common.Address{}) {
+		return fmt.Errorf("invalid common tx admission for %s: empty miner", tx.Hash())
+	}
+	if reward.TxHash != tx.Hash() {
+		return fmt.Errorf("invalid common tx reward hash: have %s want %s", reward.TxHash, tx.Hash())
+	}
+	if reward.Miner != expectedMiner {
+		return fmt.Errorf("invalid common tx reward miner for %s: have %s want %s", tx.Hash(), reward.Miner, expectedMiner)
 	}
 	actualFee := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), effectiveTxGasPrice(tx, baseFee))
 	expectedReward := new(big.Int).Div(actualFee, big.NewInt(5))
@@ -105,11 +137,8 @@ func settleCommonRPCReward(statedb *state.StateDB, reward *types.CommonTxReward,
 	if reward.Burn.Cmp(expectedBurn) != 0 {
 		return fmt.Errorf("invalid common tx burn for %s: have %s want %s", tx.Hash(), reward.Burn, expectedBurn)
 	}
-	if reward.Miner == (common.Address{}) && expectedReward.Sign() > 0 {
-		return fmt.Errorf("invalid common tx reward for %s: empty miner", tx.Hash())
-	}
 	if expectedReward.Sign() > 0 {
-		statedb.AddBalance(reward.Miner, expectedReward)
+		statedb.AddBalance(expectedMiner, expectedReward)
 	}
 	// Burn is represented by intentionally not crediting the remaining fee to any account.
 	return nil
@@ -133,8 +162,15 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if err := ValidateBlockBlobGas(p.config, header, block.Transactions()); err != nil {
 		return nil, nil, 0, err
 	}
+	if root := types.DeriveCommonTxAdmissionRoot(block.CommonTxAdmissions()); root != header.CommonTxAdmissionRoot {
+		return nil, nil, 0, fmt.Errorf("common tx admission root mismatch: have %s want %s", root, header.CommonTxAdmissionRoot)
+	}
 	if root := types.DeriveCommonTxRewardRoot(block.CommonTxRewards()); root != header.CommonTxRewardRoot {
 		return nil, nil, 0, fmt.Errorf("common tx reward root mismatch: have %s want %s", root, header.CommonTxRewardRoot)
+	}
+	admissionByTx, err := buildCommonAdmissionIndex(block.CommonTxAdmissions())
+	if err != nil {
+		return nil, nil, 0, err
 	}
 	rewardByTx, err := buildCommonRewardIndex(block.CommonTxRewards())
 	if err != nil {
@@ -155,12 +191,28 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
-		totalGas += receipt.GasUsed * tx.GasPrice().Uint64()
-		if reward := rewardByTx[tx.Hash()]; reward != nil {
-			if err := settleCommonRPCReward(statedb, reward, tx, receipt.GasUsed, header.BaseFee); err != nil {
+		totalGas += receipt.GasUsed
+
+		txHash := tx.Hash()
+		admissionMiner, hasAdmission := admissionByTx[txHash]
+		reward, hasReward := rewardByTx[txHash]
+		switch {
+		case hasAdmission:
+			if !hasReward {
+				return nil, nil, 0, fmt.Errorf("common tx admission without reward for included tx: %s", txHash)
+			}
+			if err := settleCommonRPCReward(statedb, reward, admissionMiner, tx, receipt.GasUsed, header.BaseFee); err != nil {
 				return nil, nil, 0, err
 			}
-			delete(rewardByTx, tx.Hash())
+			delete(admissionByTx, txHash)
+			delete(rewardByTx, txHash)
+		case hasReward:
+			return nil, nil, 0, fmt.Errorf("common tx reward without admission for included tx: %s", txHash)
+		}
+	}
+	if len(admissionByTx) > 0 {
+		for hash := range admissionByTx {
+			return nil, nil, 0, fmt.Errorf("common tx admission references tx not included in block: %s", hash)
 		}
 	}
 	if len(rewardByTx) > 0 {
