@@ -302,11 +302,17 @@ func (b *EthAPIBackend) SubscribeLogsEvent(ch chan<- []*types.Log) event.Subscri
 }
 
 func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction, sync bool) error {
+	var err error
 	if sync {
-		return b.eth.txPool.AddLocal(signedTx)
+		err = b.eth.txPool.AddLocal(signedTx)
 	} else {
-		return b.eth.txPool.AddLocal0(signedTx)
+		err = b.eth.txPool.AddLocal0(signedTx)
 	}
+	if err != nil {
+		return err
+	}
+	core.RecordCommonRPCAdmission(signedTx.Hash(), bftview.GetServerCoinBase())
+	return nil
 }
 
 func (b *EthAPIBackend) GetPoolTransactions() (types.Transactions, error) {
