@@ -70,9 +70,10 @@ type accessListMessage interface {
 }
 
 type ExecutionResult struct {
-	UsedGas    uint64
-	Err        error
-	ReturnData []byte
+	UsedGas           uint64
+	EffectiveGasPrice *big.Int
+	Err               error
+	ReturnData        []byte
 }
 
 func (result *ExecutionResult) Unwrap() error { return result.Err }
@@ -348,8 +349,12 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		ret, st.gas, vmerr = st.evm.Call(sender, st.to(), st.data, st.gas, st.value)
 	}
 	st.refundGas()
-	st.state.AddBalance(st.evm.Coinbase, new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.effectiveGasTip))
-	return &ExecutionResult{UsedGas: st.gasUsed(), Err: vmerr, ReturnData: ret}, nil
+	// Do not credit gas fees to the tx block coinbase here. The protocol-level
+	// common RPC settlement is handled after receipt gas usage is known:
+	//   valid admission winner: actual fee / 5 paid to the common RPC miner
+	//   remaining fee: burned by leaving it uncredited
+	//   no valid admission: 100% burned
+	return &ExecutionResult{UsedGas: st.gasUsed(), EffectiveGasPrice: new(big.Int).Set(st.gasPrice), Err: vmerr, ReturnData: ret}, nil
 }
 
 func (st *StateTransition) refundGas() {
