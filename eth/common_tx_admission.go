@@ -32,8 +32,8 @@ func (pm *ProtocolManager) broadcastCommonTxAdmissionsExcept(admissions []*types
 
 	pm.peers.lock.RLock()
 	defer pm.peers.lock.RUnlock()
-	for id, peer := range pm.peers.peers {
-		if id == exceptPeerID || peer == nil {
+	for id, ethPeer := range pm.peers.peers {
+		if id == exceptPeerID || ethPeer == nil {
 			continue
 		}
 		batch := make([]*types.CommonTxAdmission, len(valid))
@@ -48,7 +48,7 @@ func (pm *ProtocolManager) broadcastCommonTxAdmissionsExcept(admissions []*types
 			if err := p2p.Send(p.rw, CommonTxAdmissionMsg, out); err != nil {
 				log.Debug("Failed to broadcast common tx admissions", "peer", p.id, "count", len(out), "err", err)
 			}
-		}(peer, batch)
+		}(ethPeer, batch)
 	}
 }
 
