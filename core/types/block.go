@@ -50,7 +50,7 @@ const (
 )
 
 const (
-	commonTxAdmissionDomain = "CPH_COMMON_TX_ADMISSION_V1"
+	commonTxAdmissionDomain = "CPH_COMMON_TX_ADMISSION_V2"
 	commonTxRewardDomain    = "CPH_COMMON_TX_REWARD_V1"
 )
 
@@ -145,6 +145,7 @@ type SignInfo struct {
 // CommonTxAdmission records the common RPC miner that accepted and relayed a tx.
 // It is carried in the block body and committed by CommonTxAdmissionRoot.
 type CommonTxAdmission struct {
+	ChainID        *big.Int
 	TxHash         common.Hash
 	Miner          common.Address
 	KeyBlockNumber uint64
@@ -285,6 +286,9 @@ func copyCommonTxAdmissions(in []*CommonTxAdmission) []*CommonTxAdmission {
 			continue
 		}
 		cpy := *admission
+		if admission.ChainID != nil {
+			cpy.ChainID = new(big.Int).Set(admission.ChainID)
+		}
 		if len(admission.Signature) > 0 {
 			cpy.Signature = make([]byte, len(admission.Signature))
 			copy(cpy.Signature, admission.Signature)
@@ -327,6 +331,7 @@ func DeriveCommonTxAdmissionRoot(admissions []*CommonTxAdmission) common.Hash {
 		}
 		leaves = append(leaves, blake3RLPHash([]interface{}{
 			[]byte(commonTxAdmissionDomain),
+			admission.ChainID,
 			admission.TxHash,
 			admission.Miner,
 			admission.KeyBlockNumber,
@@ -400,7 +405,7 @@ type Block struct {
 	size atomic.Value
 
 	// Td is used by package core to store the total difficulty
-	// of the chain up to and including the block.
+	// of the chain up to and including the block
 	td *big.Int
 
 	// These fields are used by package eth to track
