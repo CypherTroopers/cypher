@@ -71,7 +71,8 @@ const (
 	GetPooledTransactionsMsg      = 0x09
 	PooledTransactionsMsg         = 0x0a
 
-	CandidateMsg = 0x0b
+	CandidateMsg         = 0x0b
+	CommonTxAdmissionMsg = 0x0c
 )
 
 type errCode int
@@ -87,6 +88,7 @@ const (
 	ErrNoStatusMsg
 	ErrExtraStatusMsg
 	ErrCandidate
+	ErrCommonTxAdmission
 )
 
 func (e errCode) String() string {
@@ -105,6 +107,7 @@ var errorToString = map[int]string{
 	ErrNoStatusMsg:             "No status message",
 	ErrExtraStatusMsg:          "Extra status message",
 	ErrCandidate:               "Invalid candidate,can't telnet it's ip and port",
+	ErrCommonTxAdmission:       "Invalid common tx admission",
 }
 
 type txPool interface {
@@ -153,50 +156,6 @@ type newBlockHashesData []struct {
 	Number uint64      // Number of one particular block being announced
 }
 
-// getBlockHeadersData represents a block header query.
-type getBlockHeadersData struct {
-	Origin  hashOrNumber // Block from which to retrieve headers
-	Amount  uint64       // Maximum number of headers to retrieve
-	Skip    uint64       // Blocks to skip between consecutive headers
-	Reverse bool         // Query direction (false = rising towards latest, true = falling towards genesis)
-}
-
-// hashOrNumber is a combined field for specifying an origin block.
-type hashOrNumber struct {
-	Hash   common.Hash // Block hash from which to retrieve headers (excludes Number)
-	Number uint64      // Block hash from which to retrieve headers (excludes Hash)
-}
-
-// EncodeRLP is a specialized encoder for hashOrNumber to encode only one of the
-// two contained union fields.
-func (hn *hashOrNumber) EncodeRLP(w io.Writer) error {
-	if hn.Hash == (common.Hash{}) {
-		return rlp.Encode(w, hn.Number)
-	}
-	if hn.Number != 0 {
-		return fmt.Errorf("both origin hash (%x) and number (%d) provided", hn.Hash, hn.Number)
-	}
-	return rlp.Encode(w, hn.Hash)
-}
-
-// DecodeRLP is a specialized decoder for hashOrNumber to decode the contents
-// into either a block hash or a block number.
-func (hn *hashOrNumber) DecodeRLP(s *rlp.Stream) error {
-	_, size, _ := s.Kind()
-	origin, err := s.Raw()
-	if err == nil {
-		switch {
-		case size == 32:
-			err = rlp.DecodeBytes(origin, &hn.Hash)
-		case size <= 8:
-			err = rlp.DecodeBytes(origin, &hn.Number)
-		default:
-			err = fmt.Errorf("invalid input size %d for origin", size)
-		}
-	}
-	return err
-}
-
 // newBlockData is the network packet for the block propagation message.
 type newBlockData struct {
 	Block *types.Block
@@ -222,5 +181,43 @@ type blockBody struct {
 	Uncles       []*types.Header      // Uncles contained within a block
 }
 
-// blockBodiesData is the network packet for block content distribution.
 type blockBodiesData []*blockBody
+
+// hashOrNumber is a combined field for specifying an origin block.
+type hashOrNumber struct {
+	Hash   common.Hash // Block hash from which to retrieve headers (excludes Number)
+	Number uint64      // Block hash from which to retrieve headers (excludes Hash)
+}
+
+// EncodeRLP is a specialized encoder for hashOrNumber to encode only one of the
+// two contained union fields.
+func (hn *hashOrNumber) EncodeRLP(w io.Writer) error {
+	if hn.Hash == (common.Hash{}) {
+		return rlp.Encode(w, hn.Number)
+	}
+	if hn.Number != 0 {
+		return fmt.Errorf("both origin hash (%x) and number (%d) provided", hn.Hash, hn.Number)
+	}
+	return rlp.Encode(w, hn.Hash)
+}
+
+// DecodeRLP is a specialized decoder for hashOrNumber to decode the contents
+// into either a block hash or a block number.
+func (hn *hashOrNumber) DecodeRLP(s *rlp.Stream) error {
+	_, size, _ := s.Kind()
+	switch size {
+	case 32:
+		return s.Decode(&hn.Hash)
+	case 8:
+		return s.Decode(&hn.Number)
+	default:
+		return fmt.Errorf("invalid input size %d for origin", size)
+	}
+}
+
+type getBlockHeadersData struct {
+	Origin  hashOrNumber // Block from which to retrieve headers
+	Amount  uint64       // Maximum number of headers to retrieve
+	Skip    uint64       // Blocks to skip between consecutive headers
+	Reverse bool         // Query direction: false = rising towards latest, true = falling towards genesis
+}
