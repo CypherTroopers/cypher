@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"fmt"
 	"sync/atomic"
 
@@ -9,7 +10,10 @@ import (
 	"github.com/cypherium/cypher/rlp"
 )
 
-const commonTxAdmissionSignatureDomain = "CPH_COMMON_TX_ADMISSION_SIGNATURE_V1"
+const (
+	commonTxAdmissionSignatureDomain = "CPH_COMMON_TX_ADMISSION_SIGNATURE_V1"
+	commonTxAdmissionWinnerDomain    = "CPH_COMMON_TX_ADMISSION_WINNER_V1"
+)
 
 // CommonTxAdmissionSigningPayload returns the canonical payload signed by the
 // common RPC miner. Signature is intentionally excluded from the payload.
@@ -40,6 +44,41 @@ func CommonTxAdmissionSigningHash(admission *CommonTxAdmission) common.Hash {
 		return common.Hash{}
 	}
 	return crypto.Keccak256Hash(payload)
+}
+
+// CommonTxAdmissionID returns the identity used for P2P duplicate suppression.
+func CommonTxAdmissionID(admission *CommonTxAdmission) common.Hash {
+	if admission == nil {
+		return common.Hash{}
+	}
+	return DeriveCommonTxAdmissionRoot([]*CommonTxAdmission{admission})
+}
+
+// CommonTxAdmissionWinnerHash returns the deterministic ordering hash used when
+// multiple common RPC miners submit valid admissions for the same tx. The lowest
+// hash wins, keeping reward selection reproducible across validators.
+func CommonTxAdmissionWinnerHash(admission *CommonTxAdmission) common.Hash {
+	if admission == nil {
+		return common.Hash{}
+	}
+	return blake3RLPHash([]interface{}{
+		[]byte(commonTxAdmissionWinnerDomain),
+		admission.TxHash,
+		admission.Miner,
+		admission.KeyBlockNumber,
+	})
+}
+
+func IsBetterCommonTxAdmission(candidate, current *CommonTxAdmission) bool {
+	if candidate == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+	candidateHash := CommonTxAdmissionWinnerHash(candidate)
+	currentHash := CommonTxAdmissionWinnerHash(current)
+	return bytes.Compare(candidateHash.Bytes(), currentHash.Bytes()) < 0
 }
 
 // VerifyCommonTxAdmissionSignature recovers the ECDSA signer and verifies that
