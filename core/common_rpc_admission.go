@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -26,7 +27,8 @@ func copyCommonRPCAdmission(admission *types.CommonTxAdmission) *types.CommonTxA
 }
 
 // SetCommonRPCAdmissionSigner installs the local ECDSA signer used to seal
-// CommonTxAdmission records before they are committed into a block body.
+// CommonTxAdmission records before they are committed into a block body or
+// propagated to peers.
 func SetCommonRPCAdmissionSigner(signer func(*types.CommonTxAdmission) error) {
 	commonRPCAdmissionSigner.Store(signer)
 }
@@ -34,18 +36,64 @@ func SetCommonRPCAdmissionSigner(signer func(*types.CommonTxAdmission) error) {
 func signCommonRPCAdmission(admission *types.CommonTxAdmission) error {
 	value := commonRPCAdmissionSigner.Load()
 	if value == nil {
-		return types.VerifyCommonTxAdmissionSignature(admission)
+		return fmt.Errorf("common RPC admission signer is not installed")
 	}
 	signer, ok := value.(func(*types.CommonTxAdmission) error)
 	if !ok || signer == nil {
-		return types.VerifyCommonTxAdmissionSignature(admission)
+		return fmt.Errorf("common RPC admission signer has invalid type")
 	}
 	return signer(admission)
 }
 
+// StoreCommonRPCAdmission verifies and stores a signed admission received from
+// the local RPC path or from P2P. If multiple valid admissions exist for the
+// same tx, the deterministic lowest winner hash is kept.
+func StoreCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
+	if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+		log.Warn("Rejected common RPC admission", "err", err)
+		return false
+	}
+	sealed := copyCommonRPCAdmission(admission)
+	value, ok := commonRPCAdmissions.Load(sealed.TxHash)
+	if ok {
+		current, _ := value.(*types.CommonTxAdmission)
+		if !types.IsBetterCommonTxAdmission(sealed, current) {
+			return false
+		}
+	}
+	commonRPCAdmissions.Store(sealed.TxHash, sealed)
+	return true
+}
+
+// SignAndRecordCommonRPCAdmission signs and stores a local common RPC tx
+// admission. TxBlockNumber is intentionally zero here because the block proposer
+// has not selected the tx block yet. The signed record is later carried unchanged
+// in the block body and validated by signature recovery.
+func SignAndRecordCommonRPCAdmission(txHash common.Hash, miner common.Address, keyBlockNumber uint64, timestamp uint64) (*types.CommonTxAdmission, error) {
+	if txHash == (common.Hash{}) || miner == (common.Address{}) {
+		return nil, fmt.Errorf("invalid common RPC admission: tx=%s miner=%s", txHash, miner)
+	}
+	admission := &types.CommonTxAdmission{
+		TxHash:         txHash,
+		Miner:          miner,
+		KeyBlockNumber: keyBlockNumber,
+		TxBlockNumber:  0,
+		Timestamp:      timestamp,
+	}
+	if err := signCommonRPCAdmission(admission); err != nil {
+		return nil, err
+	}
+	if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+		return nil, err
+	}
+	StoreCommonRPCAdmission(admission)
+	return copyCommonRPCAdmission(admission), nil
+}
+
 // RecordCommonRPCAdmission records that a local common RPC miner accepted a tx.
-// The block proposal path later finalizes the tx block number and ECDSA signature
-// before committing the admission through the block header/body roots.
+// It is kept as a compatibility fallback for older call sites. Production code
+// should use SignAndRecordCommonRPCAdmission so P2P relays carry recoverable
+// ECDSA signatures.
 func RecordCommonRPCAdmission(txHash common.Hash, miner common.Address) {
 	if txHash == (common.Hash{}) || miner == (common.Address{}) {
 		return
@@ -83,10 +131,10 @@ func BuildCommonTxAdmissions(txs types.Transactions, keyBlockNumber uint64, txBl
 			continue
 		}
 		sealed := copyCommonRPCAdmission(admission)
-		sealed.KeyBlockNumber = keyBlockNumber
-		sealed.TxBlockNumber = txBlockNumber
-		sealed.Timestamp = timestamp
 		if len(sealed.Signature) != crypto.SignatureLength {
+			sealed.KeyBlockNumber = keyBlockNumber
+			sealed.TxBlockNumber = txBlockNumber
+			sealed.Timestamp = timestamp
 			sealed.Signature = nil
 			if err := signCommonRPCAdmission(sealed); err != nil {
 				log.Warn("Failed to sign common RPC admission", "tx", txHash, "miner", sealed.Miner, "err", err)
