@@ -84,6 +84,9 @@ func buildCommonAdmissionIndex(admissions []*types.CommonTxAdmission) (map[commo
 		if admission.Miner == (common.Address{}) {
 			return nil, fmt.Errorf("invalid common tx admission for %s: empty miner", admission.TxHash)
 		}
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+			return nil, err
+		}
 		if _, exists := indexed[admission.TxHash]; exists {
 			return nil, fmt.Errorf("duplicate common tx admission for %s", admission.TxHash)
 		}
