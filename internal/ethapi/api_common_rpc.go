@@ -2,113 +2,100 @@ package ethapi
 
 import (
 	"context"
+	"math/big"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/core/types"
-	"github.com/cypherium/cypher/rpc"
 )
 
-type RPCCommonTxAdmission struct {
-	ChainID        *hexutil.Big   `json:"chainId"`
-	TxHash         common.Hash    `json:"txHash"`
-	Miner          common.Address `json:"miner"`
-	KeyBlockNumber hexutil.Uint64 `json:"keyBlockNumber"`
-	TxBlockNumber  hexutil.Uint64 `json:"txBlockNumber"`
-	Timestamp      hexutil.Uint64 `json:"timestamp"`
-	Signature      hexutil.Bytes  `json:"signature"`
+type PublicTransactionPoolAPIWithCommonReceipt struct {
+	*PublicTransactionPoolAPI
 }
 
-type RPCCommonTxReward struct {
-	TxHash common.Hash    `json:"txHash"`
-	Miner  common.Address `json:"miner"`
-	Reward *hexutil.Big   `json:"reward"`
-	Burn   *hexutil.Big   `json:"burn"`
+func NewPublicTransactionPoolAPIWithCommonReceipt(b Backend, nonceLock *AddrLocker) *PublicTransactionPoolAPIWithCommonReceipt {
+	return &PublicTransactionPoolAPIWithCommonReceipt{PublicTransactionPoolAPI: NewPublicTransactionPoolAPI(b, nonceLock)}
 }
 
-type RPCCommonBlockInfo struct {
-	Number                *hexutil.Big             `json:"number"`
-	Hash                  common.Hash              `json:"hash"`
-	CommonTxAdmissionRoot common.Hash              `json:"commonTxAdmissionRoot"`
-	CommonTxRewardRoot    common.Hash              `json:"commonTxRewardRoot"`
-	CommonTxAdmissions    []RPCCommonTxAdmission   `json:"commonTxAdmissions"`
-	CommonTxRewards       []RPCCommonTxReward      `json:"commonTxRewards"`
-}
-
-func rpcCommonTxAdmission(admission *types.CommonTxAdmission) RPCCommonTxAdmission {
-	result := RPCCommonTxAdmission{
-		TxHash:         admission.TxHash,
-		Miner:          admission.Miner,
-		KeyBlockNumber: hexutil.Uint64(admission.KeyBlockNumber),
-		TxBlockNumber:  hexutil.Uint64(admission.TxBlockNumber),
-		Timestamp:      hexutil.Uint64(admission.Timestamp),
-		Signature:      hexutil.Bytes(admission.Signature),
-	}
-	if admission.ChainID != nil {
-		result.ChainID = (*hexutil.Big)(admission.ChainID)
-	}
-	return result
-}
-
-func rpcCommonTxReward(reward *types.CommonTxReward) RPCCommonTxReward {
-	result := RPCCommonTxReward{
-		TxHash: reward.TxHash,
-		Miner:  reward.Miner,
-	}
-	if reward.Reward != nil {
-		result.Reward = (*hexutil.Big)(reward.Reward)
-	}
-	if reward.Burn != nil {
-		result.Burn = (*hexutil.Big)(reward.Burn)
-	}
-	return result
-}
-
-func rpcCommonBlockInfo(block *types.Block) *RPCCommonBlockInfo {
+func commonTxRewardForHash(block *types.Block, txHash common.Hash) *types.CommonTxReward {
 	if block == nil {
 		return nil
 	}
-	header := block.Header()
-	admissions := block.CommonTxAdmissions()
-	rewards := block.CommonTxRewards()
-	out := &RPCCommonBlockInfo{
-		Number:                (*hexutil.Big)(header.Number),
-		Hash:                  block.Hash(),
-		CommonTxAdmissionRoot: header.CommonTxAdmissionRoot,
-		CommonTxRewardRoot:    header.CommonTxRewardRoot,
-		CommonTxAdmissions:    make([]RPCCommonTxAdmission, 0, len(admissions)),
-		CommonTxRewards:       make([]RPCCommonTxReward, 0, len(rewards)),
-	}
-	for _, admission := range admissions {
-		if admission != nil {
-			out.CommonTxAdmissions = append(out.CommonTxAdmissions, rpcCommonTxAdmission(admission))
+	for _, reward := range block.CommonTxRewards() {
+		if reward != nil && reward.TxHash == txHash {
+			return reward
 		}
 	}
-	for _, reward := range rewards {
-		if reward != nil {
-			out.CommonTxRewards = append(out.CommonTxRewards, rpcCommonTxReward(reward))
+	return nil
+}
+
+func (s *PublicTransactionPoolAPIWithCommonReceipt) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
+	tx, blockHash, blockNumber, index, err := s.b.GetTransaction(ctx, hash)
+	if err != nil {
+		return nil, nil
+	}
+	receipts, err := s.b.GetReceipts(ctx, blockHash)
+	if err != nil {
+		return nil, err
+	}
+	if len(receipts) <= int(index) {
+		return nil, nil
+	}
+	receipt := receipts[index]
+
+	signer := rpcTransactionSigner(tx)
+	from, _ := types.Sender(signer, tx)
+
+	effectiveGasPrice := new(big.Int).Set(tx.GasPrice())
+	var block *types.Block
+	if loadedBlock, blockErr := s.b.BlockByHash(ctx, blockHash); blockErr == nil && loadedBlock != nil {
+		block = loadedBlock
+	}
+	if tx.Type() == types.DynamicFeeTxType {
+		baseFee := fixedBaseFeePerGas()
+		if block != nil {
+			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil && headerBaseFee.Sign() > 0 {
+				baseFee = new(big.Int).Set(headerBaseFee)
+			}
+		}
+		if tip, tipErr := tx.EffectiveGasTip(baseFee); tipErr == nil {
+			effectiveGasPrice = new(big.Int).Add(new(big.Int).Set(baseFee), tip)
 		}
 	}
-	return out
-}
 
-// GetBlockCommonInfoByNumber returns common RPC admission and reward/burn data
-// committed in a tx block. This supplements eth_getBlockByNumber until the
-// legacy block marshal output is extended with these custom fields.
-func (s *PublicBlockChainAPI) GetBlockCommonInfoByNumber(ctx context.Context, number rpc.BlockNumber) (*RPCCommonBlockInfo, error) {
-	block, err := s.b.BlockByNumber(ctx, number)
-	if block == nil || err != nil {
-		return nil, err
+	fields := map[string]interface{}{
+		"blockHash":         blockHash,
+		"blockNumber":       hexutil.Uint64(blockNumber),
+		"transactionHash":   hash,
+		"transactionIndex":  hexutil.Uint64(index),
+		"type":              hexutil.Uint64(tx.Type()),
+		"effectiveGasPrice": (*hexutil.Big)(effectiveGasPrice),
+		"from":              from,
+		"to":                tx.To(),
+		"gasUsed":           hexutil.Uint64(receipt.GasUsed),
+		"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
+		"contractAddress":   nil,
+		"logs":              receipt.Logs,
+		"logsBloom":         receipt.Bloom,
 	}
-	return rpcCommonBlockInfo(block), nil
-}
 
-// GetBlockCommonInfoByHash returns common RPC admission and reward/burn data
-// committed in a tx block by block hash.
-func (s *PublicBlockChainAPI) GetBlockCommonInfoByHash(ctx context.Context, hash common.Hash) (*RPCCommonBlockInfo, error) {
-	block, err := s.b.BlockByHash(ctx, hash)
-	if block == nil || err != nil {
-		return nil, err
+	fields["status"] = hexutil.Uint(receipt.Status)
+
+	if reward := commonTxRewardForHash(block, hash); reward != nil {
+		fields["commonTxMiner"] = reward.Miner
+		if reward.Reward != nil {
+			fields["commonTxReward"] = (*hexutil.Big)(reward.Reward)
+		}
+		if reward.Burn != nil {
+			fields["commonTxBurn"] = (*hexutil.Big)(reward.Burn)
+		}
 	}
-	return rpcCommonBlockInfo(block), nil
+
+	if receipt.Logs == nil {
+		fields["logs"] = [][]*types.Log{}
+	}
+	if receipt.ContractAddress != (common.Address{}) {
+		fields["contractAddress"] = receipt.ContractAddress
+	}
+	return fields, nil
 }
