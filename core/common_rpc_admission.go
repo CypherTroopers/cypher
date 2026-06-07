@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
@@ -13,6 +14,7 @@ import (
 
 var commonRPCAdmissions sync.Map // map[common.Hash]*types.CommonTxAdmission
 var commonRPCAdmissionSigner atomic.Value // func(*types.CommonTxAdmission) error
+var commonRPCAdmissionRelay atomic.Value  // func([]*types.CommonTxAdmission)
 
 func copyCommonRPCAdmission(admission *types.CommonTxAdmission) *types.CommonTxAdmission {
 	if admission == nil {
@@ -31,6 +33,27 @@ func copyCommonRPCAdmission(admission *types.CommonTxAdmission) *types.CommonTxA
 // propagated to peers.
 func SetCommonRPCAdmissionSigner(signer func(*types.CommonTxAdmission) error) {
 	commonRPCAdmissionSigner.Store(signer)
+}
+
+// SetCommonRPCAdmissionRelay installs the transport used to propagate signed
+// local admissions to validator/leader peers.
+func SetCommonRPCAdmissionRelay(relay func([]*types.CommonTxAdmission)) {
+	commonRPCAdmissionRelay.Store(relay)
+}
+
+func relayCommonRPCAdmissions(admissions []*types.CommonTxAdmission) {
+	if len(admissions) == 0 {
+		return
+	}
+	value := commonRPCAdmissionRelay.Load()
+	if value == nil {
+		return
+	}
+	relay, ok := value.(func([]*types.CommonTxAdmission))
+	if !ok || relay == nil {
+		return
+	}
+	relay(admissions)
 }
 
 func signCommonRPCAdmission(admission *types.CommonTxAdmission) error {
@@ -90,15 +113,20 @@ func SignAndRecordCommonRPCAdmission(txHash common.Hash, miner common.Address, k
 	return copyCommonRPCAdmission(admission), nil
 }
 
-// RecordCommonRPCAdmission records that a local common RPC miner accepted a tx.
-// It is kept as a compatibility fallback for older call sites. Production code
-// should use SignAndRecordCommonRPCAdmission so P2P relays carry recoverable
-// ECDSA signatures.
+// RecordCommonRPCAdmission records that a local common RPC miner accepted a tx,
+// signs the admission when the local coinbase wallet is available, and relays the
+// signed record to peers. It remains the stable entry point used by SendTx.
 func RecordCommonRPCAdmission(txHash common.Hash, miner common.Address) {
 	if txHash == (common.Hash{}) || miner == (common.Address{}) {
 		return
 	}
-	commonRPCAdmissions.Store(txHash, &types.CommonTxAdmission{TxHash: txHash, Miner: miner})
+	admission, err := SignAndRecordCommonRPCAdmission(txHash, miner, 0, uint64(time.Now().Unix()))
+	if err != nil {
+		log.Warn("Failed to sign common RPC admission", "tx", txHash, "miner", miner, "err", err)
+		commonRPCAdmissions.Store(txHash, &types.CommonTxAdmission{TxHash: txHash, Miner: miner})
+		return
+	}
+	relayCommonRPCAdmissions([]*types.CommonTxAdmission{admission})
 }
 
 // CommonRPCAdmissionMiner returns the local recorded common RPC miner for txHash.
