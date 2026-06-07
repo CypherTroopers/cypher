@@ -621,12 +621,7 @@ func (b *Block) Body() *Body {
 
 // SetCommonTxData attaches common RPC admission/reward data and commits their roots into the header.
 func (b *Block) SetCommonTxData(admissions []*CommonTxAdmission, rewards []*CommonTxReward) {
-	b.commonTxAdmissions = copyCommonTxAdmissions(admissions)
-	b.commonTxRewards = copyCommonTxRewards(rewards)
-	b.header.CommonTxAdmissionRoot = DeriveCommonTxAdmissionRoot(b.commonTxAdmissions)
-	b.header.CommonTxRewardRoot = DeriveCommonTxRewardRoot(b.commonTxRewards)
-	b.hash.Store(nil)
-	b.size.Store(nil)
+	b.AttachCommonTxData(admissions, rewards)
 }
 
 // Size returns the true RLP encoded storage size of the block, either by encoding
