@@ -241,7 +241,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	if err != nil {
 		return nil, err
 	}
-	log.Info("ApplyTransaction", "msg.from", msg.From(), "msg.To()", msg.To())
+	log.Trace("ApplyTransaction", "msg.from", msg.From(), "msg.To()", msg.To())
 	// Create a new context to be used in the EVM environment
 	context := NewEVMContextWithConfig(config, msg, header, bc, author)
 	// Create a new environment which holds all relevant information
