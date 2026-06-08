@@ -220,6 +220,13 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 
 		block := types.NewBlock(header, committedTxes, nil, publicReceipts, new(trie.Trie))
 		block.AttachCommonTxData(commonAdmissions, commonRewards)
+		encodedBlock := block.EncodeToBytes()
+		if len(encodedBlock) == 0 {
+			return nil, fmt.Errorf("failed to encode tx block proposal")
+		}
+		if limit := proposalByteLimit(blockType); limit > 0 && len(encodedBlock) > limit {
+			return nil, fmt.Errorf("tx block proposal too large: blockType=%s txs=%d bytes=%d limit=%d", readableTxBlockType(blockType), txCount, len(encodedBlock), limit)
+		}
 
 		// update block hash since it is now available, but was not when the
 		// receipt/log of individual transactions were created:
@@ -234,7 +241,7 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 
 		elapsed := time.Since(time.Unix(0, int64(header.Time)))
 		log.Info("🔨  Mined block", "number", block.Number(), "hash", fmt.Sprintf("%x", block.Hash().Bytes()[:4]), "elapsed", elapsed)
-		return block.EncodeToBytes(), nil
+		return encodedBlock, nil
 	}()
 
 	if len(failedTxes) > 0 {
@@ -372,10 +379,13 @@ const (
 	slowPerAccountTierMedium = 128
 	fastPerAccountTierLarge  = 512
 	slowPerAccountTierLarge  = 512
-	fastBlockMaxTxCount      = uint64(4000)
-	slowBlockMaxTxCount      = uint64(50000)
-	fastBlockGasTargetPct    = uint64(80)
-	slowBlockGasTargetPct    = uint64(98)
+	fastBlockMaxTxCount      = uint64(8000)
+	slowBlockMaxTxCount      = uint64(24000)
+	fastBlockGasTargetPct    = uint64(95)
+	slowBlockGasTargetPct    = uint64(99)
+
+	fastTxBlockProposalMaxBytes = 8 * 1024 * 1024
+	slowTxBlockProposalMaxBytes = 16 * 1024 * 1024
 
 	deployBlockGasTargetPct = uint64(10)
 	heavyBlockGasTargetPct  = uint64(5)
@@ -451,7 +461,7 @@ func blockProposalLimit(blockType uint8, pending int) int {
 		case pending < pendingTierLarge:
 			return fastPerAccountTierLarge
 		default:
-			return 0
+			return fastPerAccountTierLarge
 		}
 	}
 
@@ -463,8 +473,15 @@ func blockProposalLimit(blockType uint8, pending int) int {
 	case pending < pendingTierLarge:
 		return slowPerAccountTierLarge
 	default:
-		return 0
+		return slowPerAccountTierLarge
 	}
+}
+
+func proposalByteLimit(blockType uint8) int {
+	if isFastBlockType(blockType) {
+		return fastTxBlockProposalMaxBytes
+	}
+	return slowTxBlockProposalMaxBytes
 }
 
 func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {

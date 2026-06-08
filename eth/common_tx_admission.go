@@ -1,11 +1,138 @@
 package eth
 
 import (
+	"net"
+	"strconv"
+	"strings"
+
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/p2p"
 )
+
+type commonTxAdmissionTarget struct {
+	host string
+	port int
+}
+
+func parseCommonTxAdmissionTarget(address string) (commonTxAdmissionTarget, bool) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return commonTxAdmissionTarget{}, false
+	}
+
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		return commonTxAdmissionTarget{host: address}, true
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		port = 0
+	}
+	return commonTxAdmissionTarget{host: host, port: port}, host != ""
+}
+
+func commonTxAdmissionHostEqual(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	ipA := net.ParseIP(a)
+	ipB := net.ParseIP(b)
+	if ipA != nil && ipB != nil {
+		return ipA.Equal(ipB)
+	}
+	return strings.EqualFold(a, b)
+}
+
+func commonTxAdmissionPeerAddrs(p *peer) (nodeHost string, nodeTCP int, remoteHost string, remotePort int) {
+	if p == nil {
+		return "", 0, "", 0
+	}
+	if n := p.Node(); n != nil {
+		if ip := n.IP(); ip != nil {
+			nodeHost = ip.String()
+		}
+		nodeTCP = n.TCP()
+	}
+	if addr := p.RemoteAddr(); addr != nil {
+		if tcp, ok := addr.(*net.TCPAddr); ok {
+			if tcp.IP != nil {
+				remoteHost = tcp.IP.String()
+			}
+			remotePort = tcp.Port
+		} else {
+			host, portText, err := net.SplitHostPort(addr.String())
+			if err == nil {
+				remoteHost = host
+				remotePort, _ = strconv.Atoi(portText)
+			}
+		}
+	}
+	return nodeHost, nodeTCP, remoteHost, remotePort
+}
+
+func commonTxAdmissionPeerMatchesTarget(p *peer, target commonTxAdmissionTarget, exactPort bool) bool {
+	nodeHost, nodeTCP, remoteHost, remotePort := commonTxAdmissionPeerAddrs(p)
+	if exactPort && target.port > 0 {
+		return (commonTxAdmissionHostEqual(nodeHost, target.host) && nodeTCP == target.port) ||
+			(commonTxAdmissionHostEqual(remoteHost, target.host) && remotePort == target.port)
+	}
+	return commonTxAdmissionHostEqual(nodeHost, target.host) || commonTxAdmissionHostEqual(remoteHost, target.host)
+}
+
+func commonTxAdmissionPeerMatchesAnyTarget(p *peer, targets []commonTxAdmissionTarget, exactPort bool) bool {
+	for _, target := range targets {
+		if commonTxAdmissionPeerMatchesTarget(p, target, exactPort) {
+			return true
+		}
+	}
+	return false
+}
+
+func (pm *ProtocolManager) commonTxAdmissionTargetedMode() bool {
+	return pm != nil && pm.chainConfig != nil && (pm.chainConfig.FixedCommittee || pm.chainConfig.FixedLeader)
+}
+
+func (pm *ProtocolManager) commonTxAdmissionCommitteeTargets() []commonTxAdmissionTarget {
+	if pm == nil || pm.chainConfig == nil {
+		return nil
+	}
+	targets := make([]commonTxAdmissionTarget, 0, len(pm.chainConfig.GenCommittee))
+	seen := make(map[string]struct{})
+	add := func(address string) {
+		target, ok := parseCommonTxAdmissionTarget(address)
+		if !ok {
+			return
+		}
+		key := target.host + ":" + strconv.Itoa(target.port)
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		targets = append(targets, target)
+	}
+
+	// Fixed leader is committee index 0 in the current fixed-committee layout.
+	if leader, ok := pm.chainConfig.GenCommittee[0]; ok {
+		add(leader.Address)
+	}
+	for i := 0; i < len(pm.chainConfig.GenCommittee); i++ {
+		if i == 0 {
+			continue
+		}
+		if member, ok := pm.chainConfig.GenCommittee[i]; ok {
+			add(member.Address)
+		}
+	}
+	for i, member := range pm.chainConfig.GenCommittee {
+		if i >= 0 && i < len(pm.chainConfig.GenCommittee) {
+			continue
+		}
+		add(member.Address)
+	}
+	return targets
+}
 
 // BroadcastCommonTxAdmissions propagates signed common RPC tx admissions to all
 // connected peers. The receiving side verifies ECDSA recovery before accepting
@@ -31,11 +158,44 @@ func (pm *ProtocolManager) broadcastCommonTxAdmissionsExcept(admissions []*types
 	}
 
 	pm.peers.lock.RLock()
-	defer pm.peers.lock.RUnlock()
+	var allPeers []*peer
 	for id, ethPeer := range pm.peers.peers {
 		if id == exceptPeerID || ethPeer == nil {
 			continue
 		}
+		allPeers = append(allPeers, ethPeer)
+	}
+	pm.peers.lock.RUnlock()
+
+	targeted := pm.commonTxAdmissionTargetedMode()
+	targets := pm.commonTxAdmissionCommitteeTargets()
+	sendPeers := allPeers
+	if targeted {
+		if len(targets) == 0 {
+			log.Warn("No fixed committee common tx admission targets")
+			return
+		}
+		exactPeers := make([]*peer, 0, len(allPeers))
+		hostPeers := make([]*peer, 0, len(allPeers))
+		for _, ethPeer := range allPeers {
+			if commonTxAdmissionPeerMatchesAnyTarget(ethPeer, targets, true) {
+				exactPeers = append(exactPeers, ethPeer)
+				continue
+			}
+			if commonTxAdmissionPeerMatchesAnyTarget(ethPeer, targets, false) {
+				hostPeers = append(hostPeers, ethPeer)
+			}
+		}
+		sendPeers = exactPeers
+		if len(sendPeers) == 0 {
+			sendPeers = hostPeers
+		}
+		if len(sendPeers) == 0 {
+			log.Warn("No connected committee peers for common tx admission relay", "targets", len(targets), "count", len(valid))
+			return
+		}
+	}
+	for _, ethPeer := range sendPeers {
 		batch := make([]*types.CommonTxAdmission, len(valid))
 		for i, admission := range valid {
 			copy := *admission

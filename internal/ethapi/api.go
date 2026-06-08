@@ -979,7 +979,7 @@ func (s *PublicBlockChainAPI) GetUncleCountByBlockNumber(ctx context.Context, bl
 	if block, _ := s.b.BlockByNumber(ctx, blockNr); block != nil {
 		n := hexutil.Uint(len(block.Uncles()))
 		return &n
-}
+	}
 	return nil
 }
 
@@ -988,7 +988,7 @@ func (s *PublicBlockChainAPI) GetUncleCountByBlockHash(ctx context.Context, bloc
 	if block, _ := s.b.BlockByHash(ctx, blockHash); block != nil {
 		n := hexutil.Uint(len(block.Uncles()))
 		return &n
-}
+	}
 	return nil
 }
 func (s *PublicBlockChainAPI) GetCommitteeMember(ctx context.Context, blockNr rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
@@ -1791,7 +1791,7 @@ func (s *PublicTransactionPoolAPI) GetBlockTransactionCountByNumber(ctx context.
 	if block, _ := s.b.BlockByNumber(ctx, blockNr); block != nil {
 		n := hexutil.Uint(len(block.Transactions()))
 		return &n
-}
+	}
 	return nil
 }
 
@@ -1800,7 +1800,7 @@ func (s *PublicTransactionPoolAPI) GetBlockTransactionCountByHash(ctx context.Co
 	if block, _ := s.b.BlockByHash(ctx, blockHash); block != nil {
 		n := hexutil.Uint(len(block.Transactions()))
 		return &n
-}
+	}
 	return nil
 }
 
@@ -2198,7 +2198,7 @@ func (args *SendTxArgs) toTransaction(chainID *big.Int) *types.Transaction {
 
 // SubmitTransaction is a helper function that submits tx to txPool and logs a message.
 func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction, sync bool) (common.Hash, error) {
-	log.Info("SubmitTransaction", "tx chainid", tx.ChainId(), "tx ", tx.V())
+	log.Trace("SubmitTransaction", "tx chainid", tx.ChainId(), "tx", tx.V())
 	// If the transaction fee cap is already specified, ensure the
 	// fee of the given transaction is _reasonable_.
 	if err := checkTxFee(tx.GasFeeCap(), tx.Gas(), b.RPCTxFeeCap()); err != nil {

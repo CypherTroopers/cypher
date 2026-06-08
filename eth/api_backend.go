@@ -301,6 +301,24 @@ func (b *EthAPIBackend) SubscribeLogsEvent(ch chan<- []*types.Log) event.Subscri
 	return b.eth.BlockChain().SubscribeLogsEvent(ch)
 }
 
+func (b *EthAPIBackend) shouldRecordCommonRPCAdmission() bool {
+	if b == nil || b.eth == nil || b.ChainConfig() == nil {
+		return false
+	}
+
+	// Only common RPC/common miner nodes should create CommonTxAdmission records.
+	// Validator committee members must not claim common RPC admission rewards for
+	// transactions they receive through RPC.
+	miner := bftview.GetServerCoinBase()
+	if miner == (common.Address{}) {
+		return false
+	}
+	if bftview.IamMember() >= 0 {
+		return false
+	}
+	return true
+}
+
 func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction, sync bool) error {
 	var err error
 	if sync {
@@ -311,7 +329,9 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction,
 	if err != nil {
 		return err
 	}
-	core.RecordCommonRPCAdmission(signedTx.Hash(), bftview.GetServerCoinBase(), b.ChainConfig().ChainID)
+	if b.shouldRecordCommonRPCAdmission() {
+		core.RecordCommonRPCAdmission(signedTx.Hash(), bftview.GetServerCoinBase(), b.ChainConfig().ChainID)
+	}
 	return nil
 }
 

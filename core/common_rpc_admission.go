@@ -9,11 +9,10 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
-	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/log"
 )
 
-var commonRPCAdmissions sync.Map // map[common.Hash]*types.CommonTxAdmission
+var commonRPCAdmissions sync.Map          // map[common.Hash]*types.CommonTxAdmission
 var commonRPCAdmissionSigner atomic.Value // func(*types.CommonTxAdmission) error
 var commonRPCAdmissionRelay atomic.Value  // func([]*types.CommonTxAdmission)
 
@@ -137,8 +136,7 @@ func RecordCommonRPCAdmission(txHash common.Hash, miner common.Address, chainID 
 	}
 	admission, err := SignAndRecordCommonRPCAdmission(txHash, miner, chainID, 0, uint64(time.Now().Unix()))
 	if err != nil {
-		log.Warn("Failed to sign common RPC admission", "tx", txHash, "miner", miner, "err", err)
-		commonRPCAdmissions.Store(txHash, &types.CommonTxAdmission{ChainID: copyAdmissionChainID(chainID), TxHash: txHash, Miner: miner})
+		log.Error("Failed to sign common RPC admission", "tx", txHash, "miner", miner, "err", err)
 		return
 	}
 	relayCommonRPCAdmissions([]*types.CommonTxAdmission{admission})
@@ -174,16 +172,6 @@ func BuildCommonTxAdmissions(txs types.Transactions, keyBlockNumber uint64, txBl
 			continue
 		}
 		sealed := copyCommonRPCAdmission(admission)
-		if len(sealed.Signature) != crypto.SignatureLength {
-			sealed.KeyBlockNumber = keyBlockNumber
-			sealed.TxBlockNumber = txBlockNumber
-			sealed.Timestamp = timestamp
-			sealed.Signature = nil
-			if err := signCommonRPCAdmission(sealed); err != nil {
-				log.Warn("Failed to sign common RPC admission", "tx", txHash, "miner", sealed.Miner, "err", err)
-				continue
-			}
-		}
 		if err := types.VerifyCommonTxAdmissionSignature(sealed); err != nil {
 			log.Warn("Invalid common RPC admission signature", "tx", txHash, "miner", sealed.Miner, "err", err)
 			continue
