@@ -155,12 +155,12 @@ type CommonTxAdmission struct {
 }
 
 // CommonTxReward records the deterministic protocol-level split for one tx.
-// Reward is paid to Miner and Burn is intentionally not credited to any account.
+// ApproverReward is paid to Approver and Burn is intentionally not credited to any account.
 type CommonTxReward struct {
-	TxHash common.Hash
-	Miner  common.Address
-	Reward *big.Int
-	Burn   *big.Int
+	TxHash         common.Hash
+	Approver       common.Address
+	ApproverReward *big.Int
+	Burn           *big.Int
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
@@ -308,8 +308,8 @@ func copyCommonTxRewards(in []*CommonTxReward) []*CommonTxReward {
 			continue
 		}
 		cpy := *reward
-		if reward.Reward != nil {
-			cpy.Reward = new(big.Int).Set(reward.Reward)
+		if reward.ApproverReward != nil {
+			cpy.ApproverReward = new(big.Int).Set(reward.ApproverReward)
 		}
 		if reward.Burn != nil {
 			cpy.Burn = new(big.Int).Set(reward.Burn)
@@ -355,8 +355,8 @@ func DeriveCommonTxRewardRoot(rewards []*CommonTxReward) common.Hash {
 		}
 		rewardAmount := new(big.Int)
 		burnAmount := new(big.Int)
-		if reward.Reward != nil {
-			rewardAmount.Set(reward.Reward)
+		if reward.ApproverReward != nil {
+			rewardAmount.Set(reward.ApproverReward)
 		}
 		if reward.Burn != nil {
 			burnAmount.Set(reward.Burn)
@@ -364,7 +364,7 @@ func DeriveCommonTxRewardRoot(rewards []*CommonTxReward) common.Hash {
 		leaves = append(leaves, blake3RLPHash([]interface{}{
 			[]byte(commonTxRewardDomain),
 			reward.TxHash,
-			reward.Miner,
+			reward.Approver,
 			rewardAmount,
 			burnAmount,
 		}))
