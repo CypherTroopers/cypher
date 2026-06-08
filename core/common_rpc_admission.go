@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"math/big"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,9 +13,24 @@ import (
 	"github.com/cypherium/cypher/log"
 )
 
-var commonRPCAdmissions sync.Map          // map[common.Hash]*types.CommonTxAdmission
-var commonRPCAdmissionSigner atomic.Value // func(*types.CommonTxAdmission) error
-var commonRPCAdmissionRelay atomic.Value  // func([]*types.CommonTxAdmission)
+const (
+	commonRPCAdmissionTTL             = 30 * time.Minute
+	commonRPCAdmissionCleanupInterval = time.Minute
+	commonRPCAdmissionMaxEntries      = 100000
+)
+
+type commonRPCAdmissionEntry struct {
+	admission *types.CommonTxAdmission
+	storedAt  time.Time
+	updatedAt time.Time
+}
+
+var commonRPCAdmissions sync.Map // map[common.Hash]*commonRPCAdmissionEntry
+var commonRPCAdmissionCount int64
+var commonRPCAdmissionLastCleanup int64
+var commonRPCAdmissionSigner atomic.Value         // func(*types.CommonTxAdmission) error
+var commonRPCAdmissionRelay atomic.Value          // fallback func([]*types.CommonTxAdmission)
+var commonRPCAdmissionDedicatedRelay atomic.Value // preferred func([]*types.CommonTxAdmission)
 
 func copyCommonRPCAdmission(admission *types.CommonTxAdmission) *types.CommonTxAdmission {
 	if admission == nil {
@@ -45,25 +61,40 @@ func SetCommonRPCAdmissionSigner(signer func(*types.CommonTxAdmission) error) {
 	commonRPCAdmissionSigner.Store(signer)
 }
 
-// SetCommonRPCAdmissionRelay installs the transport used to propagate signed
-// local admissions to validator/leader peers.
+// SetCommonRPCAdmissionRelay installs the fallback transport used to propagate
+// signed local admissions. The preferred production path is the dedicated
+// committee channel installed with SetCommonRPCAdmissionDedicatedRelay.
 func SetCommonRPCAdmissionRelay(relay func([]*types.CommonTxAdmission)) {
 	commonRPCAdmissionRelay.Store(relay)
+}
+
+// SetCommonRPCAdmissionDedicatedRelay installs the preferred dedicated committee
+// transport used to propagate signed common RPC admissions. When installed, this
+// relay is used instead of the generic eth/p2p fallback relay.
+func SetCommonRPCAdmissionDedicatedRelay(relay func([]*types.CommonTxAdmission)) {
+	commonRPCAdmissionDedicatedRelay.Store(relay)
+}
+
+func callCommonRPCAdmissionRelay(value interface{}, admissions []*types.CommonTxAdmission) bool {
+	if value == nil {
+		return false
+	}
+	relay, ok := value.(func([]*types.CommonTxAdmission))
+	if !ok || relay == nil {
+		return false
+	}
+	relay(admissions)
+	return true
 }
 
 func relayCommonRPCAdmissions(admissions []*types.CommonTxAdmission) {
 	if len(admissions) == 0 {
 		return
 	}
-	value := commonRPCAdmissionRelay.Load()
-	if value == nil {
+	if callCommonRPCAdmissionRelay(commonRPCAdmissionDedicatedRelay.Load(), admissions) {
 		return
 	}
-	relay, ok := value.(func([]*types.CommonTxAdmission))
-	if !ok || relay == nil {
-		return
-	}
-	relay(admissions)
+	callCommonRPCAdmissionRelay(commonRPCAdmissionRelay.Load(), admissions)
 }
 
 func signCommonRPCAdmission(admission *types.CommonTxAdmission) error {
@@ -78,23 +109,114 @@ func signCommonRPCAdmission(admission *types.CommonTxAdmission) error {
 	return signer(admission)
 }
 
+func commonRPCAdmissionEntryExpired(entry *commonRPCAdmissionEntry, now time.Time) bool {
+	if entry == nil || entry.admission == nil {
+		return true
+	}
+	return now.Sub(entry.updatedAt) > commonRPCAdmissionTTL
+}
+
+func maybeCleanupCommonRPCAdmissions(now time.Time, force bool) {
+	last := atomic.LoadInt64(&commonRPCAdmissionLastCleanup)
+	if !force && now.Unix()-last < int64(commonRPCAdmissionCleanupInterval/time.Second) && atomic.LoadInt64(&commonRPCAdmissionCount) <= commonRPCAdmissionMaxEntries {
+		return
+	}
+	if !atomic.CompareAndSwapInt64(&commonRPCAdmissionLastCleanup, last, now.Unix()) && !force {
+		return
+	}
+	cleanupCommonRPCAdmissions(now)
+}
+
+func cleanupCommonRPCAdmissions(now time.Time) {
+	type candidate struct {
+		hash     common.Hash
+		storedAt time.Time
+	}
+	candidates := make([]candidate, 0)
+	var total int64
+	var removed int64
+
+	commonRPCAdmissions.Range(func(key interface{}, value interface{}) bool {
+		total++
+		hash, hashOK := key.(common.Hash)
+		entry, entryOK := value.(*commonRPCAdmissionEntry)
+		if !hashOK || !entryOK || commonRPCAdmissionEntryExpired(entry, now) {
+			commonRPCAdmissions.Delete(key)
+			removed++
+			return true
+		}
+		candidates = append(candidates, candidate{hash: hash, storedAt: entry.storedAt})
+		return true
+	})
+
+	remaining := total - removed
+	if remaining > commonRPCAdmissionMaxEntries {
+		sort.Slice(candidates, func(i, j int) bool {
+			return candidates[i].storedAt.Before(candidates[j].storedAt)
+		})
+		overflow := int(remaining - commonRPCAdmissionMaxEntries)
+		if overflow > len(candidates) {
+			overflow = len(candidates)
+		}
+		for i := 0; i < overflow; i++ {
+			commonRPCAdmissions.Delete(candidates[i].hash)
+			removed++
+		}
+	}
+
+	newCount := total - removed
+	if newCount < 0 {
+		newCount = 0
+	}
+	atomic.StoreInt64(&commonRPCAdmissionCount, newCount)
+	if removed > 0 {
+		log.Debug("Cleaned common RPC admissions", "removed", removed, "remaining", newCount)
+	}
+}
+
+func loadCommonRPCAdmissionEntry(txHash common.Hash, now time.Time) (*commonRPCAdmissionEntry, bool) {
+	value, ok := commonRPCAdmissions.Load(txHash)
+	if !ok {
+		return nil, false
+	}
+	entry, ok := value.(*commonRPCAdmissionEntry)
+	if !ok || commonRPCAdmissionEntryExpired(entry, now) {
+		commonRPCAdmissions.Delete(txHash)
+		atomic.AddInt64(&commonRPCAdmissionCount, -1)
+		return nil, false
+	}
+	return entry, true
+}
+
 // StoreCommonRPCAdmission verifies and stores a signed admission received from
-// the local RPC path or from P2P. If multiple valid admissions exist for the
-// same tx, the deterministic lowest winner hash is kept.
+// the local RPC path, the dedicated committee channel, or P2P. If multiple valid
+// admissions exist for the same tx, the deterministic lowest winner hash is kept.
 func StoreCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
 	if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
 		log.Warn("Rejected common RPC admission", "err", err)
 		return false
 	}
+	now := time.Now()
+	maybeCleanupCommonRPCAdmissions(now, false)
+
 	sealed := copyCommonRPCAdmission(admission)
 	value, ok := commonRPCAdmissions.Load(sealed.TxHash)
 	if ok {
-		current, _ := value.(*types.CommonTxAdmission)
+		entry, _ := value.(*commonRPCAdmissionEntry)
+		current := (*types.CommonTxAdmission)(nil)
+		if entry != nil {
+			current = entry.admission
+		}
 		if !types.IsBetterCommonTxAdmission(sealed, current) {
 			return false
 		}
+	} else {
+		atomic.AddInt64(&commonRPCAdmissionCount, 1)
 	}
-	commonRPCAdmissions.Store(sealed.TxHash, sealed)
+	commonRPCAdmissions.Store(sealed.TxHash, &commonRPCAdmissionEntry{admission: sealed, storedAt: now, updatedAt: now})
+	if atomic.LoadInt64(&commonRPCAdmissionCount) > commonRPCAdmissionMaxEntries {
+		maybeCleanupCommonRPCAdmissions(now, true)
+	}
 	return true
 }
 
@@ -144,34 +266,28 @@ func RecordCommonRPCAdmission(txHash common.Hash, miner common.Address, chainID 
 
 // CommonRPCAdmissionMiner returns the local recorded common RPC miner for txHash.
 func CommonRPCAdmissionMiner(txHash common.Hash) (common.Address, bool) {
-	value, ok := commonRPCAdmissions.Load(txHash)
-	if !ok {
+	entry, ok := loadCommonRPCAdmissionEntry(txHash, time.Now())
+	if !ok || entry.admission == nil || entry.admission.Miner == (common.Address{}) {
 		return common.Address{}, false
 	}
-	admission, ok := value.(*types.CommonTxAdmission)
-	if !ok || admission == nil || admission.Miner == (common.Address{}) {
-		return common.Address{}, false
-	}
-	return admission.Miner, true
+	return entry.admission.Miner, true
 }
 
 // BuildCommonTxAdmissions converts recorded tx admissions into signed block-body data.
 func BuildCommonTxAdmissions(txs types.Transactions, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) []*types.CommonTxAdmission {
+	now := time.Now()
+	maybeCleanupCommonRPCAdmissions(now, false)
 	admissions := make([]*types.CommonTxAdmission, 0)
 	for _, tx := range txs {
 		if tx == nil {
 			continue
 		}
 		txHash := tx.Hash()
-		value, ok := commonRPCAdmissions.Load(txHash)
-		if !ok {
+		entry, ok := loadCommonRPCAdmissionEntry(txHash, now)
+		if !ok || entry.admission == nil {
 			continue
 		}
-		admission, ok := value.(*types.CommonTxAdmission)
-		if !ok || admission == nil {
-			continue
-		}
-		sealed := copyCommonRPCAdmission(admission)
+		sealed := copyCommonRPCAdmission(entry.admission)
 		if err := types.VerifyCommonTxAdmissionSignature(sealed); err != nil {
 			log.Warn("Invalid common RPC admission signature", "tx", txHash, "miner", sealed.Miner, "err", err)
 			continue
@@ -185,7 +301,9 @@ func BuildCommonTxAdmissions(txs types.Transactions, keyBlockNumber uint64, txBl
 func DropCommonRPCAdmissions(txs types.Transactions) {
 	for _, tx := range txs {
 		if tx != nil {
-			commonRPCAdmissions.Delete(tx.Hash())
+			if _, loaded := commonRPCAdmissions.LoadAndDelete(tx.Hash()); loaded {
+				atomic.AddInt64(&commonRPCAdmissionCount, -1)
+			}
 		}
 	}
 }
