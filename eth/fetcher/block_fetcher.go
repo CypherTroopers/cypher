@@ -118,13 +118,14 @@ type headerFilterTask struct {
 	time    time.Time       // Arrival time of the headers
 }
 
-// bodyFilterTask represents a batch of block bodies (transactions and uncles)
-// needing fetcher filtering.
+// bodyFilterTask represents a batch of block bodies needing fetcher filtering.
 type bodyFilterTask struct {
-	peer         string                 // The source peer of block bodies
-	transactions [][]*types.Transaction // Collection of transactions per block bodies
-	uncles       [][]*types.Header      // Collection of uncles per block bodies
-	time         time.Time              // Arrival time of the blocks' contents
+	peer               string                       // The source peer of block bodies
+	transactions       [][]*types.Transaction       // Collection of transactions per block body
+	uncles             [][]*types.Header            // Collection of uncles per block body
+	commonTxAdmissions [][]*types.CommonTxAdmission // Collection of common transaction admissions per block body
+	commonTxRewards    [][]*types.CommonTxReward    // Collection of common transaction rewards per block body
+	time               time.Time                    // Arrival time of the blocks' contents
 }
 
 // blockOrHeaderInject represents a schedules import operation.
@@ -301,8 +302,8 @@ func (f *BlockFetcher) FilterHeaders(peer string, headers []*types.Header, time 
 
 // FilterBodies extracts all the block bodies that were explicitly requested by
 // the fetcher, returning those that should be handled differently.
-func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transaction, uncles [][]*types.Header, time time.Time) ([][]*types.Transaction, [][]*types.Header) {
-	log.Trace("Filtering bodies", "peer", peer, "txs", len(transactions), "uncles", len(uncles))
+func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transaction, uncles [][]*types.Header, commonTxAdmissions [][]*types.CommonTxAdmission, commonTxRewards [][]*types.CommonTxReward, time time.Time) ([][]*types.Transaction, [][]*types.Header, [][]*types.CommonTxAdmission, [][]*types.CommonTxReward) {
+	log.Trace("Filtering bodies", "peer", peer, "txs", len(transactions), "uncles", len(uncles), "commonTxAdmissions", len(commonTxAdmissions), "commonTxRewards", len(commonTxRewards))
 
 	// Send the filter channel to the fetcher
 	filter := make(chan *bodyFilterTask)
@@ -310,20 +311,20 @@ func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transac
 	select {
 	case f.bodyFilter <- filter:
 	case <-f.quit:
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 	// Request the filtering of the body list
 	select {
-	case filter <- &bodyFilterTask{peer: peer, transactions: transactions, uncles: uncles, time: time}:
+	case filter <- &bodyFilterTask{peer: peer, transactions: transactions, uncles: uncles, commonTxAdmissions: commonTxAdmissions, commonTxRewards: commonTxRewards, time: time}:
 	case <-f.quit:
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 	// Retrieve the bodies remaining after filtering
 	select {
 	case task := <-filter:
-		return task.transactions, task.uncles
+		return task.transactions, task.uncles, task.commonTxAdmissions, task.commonTxRewards
 	case <-f.quit:
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 }
 
@@ -602,12 +603,14 @@ func (f *BlockFetcher) loop() {
 			blocks := []*types.Block{}
 			// abort early if there's nothing explicitly requested
 			if len(f.completing) > 0 {
-				for i := 0; i < len(task.transactions) && i < len(task.uncles); i++ {
+				for i := 0; i < len(task.transactions) && i < len(task.uncles) && i < len(task.commonTxAdmissions) && i < len(task.commonTxRewards); i++ {
 					// Match up a body to any possible completion request
 					var (
-						matched   = false
-						uncleHash common.Hash // calculated lazily and reused
-						txnHash   common.Hash // calculated lazily and reused
+						matched               = false
+						uncleHash             common.Hash // calculated lazily and reused
+						txnHash               common.Hash // calculated lazily and reused
+						commonTxAdmissionRoot common.Hash // calculated lazily and reused
+						commonTxRewardRoot    common.Hash // calculated lazily and reused
 					)
 					for hash, announce := range f.completing {
 						if f.queued[hash] != nil || announce.origin != task.peer {
@@ -625,10 +628,23 @@ func (f *BlockFetcher) loop() {
 						if txnHash != announce.header.TxHash {
 							continue
 						}
+						if commonTxAdmissionRoot == (common.Hash{}) {
+							commonTxAdmissionRoot = types.DeriveCommonTxAdmissionRoot(task.commonTxAdmissions[i])
+						}
+						if commonTxAdmissionRoot != announce.header.CommonTxAdmissionRoot {
+							continue
+						}
+						if commonTxRewardRoot == (common.Hash{}) {
+							commonTxRewardRoot = types.DeriveCommonTxRewardRoot(task.commonTxRewards[i])
+						}
+						if commonTxRewardRoot != announce.header.CommonTxRewardRoot {
+							continue
+						}
 						// Mark the body matched, reassemble if still unknown
 						matched = true
 						if f.getBlock(hash) == nil {
 							block := types.NewBlockWithHeader(announce.header).WithBody(task.transactions[i], task.uncles[i])
+							block.SetCommonTxData(task.commonTxAdmissions[i], task.commonTxRewards[i])
 							block.ReceivedAt = task.time
 							blocks = append(blocks, block)
 						} else {
@@ -639,6 +655,8 @@ func (f *BlockFetcher) loop() {
 					if matched {
 						task.transactions = append(task.transactions[:i], task.transactions[i+1:]...)
 						task.uncles = append(task.uncles[:i], task.uncles[i+1:]...)
+						task.commonTxAdmissions = append(task.commonTxAdmissions[:i], task.commonTxAdmissions[i+1:]...)
+						task.commonTxRewards = append(task.commonTxRewards[:i], task.commonTxRewards[i+1:]...)
 						i--
 						continue
 					}

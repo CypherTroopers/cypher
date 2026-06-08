@@ -177,8 +177,10 @@ func (request *newBlockData) sanityCheck() error {
 
 // blockBody represents the data content of a single block.
 type blockBody struct {
-	Transactions []*types.Transaction // Transactions contained within a block
-	Uncles       []*types.Header      // Uncles contained within a block
+	Transactions       []*types.Transaction       // Transactions contained within a block
+	Uncles             []*types.Header            // Uncles contained within a block
+	CommonTxAdmissions []*types.CommonTxAdmission // Common transaction admissions contained within a block
+	CommonTxRewards    []*types.CommonTxReward    // Common transaction rewards contained within a block
 }
 
 type blockBodiesData []*blockBody
