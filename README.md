@@ -80,7 +80,7 @@ Example:
 
 ```json
 {
-  "transactionHash": "0xee94ceccbb785ee41e479f6ad4a7c04b0a3f0bfe2362d90fa0a05e04afaddec5",
+  "transactionHash": "0xda4ae1a37dd98beaace23ba670280c26e410177ef8bc7cea78857a4775e17f4e",
   "blockHash": "0xbda50a751138e7a0d5d3ae4275e1ef36698f362c4e320a54dc6a61b550fbd8d4",
   "blockNumber": "0x2",
   "transactionIndex": "0x0",
@@ -194,7 +194,7 @@ curl -s -X POST "$RPC_URL" \
 set -euo pipefail
 
 RPC_URL="http://167.86.76.166:8000"
-TX_HASH="0xee94ceccbb785ee41e479f6ad4a7c04b0a3f0bfe2362d90fa0a05e04afaddec5"
+TX_HASH="0xda4ae1a37dd98beaace23ba670280c26e410177ef8bc7cea78857a4775e17f4e"
 MINER_ADDR="0x946d4abb364716fd2f8403df28fa4f2b5e953d62"
 
 echo "===== Transaction Receipt ====="
