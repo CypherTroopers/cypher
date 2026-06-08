@@ -194,7 +194,7 @@ curl -s -X POST "$RPC_URL" \
 set -euo pipefail
 
 RPC_URL="http://167.86.76.166:8000"
-TX_HASH="0xda4ae1a37dd98beaace23ba670280c26e410177ef8bc7cea78857a4775e17f4e"
+TX_HASH="0x065d4a9562d0cac21a4ea892336ac447e586cb1c2cd9e8a9595a0c618912b812"
 MINER_ADDR="0x946d4abb364716fd2f8403df28fa4f2b5e953d62"
 
 echo "===== Transaction Receipt ====="
