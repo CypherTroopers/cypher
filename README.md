@@ -1,3 +1,5 @@
+<img width="1448" height="1086" alt="image" src="https://github.com/user-attachments/assets/dbb7c1bd-f031-41a0-933b-2eeadbeac9ba" />
+
 # Validators and Common Miners
 
 ## Overview
