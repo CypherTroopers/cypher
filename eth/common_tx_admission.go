@@ -24,11 +24,11 @@ func parseCommonTxAdmissionTarget(address string) (commonTxAdmissionTarget, bool
 
 	host, portText, err := net.SplitHostPort(address)
 	if err != nil {
-		return commonTxAdmissionTarget{host: address}, true
+		return commonTxAdmissionTarget{}, false
 	}
 	port, err := strconv.Atoi(portText)
-	if err != nil {
-		port = 0
+	if err != nil || port <= 0 {
+		return commonTxAdmissionTarget{}, false
 	}
 	return commonTxAdmissionTarget{host: host, port: port}, host != ""
 }
@@ -72,18 +72,15 @@ func commonTxAdmissionPeerAddrs(p *peer) (nodeHost string, nodeTCP int, remoteHo
 	return nodeHost, nodeTCP, remoteHost, remotePort
 }
 
-func commonTxAdmissionPeerMatchesTarget(p *peer, target commonTxAdmissionTarget, exactPort bool) bool {
+func commonTxAdmissionPeerMatchesTarget(p *peer, target commonTxAdmissionTarget) bool {
 	nodeHost, nodeTCP, remoteHost, remotePort := commonTxAdmissionPeerAddrs(p)
-	if exactPort && target.port > 0 {
-		return (commonTxAdmissionHostEqual(nodeHost, target.host) && nodeTCP == target.port) ||
-			(commonTxAdmissionHostEqual(remoteHost, target.host) && remotePort == target.port)
-	}
-	return commonTxAdmissionHostEqual(nodeHost, target.host) || commonTxAdmissionHostEqual(remoteHost, target.host)
+	return (commonTxAdmissionHostEqual(nodeHost, target.host) && nodeTCP == target.port) ||
+		(commonTxAdmissionHostEqual(remoteHost, target.host) && remotePort == target.port)
 }
 
-func commonTxAdmissionPeerMatchesAnyTarget(p *peer, targets []commonTxAdmissionTarget, exactPort bool) bool {
+func commonTxAdmissionPeerMatchesAnyTarget(p *peer, targets []commonTxAdmissionTarget) bool {
 	for _, target := range targets {
-		if commonTxAdmissionPeerMatchesTarget(p, target, exactPort) {
+		if commonTxAdmissionPeerMatchesTarget(p, target) {
 			return true
 		}
 	}
@@ -134,9 +131,10 @@ func (pm *ProtocolManager) commonTxAdmissionCommitteeTargets() []commonTxAdmissi
 	return targets
 }
 
-// BroadcastCommonTxAdmissions propagates signed common RPC tx admissions to all
-// connected peers. The receiving side verifies ECDSA recovery before accepting
-// the record into the local admission pool.
+// BroadcastCommonTxAdmissions propagates signed common RPC tx admissions. In
+// fixed committee mode this fallback eth/p2p relay is restricted to exact fixed
+// leader/committee peers only. The preferred production path is the dedicated
+// KCP committee channel installed by reconfig.
 func (pm *ProtocolManager) BroadcastCommonTxAdmissions(admissions []*types.CommonTxAdmission) {
 	pm.broadcastCommonTxAdmissionsExcept(admissions, "")
 }
@@ -167,34 +165,26 @@ func (pm *ProtocolManager) broadcastCommonTxAdmissionsExcept(admissions []*types
 	}
 	pm.peers.lock.RUnlock()
 
-	targeted := pm.commonTxAdmissionTargetedMode()
-	targets := pm.commonTxAdmissionCommitteeTargets()
 	sendPeers := allPeers
-	if targeted {
+	if pm.commonTxAdmissionTargetedMode() {
+		targets := pm.commonTxAdmissionCommitteeTargets()
 		if len(targets) == 0 {
 			log.Warn("No fixed committee common tx admission targets")
 			return
 		}
 		exactPeers := make([]*peer, 0, len(allPeers))
-		hostPeers := make([]*peer, 0, len(allPeers))
 		for _, ethPeer := range allPeers {
-			if commonTxAdmissionPeerMatchesAnyTarget(ethPeer, targets, true) {
+			if commonTxAdmissionPeerMatchesAnyTarget(ethPeer, targets) {
 				exactPeers = append(exactPeers, ethPeer)
-				continue
-			}
-			if commonTxAdmissionPeerMatchesAnyTarget(ethPeer, targets, false) {
-				hostPeers = append(hostPeers, ethPeer)
 			}
 		}
-		sendPeers = exactPeers
-		if len(sendPeers) == 0 {
-			sendPeers = hostPeers
-		}
-		if len(sendPeers) == 0 {
-			log.Warn("No connected committee peers for common tx admission relay", "targets", len(targets), "count", len(valid))
+		if len(exactPeers) == 0 {
+			log.Warn("No exact connected fixed committee peers for common tx admission relay", "targets", len(targets), "count", len(valid))
 			return
 		}
+		sendPeers = exactPeers
 	}
+
 	for _, ethPeer := range sendPeers {
 		batch := make([]*types.CommonTxAdmission, len(valid))
 		for i, admission := range valid {
