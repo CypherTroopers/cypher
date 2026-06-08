@@ -1563,9 +1563,9 @@ type RPCTransaction struct {
 
 	CommonTxAdmissionRoot           *common.Hash    `json:"commonTxAdmissionRoot,omitempty"`
 	CommonTxRewardRoot              *common.Hash    `json:"commonTxRewardRoot,omitempty"`
-	CommonRpcMiner                  *common.Address `json:"commonRpcMiner,omitempty"`
-	CommonRpcReward                 *hexutil.Big    `json:"commonRpcReward,omitempty"`
-	CommonRpcBurn                   *hexutil.Big    `json:"commonRpcBurn,omitempty"`
+	CommonTxApprover                *common.Address `json:"commonTxApprover,omitempty"`
+	CommonTxApproverReward          *hexutil.Big    `json:"commonTxApproverReward,omitempty"`
+	CommonTxBurn                    *hexutil.Big    `json:"commonTxBurn,omitempty"`
 	CommonTxAdmissionChainID        *hexutil.Big    `json:"commonTxAdmissionChainId,omitempty"`
 	CommonTxAdmissionKeyBlockNumber *hexutil.Uint64 `json:"commonTxAdmissionKeyBlockNumber,omitempty"`
 	CommonTxAdmissionTxBlockNumber  *hexutil.Uint64 `json:"commonTxAdmissionTxBlockNumber,omitempty"`
@@ -1600,12 +1600,12 @@ func fillCommonRPCTransactionFields(result *RPCTransaction, block *types.Block, 
 			continue
 		}
 
-		miner := admission.Miner
+		approver := admission.Miner
 		keyBlockNumber := hexutil.Uint64(admission.KeyBlockNumber)
 		txBlockNumber := hexutil.Uint64(admission.TxBlockNumber)
 		timestamp := hexutil.Uint64(admission.Timestamp)
 
-		result.CommonRpcMiner = &miner
+		result.CommonTxApprover = &approver
 		if admission.ChainID != nil {
 			result.CommonTxAdmissionChainID = (*hexutil.Big)(new(big.Int).Set(admission.ChainID))
 		}
@@ -1622,14 +1622,14 @@ func fillCommonRPCTransactionFields(result *RPCTransaction, block *types.Block, 
 			continue
 		}
 
-		miner := reward.Miner
-		result.CommonRpcMiner = &miner
+		approver := reward.Approver
+		result.CommonTxApprover = &approver
 
-		if reward.Reward != nil {
-			result.CommonRpcReward = (*hexutil.Big)(new(big.Int).Set(reward.Reward))
+		if reward.ApproverReward != nil {
+			result.CommonTxApproverReward = (*hexutil.Big)(new(big.Int).Set(reward.ApproverReward))
 		}
 		if reward.Burn != nil {
-			result.CommonRpcBurn = (*hexutil.Big)(new(big.Int).Set(reward.Burn))
+			result.CommonTxBurn = (*hexutil.Big)(new(big.Int).Set(reward.Burn))
 		}
 
 		break
@@ -1650,7 +1650,7 @@ func addCommonRPCReceiptFields(fields map[string]interface{}, block *types.Block
 			continue
 		}
 
-		fields["commonRpcMiner"] = admission.Miner
+		fields["commonTxApprover"] = admission.Miner
 
 		if admission.ChainID != nil {
 			fields["commonTxAdmissionChainId"] = (*hexutil.Big)(new(big.Int).Set(admission.ChainID))
@@ -1669,13 +1669,13 @@ func addCommonRPCReceiptFields(fields map[string]interface{}, block *types.Block
 			continue
 		}
 
-		fields["commonRpcMiner"] = reward.Miner
+		fields["commonTxApprover"] = reward.Approver
 
-		if reward.Reward != nil {
-			fields["commonRpcReward"] = (*hexutil.Big)(new(big.Int).Set(reward.Reward))
+		if reward.ApproverReward != nil {
+			fields["commonTxApproverReward"] = (*hexutil.Big)(new(big.Int).Set(reward.ApproverReward))
 		}
 		if reward.Burn != nil {
-			fields["commonRpcBurn"] = (*hexutil.Big)(new(big.Int).Set(reward.Burn))
+			fields["commonTxBurn"] = (*hexutil.Big)(new(big.Int).Set(reward.Burn))
 		}
 
 		break

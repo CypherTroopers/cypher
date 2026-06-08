@@ -107,10 +107,10 @@ func buildCommonRewardIndex(rewards []*types.CommonTxReward) (map[common.Hash]*t
 		if reward.TxHash == (common.Hash{}) {
 			return nil, fmt.Errorf("invalid common tx reward: empty tx hash")
 		}
-		if reward.Reward == nil || reward.Burn == nil {
+		if reward.ApproverReward == nil || reward.Burn == nil {
 			return nil, fmt.Errorf("invalid common tx reward for %s: nil amount", reward.TxHash)
 		}
-		if reward.Reward.Sign() < 0 || reward.Burn.Sign() < 0 {
+		if reward.ApproverReward.Sign() < 0 || reward.Burn.Sign() < 0 {
 			return nil, fmt.Errorf("invalid common tx reward for %s: negative amount", reward.TxHash)
 		}
 		if _, exists := indexed[reward.TxHash]; exists {
@@ -121,30 +121,30 @@ func buildCommonRewardIndex(rewards []*types.CommonTxReward) (map[common.Hash]*t
 	return indexed, nil
 }
 
-func settleCommonRPCReward(statedb *state.StateDB, reward *types.CommonTxReward, expectedMiner common.Address, tx *types.Transaction, gasUsed uint64, baseFee *big.Int) error {
+func settleCommonRPCReward(statedb *state.StateDB, reward *types.CommonTxReward, expectedApprover common.Address, tx *types.Transaction, gasUsed uint64, baseFee *big.Int) error {
 	if reward == nil {
 		return fmt.Errorf("missing common tx reward for admitted tx %s", tx.Hash())
 	}
-	if expectedMiner == (common.Address{}) {
+	if expectedApprover == (common.Address{}) {
 		return fmt.Errorf("invalid common tx admission for %s: empty miner", tx.Hash())
 	}
 	if reward.TxHash != tx.Hash() {
 		return fmt.Errorf("invalid common tx reward hash: have %s want %s", reward.TxHash, tx.Hash())
 	}
-	if reward.Miner != expectedMiner {
-		return fmt.Errorf("invalid common tx reward miner for %s: have %s want %s", tx.Hash(), reward.Miner, expectedMiner)
+	if reward.Approver != expectedApprover {
+		return fmt.Errorf("invalid common tx reward approver for %s: have %s want %s", tx.Hash(), reward.Approver, expectedApprover)
 	}
 	actualFee := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), effectiveTxGasPrice(tx, baseFee))
 	expectedReward := new(big.Int).Div(actualFee, big.NewInt(5))
 	expectedBurn := new(big.Int).Sub(actualFee, expectedReward)
-	if reward.Reward.Cmp(expectedReward) != 0 {
-		return fmt.Errorf("invalid common tx reward for %s: have %s want %s", tx.Hash(), reward.Reward, expectedReward)
+	if reward.ApproverReward.Cmp(expectedReward) != 0 {
+		return fmt.Errorf("invalid common tx approver reward for %s: have %s want %s", tx.Hash(), reward.ApproverReward, expectedReward)
 	}
 	if reward.Burn.Cmp(expectedBurn) != 0 {
 		return fmt.Errorf("invalid common tx burn for %s: have %s want %s", tx.Hash(), reward.Burn, expectedBurn)
 	}
 	if expectedReward.Sign() > 0 {
-		statedb.AddBalance(expectedMiner, expectedReward)
+		statedb.AddBalance(expectedApprover, expectedReward)
 	}
 	// Burn is represented by intentionally not crediting the remaining fee to any account.
 	return nil
