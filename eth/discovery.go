@@ -19,6 +19,7 @@ package eth
 import (
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/forkid"
+	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/p2p"
 	"github.com/cypherium/cypher/p2p/dnsdisc"
 	"github.com/cypherium/cypher/p2p/enode"
@@ -65,6 +66,13 @@ func (eth *Ethereum) currentEthEntry() *ethEntry {
 
 // setupDiscovery creates the node discovery source for the eth protocol.
 func (eth *Ethereum) setupDiscovery(cfg *p2p.Config) (enode.Iterator, error) {
+	if commonNodeRole(eth.blockchain.Config(), eth.config.Miner.Etherbase) {
+		// Common RPC/common miner nodes should not discover arbitrary eth peers.
+		// They submit CommonTxAdmission records to the fixed leader/committee path
+		// and keep normal/full-node discovery disabled without adding another flag.
+		log.Info("Common node eth discovery candidates disabled; fixed committee peers only")
+		return nil, nil
+	}
 	if cfg.NoDiscovery || len(eth.config.DiscoveryURLs) == 0 {
 		return nil, nil
 	}
