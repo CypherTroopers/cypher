@@ -93,7 +93,7 @@ func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash 
 			continue
 		}
 
-		fields["commonRpcMiner"] = admission.Miner
+		fields["commonTxApprover"] = admission.Miner
 
 		if admission.ChainID != nil {
 			fields["commonTxAdmissionChainId"] = (*hexutil.Big)(admission.ChainID)
@@ -112,13 +112,13 @@ func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash 
 			continue
 		}
 
-		fields["commonRpcMiner"] = reward.Miner
+		fields["commonTxApprover"] = reward.Approver
 
-		if reward.Reward != nil {
-			fields["commonRpcReward"] = (*hexutil.Big)(reward.Reward)
+		if reward.ApproverReward != nil {
+			fields["commonTxApproverReward"] = (*hexutil.Big)(reward.ApproverReward)
 		}
 		if reward.Burn != nil {
-			fields["commonRpcBurn"] = (*hexutil.Big)(reward.Burn)
+			fields["commonTxBurn"] = (*hexutil.Big)(reward.Burn)
 		}
 
 		break
