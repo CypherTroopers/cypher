@@ -82,9 +82,9 @@ func (s *PublicTransactionReceiptAPI) GetTransactionReceipt(ctx context.Context,
 	fields["status"] = hexutil.Uint(receipt.Status)
 
 	if reward := commonTxRewardForHash(block, hash); reward != nil {
-		fields["commonTxMiner"] = reward.Miner
-		if reward.Reward != nil {
-			fields["commonTxReward"] = (*hexutil.Big)(reward.Reward)
+		fields["commonTxApprover"] = reward.Approver
+		if reward.ApproverReward != nil {
+			fields["commonTxApproverReward"] = (*hexutil.Big)(reward.ApproverReward)
 		}
 		if reward.Burn != nil {
 			fields["commonTxBurn"] = (*hexutil.Big)(reward.Burn)

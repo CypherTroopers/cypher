@@ -123,7 +123,7 @@ func txEffectiveGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
 	return new(big.Int).Add(baseFee, tip)
 }
 
-func commonAdmissionMinerByTx(admissions []*types.CommonTxAdmission) map[common.Hash]common.Address {
+func commonAdmissionApproverByTx(admissions []*types.CommonTxAdmission) map[common.Hash]common.Address {
 	indexed := make(map[common.Hash]common.Address, len(admissions))
 	for _, admission := range admissions {
 		if admission == nil || admission.TxHash == (common.Hash{}) || admission.Miner == (common.Address{}) {
@@ -137,17 +137,17 @@ func commonAdmissionMinerByTx(admissions []*types.CommonTxAdmission) map[common.
 }
 
 func buildCommonTxRewards(txs types.Transactions, receipts types.Receipts, admissions []*types.CommonTxAdmission, baseFee *big.Int) []*types.CommonTxReward {
-	minerByTx := commonAdmissionMinerByTx(admissions)
-	if len(minerByTx) == 0 {
+	approverByTx := commonAdmissionApproverByTx(admissions)
+	if len(approverByTx) == 0 {
 		return nil
 	}
-	rewards := make([]*types.CommonTxReward, 0, len(minerByTx))
+	rewards := make([]*types.CommonTxReward, 0, len(approverByTx))
 	for i, tx := range txs {
 		if tx == nil || i >= len(receipts) || receipts[i] == nil {
 			continue
 		}
 		txHash := tx.Hash()
-		miner, ok := minerByTx[txHash]
+		approver, ok := approverByTx[txHash]
 		if !ok {
 			continue
 		}
@@ -155,10 +155,10 @@ func buildCommonTxRewards(txs types.Transactions, receipts types.Receipts, admis
 		reward := new(big.Int).Div(actualFee, big.NewInt(5))
 		burn := new(big.Int).Sub(actualFee, reward)
 		rewards = append(rewards, &types.CommonTxReward{
-			TxHash: txHash,
-			Miner:  miner,
-			Reward: reward,
-			Burn:   burn,
+			TxHash:         txHash,
+			Approver:       approver,
+			ApproverReward: reward,
+			Burn:           burn,
 		})
 	}
 	return rewards
@@ -169,10 +169,10 @@ func applyCommonTxRewards(st *state.StateDB, rewards []*types.CommonTxReward) {
 		return
 	}
 	for _, reward := range rewards {
-		if reward == nil || reward.Miner == (common.Address{}) || reward.Reward == nil || reward.Reward.Sign() <= 0 {
+		if reward == nil || reward.Approver == (common.Address{}) || reward.ApproverReward == nil || reward.ApproverReward.Sign() <= 0 {
 			continue
 		}
-		st.AddBalance(reward.Miner, reward.Reward)
+		st.AddBalance(reward.Approver, reward.ApproverReward)
 	}
 }
 
