@@ -104,13 +104,12 @@ curl -s -X POST "$RPC_URL" \
   -H "Content-Type: application/json" \
   --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionByHash\",\"params\":[\"$TX_HASH\"],\"id\":1}" | jq
 '''
-Check common miner balance:
-'''
+Check common miner balance: ```
 MINER_ADDR="0x946d4abb364716fd2f8403df28fa4f2b5e953d62"
 curl -s -X POST "$RPC_URL" \
   -H "Content-Type: application/json" \
   --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"$MINER_ADDR\",\"latest\"],\"id\":1}" | jq
-'''
+ ```
 For one normal transfer with gasUsed = 21000 and effectiveGasPrice = 1 gwei, the expected common miner balance increase is:
 
 4,200,000,000,000 wei
