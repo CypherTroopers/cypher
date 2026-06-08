@@ -2,7 +2,6 @@ package eth
 
 import (
 	"net"
-	"strconv"
 	"strings"
 
 	"github.com/cypherium/cypher/common"
@@ -25,16 +24,15 @@ func commonNodeRole(chainConfig *params.ChainConfig, configuredCoinbase common.A
 	return bftview.IamMember() < 0
 }
 
-func committeeAddressHostPort(address string) (string, int, bool) {
-	host, portText, err := net.SplitHostPort(strings.TrimSpace(address))
-	if err != nil || host == "" || portText == "" {
-		return "", 0, false
+func committeeAddressHost(address string) (string, bool) {
+	// GenCommittee.Address stores the rnet/KCP endpoint. Its port is the rnet UDP
+	// port, not the eth/p2p TCP port. The eth/p2p fallback peer policy can only
+	// use the host safely until validator identity based matching is added.
+	host, _, err := net.SplitHostPort(strings.TrimSpace(address))
+	if err != nil || host == "" {
+		return "", false
 	}
-	port, err := strconv.Atoi(portText)
-	if err != nil || port <= 0 {
-		return "", 0, false
-	}
-	return host, port, true
+	return host, true
 }
 
 func sameHost(a string, b string) bool {
@@ -58,16 +56,12 @@ func fixedCommitteePeerAllowed(chainConfig *params.ChainConfig, node *enode.Node
 		return false
 	}
 	nodeHost := ip.String()
-	nodeTCP := node.TCP()
-	if nodeTCP <= 0 {
-		return false
-	}
 	for _, member := range chainConfig.GenCommittee {
-		host, port, ok := committeeAddressHostPort(member.Address)
+		host, ok := committeeAddressHost(member.Address)
 		if !ok {
 			continue
 		}
-		if sameHost(nodeHost, host) && nodeTCP == port {
+		if sameHost(nodeHost, host) {
 			return true
 		}
 	}
