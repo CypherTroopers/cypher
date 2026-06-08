@@ -2,7 +2,6 @@ package eth
 
 import (
 	"net"
-	"strconv"
 	"strings"
 
 	"github.com/cypherium/cypher/core"
@@ -13,7 +12,6 @@ import (
 
 type commonTxAdmissionTarget struct {
 	host string
-	port int
 }
 
 func parseCommonTxAdmissionTarget(address string) (commonTxAdmissionTarget, bool) {
@@ -22,15 +20,15 @@ func parseCommonTxAdmissionTarget(address string) (commonTxAdmissionTarget, bool
 		return commonTxAdmissionTarget{}, false
 	}
 
-	host, portText, err := net.SplitHostPort(address)
-	if err != nil {
+	// GenCommittee.Address is the rnet/KCP endpoint. Its port is the rnet UDP
+	// port, not the eth/p2p TCP port. For the eth/p2p fallback path, only the
+	// host can be used safely; the preferred production path is the dedicated
+	// committee relay installed through SetCommonRPCAdmissionDedicatedRelay.
+	host, _, err := net.SplitHostPort(address)
+	if err != nil || host == "" {
 		return commonTxAdmissionTarget{}, false
 	}
-	port, err := strconv.Atoi(portText)
-	if err != nil || port <= 0 {
-		return commonTxAdmissionTarget{}, false
-	}
-	return commonTxAdmissionTarget{host: host, port: port}, host != ""
+	return commonTxAdmissionTarget{host: host}, true
 }
 
 func commonTxAdmissionHostEqual(a, b string) bool {
@@ -45,37 +43,34 @@ func commonTxAdmissionHostEqual(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-func commonTxAdmissionPeerAddrs(p *peer) (nodeHost string, nodeTCP int, remoteHost string, remotePort int) {
+func commonTxAdmissionPeerHosts(p *peer) (nodeHost string, remoteHost string) {
 	if p == nil {
-		return "", 0, "", 0
+		return "", ""
 	}
 	if n := p.Node(); n != nil {
 		if ip := n.IP(); ip != nil {
 			nodeHost = ip.String()
 		}
-		nodeTCP = n.TCP()
 	}
 	if addr := p.RemoteAddr(); addr != nil {
 		if tcp, ok := addr.(*net.TCPAddr); ok {
 			if tcp.IP != nil {
 				remoteHost = tcp.IP.String()
 			}
-			remotePort = tcp.Port
 		} else {
-			host, portText, err := net.SplitHostPort(addr.String())
+			host, _, err := net.SplitHostPort(addr.String())
 			if err == nil {
 				remoteHost = host
-				remotePort, _ = strconv.Atoi(portText)
 			}
 		}
 	}
-	return nodeHost, nodeTCP, remoteHost, remotePort
+	return nodeHost, remoteHost
 }
 
 func commonTxAdmissionPeerMatchesTarget(p *peer, target commonTxAdmissionTarget) bool {
-	nodeHost, nodeTCP, remoteHost, remotePort := commonTxAdmissionPeerAddrs(p)
-	return (commonTxAdmissionHostEqual(nodeHost, target.host) && nodeTCP == target.port) ||
-		(commonTxAdmissionHostEqual(remoteHost, target.host) && remotePort == target.port)
+	nodeHost, remoteHost := commonTxAdmissionPeerHosts(p)
+	return commonTxAdmissionHostEqual(nodeHost, target.host) ||
+		commonTxAdmissionHostEqual(remoteHost, target.host)
 }
 
 func commonTxAdmissionPeerMatchesAnyTarget(p *peer, targets []commonTxAdmissionTarget) bool {
@@ -102,7 +97,10 @@ func (pm *ProtocolManager) commonTxAdmissionCommitteeTargets() []commonTxAdmissi
 		if !ok {
 			return
 		}
-		key := target.host + ":" + strconv.Itoa(target.port)
+		key := strings.ToLower(target.host)
+		if ip := net.ParseIP(target.host); ip != nil {
+			key = ip.String()
+		}
 		if _, exists := seen[key]; exists {
 			return
 		}
@@ -132,9 +130,10 @@ func (pm *ProtocolManager) commonTxAdmissionCommitteeTargets() []commonTxAdmissi
 }
 
 // BroadcastCommonTxAdmissions propagates signed common RPC tx admissions. In
-// fixed committee mode this fallback eth/p2p relay is restricted to exact fixed
-// leader/committee peers only. The preferred production path is the dedicated
-// KCP committee channel installed by reconfig.
+// fixed committee mode this fallback eth/p2p relay is restricted to peers whose
+// host matches a fixed committee rnet endpoint. The GenCommittee port is the
+// rnet UDP port and must not be compared with eth/p2p TCP ports. The preferred
+// production path is the dedicated KCP committee channel installed by reconfig.
 func (pm *ProtocolManager) BroadcastCommonTxAdmissions(admissions []*types.CommonTxAdmission) {
 	pm.broadcastCommonTxAdmissionsExcept(admissions, "")
 }
@@ -172,17 +171,17 @@ func (pm *ProtocolManager) broadcastCommonTxAdmissionsExcept(admissions []*types
 			log.Warn("No fixed committee common tx admission targets")
 			return
 		}
-		exactPeers := make([]*peer, 0, len(allPeers))
+		committeePeers := make([]*peer, 0, len(allPeers))
 		for _, ethPeer := range allPeers {
 			if commonTxAdmissionPeerMatchesAnyTarget(ethPeer, targets) {
-				exactPeers = append(exactPeers, ethPeer)
+				committeePeers = append(committeePeers, ethPeer)
 			}
 		}
-		if len(exactPeers) == 0 {
-			log.Warn("No exact connected fixed committee peers for common tx admission relay", "targets", len(targets), "count", len(valid))
+		if len(committeePeers) == 0 {
+			log.Warn("No connected fixed committee host peers for common tx admission relay", "targets", len(targets), "count", len(valid))
 			return
 		}
-		sendPeers = exactPeers
+		sendPeers = committeePeers
 	}
 
 	for _, ethPeer := range sendPeers {
