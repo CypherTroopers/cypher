@@ -372,10 +372,10 @@ func DeriveCommonTxRewardRoot(rewards []*CommonTxReward) common.Hash {
 	return blake3MerkleRoot(leaves)
 }
 
-// EmptyBody returns true if there is no additional 'body' to complete the header
-// that is: no transactions and no uncles.
+// EmptyBody returns true if there is no additional body content to complete the header.
 func (h *Header) EmptyBody() bool {
-	return h.TxHash == EmptyRootHash && h.UncleHash == EmptyUncleHash
+	return h.TxHash == EmptyRootHash && h.UncleHash == EmptyUncleHash &&
+		h.CommonTxAdmissionRoot == (common.Hash{}) && h.CommonTxRewardRoot == (common.Hash{})
 }
 
 // EmptyReceipts returns true if there are no receipts for this header/block.

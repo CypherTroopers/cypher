@@ -63,10 +63,12 @@ type fetchRequest struct {
 type fetchResult struct {
 	pending int32 // Flag telling what deliveries are outstanding
 
-	Header       *types.Header
-	Uncles       []*types.Header
-	Transactions types.Transactions
-	Receipts     types.Receipts
+	Header             *types.Header
+	Uncles             []*types.Header
+	Transactions       types.Transactions
+	CommonTxAdmissions []*types.CommonTxAdmission
+	CommonTxRewards    []*types.CommonTxReward
+	Receipts           types.Receipts
 }
 
 func newFetchResult(header *types.Header, fastSync bool) *fetchResult {
@@ -768,7 +770,7 @@ func (q *queue) DeliverHeaders(id string, headers []*types.Header, headerProcCh 
 // DeliverBodies injects a block body retrieval response into the results queue.
 // The method returns the number of blocks bodies accepted from the delivery and
 // also wakes any threads waiting for data delivery.
-func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, uncleLists [][]*types.Header) (int, error) {
+func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, uncleLists [][]*types.Header, commonTxAdmissionLists [][]*types.CommonTxAdmission, commonTxRewardLists [][]*types.CommonTxReward) (int, error) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 	validate := func(index int, header *types.Header) error {
@@ -778,12 +780,20 @@ func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, uncleLi
 		if types.CalcUncleHash(uncleLists[index]) != header.UncleHash {
 			return errInvalidBody
 		}
+		if types.DeriveCommonTxAdmissionRoot(commonTxAdmissionLists[index]) != header.CommonTxAdmissionRoot {
+			return errInvalidBody
+		}
+		if types.DeriveCommonTxRewardRoot(commonTxRewardLists[index]) != header.CommonTxRewardRoot {
+			return errInvalidBody
+		}
 		return nil
 	}
 
 	reconstruct := func(index int, result *fetchResult) {
 		result.Transactions = txLists[index]
 		result.Uncles = uncleLists[index]
+		result.CommonTxAdmissions = commonTxAdmissionLists[index]
+		result.CommonTxRewards = commonTxRewardLists[index]
 		result.SetBodyDone()
 	}
 	return q.deliver(id, q.blockTaskPool, q.blockTaskQueue, q.blockPendPool,
