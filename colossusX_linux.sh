@@ -64,7 +64,7 @@ echo "==> Public IP: ${PUBLIC_IP}"
 echo "==> Start Cypher node"
 
 ./build/bin/cypher-linux-amd64 \
-  --verbosity 1 \
+  --verbosity 4 \
   --rnetport 7200 \
   --syncmode full \
   --nat "extip:${PUBLIC_IP}" \
@@ -79,6 +79,7 @@ echo "==> Start Cypher node"
   --http.api eth,web3,net,txpool \
   --http.corsdomain "*" \
   --port 6000 \
+  --allow-insecure-unlock \
   --datadir "${DATADIR}" \
   --networkid 10101919 \
   --gcmode archive \
