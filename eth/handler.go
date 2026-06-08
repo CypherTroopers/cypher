@@ -575,18 +575,22 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		// Deliver them all to the downloader for queuing
 		transactions := make([][]*types.Transaction, len(request))
 		uncles := make([][]*types.Header, len(request))
+		commonTxAdmissions := make([][]*types.CommonTxAdmission, len(request))
+		commonTxRewards := make([][]*types.CommonTxReward, len(request))
 
 		for i, body := range request {
 			transactions[i] = body.Transactions
 			uncles[i] = body.Uncles
+			commonTxAdmissions[i] = body.CommonTxAdmissions
+			commonTxRewards[i] = body.CommonTxRewards
 		}
 		// Filter out any explicitly requested bodies, deliver the rest to the downloader
-		filter := len(transactions) > 0 || len(uncles) > 0
+		filter := len(transactions) > 0 || len(uncles) > 0 || len(commonTxAdmissions) > 0 || len(commonTxRewards) > 0
 		if filter {
-			transactions, uncles = pm.blockFetcher.FilterBodies(p.id, transactions, uncles, time.Now())
+			transactions, uncles, commonTxAdmissions, commonTxRewards = pm.blockFetcher.FilterBodies(p.id, transactions, uncles, commonTxAdmissions, commonTxRewards, time.Now())
 		}
-		if len(transactions) > 0 || len(uncles) > 0 || !filter {
-			err := pm.downloader.DeliverBodies(p.id, transactions, uncles)
+		if len(transactions) > 0 || len(uncles) > 0 || len(commonTxAdmissions) > 0 || len(commonTxRewards) > 0 || !filter {
+			err := pm.downloader.DeliverBodies(p.id, transactions, uncles, commonTxAdmissions, commonTxRewards)
 			if err != nil {
 				log.Debug("Failed to deliver bodies", "err", err)
 			}
