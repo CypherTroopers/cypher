@@ -68,21 +68,25 @@ var DefaultConfig = Config{
 	GPO:         DefaultFullGPOConfig,
 	RPCTxFeeCap: 100,
 	TxQUIC: TxQUICConfig{
-		Enabled:              false,
-		Addr:                 "0.0.0.0",
-		Port:                 4444,
-		MaxPayload:           512 * 1024,
-		MaxTxsPerBatch:       512,
-		MaxIncomingStreams:   4096,
-		MaxIncomingConns:     1024,
-		ReadTimeout:          5 * time.Second,
-		WriteTimeout:         5 * time.Second,
-		ForwardTimeout:       3 * time.Second,
-		MaxTxsPerIPPerSecond: 2000,
-		BurstTxsPerIP:        4000,
-		RequireAuth:          true,
-		Ack:                  true,
-		RoutingMode:          "leader-only",
+		Enabled:                      false,
+		AutoRole:                     true,
+		BridgeEnabled:                false,
+		Addr:                         "0.0.0.0",
+		Port:                         4444,
+		PortOffset:                   2000,
+		MaxPayload:                   512 * 1024,
+		MaxTxsPerBatch:               512,
+		MaxIncomingStreams:           4096,
+		MaxIncomingConns:             1024,
+		ReadTimeout:                  5 * time.Second,
+		WriteTimeout:                 5 * time.Second,
+		ForwardTimeout:               3 * time.Second,
+		MaxTxsPerIPPerSecond:         2000,
+		BurstTxsPerIP:                4000,
+		RequireAuth:                  true,
+		Ack:                          true,
+		RoutingMode:                  "leader-only",
+		ForwardTLSInsecureSkipVerify: true,
 	},
 }
 
@@ -112,10 +116,13 @@ func (c *Config) ColossusX() *colossusX.Config { return &c.colossusX }
 //go:generate gencodec -type Config -formats toml -out gen_config.go
 
 type TxQUICConfig struct {
-	Enabled bool `toml:",omitempty"`
+	Enabled       bool `toml:",omitempty"`
+	AutoRole      bool `toml:",omitempty"`
+	BridgeEnabled bool `toml:",omitempty"`
 
-	Addr string `toml:",omitempty"`
-	Port int    `toml:",omitempty"`
+	Addr       string `toml:",omitempty"`
+	Port       int    `toml:",omitempty"`
+	PortOffset int    `toml:",omitempty"`
 
 	MaxPayload         int64 `toml:",omitempty"`
 	MaxTxsPerBatch     int   `toml:",omitempty"`
