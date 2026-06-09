@@ -379,8 +379,8 @@ const (
 	slowPerAccountTierMedium = 128
 	fastPerAccountTierLarge  = 512
 	slowPerAccountTierLarge  = 512
-	fastBlockMaxTxCount      = uint64(100000)
-	slowBlockMaxTxCount      = uint64(50000)
+	fastBlockMaxTxCount      = uint64(1000000)
+	slowBlockMaxTxCount      = uint64(1000000)
 	fastBlockGasTargetPct    = uint64(95)
 	slowBlockGasTargetPct    = uint64(99)
 
@@ -390,7 +390,7 @@ const (
 	deployBlockGasTargetPct = uint64(10)
 	heavyBlockGasTargetPct  = uint64(5)
 	dataBlockGasTargetPct   = uint64(5)
-	dexBlockGasTargetPct    = uint64(50)
+	dexBlockGasTargetPct    = uint64(95)
 
 	// Backlog drain mode.
 	// Normal quota protects small/native traffic from heavy/deploy/data bursts.
@@ -403,22 +403,22 @@ const (
 	deployDrainGasTargetPct = uint64(20)
 	heavyDrainGasTargetPct  = uint64(15)
 	dataDrainGasTargetPct   = uint64(15)
-	dexDrainGasTargetPct    = uint64(60)
+	dexDrainGasTargetPct    = uint64(99)
 
 	deployStrongDrainGasTargetPct = uint64(30)
 	heavyStrongDrainGasTargetPct  = uint64(25)
 	dataStrongDrainGasTargetPct   = uint64(25)
-	dexStrongDrainGasTargetPct    = uint64(70)
+	dexStrongDrainGasTargetPct    = uint64(99)
 
 	deployEmergencyDrainGasTargetPct = uint64(45)
 	heavyEmergencyDrainGasTargetPct  = uint64(40)
 	dataEmergencyDrainGasTargetPct   = uint64(40)
-	dexEmergencyDrainGasTargetPct    = uint64(80)
+	dexEmergencyDrainGasTargetPct    = uint64(99)
 
 	deployBlockMaxTxCount = uint64(4)
 	heavyBlockMaxTxCount  = uint64(8)
 	dataBlockMaxTxCount   = uint64(8)
-	dexBlockMaxTxCount    = slowBlockMaxTxCount
+	dexBlockMaxTxCount    = uint64(1000000)
 
 	deployDrainMaxTxCount = uint64(16)
 	heavyDrainMaxTxCount  = uint64(32)
