@@ -92,7 +92,6 @@ type txQUICBridgeItem struct {
 
 type txQUICAdmissionItem struct {
 	admission *types.CommonTxAdmission
-	am        *accounts.Manager
 }
 
 type TxQUICIngress struct {
@@ -272,9 +271,7 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 	}
 }
 
-func (q *TxQUICIngress) SetHTTP3RPCHandler(handler http.Handler) {
-	q.http3Handler = handler
-}
+func (q *TxQUICIngress) SetHTTP3RPCHandler(handler http.Handler) { q.http3Handler = handler }
 
 func (q *TxQUICIngress) Start() error {
 	if q.config.BridgeEnabled {
@@ -297,48 +294,29 @@ func (q *TxQUICIngress) Start() error {
 		return err
 	}
 	addr := fmt.Sprintf("%s:%d", q.config.Addr, q.config.Port)
-	listener, err := quic.ListenAddr(addr, &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		NextProtos:   []string{txQUICProtocolName},
-		MinVersion:   tls.VersionTLS13,
-	}, &quic.Config{
-		MaxIncomingStreams: q.config.MaxIncomingStreams,
-		KeepAlivePeriod:    10 * time.Second,
-		MaxIdleTimeout:     30 * time.Second,
-	})
+	listener, err := quic.ListenAddr(addr, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{txQUICProtocolName}, MinVersion: tls.VersionTLS13}, &quic.Config{MaxIncomingStreams: q.config.MaxIncomingStreams, KeepAlivePeriod: 10 * time.Second, MaxIdleTimeout: 30 * time.Second})
 	if err != nil {
 		return err
 	}
 	q.listener = listener
 	log.Info("Started QUIC tx ingress", "addr", addr, "routing", q.config.RoutingMode, "auth", q.config.RequireAuth, "ack", q.config.Ack, "leaders", len(q.config.LeaderEndpoints), "backups", len(q.config.BackupEndpoints))
-
 	q.wg.Add(1)
 	go q.acceptLoop()
 	return nil
 }
 
 func (q *TxQUICIngress) Stop() {
-	if q.cancel != nil {
-		q.cancel()
-	}
-	if q.listener != nil {
-		_ = q.listener.Close()
-	}
-	if q.http3Server != nil {
-		_ = q.http3Server.Close()
-	}
+	if q.cancel != nil { q.cancel() }
+	if q.listener != nil { _ = q.listener.Close() }
+	if q.http3Server != nil { _ = q.http3Server.Close() }
 	q.wg.Wait()
 	log.Info("Stopped QUIC tx ingress")
 }
 
 func (q *TxQUICIngress) ForwardLocalTxs(txs []*types.Transaction, am *accounts.Manager) {
-	if q == nil || !q.config.BridgeEnabled || len(txs) == 0 || q.bridgeQueue == nil {
-		return
-	}
+	if q == nil || !q.config.BridgeEnabled || len(txs) == 0 || q.bridgeQueue == nil { return }
 	for _, tx := range txs {
-		if tx == nil {
-			continue
-		}
+		if tx == nil { continue }
 		select {
 		case q.bridgeQueue <- txQUICBridgeItem{tx: tx, am: am}:
 		default:
@@ -349,13 +327,9 @@ func (q *TxQUICIngress) ForwardLocalTxs(txs []*types.Transaction, am *accounts.M
 }
 
 func (q *TxQUICIngress) ForwardAdmissions(admissions []*types.CommonTxAdmission) {
-	if q == nil || !q.config.BridgeEnabled || len(admissions) == 0 || q.admissionQueue == nil {
-		return
-	}
+	if q == nil || !q.config.BridgeEnabled || len(admissions) == 0 || q.admissionQueue == nil { return }
 	for _, admission := range admissions {
-		if admission == nil {
-			continue
-		}
+		if admission == nil { continue }
 		copy := copyCommonTxAdmissionForQUIC(admission)
 		select {
 		case q.admissionQueue <- txQUICAdmissionItem{admission: copy}:
@@ -367,12 +341,8 @@ func (q *TxQUICIngress) ForwardAdmissions(admissions []*types.CommonTxAdmission)
 }
 
 func (q *TxQUICIngress) startBridgeWorkers() {
-	if q.bridgeQueue == nil {
-		q.bridgeQueue = make(chan txQUICBridgeItem, q.config.BridgeQueueSize)
-	}
-	if q.admissionQueue == nil {
-		q.admissionQueue = make(chan txQUICAdmissionItem, q.config.BridgeQueueSize)
-	}
+	if q.bridgeQueue == nil { q.bridgeQueue = make(chan txQUICBridgeItem, q.config.BridgeQueueSize) }
+	if q.admissionQueue == nil { q.admissionQueue = make(chan txQUICAdmissionItem, q.config.BridgeQueueSize) }
 	for i := 0; i < q.config.BridgeWorkers; i++ {
 		q.wg.Add(2)
 		go q.bridgeWorker(i)
@@ -387,31 +357,20 @@ func (q *TxQUICIngress) bridgeWorker(id int) {
 	batch := make([]*types.Transaction, 0, q.config.MaxTxsPerBatch)
 	var am *accounts.Manager
 	flush := func() {
-		if len(batch) == 0 {
-			return
-		}
+		if len(batch) == 0 { return }
 		txs := append([]*types.Transaction(nil), batch...)
 		batch = batch[:0]
 		q.forwardBridgeBatch(txs, am)
 	}
 	for {
 		select {
-		case <-q.ctx.Done():
-			flush()
-			return
+		case <-q.ctx.Done(): flush(); return
 		case item := <-q.bridgeQueue:
-			if item.tx == nil {
-				continue
-			}
-			if item.am != nil {
-				am = item.am
-			}
+			if item.tx == nil { continue }
+			if item.am != nil { am = item.am }
 			batch = append(batch, item.tx)
-			if len(batch) >= q.config.MaxTxsPerBatch {
-				flush()
-			}
-		case <-ticker.C:
-			flush()
+			if len(batch) >= q.config.MaxTxsPerBatch { flush() }
+		case <-ticker.C: flush()
 		}
 	}
 }
@@ -422,135 +381,85 @@ func (q *TxQUICIngress) admissionWorker(id int) {
 	defer ticker.Stop()
 	batch := make([]*types.CommonTxAdmission, 0, q.config.MaxTxsPerBatch)
 	flush := func() {
-		if len(batch) == 0 {
-			return
-		}
+		if len(batch) == 0 { return }
 		admissions := append([]*types.CommonTxAdmission(nil), batch...)
 		batch = batch[:0]
 		q.forwardAdmissionBatch(admissions)
 	}
 	for {
 		select {
-		case <-q.ctx.Done():
-			flush()
-			return
+		case <-q.ctx.Done(): flush(); return
 		case item := <-q.admissionQueue:
-			if item.admission == nil {
-				continue
-			}
+			if item.admission == nil { continue }
 			batch = append(batch, item.admission)
-			if len(batch) >= q.config.MaxTxsPerBatch {
-				flush()
-			}
-		case <-ticker.C:
-			flush()
+			if len(batch) >= q.config.MaxTxsPerBatch { flush() }
+		case <-ticker.C: flush()
 		}
 	}
 }
 
 func (q *TxQUICIngress) forwardBridgeBatch(txs []*types.Transaction, am *accounts.Manager) {
 	payload, err := q.encodeTxPayload(txs, am)
-	if err != nil {
-		log.Debug("TxQUIC bridge encode failed", "err", err, "txs", len(txs))
-		return
-	}
+	if err != nil { log.Debug("TxQUIC bridge encode failed", "err", err, "txs", len(txs)); return }
 	forwarded := q.routePayload(payload)
-	if forwarded > 0 {
-		txQUICIngressForwardMeter.Mark(int64(forwarded))
-	}
+	if forwarded > 0 { txQUICIngressForwardMeter.Mark(int64(forwarded)) }
 	log.Debug("TxQUIC bridge forwarded tx batch", "txs", len(txs), "forwarded", forwarded)
 }
 
 func (q *TxQUICIngress) forwardAdmissionBatch(admissions []*types.CommonTxAdmission) {
 	payload, err := q.encodeAdmissionPayload(admissions)
-	if err != nil {
-		log.Debug("TxQUIC admission encode failed", "err", err, "admissions", len(admissions))
-		return
-	}
+	if err != nil { log.Debug("TxQUIC admission encode failed", "err", err, "admissions", len(admissions)); return }
 	forwarded := q.routePayload(payload)
-	if forwarded > 0 {
-		txQUICIngressForwardMeter.Mark(int64(forwarded))
-	}
+	if forwarded > 0 { txQUICIngressForwardMeter.Mark(int64(forwarded)) }
 	log.Debug("TxQUIC bridge forwarded admission batch", "admissions", len(admissions), "forwarded", forwarded)
 }
 
 func (q *TxQUICIngress) encodeTxPayload(txs []*types.Transaction, am *accounts.Manager) ([]byte, error) {
-	return q.encodeOutboundPacket(txs, nil, am)
-}
-
-func (q *TxQUICIngress) encodeAdmissionPayload(admissions []*types.CommonTxAdmission) ([]byte, error) {
-	return q.encodeOutboundPacket(nil, admissions, nil)
-}
-
-func (q *TxQUICIngress) encodeOutboundPacket(txs []*types.Transaction, admissions []*types.CommonTxAdmission, am *accounts.Manager) ([]byte, error) {
-	if !q.config.RequireAuth && len(admissions) == 0 {
+	if !q.config.RequireAuth {
 		return rlp.EncodeToBytes(txs)
 	}
 	sender := bftview.GetServerCoinBase()
-	if sender == (common.Address{}) {
-		return nil, fmt.Errorf("txquic bridge signer coinbase is empty")
-	}
-	if am == nil {
-		am = firstAvailableAccountManager()
-	}
-	if am == nil {
-		return nil, fmt.Errorf("txquic bridge account manager is nil")
-	}
-	pkt := &txQUICPacket{
-		Version:    txQUICPacketV1,
-		Sender:     sender,
-		Nonce:      atomic.AddUint64(&q.outboundNonce, 1),
-		Timestamp:  uint64(time.Now().Unix()),
-		Txs:        txs,
-		Admissions: admissions,
-	}
+	if sender == (common.Address{}) { return nil, fmt.Errorf("txquic bridge signer coinbase is empty") }
+	if am == nil { return nil, fmt.Errorf("txquic bridge account manager is nil") }
+	pkt := &txQUICPacket{Version: txQUICPacketV1, Sender: sender, Nonce: atomic.AddUint64(&q.outboundNonce, 1), Timestamp: uint64(time.Now().Unix()), Txs: txs}
 	payload, err := pkt.signingPayload()
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	account := accounts.Account{Address: sender}
 	wallet, err := am.Find(account)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	sig, err := wallet.SignData(account, accounts.MimetypeDataWithValidator, payload)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 	pkt.Signature = sig
 	return rlp.EncodeToBytes(pkt)
 }
 
-func firstAvailableAccountManager() *accounts.Manager { return nil }
+func (q *TxQUICIngress) encodeAdmissionPayload(admissions []*types.CommonTxAdmission) ([]byte, error) {
+	valid := make([]*types.CommonTxAdmission, 0, len(admissions))
+	for _, admission := range admissions {
+		if admission == nil { continue }
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+			log.Warn("Skip invalid TxQUIC admission before forward", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
+			continue
+		}
+		valid = append(valid, copyCommonTxAdmissionForQUIC(admission))
+	}
+	if len(valid) == 0 { return nil, fmt.Errorf("no valid admissions to forward") }
+	pkt := &txQUICPacket{Version: txQUICPacketV1, Nonce: atomic.AddUint64(&q.outboundNonce, 1), Timestamp: uint64(time.Now().Unix()), Admissions: valid}
+	return rlp.EncodeToBytes(pkt)
+}
 
 func (q *TxQUICIngress) startHTTP3RPC() error {
-	if !q.config.HTTP3Enabled || q.http3Handler == nil {
-		return nil
-	}
+	if !q.config.HTTP3Enabled || q.http3Handler == nil { return nil }
 	cert, err := q.http3Certificate()
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	addr := fmt.Sprintf("%s:%d", q.config.HTTP3Addr, q.config.HTTP3Port)
-	q.http3Server = &http3.Server{
-		Addr:    addr,
-		Handler: q.http3Handler,
-		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			NextProtos:   []string{"h3"},
-			MinVersion:   tls.VersionTLS13,
-		},
-	}
+	q.http3Server = &http3.Server{Addr: addr, Handler: q.http3Handler, TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h3"}, MinVersion: tls.VersionTLS13}}
 	q.wg.Add(1)
 	go func() {
 		defer q.wg.Done()
 		log.Info("Started HTTP/3 JSON-RPC", "addr", addr)
 		if err := q.http3Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			select {
-			case <-q.ctx.Done():
-			default:
-				log.Error("HTTP/3 JSON-RPC stopped with error", "err", err)
-			}
+			select { case <-q.ctx.Done(): default: log.Error("HTTP/3 JSON-RPC stopped with error", "err", err) }
 		}
 	}()
 	return nil
@@ -561,25 +470,11 @@ func (q *TxQUICIngress) acceptLoop() {
 	for {
 		conn, err := q.listener.Accept(q.ctx)
 		if err != nil {
-			select {
-			case <-q.ctx.Done():
-				return
-			default:
-				log.Debug("QUIC tx ingress accept failed", "err", err)
-				continue
-			}
+			select { case <-q.ctx.Done(): return; default: log.Debug("QUIC tx ingress accept failed", "err", err); continue }
 		}
 		remote := conn.RemoteAddr()
-		if !q.allowed(remote) {
-			_ = conn.CloseWithError(1, "not allowed")
-			continue
-		}
-		select {
-		case q.connSem <- struct{}{}:
-		default:
-			_ = conn.CloseWithError(2, "too many connections")
-			continue
-		}
+		if !q.allowed(remote) { _ = conn.CloseWithError(1, "not allowed"); continue }
+		select { case q.connSem <- struct{}{}: default: _ = conn.CloseWithError(2, "too many connections"); continue }
 		txQUICIngressConnMeter.Mark(1)
 		q.wg.Add(1)
 		go q.handleConn(conn)
@@ -588,21 +483,12 @@ func (q *TxQUICIngress) acceptLoop() {
 
 func (q *TxQUICIngress) handleConn(conn *quic.Conn) {
 	defer q.wg.Done()
-	defer func() {
-		<-q.connSem
-		_ = conn.CloseWithError(0, "closed")
-	}()
+	defer func() { <-q.connSem; _ = conn.CloseWithError(0, "closed") }()
 	remote := conn.RemoteAddr()
 	for {
 		stream, err := conn.AcceptStream(q.ctx)
 		if err != nil {
-			select {
-			case <-q.ctx.Done():
-				return
-			default:
-				log.Debug("QUIC tx ingress stream accept failed", "remote", remote, "err", err)
-				return
-			}
+			select { case <-q.ctx.Done(): return; default: log.Debug("QUIC tx ingress stream accept failed", "remote", remote, "err", err); return }
 		}
 		txQUICIngressStreamMeter.Mark(1)
 		q.wg.Add(1)
@@ -614,81 +500,37 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 	defer q.wg.Done()
 	defer stream.Close()
 	ack := txQUICAck{Version: txQUICPacketV1}
-
 	_ = stream.SetReadDeadline(time.Now().Add(q.config.ReadTimeout))
 	payload, err := io.ReadAll(io.LimitReader(stream, q.config.MaxPayload+1))
-	if err != nil {
-		ack.Errors = append(ack.Errors, err.Error())
-		q.writeAck(stream, ack)
-		return
-	}
-	if int64(len(payload)) > q.config.MaxPayload {
-		ack.Errors = append(ack.Errors, "payload too large")
-		q.writeAck(stream, ack)
-		return
-	}
-
+	if err != nil { ack.Errors = append(ack.Errors, err.Error()); q.writeAck(stream, ack); return }
+	if int64(len(payload)) > q.config.MaxPayload { ack.Errors = append(ack.Errors, "payload too large"); q.writeAck(stream, ack); return }
 	txs, admissions, signed, signer, err := q.decodeAndAuthenticate(payload)
-	if err != nil {
-		txQUICIngressAuthFailMeter.Mark(1)
-		ack.Errors = append(ack.Errors, err.Error())
-		q.writeAck(stream, ack)
-		return
-	}
-	if len(txs) == 0 && len(admissions) == 0 {
-		ack.Errors = append(ack.Errors, "empty txquic payload")
-		q.writeAck(stream, ack)
-		return
-	}
-	if len(txs) > q.config.MaxTxsPerBatch || len(admissions) > q.config.MaxTxsPerBatch {
-		ack.Errors = append(ack.Errors, "batch too large")
-		q.writeAck(stream, ack)
-		return
-	}
-	if !q.takeTokens(remote, len(txs)+len(admissions)) {
-		ack.Errors = append(ack.Errors, "rate limited")
-		q.writeAck(stream, ack)
-		return
-	}
-
+	if err != nil { txQUICIngressAuthFailMeter.Mark(1); ack.Errors = append(ack.Errors, err.Error()); q.writeAck(stream, ack); return }
+	if len(txs) == 0 && len(admissions) == 0 { ack.Errors = append(ack.Errors, "empty txquic payload"); q.writeAck(stream, ack); return }
+	if len(txs) > q.config.MaxTxsPerBatch || len(admissions) > q.config.MaxTxsPerBatch { ack.Errors = append(ack.Errors, "batch too large"); q.writeAck(stream, ack); return }
+	if !q.takeTokens(remote, len(txs)+len(admissions)) { ack.Errors = append(ack.Errors, "rate limited"); q.writeAck(stream, ack); return }
 	ack.Forwarded = q.routePayload(payload)
 	acceptedTx, rejectedTx, hashes := q.insertLocal(txs)
 	acceptedAdmission, rejectedAdmission := q.insertAdmissions(admissions)
 	ack.Accepted = acceptedTx + acceptedAdmission
 	ack.Rejected = rejectedTx + rejectedAdmission
 	ack.Hashes = hashes
-
-	if ack.Accepted > 0 {
-		txQUICIngressAcceptedMeter.Mark(int64(ack.Accepted))
-	}
-	if ack.Rejected > 0 {
-		txQUICIngressRejectedMeter.Mark(int64(ack.Rejected))
-	}
-	if ack.Forwarded > 0 {
-		txQUICIngressForwardMeter.Mark(int64(ack.Forwarded))
-	}
+	if ack.Accepted > 0 { txQUICIngressAcceptedMeter.Mark(int64(ack.Accepted)) }
+	if ack.Rejected > 0 { txQUICIngressRejectedMeter.Mark(int64(ack.Rejected)) }
+	if ack.Forwarded > 0 { txQUICIngressForwardMeter.Mark(int64(ack.Forwarded)) }
 	log.Debug("QUIC ingress processed", "remote", remote, "signed", signed, "signer", signer, "txs", len(txs), "admissions", len(admissions), "accepted", ack.Accepted, "rejected", ack.Rejected, "forwarded", ack.Forwarded)
 	q.writeAck(stream, ack)
 }
 
 func (q *TxQUICIngress) insertLocal(txs []*types.Transaction) (int, int, []common.Hash) {
-	if len(txs) == 0 {
-		return 0, 0, nil
-	}
+	if len(txs) == 0 { return 0, 0, nil }
 	mode := strings.ToLower(q.config.RoutingMode)
-	if mode == "leader-only" && len(q.config.LeaderEndpoints) > 0 {
-		return 0, 0, nil
-	}
+	if mode == "leader-only" && len(q.config.LeaderEndpoints) > 0 { return 0, 0, nil }
 	errs := q.txpool.AddRemotes(txs)
 	accepted, rejected := 0, 0
 	hashes := make([]common.Hash, 0, len(txs))
 	for i, err := range errs {
-		if err == nil {
-			accepted++
-			hashes = append(hashes, txs[i].Hash())
-		} else {
-			rejected++
-		}
+		if err == nil { accepted++; hashes = append(hashes, txs[i].Hash()) } else { rejected++ }
 	}
 	return accepted, rejected, hashes
 }
@@ -696,36 +538,20 @@ func (q *TxQUICIngress) insertLocal(txs []*types.Transaction) (int, int, []commo
 func (q *TxQUICIngress) insertAdmissions(admissions []*types.CommonTxAdmission) (int, int) {
 	accepted, rejected := 0, 0
 	for _, admission := range admissions {
-		if admission == nil {
-			continue
-		}
-		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
-			rejected++
-			log.Warn("Rejected invalid TxQUIC admission", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
-			continue
-		}
-		if core.StoreCommonRPCAdmission(admission) {
-			accepted++
-		}
+		if admission == nil { continue }
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil { rejected++; log.Warn("Rejected invalid TxQUIC admission", "tx", admission.TxHash, "miner", admission.Miner, "err", err); continue }
+		if core.StoreCommonRPCAdmission(admission) { accepted++ }
 	}
 	return accepted, rejected
 }
 
 func (q *TxQUICIngress) routePayload(payload []byte) int {
 	mode := strings.ToLower(q.config.RoutingMode)
-	if mode == "local" || mode == "" {
-		return 0
-	}
+	if mode == "local" || mode == "" { return 0 }
 	endpoints := append([]string{}, q.config.LeaderEndpoints...)
-	if mode == "committee-backup" {
-		endpoints = append(endpoints, q.config.BackupEndpoints...)
-	}
+	if mode == "committee-backup" { endpoints = append(endpoints, q.config.BackupEndpoints...) }
 	forwarded := 0
-	for _, endpoint := range endpoints {
-		if q.forwardPayload(endpoint, payload) == nil {
-			forwarded++
-		}
-	}
+	for _, endpoint := range endpoints { if q.forwardPayload(endpoint, payload) == nil { forwarded++ } }
 	return forwarded
 }
 
@@ -733,14 +559,10 @@ func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
 	ctx, cancel := context.WithTimeout(q.ctx, q.config.ForwardTimeout)
 	defer cancel()
 	conn, err := quic.DialAddr(ctx, endpoint, q.clientTLSConfig(), &quic.Config{MaxIdleTimeout: q.config.ForwardTimeout})
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	defer conn.CloseWithError(0, "done")
 	stream, err := conn.OpenStreamSync(ctx)
-	if err != nil {
-		return err
-	}
+	if err != nil { return err }
 	defer stream.Close()
 	_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
 	_, err = stream.Write(payload)
@@ -750,87 +572,65 @@ func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
 func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transaction, []*types.CommonTxAdmission, bool, common.Address, error) {
 	var pkt txQUICPacket
 	if err := rlp.DecodeBytes(payload, &pkt); err == nil && pkt.Version == txQUICPacketV1 && (len(pkt.Txs) > 0 || len(pkt.Admissions) > 0) {
+		if len(pkt.Txs) == 0 && len(pkt.Admissions) > 0 && len(pkt.Signature) == 0 {
+			signer, err := verifyAdmissionOnlyPacket(&pkt)
+			return nil, pkt.Admissions, false, signer, err
+		}
 		signer, err := q.verifyPacket(&pkt)
 		return pkt.Txs, pkt.Admissions, true, signer, err
 	}
-	if q.config.RequireAuth {
-		return nil, nil, false, common.Address{}, fmt.Errorf("unsigned txquic payload rejected")
-	}
+	if q.config.RequireAuth { return nil, nil, false, common.Address{}, fmt.Errorf("unsigned txquic payload rejected") }
 	var batch []*types.Transaction
-	if err := rlp.DecodeBytes(payload, &batch); err == nil {
-		return batch, nil, false, common.Address{}, nil
-	}
+	if err := rlp.DecodeBytes(payload, &batch); err == nil { return batch, nil, false, common.Address{}, nil }
 	var single types.Transaction
-	if err := rlp.DecodeBytes(payload, &single); err != nil {
-		return nil, nil, false, common.Address{}, err
-	}
+	if err := rlp.DecodeBytes(payload, &single); err != nil { return nil, nil, false, common.Address{}, err }
 	return []*types.Transaction{&single}, nil, false, common.Address{}, nil
 }
 
+func verifyAdmissionOnlyPacket(pkt *txQUICPacket) (common.Address, error) {
+	var signer common.Address
+	for _, admission := range pkt.Admissions {
+		if admission == nil { continue }
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil { return common.Address{}, err }
+		if signer == (common.Address{}) { signer = admission.Miner }
+	}
+	return signer, nil
+}
+
 func (q *TxQUICIngress) verifyPacket(pkt *txQUICPacket) (common.Address, error) {
-	if !q.config.RequireAuth {
-		return pkt.Sender, nil
-	}
-	if len(pkt.Signature) != crypto.SignatureLength {
-		return common.Address{}, fmt.Errorf("invalid ingress signature length")
-	}
+	if !q.config.RequireAuth { return pkt.Sender, nil }
+	if len(pkt.Signature) != crypto.SignatureLength { return common.Address{}, fmt.Errorf("invalid ingress signature length") }
 	hash := pkt.signingHash()
 	pub, err := crypto.SigToPub(hash.Bytes(), pkt.Signature)
-	if err != nil {
-		return common.Address{}, err
-	}
+	if err != nil { return common.Address{}, err }
 	pubBytes := crypto.FromECDSAPub(pub)
-	if len(pubBytes) == 0 {
-		return common.Address{}, fmt.Errorf("invalid ingress signer pubkey")
-	}
+	if len(pubBytes) == 0 { return common.Address{}, fmt.Errorf("invalid ingress signer pubkey") }
 	signer := common.BytesToAddress(crypto.Keccak256(pubBytes[1:])[12:])
-	if signer != pkt.Sender {
-		return signer, fmt.Errorf("ingress signer mismatch")
-	}
-	if len(q.signers) > 0 {
-		if _, ok := q.signers[signer]; !ok {
-			return signer, fmt.Errorf("ingress signer not allowed")
-		}
-	}
+	if signer != pkt.Sender { return signer, fmt.Errorf("ingress signer mismatch") }
+	if len(q.signers) > 0 { if _, ok := q.signers[signer]; !ok { return signer, fmt.Errorf("ingress signer not allowed") } }
 	return signer, nil
 }
 
 func (p *txQUICPacket) signingPayload() ([]byte, error) {
 	hashes := make([]common.Hash, 0, len(p.Txs))
-	for _, tx := range p.Txs {
-		if tx != nil {
-			hashes = append(hashes, tx.Hash())
-		}
-	}
+	for _, tx := range p.Txs { if tx != nil { hashes = append(hashes, tx.Hash()) } }
 	admissionHashes := make([]common.Hash, 0, len(p.Admissions))
 	admissionMiners := make([]common.Address, 0, len(p.Admissions))
-	for _, admission := range p.Admissions {
-		if admission != nil {
-			admissionHashes = append(admissionHashes, admission.TxHash)
-			admissionMiners = append(admissionMiners, admission.Miner)
-		}
-	}
+	for _, admission := range p.Admissions { if admission != nil { admissionHashes = append(admissionHashes, admission.TxHash); admissionMiners = append(admissionMiners, admission.Miner) } }
 	return rlp.EncodeToBytes(txQUICSigningData{Version: p.Version, Sender: p.Sender, Nonce: p.Nonce, Timestamp: p.Timestamp, TxHashes: hashes, AdmissionHashes: admissionHashes, AdmissionMiners: admissionMiners})
 }
 
-func (p *txQUICPacket) signingHash() common.Hash {
-	enc, _ := p.signingPayload()
-	return crypto.Keccak256Hash(enc)
-}
+func (p *txQUICPacket) signingHash() common.Hash { enc, _ := p.signingPayload(); return crypto.Keccak256Hash(enc) }
 
 func (q *TxQUICIngress) writeAck(stream *quic.Stream, ack txQUICAck) {
-	if !q.config.Ack {
-		return
-	}
+	if !q.config.Ack { return }
 	_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
 	_ = rlp.Encode(stream, &ack)
 }
 
 func (q *TxQUICIngress) serverCertificate() (tls.Certificate, error) {
 	if q.config.TLSCertFile != "" || q.config.TLSKeyFile != "" {
-		if q.config.TLSCertFile == "" || q.config.TLSKeyFile == "" {
-			return tls.Certificate{}, fmt.Errorf("txquic tls cert and key must both be set")
-		}
+		if q.config.TLSCertFile == "" || q.config.TLSKeyFile == "" { return tls.Certificate{}, fmt.Errorf("txquic tls cert and key must both be set") }
 		return tls.LoadX509KeyPair(q.config.TLSCertFile, q.config.TLSKeyFile)
 	}
 	return generateTxQUICSelfSignedCert()
@@ -838,9 +638,7 @@ func (q *TxQUICIngress) serverCertificate() (tls.Certificate, error) {
 
 func (q *TxQUICIngress) http3Certificate() (tls.Certificate, error) {
 	if q.config.HTTP3CertFile != "" || q.config.HTTP3KeyFile != "" {
-		if q.config.HTTP3CertFile == "" || q.config.HTTP3KeyFile == "" {
-			return tls.Certificate{}, fmt.Errorf("http3 rpc cert and key must both be set")
-		}
+		if q.config.HTTP3CertFile == "" || q.config.HTTP3KeyFile == "" { return tls.Certificate{}, fmt.Errorf("http3 rpc cert and key must both be set") }
 		return tls.LoadX509KeyPair(q.config.HTTP3CertFile, q.config.HTTP3KeyFile)
 	}
 	return q.serverCertificate()
@@ -848,14 +646,10 @@ func (q *TxQUICIngress) http3Certificate() (tls.Certificate, error) {
 
 func generateTxQUICSelfSignedCert() (tls.Certificate, error) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
+	if err != nil { return tls.Certificate{}, err }
 	template := x509.Certificate{SerialNumber: mathbig.NewInt(time.Now().UnixNano()), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(365 * 24 * time.Hour)}
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
+	if err != nil { return tls.Certificate{}, err }
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 	return tls.X509KeyPair(certPEM, keyPEM)
@@ -863,113 +657,64 @@ func generateTxQUICSelfSignedCert() (tls.Certificate, error) {
 
 func (q *TxQUICIngress) clientTLSConfig() *tls.Config {
 	cfg := &tls.Config{NextProtos: []string{txQUICProtocolName}, MinVersion: tls.VersionTLS13, ServerName: q.config.ForwardServerName, InsecureSkipVerify: q.config.ForwardTLSInsecureSkipVerify}
-	if q.config.ForwardTLSCAFile == "" {
-		return cfg
-	}
+	if q.config.ForwardTLSCAFile == "" { return cfg }
 	pem, err := os.ReadFile(q.config.ForwardTLSCAFile)
-	if err != nil {
-		return cfg
-	}
+	if err != nil { return cfg }
 	pool := x509.NewCertPool()
-	if pool.AppendCertsFromPEM(pem) {
-		cfg.RootCAs = pool
-	}
+	if pool.AppendCertsFromPEM(pem) { cfg.RootCAs = pool }
 	return cfg
 }
 
 func (q *TxQUICIngress) parseAllowlist() {
 	for _, entry := range q.config.AllowIPs {
 		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		if strings.Contains(entry, "/") {
-			if _, ipnet, err := net.ParseCIDR(entry); err == nil {
-				q.allowNets = append(q.allowNets, ipnet)
-			}
-			continue
-		}
-		if ip := net.ParseIP(entry); ip != nil {
-			q.allowIPs[ip.String()] = struct{}{}
-		}
+		if entry == "" { continue }
+		if strings.Contains(entry, "/") { if _, ipnet, err := net.ParseCIDR(entry); err == nil { q.allowNets = append(q.allowNets, ipnet) }; continue }
+		if ip := net.ParseIP(entry); ip != nil { q.allowIPs[ip.String()] = struct{}{} }
 	}
 }
 
-func (q *TxQUICIngress) parseSigners() {
-	for _, signer := range q.config.AllowedSigners {
-		q.signers[signer] = struct{}{}
-	}
-}
+func (q *TxQUICIngress) parseSigners() { for _, signer := range q.config.AllowedSigners { q.signers[signer] = struct{}{} } }
 
 func (q *TxQUICIngress) allowed(addr net.Addr) bool {
-	if len(q.allowIPs) == 0 && len(q.allowNets) == 0 {
-		return true
-	}
+	if len(q.allowIPs) == 0 && len(q.allowNets) == 0 { return true }
 	host, _, err := net.SplitHostPort(addr.String())
-	if err != nil {
-		host = addr.String()
-	}
+	if err != nil { host = addr.String() }
 	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	if _, ok := q.allowIPs[ip.String()]; ok {
-		return true
-	}
-	for _, ipnet := range q.allowNets {
-		if ipnet.Contains(ip) {
-			return true
-		}
-	}
+	if ip == nil { return false }
+	if _, ok := q.allowIPs[ip.String()]; ok { return true }
+	for _, ipnet := range q.allowNets { if ipnet.Contains(ip) { return true } }
 	return false
 }
 
 func (q *TxQUICIngress) takeTokens(addr net.Addr, n int) bool {
 	host, _, err := net.SplitHostPort(addr.String())
-	if err != nil {
-		host = addr.String()
-	}
-	q.rateMu.Lock()
-	defer q.rateMu.Unlock()
+	if err != nil { host = addr.String() }
+	q.rateMu.Lock(); defer q.rateMu.Unlock()
 	now := time.Now()
 	b := q.buckets[host]
-	if b == nil {
-		b = &txQUICRateBucket{tokens: q.config.BurstTxsPerIP, last: now}
-		q.buckets[host] = b
-	}
+	if b == nil { b = &txQUICRateBucket{tokens: q.config.BurstTxsPerIP, last: now}; q.buckets[host] = b }
 	if refill := int(now.Sub(b.last).Seconds() * float64(q.config.MaxTxsPerIPPerSecond)); refill > 0 {
 		b.tokens += refill
-		if b.tokens > q.config.BurstTxsPerIP {
-			b.tokens = q.config.BurstTxsPerIP
-		}
+		if b.tokens > q.config.BurstTxsPerIP { b.tokens = q.config.BurstTxsPerIP }
 		b.last = now
 	}
-	if b.tokens < n {
-		return false
-	}
+	if b.tokens < n { return false }
 	b.tokens -= n
 	return true
 }
 
 func copyCommonTxAdmissionForQUIC(admission *types.CommonTxAdmission) *types.CommonTxAdmission {
-	if admission == nil {
-		return nil
-	}
+	if admission == nil { return nil }
 	cpy := *admission
-	if admission.ChainID != nil {
-		cpy.ChainID = new(mathbig.Int).Set(admission.ChainID)
-	}
-	if len(admission.Signature) > 0 {
-		cpy.Signature = append([]byte(nil), admission.Signature...)
-	}
+	if admission.ChainID != nil { cpy.ChainID = new(mathbig.Int).Set(admission.ChainID) }
+	if len(admission.Signature) > 0 { cpy.Signature = append([]byte(nil), admission.Signature...) }
 	return &cpy
 }
 
 func txQUICEndpointFromCommitteeAddress(address string, offset int) (string, bool) {
 	host, port, ok := splitHostPortLoose(address)
-	if !ok {
-		return "", false
-	}
+	if !ok { return "", false }
 	return net.JoinHostPort(host, strconv.Itoa(port+offset)), true
 }
 
@@ -977,15 +722,11 @@ func splitHostPortLoose(address string) (string, int, bool) {
 	host, portText, err := net.SplitHostPort(address)
 	if err != nil {
 		idx := strings.LastIndex(address, ":")
-		if idx <= 0 || idx == len(address)-1 {
-			return "", 0, false
-		}
+		if idx <= 0 || idx == len(address)-1 { return "", 0, false }
 		host = address[:idx]
 		portText = address[idx+1:]
 	}
 	port, err := strconv.Atoi(portText)
-	if err != nil || port <= 0 {
-		return "", 0, false
-	}
+	if err != nil || port <= 0 { return "", 0, false }
 	return host, port, true
 }
