@@ -71,6 +71,10 @@ var DefaultConfig = Config{
 		Enabled:                      false,
 		AutoRole:                     true,
 		BridgeEnabled:                false,
+		BridgeQueueSize:              100000,
+		BridgeWorkers:                1,
+		BridgeBatchInterval:          10 * time.Millisecond,
+		HTTP3Enabled:                 false,
 		Addr:                         "0.0.0.0",
 		Port:                         4444,
 		PortOffset:                   2000,
@@ -119,6 +123,16 @@ type TxQUICConfig struct {
 	Enabled       bool `toml:",omitempty"`
 	AutoRole      bool `toml:",omitempty"`
 	BridgeEnabled bool `toml:",omitempty"`
+
+	BridgeQueueSize     int           `toml:",omitempty"`
+	BridgeWorkers       int           `toml:",omitempty"`
+	BridgeBatchInterval time.Duration `toml:",omitempty"`
+
+	HTTP3Enabled bool   `toml:",omitempty"`
+	HTTP3Addr    string `toml:",omitempty"`
+	HTTP3Port    int    `toml:",omitempty"`
+	HTTP3CertFile string `toml:",omitempty"`
+	HTTP3KeyFile  string `toml:",omitempty"`
 
 	Addr       string `toml:",omitempty"`
 	Port       int    `toml:",omitempty"`
