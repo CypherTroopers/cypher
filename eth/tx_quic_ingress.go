@@ -5,22 +5,31 @@ package eth
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io"
+	mathbig "math/big"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/cypherium/cypher/accounts"
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/metrics"
+	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
 	quic "github.com/quic-go/quic-go"
 )
@@ -88,6 +97,62 @@ type TxQUICIngress struct {
 
 	rateMu  sync.Mutex
 	buckets map[string]*txQUICRateBucket
+
+	outboundNonce uint64
+}
+
+func (config *TxQUICConfig) ApplyFixedCommitteeAutoRole(chainConfig *params.ChainConfig) {
+	if config == nil || !config.AutoRole || chainConfig == nil || len(chainConfig.GenCommittee) == 0 {
+		return
+	}
+	if !chainConfig.FixedLeader && !chainConfig.FixedCommittee {
+		return
+	}
+	if config.PortOffset == 0 {
+		config.PortOffset = 2000
+	}
+	localRnetPort, err := strconv.Atoi(chainConfig.RnetPort)
+	if err != nil || localRnetPort <= 0 {
+		return
+	}
+	localIndex := -1
+	for i, node := range chainConfig.GenCommittee {
+		_, port, ok := splitHostPortLoose(node.Address)
+		if !ok {
+			continue
+		}
+		if port == localRnetPort {
+			localIndex = i
+			break
+		}
+	}
+	if localIndex >= 0 {
+		config.Enabled = true
+		config.BridgeEnabled = false
+		config.Port = localRnetPort + config.PortOffset
+		config.RoutingMode = "local"
+		config.LeaderEndpoints = nil
+		config.BackupEndpoints = nil
+		log.Info("TxQUIC auto role: validator ingress", "committeeIndex", localIndex, "rnetPort", localRnetPort, "txquicPort", config.Port)
+		return
+	}
+	config.Enabled = false
+	config.BridgeEnabled = true
+	config.RoutingMode = "committee-backup"
+	config.LeaderEndpoints = nil
+	config.BackupEndpoints = nil
+	for i, node := range chainConfig.GenCommittee {
+		endpoint, ok := txQUICEndpointFromCommitteeAddress(node.Address, config.PortOffset)
+		if !ok {
+			continue
+		}
+		if i == 0 {
+			config.LeaderEndpoints = append(config.LeaderEndpoints, endpoint)
+		} else {
+			config.BackupEndpoints = append(config.BackupEndpoints, endpoint)
+		}
+	}
+	log.Info("TxQUIC auto role: common RPC bridge", "leaders", config.LeaderEndpoints, "backups", len(config.BackupEndpoints))
 }
 
 func NewTxQUICIngress(config TxQUICConfig, txpool *core.TxPool) *TxQUICIngress {
@@ -114,6 +179,9 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 	}
 	if config.Port == 0 {
 		config.Port = 4444
+	}
+	if config.PortOffset == 0 {
+		config.PortOffset = 2000
 	}
 	if config.MaxPayload <= 0 {
 		config.MaxPayload = 512 * 1024
@@ -149,16 +217,15 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 
 func (q *TxQUICIngress) Start() error {
 	if !q.config.Enabled {
+		if q.config.BridgeEnabled {
+			log.Info("TxQUIC bridge enabled", "routing", q.config.RoutingMode, "leaders", len(q.config.LeaderEndpoints), "backups", len(q.config.BackupEndpoints))
+		}
 		return nil
 	}
 	if q.txpool == nil {
 		return fmt.Errorf("txquic ingress requires txpool")
 	}
-	if q.config.TLSCertFile == "" || q.config.TLSKeyFile == "" {
-		return fmt.Errorf("txquic requires txquic.tlscert and txquic.tlskey")
-	}
-
-	cert, err := tls.LoadX509KeyPair(q.config.TLSCertFile, q.config.TLSKeyFile)
+	cert, err := q.serverCertificate()
 	if err != nil {
 		return err
 	}
@@ -192,6 +259,59 @@ func (q *TxQUICIngress) Stop() {
 	}
 	q.wg.Wait()
 	log.Info("Stopped QUIC tx ingress")
+}
+
+func (q *TxQUICIngress) ForwardLocalTxs(txs []*types.Transaction, am *accounts.Manager) {
+	if q == nil || !q.config.BridgeEnabled || len(txs) == 0 {
+		return
+	}
+	payload, err := q.encodeOutboundPayload(txs, am)
+	if err != nil {
+		log.Debug("TxQUIC bridge encode failed", "err", err, "txs", len(txs))
+		return
+	}
+	go func() {
+		forwarded := q.routePayload(payload)
+		if forwarded > 0 {
+			txQUICIngressForwardMeter.Mark(int64(forwarded))
+		}
+		log.Debug("TxQUIC bridge forwarded txs", "txs", len(txs), "forwarded", forwarded)
+	}()
+}
+
+func (q *TxQUICIngress) encodeOutboundPayload(txs []*types.Transaction, am *accounts.Manager) ([]byte, error) {
+	if !q.config.RequireAuth {
+		return rlp.EncodeToBytes(txs)
+	}
+	sender := bftview.GetServerCoinBase()
+	if sender == (common.Address{}) {
+		return nil, fmt.Errorf("txquic bridge signer coinbase is empty")
+	}
+	if am == nil {
+		return nil, fmt.Errorf("txquic bridge account manager is nil")
+	}
+	pkt := &txQUICPacket{
+		Version:   txQUICPacketV1,
+		Sender:    sender,
+		Nonce:     atomic.AddUint64(&q.outboundNonce, 1),
+		Timestamp: uint64(time.Now().Unix()),
+		Txs:       txs,
+	}
+	payload, err := pkt.signingPayload()
+	if err != nil {
+		return nil, err
+	}
+	account := accounts.Account{Address: sender}
+	wallet, err := am.Find(account)
+	if err != nil {
+		return nil, err
+	}
+	sig, err := wallet.SignData(account, accounts.MimetypeDataWithValidator, payload)
+	if err != nil {
+		return nil, err
+	}
+	pkt.Signature = sig
+	return rlp.EncodeToBytes(pkt)
 }
 
 func (q *TxQUICIngress) acceptLoop() {
@@ -411,14 +531,18 @@ func (q *TxQUICIngress) verifyPacket(pkt *txQUICPacket) (common.Address, error) 
 	return signer, nil
 }
 
-func (p *txQUICPacket) signingHash() common.Hash {
+func (p *txQUICPacket) signingPayload() ([]byte, error) {
 	hashes := make([]common.Hash, 0, len(p.Txs))
 	for _, tx := range p.Txs {
 		if tx != nil {
 			hashes = append(hashes, tx.Hash())
 		}
 	}
-	enc, _ := rlp.EncodeToBytes(txQUICSigningData{Version: p.Version, Sender: p.Sender, Nonce: p.Nonce, Timestamp: p.Timestamp, TxHashes: hashes})
+	return rlp.EncodeToBytes(txQUICSigningData{Version: p.Version, Sender: p.Sender, Nonce: p.Nonce, Timestamp: p.Timestamp, TxHashes: hashes})
+}
+
+func (p *txQUICPacket) signingHash() common.Hash {
+	enc, _ := p.signingPayload()
 	return crypto.Keccak256Hash(enc)
 }
 
@@ -428,6 +552,31 @@ func (q *TxQUICIngress) writeAck(stream *quic.Stream, ack txQUICAck) {
 	}
 	_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
 	_ = rlp.Encode(stream, &ack)
+}
+
+func (q *TxQUICIngress) serverCertificate() (tls.Certificate, error) {
+	if q.config.TLSCertFile != "" || q.config.TLSKeyFile != "" {
+		if q.config.TLSCertFile == "" || q.config.TLSKeyFile == "" {
+			return tls.Certificate{}, fmt.Errorf("txquic tls cert and key must both be set")
+		}
+		return tls.LoadX509KeyPair(q.config.TLSCertFile, q.config.TLSKeyFile)
+	}
+	return generateTxQUICSelfSignedCert()
+}
+
+func generateTxQUICSelfSignedCert() (tls.Certificate, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	template := x509.Certificate{SerialNumber: mathbig.NewInt(time.Now().UnixNano()), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(365 * 24 * time.Hour)}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	return tls.X509KeyPair(certPEM, keyPEM)
 }
 
 func (q *TxQUICIngress) clientTLSConfig() *tls.Config {
@@ -518,4 +667,29 @@ func (q *TxQUICIngress) takeTokens(addr net.Addr, n int) bool {
 	}
 	b.tokens -= n
 	return true
+}
+
+func txQUICEndpointFromCommitteeAddress(address string, offset int) (string, bool) {
+	host, port, ok := splitHostPortLoose(address)
+	if !ok {
+		return "", false
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port+offset)), true
+}
+
+func splitHostPortLoose(address string) (string, int, bool) {
+	host, portText, err := net.SplitHostPort(address)
+	if err != nil {
+		idx := strings.LastIndex(address, ":")
+		if idx <= 0 || idx == len(address)-1 {
+			return "", 0, false
+		}
+		host = address[:idx]
+		portText = address[idx+1:]
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port <= 0 {
+		return "", 0, false
+	}
+	return host, port, true
 }
