@@ -2,6 +2,7 @@ package network
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -18,8 +19,11 @@ import (
 
 // ----------------------------------------------------------------------------------------------------
 const (
-	def_headerSize    = 6
-	def_MaxPacketSize = 10 * 1024 * 1024
+	def_headerSize           = 6
+	def_extendedSize         = 4
+	def_extendedPacketMarker = uint32(0)
+	def_legacyMaxPacketSize  = uint32(0xFFFFFF)
+	def_MaxPacketSize        = 257 * 1024 * 1024
 )
 
 var (
@@ -143,12 +147,26 @@ func (c *KCPConn) receiveRaw() ([]byte, error) {
 		return nil, err
 	}
 
-	// Check the message header
-	total := readInt24(headBuf)
-	if headBuf[3] != def_headerMagic[0] || headBuf[4] != def_headerMagic[1] || headBuf[5] != def_headerMagic[2] {
+	// Check the message header. Large packets use the reserved 24-bit length
+	// value followed by a 32-bit length, while ordinary packets retain the
+	// original wire format.
+	total, extended, validHeader := decodePacketHeader(headBuf)
+	if !validHeader {
 		err := fmt.Errorf("Buffer head not match! ")
 		log.Info("receiveRaw", "header check fail", "error", err)
 		return nil, err
+	}
+	headerSize := uint64(def_headerSize)
+	if extended {
+		extendedBuf := make([]byte, def_extendedSize)
+		c.setReadDeadline(ReadTimeout)
+		_, err := io.ReadFull(c.conn, extendedBuf)
+		c.setReadDeadline(0)
+		if err != nil {
+			return nil, err
+		}
+		total = binary.BigEndian.Uint32(extendedBuf)
+		headerSize += def_extendedSize
 	}
 
 	if total > def_MaxPacketSize {
@@ -166,7 +184,7 @@ func (c *KCPConn) receiveRaw() ([]byte, error) {
 		c.setReadDeadline(0)
 		// Quit if there is an error.
 		if err != nil {
-			c.updateRx(def_headerSize + uint64(read))
+			c.updateRx(headerSize + uint64(read))
 			return nil, handleError(err)
 		}
 		// Append the read bytes into the buffer.
@@ -177,9 +195,8 @@ func (c *KCPConn) receiveRaw() ([]byte, error) {
 		b = b[n:]
 	}
 
-	// register how many bytes we read. (4 is for the frame size
-	// that we read up above).
-	c.updateRx(def_headerSize + uint64(read))
+	// Register the payload and framing bytes read from the connection.
+	c.updateRx(headerSize + uint64(read))
 	return buffer.Bytes(), nil
 }
 
@@ -201,12 +218,15 @@ func (c *KCPConn) Send(msg Message) (uint64, error) {
 // whole message b in slices of size maxChunkSize.
 // In case of an error it aborts.
 func (c *KCPConn) sendRaw(b []byte) (uint64, error) {
-	// First write the size
+	if uint64(len(b)) > uint64(def_MaxPacketSize) {
+		return 0, fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize)
+	}
+
+	// Keep the original 24-bit header for ordinary messages. Transaction block
+	// proposals above that limit use an extended 32-bit packet length.
 	packetSize := uint32(len(b))
 
-	headBuf := make([]byte, def_headerSize)
-	putInt24(packetSize, headBuf)
-	copy(headBuf[3:], def_headerMagic)
+	headBuf := encodePacketHeader(packetSize)
 
 	if _, err := c.conn.Write(headBuf); err != nil {
 		return 0, err
@@ -219,14 +239,14 @@ func (c *KCPConn) sendRaw(b []byte) (uint64, error) {
 	for sent < packetSize {
 		n, err := c.conn.Write(b[sent:])
 		if err != nil {
-			sentLen := def_headerSize + uint64(sent)
+			sentLen := uint64(len(headBuf)) + uint64(sent)
 			c.updateTx(sentLen)
 			return sentLen, handleError(err)
 		}
 		sent += uint32(n)
 	}
-	// update stats on the connection. Plus 4 for the uint32 for the frame size.
-	sentLen := def_headerSize + uint64(sent)
+	// Update stats on the connection, including the legacy or extended header.
+	sentLen := uint64(len(headBuf)) + uint64(sent)
 	c.updateTx(sentLen)
 	return sentLen, nil
 }
@@ -513,6 +533,30 @@ func (t *KCPHost) Connect(si *ServerIdentity) (Conn, error) {
 		return nil, errors.New("This address is not correctly formatted: " + si.Address.String())
 	}
 	return nil, fmt.Errorf("KCPHost %s can't handle this type of connection: %s", si.Address, si.Address.ConnType())
+}
+
+func encodePacketHeader(size uint32) []byte {
+	header := make([]byte, def_headerSize, def_headerSize+def_extendedSize)
+	encodedSize := size
+	if size > def_legacyMaxPacketSize {
+		encodedSize = def_extendedPacketMarker
+	}
+	putInt24(encodedSize, header)
+	copy(header[3:], def_headerMagic)
+	if encodedSize == def_extendedPacketMarker {
+		extended := make([]byte, def_extendedSize)
+		binary.BigEndian.PutUint32(extended, size)
+		header = append(header, extended...)
+	}
+	return header
+}
+
+func decodePacketHeader(header []byte) (size uint32, extended bool, valid bool) {
+	if len(header) != def_headerSize || !bytes.Equal(header[3:], def_headerMagic) {
+		return 0, false, false
+	}
+	size = readInt24(header)
+	return size, size == def_extendedPacketMarker, true
 }
 
 func readInt24(b []byte) uint32 {
