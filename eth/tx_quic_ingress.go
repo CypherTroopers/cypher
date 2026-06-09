@@ -10,10 +10,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	mathbig "math/big"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -32,6 +34,7 @@ import (
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
 	quic "github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 )
 
 const (
@@ -79,6 +82,11 @@ type txQUICAck struct {
 	Hashes    []common.Hash
 }
 
+type txQUICBridgeItem struct {
+	tx *types.Transaction
+	am *accounts.Manager
+}
+
 type TxQUICIngress struct {
 	config TxQUICConfig
 	txpool *core.TxPool
@@ -86,7 +94,9 @@ type TxQUICIngress struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	listener *quic.Listener
+	listener    *quic.Listener
+	http3Server *http3.Server
+	http3Handler http.Handler
 
 	allowNets []*net.IPNet
 	allowIPs  map[string]struct{}
@@ -97,6 +107,8 @@ type TxQUICIngress struct {
 
 	rateMu  sync.Mutex
 	buckets map[string]*txQUICRateBucket
+
+	bridgeQueue chan txQUICBridgeItem
 
 	outboundNonce uint64
 }
@@ -129,6 +141,7 @@ func (config *TxQUICConfig) ApplyFixedCommitteeAutoRole(chainConfig *params.Chai
 	if localIndex >= 0 {
 		config.Enabled = true
 		config.BridgeEnabled = false
+		config.HTTP3Enabled = false
 		config.Port = localRnetPort + config.PortOffset
 		config.RoutingMode = "local"
 		config.LeaderEndpoints = nil
@@ -138,6 +151,7 @@ func (config *TxQUICConfig) ApplyFixedCommitteeAutoRole(chainConfig *params.Chai
 	}
 	config.Enabled = false
 	config.BridgeEnabled = true
+	config.HTTP3Enabled = true
 	config.RoutingMode = "committee-backup"
 	config.LeaderEndpoints = nil
 	config.BackupEndpoints = nil
@@ -152,7 +166,27 @@ func (config *TxQUICConfig) ApplyFixedCommitteeAutoRole(chainConfig *params.Chai
 			config.BackupEndpoints = append(config.BackupEndpoints, endpoint)
 		}
 	}
-	log.Info("TxQUIC auto role: common RPC bridge", "leaders", config.LeaderEndpoints, "backups", len(config.BackupEndpoints))
+	log.Info("TxQUIC auto role: common RPC bridge", "leaders", config.LeaderEndpoints, "backups", len(config.BackupEndpoints), "http3rpc", config.HTTP3Enabled)
+}
+
+func (config *TxQUICConfig) ApplyHTTP3RPCDefaults(httpHost string, httpPort int) {
+	if config == nil || !config.HTTP3Enabled {
+		return
+	}
+	if config.HTTP3Addr == "" {
+		if httpHost != "" {
+			config.HTTP3Addr = httpHost
+		} else {
+			config.HTTP3Addr = "0.0.0.0"
+		}
+	}
+	if config.HTTP3Port == 0 {
+		if httpPort > 0 {
+			config.HTTP3Port = httpPort
+		} else {
+			config.HTTP3Port = 8545
+		}
+	}
 }
 
 func NewTxQUICIngress(config TxQUICConfig, txpool *core.TxPool) *TxQUICIngress {
@@ -168,6 +202,9 @@ func NewTxQUICIngress(config TxQUICConfig, txpool *core.TxPool) *TxQUICIngress {
 		allowIPs: make(map[string]struct{}),
 		signers:  make(map[common.Address]struct{}),
 	}
+	if config.BridgeEnabled {
+		q.bridgeQueue = make(chan txQUICBridgeItem, config.BridgeQueueSize)
+	}
 	q.parseAllowlist()
 	q.parseSigners()
 	return q
@@ -182,6 +219,15 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 	}
 	if config.PortOffset == 0 {
 		config.PortOffset = 2000
+	}
+	if config.BridgeQueueSize <= 0 {
+		config.BridgeQueueSize = 100000
+	}
+	if config.BridgeWorkers <= 0 {
+		config.BridgeWorkers = 1
+	}
+	if config.BridgeBatchInterval <= 0 {
+		config.BridgeBatchInterval = 10 * time.Millisecond
 	}
 	if config.MaxPayload <= 0 {
 		config.MaxPayload = 512 * 1024
@@ -215,10 +261,20 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 	}
 }
 
+func (q *TxQUICIngress) SetHTTP3RPCHandler(handler http.Handler) {
+	q.http3Handler = handler
+}
+
 func (q *TxQUICIngress) Start() error {
+	if q.config.BridgeEnabled {
+		q.startBridgeWorkers()
+	}
+	if err := q.startHTTP3RPC(); err != nil {
+		return err
+	}
 	if !q.config.Enabled {
 		if q.config.BridgeEnabled {
-			log.Info("TxQUIC bridge enabled", "routing", q.config.RoutingMode, "leaders", len(q.config.LeaderEndpoints), "backups", len(q.config.BackupEndpoints))
+			log.Info("TxQUIC bridge enabled", "routing", q.config.RoutingMode, "leaders", len(q.config.LeaderEndpoints), "backups", len(q.config.BackupEndpoints), "queue", q.config.BridgeQueueSize, "batch", q.config.MaxTxsPerBatch, "interval", q.config.BridgeBatchInterval)
 		}
 		return nil
 	}
@@ -257,26 +313,87 @@ func (q *TxQUICIngress) Stop() {
 	if q.listener != nil {
 		_ = q.listener.Close()
 	}
+	if q.http3Server != nil {
+		_ = q.http3Server.Close()
+	}
 	q.wg.Wait()
 	log.Info("Stopped QUIC tx ingress")
 }
 
 func (q *TxQUICIngress) ForwardLocalTxs(txs []*types.Transaction, am *accounts.Manager) {
-	if q == nil || !q.config.BridgeEnabled || len(txs) == 0 {
+	if q == nil || !q.config.BridgeEnabled || len(txs) == 0 || q.bridgeQueue == nil {
 		return
 	}
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		select {
+		case q.bridgeQueue <- txQUICBridgeItem{tx: tx, am: am}:
+		default:
+			txQUICIngressRejectedMeter.Mark(1)
+			log.Warn("TxQUIC bridge queue full, dropping forward only", "hash", tx.Hash(), "queue", q.config.BridgeQueueSize)
+		}
+	}
+}
+
+func (q *TxQUICIngress) startBridgeWorkers() {
+	if q.bridgeQueue == nil {
+		q.bridgeQueue = make(chan txQUICBridgeItem, q.config.BridgeQueueSize)
+	}
+	for i := 0; i < q.config.BridgeWorkers; i++ {
+		q.wg.Add(1)
+		go q.bridgeWorker(i)
+	}
+}
+
+func (q *TxQUICIngress) bridgeWorker(id int) {
+	defer q.wg.Done()
+	ticker := time.NewTicker(q.config.BridgeBatchInterval)
+	defer ticker.Stop()
+	batch := make([]*types.Transaction, 0, q.config.MaxTxsPerBatch)
+	var am *accounts.Manager
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		txs := append([]*types.Transaction(nil), batch...)
+		batch = batch[:0]
+		q.forwardBridgeBatch(txs, am)
+	}
+	for {
+		select {
+		case <-q.ctx.Done():
+			flush()
+			return
+		case item := <-q.bridgeQueue:
+			if item.tx == nil {
+				continue
+			}
+			if item.am != nil {
+				am = item.am
+			}
+			batch = append(batch, item.tx)
+			if len(batch) >= q.config.MaxTxsPerBatch {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		}
+	}
+}
+
+func (q *TxQUICIngress) forwardBridgeBatch(txs []*types.Transaction, am *accounts.Manager) {
 	payload, err := q.encodeOutboundPayload(txs, am)
 	if err != nil {
 		log.Debug("TxQUIC bridge encode failed", "err", err, "txs", len(txs))
 		return
 	}
-	go func() {
-		forwarded := q.routePayload(payload)
-		if forwarded > 0 {
-			txQUICIngressForwardMeter.Mark(int64(forwarded))
-		}
-		log.Debug("TxQUIC bridge forwarded txs", "txs", len(txs), "forwarded", forwarded)
-	}()
+	forwarded := q.routePayload(payload)
+	if forwarded > 0 {
+		txQUICIngressForwardMeter.Mark(int64(forwarded))
+	}
+	log.Debug("TxQUIC bridge forwarded batch", "txs", len(txs), "forwarded", forwarded)
 }
 
 func (q *TxQUICIngress) encodeOutboundPayload(txs []*types.Transaction, am *accounts.Manager) ([]byte, error) {
@@ -312,6 +429,39 @@ func (q *TxQUICIngress) encodeOutboundPayload(txs []*types.Transaction, am *acco
 	}
 	pkt.Signature = sig
 	return rlp.EncodeToBytes(pkt)
+}
+
+func (q *TxQUICIngress) startHTTP3RPC() error {
+	if !q.config.HTTP3Enabled || q.http3Handler == nil {
+		return nil
+	}
+	cert, err := q.http3Certificate()
+	if err != nil {
+		return err
+	}
+	addr := fmt.Sprintf("%s:%d", q.config.HTTP3Addr, q.config.HTTP3Port)
+	q.http3Server = &http3.Server{
+		Addr:    addr,
+		Handler: q.http3Handler,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			NextProtos:   []string{"h3"},
+			MinVersion:   tls.VersionTLS13,
+		},
+	}
+	q.wg.Add(1)
+	go func() {
+		defer q.wg.Done()
+		log.Info("Started HTTP/3 JSON-RPC", "addr", addr)
+		if err := q.http3Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			select {
+			case <-q.ctx.Done():
+			default:
+				log.Error("HTTP/3 JSON-RPC stopped with error", "err", err)
+			}
+		}
+	}()
+	return nil
 }
 
 func (q *TxQUICIngress) acceptLoop() {
@@ -562,6 +712,16 @@ func (q *TxQUICIngress) serverCertificate() (tls.Certificate, error) {
 		return tls.LoadX509KeyPair(q.config.TLSCertFile, q.config.TLSKeyFile)
 	}
 	return generateTxQUICSelfSignedCert()
+}
+
+func (q *TxQUICIngress) http3Certificate() (tls.Certificate, error) {
+	if q.config.HTTP3CertFile != "" || q.config.HTTP3KeyFile != "" {
+		if q.config.HTTP3CertFile == "" || q.config.HTTP3KeyFile == "" {
+			return tls.Certificate{}, fmt.Errorf("http3 rpc cert and key must both be set")
+		}
+		return tls.LoadX509KeyPair(q.config.HTTP3CertFile, q.config.HTTP3KeyFile)
+	}
+	return q.serverCertificate()
 }
 
 func generateTxQUICSelfSignedCert() (tls.Certificate, error) {
