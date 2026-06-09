@@ -137,6 +137,7 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	chainConfig.RnetPort = config.RnetPort
 	chainConfig.EnabledTPS = config.EnableTPS
 	config.TxQUIC.ApplyFixedCommitteeAutoRole(chainConfig)
+	config.TxQUIC.ApplyHTTP3RPCDefaults(stack.Config().HTTPHost, stack.Config().HTTPPort)
 
 	log.Info("Initialised chain configuration", "config id", chainConfig.ChainID)
 	extIP := net.ParseIP(config.ExternalIp).To4()
@@ -249,6 +250,17 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	stack.RegisterLifecycle(eth)
 
 	eth.reconfig, _ = reconfig.New(stack, chainConfig, eth)
+	if eth.txQUICIngress != nil && config.TxQUIC.HTTP3Enabled {
+		if rpcHandler, err := stack.RPCHandler(); err == nil {
+			vhosts := stack.Config().HTTPVirtualHosts
+			if len(vhosts) == 0 {
+				vhosts = []string{"*"}
+			}
+			eth.txQUICIngress.SetHTTP3RPCHandler(node.NewHTTPHandlerStack(rpcHandler, stack.Config().HTTPCors, vhosts))
+		} else {
+			log.Warn("Failed to attach HTTP/3 JSON-RPC handler", "err", err)
+		}
+	}
 	return eth, nil
 }
 
@@ -301,9 +313,7 @@ func (s *Ethereum) APIs() []rpc.API {
 	return apis
 }
 
-func (s *Ethereum) ResetWithGenesisBlock(gb *types.Block) {
-	s.blockchain.ResetWithGenesisBlock(gb)
-}
+func (s *Ethereum) ResetWithGenesisBlock(gb *types.Block) { s.blockchain.ResetWithGenesisBlock(gb) }
 
 func (s *Ethereum) Etherbase() (eb common.Address, err error) {
 	s.lock.RLock()
@@ -325,9 +335,7 @@ func (s *Ethereum) Etherbase() (eb common.Address, err error) {
 	return common.Address{}, fmt.Errorf("etherbase must be explicitly specified")
 }
 
-func (s *Ethereum) shouldPreserve(block *types.Block) bool {
-	return false
-}
+func (s *Ethereum) shouldPreserve(block *types.Block) bool { return false }
 
 // SetEtherbase sets the mining reward address.
 func (s *Ethereum) SetEtherbase(etherbase common.Address) {
@@ -341,9 +349,7 @@ func (s *Ethereum) SetEtherbase(etherbase common.Address) {
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
 
 func (s *Ethereum) setMiningThreads(threads int) {
-	type threaded interface {
-		SetThreads(threads int)
-	}
+	type threaded interface{ SetThreads(threads int) }
 	if th, ok := s.engine.(threaded); ok {
 		log.Info("Updated mining threads", "threads", threads)
 		th.SetThreads(threads)
@@ -364,27 +370,25 @@ func (s *Ethereum) StartMining(threads int, local bool, eb common.Address, pubKe
 }
 
 func (s *Ethereum) StopMining() { s.miner.Stop() }
-
-func (s *Ethereum) IsMining() bool      { return s.miner.Mining() }
+func (s *Ethereum) IsMining() bool { return s.miner.Mining() }
 func (s *Ethereum) Miner() *miner.Miner { return s.miner }
-
-func (s *Ethereum) AccountManager() *accounts.Manager                { return s.accountManager }
-func (s *Ethereum) BlockChain() *core.BlockChain                     { return s.blockchain }
-func (s *Ethereum) KeyBlockChain() *core.KeyBlockChain               { return s.keyBlockChain }
-func (s *Ethereum) TxPool() *core.TxPool                             { return s.txPool }
-func (s *Ethereum) EventMux() *event.TypeMux                         { return s.eventMux }
-func (s *Ethereum) Engine() consensus.Engine                         { return s.engine }
-func (s *Ethereum) ChainDb() ethdb.Database                          { return s.chainDb }
-func (s *Ethereum) IsListening() bool                                { return true }
-func (s *Ethereum) EthVersion() int                                  { return int(ProtocolVersions[0]) }
-func (s *Ethereum) NetVersion() uint64                               { return s.networkID }
-func (s *Ethereum) Downloader() *downloader.Downloader               { return s.protocolManager.downloader }
-func (s *Ethereum) Synced() bool                                     { return atomic.LoadUint32(&s.protocolManager.acceptTxs) == 1 }
-func (s *Ethereum) ArchiveMode() bool                                { return s.config.NoPruning }
-func (s *Ethereum) BloomIndexer() *core.ChainIndexer                 { return s.bloomIndexer }
-func (s *Ethereum) CandidatePool() *core.CandidatePool               { return s.candidatePool }
-func (s *Ethereum) ExtIP() net.IP                                    { return s.extIP }
-func (s *Ethereum) PublicKey() ed25519.PublicKey                     { return s.miner.GetPubKey() }
+func (s *Ethereum) AccountManager() *accounts.Manager { return s.accountManager }
+func (s *Ethereum) BlockChain() *core.BlockChain { return s.blockchain }
+func (s *Ethereum) KeyBlockChain() *core.KeyBlockChain { return s.keyBlockChain }
+func (s *Ethereum) TxPool() *core.TxPool { return s.txPool }
+func (s *Ethereum) EventMux() *event.TypeMux { return s.eventMux }
+func (s *Ethereum) Engine() consensus.Engine { return s.engine }
+func (s *Ethereum) ChainDb() ethdb.Database { return s.chainDb }
+func (s *Ethereum) IsListening() bool { return true }
+func (s *Ethereum) EthVersion() int { return int(ProtocolVersions[0]) }
+func (s *Ethereum) NetVersion() uint64 { return s.networkID }
+func (s *Ethereum) Downloader() *downloader.Downloader { return s.protocolManager.downloader }
+func (s *Ethereum) Synced() bool { return atomic.LoadUint32(&s.protocolManager.acceptTxs) == 1 }
+func (s *Ethereum) ArchiveMode() bool { return s.config.NoPruning }
+func (s *Ethereum) BloomIndexer() *core.ChainIndexer { return s.bloomIndexer }
+func (s *Ethereum) CandidatePool() *core.CandidatePool { return s.candidatePool }
+func (s *Ethereum) ExtIP() net.IP { return s.extIP }
+func (s *Ethereum) PublicKey() ed25519.PublicKey { return s.miner.GetPubKey() }
 func (s *Ethereum) GetCalcGasLimit() func(block *types.Block) uint64 { return s.CalcGasLimit }
 
 // Protocols returns all the currently configured network protocols to start.
@@ -402,7 +406,6 @@ func (s *Ethereum) Protocols() []p2p.Protocol {
 func (s *Ethereum) Start() error {
 	s.startEthEntryUpdate(s.p2pServer.LocalNode())
 	s.startBloomHandlers(params.BloomBitsBlocks)
-
 	maxPeers := s.p2pServer.MaxPeers
 	if s.config.LightServ > 0 {
 		if s.config.LightPeers >= s.p2pServer.MaxPeers {
@@ -410,7 +413,6 @@ func (s *Ethereum) Start() error {
 		}
 		maxPeers -= s.config.LightPeers
 	}
-
 	s.protocolManager.Start(maxPeers)
 	if s.txQUICIngress != nil {
 		if err := s.txQUICIngress.Start(); err != nil {
@@ -423,12 +425,9 @@ func (s *Ethereum) Start() error {
 
 // Stop implements node.Lifecycle, terminating all internal goroutines used by the Ethereum protocol.
 func (s *Ethereum) Stop() error {
-	if s.txQUICIngress != nil {
-		s.txQUICIngress.Stop()
-	}
+	if s.txQUICIngress != nil { s.txQUICIngress.Stop() }
 	s.protocolManager.Stop()
 	s.candidatePool.StopPoWResultUDP()
-
 	s.bloomIndexer.Close()
 	close(s.closeBloomHandler)
 	s.txPool.Stop()
@@ -441,16 +440,6 @@ func (s *Ethereum) Stop() error {
 	return nil
 }
 
-func (s *Ethereum) CalcGasLimit(block *types.Block) uint64 {
-	return core.CalcGasLimit(block, s.config.Miner.GasFloor, s.config.Miner.GasCeil)
-}
-
-// ConsensusServicePendingLogsFeed returns an event.Feed. When the consensus protocol does not use eth.worker, the event.Feed should be used to send logs from transactions included in the pending block.
-func (s *Ethereum) ConsensusServicePendingLogsFeed() *event.Feed {
-	return s.consensusServicePendingLogsFeed
-}
-
-// SubscribePendingLogs starts delivering logs from transactions included in the consensus engine's pending block to the given channel.
-func (s *Ethereum) SubscribePendingLogs(ch chan<- []*types.Log) event.Subscription {
-	return s.consensusServicePendingLogsFeed.Subscribe(ch)
-}
+func (s *Ethereum) CalcGasLimit(block *types.Block) uint64 { return core.CalcGasLimit(block, s.config.Miner.GasFloor, s.config.Miner.GasCeil) }
+func (s *Ethereum) ConsensusServicePendingLogsFeed() *event.Feed { return s.consensusServicePendingLogsFeed }
+func (s *Ethereum) SubscribePendingLogs(ch chan<- []*types.Log) event.Subscription { return s.consensusServicePendingLogsFeed.Subscribe(ch) }
