@@ -142,8 +142,8 @@ const (
 	// With 100k+ wallets, building a full candidate account list for every
 	// proposal is too expensive. Limit the number of account candidates scanned
 	// per proposal and let subsequent proposals drain the rest.
-	fastPendingCandidateScanLimit = 8192
-	slowPendingCandidateScanLimit = 8192
+	fastPendingCandidateScanLimit = 131072
+	slowPendingCandidateScanLimit = 65536
 )
 
 type pendingReadyIndex struct {
