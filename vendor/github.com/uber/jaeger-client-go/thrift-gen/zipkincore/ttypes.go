@@ -92,15 +92,15 @@ func (p *AnnotationType) UnmarshalText(text []byte) error {
 // clients such as web browsers.
 //
 // Attributes:
-//  - Ipv4: IPv4 host address packed into 4 bytes.
+//   - Ipv4: IPv4 host address packed into 4 bytes.
 //
 // Ex for the ip 1.2.3.4, it would be (1 << 24) | (2 << 16) | (3 << 8) | 4
-//  - Port: IPv4 port
+//   - Port: IPv4 port
 //
 // Note: this is to be treated as an unsigned integer, so watch for negatives.
 //
 // Conventionally, when the port isn't known, port = 0.
-//  - ServiceName: Service name in lowercase, such as "memcache" or "zipkin-web"
+//   - ServiceName: Service name in lowercase, such as "memcache" or "zipkin-web"
 //
 // Conventionally, when the service name isn't known, service_name = "unknown".
 type Endpoint struct {
@@ -264,12 +264,13 @@ func (p *Endpoint) String() string {
 // allows these events to be attributed properly, and also aggregatable.
 //
 // Attributes:
-//  - Timestamp: Microseconds from epoch.
+//   - Timestamp: Microseconds from epoch.
 //
 // This value should use the most precise value possible. For example,
 // gettimeofday or syncing nanoTime against a tick of currentTimeMillis.
-//  - Value
-//  - Host: Always the host that recorded the event. By specifying the host you allow
+//   - Value
+//   - Host: Always the host that recorded the event. By specifying the host you allow
+//
 // rollup of all events (such as client requests to a service) by IP address.
 type Annotation struct {
 	Timestamp int64     `thrift:"timestamp,1" json:"timestamp"`
@@ -453,10 +454,11 @@ func (p *Annotation) String() string {
 // you can see the different points of view, which often help in debugging.
 //
 // Attributes:
-//  - Key
-//  - Value
-//  - AnnotationType
-//  - Host: The host that recorded tag, which allows you to differentiate between
+//   - Key
+//   - Value
+//   - AnnotationType
+//   - Host: The host that recorded tag, which allows you to differentiate between
+//
 // multiple tags with the same key. There are two exceptions to this.
 //
 // When the key is CLIENT_ADDR or SERVER_ADDR, host indicates the source or
@@ -671,16 +673,16 @@ func (p *BinaryAnnotation) String() string {
 // annotation and ending with a SERVER_SEND.
 //
 // Attributes:
-//  - TraceID
-//  - Name: Span name in lowercase, rpc method for example
+//   - TraceID
+//   - Name: Span name in lowercase, rpc method for example
 //
 // Conventionally, when the span name isn't known, name = "unknown".
-//  - ID
-//  - ParentID
-//  - Annotations
-//  - BinaryAnnotations
-//  - Debug
-//  - Timestamp: Microseconds from epoch of the creation of this span.
+//   - ID
+//   - ParentID
+//   - Annotations
+//   - BinaryAnnotations
+//   - Debug
+//   - Timestamp: Microseconds from epoch of the creation of this span.
 //
 // This value should be set directly by instrumentation, using the most
 // precise value possible. For example, gettimeofday or syncing nanoTime
@@ -692,7 +694,7 @@ func (p *BinaryAnnotation) String() string {
 //
 // This field is optional for compatibility with old data: first-party span
 // stores are expected to support this at time of introduction.
-//  - Duration: Measurement of duration in microseconds, used to support queries.
+//   - Duration: Measurement of duration in microseconds, used to support queries.
 //
 // This value should be set directly, where possible. Doing so encourages
 // precise measurement decoupled from problems of clocks, such as skew or NTP
@@ -1150,7 +1152,7 @@ func (p *Span) String() string {
 }
 
 // Attributes:
-//  - Ok
+//   - Ok
 type Response struct {
 	Ok bool `thrift:"ok,1,required" json:"ok"`
 }

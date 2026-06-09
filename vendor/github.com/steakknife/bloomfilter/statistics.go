@@ -4,10 +4,9 @@
 //
 // https://github.com/steakknife/bloomfilter
 //
-// Copyright © 2014, 2015, 2018 Barry Allard
+// # Copyright © 2014, 2015, 2018 Barry Allard
 //
 // MIT license
-//
 package bloomfilter
 
 import (
@@ -34,7 +33,8 @@ func (f *Filter) N() uint64 {
 }
 
 // FalsePosititveProbability is the upper-bound probability of false positives
-//  (1 - exp(-k*(n+0.5)/(m-1))) ** k
+//
+//	(1 - exp(-k*(n+0.5)/(m-1))) ** k
 func (f *Filter) FalsePosititveProbability() float64 {
 	k := float64(f.K())
 	n := float64(f.N())

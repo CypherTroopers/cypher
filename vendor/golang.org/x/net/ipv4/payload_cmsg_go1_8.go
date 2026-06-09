@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !go1.9
-// +build !nacl,!plan9,!windows
+//go:build !go1.9 && !nacl && !plan9 && !windows
+// +build !go1.9,!nacl,!plan9,!windows
 
 package ipv4
 

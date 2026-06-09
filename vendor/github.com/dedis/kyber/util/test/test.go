@@ -136,7 +136,6 @@ func testScalarClone(g kyber.Group, rand cipher.Stream) {
 // Returns a log of the pseudorandom Points produced in the test,
 // for comparison across alternative implementations
 // that are supposed to be equivalent.
-//
 func testGroup(g kyber.Group, rand cipher.Stream) []kyber.Point {
 	//	fmt.Printf("\nTesting group '%s': %d-byte Point, %d-byte Scalar\n",
 	//			g.String(), g.PointLen(), g.ScalarLen())

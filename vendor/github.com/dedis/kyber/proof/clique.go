@@ -17,7 +17,6 @@ import "github.com/dedis/kyber"
 // which invokes the StarContext's methods to send and receive messages,
 // and finally returns once the protocol has concluded for all participants.
 // Returns a slice of success/error indicators, one for each participant.
-//
 type Protocol func(ctx Context) []error
 
 // Context represents a kyber.context for running a clique protocol.

@@ -5,7 +5,7 @@ import "testing"
 func TestBlobTxSidecarBlobHashesAlias(t *testing.T) {
 	commitment := testKZGCommitment(51)
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}

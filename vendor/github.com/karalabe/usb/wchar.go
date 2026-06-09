@@ -6,6 +6,7 @@
 // The vendored file is licensed under the 3-clause BSD license, according to:
 // https://github.com/orofarne/gowchar/blob/master/LICENSE
 
+//go:build !ios && (freebsd || linux || darwin || windows)
 // +build !ios
 // +build freebsd linux darwin windows
 

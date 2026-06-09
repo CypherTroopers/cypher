@@ -68,18 +68,18 @@ var ErrNoFunc = errors.New("no call stack information")
 
 // Format implements fmt.Formatter with support for the following verbs.
 //
-//    %s    source file
-//    %d    line number
-//    %n    function name
-//    %v    equivalent to %s:%d
+//	%s    source file
+//	%d    line number
+//	%n    function name
+//	%v    equivalent to %s:%d
 //
 // It accepts the '+' and '#' flags for most of the verbs as follows.
 //
-//    %+s   path of source file relative to the compile time GOPATH
-//    %#s   full path of source file
-//    %+n   import path qualified function name
-//    %+v   equivalent to %+s:%d
-//    %#v   equivalent to %#s:%d
+//	%+s   path of source file relative to the compile time GOPATH
+//	%#s   full path of source file
+//	%+n   import path qualified function name
+//	%+v   equivalent to %+s:%d
+//	%#v   equivalent to %#s:%d
 func (c Call) Format(s fmt.State, verb rune) {
 	if c.fn == nil {
 		fmt.Fprintf(s, "%%!%c(NOFUNC)", verb)

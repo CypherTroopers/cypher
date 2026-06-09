@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build ignore
 // +build ignore
 
 // Normalization table generator.
@@ -131,8 +132,10 @@ func (c Char) String() string {
 }
 
 // In UnicodeData.txt, some ranges are marked like this:
+//
 //	3400;<CJK Ideograph Extension A, First>;Lo;0;L;;;;;N;;;;;
 //	4DB5;<CJK Ideograph Extension A, Last>;Lo;0;L;;;;;N;;;;;
+//
 // parseCharacter keeps a state variable indicating the weirdness.
 type State int
 
@@ -242,7 +245,7 @@ func compactCCC() {
 		m[c.ccc] = 0
 	}
 	cccs := []int{}
-	for v, _ := range m {
+	for v := range m {
 		cccs = append(cccs, int(v))
 	}
 	sort.Ints(cccs)

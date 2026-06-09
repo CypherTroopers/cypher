@@ -108,11 +108,11 @@ func TestCacheTimes(t *testing.T) {
 
 func TestNewFrom(t *testing.T) {
 	m := map[string]Item{
-		"a": Item{
+		"a": {
 			Object:     1,
 			Expiration: 0,
 		},
-		"b": Item{
+		"b": {
 			Object:     2,
 			Expiration: 0,
 		},
@@ -1267,14 +1267,14 @@ func testFillAndSerialize(t *testing.T, tc *Cache) {
 		{Num: 3},
 	}, DefaultExpiration)
 	tc.Set("[]*struct", []*TestStruct{
-		&TestStruct{Num: 4},
-		&TestStruct{Num: 5},
+		{Num: 4},
+		{Num: 5},
 	}, DefaultExpiration)
 	tc.Set("structception", &TestStruct{
 		Num: 42,
 		Children: []*TestStruct{
-			&TestStruct{Num: 6174},
-			&TestStruct{Num: 4716},
+			{Num: 6174},
+			{Num: 4716},
 		},
 	}, DefaultExpiration)
 

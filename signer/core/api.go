@@ -22,7 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-//	"os"
+	//	"os"
 	"reflect"
 
 	"github.com/cypherium/cypher/accounts"

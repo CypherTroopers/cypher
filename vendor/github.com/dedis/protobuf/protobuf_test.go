@@ -155,7 +155,7 @@ func TestProtobuf(t *testing.T) {
 		[]myfloat32{5.5, 6.6, 7.7}, []myfloat64{6.6, 7.7, 8.8},
 		[]mybytes{[]byte("the"), []byte("quick"), []byte("brown"), []byte("fox")},
 		[]mystring{"the", "quick", "brown", "fox"},
-		[]emb{emb{-1, "a"}, emb{-2, "b"}, emb{-3, "c"}},
+		[]emb{{-1, "a"}, {-2, "b"}, {-3, "c"}},
 	}
 	buf, err := Encode(&t1)
 	assert.NoError(t, err)

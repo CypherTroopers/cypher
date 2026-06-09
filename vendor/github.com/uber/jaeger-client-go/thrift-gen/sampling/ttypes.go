@@ -59,7 +59,7 @@ func (p *SamplingStrategyType) UnmarshalText(text []byte) error {
 }
 
 // Attributes:
-//  - SamplingRate
+//   - SamplingRate
 type ProbabilisticSamplingStrategy struct {
 	SamplingRate float64 `thrift:"samplingRate,1,required" json:"samplingRate"`
 }
@@ -156,7 +156,7 @@ func (p *ProbabilisticSamplingStrategy) String() string {
 }
 
 // Attributes:
-//  - MaxTracesPerSecond
+//   - MaxTracesPerSecond
 type RateLimitingSamplingStrategy struct {
 	MaxTracesPerSecond int16 `thrift:"maxTracesPerSecond,1,required" json:"maxTracesPerSecond"`
 }
@@ -253,8 +253,8 @@ func (p *RateLimitingSamplingStrategy) String() string {
 }
 
 // Attributes:
-//  - Operation
-//  - ProbabilisticSampling
+//   - Operation
+//   - ProbabilisticSampling
 type OperationSamplingStrategy struct {
 	Operation             string                         `thrift:"operation,1,required" json:"operation"`
 	ProbabilisticSampling *ProbabilisticSamplingStrategy `thrift:"probabilisticSampling,2,required" json:"probabilisticSampling"`
@@ -398,10 +398,10 @@ func (p *OperationSamplingStrategy) String() string {
 }
 
 // Attributes:
-//  - DefaultSamplingProbability
-//  - DefaultLowerBoundTracesPerSecond
-//  - PerOperationStrategies
-//  - DefaultUpperBoundTracesPerSecond
+//   - DefaultSamplingProbability
+//   - DefaultLowerBoundTracesPerSecond
+//   - PerOperationStrategies
+//   - DefaultUpperBoundTracesPerSecond
 type PerOperationSamplingStrategies struct {
 	DefaultSamplingProbability       float64                      `thrift:"defaultSamplingProbability,1,required" json:"defaultSamplingProbability"`
 	DefaultLowerBoundTracesPerSecond float64                      `thrift:"defaultLowerBoundTracesPerSecond,2,required" json:"defaultLowerBoundTracesPerSecond"`
@@ -640,10 +640,10 @@ func (p *PerOperationSamplingStrategies) String() string {
 }
 
 // Attributes:
-//  - StrategyType
-//  - ProbabilisticSampling
-//  - RateLimitingSampling
-//  - OperationSampling
+//   - StrategyType
+//   - ProbabilisticSampling
+//   - RateLimitingSampling
+//   - OperationSampling
 type SamplingStrategyResponse struct {
 	StrategyType          SamplingStrategyType            `thrift:"strategyType,1,required" json:"strategyType"`
 	ProbabilisticSampling *ProbabilisticSamplingStrategy  `thrift:"probabilisticSampling,2" json:"probabilisticSampling,omitempty"`

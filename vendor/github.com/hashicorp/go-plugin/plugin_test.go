@@ -622,7 +622,7 @@ func TestHelperProcess(*testing.T) {
 		Serve(&ServeConfig{
 			HandshakeConfig: testVersionedHandshake,
 			VersionedPlugins: map[int]PluginSet{
-				1: PluginSet{
+				1: {
 					"old": &testInterfacePlugin{Impl: testPlugin},
 				},
 				2: testGRPCPluginMap,

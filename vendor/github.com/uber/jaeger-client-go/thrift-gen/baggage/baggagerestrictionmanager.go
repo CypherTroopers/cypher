@@ -55,7 +55,7 @@ func NewBaggageRestrictionManagerClientProtocol(t thrift.TTransport, iprot thrif
 // where a baggageKey might only be allowed to be set by a specific service.
 //
 // Parameters:
-//  - ServiceName
+//   - ServiceName
 func (p *BaggageRestrictionManagerClient) GetBaggageRestrictions(serviceName string) (r []*BaggageRestriction, err error) {
 	if err = p.sendGetBaggageRestrictions(serviceName); err != nil {
 		return
@@ -226,7 +226,7 @@ func (p *baggageRestrictionManagerProcessorGetBaggageRestrictions) Process(seqId
 // HELPER FUNCTIONS AND STRUCTURES
 
 // Attributes:
-//  - ServiceName
+//   - ServiceName
 type BaggageRestrictionManagerGetBaggageRestrictionsArgs struct {
 	ServiceName string `thrift:"serviceName,1" json:"serviceName"`
 }
@@ -317,7 +317,7 @@ func (p *BaggageRestrictionManagerGetBaggageRestrictionsArgs) String() string {
 }
 
 // Attributes:
-//  - Success
+//   - Success
 type BaggageRestrictionManagerGetBaggageRestrictionsResult struct {
 	Success []*BaggageRestriction `thrift:"success,0" json:"success,omitempty"`
 }

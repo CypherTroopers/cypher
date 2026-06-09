@@ -818,7 +818,6 @@ func WriteKeyBlock(db ethdb.KeyValueWriter, block *types.KeyBlock) {
 // ReadKeyBlock retrieves an entire key block corresponding to the hash, assembling it
 // back from the stored header and body. If either the header or body could not
 // be retrieved nil is returned.
-//
 func ReadKeyBlock(db ethdb.Reader, hash common.Hash, number uint64) *types.KeyBlock {
 	header := ReadKeyHeader(db, hash, number)
 	if header == nil {

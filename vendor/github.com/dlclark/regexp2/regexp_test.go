@@ -152,63 +152,63 @@ func TestGroups_Basic(t *testing.T) {
 		strs []string
 	}
 	data := []d{
-		d{"(?<first_name>\\S+)\\s(?<last_name>\\S+)", // example
+		{"(?<first_name>\\S+)\\s(?<last_name>\\S+)", // example
 			"Ryan Byington",
 			[]string{"0", "first_name", "last_name"},
 			[]int{0, 1, 2},
 			[]string{"Ryan Byington", "Ryan", "Byington"}},
-		d{"((?<One>abc)\\d+)?(?<Two>xyz)(.*)", // example
+		{"((?<One>abc)\\d+)?(?<Two>xyz)(.*)", // example
 			"abc208923xyzanqnakl",
 			[]string{"0", "1", "2", "One", "Two"},
 			[]int{0, 1, 2, 3, 4},
 			[]string{"abc208923xyzanqnakl", "abc208923", "anqnakl", "abc", "xyz"}},
-		d{"((?<256>abc)\\d+)?(?<16>xyz)(.*)", // numeric names
+		{"((?<256>abc)\\d+)?(?<16>xyz)(.*)", // numeric names
 			"0272saasdabc8978xyz][]12_+-",
 			[]string{"0", "1", "2", "16", "256"},
 			[]int{0, 1, 2, 16, 256},
 			[]string{"abc8978xyz][]12_+-", "abc8978", "][]12_+-", "xyz", "abc"}},
-		d{"((?<4>abc)(?<digits>\\d+))?(?<2>xyz)(?<everything_else>.*)", // mix numeric and string names
+		{"((?<4>abc)(?<digits>\\d+))?(?<2>xyz)(?<everything_else>.*)", // mix numeric and string names
 			"0272saasdabc8978xyz][]12_+-",
 			[]string{"0", "1", "2", "digits", "4", "everything_else"},
 			[]int{0, 1, 2, 3, 4, 5},
 			[]string{"abc8978xyz][]12_+-", "abc8978", "xyz", "8978", "abc", "][]12_+-"}},
-		d{"(?<first_name>\\S+)\\s(?<first_name>\\S+)", // dupe string names
+		{"(?<first_name>\\S+)\\s(?<first_name>\\S+)", // dupe string names
 			"Ryan Byington",
 			[]string{"0", "first_name"},
 			[]int{0, 1},
 			[]string{"Ryan Byington", "Byington"}},
-		d{"(?<15>\\S+)\\s(?<15>\\S+)", // dupe numeric names
+		{"(?<15>\\S+)\\s(?<15>\\S+)", // dupe numeric names
 			"Ryan Byington",
 			[]string{"0", "15"},
 			[]int{0, 15},
 			[]string{"Ryan Byington", "Byington"}},
 		// *** repeated from above, but with alt cap syntax ***
-		d{"(?'first_name'\\S+)\\s(?'last_name'\\S+)", //example
+		{"(?'first_name'\\S+)\\s(?'last_name'\\S+)", //example
 			"Ryan Byington",
 			[]string{"0", "first_name", "last_name"},
 			[]int{0, 1, 2},
 			[]string{"Ryan Byington", "Ryan", "Byington"}},
-		d{"((?'One'abc)\\d+)?(?'Two'xyz)(.*)", // example
+		{"((?'One'abc)\\d+)?(?'Two'xyz)(.*)", // example
 			"abc208923xyzanqnakl",
 			[]string{"0", "1", "2", "One", "Two"},
 			[]int{0, 1, 2, 3, 4},
 			[]string{"abc208923xyzanqnakl", "abc208923", "anqnakl", "abc", "xyz"}},
-		d{"((?'256'abc)\\d+)?(?'16'xyz)(.*)", // numeric names
+		{"((?'256'abc)\\d+)?(?'16'xyz)(.*)", // numeric names
 			"0272saasdabc8978xyz][]12_+-",
 			[]string{"0", "1", "2", "16", "256"},
 			[]int{0, 1, 2, 16, 256},
 			[]string{"abc8978xyz][]12_+-", "abc8978", "][]12_+-", "xyz", "abc"}},
-		d{"((?'4'abc)(?'digits'\\d+))?(?'2'xyz)(?'everything_else'.*)", // mix numeric and string names
+		{"((?'4'abc)(?'digits'\\d+))?(?'2'xyz)(?'everything_else'.*)", // mix numeric and string names
 			"0272saasdabc8978xyz][]12_+-",
 			[]string{"0", "1", "2", "digits", "4", "everything_else"},
 			[]int{0, 1, 2, 3, 4, 5},
 			[]string{"abc8978xyz][]12_+-", "abc8978", "xyz", "8978", "abc", "][]12_+-"}},
-		d{"(?'first_name'\\S+)\\s(?'first_name'\\S+)", // dupe string names
+		{"(?'first_name'\\S+)\\s(?'first_name'\\S+)", // dupe string names
 			"Ryan Byington",
 			[]string{"0", "first_name"},
 			[]int{0, 1},
 			[]string{"Ryan Byington", "Byington"}},
-		d{"(?'15'\\S+)\\s(?'15'\\S+)", // dupe numeric names
+		{"(?'15'\\S+)\\s(?'15'\\S+)", // dupe numeric names
 			"Ryan Byington",
 			[]string{"0", "15"},
 			[]int{0, 15},

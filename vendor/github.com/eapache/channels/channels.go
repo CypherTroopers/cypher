@@ -127,7 +127,7 @@ func tee(input SimpleOutChannel, outputs []SimpleInChannel, closeWhenDone bool) 
 			cases[i].Chan = reflect.ValueOf(outputs[i].In())
 			cases[i].Send = reflect.ValueOf(elem)
 		}
-		for _ = range cases {
+		for range cases {
 			chosen, _, _ := reflect.Select(cases)
 			cases[chosen].Chan = reflect.ValueOf(nil)
 		}

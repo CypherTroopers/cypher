@@ -130,10 +130,10 @@ func (e *KeyGenesisMismatchError) Error() string {
 // SetupGenesisBlock writes or updates the genesis block in db.
 // The block that will be used is:
 //
-//                          genesis == nil       genesis != nil
-//                       +------------------------------------------
-//     db has no genesis |  main-net default  |  genesis
-//     db has genesis    |  from DB           |  genesis (if compatible)
+//	                     genesis == nil       genesis != nil
+//	                  +------------------------------------------
+//	db has no genesis |  main-net default  |  genesis
+//	db has genesis    |  from DB           |  genesis (if compatible)
 //
 // The stored chain configuration will be updated if it is compatible (i.e. does not
 // specify a fork block below the local head block). In case of a conflict, the
@@ -163,7 +163,7 @@ func SetupGenesisKeyBlock(db ethdb.Database, genesis *GenesisKey) (*params.Chain
 		keyblock := genesis.ToBlock()
 		gc := genesis.Config.GenCommittee
 		cnodes := make([]*common.Cnode, len(gc))
-		for k, _ := range gc {
+		for k := range gc {
 			node := gc[k]
 			cnodes[k] = &node
 		}
@@ -270,7 +270,7 @@ func (g *GenesisKey) Commit(db ethdb.Database) (*types.KeyBlock, error) {
 	gc := g.Config.GenCommittee
 
 	cnodes := make([]*common.Cnode, len(gc))
-	for k, _ := range gc {
+	for k := range gc {
 		node := gc[k]
 		cnodes[k] = &node
 	}

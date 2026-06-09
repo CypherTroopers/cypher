@@ -1,3 +1,4 @@
+//go:build !windows
 // +build !windows
 
 package termbox
@@ -15,11 +16,12 @@ import "runtime"
 // After successful initialization, the library must be finalized using 'Close' function.
 //
 // Example usage:
-//      err := termbox.Init()
-//      if err != nil {
-//              panic(err)
-//      }
-//      defer termbox.Close()
+//
+//	err := termbox.Init()
+//	if err != nil {
+//	        panic(err)
+//	}
+//	defer termbox.Close()
 func Init() error {
 	var err error
 
@@ -396,34 +398,34 @@ func SetInputMode(mode InputMode) InputMode {
 
 // Sets the termbox output mode. Termbox has four output options:
 //
-// 1. OutputNormal => [1..8]
-//    This mode provides 8 different colors:
-//        black, red, green, yellow, blue, magenta, cyan, white
-//    Shortcut: ColorBlack, ColorRed, ...
-//    Attributes: AttrBold, AttrUnderline, AttrReverse
+//  1. OutputNormal => [1..8]
+//     This mode provides 8 different colors:
+//     black, red, green, yellow, blue, magenta, cyan, white
+//     Shortcut: ColorBlack, ColorRed, ...
+//     Attributes: AttrBold, AttrUnderline, AttrReverse
 //
-//    Example usage:
-//        SetCell(x, y, '@', ColorBlack | AttrBold, ColorRed);
+//     Example usage:
+//     SetCell(x, y, '@', ColorBlack | AttrBold, ColorRed);
 //
-// 2. Output256 => [1..256]
-//    In this mode you can leverage the 256 terminal mode:
-//    0x01 - 0x08: the 8 colors as in OutputNormal
-//    0x09 - 0x10: Color* | AttrBold
-//    0x11 - 0xe8: 216 different colors
-//    0xe9 - 0x1ff: 24 different shades of grey
+//  2. Output256 => [1..256]
+//     In this mode you can leverage the 256 terminal mode:
+//     0x01 - 0x08: the 8 colors as in OutputNormal
+//     0x09 - 0x10: Color* | AttrBold
+//     0x11 - 0xe8: 216 different colors
+//     0xe9 - 0x1ff: 24 different shades of grey
 //
-//    Example usage:
-//        SetCell(x, y, '@', 184, 240);
-//        SetCell(x, y, '@', 0xb8, 0xf0);
+//     Example usage:
+//     SetCell(x, y, '@', 184, 240);
+//     SetCell(x, y, '@', 0xb8, 0xf0);
 //
-// 3. Output216 => [1..216]
-//    This mode supports the 3rd range of the 256 mode only.
-//    But you dont need to provide an offset.
+//  3. Output216 => [1..216]
+//     This mode supports the 3rd range of the 256 mode only.
+//     But you dont need to provide an offset.
 //
-// 4. OutputGrayscale => [1..26]
-//    This mode supports the 4th range of the 256 mode
-//    and black and white colors from 3th range of the 256 mode
-//    But you dont need to provide an offset.
+//  4. OutputGrayscale => [1..26]
+//     This mode supports the 4th range of the 256 mode
+//     and black and white colors from 3th range of the 256 mode
+//     But you dont need to provide an offset.
 //
 // In all modes, 0x00 represents the default color.
 //

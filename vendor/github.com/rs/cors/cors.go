@@ -4,15 +4,15 @@ as defined by http://www.w3.org/TR/cors/
 
 You can configure it by passing an option struct to cors.New:
 
-    c := cors.New(cors.Options{
-        AllowedOrigins: []string{"foo.com"},
-        AllowedMethods: []string{"GET", "POST", "DELETE"},
-        AllowCredentials: true,
-    })
+	c := cors.New(cors.Options{
+	    AllowedOrigins: []string{"foo.com"},
+	    AllowedMethods: []string{"GET", "POST", "DELETE"},
+	    AllowCredentials: true,
+	})
 
 Then insert the handler in the chain:
 
-    handler = c.Handler(handler)
+	handler = c.Handler(handler)
 
 See Options documentation for more options.
 
@@ -128,7 +128,7 @@ func New(options Options) *Cors {
 				break
 			} else if i := strings.IndexByte(origin, '*'); i >= 0 {
 				// Split the origin in two: start and end string without the *
-				w := wildcard{origin[0:i], origin[i+1 : len(origin)]}
+				w := wildcard{origin[0:i], origin[i+1:]}
 				c.allowedWOrigins = append(c.allowedWOrigins, w)
 			} else {
 				c.allowedOrigins = append(c.allowedOrigins, origin)

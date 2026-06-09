@@ -51,8 +51,8 @@ var (
 	oidAttributeContentType   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	oidAttributeMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 	oidAttributeSigningTime   = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 5}
-    oidSM3withSM2=asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 501}
-	oidDSASM2 = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 301, 1}
+	oidSM3withSM2             = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 501}
+	oidDSASM2                 = asn1.ObjectIdentifier{1, 2, 156, 10197, 1, 301, 1}
 )
 
 type signedData struct {
@@ -889,7 +889,7 @@ func encryptDESCBC(content []byte) ([]byte, *encryptedContentInfo, error) {
 // value is EncryptionAlgorithmDESCBC. To use a different algorithm, change the
 // value before calling Encrypt(). For example:
 //
-//     ContentEncryptionAlgorithm = EncryptionAlgorithmAES128GCM
+//	ContentEncryptionAlgorithm = EncryptionAlgorithmAES128GCM
 //
 // TODO(fullsailor): Add support for encrypting content with other algorithms
 func PKCS7Encrypt(content []byte, recipients []*Certificate) ([]byte, error) {

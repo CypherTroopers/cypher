@@ -559,7 +559,6 @@ func TestKeysWhenRemoving(t *testing.T) {
 	}
 }
 
-//
 func TestUnDrainedIter(t *testing.T) {
 	m := New()
 	// Insert 100 elements.

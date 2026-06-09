@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build ignore
 // +build ignore
 
 package main
@@ -170,9 +171,9 @@ func genPlurals(w *gen.CodeWriter, data *cldr.CLDR) {
 		// a true value for element i means that the number i is included.
 		setMap := map[[numN]bool]int{
 			// The above init func adds an entry for including all numbers.
-			[numN]bool{1: true}: 1, // fix {1} to a nice value
-			[numN]bool{2: true}: 2, // fix {2} to a nice value
-			[numN]bool{0: true}: 3, // fix {0} to a nice value
+			{1: true}: 1, // fix {1} to a nice value
+			{2: true}: 2, // fix {2} to a nice value
+			{0: true}: 3, // fix {0} to a nice value
 		}
 
 		// inclusionMasks contains bit masks for every number under numN to
@@ -358,15 +359,16 @@ var operandIndex = map[string]opID{
 // the resulting or conditions to conds.
 //
 // Example rules:
-//   // Category "one" in English: only allow 1 with no visible fraction
-//   i = 1 and v = 0 @integer 1
 //
-//   // Category "few" in Czech: all numbers with visible fractions
-//   v != 0   @decimal ...
+//	// Category "one" in English: only allow 1 with no visible fraction
+//	i = 1 and v = 0 @integer 1
 //
-//   // Category "zero" in Latvian: all multiples of 10 or the numbers 11-19 or
-//   // numbers with a fraction 11..19 and no trailing zeros.
-//   n % 10 = 0 or n % 100 = 11..19 or v = 2 and f % 100 = 11..19 @integer ...
+//	// Category "few" in Czech: all numbers with visible fractions
+//	v != 0   @decimal ...
+//
+//	// Category "zero" in Latvian: all multiples of 10 or the numbers 11-19 or
+//	// numbers with a fraction 11..19 and no trailing zeros.
+//	n % 10 = 0 or n % 100 = 11..19 or v = 2 and f % 100 = 11..19 @integer ...
 //
 // @integer and @decimal are followed by examples and are not relevant for the
 // rule itself. The are used here to signal the termination of the rule.

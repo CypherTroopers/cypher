@@ -127,9 +127,9 @@ func NewDistKeyGenerator(suite Suite, longterm kyber.Scalar, participants []kybe
 // participant a deal belongs to, loop over the keys as indices in the
 // list of participants:
 //
-//   for i,dd := range distDeals {
-//      sendTo(participants[i],dd)
-//   }
+//	for i,dd := range distDeals {
+//	   sendTo(participants[i],dd)
+//	}
 //
 // If this method cannot process its own Deal, that indicates a
 // sever problem with the configuration or implementation and

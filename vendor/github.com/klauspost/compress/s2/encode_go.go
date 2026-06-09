@@ -1,3 +1,4 @@
+//go:build !amd64 || appengine || !gc || noasm
 // +build !amd64 appengine !gc noasm
 
 package s2
@@ -12,6 +13,7 @@ import (
 // been written.
 //
 // It also assumes that:
+//
 //	len(dst) >= MaxEncodedLen(len(src))
 func encodeBlock(dst, src []byte) (d int) {
 	if len(src) < minNonLiteralBlockSize {
@@ -23,6 +25,7 @@ func encodeBlock(dst, src []byte) (d int) {
 // emitLiteral writes a literal chunk and returns the number of bytes written.
 //
 // It assumes that:
+//
 //	dst is long enough to hold the encoded bytes
 //	0 <= len(lit) && len(lit) <= math.MaxUint32
 func emitLiteral(dst, lit []byte) int {
@@ -113,6 +116,7 @@ func emitRepeat(dst []byte, offset, length int) int {
 // emitCopy writes a copy chunk and returns the number of bytes written.
 //
 // It assumes that:
+//
 //	dst is long enough to hold the encoded bytes
 //	1 <= offset && offset <= math.MaxUint32
 //	4 <= length && length <= 1 << 24
@@ -172,6 +176,7 @@ func emitCopy(dst []byte, offset, length int) int {
 // emitCopyNoRepeat writes a copy chunk and returns the number of bytes written.
 //
 // It assumes that:
+//
 //	dst is long enough to hold the encoded bytes
 //	1 <= offset && offset <= math.MaxUint32
 //	4 <= length && length <= 1 << 24
@@ -231,8 +236,8 @@ func emitCopyNoRepeat(dst []byte, offset, length int) int {
 // matchLen returns how many bytes match in a and b
 //
 // It assumes that:
-//   len(a) <= len(b)
 //
+//	len(a) <= len(b)
 func matchLen(a []byte, b []byte) int {
 	b = b[:len(a)]
 	var checked int

@@ -184,13 +184,13 @@ func (ps pollingState) Error() string {
 	return fmt.Sprintf("Long running operation terminated with status '%s': Code=%q Message=%q", ps.state, ps.code, ps.message)
 }
 
-//	updatePollingState maps the operation status -- retrieved from either a provisioningState
-// 	field, the status field of an OperationResource, or inferred from the HTTP status code --
-// 	into a well-known states. Since the process begins from the initial request, the state
-//	always comes from either a the provisioningState returned or is inferred from the HTTP
-//	status code. Subsequent requests will read an Azure OperationResource object if the
-//	service initially returned the Azure-AsyncOperation header. The responseFormat field notes
-//	the expected response format.
+// updatePollingState maps the operation status -- retrieved from either a provisioningState
+// field, the status field of an OperationResource, or inferred from the HTTP status code --
+// into a well-known states. Since the process begins from the initial request, the state
+// always comes from either a the provisioningState returned or is inferred from the HTTP
+// status code. Subsequent requests will read an Azure OperationResource object if the
+// service initially returned the Azure-AsyncOperation header. The responseFormat field notes
+// the expected response format.
 func updatePollingState(resp *http.Response, ps *pollingState) error {
 	// Determine the response shape
 	// -- The first response will always be a provisioningStatus response; only the polling requests,

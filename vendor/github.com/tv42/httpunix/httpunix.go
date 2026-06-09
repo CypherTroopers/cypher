@@ -7,7 +7,7 @@
 //
 // The URLs look like this:
 //
-//     http+unix://LOCATION/PATH_ETC
+//	http+unix://LOCATION/PATH_ETC
 //
 // where LOCATION is translated to a file system path with
 // Transport.RegisterLocation, and PATH_ETC follow normal http: scheme

@@ -82,7 +82,7 @@ func TestMapFieldRoundTrips(t *testing.T) {
 			8: "Dave",
 		},
 		MsgMapping: map[int64]*FloatingPoint{
-			0x7001: &FloatingPoint{F: &Float},
+			0x7001: {F: &Float},
 		},
 		ByteMapping: map[bool][]byte{
 			false: []byte("that's not right!"),
@@ -93,8 +93,8 @@ func TestMapFieldRoundTrips(t *testing.T) {
 			"other key": "other value",
 		},
 		StructMapping: map[string]*Inner{
-			"first":  &Inner{Id: 1, Name: "one"},
-			"second": &Inner{Id: 5, Name: "two"},
+			"first":  {Id: 1, Name: "one"},
+			"second": {Id: 5, Name: "two"},
 		},
 	}
 	b, err := Encode(m)
