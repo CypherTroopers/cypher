@@ -130,11 +130,15 @@ func (pm *ProtocolManager) commonTxAdmissionCommitteeTargets() []commonTxAdmissi
 }
 
 // BroadcastCommonTxAdmissions propagates signed common RPC tx admissions. In
-// fixed committee mode this fallback eth/p2p relay is restricted to peers whose
-// host matches a fixed committee rnet endpoint. The GenCommittee port is the
-// rnet UDP port and must not be compared with eth/p2p TCP ports. The preferred
-// production path is the dedicated KCP committee channel installed by reconfig.
+// fixed committee mode the preferred production path is the dedicated KCP
+// committee relay. If the dedicated path is unavailable, this falls back to the
+// generic eth/p2p relay restricted to peers whose host matches a fixed committee
+// rnet endpoint. The GenCommittee port is the rnet UDP/KCP port and must not be
+// compared with eth/p2p TCP ports.
 func (pm *ProtocolManager) BroadcastCommonTxAdmissions(admissions []*types.CommonTxAdmission) {
+	if pm.broadcastCommonTxAdmissionsDedicated(admissions) {
+		return
+	}
 	pm.broadcastCommonTxAdmissionsExcept(admissions, "")
 }
 
@@ -221,7 +225,7 @@ func (pm *ProtocolManager) handleCommonTxAdmissionMsg(p *peer, msg p2p.Msg) erro
 	}
 	if len(accepted) > 0 {
 		log.Trace("Accepted common tx admissions", "peer", p.id, "count", len(accepted))
-		pm.broadcastCommonTxAdmissionsExcept(accepted, p.id)
+		pm.broadcastAcceptedCommonTxAdmissions(accepted, p.id)
 	}
 	return nil
 }
