@@ -198,3 +198,42 @@ type Config struct {
 	DatabaseHandles    int  `toml:"-"`
 	DatabaseCache      int
 	DatabaseFreezer    string
+
+	TrieCleanCache          int
+	TrieCleanCacheJournal   string        `toml:",omitempty"`
+	TrieCleanCacheRejournal time.Duration `toml:",omitempty"`
+	TrieDirtyCache          int
+	TrieTimeout             time.Duration
+	SnapshotCache           int
+
+	Miner miner.Config
+
+	colossusX colossusX.Config
+
+	TxPool core.TxPoolConfig
+
+	GPO gasprice.Config
+
+	TxQUIC TxQUICConfig
+
+	EnablePreimageRecording bool
+
+	DocRoot          string `toml:"-"`
+	EWASMInterpreter string
+	EVMInterpreter   string
+
+	RPCGasCap uint64 `toml:",omitempty"`
+
+	RPCTxFeeCap float64 `toml:",omitempty"`
+
+	Checkpoint       *params.TrustedCheckpoint      `toml:",omitempty"`
+	CheckpointOracle *params.CheckpointOracleConfig `toml:",omitempty"`
+
+	EVMCallTimeOut time.Duration
+
+	EnableMultitenancy bool
+
+	RnetPort   string
+	ExternalIp string
+	EnableTPS  bool
+}
