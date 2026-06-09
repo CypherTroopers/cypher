@@ -77,6 +77,18 @@ var DefaultConfig = Config{
 	RPCGasCap:   9000000000000000000,
 	GPO:         DefaultFullGPOConfig,
 	RPCTxFeeCap: 100, // 1 ether
+	TxQUIC: TxQUICConfig{
+		Enabled:              false,
+		Addr:                 "0.0.0.0",
+		Port:                 4444,
+		MaxPayload:           512 * 1024,
+		MaxTxsPerBatch:       512,
+		MaxIncomingStreams:   4096,
+		MaxIncomingConns:     1024,
+		ReadTimeout:          5 * time.Second,
+		MaxTxsPerIPPerSecond: 2000,
+		BurstTxsPerIP:        4000,
+	},
 }
 
 func init() {
@@ -106,6 +118,28 @@ func (c *Config) ColossusX() *colossusX.Config {
 }
 
 //go:generate gencodec -type Config -formats toml -out gen_config.go
+
+type TxQUICConfig struct {
+	Enabled bool `toml:",omitempty"`
+
+	Addr string `toml:",omitempty"`
+	Port int    `toml:",omitempty"`
+
+	MaxPayload         int64 `toml:",omitempty"`
+	MaxTxsPerBatch     int   `toml:",omitempty"`
+	MaxIncomingStreams int64 `toml:",omitempty"`
+	MaxIncomingConns   int   `toml:",omitempty"`
+
+	ReadTimeout time.Duration `toml:",omitempty"`
+
+	MaxTxsPerIPPerSecond int `toml:",omitempty"`
+	BurstTxsPerIP        int `toml:",omitempty"`
+
+	AllowIPs []string `toml:",omitempty"`
+
+	TLSCertFile string `toml:",omitempty"`
+	TLSKeyFile  string `toml:",omitempty"`
+}
 
 type Config struct {
 	// The genesis block, which is inserted if the database is empty.
@@ -165,6 +199,9 @@ type Config struct {
 
 	// Gas Price Oracle options
 	GPO gasprice.Config
+
+	// QUIC transaction ingress options
+	TxQUIC TxQUICConfig
 
 	// Enables tracking of SHA3 preimages in the VM
 	EnablePreimageRecording bool
