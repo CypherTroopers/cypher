@@ -9,28 +9,71 @@ package eth
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
+	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/log"
+	"github.com/cypherium/cypher/metrics"
 	"github.com/cypherium/cypher/rlp"
 	quic "github.com/quic-go/quic-go"
 )
 
-const txQUICProtocolName = "cypher-tx-quic/1"
+const (
+	txQUICProtocolName = "cypher-tx-quic/1"
+	txQUICPacketV1     = uint(1)
+)
+
+var (
+	txQUICIngressConnMeter     = metrics.GetOrRegisterMeter("txquic/ingress/conns", metrics.DefaultRegistry)
+	txQUICIngressStreamMeter   = metrics.GetOrRegisterMeter("txquic/ingress/streams", metrics.DefaultRegistry)
+	txQUICIngressAcceptedMeter = metrics.GetOrRegisterMeter("txquic/ingress/accepted", metrics.DefaultRegistry)
+	txQUICIngressRejectedMeter = metrics.GetOrRegisterMeter("txquic/ingress/rejected", metrics.DefaultRegistry)
+	txQUICIngressForwardMeter  = metrics.GetOrRegisterMeter("txquic/ingress/forwarded", metrics.DefaultRegistry)
+	txQUICIngressAuthFailMeter = metrics.GetOrRegisterMeter("txquic/ingress/authfail", metrics.DefaultRegistry)
+)
 
 type txQUICRateBucket struct {
 	tokens int
 	last   time.Time
 }
 
-// TxQUICIngress receives signed transactions over QUIC and inserts them into the normal txpool.
+type txQUICPacket struct {
+	Version   uint
+	Sender    common.Address
+	Nonce     uint64
+	Timestamp uint64
+	Txs       []*types.Transaction
+	Signature []byte
+}
+
+type txQUICSigningData struct {
+	Version   uint
+	Sender    common.Address
+	Nonce     uint64
+	Timestamp uint64
+	TxHashes  []common.Hash
+}
+
+type txQUICAck struct {
+	Version   uint
+	Accepted  int
+	Rejected  int
+	Forwarded int
+	Errors    []string
+	Hashes    []common.Hash
+}
+
+// TxQUICIngress receives signed transactions over QUIC and inserts or forwards them.
 // It does not replace TCP/RLPx header, body, block or peer sync.
 type TxQUICIngress struct {
 	config TxQUICConfig
@@ -43,6 +86,7 @@ type TxQUICIngress struct {
 
 	allowNets []*net.IPNet
 	allowIPs  map[string]struct{}
+	signers   map[common.Address]struct{}
 
 	wg      sync.WaitGroup
 	connSem chan struct{}
@@ -52,6 +96,24 @@ type TxQUICIngress struct {
 }
 
 func NewTxQUICIngress(config TxQUICConfig, txpool *core.TxPool) *TxQUICIngress {
+	applyTxQUICDefaults(&config)
+	ctx, cancel := context.WithCancel(context.Background())
+	q := &TxQUICIngress{
+		config:   config,
+		txpool:   txpool,
+		ctx:      ctx,
+		cancel:   cancel,
+		connSem:  make(chan struct{}, config.MaxIncomingConns),
+		buckets:  make(map[string]*txQUICRateBucket),
+		allowIPs: make(map[string]struct{}),
+		signers:  make(map[common.Address]struct{}),
+	}
+	q.parseAllowlist()
+	q.parseSigners()
+	return q
+}
+
+func applyTxQUICDefaults(config *TxQUICConfig) {
 	if config.Addr == "" {
 		config.Addr = "0.0.0.0"
 	}
@@ -73,25 +135,21 @@ func NewTxQUICIngress(config TxQUICConfig, txpool *core.TxPool) *TxQUICIngress {
 	if config.ReadTimeout <= 0 {
 		config.ReadTimeout = 5 * time.Second
 	}
+	if config.WriteTimeout <= 0 {
+		config.WriteTimeout = 5 * time.Second
+	}
+	if config.ForwardTimeout <= 0 {
+		config.ForwardTimeout = 3 * time.Second
+	}
 	if config.MaxTxsPerIPPerSecond <= 0 {
 		config.MaxTxsPerIPPerSecond = 2000
 	}
 	if config.BurstTxsPerIP <= 0 {
 		config.BurstTxsPerIP = 4000
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	q := &TxQUICIngress{
-		config:   config,
-		txpool:   txpool,
-		ctx:      ctx,
-		cancel:   cancel,
-		connSem:  make(chan struct{}, config.MaxIncomingConns),
-		buckets:  make(map[string]*txQUICRateBucket),
-		allowIPs: make(map[string]struct{}),
+	if config.RoutingMode == "" {
+		config.RoutingMode = "leader-only"
 	}
-	q.parseAllowlist()
-	return q
 }
 
 func (q *TxQUICIngress) Start() error {
@@ -102,14 +160,13 @@ func (q *TxQUICIngress) Start() error {
 		return fmt.Errorf("txquic ingress requires txpool")
 	}
 	if q.config.TLSCertFile == "" || q.config.TLSKeyFile == "" {
-		return fmt.Errorf("txquic requires txquic.tlscert and txquic.tlskey in production builds")
+		return fmt.Errorf("txquic requires txquic.tlscert and txquic.tlskey")
 	}
 
 	cert, err := tls.LoadX509KeyPair(q.config.TLSCertFile, q.config.TLSKeyFile)
 	if err != nil {
 		return err
 	}
-
 	addr := fmt.Sprintf("%s:%d", q.config.Addr, q.config.Port)
 	listener, err := quic.ListenAddr(addr, &tls.Config{
 		Certificates: []tls.Certificate{cert},
@@ -124,8 +181,7 @@ func (q *TxQUICIngress) Start() error {
 		return err
 	}
 	q.listener = listener
-
-	log.Info("Started QUIC tx ingress", "addr", addr, "maxPayload", q.config.MaxPayload, "maxTxsPerBatch", q.config.MaxTxsPerBatch, "maxIncomingStreams", q.config.MaxIncomingStreams, "maxIncomingConns", q.config.MaxIncomingConns, "allowlist", len(q.config.AllowIPs))
+	log.Info("Started QUIC tx ingress", "addr", addr, "routing", q.config.RoutingMode, "auth", q.config.RequireAuth, "ack", q.config.Ack, "leaders", len(q.config.LeaderEndpoints), "backups", len(q.config.BackupEndpoints))
 
 	q.wg.Add(1)
 	go q.acceptLoop()
@@ -156,34 +212,29 @@ func (q *TxQUICIngress) acceptLoop() {
 				continue
 			}
 		}
-
 		remote := conn.RemoteAddr()
 		if !q.allowed(remote) {
-			log.Debug("QUIC tx ingress rejected disallowed remote", "remote", remote)
 			_ = conn.CloseWithError(1, "not allowed")
 			continue
 		}
-
 		select {
 		case q.connSem <- struct{}{}:
 		default:
-			log.Debug("QUIC tx ingress rejected connection, limit reached", "remote", remote)
 			_ = conn.CloseWithError(2, "too many connections")
 			continue
 		}
-
+		txQUICIngressConnMeter.Mark(1)
 		q.wg.Add(1)
 		go q.handleConn(conn)
 	}
 }
 
-func (q *TxQUICIngress) handleConn(conn quic.Connection) {
+func (q *TxQUICIngress) handleConn(conn *quic.Conn) {
 	defer q.wg.Done()
 	defer func() {
 		<-q.connSem
 		_ = conn.CloseWithError(0, "closed")
 	}()
-
 	remote := conn.RemoteAddr()
 	for {
 		stream, err := conn.AcceptStream(q.ctx)
@@ -196,69 +247,208 @@ func (q *TxQUICIngress) handleConn(conn quic.Connection) {
 				return
 			}
 		}
+		txQUICIngressStreamMeter.Mark(1)
 		q.wg.Add(1)
 		go q.handleStream(remote, stream)
 	}
 }
 
-func (q *TxQUICIngress) handleStream(remote net.Addr, stream quic.Stream) {
+func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 	defer q.wg.Done()
 	defer stream.Close()
+	ack := txQUICAck{Version: txQUICPacketV1}
 
 	_ = stream.SetReadDeadline(time.Now().Add(q.config.ReadTimeout))
 	payload, err := io.ReadAll(io.LimitReader(stream, q.config.MaxPayload+1))
 	if err != nil {
-		log.Debug("QUIC tx ingress read failed", "remote", remote, "err", err)
+		ack.Errors = append(ack.Errors, err.Error())
+		q.writeAck(stream, ack)
 		return
 	}
 	if int64(len(payload)) > q.config.MaxPayload {
-		log.Debug("QUIC tx ingress payload too large", "remote", remote, "size", len(payload), "limit", q.config.MaxPayload)
-		return
-	}
-	if len(payload) == 0 {
+		ack.Errors = append(ack.Errors, "payload too large")
+		q.writeAck(stream, ack)
 		return
 	}
 
-	txs, err := q.decodePayload(payload)
+	txs, signed, signer, err := q.decodeAndAuthenticate(payload)
 	if err != nil {
-		log.Debug("QUIC tx ingress decode failed", "remote", remote, "err", err, "size", len(payload))
+		txQUICIngressAuthFailMeter.Mark(1)
+		ack.Errors = append(ack.Errors, err.Error())
+		q.writeAck(stream, ack)
 		return
 	}
 	if len(txs) == 0 {
+		ack.Errors = append(ack.Errors, "empty tx batch")
+		q.writeAck(stream, ack)
 		return
 	}
 	if len(txs) > q.config.MaxTxsPerBatch {
-		log.Debug("QUIC tx ingress batch too large", "remote", remote, "count", len(txs), "limit", q.config.MaxTxsPerBatch)
+		ack.Errors = append(ack.Errors, "batch too large")
+		q.writeAck(stream, ack)
 		return
 	}
 	if !q.takeTokens(remote, len(txs)) {
-		log.Debug("QUIC tx ingress rate limited", "remote", remote, "count", len(txs))
+		ack.Errors = append(ack.Errors, "rate limited")
+		q.writeAck(stream, ack)
 		return
 	}
 
+	ack.Forwarded = q.routePayload(payload)
+	accepted, rejected, hashes := q.insertLocal(txs)
+	ack.Accepted = accepted
+	ack.Rejected = rejected
+	ack.Hashes = hashes
+
+	if accepted > 0 {
+		txQUICIngressAcceptedMeter.Mark(int64(accepted))
+	}
+	if rejected > 0 {
+		txQUICIngressRejectedMeter.Mark(int64(rejected))
+	}
+	if ack.Forwarded > 0 {
+		txQUICIngressForwardMeter.Mark(int64(ack.Forwarded))
+	}
+	log.Debug("QUIC tx ingress processed", "remote", remote, "signed", signed, "signer", signer, "accepted", accepted, "rejected", rejected, "forwarded", ack.Forwarded)
+	q.writeAck(stream, ack)
+}
+
+func (q *TxQUICIngress) insertLocal(txs []*types.Transaction) (int, int, []common.Hash) {
+	mode := strings.ToLower(q.config.RoutingMode)
+	if mode == "leader-only" && len(q.config.LeaderEndpoints) > 0 {
+		return 0, 0, nil
+	}
 	errs := q.txpool.AddRemotes(txs)
 	accepted, rejected := 0, 0
-	for _, err := range errs {
+	hashes := make([]common.Hash, 0, len(txs))
+	for i, err := range errs {
 		if err == nil {
 			accepted++
+			hashes = append(hashes, txs[i].Hash())
 		} else {
 			rejected++
 		}
 	}
-	log.Debug("QUIC tx ingress processed tx batch", "remote", remote, "accepted", accepted, "rejected", rejected)
+	return accepted, rejected, hashes
 }
 
-func (q *TxQUICIngress) decodePayload(payload []byte) ([]*types.Transaction, error) {
+func (q *TxQUICIngress) routePayload(payload []byte) int {
+	mode := strings.ToLower(q.config.RoutingMode)
+	if mode == "local" || mode == "" {
+		return 0
+	}
+	endpoints := append([]string{}, q.config.LeaderEndpoints...)
+	if mode == "committee-backup" {
+		endpoints = append(endpoints, q.config.BackupEndpoints...)
+	}
+	forwarded := 0
+	for _, endpoint := range endpoints {
+		if q.forwardPayload(endpoint, payload) == nil {
+			forwarded++
+		}
+	}
+	return forwarded
+}
+
+func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
+	ctx, cancel := context.WithTimeout(q.ctx, q.config.ForwardTimeout)
+	defer cancel()
+	conn, err := quic.DialAddr(ctx, endpoint, q.clientTLSConfig(), &quic.Config{MaxIdleTimeout: q.config.ForwardTimeout})
+	if err != nil {
+		return err
+	}
+	defer conn.CloseWithError(0, "done")
+	stream, err := conn.OpenStreamSync(ctx)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+	_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
+	_, err = stream.Write(payload)
+	return err
+}
+
+func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transaction, bool, common.Address, error) {
+	var pkt txQUICPacket
+	if err := rlp.DecodeBytes(payload, &pkt); err == nil && pkt.Version == txQUICPacketV1 && len(pkt.Txs) > 0 {
+		signer, err := q.verifyPacket(&pkt)
+		return pkt.Txs, true, signer, err
+	}
+	if q.config.RequireAuth {
+		return nil, false, common.Address{}, fmt.Errorf("unsigned txquic payload rejected")
+	}
 	var batch []*types.Transaction
 	if err := rlp.DecodeBytes(payload, &batch); err == nil {
-		return batch, nil
+		return batch, false, common.Address{}, nil
 	}
-
 	var single types.Transaction
 	if err := rlp.DecodeBytes(payload, &single); err != nil {
-		return nil, err
+		return nil, false, common.Address{}, err
 	}
-	return []*types.Transaction{&single}, nil
+	return []*types.Transaction{&single}, false, common.Address{}, nil
+}
+
+func (q *TxQUICIngress) verifyPacket(pkt *txQUICPacket) (common.Address, error) {
+	if !q.config.RequireAuth {
+		return pkt.Sender, nil
+	}
+	if len(pkt.Signature) != crypto.SignatureLength {
+		return common.Address{}, fmt.Errorf("invalid ingress signature length")
+	}
+	hash := pkt.signingHash()
+	pub, err := crypto.SigToPub(hash.Bytes(), pkt.Signature)
+	if err != nil {
+		return common.Address{}, err
+	}
+	pubBytes := crypto.FromECDSAPub(pub)
+	if len(pubBytes) == 0 {
+		return common.Address{}, fmt.Errorf("invalid ingress signer pubkey")
+	}
+	signer := common.BytesToAddress(crypto.Keccak256(pubBytes[1:])[12:])
+	if signer != pkt.Sender {
+		return signer, fmt.Errorf("ingress signer mismatch")
+	}
+	if len(q.signers) > 0 {
+		if _, ok := q.signers[signer]; !ok {
+			return signer, fmt.Errorf("ingress signer not allowed")
+		}
+	}
+	return signer, nil
+}
+
+func (p *txQUICPacket) signingHash() common.Hash {
+	hashes := make([]common.Hash, 0, len(p.Txs))
+	for _, tx := range p.Txs {
+		if tx != nil {
+			hashes = append(hashes, tx.Hash())
+		}
+	}
+	enc, _ := rlp.EncodeToBytes(txQUICSigningData{Version: p.Version, Sender: p.Sender, Nonce: p.Nonce, Timestamp: p.Timestamp, TxHashes: hashes})
+	return crypto.Keccak256Hash(enc)
+}
+
+func (q *TxQUICIngress) writeAck(stream *quic.Stream, ack txQUICAck) {
+	if !q.config.Ack {
+		return
+	}
+	_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
+	_ = rlp.Encode(stream, &ack)
+}
+
+func (q *TxQUICIngress) clientTLSConfig() *tls.Config {
+	cfg := &tls.Config{NextProtos: []string{txQUICProtocolName}, MinVersion: tls.VersionTLS13, ServerName: q.config.ForwardServerName, InsecureSkipVerify: q.config.ForwardTLSInsecureSkipVerify}
+	if q.config.ForwardTLSCAFile == "" {
+		return cfg
+	}
+	pem, err := os.ReadFile(q.config.ForwardTLSCAFile)
+	if err != nil {
+		return cfg
+	}
+	pool := x509.NewCertPool()
+	if pool.AppendCertsFromPEM(pem) {
+		cfg.RootCAs = pool
+	}
+	return cfg
 }
 
 func (q *TxQUICIngress) parseAllowlist() {
@@ -270,17 +460,18 @@ func (q *TxQUICIngress) parseAllowlist() {
 		if strings.Contains(entry, "/") {
 			if _, ipnet, err := net.ParseCIDR(entry); err == nil {
 				q.allowNets = append(q.allowNets, ipnet)
-			} else {
-				log.Warn("Invalid txquic allow CIDR ignored", "entry", entry, "err", err)
 			}
 			continue
 		}
-		ip := net.ParseIP(entry)
-		if ip == nil {
-			log.Warn("Invalid txquic allow IP ignored", "entry", entry)
-			continue
+		if ip := net.ParseIP(entry); ip != nil {
+			q.allowIPs[ip.String()] = struct{}{}
 		}
-		q.allowIPs[ip.String()] = struct{}{}
+	}
+}
+
+func (q *TxQUICIngress) parseSigners() {
+	for _, signer := range q.config.AllowedSigners {
+		q.signers[signer] = struct{}{}
 	}
 }
 
@@ -312,10 +503,8 @@ func (q *TxQUICIngress) takeTokens(addr net.Addr, n int) bool {
 	if err != nil {
 		host = addr.String()
 	}
-
 	q.rateMu.Lock()
 	defer q.rateMu.Unlock()
-
 	now := time.Now()
 	b := q.buckets[host]
 	if b == nil {
