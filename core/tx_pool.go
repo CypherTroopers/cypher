@@ -57,7 +57,7 @@ var (
 var (
 	evictionInterval    = time.Minute
 	statsReportInterval = 8 * time.Second
-	reqWaitTimeout      = 3 * time.Second
+	reqWaitTimeout      = 15 * time.Second
 )
 
 var (
