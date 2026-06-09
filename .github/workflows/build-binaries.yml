@@ -79,6 +79,10 @@ jobs:
           cd "$GOPATH/src/github.com/go-sourcemap"
           [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
 
+          mkdir -p "$GOPATH/src/github.com/quic-go"
+          cd "$GOPATH/src/github.com/quic-go"
+          [ -d quic-go ] || git clone https://github.com/quic-go/quic-go.git
+
           mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
           cd "$GOPATH/src/github.com/yusufpapurcu"
           [ -d wmi ] || git clone https://github.com/yusufpapurcu/wmi.git
@@ -289,6 +293,10 @@ jobs:
           cd "$GOPATH/src/github.com/go-sourcemap"
           [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
 
+          mkdir -p "$GOPATH/src/github.com/quic-go"
+          cd "$GOPATH/src/github.com/quic-go"
+          [ -d quic-go ] || git clone https://github.com/quic-go/quic-go.git
+
           mkdir -p "$GOPATH/src/github.com/tklauser"
           cd "$GOPATH/src/github.com/tklauser"
           [ -d go-sysconf ] || git clone https://github.com/tklauser/go-sysconf.git
@@ -381,6 +389,7 @@ jobs:
           mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
           mkdir -p "$GOPATH/src/github.com/go-ole"
           mkdir -p "$GOPATH/src/github.com/dlclark"
+          mkdir -p "$GOPATH/src/github.com/quic-go"
 
           git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
           git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
@@ -390,6 +399,7 @@ jobs:
           git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
           git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
           git clone --depth 1 https://github.com/dlclark/regexp2.git "$GOPATH/src/github.com/dlclark/regexp2"
+          git clone --depth 1 https://github.com/quic-go/quic-go.git "$GOPATH/src/github.com/quic-go/quic-go"
 
           rm -rf "$GOPATH/src/github.com/herumi"
           mkdir -p "$GOPATH/src/github.com/herumi"
