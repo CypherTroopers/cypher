@@ -1,7 +1,9 @@
 package core
 
 import (
+	"encoding/binary"
 	"errors"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -13,13 +15,17 @@ import (
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
+	kcp "github.com/xtaci/kcp-go"
 )
 
-const powResultUDPMaxPacketSize = 4096
+const powResultUDPMaxPacketSize = 64 * 1024
 
-// PoWResultUDPPort derives the fixed-mode PoW result UDP port from the
-// consensus UDP port. Keeping it separate avoids colliding with the rnet
-// protocol already bound to RnetPort.
+var powResultKCPMagic = [4]byte{'C', 'P', 'W', 'R'}
+
+// PoWResultUDPPort derives the fixed-mode PoW result KCP port from the
+// consensus UDP/KCP port. Keeping it separate avoids colliding with the rnet
+// protocol already bound to RnetPort. The public function name is kept for
+// compatibility with the existing fixed-mode call sites.
 func PoWResultUDPPort(rnetPort string) (int, error) {
 	port, err := strconv.Atoi(rnetPort)
 	if err != nil {
@@ -58,17 +64,70 @@ func powResultUDPAddrFromCommitteeNode(node *common.Cnode, fallbackPort int) (*n
 	return net.ResolveUDPAddr("udp4", net.JoinHostPort(host, strconv.Itoa(rnetPort+1)))
 }
 
-func sendPoWResultUDP(payload []byte, addr net.UDPAddr) error {
-	conn, err := net.DialUDP("udp4", nil, &addr)
-	if err != nil {
+func tunePoWResultKCPSession(session *kcp.UDPSession) {
+	if session == nil {
+		return
+	}
+	session.SetNoDelay(1, 10, 2, 1)
+	session.SetWindowSize(128, 512)
+	session.SetStreamMode(true)
+	session.SetACKNoDelay(true)
+}
+
+func writePoWResultKCPFrame(conn net.Conn, payload []byte) error {
+	if len(payload) == 0 {
+		return errors.New("empty pow result payload")
+	}
+	if len(payload) > powResultUDPMaxPacketSize {
+		return errors.New("pow result KCP payload too large")
+	}
+	header := make([]byte, 8)
+	copy(header[:4], powResultKCPMagic[:])
+	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)))
+	if err := conn.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		return err
 	}
-	defer conn.Close()
-	_, err = conn.Write(payload)
+	if _, err := conn.Write(header); err != nil {
+		return err
+	}
+	_, err := conn.Write(payload)
 	return err
 }
 
-// BroadcastPoWResultUDP broadcasts a mined PoW result to validators over UDP.
+func readPoWResultKCPFrame(conn net.Conn) ([]byte, error) {
+	header := make([]byte, 8)
+	if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return nil, err
+	}
+	if _, err := io.ReadFull(conn, header); err != nil {
+		return nil, err
+	}
+	if string(header[:4]) != string(powResultKCPMagic[:]) {
+		return nil, errors.New("invalid pow result KCP frame magic")
+	}
+	size := binary.BigEndian.Uint32(header[4:])
+	if size == 0 || size > powResultUDPMaxPacketSize {
+		return nil, errors.New("invalid pow result KCP frame size")
+	}
+	payload := make([]byte, size)
+	if _, err := io.ReadFull(conn, payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func sendPoWResultUDP(payload []byte, addr net.UDPAddr) error {
+	session, err := kcp.DialWithOptions(addr.String(), nil, 10, 3)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	tunePoWResultKCPSession(session)
+	return writePoWResultKCPFrame(session, payload)
+}
+
+// BroadcastPoWResultUDP broadcasts a mined PoW result to validators over KCP.
+// The legacy function name is kept because fixed-mode callers already use it.
 func BroadcastPoWResultUDP(rnetPort string, validators []*common.Cnode, result *types.PoWResult) error {
 	if result == nil {
 		return errors.New("nil pow result")
@@ -82,11 +141,11 @@ func BroadcastPoWResultUDP(rnetPort string, validators []*common.Cnode, result *
 		return err
 	}
 	if len(payload) > powResultUDPMaxPacketSize {
-		return errors.New("pow result UDP payload too large")
+		return errors.New("pow result KCP payload too large")
 	}
 
 	seen := make(map[string]struct{})
-	addrs := make([]net.UDPAddr, 0, len(validators)+2)
+	addrs := make([]net.UDPAddr, 0, len(validators)+1)
 	for _, validator := range validators {
 		addr, err := powResultUDPAddrFromCommitteeNode(validator, port)
 		if err != nil {
@@ -94,63 +153,69 @@ func BroadcastPoWResultUDP(rnetPort string, validators []*common.Cnode, result *
 			if validator != nil {
 				address = validator.Address
 			}
-			log.Warn("Failed to resolve fixed-mode PoW result validator UDP address", "address", address, "err", err)
+			log.Warn("Failed to resolve fixed-mode PoW result validator KCP address", "address", address, "err", err)
 			continue
 		}
 		addrs = appendPoWResultUDPAddr(addrs, seen, *addr)
 	}
 
-	// Keep localhost for same-host tests and broadcast as a best-effort fallback.
+	// Keep localhost for same-host tests. Broadcast packets are intentionally not
+	// used here because KCP is connection-oriented over UDP.
 	addrs = appendPoWResultUDPAddr(addrs, seen, net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
-	addrs = appendPoWResultUDPAddr(addrs, seen, net.UDPAddr{IP: net.IPv4bcast, Port: port})
 
 	var firstErr error
+	sent := 0
 	for _, addr := range addrs {
 		if err := sendPoWResultUDP(payload, addr); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
-			log.Warn("Failed to send fixed-mode PoW result UDP", "addr", addr.String(), "err", err)
+			log.Warn("Failed to send fixed-mode PoW result KCP", "addr", addr.String(), "err", err)
 			continue
 		}
-		log.Debug("Sent fixed-mode PoW result UDP", "addr", addr.String())
+		sent++
+		log.Debug("Sent fixed-mode PoW result KCP", "addr", addr.String())
+	}
+	if sent > 0 {
+		return nil
 	}
 	return firstErr
 }
 
 type powResultUDPServer struct {
-	conn net.PacketConn
-	once sync.Once
+	listener *kcp.Listener
+	once     sync.Once
 }
 
 func (s *powResultUDPServer) stop() {
 	s.once.Do(func() {
-		if s.conn != nil {
-			s.conn.Close()
+		if s.listener != nil {
+			s.listener.Close()
 		}
 	})
 }
 
-// StartPoWResultUDP starts the fixed-mode UDP listener that accepts compact PoW
+// StartPoWResultUDP starts the fixed-mode KCP listener that accepts compact PoW
 // results from miners, reconstructs candidates, verifies them locally and adds
-// the verified candidate to the pool for keyblock reward accounting.
+// the verified candidate to the pool for keyblock reward accounting. The public
+// function name is kept for compatibility with existing fixed-mode code.
 func (cp *CandidatePool) StartPoWResultUDP(rnetPort string) error {
 	port, err := PoWResultUDPPort(rnetPort)
 	if err != nil {
 		return err
 	}
 	addr := ":" + strconv.Itoa(port)
-	conn, err := net.ListenPacket("udp4", addr)
+	listener, err := kcp.ListenWithOptions(addr, nil, 10, 3)
 	if err != nil {
 		return err
 	}
-	cp.powResultUDP = &powResultUDPServer{conn: conn}
-	go cp.powResultUDPLoop(conn)
-	log.Info("Started fixed-mode PoW result UDP listener", "addr", addr)
+	cp.powResultUDP = &powResultUDPServer{listener: listener}
+	go cp.powResultUDPLoop(listener)
+	log.Info("Started fixed-mode PoW result KCP listener", "addr", addr)
 	return nil
 }
 
-// StopPoWResultUDP stops the fixed-mode UDP listener, if present.
+// StopPoWResultUDP stops the fixed-mode PoW result KCP listener, if present.
 func (cp *CandidatePool) StopPoWResultUDP() {
 	cp.mu.Lock()
 	server := cp.powResultUDP
@@ -161,25 +226,36 @@ func (cp *CandidatePool) StopPoWResultUDP() {
 	}
 }
 
-func (cp *CandidatePool) powResultUDPLoop(conn net.PacketConn) {
-	buf := make([]byte, powResultUDPMaxPacketSize)
+func (cp *CandidatePool) powResultUDPLoop(listener *kcp.Listener) {
 	for {
-		n, from, err := conn.ReadFrom(buf)
+		session, err := listener.AcceptKCP()
 		if err != nil {
 			return
 		}
-		var result types.PoWResult
-		if err := rlp.DecodeBytes(buf[:n], &result); err != nil {
-			log.Warn("Failed to decode fixed-mode PoW result", "from", from, "err", err)
-			continue
-		}
-		if err := cp.AddRemotePoWResult(&result); err != nil {
-			log.Warn("Rejected fixed-mode PoW result", "from", from, "err", err)
-		}
+		tunePoWResultKCPSession(session)
+		go cp.handlePoWResultKCPSession(session)
 	}
 }
 
-// AddRemotePoWResult reconstructs and verifies a UDP PoW result without asking
+func (cp *CandidatePool) handlePoWResultKCPSession(session *kcp.UDPSession) {
+	defer session.Close()
+	from := session.RemoteAddr()
+	payload, err := readPoWResultKCPFrame(session)
+	if err != nil {
+		log.Warn("Failed to read fixed-mode PoW result KCP", "from", from, "err", err)
+		return
+	}
+	var result types.PoWResult
+	if err := rlp.DecodeBytes(payload, &result); err != nil {
+		log.Warn("Failed to decode fixed-mode PoW result", "from", from, "err", err)
+		return
+	}
+	if err := cp.AddRemotePoWResult(&result); err != nil {
+		log.Warn("Rejected fixed-mode PoW result", "from", from, "err", err)
+	}
+}
+
+// AddRemotePoWResult reconstructs and verifies a PoW result without asking
 // the miner to participate in CandidatePool or block/keyblock validation.
 func (cp *CandidatePool) AddRemotePoWResult(result *types.PoWResult) error {
 	candidate := result.ToCandidate()
@@ -217,7 +293,7 @@ func (cp *CandidatePool) AddRemotePoWResult(result *types.PoWResult) error {
 	if exists := cp.candidates.Add(candidate); exists {
 		return ErrCandidateExisted
 	}
-	log.Info("Accepted fixed-mode UDP PoW result", "candidate.number", candidate.KeyCandidate.Number.Uint64(), "pubkey", candidate.PubKey, "hash", candidate.Hash())
+	log.Info("Accepted fixed-mode KCP PoW result", "candidate.number", candidate.KeyCandidate.Number.Uint64(), "pubkey", candidate.PubKey, "hash", candidate.Hash())
 	go cp.feed.Send(candidate)
 	return nil
 }
