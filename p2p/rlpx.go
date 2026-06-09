@@ -47,6 +47,13 @@ import (
 const (
 	maxUint24 = ^uint32(0) >> 8
 
+	// maxRLPXFrameSize allows large tx-block body sync/pro\-pagation packets.
+	// Legacy RLPx frames use a 24-bit length field (~16MiB). When a frame is
+	// larger than that, this fork writes maxUint24 as a marker and stores the
+	// real 32-bit frame length in header bytes [3:7].
+	maxRLPXFrameSize      = uint32(257 * 1024 * 1024)
+	extendedFrameSizeMark = maxUint24
+
 	sskLen = 16                     // ecies.MaxSharedKeyLength(pubKey) / 2
 	sigLen = crypto.SignatureLength // elliptic S256
 	pubLen = 64                     // 512 bit pubkey in uncompressed representation without format byte
@@ -71,10 +78,10 @@ const (
 )
 
 // errPlainMessageTooLarge is returned if a decompressed message length exceeds
-// the allowed 24 bits (i.e. length >= 16MB).
+// the fork's extended RLPx frame cap.
 var (
-	errPlainMessageTooLarge = errors.New("message length >= 16MB")
-	errMessageFrameTooLarge = errors.New("message size overflows uint24")
+	errPlainMessageTooLarge = fmt.Errorf("message length > %d bytes", maxRLPXFrameSize)
+	errMessageFrameTooLarge = fmt.Errorf("message size exceeds extended RLPx frame cap %d", maxRLPXFrameSize)
 )
 
 // rlpx is the transport protocol used by actual (non-test) connections.
@@ -587,7 +594,7 @@ func (rw *rlpxFrameRW) WriteMsg(msg Msg) error {
 
 	// if snappy is enabled, compress message now
 	if rw.snappy {
-		if msg.Size > maxUint24 {
+		if msg.Size > maxRLPXFrameSize {
 			return errPlainMessageTooLarge
 		}
 		payload, _ := ioutil.ReadAll(msg.Payload)
@@ -605,12 +612,11 @@ func (rw *rlpxFrameRW) WriteMsg(msg Msg) error {
 	// write header
 	headbuf := make([]byte, 32)
 	fsize64 := uint64(len(ptype)) + uint64(msg.Size)
-	if fsize64 > uint64(maxUint24) {
-		return errors.New("message size overflows uint24")
+	if fsize64 > uint64(maxRLPXFrameSize) {
+		return errMessageFrameTooLarge
 	}
 	fsize := uint32(fsize64)
-	putInt24(fsize, headbuf) // TODO: check overflow
-	copy(headbuf[3:], zeroHeader)
+	putFrameSize(fsize, headbuf)
 	rw.enc.XORKeyStream(headbuf[:16], headbuf[:16]) // first half is now encrypted
 
 	// write header MAC
@@ -654,15 +660,18 @@ func (rw *rlpxFrameRW) ReadMsg() (msg Msg, err error) {
 		return msg, errors.New("bad header MAC")
 	}
 	rw.dec.XORKeyStream(headbuf[:16], headbuf[:16]) // first half is now decrypted
-	fsize := readInt24(headbuf)
+	fsize, err := readFrameSize(headbuf)
+	if err != nil {
+		return msg, err
+	}
 	// ignore protocol type for now
 
 	// read the frame content
-	var rsize = fsize // frame size rounded up to 16 byte boundary
+	rsize := fsize // frame size rounded up to 16 byte boundary
 	if padding := fsize % 16; padding > 0 {
 		rsize += 16 - padding
 	}
-	framebuf := make([]byte, rsize)
+	framebuf := make([]byte, int(rsize))
 	if _, err := io.ReadFull(rw.conn, framebuf); err != nil {
 		return msg, err
 	}
@@ -682,7 +691,7 @@ func (rw *rlpxFrameRW) ReadMsg() (msg Msg, err error) {
 	rw.dec.XORKeyStream(framebuf, framebuf)
 
 	// decode message code
-	content := bytes.NewReader(framebuf[:fsize])
+	content := bytes.NewReader(framebuf[:int(fsize)])
 	if err := rlp.Decode(content, &msg.Code); err != nil {
 		return msg, err
 	}
@@ -700,7 +709,7 @@ func (rw *rlpxFrameRW) ReadMsg() (msg Msg, err error) {
 		if err != nil {
 			return msg, err
 		}
-		if size > int(maxUint24) {
+		if size > int(maxRLPXFrameSize) {
 			return msg, errPlainMessageTooLarge
 		}
 		payload, err = snappy.Decode(nil, payload)
@@ -732,4 +741,29 @@ func putInt24(v uint32, b []byte) {
 	b[0] = byte(v >> 16)
 	b[1] = byte(v >> 8)
 	b[2] = byte(v)
+}
+
+func putFrameSize(v uint32, b []byte) {
+	if v < extendedFrameSizeMark {
+		putInt24(v, b)
+		copy(b[3:], zeroHeader)
+		return
+	}
+	putInt24(extendedFrameSizeMark, b)
+	binary.BigEndian.PutUint32(b[3:7], v)
+}
+
+func readFrameSize(b []byte) (uint32, error) {
+	v := readInt24(b)
+	if v != extendedFrameSizeMark {
+		return v, nil
+	}
+	extended := binary.BigEndian.Uint32(b[3:7])
+	if extended < extendedFrameSizeMark {
+		return 0, fmt.Errorf("invalid extended frame size %d", extended)
+	}
+	if extended > maxRLPXFrameSize {
+		return 0, errMessageFrameTooLarge
+	}
+	return extended, nil
 }
