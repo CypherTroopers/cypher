@@ -71,15 +71,15 @@ var DefaultConfig = Config{
 		Enabled:                      false,
 		AutoRole:                     true,
 		BridgeEnabled:                false,
-		BridgeQueueSize:              100000,
-		BridgeWorkers:                1,
+		BridgeQueueSize:              1000000,
+		BridgeWorkers:                4,
 		BridgeBatchInterval:          10 * time.Millisecond,
 		HTTP3Enabled:                 false,
 		Addr:                         "0.0.0.0",
 		Port:                         4444,
 		PortOffset:                   2000,
-		MaxPayload:                   512 * 1024,
-		MaxTxsPerBatch:               512,
+		MaxPayload:                   32 * 1024 * 1024,
+		MaxTxsPerBatch:               8192,
 		MaxIncomingStreams:           4096,
 		MaxIncomingConns:             1024,
 		ReadTimeout:                  5 * time.Second,
@@ -198,42 +198,3 @@ type Config struct {
 	DatabaseHandles    int  `toml:"-"`
 	DatabaseCache      int
 	DatabaseFreezer    string
-
-	TrieCleanCache          int
-	TrieCleanCacheJournal   string        `toml:",omitempty"`
-	TrieCleanCacheRejournal time.Duration `toml:",omitempty"`
-	TrieDirtyCache          int
-	TrieTimeout             time.Duration
-	SnapshotCache           int
-
-	Miner miner.Config
-
-	colossusX colossusX.Config
-
-	TxPool core.TxPoolConfig
-
-	GPO gasprice.Config
-
-	TxQUIC TxQUICConfig
-
-	EnablePreimageRecording bool
-
-	DocRoot          string `toml:"-"`
-	EWASMInterpreter string
-	EVMInterpreter   string
-
-	RPCGasCap uint64 `toml:",omitempty"`
-
-	RPCTxFeeCap float64 `toml:",omitempty"`
-
-	Checkpoint       *params.TrustedCheckpoint      `toml:",omitempty"`
-	CheckpointOracle *params.CheckpointOracleConfig `toml:",omitempty"`
-
-	EVMCallTimeOut time.Duration
-
-	EnableMultitenancy bool
-
-	RnetPort   string
-	ExternalIp string
-	EnableTPS  bool
-}
