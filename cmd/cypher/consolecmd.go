@@ -253,7 +253,8 @@ func remoteConsole(ctx *cli.Context) error {
 // The check for empty endpoint implements the defaulting logic
 // for "cypher attach" and "cypher monitor" with no argument.
 //
-//  passing the cli context to build security-aware client:
+//	passing the cli context to build security-aware client:
+//
 // 1. Custom TLS configuration
 // 2. Access Token awareness via rpc.HttpCredentialsProviderFunc
 func dialRPC(endpoint string, ctx *cli.Context) (*rpc.Client, error) {

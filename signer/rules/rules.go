@@ -22,12 +22,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dop251/goja"
 	"github.com/cypherium/cypher/internal/ethapi"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/signer/core"
 	"github.com/cypherium/cypher/signer/rules/deps"
 	"github.com/cypherium/cypher/signer/storage"
+	"github.com/dop251/goja"
 )
 
 var (

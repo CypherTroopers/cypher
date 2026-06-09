@@ -47,7 +47,7 @@ func NewSamplingManagerClientProtocol(t thrift.TTransport, iprot thrift.TProtoco
 }
 
 // Parameters:
-//  - ServiceName
+//   - ServiceName
 func (p *SamplingManagerClient) GetSamplingStrategy(serviceName string) (r *SamplingStrategyResponse, err error) {
 	if err = p.sendGetSamplingStrategy(serviceName); err != nil {
 		return
@@ -218,7 +218,7 @@ func (p *samplingManagerProcessorGetSamplingStrategy) Process(seqId int32, iprot
 // HELPER FUNCTIONS AND STRUCTURES
 
 // Attributes:
-//  - ServiceName
+//   - ServiceName
 type SamplingManagerGetSamplingStrategyArgs struct {
 	ServiceName string `thrift:"serviceName,1" json:"serviceName"`
 }
@@ -309,7 +309,7 @@ func (p *SamplingManagerGetSamplingStrategyArgs) String() string {
 }
 
 // Attributes:
-//  - Success
+//   - Success
 type SamplingManagerGetSamplingStrategyResult struct {
 	Success *SamplingStrategyResponse `thrift:"success,0" json:"success,omitempty"`
 }

@@ -11,17 +11,18 @@ import (
 )
 
 // Router handles all networking operations such as:
-//   * listening to incoming connections using a host.Listener method
-//   * opening up new connections using host.Connect method
-//   * dispatching incoming message using a Dispatcher
-//   * dispatching outgoing message maintaining a translation
-//   between ServerIdentity <-> address
-//   * managing the re-connections of non-working Conn
+//   - listening to incoming connections using a host.Listener method
+//   - opening up new connections using host.Connect method
+//   - dispatching incoming message using a Dispatcher
+//   - dispatching outgoing message maintaining a translation
+//     between ServerIdentity <-> address
+//   - managing the re-connections of non-working Conn
+//
 // Most caller should use the creation function like NewKCPRouter(...),
 // NewLocalRouter(...) then use the Host such as:
 //
-//   router.Start() // will listen for incoming Conn and block
-//   router.Stop() // will stop the listening and the managing of all Conn
+//	router.Start() // will listen for incoming Conn and block
+//	router.Stop() // will stop the listening and the managing of all Conn
 type Router struct {
 	// id is our own ServerIdentity
 	ServerIdentity *ServerIdentity
@@ -169,7 +170,7 @@ func (r *Router) GetBlocks(e *ServerIdentity) int {
 		r.sendMu.Unlock()
 		return blocksLen
 	} else {
-		for id, _ := range r.connections {
+		for id := range r.connections {
 			log.Info("NetBlocks", "id", id, "num", r.sendsMap[id])
 		}
 	}

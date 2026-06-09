@@ -28,19 +28,19 @@ const (
 // The "toml" key in the struct field's tag value is the key name, followed by
 // an optional comma and options. Examples:
 //
-//   // Field is ignored by this package.
-//   Field int `toml:"-"`
+//	// Field is ignored by this package.
+//	Field int `toml:"-"`
 //
-//   // Field appears in TOML as key "myName".
-//   Field int `toml:"myName"`
+//	// Field appears in TOML as key "myName".
+//	Field int `toml:"myName"`
 //
-//   // Field appears in TOML as key "myName" and the field is omitted from the
-//   // result of encoding if its value is empty.
-//   Field int `toml:"myName,omitempty"`
+//	// Field appears in TOML as key "myName" and the field is omitted from the
+//	// result of encoding if its value is empty.
+//	Field int `toml:"myName,omitempty"`
 //
-//   // Field appears in TOML as key "field", but the field is skipped if
-//   // empty. Note the leading comma.
-//   Field int `toml:",omitempty"`
+//	// Field appears in TOML as key "field", but the field is skipped if
+//	// empty. Note the leading comma.
+//	Field int `toml:",omitempty"`
 func (cfg *Config) Marshal(v interface{}) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	err := cfg.NewEncoder(buf).Encode(v)

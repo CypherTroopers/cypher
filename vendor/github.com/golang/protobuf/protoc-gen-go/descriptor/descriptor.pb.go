@@ -5,9 +5,11 @@
 Package descriptor is a generated protocol buffer package.
 
 It is generated from these files:
+
 	google/protobuf/descriptor.proto
 
 It has these top-level messages:
+
 	FileDescriptorSet
 	FileDescriptorProto
 	DescriptorProto
@@ -137,7 +139,9 @@ func (x *FieldDescriptorProto_Type) UnmarshalJSON(data []byte) error {
 	*x = FieldDescriptorProto_Type(value)
 	return nil
 }
-func (FieldDescriptorProto_Type) EnumDescriptor() ([]byte, []int) { return fileDescriptor0, []int{3, 0} }
+func (FieldDescriptorProto_Type) EnumDescriptor() ([]byte, []int) {
+	return fileDescriptor0, []int{3, 0}
+}
 
 type FieldDescriptorProto_Label int32
 

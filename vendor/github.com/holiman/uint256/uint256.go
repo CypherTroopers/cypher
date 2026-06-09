@@ -675,10 +675,11 @@ func (z *Int) MulMod(x, y, m *Int) *Int {
 
 // Abs interprets x as a two's complement signed number,
 // and sets z to the absolute value
-//   Abs(0)        = 0
-//   Abs(1)        = 1
-//   Abs(2**255)   = -2**255
-//   Abs(2**256-1) = -1
+//
+//	Abs(0)        = 0
+//	Abs(1)        = 1
+//	Abs(2**255)   = -2**255
+//	Abs(2**256-1) = -1
 func (z *Int) Abs(x *Int) *Int {
 	if x[3] < 0x8000000000000000 {
 		return z.Set(x)
@@ -718,9 +719,11 @@ func (z *Int) SDiv(n, d *Int) *Int {
 }
 
 // Sign returns:
+//
 //	-1 if z <  0
 //	 0 if z == 0
 //	+1 if z >  0
+//
 // Where z is interpreted as a two's complement signed number
 func (z *Int) Sign() int {
 	if z.IsZero() {
@@ -855,10 +858,9 @@ func (z *Int) Eq(x *Int) bool {
 
 // Cmp compares z and x and returns:
 //
-//   -1 if z <  x
-//    0 if z == x
-//   +1 if z >  x
-//
+//	-1 if z <  x
+//	 0 if z == x
+//	+1 if z >  x
 func (z *Int) Cmp(x *Int) (r int) {
 	// z < x <=> z - x < 0 i.e. when subtraction overflows.
 	d0, carry := bits.Sub64(z[0], x[0], 0)
@@ -1190,8 +1192,9 @@ func (z *Int) Exp(base, exponent *Int) *Int {
 
 // ExtendSign extends length of two’s complement signed integer,
 // sets z to
-//  - x if byteNum > 31
-//  - x interpreted as a signed number with sign-bit at (byteNum*8+7), extended to the full 256 bits
+//   - x if byteNum > 31
+//   - x interpreted as a signed number with sign-bit at (byteNum*8+7), extended to the full 256 bits
+//
 // and returns z.
 func (z *Int) ExtendSign(x, byteNum *Int) *Int {
 	if byteNum.GtUint64(31) {

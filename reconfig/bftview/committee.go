@@ -50,7 +50,7 @@ type ServiceInterface interface {
 	Committee_Request(kNumber uint64, hash common.Hash)
 }
 
-//type Committee []*common.Cnode
+// type Committee []*common.Cnode
 type Committee struct {
 	List []*common.Cnode
 }
@@ -502,7 +502,7 @@ func (committee *Committee) HasIP() bool {
 	return true
 }
 
-//------Tools---------------------------------------------------------------------------------------------------------
+// ------Tools---------------------------------------------------------------------------------------------------------
 func ToBlsPublicKeys(hash common.Hash) []*bls.PublicKey {
 	m_config.muCommitteeCache.Lock()
 	c, ok := m_config.cacheCommittee[hash]

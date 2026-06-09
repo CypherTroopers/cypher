@@ -58,7 +58,6 @@ func BenchmarkCurve25519(b *testing.B) {
 	}
 }
 
-
 func testECDH(e ECDH, t testing.TB) {
 	var privKey1, privKey2 crypto.PrivateKey
 	var pubKey1, pubKey2 crypto.PublicKey

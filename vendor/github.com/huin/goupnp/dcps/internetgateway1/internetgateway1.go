@@ -774,7 +774,6 @@ func newWANCableLinkConfig1ClientsFromGenericClients(genericClients []goupnp.Ser
 	return clients
 }
 
-//
 // Return values:
 //
 // * NewCableLinkConfigState: allowed values: notReady, dsSyncComplete, usParamAcquired, rangingComplete, ipComplete, todEstablished, paramTransferComplete, registrationComplete, operational, accessDenied
@@ -837,7 +836,6 @@ func (client *WANCableLinkConfig1) GetDownstreamFrequency() (NewDownstreamFreque
 	return
 }
 
-//
 // Return values:
 //
 // * NewDownstreamModulation: allowed values: 64QAM, 256QAM
@@ -893,7 +891,6 @@ func (client *WANCableLinkConfig1) GetUpstreamFrequency() (NewUpstreamFrequency 
 	return
 }
 
-//
 // Return values:
 //
 // * NewUpstreamModulation: allowed values: QPSK, 16QAM
@@ -1165,7 +1162,6 @@ func (client *WANCommonInterfaceConfig1) GetEnabledForInternet() (NewEnabledForI
 	return
 }
 
-//
 // Return values:
 //
 // * NewWANAccessType: allowed values: DSL, POTS, Cable, Ethernet
@@ -1238,7 +1234,6 @@ func (client *WANCommonInterfaceConfig1) GetWANAccessProvider() (NewWANAccessPro
 	return
 }
 
-//
 // Return values:
 //
 // * NewMaximumActiveConnections: allowed value range: minimum=1, step=1
@@ -1494,7 +1489,6 @@ func (client *WANDSLLinkConfig1) SetDSLLinkType(NewLinkType string) (err error) 
 	return
 }
 
-//
 // Return values:
 //
 // * NewLinkStatus: allowed values: Up, Down
@@ -1797,7 +1791,6 @@ func newWANEthernetLinkConfig1ClientsFromGenericClients(genericClients []goupnp.
 	return clients
 }
 
-//
 // Return values:
 //
 // * NewEthernetLinkStatus: allowed values: Up, Down
@@ -1913,7 +1906,6 @@ func (client *WANIPConnection1) SetConnectionType(NewConnectionType string) (err
 	return
 }
 
-//
 // Return values:
 //
 // * NewPossibleConnectionTypes: allowed values: Unconfigured, IP_Routed, IP_Bridged
@@ -2089,7 +2081,6 @@ func (client *WANIPConnection1) SetWarnDisconnectDelay(NewWarnDisconnectDelay ui
 	return
 }
 
-//
 // Return values:
 //
 // * NewConnectionStatus: allowed values: Unconfigured, Connected, Disconnected
@@ -2240,7 +2231,6 @@ func (client *WANIPConnection1) GetNATRSIPStatus() (NewRSIPAvailable bool, NewNA
 	return
 }
 
-//
 // Return values:
 //
 // * NewProtocol: allowed values: TCP, UDP
@@ -2641,7 +2631,6 @@ func (client *WANPOTSLinkConfig1) SetCallRetryInfo(NewNumberOfRetries uint32, Ne
 	return
 }
 
-//
 // Return values:
 //
 // * NewLinkType: allowed values: PPP_Dialup
@@ -2928,7 +2917,6 @@ func (client *WANPPPConnection1) SetConnectionType(NewConnectionType string) (er
 	return
 }
 
-//
 // Return values:
 //
 // * NewPossibleConnectionTypes: allowed values: Unconfigured, IP_Routed, DHCP_Spoofed, PPPoE_Bridged, PPTP_Relay, L2TP_Relay, PPPoE_Relay
@@ -3135,7 +3123,6 @@ func (client *WANPPPConnection1) SetWarnDisconnectDelay(NewWarnDisconnectDelay u
 	return
 }
 
-//
 // Return values:
 //
 // * NewConnectionStatus: allowed values: Unconfigured, Connected, Disconnected
@@ -3447,7 +3434,6 @@ func (client *WANPPPConnection1) GetNATRSIPStatus() (NewRSIPAvailable bool, NewN
 	return
 }
 
-//
 // Return values:
 //
 // * NewProtocol: allowed values: TCP, UDP

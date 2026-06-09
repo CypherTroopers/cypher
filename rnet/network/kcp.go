@@ -16,7 +16,7 @@ import (
 	kcp "github.com/xtaci/kcp-go"
 )
 
-//----------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------
 const (
 	def_headerSize    = 6
 	def_MaxPacketSize = 10 * 1024 * 1024
@@ -247,7 +247,7 @@ func (c *KCPConn) Type() ConnType {
 	return PlainKCP
 }
 
-//IsClosed  return connection closing
+// IsClosed  return connection closing
 func (c *KCPConn) IsClosed() bool {
 	c.closedMut.Lock()
 	defer c.closedMut.Unlock()

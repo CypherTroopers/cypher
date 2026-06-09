@@ -119,7 +119,7 @@ func (s *netService) StartStop(isStart bool) {
 	}
 }
 
-//----------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------
 func (s *netService) CheckMinerPort(addr string, blockN uint64, keyblockN uint64, ackFlag uint64) {
 	msg := &checkMinerMsg{BlockN: blockN, KeyblockN: keyblockN, AckFlag: ackFlag}
 	log.Info("CheckMinerPort", "addr", addr, "msg", msg)
@@ -143,7 +143,7 @@ func (s *netService) handleCheckMinerMsgAck(env *network.Envelope) {
 	}
 }
 
-//----------------------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------------------
 func (s *netService) AdjustConnect(outAddress string) {
 	s.setIsRunning(outAddress, false)
 }
@@ -223,7 +223,7 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 	mblist := mb.List
 	n := len(mblist)
 	seedIndexs := math.GetRandIntArray(n, n/2+3)
-	for i, _ := range seedIndexs {
+	for i := range seedIndexs {
 		if mblist[i].Address == "" {
 			continue
 		}
@@ -321,7 +321,7 @@ func (s *netService) IgnoreMsg(m *networkMsg) bool {
 	return false
 }
 
-//------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------
 func (s *netService) isRunning(id string) int32 {
 	s.muIdMap.Lock()
 	isRunning, ok := s.goMap[id]
@@ -364,7 +364,7 @@ func (s *netService) setIsRunning(id string, isStart bool) {
 	}
 }
 
-//-------------------------------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------------------------------------------------
 func (s *netService) handleHeartBeatMsgAck(env *network.Envelope) {
 	_, ok := env.Msg.(*heartBeatMsg)
 	if !ok {
@@ -447,7 +447,7 @@ func (s *netService) ResetAckTime(addr string) {
 	s.muIdMap.Unlock()
 }
 
-//--------------------------------------------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------------------------------------------
 func rlpHash(x interface{}) (h common.Hash) {
 	hw := sha3.NewLegacyKeccak256()
 	rlp.Encode(hw, x)

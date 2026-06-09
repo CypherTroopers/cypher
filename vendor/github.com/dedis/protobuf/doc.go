@@ -152,5 +152,4 @@
 // we could in principle achieve that by adding a "Go-format"
 // message format compiler frontend to goprotobuf or gogoprotobuf -
 // but we leave this as an exercise for the reader.
-//
 package protobuf

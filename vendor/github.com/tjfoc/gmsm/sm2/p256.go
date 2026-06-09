@@ -424,15 +424,15 @@ func sm2P256ToAffine(x, y, z *sm2P256FieldElement) (xOut, yOut *big.Int) {
 }
 
 var sm2P256Factor = []sm2P256FieldElement{
-	sm2P256FieldElement{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
-	sm2P256FieldElement{0x2, 0x0, 0x1FFFFF00, 0x7FF, 0x0, 0x0, 0x0, 0x2000000, 0x0},
-	sm2P256FieldElement{0x4, 0x0, 0x1FFFFE00, 0xFFF, 0x0, 0x0, 0x0, 0x4000000, 0x0},
-	sm2P256FieldElement{0x6, 0x0, 0x1FFFFD00, 0x17FF, 0x0, 0x0, 0x0, 0x6000000, 0x0},
-	sm2P256FieldElement{0x8, 0x0, 0x1FFFFC00, 0x1FFF, 0x0, 0x0, 0x0, 0x8000000, 0x0},
-	sm2P256FieldElement{0xA, 0x0, 0x1FFFFB00, 0x27FF, 0x0, 0x0, 0x0, 0xA000000, 0x0},
-	sm2P256FieldElement{0xC, 0x0, 0x1FFFFA00, 0x2FFF, 0x0, 0x0, 0x0, 0xC000000, 0x0},
-	sm2P256FieldElement{0xE, 0x0, 0x1FFFF900, 0x37FF, 0x0, 0x0, 0x0, 0xE000000, 0x0},
-	sm2P256FieldElement{0x10, 0x0, 0x1FFFF800, 0x3FFF, 0x0, 0x0, 0x0, 0x0, 0x01},
+	{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
+	{0x2, 0x0, 0x1FFFFF00, 0x7FF, 0x0, 0x0, 0x0, 0x2000000, 0x0},
+	{0x4, 0x0, 0x1FFFFE00, 0xFFF, 0x0, 0x0, 0x0, 0x4000000, 0x0},
+	{0x6, 0x0, 0x1FFFFD00, 0x17FF, 0x0, 0x0, 0x0, 0x6000000, 0x0},
+	{0x8, 0x0, 0x1FFFFC00, 0x1FFF, 0x0, 0x0, 0x0, 0x8000000, 0x0},
+	{0xA, 0x0, 0x1FFFFB00, 0x27FF, 0x0, 0x0, 0x0, 0xA000000, 0x0},
+	{0xC, 0x0, 0x1FFFFA00, 0x2FFF, 0x0, 0x0, 0x0, 0xC000000, 0x0},
+	{0xE, 0x0, 0x1FFFF900, 0x37FF, 0x0, 0x0, 0x0, 0xE000000, 0x0},
+	{0x10, 0x0, 0x1FFFF800, 0x3FFF, 0x0, 0x0, 0x0, 0x0, 0x01},
 }
 
 func sm2P256Scalar(b *sm2P256FieldElement, a int) {
@@ -500,10 +500,10 @@ func sm2P256PointAdd(x1, y1, z1, x2, y2, z2, x3, y3, z3 *sm2P256FieldElement) {
 // (x3, y3, z3) = (x1, y1, z1)- (x2, y2, z2)
 func sm2P256PointSub(x1, y1, z1, x2, y2, z2, x3, y3, z3 *sm2P256FieldElement) {
 	var u1, u2, z22, z12, z23, z13, s1, s2, h, h2, r, r2, tm sm2P256FieldElement
-	y:=sm2P256ToBig(y2)
-	zero:=new(big.Int).SetInt64(0)
-	y.Sub(zero,y)
-	sm2P256FromBig(y2,y)
+	y := sm2P256ToBig(y2)
+	zero := new(big.Int).SetInt64(0)
+	y.Sub(zero, y)
+	sm2P256FromBig(y2, y)
 
 	if sm2P256ToBig(z1).Sign() == 0 {
 		sm2P256Dup(x3, x2)
@@ -789,8 +789,9 @@ func sm2P256Square(b, a *sm2P256FieldElement) {
 }
 
 // nonZeroToAllOnes returns:
-//   0xffffffff for 0 < x <= 2**31
-//   0 for x == 0 or x > 2**31.
+//
+//	0xffffffff for 0 < x <= 2**31
+//	0 for x == 0 or x > 2**31.
 func nonZeroToAllOnes(x uint32) uint32 {
 	return ((x - 1) >> 31) - 1
 }
@@ -1065,7 +1066,7 @@ func WNafReversed(wnaf []int8) []int8 {
 	return wnafRev
 }
 func sm2GenrateWNaf(b []byte) []int8 {
-	n:= new(big.Int).SetBytes(b)
+	n := new(big.Int).SetBytes(b)
 	var k *big.Int
 	if n.Cmp(sm2P256.N) >= 0 {
 		n.Mod(n, sm2P256.N)
@@ -1114,8 +1115,8 @@ func boolToUint(b bool) uint {
 	}
 	return 0
 }
-func abs(a int8) uint32{
-	if a<0 {
+func abs(a int8) uint32 {
+	if a < 0 {
 		return uint32(-a)
 	}
 	return uint32(a)
@@ -1147,13 +1148,13 @@ func sm2P256ScalarMult(xOut, yOut, zOut, x, y *sm2P256FieldElement, scalar []int
 	}
 	nIsInfinityMask = ^uint32(0)
 	var zeroes int16
-	for i := 0; i<len(scalar); i++ {
-		if scalar[i] ==0{
+	for i := 0; i < len(scalar); i++ {
+		if scalar[i] == 0 {
 			zeroes++
 			continue
 		}
-		if(zeroes>0){
-			for  ;zeroes>0;zeroes-- {
+		if zeroes > 0 {
+			for ; zeroes > 0; zeroes-- {
 				sm2P256PointDouble(xOut, yOut, zOut, xOut, yOut, zOut)
 			}
 		}
@@ -1175,8 +1176,8 @@ func sm2P256ScalarMult(xOut, yOut, zOut, x, y *sm2P256FieldElement, scalar []int
 		sm2P256CopyConditional(zOut, &tz, mask)
 		nIsInfinityMask &^= pIsNoninfiniteMask
 	}
-	if(zeroes>0){
-		for  ;zeroes>0;zeroes-- {
+	if zeroes > 0 {
+		for ; zeroes > 0; zeroes-- {
 			sm2P256PointDouble(xOut, yOut, zOut, xOut, yOut, zOut)
 		}
 	}

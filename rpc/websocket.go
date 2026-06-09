@@ -28,8 +28,8 @@ import (
 	"sync"
 	"time"
 
-	mapset "github.com/deckarep/golang-set"
 	"github.com/cypherium/cypher/log"
+	mapset "github.com/deckarep/golang-set"
 	"github.com/gorilla/websocket"
 )
 

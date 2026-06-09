@@ -87,7 +87,7 @@ func dialTinyBufferEcho(port int) (*UDPSession, error) {
 	return sess, err
 }
 
-//////////////////////////
+// ////////////////////////
 func listenEcho(port int) (net.Listener, error) {
 	//block, _ := NewNoneBlockCrypt(pass)
 	//block, _ := NewSimpleXORBlockCrypt(pass)

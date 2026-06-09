@@ -123,16 +123,17 @@ func (a Address) Resolve() string {
 
 // validHostname returns true if the hostname is well formed or false otherwise.
 // A hostname is well formed if the following conditions are met:
-//	- each label contains from 1 to 63 characters
-//	- the entire hostname (including the delimiting dots, but not a trailing dot)
-// 		has a maximum of 253 ASCII characters
-//	- labels have only ASCII letters 'a' through 'z' (case-insensitive), the digits
-//		'0' through '9', and the hyphen (-). No other symbol is permitted
-//	- labels cannot start with a hyphen
-//	- labels cannot end with a hyphen
-//	- the last label is alphabetic
-//	More information about the definition of the TLD (the last label of a hostname) on:
-//		https://github.com/dedis/cothority/issues/620
+//   - each label contains from 1 to 63 characters
+//   - the entire hostname (including the delimiting dots, but not a trailing dot)
+//     has a maximum of 253 ASCII characters
+//   - labels have only ASCII letters 'a' through 'z' (case-insensitive), the digits
+//     '0' through '9', and the hyphen (-). No other symbol is permitted
+//   - labels cannot start with a hyphen
+//   - labels cannot end with a hyphen
+//   - the last label is alphabetic
+//     More information about the definition of the TLD (the last label of a hostname) on:
+//     https://github.com/dedis/cothority/issues/620
+//
 // This method assumes that only the host part is passed as parameter
 // This function is integrated in the Valid() function
 //

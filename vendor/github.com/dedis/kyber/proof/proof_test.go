@@ -140,7 +140,6 @@ func Example_rep2() {
 // If the prover does know the relationship between B1 and B2, however,
 // then X does not serve as a useful commitment:
 // the prover can trivially compute the x1 corresponding to an arbitrary x2.
-//
 func Example_rep3() {
 	pred := Rep("X", "x1", "B1", "x2", "B2")
 	fmt.Println(pred.String())

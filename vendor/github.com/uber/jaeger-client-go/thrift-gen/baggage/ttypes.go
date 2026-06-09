@@ -17,8 +17,8 @@ var _ = bytes.Equal
 var GoUnusedProtection__ int
 
 // Attributes:
-//  - BaggageKey
-//  - MaxValueLength
+//   - BaggageKey
+//   - MaxValueLength
 type BaggageRestriction struct {
 	BaggageKey     string `thrift:"baggageKey,1,required" json:"baggageKey"`
 	MaxValueLength int32  `thrift:"maxValueLength,2,required" json:"maxValueLength"`

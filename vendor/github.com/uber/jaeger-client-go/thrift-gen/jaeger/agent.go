@@ -47,7 +47,7 @@ func NewAgentClientProtocol(t thrift.TTransport, iprot thrift.TProtocol, oprot t
 }
 
 // Parameters:
-//  - Batch
+//   - Batch
 func (p *AgentClient) EmitBatch(batch *Batch) (err error) {
 	if err = p.sendEmitBatch(batch); err != nil {
 		return
@@ -143,7 +143,7 @@ func (p *agentProcessorEmitBatch) Process(seqId int32, iprot, oprot thrift.TProt
 // HELPER FUNCTIONS AND STRUCTURES
 
 // Attributes:
-//  - Batch
+//   - Batch
 type AgentEmitBatchArgs struct {
 	Batch *Batch `thrift:"batch,1" json:"batch"`
 }

@@ -1,3 +1,4 @@
+//go:build vartime
 // +build vartime
 
 package curve25519
@@ -71,7 +72,6 @@ func (el *el2param) padmask() byte {
 //
 // Beware: the Twisted Edwards Curves paper uses B as a factor for v^2,
 // whereas the Elligator 2 paper uses B as a factor for the last u term.
-//
 func (el *el2param) ed2mont(u, v, x, y *mod.Int) {
 	ec := el.ec
 	var t1, t2 mod.Int
@@ -83,7 +83,6 @@ func (el *el2param) ed2mont(u, v, x, y *mod.Int) {
 //
 //	x = sqrt(B)u/v
 //	y = (u-1)/(u+1)
-//
 func (el *el2param) mont2ed(x, y, u, v *mod.Int) {
 	ec := el.ec
 	var t1, t2 mod.Int

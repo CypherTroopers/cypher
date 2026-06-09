@@ -140,7 +140,7 @@ func calcKeyBlockDifficultyByzantium(time uint64, parent *types.KeyBlockHeader) 
 	return x
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////
+// //////////////////////////////////////////////////////////////////////////////////////////////
 // VerifyCandidate implements pow.Engine, checking whether the given candidate satisfies
 // the PoW difficulty requirements.
 func (ethash *Ethash) VerifyCandidate(chain types.KeyChainReader, candidate *types.Candidate) error {
@@ -252,7 +252,7 @@ func (ethash *Ethash) PowMode() uint {
 	return uint(ethash.config.PowMode)
 }
 
-//----------------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------------------
 // Author implements consensus.Engine, returning the header's coinbase as the
 // proof-of-work verified author of the block.
 func (ethash *Ethash) Author(header *types.Header) (common.Address, error) {

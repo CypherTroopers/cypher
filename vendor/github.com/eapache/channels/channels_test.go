@@ -179,7 +179,7 @@ func testDistribute(t *testing.T, dist func(input SimpleOutChannel, outputs ...S
 	}()
 
 	received := make([]bool, 1000)
-	for _ = range received {
+	for range received {
 		var val interface{}
 		select {
 		case val = <-outputs[0].Out():

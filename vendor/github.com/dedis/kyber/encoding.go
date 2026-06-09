@@ -82,10 +82,10 @@ type Hiding interface {
 // will have different constraints, of course. Two implementations are
 // available:
 //
-//   1. The protobuf encoding using the variable length Google Protobuf encoding
-//      scheme. The library is available at https://github.com/dedis/protobuf
-//   2. The fixbuf encoding, a fixed length binary encoding of arbitrary
-//      structures. The library is available at https://github.com/dedis/fixbuf.
+//  1. The protobuf encoding using the variable length Google Protobuf encoding
+//     scheme. The library is available at https://github.com/dedis/protobuf
+//  2. The fixbuf encoding, a fixed length binary encoding of arbitrary
+//     structures. The library is available at https://github.com/dedis/fixbuf.
 type Encoding interface {
 	// Encode and write objects to an io.Writer.
 	Write(w io.Writer, objs ...interface{}) error

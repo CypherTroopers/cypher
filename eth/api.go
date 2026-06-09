@@ -139,9 +139,9 @@ func (api *PublicEthereumAPI) rpcTransactionFields(tx *types.Transaction, block 
 		"transactionHash": tx.Hash(),
 		"hash":            tx.Hash(),
 
-		"nonce":           hexutil.Uint64(tx.Nonce()),
-		"blockHash":       nil,
-		"blockNumber":     nil,
+		"nonce":            hexutil.Uint64(tx.Nonce()),
+		"blockHash":        nil,
+		"blockNumber":      nil,
 		"transactionIndex": nil,
 
 		"from":     from,

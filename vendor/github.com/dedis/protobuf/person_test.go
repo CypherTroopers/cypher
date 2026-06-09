@@ -33,8 +33,8 @@ func Example_protobuf() {
 	email := "alice@somewhere"
 	ptype := WORK
 	person := Person{"Alice", 123, &email,
-		[]PhoneNumber{PhoneNumber{"111-222-3333", nil},
-			PhoneNumber{"444-555-6666", &ptype}}}
+		[]PhoneNumber{{"111-222-3333", nil},
+			{"444-555-6666", &ptype}}}
 
 	// Encode it
 	buf, err := Encode(&person)

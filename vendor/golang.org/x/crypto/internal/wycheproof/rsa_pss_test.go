@@ -112,14 +112,14 @@ func TestRsaPss(t *testing.T) {
 	// works deterministically to auto-detect the length when
 	// verifying, so these tests actually pass as they should.
 	filesOverrideToPassZeroSLen := map[string][]int{
-		"rsa_pss_2048_sha1_mgf1_20_test.json":       []int{46, 47},
-		"rsa_pss_2048_sha256_mgf1_0_test.json":      []int{67, 68},
-		"rsa_pss_2048_sha256_mgf1_32_test.json":     []int{67, 68},
-		"rsa_pss_2048_sha512_256_mgf1_28_test.json": []int{13, 14, 15},
-		"rsa_pss_2048_sha512_256_mgf1_32_test.json": []int{13, 14},
-		"rsa_pss_3072_sha256_mgf1_32_test.json":     []int{67, 68},
-		"rsa_pss_4096_sha256_mgf1_32_test.json":     []int{67, 68},
-		"rsa_pss_4096_sha512_mgf1_32_test.json":     []int{136, 137},
+		"rsa_pss_2048_sha1_mgf1_20_test.json":       {46, 47},
+		"rsa_pss_2048_sha256_mgf1_0_test.json":      {67, 68},
+		"rsa_pss_2048_sha256_mgf1_32_test.json":     {67, 68},
+		"rsa_pss_2048_sha512_256_mgf1_28_test.json": {13, 14, 15},
+		"rsa_pss_2048_sha512_256_mgf1_32_test.json": {13, 14},
+		"rsa_pss_3072_sha256_mgf1_32_test.json":     {67, 68},
+		"rsa_pss_4096_sha256_mgf1_32_test.json":     {67, 68},
+		"rsa_pss_4096_sha512_mgf1_32_test.json":     {136, 137},
 		// "rsa_pss_misc_test.json": nil,  // TODO: This ones seems to be broken right now, but can enable later on.
 	}
 

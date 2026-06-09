@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"text/tabwriter"
 	"unsafe"
-	"runtime"
 )
 
 // Scan traverses all objects reachable from v and counts how much memory
@@ -19,9 +19,9 @@ func Scan(v interface{}) Sizes {
 		panic("value to scan must be non-nil pointer")
 	}
 
-//	stopTheWorld("memsize scan")
-//	defer startTheWorld()
-        runtime.GC()
+	//	stopTheWorld("memsize scan")
+	//	defer startTheWorld()
+	runtime.GC()
 	ctx := newContext()
 	ctx.scan(invalidAddr, rv, false)
 	ctx.s.BitmapSize = ctx.seen.size()

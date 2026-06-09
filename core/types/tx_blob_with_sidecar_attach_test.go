@@ -6,7 +6,7 @@ func TestNewBlobTxWithSidecarAttachesSidecar(t *testing.T) {
 	commitment := testKZGCommitment(31)
 	tx := testVerifyBlobTx(KZGToVersionedHash(commitment))
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}

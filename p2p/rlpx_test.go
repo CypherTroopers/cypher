@@ -32,11 +32,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/crypto/ecies"
 	"github.com/cypherium/cypher/p2p/simulations/pipes"
 	"github.com/cypherium/cypher/rlp"
+	"github.com/davecgh/go-spew/spew"
 	"golang.org/x/crypto/sha3"
 )
 

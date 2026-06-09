@@ -55,7 +55,7 @@ func NewAgentClientProtocol(t thrift.TTransport, iprot thrift.TProtocol, oprot t
 }
 
 // Parameters:
-//  - Spans
+//   - Spans
 func (p *AgentClient) EmitZipkinBatch(spans []*zipkincore.Span) (err error) {
 	if err = p.sendEmitZipkinBatch(spans); err != nil {
 		return
@@ -86,7 +86,7 @@ func (p *AgentClient) sendEmitZipkinBatch(spans []*zipkincore.Span) (err error) 
 }
 
 // Parameters:
-//  - Batch
+//   - Batch
 func (p *AgentClient) EmitBatch(batch *jaeger.Batch) (err error) {
 	if err = p.sendEmitBatch(batch); err != nil {
 		return
@@ -202,7 +202,7 @@ func (p *agentProcessorEmitBatch) Process(seqId int32, iprot, oprot thrift.TProt
 // HELPER FUNCTIONS AND STRUCTURES
 
 // Attributes:
-//  - Spans
+//   - Spans
 type AgentEmitZipkinBatchArgs struct {
 	Spans []*zipkincore.Span `thrift:"spans,1" json:"spans"`
 }
@@ -312,7 +312,7 @@ func (p *AgentEmitZipkinBatchArgs) String() string {
 }
 
 // Attributes:
-//  - Batch
+//   - Batch
 type AgentEmitBatchArgs struct {
 	Batch *jaeger.Batch `thrift:"batch,1" json:"batch"`
 }

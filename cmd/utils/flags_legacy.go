@@ -162,11 +162,13 @@ var (
 	}
 
 /*
-	// (Deprecated July 2020, shown in aliased flags section)
+// (Deprecated July 2020, shown in aliased flags section)
+
 	LegacyGraphQLListenAddrFlag = cli.StringFlag{
 		Name:  "graphql.addr",
 		Usage: "GraphQL server listening interface (deprecated, graphql can only be enabled on the HTTP-RPC server endpoint, use --graphql)",
 	}
+
 	LegacyGraphQLPortFlag = cli.IntFlag{
 		Name:  "graphql.port",
 		Usage: "GraphQL server listening port (deprecated, graphql can only be enabled on the HTTP-RPC server endpoint, use --graphql)",

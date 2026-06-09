@@ -2,9 +2,8 @@
 // but copy it to your own project and rename the package.
 // See more at http://github.com/klauspost/cpuid
 
-// +build !appengine
-// +build gc
-// +build !noasm
+//go:build !appengine && gc && !noasm
+// +build !appengine,gc,!noasm
 
 package s2
 

@@ -12,9 +12,9 @@ import (
 // The network layer calls `Dispatch()` each time it receives a message, so
 // the dispatcher is able to dispatch correctly to the corresponding Processor.
 // Two Dispatchers are available:
-//   * BlockingDispatcher - waits for the return of the Processor before taking
+//   - BlockingDispatcher - waits for the return of the Processor before taking
 //     another message
-//   * RoutineDispatcher - starts every Processor in a go-routine
+//   - RoutineDispatcher - starts every Processor in a go-routine
 type Dispatcher interface {
 	// RegisterProcessor is called by a Processor so it can receive all messages
 	// of type msgType. If given multiple msgType, the same processor will be

@@ -287,7 +287,7 @@ func findSetMatches(pattern string) []string {
 		return nil
 	}
 	escaped := false
-	sets := []*strings.Builder{&strings.Builder{}}
+	sets := []*strings.Builder{{}}
 	for i := 4; i < len(pattern)-2; i++ {
 		if escaped {
 			switch {

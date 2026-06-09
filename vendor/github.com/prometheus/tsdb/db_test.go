@@ -1407,10 +1407,10 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 }
 
 // TestInitializeHeadTimestamp ensures that the h.minTime is set properly.
-// 	- no blocks no WAL: set to the time of the first  appended sample
-// 	- no blocks with WAL: set to the smallest sample from the WAL
-//	- with blocks no WAL: set to the last block maxT
-// 	- with blocks with WAL: same as above
+//   - no blocks no WAL: set to the time of the first  appended sample
+//   - no blocks with WAL: set to the smallest sample from the WAL
+//   - with blocks no WAL: set to the last block maxT
+//   - with blocks with WAL: same as above
 func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
 		dir, err := ioutil.TempDir("", "test_head_init")
@@ -1642,26 +1642,26 @@ func TestDB_LabelNames(t *testing.T) {
 	}{
 		{
 			sampleLabels1: [][2]string{
-				[2]string{"name1", "1"},
-				[2]string{"name3", "3"},
-				[2]string{"name2", "2"},
+				{"name1", "1"},
+				{"name3", "3"},
+				{"name2", "2"},
 			},
 			sampleLabels2: [][2]string{
-				[2]string{"name4", "4"},
-				[2]string{"name1", "1"},
+				{"name4", "4"},
+				{"name1", "1"},
 			},
 			exp1: []string{"name1", "name2", "name3"},
 			exp2: []string{"name1", "name2", "name3", "name4"},
 		},
 		{
 			sampleLabels1: [][2]string{
-				[2]string{"name2", "2"},
-				[2]string{"name1", "1"},
-				[2]string{"name2", "2"},
+				{"name2", "2"},
+				{"name1", "1"},
+				{"name2", "2"},
 			},
 			sampleLabels2: [][2]string{
-				[2]string{"name6", "6"},
-				[2]string{"name0", "0"},
+				{"name6", "6"},
+				{"name0", "0"},
 			},
 			exp1: []string{"name1", "name2"},
 			exp2: []string{"name0", "name1", "name2", "name6"},
@@ -1778,13 +1778,13 @@ func TestVerticalCompaction(t *testing.T) {
 		//        |----------------|
 		{
 			blockSeries: [][]Series{
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
 						sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
@@ -1806,14 +1806,14 @@ func TestVerticalCompaction(t *testing.T) {
 		//        |----------------|
 		{
 			blockSeries: [][]Series{
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
 						sample{11, 0}, sample{13, 0}, sample{17, 0},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
 						sample{8, 99}, sample{9, 99}, sample{10, 99},
@@ -1835,20 +1835,20 @@ func TestVerticalCompaction(t *testing.T) {
 		//                           |--------------------|
 		{
 			blockSeries: [][]Series{
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
 						sample{11, 0}, sample{13, 0}, sample{17, 0},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
 						sample{8, 99}, sample{9, 99},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{14, 59}, sample{15, 59}, sample{17, 59}, sample{20, 59},
 						sample{21, 59}, sample{22, 59},
@@ -1871,19 +1871,19 @@ func TestVerticalCompaction(t *testing.T) {
 		//               |----------------|
 		{
 			blockSeries: [][]Series{
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{8, 0}, sample{9, 0},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{14, 59}, sample{15, 59}, sample{17, 59}, sample{20, 59},
 						sample{21, 59}, sample{22, 59},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{5, 99}, sample{6, 99}, sample{7, 99}, sample{8, 99},
 						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
@@ -1907,7 +1907,7 @@ func TestVerticalCompaction(t *testing.T) {
 		//      |-------------------------|
 		{
 			blockSeries: [][]Series{
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
@@ -1915,13 +1915,13 @@ func TestVerticalCompaction(t *testing.T) {
 						sample{20, 0}, sample{22, 0},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
 						sample{11, 59},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{8, 99},
 						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
@@ -1945,7 +1945,7 @@ func TestVerticalCompaction(t *testing.T) {
 		//      |-------------------------|
 		{
 			blockSeries: [][]Series{
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{8, 0}, sample{9, 0}, sample{10, 0},
@@ -1965,7 +1965,7 @@ func TestVerticalCompaction(t *testing.T) {
 						sample{20, 0}, sample{22, 0},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"__name__": "a"}, []tsdbutil.Sample{
 						sample{7, 59}, sample{8, 59}, sample{9, 59}, sample{10, 59},
 						sample{11, 59},
@@ -1983,7 +1983,7 @@ func TestVerticalCompaction(t *testing.T) {
 						sample{11, 59},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{8, 99},
 						sample{9, 99}, sample{10, 99}, sample{13, 99}, sample{15, 99},
@@ -2042,26 +2042,26 @@ func TestVerticalCompaction(t *testing.T) {
 		//                                                  |----------------|
 		{
 			blockSeries: [][]Series{
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{0, 0}, sample{1, 0}, sample{2, 0}, sample{4, 0},
 						sample{5, 0}, sample{7, 0}, sample{8, 0}, sample{9, 0},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{3, 99}, sample{5, 99}, sample{6, 99}, sample{7, 99},
 						sample{8, 99}, sample{9, 99}, sample{10, 99}, sample{11, 99},
 						sample{12, 99}, sample{13, 99}, sample{14, 99},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{20, 0}, sample{21, 0}, sample{22, 0}, sample{24, 0},
 						sample{25, 0}, sample{27, 0}, sample{28, 0}, sample{29, 0},
 					}),
 				},
-				[]Series{
+				{
 					newSeries(map[string]string{"a": "b"}, []tsdbutil.Sample{
 						sample{23, 99}, sample{25, 99}, sample{26, 99}, sample{27, 99},
 						sample{28, 99}, sample{29, 99}, sample{30, 99}, sample{31, 99},
@@ -2132,10 +2132,12 @@ func TestVerticalCompaction(t *testing.T) {
 }
 
 // TestBlockRanges checks the following use cases:
-//  - No samples can be added with timestamps lower than the last block maxt.
-//  - The compactor doesn't create overlapping blocks
+//   - No samples can be added with timestamps lower than the last block maxt.
+//   - The compactor doesn't create overlapping blocks
+//
 // even when the last blocks is not within the default boundaries.
-//	- Lower boundary is based on the smallest sample in the head and
+//   - Lower boundary is based on the smallest sample in the head and
+//
 // upper boundary is rounded to the configured block range.
 //
 // This ensures that a snapshot that includes the head and creates a block with a custom time range

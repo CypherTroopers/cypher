@@ -119,7 +119,7 @@ func ExampleSharedBuffer() {
 		ch1.Close()
 	}()
 
-	for _ = range ch2.Out() {
+	for range ch2.Out() {
 		// outputs
 	}
 

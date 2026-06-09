@@ -44,7 +44,8 @@ func newDoubleArray(keys []string) (*doubleArray, error) {
 // baseCheck contains BASE, CHECK and Extra flags.
 // From the top, 22bits of BASE, 2bits of Extra flags and 8bits of CHECK.
 //
-//  BASE (22bit) | Extra flags (2bit) | CHECK (8bit)
+//	BASE (22bit) | Extra flags (2bit) | CHECK (8bit)
+//
 // |----------------------|--|--------|
 // 32                    10  8         0
 type baseCheck uint32

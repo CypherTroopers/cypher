@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/dedis/protobuf"
 	"github.com/cypherium/cypher/log"
+	"github.com/dedis/protobuf"
 	uuid "gopkg.in/satori/go.uuid.v1"
 )
 

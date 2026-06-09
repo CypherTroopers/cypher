@@ -424,14 +424,14 @@ func (s *nodeStore) extendPathToGroupLeaf(path []byte, node nodeRef, remainingLe
 	}
 	if node.Kind() == kindStem {
 		sn := s.getStem(node.Index())
-		for _ = range remainingLevels {
+		for range remainingLevels {
 			bit := sn.Stem[len(path)/8] >> (7 - (len(path) % 8)) & 1
 			path = appendBit(path, bit)
 		}
 	} else {
 		// HashedNode or other: all-left extension (matches serializeSubtree's
 		// position << remainingDepth behavior).
-		for _ = range remainingLevels {
+		for range remainingLevels {
 			path = appendBit(path, 0)
 		}
 	}

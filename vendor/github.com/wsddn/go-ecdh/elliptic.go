@@ -46,10 +46,10 @@ func (e *ellipticECDH) GenerateKey(rand io.Reader) (crypto.PrivateKey, crypto.Pu
 	}
 	pub = &ellipticPublicKey{
 		Curve: e.curve,
-		X: x,
-		Y: y,
+		X:     x,
+		Y:     y,
 	}
-	
+
 	return priv, pub, nil
 }
 

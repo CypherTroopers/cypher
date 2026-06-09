@@ -14,7 +14,7 @@ func testTxPoolSidecar(t *testing.T, n byte) (*types.Transaction, *types.BlobTxS
 	hash := types.KZGToVersionedHash(commitment)
 	tx := newTxpoolBlobTx(t, []common.Hash{hash}, common.Big1)
 	sidecar := &types.BlobTxSidecar{
-		Blobs:       []types.Blob{types.Blob{1, 2, 3}},
+		Blobs:       []types.Blob{{1, 2, 3}},
 		Commitments: []types.KZGCommitment{commitment},
 		Proofs:      []types.KZGProof{{}},
 	}

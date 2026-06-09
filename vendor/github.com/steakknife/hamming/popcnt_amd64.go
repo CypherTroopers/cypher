@@ -1,12 +1,10 @@
-//
 // Package hamming distance calculations in Go
 //
 // https://github.com/steakknife/hamming
 //
-// Copyright © 2014, 2015, 2016, 2018 Barry Allard
+// # Copyright © 2014, 2015, 2016, 2018 Barry Allard
 //
 // MIT license
-//
 package hamming
 
 import "strconv"

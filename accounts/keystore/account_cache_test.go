@@ -28,9 +28,9 @@ import (
 	"time"
 
 	"github.com/cespare/cp"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/cypherium/cypher/accounts"
 	"github.com/cypherium/cypher/common"
+	"github.com/davecgh/go-spew/spew"
 )
 
 var (

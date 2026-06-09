@@ -20,9 +20,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/p2p/enode"
+	"github.com/davecgh/go-spew/spew"
 )
 
 func TestParseRoot(t *testing.T) {

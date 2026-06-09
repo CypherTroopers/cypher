@@ -161,7 +161,7 @@ func l0(b uint32) uint32 { return b ^ rl(b, 13) ^ rl(b, 23) }
 
 func feistel0(x0, x1, x2, x3, rk uint32) uint32 { return x0 ^ l0(p(x1^x2^x3^rk)) }
 
-//非线性变换τ(.)
+// 非线性变换τ(.)
 func p(a uint32) uint32 {
 	return (uint32(sbox[a>>24]) << 24) ^ (uint32(sbox[(a>>16)&0xff]) << 16) ^ (uint32(sbox[(a>>8)&0xff]) << 8) ^ uint32(sbox[(a)&0xff])
 }
@@ -182,7 +182,7 @@ func permuteFinalBlock(b []byte, block []uint32) {
 	}
 }
 
-//修改后的加密核心函数
+// 修改后的加密核心函数
 func cryptBlock(subkeys []uint32, b []uint32, r []byte, dst, src []byte, decrypt bool) {
 	permuteInitialBlock(b, src)
 

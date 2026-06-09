@@ -6,7 +6,7 @@ designed to be independent of specific cryptographic algorithms,
 to facilitate upgrading applications to new cryptographic algorithms
 or switching to alternative algorithms for experimentation purposes.
 
-Abstract Groups
+# Abstract Groups
 
 This toolkits public-key crypto API includes a kyber.Group interface
 supporting a broad class of group-based public-key primitives
@@ -23,9 +23,9 @@ DSA-style integer groups.
 
 As a trivial example, generating a public/private keypair is as simple as:
 
-    suite := suites.MustFind("Ed25519")		// Use the edwards25519-curve
-	a := suite.Scalar().Pick(suite.RandomStream()) // Alice's private key
-	A := suite.Point().Mul(a, nil)          // Alice's public key
+	    suite := suites.MustFind("Ed25519")		// Use the edwards25519-curve
+		a := suite.Scalar().Pick(suite.RandomStream()) // Alice's private key
+		A := suite.Point().Mul(a, nil)          // Alice's public key
 
 The first statement picks a private key (Scalar) from a the suites's source of
 cryptographic random or pseudo-random bits, while the second performs elliptic
@@ -42,7 +42,7 @@ rather than the multiplicative-group terminology of traditional
 integer groups - but the two are semantically equivalent and the
 interface itself works for both elliptic curve and integer groups.
 
-Higher-level Building Blocks
+# Higher-level Building Blocks
 
 Various sub-packages provide several specific
 implementations of these cryptographic interfaces.
@@ -91,7 +91,7 @@ that keep the sources of individual votes or bids private
 without anyone having to trust more than one of the shuffler(s) to shuffle
 votes/bids honestly.
 
-Disclaimer
+# Disclaimer
 
 For now this library should currently be considered experimental: it will
 definitely be changing in non-backward-compatible ways, and it will need

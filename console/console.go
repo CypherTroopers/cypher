@@ -28,12 +28,12 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/dop251/goja"
 	"github.com/cypherium/cypher/console/prompt"
 	"github.com/cypherium/cypher/internal/jsre"
 	"github.com/cypherium/cypher/internal/jsre/deps"
 	"github.com/cypherium/cypher/internal/web3ext"
 	"github.com/cypherium/cypher/rpc"
+	"github.com/dop251/goja"
 	"github.com/mattn/go-colorable"
 	"github.com/peterh/liner"
 )
@@ -302,7 +302,7 @@ func (c *Console) Welcome() {
 	message := "Welcome to the Geth JavaScript console!\n\n"
 
 	// Print some generic Geth metadata
-if res, err := c.jsre.Run(`
+	if res, err := c.jsre.Run(`
 	var message = "instance: " + web3.version.node + "\n";
 	try {
 		message += "coinbase: " + eth.coinbase + "\n";
@@ -323,8 +323,8 @@ if res, err := c.jsre.Run(`
 	} catch (err) {}
 	message
 `); err == nil {
-	message += res.String()
-}
+		message += res.String()
+	}
 	// List all the supported modules for the user to call
 	if apis, err := c.client.SupportedModules(); err == nil {
 		modules := make([]string, 0, len(apis))

@@ -57,15 +57,15 @@ func BenchmarkMatchClass_InRange(b *testing.B) {
 }
 
 /*
-func BenchmarkReplaceAll(b *testing.B) {
-	x := "abcdefghijklmnopqrstuvwxyz"
-	b.StopTimer()
-	re := MustCompile("[cjrw]", 0)
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		re.ReplaceAllString(x, "")
+	func BenchmarkReplaceAll(b *testing.B) {
+		x := "abcdefghijklmnopqrstuvwxyz"
+		b.StopTimer()
+		re := MustCompile("[cjrw]", 0)
+		b.StartTimer()
+		for i := 0; i < b.N; i++ {
+			re.ReplaceAllString(x, "")
+		}
 	}
-}
 */
 func BenchmarkAnchoredLiteralShortNonMatch(b *testing.B) {
 	b.StopTimer()

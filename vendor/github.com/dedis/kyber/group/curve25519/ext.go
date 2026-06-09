@@ -1,3 +1,4 @@
+//go:build vartime
 // +build vartime
 
 package curve25519
@@ -82,7 +83,6 @@ func (P *extPoint) HideDecode(rep []byte) {
 //	(X1/Z1,Y1/Z1) == (X2/Z2,Y2/Z2)
 //		iff
 //	(X1*Z2,Y1*Z2) == (X2*Z1,Y2*Z1)
-//
 func (P1 *extPoint) Equal(CP2 kyber.Point) bool {
 	P2 := CP2.(*extPoint)
 	var t1, t2 mod.Int
@@ -244,7 +244,6 @@ func (P *extPoint) double() {
 // Currently doesn't implement the optimization of
 // switching between projective and extended coordinates during
 // scalar multiplication.
-//
 func (P *extPoint) Mul(s kyber.Scalar, G kyber.Point) kyber.Point {
 	v := s.(*mod.Int).V
 	if G == nil {
@@ -286,7 +285,6 @@ func (P *extPoint) Mul(s kyber.Scalar, G kyber.Point) kyber.Point {
 // special case with curve parameter a=-1.
 // We leave the task of hyperoptimization to curve-specific implementations
 // such as the ed25519 package.
-//
 type ExtendedCurve struct {
 	curve          // generic Edwards curve functionality
 	null  extPoint // Constant identity/null point (0,1)

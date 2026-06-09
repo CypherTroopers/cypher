@@ -116,13 +116,13 @@ func (p *SpanRefType) UnmarshalText(text []byte) error {
 }
 
 // Attributes:
-//  - Key
-//  - VType
-//  - VStr
-//  - VDouble
-//  - VBool
-//  - VLong
-//  - VBinary
+//   - Key
+//   - VType
+//   - VStr
+//   - VDouble
+//   - VBool
+//   - VLong
+//   - VBinary
 type Tag struct {
 	Key     string   `thrift:"key,1,required" json:"key"`
 	VType   TagType  `thrift:"vType,2,required" json:"vType"`
@@ -481,8 +481,8 @@ func (p *Tag) String() string {
 }
 
 // Attributes:
-//  - Timestamp
-//  - Fields
+//   - Timestamp
+//   - Fields
 type Log struct {
 	Timestamp int64  `thrift:"timestamp,1,required" json:"timestamp"`
 	Fields    []*Tag `thrift:"fields,2,required" json:"fields"`
@@ -637,10 +637,10 @@ func (p *Log) String() string {
 }
 
 // Attributes:
-//  - RefType
-//  - TraceIdLow
-//  - TraceIdHigh
-//  - SpanId
+//   - RefType
+//   - TraceIdLow
+//   - TraceIdHigh
+//   - SpanId
 type SpanRef struct {
 	RefType     SpanRefType `thrift:"refType,1,required" json:"refType"`
 	TraceIdLow  int64       `thrift:"traceIdLow,2,required" json:"traceIdLow"`
@@ -855,17 +855,17 @@ func (p *SpanRef) String() string {
 }
 
 // Attributes:
-//  - TraceIdLow
-//  - TraceIdHigh
-//  - SpanId
-//  - ParentSpanId
-//  - OperationName
-//  - References
-//  - Flags
-//  - StartTime
-//  - Duration
-//  - Tags
-//  - Logs
+//   - TraceIdLow
+//   - TraceIdHigh
+//   - SpanId
+//   - ParentSpanId
+//   - OperationName
+//   - References
+//   - Flags
+//   - StartTime
+//   - Duration
+//   - Tags
+//   - Logs
 type Span struct {
 	TraceIdLow    int64      `thrift:"traceIdLow,1,required" json:"traceIdLow"`
 	TraceIdHigh   int64      `thrift:"traceIdHigh,2,required" json:"traceIdHigh"`
@@ -1418,8 +1418,8 @@ func (p *Span) String() string {
 }
 
 // Attributes:
-//  - ServiceName
-//  - Tags
+//   - ServiceName
+//   - Tags
 type Process struct {
 	ServiceName string `thrift:"serviceName,1,required" json:"serviceName"`
 	Tags        []*Tag `thrift:"tags,2" json:"tags,omitempty"`
@@ -1577,8 +1577,8 @@ func (p *Process) String() string {
 }
 
 // Attributes:
-//  - Process
-//  - Spans
+//   - Process
+//   - Spans
 type Batch struct {
 	Process *Process `thrift:"process,1,required" json:"process"`
 	Spans   []*Span  `thrift:"spans,2,required" json:"spans"`
@@ -1741,7 +1741,7 @@ func (p *Batch) String() string {
 }
 
 // Attributes:
-//  - Ok
+//   - Ok
 type BatchSubmitResponse struct {
 	Ok bool `thrift:"ok,1,required" json:"ok"`
 }

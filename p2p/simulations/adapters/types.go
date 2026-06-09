@@ -25,7 +25,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/docker/docker/pkg/reexec"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/node"
@@ -33,6 +32,7 @@ import (
 	"github.com/cypherium/cypher/p2p/enode"
 	"github.com/cypherium/cypher/p2p/enr"
 	"github.com/cypherium/cypher/rpc"
+	"github.com/docker/docker/pkg/reexec"
 	"github.com/gorilla/websocket"
 )
 
@@ -42,7 +42,6 @@ import (
 // * SimNode    - An in-memory node
 // * ExecNode   - A child process node
 // * DockerNode - A Docker container node
-//
 type Node interface {
 	// Addr returns the node's address (e.g. an Enode URL)
 	Addr() []byte

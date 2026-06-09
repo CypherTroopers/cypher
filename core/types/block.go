@@ -571,8 +571,10 @@ func (b *StorageBlock) DecodeRLP(s *rlp.Stream) error {
 func (b *Block) Uncles() []*Header          { return b.uncles }
 func (b *Block) Transactions() Transactions { return b.transactions }
 
-func (b *Block) CommonTxAdmissions() []*CommonTxAdmission { return copyCommonTxAdmissions(b.commonTxAdmissions) }
-func (b *Block) CommonTxRewards() []*CommonTxReward       { return copyCommonTxRewards(b.commonTxRewards) }
+func (b *Block) CommonTxAdmissions() []*CommonTxAdmission {
+	return copyCommonTxAdmissions(b.commonTxAdmissions)
+}
+func (b *Block) CommonTxRewards() []*CommonTxReward { return copyCommonTxRewards(b.commonTxRewards) }
 
 func (b *Block) Transaction(hash common.Hash) *Transaction {
 	for _, transaction := range b.transactions {

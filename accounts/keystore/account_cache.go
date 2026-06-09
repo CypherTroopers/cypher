@@ -27,10 +27,10 @@ import (
 	"sync"
 	"time"
 
-	mapset "github.com/deckarep/golang-set"
 	"github.com/cypherium/cypher/accounts"
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/log"
+	mapset "github.com/deckarep/golang-set"
 )
 
 // Minimum amount of time between cache reloads. This limit applies if the platform does

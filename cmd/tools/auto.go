@@ -205,7 +205,7 @@ func remote_miner_start(c *cli.Context) error {
 		err = client.Call(&result, "miner_start", 1, r[0], "1")
 		if err != nil {
 			fmt.Printf("miner_start %s %v\n", remote, err)
-		//	return err
+			//	return err
 		}
 		fmt.Printf("miner start %s ok\n", remote)
 
@@ -236,7 +236,7 @@ func auto_miner_start(c *cli.Context) error {
 		err = client.Call(&result, "miner_start", 2, account[0], "1")
 		if err != nil {
 			fmt.Println("client.call: miner_start err", err)
-		//	return err
+			//	return err
 		}
 		fmt.Println(sPort+" miner_start OK!", result)
 

@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"reflect"
 
-	"github.com/dedis/protobuf"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/rnet/network"
+	"github.com/dedis/protobuf"
 )
 
 // ServiceProcessor allows for an easy integration of external messages

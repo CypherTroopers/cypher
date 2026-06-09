@@ -17,11 +17,11 @@ func init() {
 
 // Service is a generic interface to define any type of services.
 // A Service has multiple roles:
-// * Processing websocket client requests with ProcessClientRequests
-// * Handling rnet information to ProtocolInstances created with
-//  	NewProtocol
-// * Handling any kind of messages between Services between different hosts with
-//   	the Processor interface
+//   - Processing websocket client requests with ProcessClientRequests
+//   - Handling rnet information to ProtocolInstances created with
+//     NewProtocol
+//   - Handling any kind of messages between Services between different hosts with
+//     the Processor interface
 type Service interface {
 	// NewProtocol is called upon a ProtocolInstance's first message when Rnet needs
 	// to instantiate the protocol. A Service is expected to manually create

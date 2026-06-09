@@ -47,7 +47,7 @@ func NewZipkinCollectorClientProtocol(t thrift.TTransport, iprot thrift.TProtoco
 }
 
 // Parameters:
-//  - Spans
+//   - Spans
 func (p *ZipkinCollectorClient) SubmitZipkinBatch(spans []*Span) (r []*Response, err error) {
 	if err = p.sendSubmitZipkinBatch(spans); err != nil {
 		return
@@ -218,7 +218,7 @@ func (p *zipkinCollectorProcessorSubmitZipkinBatch) Process(seqId int32, iprot, 
 // HELPER FUNCTIONS AND STRUCTURES
 
 // Attributes:
-//  - Spans
+//   - Spans
 type ZipkinCollectorSubmitZipkinBatchArgs struct {
 	Spans []*Span `thrift:"spans,1" json:"spans"`
 }
@@ -328,7 +328,7 @@ func (p *ZipkinCollectorSubmitZipkinBatchArgs) String() string {
 }
 
 // Attributes:
-//  - Success
+//   - Success
 type ZipkinCollectorSubmitZipkinBatchResult struct {
 	Success []*Response `thrift:"success,0" json:"success,omitempty"`
 }

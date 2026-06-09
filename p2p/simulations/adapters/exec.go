@@ -34,12 +34,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/docker/docker/pkg/reexec"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/node"
 	"github.com/cypherium/cypher/p2p"
 	"github.com/cypherium/cypher/p2p/enode"
 	"github.com/cypherium/cypher/rpc"
+	"github.com/docker/docker/pkg/reexec"
 	"github.com/gorilla/websocket"
 )
 

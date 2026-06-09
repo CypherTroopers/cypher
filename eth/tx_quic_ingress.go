@@ -169,8 +169,8 @@ func (q *TxQUICIngress) Start() error {
 		MinVersion:   tls.VersionTLS13,
 	}, &quic.Config{
 		MaxIncomingStreams: q.config.MaxIncomingStreams,
-		KeepAlivePeriod:   10 * time.Second,
-		MaxIdleTimeout:    30 * time.Second,
+		KeepAlivePeriod:    10 * time.Second,
+		MaxIdleTimeout:     30 * time.Second,
 	})
 	if err != nil {
 		return err

@@ -1,4 +1,5 @@
-//+build !appengine
+//go:build !appengine
+// +build !appengine
 
 package graceful
 

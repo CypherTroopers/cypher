@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build ignore
 // +build ignore
 
 // Language tag table generator.
@@ -1043,7 +1044,7 @@ func (b *builder) writeRegion() {
 	m49Index := [9]int16{}
 	fromM49 := []uint16{}
 	m49 := []int{}
-	for k, _ := range fromM49map {
+	for k := range fromM49map {
 		m49 = append(m49, int(k))
 	}
 	sort.Ints(m49)

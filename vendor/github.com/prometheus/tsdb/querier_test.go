@@ -461,9 +461,9 @@ func TestBlockQuerierDelete(t *testing.T) {
 			},
 		},
 		tombstones: &memTombstones{intvlGroups: map[uint64]Intervals{
-			1: Intervals{{1, 3}},
-			2: Intervals{{1, 3}, {6, 10}},
-			3: Intervals{{6, 10}},
+			1: {{1, 3}},
+			2: {{1, 3}, {6, 10}},
+			3: {{6, 10}},
 		}},
 		queries: []query{
 			{
@@ -2109,27 +2109,27 @@ func TestClose(t *testing.T) {
 
 func BenchmarkQueries(b *testing.B) {
 	cases := map[string]labels.Selector{
-		"Eq Matcher: Expansion - 1": labels.Selector{
+		"Eq Matcher: Expansion - 1": {
 			labels.NewEqualMatcher("la", "va"),
 		},
-		"Eq Matcher: Expansion - 2": labels.Selector{
+		"Eq Matcher: Expansion - 2": {
 			labels.NewEqualMatcher("la", "va"),
 			labels.NewEqualMatcher("lb", "vb"),
 		},
 
-		"Eq Matcher: Expansion - 3": labels.Selector{
+		"Eq Matcher: Expansion - 3": {
 			labels.NewEqualMatcher("la", "va"),
 			labels.NewEqualMatcher("lb", "vb"),
 			labels.NewEqualMatcher("lc", "vc"),
 		},
-		"Regex Matcher: Expansion - 1": labels.Selector{
+		"Regex Matcher: Expansion - 1": {
 			labels.NewMustRegexpMatcher("la", ".*va"),
 		},
-		"Regex Matcher: Expansion - 2": labels.Selector{
+		"Regex Matcher: Expansion - 2": {
 			labels.NewMustRegexpMatcher("la", ".*va"),
 			labels.NewMustRegexpMatcher("lb", ".*vb"),
 		},
-		"Regex Matcher: Expansion - 3": labels.Selector{
+		"Regex Matcher: Expansion - 3": {
 			labels.NewMustRegexpMatcher("la", ".*va"),
 			labels.NewMustRegexpMatcher("lb", ".*vb"),
 			labels.NewMustRegexpMatcher("lc", ".*vc"),
