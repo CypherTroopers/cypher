@@ -128,9 +128,9 @@ type TxQUICConfig struct {
 	BridgeWorkers       int           `toml:",omitempty"`
 	BridgeBatchInterval time.Duration `toml:",omitempty"`
 
-	HTTP3Enabled bool   `toml:",omitempty"`
-	HTTP3Addr    string `toml:",omitempty"`
-	HTTP3Port    int    `toml:",omitempty"`
+	HTTP3Enabled  bool   `toml:",omitempty"`
+	HTTP3Addr     string `toml:",omitempty"`
+	HTTP3Port     int    `toml:",omitempty"`
 	HTTP3CertFile string `toml:",omitempty"`
 	HTTP3KeyFile  string `toml:",omitempty"`
 

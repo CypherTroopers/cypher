@@ -369,26 +369,26 @@ func (s *Ethereum) StartMining(threads int, local bool, eb common.Address, pubKe
 	return nil
 }
 
-func (s *Ethereum) StopMining() { s.miner.Stop() }
-func (s *Ethereum) IsMining() bool { return s.miner.Mining() }
-func (s *Ethereum) Miner() *miner.Miner { return s.miner }
-func (s *Ethereum) AccountManager() *accounts.Manager { return s.accountManager }
-func (s *Ethereum) BlockChain() *core.BlockChain { return s.blockchain }
-func (s *Ethereum) KeyBlockChain() *core.KeyBlockChain { return s.keyBlockChain }
-func (s *Ethereum) TxPool() *core.TxPool { return s.txPool }
-func (s *Ethereum) EventMux() *event.TypeMux { return s.eventMux }
-func (s *Ethereum) Engine() consensus.Engine { return s.engine }
-func (s *Ethereum) ChainDb() ethdb.Database { return s.chainDb }
-func (s *Ethereum) IsListening() bool { return true }
-func (s *Ethereum) EthVersion() int { return int(ProtocolVersions[0]) }
-func (s *Ethereum) NetVersion() uint64 { return s.networkID }
-func (s *Ethereum) Downloader() *downloader.Downloader { return s.protocolManager.downloader }
-func (s *Ethereum) Synced() bool { return atomic.LoadUint32(&s.protocolManager.acceptTxs) == 1 }
-func (s *Ethereum) ArchiveMode() bool { return s.config.NoPruning }
-func (s *Ethereum) BloomIndexer() *core.ChainIndexer { return s.bloomIndexer }
-func (s *Ethereum) CandidatePool() *core.CandidatePool { return s.candidatePool }
-func (s *Ethereum) ExtIP() net.IP { return s.extIP }
-func (s *Ethereum) PublicKey() ed25519.PublicKey { return s.miner.GetPubKey() }
+func (s *Ethereum) StopMining()                                      { s.miner.Stop() }
+func (s *Ethereum) IsMining() bool                                   { return s.miner.Mining() }
+func (s *Ethereum) Miner() *miner.Miner                              { return s.miner }
+func (s *Ethereum) AccountManager() *accounts.Manager                { return s.accountManager }
+func (s *Ethereum) BlockChain() *core.BlockChain                     { return s.blockchain }
+func (s *Ethereum) KeyBlockChain() *core.KeyBlockChain               { return s.keyBlockChain }
+func (s *Ethereum) TxPool() *core.TxPool                             { return s.txPool }
+func (s *Ethereum) EventMux() *event.TypeMux                         { return s.eventMux }
+func (s *Ethereum) Engine() consensus.Engine                         { return s.engine }
+func (s *Ethereum) ChainDb() ethdb.Database                          { return s.chainDb }
+func (s *Ethereum) IsListening() bool                                { return true }
+func (s *Ethereum) EthVersion() int                                  { return int(ProtocolVersions[0]) }
+func (s *Ethereum) NetVersion() uint64                               { return s.networkID }
+func (s *Ethereum) Downloader() *downloader.Downloader               { return s.protocolManager.downloader }
+func (s *Ethereum) Synced() bool                                     { return atomic.LoadUint32(&s.protocolManager.acceptTxs) == 1 }
+func (s *Ethereum) ArchiveMode() bool                                { return s.config.NoPruning }
+func (s *Ethereum) BloomIndexer() *core.ChainIndexer                 { return s.bloomIndexer }
+func (s *Ethereum) CandidatePool() *core.CandidatePool               { return s.candidatePool }
+func (s *Ethereum) ExtIP() net.IP                                    { return s.extIP }
+func (s *Ethereum) PublicKey() ed25519.PublicKey                     { return s.miner.GetPubKey() }
 func (s *Ethereum) GetCalcGasLimit() func(block *types.Block) uint64 { return s.CalcGasLimit }
 
 // Protocols returns all the currently configured network protocols to start.
@@ -425,7 +425,9 @@ func (s *Ethereum) Start() error {
 
 // Stop implements node.Lifecycle, terminating all internal goroutines used by the Ethereum protocol.
 func (s *Ethereum) Stop() error {
-	if s.txQUICIngress != nil { s.txQUICIngress.Stop() }
+	if s.txQUICIngress != nil {
+		s.txQUICIngress.Stop()
+	}
 	s.protocolManager.Stop()
 	s.candidatePool.StopPoWResultUDP()
 	s.bloomIndexer.Close()
@@ -440,6 +442,12 @@ func (s *Ethereum) Stop() error {
 	return nil
 }
 
-func (s *Ethereum) CalcGasLimit(block *types.Block) uint64 { return core.CalcGasLimit(block, s.config.Miner.GasFloor, s.config.Miner.GasCeil) }
-func (s *Ethereum) ConsensusServicePendingLogsFeed() *event.Feed { return s.consensusServicePendingLogsFeed }
-func (s *Ethereum) SubscribePendingLogs(ch chan<- []*types.Log) event.Subscription { return s.consensusServicePendingLogsFeed.Subscribe(ch) }
+func (s *Ethereum) CalcGasLimit(block *types.Block) uint64 {
+	return core.CalcGasLimit(block, s.config.Miner.GasFloor, s.config.Miner.GasCeil)
+}
+func (s *Ethereum) ConsensusServicePendingLogsFeed() *event.Feed {
+	return s.consensusServicePendingLogsFeed
+}
+func (s *Ethereum) SubscribePendingLogs(ch chan<- []*types.Log) event.Subscription {
+	return s.consensusServicePendingLogsFeed.Subscribe(ch)
+}

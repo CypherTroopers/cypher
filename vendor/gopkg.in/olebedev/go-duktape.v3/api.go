@@ -1477,7 +1477,7 @@ func (d *Context) PushPointer(p unsafe.Pointer) {
 	C.duk_push_pointer(d.duk_context, p)
 }
 
-//---[ Duktape 1.3 API ]--- //
+// ---[ Duktape 1.3 API ]--- //
 // See: http://duktape.org/api.html#duk_debugger_attach
 func (d *Context) DebuggerAttach(
 	readFn,
