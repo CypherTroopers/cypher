@@ -15,6 +15,7 @@ import (
 // be constructed with the global functions in this package.
 //
 // Example:
+//
 //	srv := &graceful.Server{
 //		Timeout: 5 * time.Second,
 //		Server: &http.Server{Addr: ":1234", Handler: handler},

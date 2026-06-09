@@ -326,7 +326,9 @@ func (b *EthAPIBackend) GetPoolTransactions() (types.Transactions, error) {
 	}
 	return txs, nil
 }
-func (b *EthAPIBackend) GetPoolTransaction(hash common.Hash) *types.Transaction { return b.eth.txPool.Get(hash) }
+func (b *EthAPIBackend) GetPoolTransaction(hash common.Hash) *types.Transaction {
+	return b.eth.txPool.Get(hash)
+}
 func (b *EthAPIBackend) GetTransaction(ctx context.Context, txHash common.Hash) (*types.Transaction, common.Hash, uint64, uint64, error) {
 	tx, blockHash, blockNumber, index := rawdb.ReadTransaction(b.eth.ChainDb(), txHash)
 	return tx, blockHash, blockNumber, index, nil
@@ -361,13 +363,13 @@ func (b *EthAPIBackend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) 
 	}
 	return new(big.Int).Set(price), nil
 }
-func (b *EthAPIBackend) ChainDb() ethdb.Database          { return b.eth.ChainDb() }
-func (b *EthAPIBackend) EventMux() *event.TypeMux         { return b.eth.EventMux() }
+func (b *EthAPIBackend) ChainDb() ethdb.Database           { return b.eth.ChainDb() }
+func (b *EthAPIBackend) EventMux() *event.TypeMux          { return b.eth.EventMux() }
 func (b *EthAPIBackend) AccountManager() *accounts.Manager { return b.eth.AccountManager() }
-func (b *EthAPIBackend) ExtRPCEnabled() bool              { return b.extRPCEnabled }
-func (b *EthAPIBackend) CallTimeOut() time.Duration       { return b.evmCallTimeOut }
-func (b *EthAPIBackend) RPCGasCap() uint64                { return b.eth.config.RPCGasCap }
-func (b *EthAPIBackend) RPCTxFeeCap() float64             { return b.eth.config.RPCTxFeeCap }
+func (b *EthAPIBackend) ExtRPCEnabled() bool               { return b.extRPCEnabled }
+func (b *EthAPIBackend) CallTimeOut() time.Duration        { return b.evmCallTimeOut }
+func (b *EthAPIBackend) RPCGasCap() uint64                 { return b.eth.config.RPCGasCap }
+func (b *EthAPIBackend) RPCTxFeeCap() float64              { return b.eth.config.RPCTxFeeCap }
 func (b *EthAPIBackend) BloomStatus() (uint64, uint64) {
 	sections, _, _ := b.eth.bloomIndexer.Sections()
 	return params.BloomBitsBlocks, sections
