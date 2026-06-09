@@ -36,7 +36,6 @@ import (
 var DefaultFullGPOConfig = gasprice.Config{Blocks: 20, Percentile: 60}
 var DefaultLightGPOConfig = gasprice.Config{Blocks: 2, Percentile: 60}
 
-// DefaultConfig contains default settings for use on the Ethereum main net.
 var DefaultConfig = Config{
 	SyncMode: downloader.FastSync,
 	colossusX: colossusX.Config{
@@ -143,8 +142,9 @@ type TxQUICConfig struct {
 	LeaderEndpoints []string `toml:",omitempty"`
 	BackupEndpoints []string `toml:",omitempty"`
 
-	ForwardServerName         string `toml:",omitempty"`
-	ForwardTLSInsecureSkipVerify bool `toml:",omitempty"`
+	ForwardServerName            string `toml:",omitempty"`
+	ForwardTLSCAFile             string `toml:",omitempty"`
+	ForwardTLSInsecureSkipVerify bool   `toml:",omitempty"`
 }
 
 type Config struct {
@@ -197,15 +197,15 @@ type Config struct {
 
 	EnablePreimageRecording bool
 
-	DocRoot string `toml:"-"`
+	DocRoot          string `toml:"-"`
 	EWASMInterpreter string
-	EVMInterpreter string
+	EVMInterpreter   string
 
 	RPCGasCap uint64 `toml:",omitempty"`
 
 	RPCTxFeeCap float64 `toml:",omitempty"`
 
-	Checkpoint *params.TrustedCheckpoint `toml:",omitempty"`
+	Checkpoint       *params.TrustedCheckpoint      `toml:",omitempty"`
 	CheckpointOracle *params.CheckpointOracleConfig `toml:",omitempty"`
 
 	EVMCallTimeOut time.Duration
