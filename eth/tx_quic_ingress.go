@@ -1,9 +1,6 @@
 // Copyright 2026 The Cypherium Authors
 // This file is part of the Cypherium library.
 
-//go:build txquic
-// +build txquic
-
 package eth
 
 import (
@@ -73,8 +70,6 @@ type txQUICAck struct {
 	Hashes    []common.Hash
 }
 
-// TxQUICIngress receives signed transactions over QUIC and inserts or forwards them.
-// It does not replace TCP/RLPx header, body, block or peer sync.
 type TxQUICIngress struct {
 	config TxQUICConfig
 	txpool *core.TxPool
