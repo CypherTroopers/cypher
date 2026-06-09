@@ -198,20 +198,22 @@ func (pm *ProtocolManager) commonTxAdmissionKCPRelay() *commonTxAdmissionKCPRela
 		}
 		return nil
 	}
-	core.SetCommonRPCAdmissionDedicatedRelay(func(admissions []*types.CommonTxAdmission) {
-		if !relay.Broadcast(admissions) {
-			pm.broadcastCommonTxAdmissionsExcept(admissions, "")
-		}
-	})
 	return relay
 }
 
-func (pm *ProtocolManager) broadcastCommonTxAdmissionsDedicated(admissions []*types.CommonTxAdmission) bool {
+func (pm *ProtocolManager) broadcastCommonTxAdmissionsKCPOnly(admissions []*types.CommonTxAdmission) bool {
 	relay := pm.commonTxAdmissionKCPRelay()
 	if relay == nil {
 		return false
 	}
 	return relay.Broadcast(admissions)
+}
+
+func (pm *ProtocolManager) broadcastCommonTxAdmissionsDedicated(admissions []*types.CommonTxAdmission) bool {
+	if relay := pm.commonTxAdmissionQUICRelay(); relay != nil && relay.Broadcast(admissions) {
+		return true
+	}
+	return pm.broadcastCommonTxAdmissionsKCPOnly(admissions)
 }
 
 func (pm *ProtocolManager) broadcastAcceptedCommonTxAdmissions(admissions []*types.CommonTxAdmission, exceptPeerID string) {
