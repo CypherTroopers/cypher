@@ -136,6 +136,7 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	log.Info("Initialised chain configuration", "config", chainConfig)
 	chainConfig.RnetPort = config.RnetPort
 	chainConfig.EnabledTPS = config.EnableTPS
+	config.TxQUIC.ApplyFixedCommitteeAutoRole(chainConfig)
 
 	log.Info("Initialised chain configuration", "config id", chainConfig.ChainID)
 	extIP := net.ParseIP(config.ExternalIp).To4()
