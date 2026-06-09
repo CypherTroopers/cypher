@@ -103,6 +103,9 @@ jobs:
           mkdir -p "$GOPATH/src/golang.org/x"
           cd "$GOPATH/src/golang.org/x"
           [ -d sys ] || git clone https://go.googlesource.com/sys
+          [ -d crypto ] || git clone https://go.googlesource.com/crypto
+          [ -d net ] || git clone https://go.googlesource.com/net
+          [ -d sync ] || git clone https://go.googlesource.com/sync
 
           rm -rf "$GOPATH/src/github.com/herumi"
           mkdir -p "$GOPATH/src/github.com/herumi"
@@ -239,7 +242,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          wget -4 https://ftp.gnu.org/gnu/gmp/gmp-6.1.2.tar.bz2
+          wget -4 https://ftpmirror.gnu.org/gmp/gmp-6.1.2.tar.bz2
           tar -xjf gmp-6.1.2.tar.bz2
 
           cd gmp-6.1.2
@@ -305,6 +308,9 @@ jobs:
           mkdir -p "$GOPATH/src/golang.org/x"
           cd "$GOPATH/src/golang.org/x"
           [ -d sys ] || git clone https://go.googlesource.com/sys
+          [ -d crypto ] || git clone https://go.googlesource.com/crypto
+          [ -d net ] || git clone https://go.googlesource.com/net
+          [ -d sync ] || git clone https://go.googlesource.com/sync
 
           cd "${GITHUB_WORKSPACE}/go/src/github.com/cypherium/cypher"
 
@@ -394,6 +400,9 @@ jobs:
           git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
           git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
           git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
+          git clone --depth 1 https://github.com/golang/crypto.git "$GOPATH/src/golang.org/x/crypto"
+          git clone --depth 1 https://github.com/golang/net.git "$GOPATH/src/golang.org/x/net"
+          git clone --depth 1 https://github.com/golang/sync.git "$GOPATH/src/golang.org/x/sync"
 
           git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
           git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
