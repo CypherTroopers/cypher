@@ -206,11 +206,15 @@ func (hn *hashOrNumber) EncodeRLP(w io.Writer) error {
 // DecodeRLP is a specialized decoder for hashOrNumber to decode the contents
 // into either a block hash or a block number.
 func (hn *hashOrNumber) DecodeRLP(s *rlp.Stream) error {
-	_, size, _ := s.Kind()
-	switch size {
-	case 32:
+	_, size, err := s.Kind()
+	if err != nil {
+		return err
+	}
+
+	switch {
+	case size == 32:
 		return s.Decode(&hn.Hash)
-	case 8:
+	case size <= 8:
 		return s.Decode(&hn.Number)
 	default:
 		return fmt.Errorf("invalid input size %d for origin", size)
