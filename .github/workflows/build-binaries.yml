@@ -82,6 +82,7 @@ jobs:
           mkdir -p "$GOPATH/src/github.com/quic-go"
           cd "$GOPATH/src/github.com/quic-go"
           [ -d quic-go ] || git clone https://github.com/quic-go/quic-go.git
+          [ -d qpack ] || git clone https://github.com/quic-go/qpack.git
 
           mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
           cd "$GOPATH/src/github.com/yusufpapurcu"
@@ -106,6 +107,7 @@ jobs:
           [ -d crypto ] || git clone https://go.googlesource.com/crypto
           [ -d net ] || git clone https://go.googlesource.com/net
           [ -d sync ] || git clone https://go.googlesource.com/sync
+          [ -d text ] || git clone https://go.googlesource.com/text
 
           rm -rf "$GOPATH/src/github.com/herumi"
           mkdir -p "$GOPATH/src/github.com/herumi"
@@ -299,6 +301,7 @@ jobs:
           mkdir -p "$GOPATH/src/github.com/quic-go"
           cd "$GOPATH/src/github.com/quic-go"
           [ -d quic-go ] || git clone https://github.com/quic-go/quic-go.git
+          [ -d qpack ] || git clone https://github.com/quic-go/qpack.git
 
           mkdir -p "$GOPATH/src/github.com/tklauser"
           cd "$GOPATH/src/github.com/tklauser"
@@ -311,6 +314,7 @@ jobs:
           [ -d crypto ] || git clone https://go.googlesource.com/crypto
           [ -d net ] || git clone https://go.googlesource.com/net
           [ -d sync ] || git clone https://go.googlesource.com/sync
+          [ -d text ] || git clone https://go.googlesource.com/text
 
           cd "${GITHUB_WORKSPACE}/go/src/github.com/cypherium/cypher"
 
@@ -403,12 +407,14 @@ jobs:
           git clone --depth 1 https://github.com/golang/crypto.git "$GOPATH/src/golang.org/x/crypto"
           git clone --depth 1 https://github.com/golang/net.git "$GOPATH/src/golang.org/x/net"
           git clone --depth 1 https://github.com/golang/sync.git "$GOPATH/src/golang.org/x/sync"
+          git clone --depth 1 https://github.com/golang/text.git "$GOPATH/src/golang.org/x/text"
 
           git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
           git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
           git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
           git clone --depth 1 https://github.com/dlclark/regexp2.git "$GOPATH/src/github.com/dlclark/regexp2"
           git clone --depth 1 https://github.com/quic-go/quic-go.git "$GOPATH/src/github.com/quic-go/quic-go"
+          git clone --depth 1 https://github.com/quic-go/qpack.git "$GOPATH/src/github.com/quic-go/qpack"
 
           rm -rf "$GOPATH/src/github.com/herumi"
           mkdir -p "$GOPATH/src/github.com/herumi"
