@@ -57,20 +57,23 @@ type txQUICRateBucket struct {
 }
 
 type txQUICPacket struct {
-	Version   uint
-	Sender    common.Address
-	Nonce     uint64
-	Timestamp uint64
-	Txs       []*types.Transaction
-	Signature []byte
+	Version    uint
+	Sender     common.Address
+	Nonce      uint64
+	Timestamp  uint64
+	Txs        []*types.Transaction
+	Admissions []*types.CommonTxAdmission
+	Signature  []byte
 }
 
 type txQUICSigningData struct {
-	Version   uint
-	Sender    common.Address
-	Nonce     uint64
-	Timestamp uint64
-	TxHashes  []common.Hash
+	Version         uint
+	Sender          common.Address
+	Nonce           uint64
+	Timestamp       uint64
+	TxHashes        []common.Hash
+	AdmissionHashes []common.Hash
+	AdmissionMiners []common.Address
 }
 
 type txQUICAck struct {
@@ -87,6 +90,11 @@ type txQUICBridgeItem struct {
 	am *accounts.Manager
 }
 
+type txQUICAdmissionItem struct {
+	admission *types.CommonTxAdmission
+	am        *accounts.Manager
+}
+
 type TxQUICIngress struct {
 	config TxQUICConfig
 	txpool *core.TxPool
@@ -94,8 +102,8 @@ type TxQUICIngress struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	listener    *quic.Listener
-	http3Server *http3.Server
+	listener     *quic.Listener
+	http3Server  *http3.Server
 	http3Handler http.Handler
 
 	allowNets []*net.IPNet
@@ -108,7 +116,8 @@ type TxQUICIngress struct {
 	rateMu  sync.Mutex
 	buckets map[string]*txQUICRateBucket
 
-	bridgeQueue chan txQUICBridgeItem
+	bridgeQueue    chan txQUICBridgeItem
+	admissionQueue chan txQUICAdmissionItem
 
 	outboundNonce uint64
 }
@@ -204,6 +213,8 @@ func NewTxQUICIngress(config TxQUICConfig, txpool *core.TxPool) *TxQUICIngress {
 	}
 	if config.BridgeEnabled {
 		q.bridgeQueue = make(chan txQUICBridgeItem, config.BridgeQueueSize)
+		q.admissionQueue = make(chan txQUICAdmissionItem, config.BridgeQueueSize)
+		core.SetCommonRPCAdmissionDedicatedRelay(q.ForwardAdmissions)
 	}
 	q.parseAllowlist()
 	q.parseSigners()
@@ -332,7 +343,25 @@ func (q *TxQUICIngress) ForwardLocalTxs(txs []*types.Transaction, am *accounts.M
 		case q.bridgeQueue <- txQUICBridgeItem{tx: tx, am: am}:
 		default:
 			txQUICIngressRejectedMeter.Mark(1)
-			log.Warn("TxQUIC bridge queue full, dropping forward only", "hash", tx.Hash(), "queue", q.config.BridgeQueueSize)
+			log.Warn("TxQUIC bridge queue full, dropping tx forward only", "hash", tx.Hash(), "queue", q.config.BridgeQueueSize)
+		}
+	}
+}
+
+func (q *TxQUICIngress) ForwardAdmissions(admissions []*types.CommonTxAdmission) {
+	if q == nil || !q.config.BridgeEnabled || len(admissions) == 0 || q.admissionQueue == nil {
+		return
+	}
+	for _, admission := range admissions {
+		if admission == nil {
+			continue
+		}
+		copy := copyCommonTxAdmissionForQUIC(admission)
+		select {
+		case q.admissionQueue <- txQUICAdmissionItem{admission: copy}:
+		default:
+			txQUICIngressRejectedMeter.Mark(1)
+			log.Warn("TxQUIC admission queue full, dropping admission forward only", "tx", admission.TxHash, "miner", admission.Miner, "queue", q.config.BridgeQueueSize)
 		}
 	}
 }
@@ -341,9 +370,13 @@ func (q *TxQUICIngress) startBridgeWorkers() {
 	if q.bridgeQueue == nil {
 		q.bridgeQueue = make(chan txQUICBridgeItem, q.config.BridgeQueueSize)
 	}
+	if q.admissionQueue == nil {
+		q.admissionQueue = make(chan txQUICAdmissionItem, q.config.BridgeQueueSize)
+	}
 	for i := 0; i < q.config.BridgeWorkers; i++ {
-		q.wg.Add(1)
+		q.wg.Add(2)
 		go q.bridgeWorker(i)
+		go q.admissionWorker(i)
 	}
 }
 
@@ -383,8 +416,40 @@ func (q *TxQUICIngress) bridgeWorker(id int) {
 	}
 }
 
+func (q *TxQUICIngress) admissionWorker(id int) {
+	defer q.wg.Done()
+	ticker := time.NewTicker(q.config.BridgeBatchInterval)
+	defer ticker.Stop()
+	batch := make([]*types.CommonTxAdmission, 0, q.config.MaxTxsPerBatch)
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		admissions := append([]*types.CommonTxAdmission(nil), batch...)
+		batch = batch[:0]
+		q.forwardAdmissionBatch(admissions)
+	}
+	for {
+		select {
+		case <-q.ctx.Done():
+			flush()
+			return
+		case item := <-q.admissionQueue:
+			if item.admission == nil {
+				continue
+			}
+			batch = append(batch, item.admission)
+			if len(batch) >= q.config.MaxTxsPerBatch {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		}
+	}
+}
+
 func (q *TxQUICIngress) forwardBridgeBatch(txs []*types.Transaction, am *accounts.Manager) {
-	payload, err := q.encodeOutboundPayload(txs, am)
+	payload, err := q.encodeTxPayload(txs, am)
 	if err != nil {
 		log.Debug("TxQUIC bridge encode failed", "err", err, "txs", len(txs))
 		return
@@ -393,11 +458,32 @@ func (q *TxQUICIngress) forwardBridgeBatch(txs []*types.Transaction, am *account
 	if forwarded > 0 {
 		txQUICIngressForwardMeter.Mark(int64(forwarded))
 	}
-	log.Debug("TxQUIC bridge forwarded batch", "txs", len(txs), "forwarded", forwarded)
+	log.Debug("TxQUIC bridge forwarded tx batch", "txs", len(txs), "forwarded", forwarded)
 }
 
-func (q *TxQUICIngress) encodeOutboundPayload(txs []*types.Transaction, am *accounts.Manager) ([]byte, error) {
-	if !q.config.RequireAuth {
+func (q *TxQUICIngress) forwardAdmissionBatch(admissions []*types.CommonTxAdmission) {
+	payload, err := q.encodeAdmissionPayload(admissions)
+	if err != nil {
+		log.Debug("TxQUIC admission encode failed", "err", err, "admissions", len(admissions))
+		return
+	}
+	forwarded := q.routePayload(payload)
+	if forwarded > 0 {
+		txQUICIngressForwardMeter.Mark(int64(forwarded))
+	}
+	log.Debug("TxQUIC bridge forwarded admission batch", "admissions", len(admissions), "forwarded", forwarded)
+}
+
+func (q *TxQUICIngress) encodeTxPayload(txs []*types.Transaction, am *accounts.Manager) ([]byte, error) {
+	return q.encodeOutboundPacket(txs, nil, am)
+}
+
+func (q *TxQUICIngress) encodeAdmissionPayload(admissions []*types.CommonTxAdmission) ([]byte, error) {
+	return q.encodeOutboundPacket(nil, admissions, nil)
+}
+
+func (q *TxQUICIngress) encodeOutboundPacket(txs []*types.Transaction, admissions []*types.CommonTxAdmission, am *accounts.Manager) ([]byte, error) {
+	if !q.config.RequireAuth && len(admissions) == 0 {
 		return rlp.EncodeToBytes(txs)
 	}
 	sender := bftview.GetServerCoinBase()
@@ -405,14 +491,18 @@ func (q *TxQUICIngress) encodeOutboundPayload(txs []*types.Transaction, am *acco
 		return nil, fmt.Errorf("txquic bridge signer coinbase is empty")
 	}
 	if am == nil {
+		am = firstAvailableAccountManager()
+	}
+	if am == nil {
 		return nil, fmt.Errorf("txquic bridge account manager is nil")
 	}
 	pkt := &txQUICPacket{
-		Version:   txQUICPacketV1,
-		Sender:    sender,
-		Nonce:     atomic.AddUint64(&q.outboundNonce, 1),
-		Timestamp: uint64(time.Now().Unix()),
-		Txs:       txs,
+		Version:    txQUICPacketV1,
+		Sender:     sender,
+		Nonce:      atomic.AddUint64(&q.outboundNonce, 1),
+		Timestamp:  uint64(time.Now().Unix()),
+		Txs:        txs,
+		Admissions: admissions,
 	}
 	payload, err := pkt.signingPayload()
 	if err != nil {
@@ -430,6 +520,8 @@ func (q *TxQUICIngress) encodeOutboundPayload(txs []*types.Transaction, am *acco
 	pkt.Signature = sig
 	return rlp.EncodeToBytes(pkt)
 }
+
+func firstAvailableAccountManager() *accounts.Manager { return nil }
 
 func (q *TxQUICIngress) startHTTP3RPC() error {
 	if !q.config.HTTP3Enabled || q.http3Handler == nil {
@@ -536,49 +628,53 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 		return
 	}
 
-	txs, signed, signer, err := q.decodeAndAuthenticate(payload)
+	txs, admissions, signed, signer, err := q.decodeAndAuthenticate(payload)
 	if err != nil {
 		txQUICIngressAuthFailMeter.Mark(1)
 		ack.Errors = append(ack.Errors, err.Error())
 		q.writeAck(stream, ack)
 		return
 	}
-	if len(txs) == 0 {
-		ack.Errors = append(ack.Errors, "empty tx batch")
+	if len(txs) == 0 && len(admissions) == 0 {
+		ack.Errors = append(ack.Errors, "empty txquic payload")
 		q.writeAck(stream, ack)
 		return
 	}
-	if len(txs) > q.config.MaxTxsPerBatch {
+	if len(txs) > q.config.MaxTxsPerBatch || len(admissions) > q.config.MaxTxsPerBatch {
 		ack.Errors = append(ack.Errors, "batch too large")
 		q.writeAck(stream, ack)
 		return
 	}
-	if !q.takeTokens(remote, len(txs)) {
+	if !q.takeTokens(remote, len(txs)+len(admissions)) {
 		ack.Errors = append(ack.Errors, "rate limited")
 		q.writeAck(stream, ack)
 		return
 	}
 
 	ack.Forwarded = q.routePayload(payload)
-	accepted, rejected, hashes := q.insertLocal(txs)
-	ack.Accepted = accepted
-	ack.Rejected = rejected
+	acceptedTx, rejectedTx, hashes := q.insertLocal(txs)
+	acceptedAdmission, rejectedAdmission := q.insertAdmissions(admissions)
+	ack.Accepted = acceptedTx + acceptedAdmission
+	ack.Rejected = rejectedTx + rejectedAdmission
 	ack.Hashes = hashes
 
-	if accepted > 0 {
-		txQUICIngressAcceptedMeter.Mark(int64(accepted))
+	if ack.Accepted > 0 {
+		txQUICIngressAcceptedMeter.Mark(int64(ack.Accepted))
 	}
-	if rejected > 0 {
-		txQUICIngressRejectedMeter.Mark(int64(rejected))
+	if ack.Rejected > 0 {
+		txQUICIngressRejectedMeter.Mark(int64(ack.Rejected))
 	}
 	if ack.Forwarded > 0 {
 		txQUICIngressForwardMeter.Mark(int64(ack.Forwarded))
 	}
-	log.Debug("QUIC tx ingress processed", "remote", remote, "signed", signed, "signer", signer, "accepted", accepted, "rejected", rejected, "forwarded", ack.Forwarded)
+	log.Debug("QUIC ingress processed", "remote", remote, "signed", signed, "signer", signer, "txs", len(txs), "admissions", len(admissions), "accepted", ack.Accepted, "rejected", ack.Rejected, "forwarded", ack.Forwarded)
 	q.writeAck(stream, ack)
 }
 
 func (q *TxQUICIngress) insertLocal(txs []*types.Transaction) (int, int, []common.Hash) {
+	if len(txs) == 0 {
+		return 0, 0, nil
+	}
 	mode := strings.ToLower(q.config.RoutingMode)
 	if mode == "leader-only" && len(q.config.LeaderEndpoints) > 0 {
 		return 0, 0, nil
@@ -595,6 +691,24 @@ func (q *TxQUICIngress) insertLocal(txs []*types.Transaction) (int, int, []commo
 		}
 	}
 	return accepted, rejected, hashes
+}
+
+func (q *TxQUICIngress) insertAdmissions(admissions []*types.CommonTxAdmission) (int, int) {
+	accepted, rejected := 0, 0
+	for _, admission := range admissions {
+		if admission == nil {
+			continue
+		}
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+			rejected++
+			log.Warn("Rejected invalid TxQUIC admission", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
+			continue
+		}
+		if core.StoreCommonRPCAdmission(admission) {
+			accepted++
+		}
+	}
+	return accepted, rejected
 }
 
 func (q *TxQUICIngress) routePayload(payload []byte) int {
@@ -633,24 +747,24 @@ func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
 	return err
 }
 
-func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transaction, bool, common.Address, error) {
+func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transaction, []*types.CommonTxAdmission, bool, common.Address, error) {
 	var pkt txQUICPacket
-	if err := rlp.DecodeBytes(payload, &pkt); err == nil && pkt.Version == txQUICPacketV1 && len(pkt.Txs) > 0 {
+	if err := rlp.DecodeBytes(payload, &pkt); err == nil && pkt.Version == txQUICPacketV1 && (len(pkt.Txs) > 0 || len(pkt.Admissions) > 0) {
 		signer, err := q.verifyPacket(&pkt)
-		return pkt.Txs, true, signer, err
+		return pkt.Txs, pkt.Admissions, true, signer, err
 	}
 	if q.config.RequireAuth {
-		return nil, false, common.Address{}, fmt.Errorf("unsigned txquic payload rejected")
+		return nil, nil, false, common.Address{}, fmt.Errorf("unsigned txquic payload rejected")
 	}
 	var batch []*types.Transaction
 	if err := rlp.DecodeBytes(payload, &batch); err == nil {
-		return batch, false, common.Address{}, nil
+		return batch, nil, false, common.Address{}, nil
 	}
 	var single types.Transaction
 	if err := rlp.DecodeBytes(payload, &single); err != nil {
-		return nil, false, common.Address{}, err
+		return nil, nil, false, common.Address{}, err
 	}
-	return []*types.Transaction{&single}, false, common.Address{}, nil
+	return []*types.Transaction{&single}, nil, false, common.Address{}, nil
 }
 
 func (q *TxQUICIngress) verifyPacket(pkt *txQUICPacket) (common.Address, error) {
@@ -688,7 +802,15 @@ func (p *txQUICPacket) signingPayload() ([]byte, error) {
 			hashes = append(hashes, tx.Hash())
 		}
 	}
-	return rlp.EncodeToBytes(txQUICSigningData{Version: p.Version, Sender: p.Sender, Nonce: p.Nonce, Timestamp: p.Timestamp, TxHashes: hashes})
+	admissionHashes := make([]common.Hash, 0, len(p.Admissions))
+	admissionMiners := make([]common.Address, 0, len(p.Admissions))
+	for _, admission := range p.Admissions {
+		if admission != nil {
+			admissionHashes = append(admissionHashes, admission.TxHash)
+			admissionMiners = append(admissionMiners, admission.Miner)
+		}
+	}
+	return rlp.EncodeToBytes(txQUICSigningData{Version: p.Version, Sender: p.Sender, Nonce: p.Nonce, Timestamp: p.Timestamp, TxHashes: hashes, AdmissionHashes: admissionHashes, AdmissionMiners: admissionMiners})
 }
 
 func (p *txQUICPacket) signingHash() common.Hash {
@@ -827,6 +949,20 @@ func (q *TxQUICIngress) takeTokens(addr net.Addr, n int) bool {
 	}
 	b.tokens -= n
 	return true
+}
+
+func copyCommonTxAdmissionForQUIC(admission *types.CommonTxAdmission) *types.CommonTxAdmission {
+	if admission == nil {
+		return nil
+	}
+	cpy := *admission
+	if admission.ChainID != nil {
+		cpy.ChainID = new(mathbig.Int).Set(admission.ChainID)
+	}
+	if len(admission.Signature) > 0 {
+		cpy.Signature = append([]byte(nil), admission.Signature...)
+	}
+	return &cpy
 }
 
 func txQUICEndpointFromCommitteeAddress(address string, offset int) (string, bool) {
