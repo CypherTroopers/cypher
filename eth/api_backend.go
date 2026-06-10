@@ -328,10 +328,6 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction,
 		return err
 	}
 
-	if b.shouldRecordCommonRPCAdmission() {
-		core.RecordCommonRPCAdmission(signedTx.Hash(), bftview.GetServerCoinBase(), b.ChainConfig().ChainID)
-	}
-
 	if b.eth.txQUICIngress != nil {
 		b.eth.txQUICIngress.ForwardLocalTxs([]*types.Transaction{signedTx}, b.eth.accountManager)
 	}
