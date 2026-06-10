@@ -323,11 +323,9 @@ jobs:
     runs-on: windows-2022
 
     env:
-      GOPATH: ${{ github.workspace }}\go
-      GO111MODULE: 'off'
       CGO_ENABLED: '1'
-      CC: gcc
-      CXX: g++
+      CC: clang
+      CXX: clang++
 
     steps:
       - name: Enable Git long paths
@@ -340,12 +338,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
-          path: go/src/github.com/cypherium/cypher
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.2'
-          cache: false
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
@@ -355,64 +353,85 @@ jobs:
           path-type: inherit
           install: >-
             mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-binutils
             mingw-w64-x86_64-gmp
             mingw-w64-x86_64-openssl
             make
             git
             python
 
-      - name: Build cypher.exe
+      - name: Build herumi BLS and MCL C libs for Windows
         shell: msys2 {0}
-        working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
         run: |
           set -e
 
-          mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
-          mkdir -p "$GOPATH/src/github.com/shirou"
-          mkdir -p "$GOPATH/src/golang.org/x"
-          mkdir -p "$GOPATH/src/github.com/go-sourcemap"
-          mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
-          mkdir -p "$GOPATH/src/github.com/go-ole"
-          mkdir -p "$GOPATH/src/github.com/dlclark"
+          export CC=clang
+          export CXX=clang++
 
-          git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
-          git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
-          git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
+          rm -rf /tmp/herumi
+          mkdir -p /tmp/herumi
 
-          git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
-          git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
-          git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
-          git clone --depth 1 https://github.com/dlclark/regexp2.git "$GOPATH/src/github.com/dlclark/regexp2"
+          git clone --depth 1 --recursive https://github.com/herumi/bls.git /tmp/herumi/bls
 
-          rm -rf "$GOPATH/src/github.com/herumi"
-          mkdir -p "$GOPATH/src/github.com/herumi"
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
-
-          cd "$GOPATH/src/github.com/herumi/bls"
+          cd /tmp/herumi/bls
           git submodule update --init --recursive
 
-          cd "$GOPATH/src/github.com/herumi/bls/mcl"
+          cd /tmp/herumi/bls/mcl
           rm -f src/bint_switch.hpp src/llvm_proto.hpp
           python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
 
-          cd "$GOPATH/src/github.com/herumi/bls"
+          make -j4 OS=mingw64 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libmcl.a
+          make -j4 OS=mingw64 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libmclbn256.a
+
+          echo "Checking required mcl C API symbols"
+          nm -g lib/libmclbn256.a | grep 'mclBn_precomputeG2'
+          nm -g lib/libmclbn256.a | grep 'mclBn_precomputedMillerLoop'
+          nm -g lib/libmclbn256.a | grep 'mclBn_precomputedMillerLoop2'
+
+          cd /tmp/herumi/bls
           rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+          make -j4 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
 
-          cd "${{ github.workspace }}\go\src\github.com\cypherium\cypher"
+          mkdir -p crypto/bls/lib/win
 
-          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/win/libbls256.a
-          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/win/libmcl.a
+          cp /tmp/herumi/bls/lib/libbls256.a crypto/bls/lib/win/libbls256.a
+          cp /tmp/herumi/bls/mcl/lib/libmcl.a crypto/bls/lib/win/libmcl.a
+          cp /tmp/herumi/bls/mcl/lib/libmclbn256.a crypto/bls/lib/win/libmclbn256.a
+
           cp crypto/bls/lib/win/* crypto/bls/lib/
+
+          ls -lah crypto/bls/lib/
+
+      - name: Download Go modules
+        shell: msys2 {0}
+        run: |
+          set -e
+
+          go env -w GO111MODULE=on
+          go mod download
+
+      - name: Build cypher.exe
+        shell: msys2 {0}
+        run: |
+          set -e
 
           COMMIT=$(git rev-parse HEAD)
           DATE=$(date +%Y%m%d)
 
-          go env -w GO111MODULE=off
+          export GO111MODULE=on
+          export GOOS=windows
+          export GOARCH=amd64
+          export CGO_ENABLED=1
+          export CC=clang
+          export CXX=clang++
 
-          go build -trimpath -v \
-            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
+          export CGO_LDFLAGS="-L$(pwd)/crypto/bls/lib -lmclbn256"
+
+          mkdir -p build/bin
+
+          go build -mod=mod -trimpath -v \
+            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase,--disable-high-entropy-va" \
             -o build/bin/cypher.exe \
             ./cmd/cypher
 
@@ -421,16 +440,19 @@ jobs:
           cp /mingw64/bin/libstdc++-6.dll build/bin/ || true
           cp /mingw64/bin/libgcc_s_seh-1.dll build/bin/ || true
           cp /mingw64/bin/libwinpthread-1.dll build/bin/ || true
+          cp /mingw64/bin/libc++.dll build/bin/ || true
+          cp /mingw64/bin/libunwind.dll build/bin/ || true
 
-          ./build/bin/cypher.exe version
+          ls -lah build/bin/cypher.exe
+          file build/bin/cypher.exe || true
 
       - name: Upload Windows binary
         uses: actions/upload-artifact@v4
         with:
           name: cypher-windows
           path: |
-            ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\cypher.exe
-            ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\*.dll
+            build/bin/cypher.exe
+            build/bin/*.dll
 
   commit-binaries:
     name: Commit binaries
