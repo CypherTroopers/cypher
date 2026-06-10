@@ -594,11 +594,13 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 	payload, err := io.ReadAll(io.LimitReader(stream, q.config.MaxPayload+1))
 	if err != nil {
 		ack.Errors = append(ack.Errors, err.Error())
+		log.Warn("TxQUIC stream read failed", "remote", remote, "err", err)
 		q.writeAck(stream, ack)
 		return
 	}
 	if int64(len(payload)) > q.config.MaxPayload {
 		ack.Errors = append(ack.Errors, "payload too large")
+		log.Warn("TxQUIC payload too large", "remote", remote, "payload", len(payload), "limit", q.config.MaxPayload)
 		q.writeAck(stream, ack)
 		return
 	}
@@ -606,21 +608,25 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 	if err != nil {
 		txQUICIngressAuthFailMeter.Mark(1)
 		ack.Errors = append(ack.Errors, err.Error())
+		log.Warn("TxQUIC decode/auth failed", "remote", remote, "payload", len(payload), "err", err)
 		q.writeAck(stream, ack)
 		return
 	}
 	if len(txs) == 0 && len(admissions) == 0 {
 		ack.Errors = append(ack.Errors, "empty txquic payload")
+		log.Warn("TxQUIC empty payload", "remote", remote, "payload", len(payload))
 		q.writeAck(stream, ack)
 		return
 	}
 	if len(txs) > q.config.MaxTxsPerBatch || len(admissions) > q.config.MaxTxsPerBatch {
 		ack.Errors = append(ack.Errors, "batch too large")
+		log.Warn("TxQUIC batch too large", "remote", remote, "txs", len(txs), "admissions", len(admissions), "limit", q.config.MaxTxsPerBatch)
 		q.writeAck(stream, ack)
 		return
 	}
 	if !q.takeTokens(remote, len(txs)+len(admissions)) {
 		ack.Errors = append(ack.Errors, "rate limited")
+		log.Warn("TxQUIC rate limited", "remote", remote, "txs", len(txs), "admissions", len(admissions))
 		q.writeAck(stream, ack)
 		return
 	}
@@ -694,17 +700,20 @@ func (q *TxQUICIngress) routePayload(payload []byte) int {
 	}
 	forwarded := 0
 	for _, endpoint := range endpoints {
-		if q.forwardPayload(endpoint, payload) == nil {
-			forwarded++
+		if err := q.forwardPayload(endpoint, payload); err != nil {
+			log.Debug("TxQUIC forward failed", "endpoint", endpoint, "err", err)
+			continue
 		}
+		forwarded++
 	}
 	return forwarded
 }
 
 func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
-	ctx, cancel := context.WithTimeout(q.ctx, q.config.ForwardTimeout)
+	timeout := endpointForwardTimeout(q.config.ForwardTimeout, q.config.ReadTimeout, q.config.WriteTimeout)
+	ctx, cancel := context.WithTimeout(q.ctx, timeout)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, endpoint, q.clientTLSConfig(), &quic.Config{MaxIdleTimeout: q.config.ForwardTimeout})
+	conn, err := quic.DialAddr(ctx, endpoint, q.clientTLSConfig(), &quic.Config{MaxIdleTimeout: timeout})
 	if err != nil {
 		return err
 	}
@@ -713,10 +722,43 @@ func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
 	if err != nil {
 		return err
 	}
-	defer stream.Close()
 	_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
-	_, err = stream.Write(payload)
-	return err
+	if _, err := stream.Write(payload); err != nil {
+		_ = stream.Close()
+		return err
+	}
+	if err := stream.Close(); err != nil {
+		return err
+	}
+	if !q.config.Ack {
+		return nil
+	}
+	_ = stream.SetReadDeadline(time.Now().Add(q.config.ReadTimeout))
+	var ack txQUICAck
+	if err := rlp.Decode(stream, &ack); err != nil {
+		return fmt.Errorf("txquic ack read failed from %s: %w", endpoint, err)
+	}
+	if len(ack.Errors) > 0 {
+		return fmt.Errorf("txquic ack errors from %s: %v", endpoint, ack.Errors)
+	}
+	if ack.Accepted == 0 && ack.Forwarded == 0 {
+		return fmt.Errorf("txquic ack no accepted/forwarded from %s: accepted=%d rejected=%d forwarded=%d", endpoint, ack.Accepted, ack.Rejected, ack.Forwarded)
+	}
+	return nil
+}
+
+func endpointForwardTimeout(forwardTimeout time.Duration, readTimeout time.Duration, writeTimeout time.Duration) time.Duration {
+	total := forwardTimeout
+	if total <= 0 {
+		total = 3 * time.Second
+	}
+	if readTimeout > 0 {
+		total += readTimeout
+	}
+	if writeTimeout > 0 {
+		total += writeTimeout
+	}
+	return total
 }
 
 func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transaction, []*types.CommonTxAdmission, bool, common.Address, error) {
