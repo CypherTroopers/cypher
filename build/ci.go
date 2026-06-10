@@ -1,3 +1,8 @@
+//go:build ignore
+//go:build none
+// +build ignore
+// +build none
+
 // Copyright 2016 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
@@ -13,9 +18,6 @@
 //
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
-
-//go:build none
-// +build none
 
 /*
 The ci command is called from Continuous Integration scripts.

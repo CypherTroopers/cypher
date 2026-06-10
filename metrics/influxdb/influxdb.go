@@ -1,256 +1,127 @@
 package influxdb
 
 import (
-	"fmt"
-	uurl "net/url"
+	stdlog "log"
 	"time"
 
-	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/metrics"
-	"github.com/influxdata/influxdb/client"
+	client "github.com/influxdata/influxdb1-client/v2"
 )
 
-type reporter struct {
-	reg      metrics.Registry
-	interval time.Duration
-
-	url       uurl.URL
-	database  string
-	username  string
-	password  string
-	namespace string
-	tags      map[string]string
-
-	client *client.Client
-
-	cache map[string]int64
+func InfluxDB(r metrics.Registry, d time.Duration, endpoint, database, username, password string) {
+	InfluxDBWithTags(r, d, endpoint, database, username, password, "cypher.", nil)
 }
 
-// InfluxDB starts a InfluxDB reporter which will post the from the given metrics.Registry at each d interval.
-func InfluxDB(r metrics.Registry, d time.Duration, url, database, username, password, namespace string) {
-	InfluxDBWithTags(r, d, url, database, username, password, namespace, nil)
-}
-
-// InfluxDBWithTags starts a InfluxDB reporter which will post the from the given metrics.Registry at each d interval with the specified tags
-func InfluxDBWithTags(r metrics.Registry, d time.Duration, url, database, username, password, namespace string, tags map[string]string) {
-	u, err := uurl.Parse(url)
-	if err != nil {
-		log.Warn("Unable to parse InfluxDB", "url", url, "err", err)
-		return
-	}
-
-	rep := &reporter{
-		reg:       r,
-		interval:  d,
-		url:       *u,
-		database:  database,
-		username:  username,
-		password:  password,
-		namespace: namespace,
-		tags:      tags,
-		cache:     make(map[string]int64),
-	}
-	if err := rep.makeClient(); err != nil {
-		log.Warn("Unable to make InfluxDB client", "err", err)
-		return
-	}
-
-	rep.run()
-}
-
-// InfluxDBWithTagsOnce runs once an InfluxDB reporter and post the given metrics.Registry with the specified tags
-func InfluxDBWithTagsOnce(r metrics.Registry, url, database, username, password, namespace string, tags map[string]string) error {
-	u, err := uurl.Parse(url)
-	if err != nil {
-		return fmt.Errorf("unable to parse InfluxDB. url: %s, err: %v", url, err)
-	}
-
-	rep := &reporter{
-		reg:       r,
-		url:       *u,
-		database:  database,
-		username:  username,
-		password:  password,
-		namespace: namespace,
-		tags:      tags,
-		cache:     make(map[string]int64),
-	}
-	if err := rep.makeClient(); err != nil {
-		return fmt.Errorf("unable to make InfluxDB client. err: %v", err)
-	}
-
-	if err := rep.send(); err != nil {
-		return fmt.Errorf("unable to send to InfluxDB. err: %v", err)
-	}
-
-	return nil
-}
-
-func (r *reporter) makeClient() (err error) {
-	r.client, err = client.NewClient(client.Config{
-		URL:      r.url,
-		Username: r.username,
-		Password: r.password,
-		Timeout:  10 * time.Second,
+func InfluxDBWithTags(r metrics.Registry, d time.Duration, endpoint, database, username, password string, namespace string, tags map[string]string) {
+	c, err := client.NewHTTPClient(client.HTTPConfig{
+		Addr:     endpoint,
+		Username: username,
+		Password: password,
 	})
+	if err != nil {
+		stdlog.Printf("influxdb: failed to create client: %v", err)
+		return
+	}
+	defer c.Close()
 
-	return
-}
+	ticker := time.NewTicker(d)
+	defer ticker.Stop()
 
-func (r *reporter) run() {
-	intervalTicker := time.Tick(r.interval)
-	pingTicker := time.Tick(time.Second * 5)
-
-	for {
-		select {
-		case <-intervalTicker:
-			if err := r.send(); err != nil {
-				log.Warn("Unable to send to InfluxDB", "err", err)
-			}
-		case <-pingTicker:
-			_, _, err := r.client.Ping()
-			if err != nil {
-				log.Warn("Got error while sending a ping to InfluxDB, trying to recreate client", "err", err)
-
-				if err = r.makeClient(); err != nil {
-					log.Warn("Unable to make InfluxDB client", "err", err)
-				}
-			}
+	for range ticker.C {
+		if err := writeRegistry(c, r, database, namespace, tags); err != nil {
+			stdlog.Printf("influxdb: failed to write metrics: %v", err)
 		}
 	}
 }
 
-func (r *reporter) send() error {
-	var pts []client.Point
-
-	r.reg.Each(func(name string, i interface{}) {
-		now := time.Now()
-		namespace := r.namespace
-
-		switch metric := i.(type) {
-		case metrics.Counter:
-			v := metric.Count()
-			l := r.cache[name]
-			pts = append(pts, client.Point{
-				Measurement: fmt.Sprintf("%s%s.count", namespace, name),
-				Tags:        r.tags,
-				Fields: map[string]interface{}{
-					"value": v - l,
-				},
-				Time: now,
-			})
-			r.cache[name] = v
-		case metrics.Gauge:
-			ms := metric.Snapshot()
-			pts = append(pts, client.Point{
-				Measurement: fmt.Sprintf("%s%s.gauge", namespace, name),
-				Tags:        r.tags,
-				Fields: map[string]interface{}{
-					"value": ms.Value(),
-				},
-				Time: now,
-			})
-		case metrics.GaugeFloat64:
-			ms := metric.Snapshot()
-			pts = append(pts, client.Point{
-				Measurement: fmt.Sprintf("%s%s.gauge", namespace, name),
-				Tags:        r.tags,
-				Fields: map[string]interface{}{
-					"value": ms.Value(),
-				},
-				Time: now,
-			})
-		case metrics.Histogram:
-			ms := metric.Snapshot()
-			ps := ms.Percentiles([]float64{0.5, 0.75, 0.95, 0.99, 0.999, 0.9999})
-			pts = append(pts, client.Point{
-				Measurement: fmt.Sprintf("%s%s.histogram", namespace, name),
-				Tags:        r.tags,
-				Fields: map[string]interface{}{
-					"count":    ms.Count(),
-					"max":      ms.Max(),
-					"mean":     ms.Mean(),
-					"min":      ms.Min(),
-					"stddev":   ms.StdDev(),
-					"variance": ms.Variance(),
-					"p50":      ps[0],
-					"p75":      ps[1],
-					"p95":      ps[2],
-					"p99":      ps[3],
-					"p999":     ps[4],
-					"p9999":    ps[5],
-				},
-				Time: now,
-			})
-		case metrics.Meter:
-			ms := metric.Snapshot()
-			pts = append(pts, client.Point{
-				Measurement: fmt.Sprintf("%s%s.meter", namespace, name),
-				Tags:        r.tags,
-				Fields: map[string]interface{}{
-					"count": ms.Count(),
-					"m1":    ms.Rate1(),
-					"m5":    ms.Rate5(),
-					"m15":   ms.Rate15(),
-					"mean":  ms.RateMean(),
-				},
-				Time: now,
-			})
-		case metrics.Timer:
-			ms := metric.Snapshot()
-			ps := ms.Percentiles([]float64{0.5, 0.75, 0.95, 0.99, 0.999, 0.9999})
-			pts = append(pts, client.Point{
-				Measurement: fmt.Sprintf("%s%s.timer", namespace, name),
-				Tags:        r.tags,
-				Fields: map[string]interface{}{
-					"count":    ms.Count(),
-					"max":      ms.Max(),
-					"mean":     ms.Mean(),
-					"min":      ms.Min(),
-					"stddev":   ms.StdDev(),
-					"variance": ms.Variance(),
-					"p50":      ps[0],
-					"p75":      ps[1],
-					"p95":      ps[2],
-					"p99":      ps[3],
-					"p999":     ps[4],
-					"p9999":    ps[5],
-					"m1":       ms.Rate1(),
-					"m5":       ms.Rate5(),
-					"m15":      ms.Rate15(),
-					"meanrate": ms.RateMean(),
-				},
-				Time: now,
-			})
-		case metrics.ResettingTimer:
-			t := metric.Snapshot()
-
-			if len(t.Values()) > 0 {
-				ps := t.Percentiles([]float64{50, 95, 99})
-				val := t.Values()
-				pts = append(pts, client.Point{
-					Measurement: fmt.Sprintf("%s%s.span", namespace, name),
-					Tags:        r.tags,
-					Fields: map[string]interface{}{
-						"count": len(val),
-						"max":   val[len(val)-1],
-						"mean":  t.Mean(),
-						"min":   val[0],
-						"p50":   ps[0],
-						"p95":   ps[1],
-						"p99":   ps[2],
-					},
-					Time: now,
-				})
-			}
-		}
+func writeRegistry(c client.Client, r metrics.Registry, database string, namespace string, tags map[string]string) error {
+	bp, err := client.NewBatchPoints(client.BatchPointsConfig{
+		Database:  database,
+		Precision: "ns",
 	})
-
-	bps := client.BatchPoints{
-		Points:   pts,
-		Database: r.database,
+	if err != nil {
+		return err
 	}
 
-	_, err := r.client.Write(bps)
-	return err
+	now := time.Now()
+
+	r.Each(func(name string, item interface{}) {
+		fields := metricFields(item)
+		if len(fields) == 0 {
+			return
+		}
+
+		point, err := client.NewPoint(namespace+name, copyTags(tags), fields, now)
+		if err != nil {
+			return
+		}
+		bp.AddPoint(point)
+	})
+
+	return c.Write(bp)
+}
+
+func copyTags(tags map[string]string) map[string]string {
+	if len(tags) == 0 {
+		return nil
+	}
+	copied := make(map[string]string, len(tags))
+	for k, v := range tags {
+		copied[k] = v
+	}
+	return copied
+}
+
+func metricFields(item interface{}) map[string]interface{} {
+	fields := make(map[string]interface{})
+
+	switch m := item.(type) {
+	case metrics.Counter:
+		fields["count"] = m.Count()
+
+	case metrics.Gauge:
+		fields["value"] = m.Value()
+
+	case metrics.GaugeFloat64:
+		fields["value"] = m.Value()
+
+	case metrics.Histogram:
+		ps := m.Percentiles([]float64{0.50, 0.75, 0.95, 0.99, 0.999})
+		fields["count"] = m.Count()
+		fields["min"] = m.Min()
+		fields["max"] = m.Max()
+		fields["mean"] = m.Mean()
+		fields["stddev"] = m.StdDev()
+		fields["p50"] = ps[0]
+		fields["p75"] = ps[1]
+		fields["p95"] = ps[2]
+		fields["p99"] = ps[3]
+		fields["p999"] = ps[4]
+
+	case metrics.Meter:
+		fields["count"] = m.Count()
+		fields["m1"] = m.Rate1()
+		fields["m5"] = m.Rate5()
+		fields["m15"] = m.Rate15()
+		fields["mean"] = m.RateMean()
+
+	case metrics.Timer:
+		ps := m.Percentiles([]float64{0.50, 0.75, 0.95, 0.99, 0.999})
+		fields["count"] = m.Count()
+		fields["min"] = m.Min()
+		fields["max"] = m.Max()
+		fields["mean"] = m.Mean()
+		fields["stddev"] = m.StdDev()
+		fields["p50"] = ps[0]
+		fields["p75"] = ps[1]
+		fields["p95"] = ps[2]
+		fields["p99"] = ps[3]
+		fields["p999"] = ps[4]
+		fields["m1"] = m.Rate1()
+		fields["m5"] = m.Rate5()
+		fields["m15"] = m.Rate15()
+		fields["rate_mean"] = m.RateMean()
+	}
+
+	return fields
 }
