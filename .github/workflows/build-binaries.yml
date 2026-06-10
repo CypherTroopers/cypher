@@ -230,23 +230,14 @@ jobs:
 
           file build/bin/cypher
           file build/bin/cypher-linux-amd64
-
-      - name: Upload Linux binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypher-linux-amd64
-          path: |
-            build/bin/cypher
-            build/bin/cypher-linux-amd64
-
   build-windows:
     name: Build Windows
     runs-on: windows-2022
 
     env:
       CGO_ENABLED: '1'
-      CC: gcc
-      CXX: g++
+      CC: clang
+      CXX: clang++
 
     steps:
       - name: Enable Git long paths
@@ -274,27 +265,55 @@ jobs:
           path-type: inherit
           install: >-
             mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-clang
+            mingw-w64-x86_64-binutils
             mingw-w64-x86_64-gmp
             mingw-w64-x86_64-openssl
             make
             git
             python
 
-      - name: Prepare Windows native BLS libs
+      - name: Build herumi BLS and MCL C libs for Windows
         shell: msys2 {0}
         run: |
           set -e
 
-          ls -lah crypto/bls/lib/win
+          export CC=clang
+          export CXX=clang++
 
-          cp -f crypto/bls/lib/win/* crypto/bls/lib/
+          rm -rf /tmp/herumi
+          mkdir -p /tmp/herumi
+
+          git clone --depth 1 --recursive https://github.com/herumi/bls.git /tmp/herumi/bls
+
+          cd /tmp/herumi/bls
+          git submodule update --init --recursive
+
+          cd /tmp/herumi/bls/mcl
+          rm -f src/bint_switch.hpp src/llvm_proto.hpp
+          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
+
+          make -j4 OS=mingw64 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libmcl.a
+          make -j4 OS=mingw64 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libmclbn256.a
+
+          echo "Checking required mcl C API symbols"
+          nm -g lib/libmclbn256.a | grep 'mclBn_precomputeG2'
+          nm -g lib/libmclbn256.a | grep 'mclBn_precomputedMillerLoop'
+          nm -g lib/libmclbn256.a | grep 'mclBn_precomputedMillerLoop2'
+
+          cd /tmp/herumi/bls
+          rm -f obj/*.d obj/*.o lib/libbls256.a
+          make -j4 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+
+          mkdir -p crypto/bls/lib/win
+
+          cp /tmp/herumi/bls/lib/libbls256.a crypto/bls/lib/win/libbls256.a
+          cp /tmp/herumi/bls/mcl/lib/libmcl.a crypto/bls/lib/win/libmcl.a
+          cp /tmp/herumi/bls/mcl/lib/libmclbn256.a crypto/bls/lib/win/libmclbn256.a
+
+          cp crypto/bls/lib/win/* crypto/bls/lib/
 
           ls -lah crypto/bls/lib/
-
-          echo "Checking bundled Windows BLS/MCL symbols"
-          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputeG2' || true
-          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop' || true
-          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop2' || true
 
       - name: Download Go modules
         shell: msys2 {0}
@@ -316,8 +335,10 @@ jobs:
           export GOOS=windows
           export GOARCH=amd64
           export CGO_ENABLED=1
-          export CC=gcc
-          export CXX=g++
+          export CC=clang
+          export CXX=clang++
+
+          export CGO_LDFLAGS="-L$(pwd)/crypto/bls/lib -lmclbn256"
 
           mkdir -p build/bin
 
@@ -331,6 +352,8 @@ jobs:
           cp /mingw64/bin/libstdc++-6.dll build/bin/ || true
           cp /mingw64/bin/libgcc_s_seh-1.dll build/bin/ || true
           cp /mingw64/bin/libwinpthread-1.dll build/bin/ || true
+          cp /mingw64/bin/libc++.dll build/bin/ || true
+          cp /mingw64/bin/libunwind.dll build/bin/ || true
 
           ls -lah build/bin/cypher.exe
           file build/bin/cypher.exe || true
@@ -342,6 +365,14 @@ jobs:
           path: |
             build/bin/cypher.exe
             build/bin/*.dll
+      - name: Upload Linux binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypher-linux-amd64
+          path: |
+            build/bin/cypher
+            build/bin/cypher-linux-amd64
+
 
   commit-binaries:
     name: Commit binaries
