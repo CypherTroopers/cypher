@@ -86,8 +86,9 @@ type txQUICAck struct {
 }
 
 type txQUICBridgeItem struct {
-	tx *types.Transaction
-	am *accounts.Manager
+	tx        *types.Transaction
+	admission *types.CommonTxAdmission
+	am        *accounts.Manager
 }
 
 type txQUICAdmissionItem struct {
@@ -320,18 +321,41 @@ func (q *TxQUICIngress) Stop() {
 }
 
 func (q *TxQUICIngress) ForwardLocalTxs(txs []*types.Transaction, am *accounts.Manager) {
+	q.ForwardLocalTxsWithAdmissions(txs, nil, am)
+}
+
+func (q *TxQUICIngress) ForwardLocalTxsWithAdmissions(txs []*types.Transaction, admissions []*types.CommonTxAdmission, am *accounts.Manager) {
 	if q == nil || !q.config.BridgeEnabled || len(txs) == 0 || q.bridgeQueue == nil {
 		return
 	}
+
+	admissionByTx := make(map[common.Hash]*types.CommonTxAdmission)
+	for _, admission := range admissions {
+		if admission == nil {
+			continue
+		}
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+			log.Warn("Skip invalid TxQUIC admission sidecar before queue", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
+			continue
+		}
+		admissionByTx[admission.TxHash] = copyCommonTxAdmissionForQUIC(admission)
+	}
+
 	for _, tx := range txs {
 		if tx == nil {
 			continue
 		}
+		hash := tx.Hash()
+		item := txQUICBridgeItem{
+			tx:        tx,
+			admission: admissionByTx[hash],
+			am:        am,
+		}
 		select {
-		case q.bridgeQueue <- txQUICBridgeItem{tx: tx, am: am}:
+		case q.bridgeQueue <- item:
 		default:
 			txQUICIngressRejectedMeter.Mark(1)
-			log.Warn("TxQUIC bridge queue full, dropping tx forward only", "hash", tx.Hash(), "queue", q.config.BridgeQueueSize)
+			log.Warn("TxQUIC bridge queue full, dropping tx forward", "hash", hash, "hasAdmission", item.admission != nil, "queue", q.config.BridgeQueueSize)
 		}
 	}
 }
@@ -372,21 +396,28 @@ func (q *TxQUICIngress) bridgeWorker(id int) {
 	defer q.wg.Done()
 	ticker := time.NewTicker(q.config.BridgeBatchInterval)
 	defer ticker.Stop()
+
 	batch := make([]*types.Transaction, 0, q.config.MaxTxsPerBatch)
+	admissionBatch := make([]*types.CommonTxAdmission, 0, q.config.MaxTxsPerBatch)
 	var am *accounts.Manager
+
 	flush := func() {
 		if len(batch) == 0 {
 			return
 		}
 		txs := append([]*types.Transaction(nil), batch...)
+		admissions := append([]*types.CommonTxAdmission(nil), admissionBatch...)
 		batch = batch[:0]
-		q.forwardBridgeBatch(txs, am)
+		admissionBatch = admissionBatch[:0]
+		q.forwardBridgeBatch(txs, admissions, am)
 	}
+
 	for {
 		select {
 		case <-q.ctx.Done():
 			flush()
 			return
+
 		case item := <-q.bridgeQueue:
 			if item.tx == nil {
 				continue
@@ -395,9 +426,13 @@ func (q *TxQUICIngress) bridgeWorker(id int) {
 				am = item.am
 			}
 			batch = append(batch, item.tx)
+			if item.admission != nil {
+				admissionBatch = append(admissionBatch, copyCommonTxAdmissionForQUIC(item.admission))
+			}
 			if len(batch) >= q.config.MaxTxsPerBatch {
 				flush()
 			}
+
 		case <-ticker.C:
 			flush()
 		}
@@ -436,17 +471,17 @@ func (q *TxQUICIngress) admissionWorker(id int) {
 	}
 }
 
-func (q *TxQUICIngress) forwardBridgeBatch(txs []*types.Transaction, am *accounts.Manager) {
-	payload, err := q.encodeTxPayload(txs, am)
+func (q *TxQUICIngress) forwardBridgeBatch(txs []*types.Transaction, admissions []*types.CommonTxAdmission, am *accounts.Manager) {
+	payload, err := q.encodeTxPayload(txs, admissions, am)
 	if err != nil {
-		log.Debug("TxQUIC bridge encode failed", "err", err, "txs", len(txs))
+		log.Debug("TxQUIC bridge encode failed", "err", err, "txs", len(txs), "admissions", len(admissions))
 		return
 	}
 	forwarded := q.routePayload(payload)
 	if forwarded > 0 {
 		txQUICIngressForwardMeter.Mark(int64(forwarded))
 	}
-	log.Debug("TxQUIC bridge forwarded tx batch", "txs", len(txs), "forwarded", forwarded)
+	log.Debug("TxQUIC bridge forwarded tx batch", "txs", len(txs), "admissions", len(admissions), "forwarded", forwarded)
 }
 
 func (q *TxQUICIngress) forwardAdmissionBatch(admissions []*types.CommonTxAdmission) {
@@ -462,18 +497,46 @@ func (q *TxQUICIngress) forwardAdmissionBatch(admissions []*types.CommonTxAdmiss
 	log.Debug("TxQUIC bridge forwarded admission batch", "admissions", len(admissions), "forwarded", forwarded)
 }
 
-func (q *TxQUICIngress) encodeTxPayload(txs []*types.Transaction, am *accounts.Manager) ([]byte, error) {
-	if !q.config.RequireAuth {
+func (q *TxQUICIngress) encodeTxPayload(txs []*types.Transaction, admissions []*types.CommonTxAdmission, am *accounts.Manager) ([]byte, error) {
+	validAdmissions := make([]*types.CommonTxAdmission, 0, len(admissions))
+	for _, admission := range admissions {
+		if admission == nil {
+			continue
+		}
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+			log.Warn("Skip invalid TxQUIC admission sidecar before forward", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
+			continue
+		}
+		validAdmissions = append(validAdmissions, copyCommonTxAdmissionForQUIC(admission))
+	}
+
+	if !q.config.RequireAuth && len(validAdmissions) == 0 {
 		return rlp.EncodeToBytes(txs)
 	}
+
 	sender := bftview.GetServerCoinBase()
-	if sender == (common.Address{}) {
-		return nil, fmt.Errorf("txquic bridge signer coinbase is empty")
+	if q.config.RequireAuth {
+		if sender == (common.Address{}) {
+			return nil, fmt.Errorf("txquic bridge signer coinbase is empty")
+		}
+		if am == nil {
+			return nil, fmt.Errorf("txquic bridge account manager is nil")
+		}
 	}
-	if am == nil {
-		return nil, fmt.Errorf("txquic bridge account manager is nil")
+
+	pkt := &txQUICPacket{
+		Version:    txQUICPacketV1,
+		Sender:     sender,
+		Nonce:      atomic.AddUint64(&q.outboundNonce, 1),
+		Timestamp:  uint64(time.Now().Unix()),
+		Txs:        txs,
+		Admissions: validAdmissions,
 	}
-	pkt := &txQUICPacket{Version: txQUICPacketV1, Sender: sender, Nonce: atomic.AddUint64(&q.outboundNonce, 1), Timestamp: uint64(time.Now().Unix()), Txs: txs}
+
+	if !q.config.RequireAuth {
+		return rlp.EncodeToBytes(pkt)
+	}
+
 	payload, err := pkt.signingPayload()
 	if err != nil {
 		return nil, err
@@ -631,8 +694,8 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 		return
 	}
 	forwarded := q.routePayload(payload)
-	acceptedTx, rejectedTx, hashes := q.insertLocal(txs)
 	acceptedAdmission, rejectedAdmission := q.insertAdmissions(admissions)
+	acceptedTx, rejectedTx, hashes := q.insertLocal(txs)
 	ack.Forwarded = uint64(forwarded)
 	ack.Accepted = uint64(acceptedTx + acceptedAdmission)
 	ack.Rejected = uint64(rejectedTx + rejectedAdmission)
