@@ -245,8 +245,8 @@ jobs:
 
     env:
       CGO_ENABLED: '1'
-      CC: clang
-      CXX: clang++
+      CC: gcc
+      CXX: g++
 
     steps:
       - name: Enable Git long paths
@@ -274,71 +274,27 @@ jobs:
           path-type: inherit
           install: >-
             mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-clang
-            mingw-w64-x86_64-binutils
             mingw-w64-x86_64-gmp
             mingw-w64-x86_64-openssl
             make
             git
             python
 
-      - name: Build herumi BLS libs for Windows
+      - name: Prepare Windows native BLS libs
         shell: msys2 {0}
         run: |
           set -e
 
-          export CC=clang
-          export CXX=clang++
+          ls -lah crypto/bls/lib/win
 
-          rm -rf /tmp/herumi
-          mkdir -p /tmp/herumi
-
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git /tmp/herumi/bls
-
-          cd /tmp/herumi/bls
-          git submodule update --init --recursive
-
-          cd /tmp/herumi/bls/mcl
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-
-          make -j4 OS=mingw64 CC=clang CXX=clang++ lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          make -j4 OS=mingw64 CC=clang CXX=clang++ lib/libmclbn256.a MCL_FP_BIT=256 MCL_FR_BIT=256 || true
-
-          if [ -f lib/libmclbn256.a ]; then
-            echo "Merging libmcl.a and libmclbn256.a"
-
-            rm -rf /tmp/herumi/merge-mcl
-            mkdir -p /tmp/herumi/merge-mcl/mcl
-            mkdir -p /tmp/herumi/merge-mcl/mclbn
-
-            cd /tmp/herumi/merge-mcl/mcl
-            ar x /tmp/herumi/bls/mcl/lib/libmcl.a
-
-            cd /tmp/herumi/merge-mcl/mclbn
-            ar x /tmp/herumi/bls/mcl/lib/libmclbn256.a
-
-            cd /tmp/herumi/merge-mcl
-            rm -f /tmp/herumi/bls/mcl/lib/libmcl.a
-            ar rcs /tmp/herumi/bls/mcl/lib/libmcl.a mcl/*.o mclbn/*.o
-            ranlib /tmp/herumi/bls/mcl/lib/libmcl.a
-          fi
-
-          cd /tmp/herumi/bls
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
-
-          echo "Checking required mcl symbols"
-          nm -g /tmp/herumi/bls/mcl/lib/libmcl.a | grep 'mclBn_precomputeG2'
-          nm -g /tmp/herumi/bls/mcl/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop'
-
-          mkdir -p crypto/bls/lib/win
-          cp /tmp/herumi/bls/lib/libbls256.a crypto/bls/lib/win/libbls256.a
-          cp /tmp/herumi/bls/mcl/lib/libmcl.a crypto/bls/lib/win/libmcl.a
-          cp crypto/bls/lib/win/* crypto/bls/lib/
+          cp -f crypto/bls/lib/win/* crypto/bls/lib/
 
           ls -lah crypto/bls/lib/
+
+          echo "Checking bundled Windows BLS/MCL symbols"
+          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputeG2' || true
+          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop' || true
+          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop2' || true
 
       - name: Download Go modules
         shell: msys2 {0}
@@ -360,8 +316,8 @@ jobs:
           export GOOS=windows
           export GOARCH=amd64
           export CGO_ENABLED=1
-          export CC=clang
-          export CXX=clang++
+          export CC=gcc
+          export CXX=g++
 
           mkdir -p build/bin
 
@@ -375,8 +331,6 @@ jobs:
           cp /mingw64/bin/libstdc++-6.dll build/bin/ || true
           cp /mingw64/bin/libgcc_s_seh-1.dll build/bin/ || true
           cp /mingw64/bin/libwinpthread-1.dll build/bin/ || true
-          cp /mingw64/bin/libc++.dll build/bin/ || true
-          cp /mingw64/bin/libunwind.dll build/bin/ || true
 
           ls -lah build/bin/cypher.exe
           file build/bin/cypher.exe || true
