@@ -303,34 +303,17 @@ jobs:
           python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
 
           make -j4 OS=mingw64 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libmcl.a
-          make -j4 OS=mingw64 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libmclbn256.a
+          make -j4 OS=mingw64 CC=clang CXX=clang++ MCL_FP_BIT=256 MCL_FR_BIT=256 obj/bn_c256.o
+
+          echo "Merging bn_c256.o into libmcl.a"
+
+          ar rcs lib/libmcl.a obj/bn_c256.o
+          ranlib lib/libmcl.a
 
           echo "Checking required mcl C API symbols"
-          nm -g lib/libmclbn256.a | grep 'mclBn_precomputeG2'
-          nm -g lib/libmclbn256.a | grep 'mclBn_precomputedMillerLoop'
-          nm -g lib/libmclbn256.a | grep 'mclBn_precomputedMillerLoop2'
-
-          echo "Merging libmcl.a and libmclbn256.a into one libmcl.a"
-
-          rm -rf /tmp/herumi/merge-mcl
-          mkdir -p /tmp/herumi/merge-mcl/mcl
-          mkdir -p /tmp/herumi/merge-mcl/mclbn
-
-          cd /tmp/herumi/merge-mcl/mcl
-          ar x /tmp/herumi/bls/mcl/lib/libmcl.a
-
-          cd /tmp/herumi/merge-mcl/mclbn
-          ar x /tmp/herumi/bls/mcl/lib/libmclbn256.a
-
-          cd /tmp/herumi/merge-mcl
-          rm -f /tmp/herumi/bls/mcl/lib/libmcl.a
-          ar rcs /tmp/herumi/bls/mcl/lib/libmcl.a mcl/*.o mclbn/*.o
-          ranlib /tmp/herumi/bls/mcl/lib/libmcl.a
-
-          echo "Checking merged libmcl.a symbols"
-          nm -g /tmp/herumi/bls/mcl/lib/libmcl.a | grep 'mclBn_precomputeG2'
-          nm -g /tmp/herumi/bls/mcl/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop'
-          nm -g /tmp/herumi/bls/mcl/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop2'
+          nm -g lib/libmcl.a | grep 'mclBn_precomputeG2'
+          nm -g lib/libmcl.a | grep 'mclBn_precomputedMillerLoop'
+          nm -g lib/libmcl.a | grep 'mclBn_precomputedMillerLoop2'
 
           cd /tmp/herumi/bls
           rm -f obj/*.d obj/*.o lib/libbls256.a
@@ -340,7 +323,6 @@ jobs:
 
           cp /tmp/herumi/bls/lib/libbls256.a crypto/bls/lib/win/libbls256.a
           cp /tmp/herumi/bls/mcl/lib/libmcl.a crypto/bls/lib/win/libmcl.a
-          cp /tmp/herumi/bls/mcl/lib/libmclbn256.a crypto/bls/lib/win/libmclbn256.a
 
           cp crypto/bls/lib/win/* crypto/bls/lib/
 
