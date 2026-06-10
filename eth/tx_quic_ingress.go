@@ -78,9 +78,9 @@ type txQUICSigningData struct {
 
 type txQUICAck struct {
 	Version   uint
-	Accepted  int
-	Rejected  int
-	Forwarded int
+	Accepted  uint64
+	Rejected  uint64
+	Forwarded uint64
 	Errors    []string
 	Hashes    []common.Hash
 }
@@ -630,11 +630,12 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 		q.writeAck(stream, ack)
 		return
 	}
-	ack.Forwarded = q.routePayload(payload)
+	forwarded := q.routePayload(payload)
 	acceptedTx, rejectedTx, hashes := q.insertLocal(txs)
 	acceptedAdmission, rejectedAdmission := q.insertAdmissions(admissions)
-	ack.Accepted = acceptedTx + acceptedAdmission
-	ack.Rejected = rejectedTx + rejectedAdmission
+	ack.Forwarded = uint64(forwarded)
+	ack.Accepted = uint64(acceptedTx + acceptedAdmission)
+	ack.Rejected = uint64(rejectedTx + rejectedAdmission)
 	ack.Hashes = hashes
 	if ack.Accepted > 0 {
 		txQUICIngressAcceptedMeter.Mark(int64(ack.Accepted))
@@ -857,7 +858,9 @@ func (q *TxQUICIngress) writeAck(stream *quic.Stream, ack txQUICAck) {
 		return
 	}
 	_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
-	_ = rlp.Encode(stream, &ack)
+	if err := rlp.Encode(stream, &ack); err != nil {
+		log.Warn("TxQUIC ack encode failed", "accepted", ack.Accepted, "rejected", ack.Rejected, "forwarded", ack.Forwarded, "errors", ack.Errors, "err", err)
+	}
 }
 
 func (q *TxQUICIngress) serverCertificate() (tls.Certificate, error) {
