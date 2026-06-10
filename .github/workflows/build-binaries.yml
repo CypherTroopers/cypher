@@ -53,32 +53,17 @@ jobs:
           brew update
           brew install openssl@3 gmp cmake
 
-      - name: Build herumi BLS libs for macOS
+      - name: Prepare macOS native BLS libs
         shell: bash
         run: |
           set -euo pipefail
 
-          rm -rf "$RUNNER_TEMP/herumi"
-          mkdir -p "$RUNNER_TEMP/herumi"
+          ls -lah crypto/bls/lib/darwin
 
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$RUNNER_TEMP/herumi/bls"
+          cp -f crypto/bls/lib/darwin/* crypto/bls/lib/
 
-          cd "$RUNNER_TEMP/herumi/bls"
-          git submodule update --init --recursive
-
-          cd "$RUNNER_TEMP/herumi/bls/mcl"
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          cd "$RUNNER_TEMP/herumi/bls"
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
-
-          mkdir -p crypto/bls/lib/darwin
-          cp "$RUNNER_TEMP/herumi/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
-          cp "$RUNNER_TEMP/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
-          cp crypto/bls/lib/darwin/* crypto/bls/lib/
+          file crypto/bls/lib/libbls256.a || true
+          file crypto/bls/lib/libmcl.a || true
 
       - name: Download Go modules
         shell: bash
@@ -170,7 +155,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp ./crypto/bls/lib/linux/* ./crypto/bls/lib/
+
+          ls -lah crypto/bls/lib/linux
+
+          cp -f crypto/bls/lib/linux/* crypto/bls/lib/
+
+          file crypto/bls/lib/libbls256.a || true
+          file crypto/bls/lib/libmcl.a || true
 
       - name: Download Go modules
         shell: bash
@@ -250,32 +241,16 @@ jobs:
             git
             python
 
-      - name: Build herumi BLS libs for Windows
+      - name: Prepare Windows native BLS libs
         shell: msys2 {0}
         run: |
           set -e
 
-          rm -rf /tmp/herumi
-          mkdir -p /tmp/herumi
+          ls -lah crypto/bls/lib/win
 
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git /tmp/herumi/bls
+          cp -f crypto/bls/lib/win/* crypto/bls/lib/
 
-          cd /tmp/herumi/bls
-          git submodule update --init --recursive
-
-          cd /tmp/herumi/bls/mcl
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          cd /tmp/herumi/bls
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
-
-          mkdir -p crypto/bls/lib/win
-          cp /tmp/herumi/bls/lib/libbls256.a crypto/bls/lib/win/libbls256.a
-          cp /tmp/herumi/bls/mcl/lib/libmcl.a crypto/bls/lib/win/libmcl.a
-          cp crypto/bls/lib/win/* crypto/bls/lib/
+          ls -lah crypto/bls/lib/
 
       - name: Download Go modules
         shell: msys2 {0}
