@@ -50,25 +50,63 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           brew update
           brew install openssl@3 gmp cmake
 
-      - name: Prepare macOS native BLS libs
+      - name: Build herumi BLS libs for macOS arm64
         shell: bash
         run: |
           set -euo pipefail
 
-          ls -lah crypto/bls/lib/darwin
+          rm -rf "$RUNNER_TEMP/herumi"
+          mkdir -p "$RUNNER_TEMP/herumi"
 
-          cp -f crypto/bls/lib/darwin/* crypto/bls/lib/
+          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$RUNNER_TEMP/herumi/bls"
+
+          cd "$RUNNER_TEMP/herumi/bls"
+          git submodule update --init --recursive
+
+          cd "$RUNNER_TEMP/herumi/bls/mcl"
+          rm -f src/bint_switch.hpp src/llvm_proto.hpp
+          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
+          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
+
+          cd "$RUNNER_TEMP/herumi/bls"
+          rm -f obj/*.d obj/*.o lib/libbls256.a
+          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+
+          echo "Repacking static archives with Apple libtool"
+
+          rm -rf "$RUNNER_TEMP/herumi/repack"
+          mkdir -p "$RUNNER_TEMP/herumi/repack/mcl"
+          mkdir -p "$RUNNER_TEMP/herumi/repack/bls"
+
+          cd "$RUNNER_TEMP/herumi/repack/mcl"
+          ar -x "$RUNNER_TEMP/herumi/bls/mcl/lib/libmcl.a"
+          /usr/bin/libtool -static -o "$RUNNER_TEMP/herumi/bls/mcl/lib/libmcl.a" ./*.o
+
+          cd "$RUNNER_TEMP/herumi/repack/bls"
+          ar -x "$RUNNER_TEMP/herumi/bls/lib/libbls256.a"
+          /usr/bin/libtool -static -o "$RUNNER_TEMP/herumi/bls/lib/libbls256.a" ./*.o
+
+          cd "${{ github.workspace }}"
+
+          mkdir -p crypto/bls/lib/darwin
+          cp "$RUNNER_TEMP/herumi/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
+          cp "$RUNNER_TEMP/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
+          cp crypto/bls/lib/darwin/* crypto/bls/lib/
 
           file crypto/bls/lib/libbls256.a || true
           file crypto/bls/lib/libmcl.a || true
+          lipo -info crypto/bls/lib/libbls256.a || true
+          lipo -info crypto/bls/lib/libmcl.a || true
 
       - name: Download Go modules
         shell: bash
         run: |
           set -euo pipefail
+
           go env -w GO111MODULE=on
           go mod download
 
@@ -167,6 +205,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           go env -w GO111MODULE=on
           go mod download
 
@@ -241,14 +280,32 @@ jobs:
             git
             python
 
-      - name: Prepare Windows native BLS libs
+      - name: Build herumi BLS libs for Windows
         shell: msys2 {0}
         run: |
           set -e
 
-          ls -lah crypto/bls/lib/win
+          rm -rf /tmp/herumi
+          mkdir -p /tmp/herumi
 
-          cp -f crypto/bls/lib/win/* crypto/bls/lib/
+          git clone --depth 1 --recursive https://github.com/herumi/bls.git /tmp/herumi/bls
+
+          cd /tmp/herumi/bls
+          git submodule update --init --recursive
+
+          cd /tmp/herumi/bls/mcl
+          rm -f src/bint_switch.hpp src/llvm_proto.hpp
+          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
+          make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
+
+          cd /tmp/herumi/bls
+          rm -f obj/*.d obj/*.o lib/libbls256.a
+          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+
+          mkdir -p crypto/bls/lib/win
+          cp /tmp/herumi/bls/lib/libbls256.a crypto/bls/lib/win/libbls256.a
+          cp /tmp/herumi/bls/mcl/lib/libmcl.a crypto/bls/lib/win/libmcl.a
+          cp crypto/bls/lib/win/* crypto/bls/lib/
 
           ls -lah crypto/bls/lib/
 
@@ -256,6 +313,7 @@ jobs:
         shell: msys2 {0}
         run: |
           set -e
+
           go env -w GO111MODULE=on
           go mod download
 
@@ -277,7 +335,7 @@ jobs:
           mkdir -p build/bin
 
           go build -mod=mod -trimpath -v \
-            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
+            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase,--disable-high-entropy-va" \
             -o build/bin/cypher.exe \
             ./cmd/cypher
 
@@ -287,7 +345,8 @@ jobs:
           cp /mingw64/bin/libgcc_s_seh-1.dll build/bin/ || true
           cp /mingw64/bin/libwinpthread-1.dll build/bin/ || true
 
-          ./build/bin/cypher.exe version
+          ls -lah build/bin/cypher.exe
+          file build/bin/cypher.exe || true
 
       - name: Upload Windows binary
         uses: actions/upload-artifact@v4
