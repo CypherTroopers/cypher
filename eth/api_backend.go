@@ -310,11 +310,14 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction,
 			return err
 		}
 
-		b.eth.txQUICIngress.ForwardLocalTxsWithAdmissions(
+		if err := b.eth.txQUICIngress.SendLocalTxsWithAdmissionsSync(
 			[]*types.Transaction{signedTx},
 			[]*types.CommonTxAdmission{admission},
 			b.eth.accountManager,
-		)
+		); err != nil {
+			log.Error("Failed to sync forward common RPC tx via TxQUIC", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
+			return err
+		}
 		return nil
 	}
 
