@@ -306,11 +306,25 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction,
 	if err != nil {
 		return err
 	}
+
+	var admissions []*types.CommonTxAdmission
 	if b.shouldRecordCommonRPCAdmission() {
-		core.RecordCommonRPCAdmission(signedTx.Hash(), bftview.GetServerCoinBase(), b.ChainConfig().ChainID)
+		admission, err := core.SignAndRecordCommonRPCAdmission(
+			signedTx.Hash(),
+			bftview.GetServerCoinBase(),
+			b.ChainConfig().ChainID,
+			0,
+			uint64(time.Now().Unix()),
+		)
+		if err != nil {
+			log.Error("Failed to sign common RPC admission", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
+		} else if admission != nil {
+			admissions = append(admissions, admission)
+		}
 	}
+
 	if b.eth.txQUICIngress != nil {
-		b.eth.txQUICIngress.ForwardLocalTxs([]*types.Transaction{signedTx}, b.eth.accountManager)
+		b.eth.txQUICIngress.ForwardLocalTxsWithAdmissions([]*types.Transaction{signedTx}, admissions, b.eth.accountManager)
 	}
 	return nil
 }
