@@ -157,30 +157,57 @@ func CalcGasLimit(parent *types.Block, gasFloor, gasCeil uint64) uint64 {
 }
 
 func (v *BlockValidator) VerifySignature(block *types.Block) error {
-	//TxHash  verify
+	// HotStuff v2 production signature verification.
+	//
+	// Validators now sign the compact HotstuffProposalRef carried in
+	// MsgPrepare.DataB, not the full block RLP.
+	//
+	// Full block RLP is a sidecar body referenced by BodyHash. Therefore normal
+	// downloader/import validation must reconstruct the exact ProposalRef from
+	// the downloaded unsigned block and verify the aggregated VotePrepare
+	// signature against those ProposalRef bytes.
+	//
+	// Important:
+	//   - BodyHash is computed from the unsigned block encoding.
+	//   - block.Hash() / header.Hash() already ignores SignInfo.
+	//   - CopyOrg() clears SignInfo and gives the same unsigned body that was
+	//     used when the leader created the original ProposalRef.
 	mycommittee := &bftview.Committee{List: v.bc.keyBlockChain.GetCommitteeByHash(block.KeyHash())}
 	if mycommittee == nil || len(mycommittee.List) < 2 {
 		return types.ErrInvalidCommittee
 	}
 	pubs := mycommittee.ToBlsPublicKeys(block.KeyHash())
 
-	buf := block.CopyOrg().EncodeToBytes()
-	if buf == nil {
-		return types.ErrEncodeRLP
-	}
 	si := block.SignInfo()
 	if si == nil {
 		return types.ErrEmptySignature
 	}
+	if si.ViewID == (common.Hash{}) || si.LeaderID == "" {
+		return types.ErrInvalidSignature
+	}
+
+	unsignedBlock := block.CopyOrg()
+	encodedUnsignedBlock := unsignedBlock.EncodeToBytes()
+	if encodedUnsignedBlock == nil {
+		return types.ErrEncodeRLP
+	}
+
 	threshold := hotstuff.CalcThreshold(len(pubs))
 	chainID := uint64(0)
 	if v.config != nil && v.config.ChainID != nil {
 		chainID = v.config.ChainID.Uint64()
 	}
-	if si.ViewID == (common.Hash{}) || si.LeaderID == "" {
+
+	proposalRef, err := types.NewHotstuffProposalRef(chainID, si.ViewID, si.LeaderID, unsignedBlock, encodedUnsignedBlock)
+	if err != nil {
 		return types.ErrInvalidSignature
 	}
-	if !hotstuff.VerifySignatureWithContext(si.Signature, si.Exceptions, buf, pubs, threshold, chainID, hotstuff.MsgVotePrepare, si.ViewID, si.LeaderID) {
+	proposalBytes := proposalRef.EncodeToBytes()
+	if len(proposalBytes) == 0 {
+		return types.ErrEncodeRLP
+	}
+
+	if !hotstuff.VerifySignatureWithContext(si.Signature, si.Exceptions, proposalBytes, pubs, threshold, chainID, hotstuff.MsgVotePrepare, si.ViewID, si.LeaderID) {
 		return types.ErrInvalidSignature
 	}
 	return nil
