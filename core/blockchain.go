@@ -1083,6 +1083,69 @@ const (
 	SideStatTy
 )
 
+// VerifiedProposal contains the full state-transition result produced during
+// HotStuff Prepare validation. It is intentionally tied to a specific
+// ProposalID/ViewID and parent state so Decide can commit the exact execution
+// result without running the EVM a second time.
+//
+// A VerifiedProposal must be used once and then discarded by the caller. The
+// StateDB inside it is mutable and becomes committed after CommitVerifiedProposal.
+type VerifiedProposal struct {
+	ProposalID common.Hash
+	ViewID     common.Hash
+	LeaderID   string
+
+	Block    *types.Block
+	Receipts types.Receipts
+	Logs     []*types.Log
+	UsedGas  uint64
+	StateDB  *state.StateDB
+
+	ParentHash   common.Hash
+	ParentNumber uint64
+	ParentRoot   common.Hash
+
+	CreatedAt time.Time
+}
+
+// BlockHash returns the verified block hash, or zero if the proposal is empty.
+func (vp *VerifiedProposal) BlockHash() common.Hash {
+	if vp == nil || vp.Block == nil {
+		return common.Hash{}
+	}
+	return vp.Block.Hash()
+}
+
+// SanityCheck verifies that a cached HotStuff proposal still matches its block
+// and parent metadata. It does not re-run EVM execution.
+func (vp *VerifiedProposal) SanityCheck() error {
+	if vp == nil {
+		return fmt.Errorf("nil verified proposal")
+	}
+	if vp.Block == nil {
+		return fmt.Errorf("verified proposal missing block")
+	}
+	if vp.ProposalID == (common.Hash{}) {
+		return fmt.Errorf("verified proposal missing proposal id")
+	}
+	if vp.ViewID == (common.Hash{}) {
+		return fmt.Errorf("verified proposal missing view id")
+	}
+	if vp.LeaderID == "" {
+		return fmt.Errorf("verified proposal missing leader id")
+	}
+	if vp.ParentHash != vp.Block.ParentHash() {
+		return fmt.Errorf("verified proposal parent hash mismatch: have %s want %s", vp.ParentHash, vp.Block.ParentHash())
+	}
+	if vp.ParentNumber+1 != vp.Block.NumberU64() {
+		return fmt.Errorf("verified proposal parent number mismatch: parent=%d block=%d", vp.ParentNumber, vp.Block.NumberU64())
+	}
+	if vp.StateDB == nil && len(vp.Block.Transactions()) > 0 {
+		return fmt.Errorf("verified proposal missing statedb for non-empty block")
+	}
+	return nil
+}
+
 // truncateAncient rewinds the blockchain to the specified header and deletes all
 // data in the ancient store that exceeds the specified header.
 func (bc *BlockChain) truncateAncient(head uint64) error {
@@ -1488,6 +1551,155 @@ func (bc *BlockChain) WriteBlockWithState(block *types.Block, receipts []*types.
 	defer bc.chainmu.Unlock()
 
 	return bc.writeBlockWithState(block, receipts, logs, state, emitHeadEvent)
+}
+
+// ValidateBlockForHotstuff executes and validates a proposed block during the
+// HotStuff Prepare phase. The returned VerifiedProposal is safe to cache by
+// ProposalID and later pass to CommitVerifiedProposal after a valid Decide QC.
+//
+// This method is deliberately strict: a node must not sign VotePrepare until
+// this function succeeds. It verifies header/body/state and returns the exact
+// receipts/logs/state generated from the parent root used for validation.
+func (bc *BlockChain) ValidateBlockForHotstuff(proposalID common.Hash, viewID common.Hash, leaderID string, block *types.Block) (*VerifiedProposal, error) {
+	if block == nil {
+		return nil, fmt.Errorf("nil hotstuff proposal block")
+	}
+	if proposalID == (common.Hash{}) {
+		return nil, fmt.Errorf("empty hotstuff proposal id")
+	}
+	if viewID == (common.Hash{}) {
+		return nil, fmt.Errorf("empty hotstuff view id")
+	}
+	if leaderID == "" {
+		return nil, fmt.Errorf("empty hotstuff leader id")
+	}
+	if bc.insertStopped() {
+		return nil, ErrAbortBlocksProcessing
+	}
+	if BadHashes[block.Hash()] {
+		bc.reportBlock(block, nil, ErrBlacklistedHash)
+		return nil, ErrBlacklistedHash
+	}
+	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+		log.Info("HOTSTUFF VERIFY already known block", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
+		return &VerifiedProposal{
+			ProposalID: proposalID,
+			ViewID:     viewID,
+			LeaderID:   leaderID,
+			Block:      block,
+			ParentHash: block.ParentHash(),
+			CreatedAt:  time.Now(),
+		}, nil
+	}
+
+	start := time.Now()
+	header := block.Header()
+	if err := bc.engine.VerifyHeader(bc, header, false); err != nil {
+		return nil, fmt.Errorf("hotstuff proposal header invalid: %w", err)
+	}
+	if err := bc.validator.ValidateBody(block); err != nil {
+		return nil, fmt.Errorf("hotstuff proposal body invalid: %w", err)
+	}
+	parent := bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
+	if parent == nil {
+		return nil, fmt.Errorf("hotstuff proposal unknown parent: number=%d hash=%s", block.NumberU64()-1, block.ParentHash())
+	}
+	statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
+	if err != nil {
+		return nil, fmt.Errorf("hotstuff proposal parent state unavailable: root=%s err=%w", parent.Root, err)
+	}
+
+	processStart := time.Now()
+	receipts, logs, usedGas, err := bc.processor.Process(block, statedb, bc.vmConfig)
+	if err != nil {
+		bc.reportBlock(block, receipts, err)
+		return nil, fmt.Errorf("hotstuff proposal state process failed: %w", err)
+	}
+	processElapsed := time.Since(processStart)
+
+	validateStart := time.Now()
+	if err := bc.validator.ValidateState(block, statedb, receipts, usedGas); err != nil {
+		bc.reportBlock(block, receipts, err)
+		return nil, fmt.Errorf("hotstuff proposal state invalid: %w", err)
+	}
+	validateElapsed := time.Since(validateStart)
+
+	verified := &VerifiedProposal{
+		ProposalID:   proposalID,
+		ViewID:       viewID,
+		LeaderID:     leaderID,
+		Block:        block,
+		Receipts:     receipts,
+		Logs:         logs,
+		UsedGas:      usedGas,
+		StateDB:      statedb,
+		ParentHash:   block.ParentHash(),
+		ParentNumber: block.NumberU64() - 1,
+		ParentRoot:   parent.Root,
+		CreatedAt:    time.Now(),
+	}
+	log.Info("HOTSTUFF VERIFY proposal",
+		"number", block.NumberU64(),
+		"hash", block.Hash(),
+		"proposalID", proposalID,
+		"txs", len(block.Transactions()),
+		"gas", usedGas,
+		"process", common.PrettyDuration(processElapsed),
+		"validate", common.PrettyDuration(validateElapsed),
+		"total", common.PrettyDuration(time.Since(start)))
+	return verified, nil
+}
+
+// CommitVerifiedProposal commits a proposal that was fully executed and
+// ValidateState-checked during HotStuff Prepare. This avoids running the same
+// block through StateProcessor again after Decide, while preserving the same
+// writeBlockWithState commit path used by normal imports.
+func (bc *BlockChain) CommitVerifiedProposal(vp *VerifiedProposal, emitHeadEvent bool) (WriteStatus, error) {
+	if err := vp.SanityCheck(); err != nil {
+		return NonStatTy, err
+	}
+	block := vp.Block
+	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+		log.Info("HOTSTUFF COMMIT already known block", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", vp.ProposalID)
+		return CanonStatTy, nil
+	}
+	if bc.insertStopped() {
+		return NonStatTy, ErrAbortBlocksProcessing
+	}
+	if BadHashes[block.Hash()] {
+		bc.reportBlock(block, vp.Receipts, ErrBlacklistedHash)
+		return NonStatTy, ErrBlacklistedHash
+	}
+	parent := bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
+	if parent == nil {
+		return NonStatTy, fmt.Errorf("hotstuff commit unknown parent: number=%d hash=%s", block.NumberU64()-1, block.ParentHash())
+	}
+	if parent.Root != vp.ParentRoot {
+		return NonStatTy, fmt.Errorf("hotstuff commit parent root changed: have %s want %s", parent.Root, vp.ParentRoot)
+	}
+
+	bc.chainmu.Lock()
+	defer bc.chainmu.Unlock()
+
+	start := time.Now()
+	status, err := bc.writeBlockWithState(block, vp.Receipts, vp.Logs, vp.StateDB, emitHeadEvent)
+	if err != nil {
+		return status, err
+	}
+	if block.BlockType() == types.Key_Block {
+		if err := bc.keyBlockChain.InsertBlockFromData(block.KeyInfo()); err != nil {
+			return status, err
+		}
+	}
+	log.Info("HOTSTUFF COMMIT verified proposal",
+		"number", block.NumberU64(),
+		"hash", block.Hash(),
+		"proposalID", vp.ProposalID,
+		"status", status,
+		"txs", len(block.Transactions()),
+		"gas", vp.UsedGas,
+		"elapsed", common.PrettyDuration(time.Since(start)))
+	return status, nil
 }
 
 // function specifically added for Raft consensus. This is called from mintNewBlock
