@@ -64,6 +64,17 @@ const slowEmergencyForcePending = 8192
 
 const startNewViewDedupWindow = 2 * time.Second
 
+const proposalBodyCacheTTL = 2 * time.Minute
+const proposalBodyWaitTimeout = 30 * time.Second
+const proposalBodyRequestAfter = 250 * time.Millisecond
+const proposalBodyPollInterval = 5 * time.Millisecond
+const proposalBodySidecarMaxBytes = 256 * 1024 * 1024
+
+const (
+	proposalBodyMsgData uint8 = iota + 1
+	proposalBodyMsgRequest
+)
+
 type committeeInfo struct {
 	Committee *bftview.Committee
 	KeyHash   common.Hash
@@ -73,6 +84,20 @@ type bestCandidateInfo struct {
 	Node      *common.Cnode
 	KeyHash   common.Hash
 	KeyNumber uint64
+}
+
+type proposalBodyMsg struct {
+	Type uint8
+
+	ProposalID common.Hash
+	BodyHash   common.Hash
+	Number     uint64
+	ViewID     common.Hash
+	LeaderID   string
+	From       string
+
+	EncodedBlock []byte
+	CreatedAt    time.Time
 }
 type cachedCommitteeInfo struct {
 	keyHash   common.Hash
@@ -96,6 +121,7 @@ type networkMsg struct {
 	Hmsg    *hotstuff.HotstuffMessage
 	Cmsg    *committeeInfo
 	Bmsg    *bestCandidateInfo
+	Pmsg    *proposalBodyMsg
 }
 
 func (msg *networkMsg) GetCommittee() *bftview.Committee {
@@ -105,6 +131,8 @@ func (msg *networkMsg) GetCommittee() *bftview.Committee {
 	} else if msg.Bmsg != nil {
 		mb = bftview.LoadMember(msg.Bmsg.KeyNumber, msg.Bmsg.KeyHash, true)
 	} else if msg.Hmsg != nil {
+		mb = bftview.GetCurrentMember()
+	} else if msg.Pmsg != nil {
 		mb = bftview.GetCurrentMember()
 	}
 	return mb
@@ -148,6 +176,10 @@ type Service struct {
 	lastProgressViewID        common.Hash
 	lastProgressRank          uint8
 
+	muProposalBody       sync.RWMutex
+	proposalBodies       map[common.Hash]*proposalBodyMsg
+	verifiedProposalByID map[common.Hash]*core.VerifiedProposal
+
 	hotstuffMsgQ *common.Queue
 	feed1        event.Feed
 	msgCh1       chan committeeMsg
@@ -167,6 +199,8 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.chainConfig = chainConfig
 
 	s.lastCmInfoMap = make(map[common.Hash]*cachedCommitteeInfo)
+	s.proposalBodies = make(map[common.Hash]*proposalBodyMsg)
+	s.verifiedProposalByID = make(map[common.Hash]*core.VerifiedProposal)
 
 	s.msgCh1 = make(chan committeeMsg, 10)
 	s.msgSub1 = s.feed1.Subscribe(s.msgCh1)
@@ -294,46 +328,336 @@ func (s *Service) CheckView(data []byte) error {
 	return nil
 }
 
+func cloneProposalBodyMsg(in *proposalBodyMsg) *proposalBodyMsg {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	if len(in.EncodedBlock) > 0 {
+		out.EncodedBlock = make([]byte, len(in.EncodedBlock))
+		copy(out.EncodedBlock, in.EncodedBlock)
+	}
+	return &out
+}
+
+func (s *Service) purgeExpiredProposalCachesLocked(now time.Time) {
+	for id, body := range s.proposalBodies {
+		if body == nil || (!body.CreatedAt.IsZero() && now.Sub(body.CreatedAt) > proposalBodyCacheTTL) {
+			delete(s.proposalBodies, id)
+			delete(s.verifiedProposalByID, id)
+		}
+	}
+}
+
+func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
+	if body == nil {
+		return fmt.Errorf("nil proposal body")
+	}
+	if body.ProposalID == (common.Hash{}) {
+		return fmt.Errorf("proposal body missing proposal id")
+	}
+	if body.BodyHash == (common.Hash{}) {
+		return fmt.Errorf("proposal body missing body hash")
+	}
+	if len(body.EncodedBlock) == 0 {
+		return fmt.Errorf("proposal body missing encoded block")
+	}
+	if len(body.EncodedBlock) > proposalBodySidecarMaxBytes {
+		return fmt.Errorf("proposal body too large: bytes=%d limit=%d", len(body.EncodedBlock), proposalBodySidecarMaxBytes)
+	}
+	if got := types.HotstuffProposalBodyHash(body.EncodedBlock); got != body.BodyHash {
+		return fmt.Errorf("proposal body hash mismatch: have %s want %s", got, body.BodyHash)
+	}
+	cpy := cloneProposalBodyMsg(body)
+	cpy.Type = proposalBodyMsgData
+	if cpy.From == "" {
+		cpy.From = s.Self()
+	}
+	if cpy.CreatedAt.IsZero() {
+		cpy.CreatedAt = time.Now()
+	}
+
+	s.muProposalBody.Lock()
+	defer s.muProposalBody.Unlock()
+	s.purgeExpiredProposalCachesLocked(time.Now())
+	s.proposalBodies[cpy.ProposalID] = cpy
+	return nil
+}
+
+func (s *Service) getProposalBody(proposalID common.Hash) *proposalBodyMsg {
+	s.muProposalBody.RLock()
+	body := cloneProposalBodyMsg(s.proposalBodies[proposalID])
+	s.muProposalBody.RUnlock()
+	return body
+}
+
+func (s *Service) storeVerifiedProposal(proposalID common.Hash, verified *core.VerifiedProposal) {
+	if proposalID == (common.Hash{}) || verified == nil {
+		return
+	}
+	s.muProposalBody.Lock()
+	defer s.muProposalBody.Unlock()
+	s.purgeExpiredProposalCachesLocked(time.Now())
+	s.verifiedProposalByID[proposalID] = verified
+}
+
+func (s *Service) getVerifiedProposal(proposalID common.Hash) *core.VerifiedProposal {
+	s.muProposalBody.RLock()
+	verified := s.verifiedProposalByID[proposalID]
+	s.muProposalBody.RUnlock()
+	return verified
+}
+
+func (s *Service) deleteProposalCaches(proposalID common.Hash) {
+	s.muProposalBody.Lock()
+	delete(s.proposalBodies, proposalID)
+	delete(s.verifiedProposalByID, proposalID)
+	s.muProposalBody.Unlock()
+}
+
+func (s *Service) prepareHotstuffProposal(viewID common.Hash, leaderID string, encodedBlock []byte) ([]byte, error) {
+	if len(encodedBlock) == 0 {
+		return nil, fmt.Errorf("empty encoded block proposal")
+	}
+	if len(encodedBlock) > proposalBodySidecarMaxBytes {
+		return nil, fmt.Errorf("encoded block proposal too large: bytes=%d limit=%d", len(encodedBlock), proposalBodySidecarMaxBytes)
+	}
+	block := types.DecodeToBlock(encodedBlock)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode encoded block proposal")
+	}
+	ref, err := types.NewHotstuffProposalRef(s.ChainID(), viewID, leaderID, block, encodedBlock)
+	if err != nil {
+		return nil, err
+	}
+	proposalID := ref.ProposalID()
+	body := &proposalBodyMsg{
+		Type:         proposalBodyMsgData,
+		ProposalID:   proposalID,
+		BodyHash:     ref.BodyHash,
+		Number:       ref.Number,
+		ViewID:       ref.ViewID,
+		LeaderID:     ref.LeaderID,
+		From:         s.Self(),
+		EncodedBlock: encodedBlock,
+		CreatedAt:    time.Now(),
+	}
+	if err := s.storeProposalBody(body); err != nil {
+		return nil, err
+	}
+	s.broadcastProposalBodyToCommittee(body)
+	refBytes := ref.EncodeToBytes()
+	if len(refBytes) == 0 {
+		return nil, fmt.Errorf("failed to encode hotstuff proposal ref")
+	}
+	log.Info("HOTSTUFF PROPOSAL REF",
+		"number", ref.Number,
+		"viewID", ref.ViewID,
+		"proposalID", proposalID,
+		"blockHash", ref.BlockHash,
+		"bodyHash", ref.BodyHash,
+		"bodySize", ref.BodySize,
+		"refBytes", len(refBytes))
+	return refBytes, nil
+}
+
+func (s *Service) broadcastProposalBodyToCommittee(body *proposalBodyMsg) {
+	if body == nil {
+		return
+	}
+	mb := bftview.GetCurrentMember()
+	if mb == nil {
+		log.Warn("HOTSTUFF PROPOSAL BODY broadcast skipped; missing committee", "number", body.Number, "proposalID", body.ProposalID)
+		return
+	}
+	for _, node := range mb.List {
+		if node == nil || node.Address == "" || IsSelf(node.Address) {
+			continue
+		}
+		cpy := cloneProposalBodyMsg(body)
+		if cpy != nil {
+			cpy.From = s.Self()
+		}
+		log.Info("HOTSTUFF PROPOSAL BODY SEND",
+			"to", node.Address,
+			"number", body.Number,
+			"proposalID", body.ProposalID,
+			"bodyHash", body.BodyHash,
+			"bytes", len(body.EncodedBlock))
+		if err := s.netService.SendRawData(node.Address, &networkMsg{Pmsg: cpy}); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL BODY send failed", "to", node.Address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
+		}
+	}
+}
+
+func (s *Service) sendProposalBodyRequest(ref *types.HotstuffProposalRef) {
+	if ref == nil {
+		return
+	}
+	req := &proposalBodyMsg{
+		Type:       proposalBodyMsgRequest,
+		ProposalID: ref.ProposalID(),
+		BodyHash:   ref.BodyHash,
+		Number:     ref.Number,
+		ViewID:     ref.ViewID,
+		LeaderID:   ref.LeaderID,
+		From:       s.Self(),
+		CreatedAt:  time.Now(),
+	}
+
+	mb := bftview.GetCurrentMember()
+	if mb == nil {
+		return
+	}
+	for _, node := range mb.List {
+		if node == nil || node.Address == "" || IsSelf(node.Address) {
+			continue
+		}
+		if ref.LeaderID != "" {
+			nodeID := bftview.GetNodeID(node.Address, node.Public)
+			if nodeID != ref.LeaderID {
+				continue
+			}
+		}
+		log.Info("HOTSTUFF PROPOSAL BODY REQUEST",
+			"to", node.Address,
+			"number", ref.Number,
+			"proposalID", req.ProposalID,
+			"bodyHash", req.BodyHash)
+		if err := s.netService.SendRawData(node.Address, &networkMsg{Pmsg: req}); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL BODY request failed", "to", node.Address, "number", ref.Number, "proposalID", req.ProposalID, "err", err)
+		}
+	}
+}
+
+func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBodyMsg, error) {
+	if ref == nil {
+		return nil, fmt.Errorf("nil proposal ref")
+	}
+	proposalID := ref.ProposalID()
+	deadline := time.Now().Add(proposalBodyWaitTimeout)
+	requestAt := time.Now().Add(proposalBodyRequestAfter)
+	requested := false
+	for {
+		body := s.getProposalBody(proposalID)
+		if body != nil {
+			if body.BodyHash != ref.BodyHash {
+				return nil, fmt.Errorf("proposal body hash mismatch for %s: have %s want %s", proposalID, body.BodyHash, ref.BodyHash)
+			}
+			if uint64(len(body.EncodedBlock)) != ref.BodySize {
+				return nil, fmt.Errorf("proposal body size mismatch for %s: have %d want %d", proposalID, len(body.EncodedBlock), ref.BodySize)
+			}
+			return body, nil
+		}
+		now := time.Now()
+		if !requested && !now.Before(requestAt) {
+			s.sendProposalBodyRequest(ref)
+			requested = true
+		}
+		if now.After(deadline) {
+			return nil, fmt.Errorf("proposal body timeout: number=%d proposalID=%s bodyHash=%s", ref.Number, proposalID, ref.BodyHash)
+		}
+		time.Sleep(proposalBodyPollInterval)
+	}
+}
+
+func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposalBodyMsg) {
+	if msg == nil {
+		return
+	}
+	switch msg.Type {
+	case proposalBodyMsgData:
+		if err := s.storeProposalBody(msg); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL BODY rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+			return
+		}
+		log.Info("HOTSTUFF PROPOSAL BODY stored", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "bytes", len(msg.EncodedBlock))
+	case proposalBodyMsgRequest:
+		body := s.getProposalBody(msg.ProposalID)
+		if body == nil {
+			log.Debug("HOTSTUFF PROPOSAL BODY request miss", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID)
+			return
+		}
+		if si == nil || si.Address == nil {
+			return
+		}
+		address := si.Address.String()
+		cpy := cloneProposalBodyMsg(body)
+		if cpy != nil {
+			cpy.From = s.Self()
+		}
+		log.Info("HOTSTUFF PROPOSAL BODY RESPONSE", "to", address, "number", body.Number, "proposalID", body.ProposalID, "bytes", len(body.EncodedBlock))
+		if err := s.netService.SendRawData(address, &networkMsg{Pmsg: cpy}); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL BODY response failed", "to", address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
+		}
+	default:
+		log.Warn("HOTSTUFF PROPOSAL BODY unknown type", "type", msg.Type, "number", msg.Number, "proposalID", msg.ProposalID)
+	}
+}
+
 // OnPropose call by hotstuff
-func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new block
+func (s *Service) OnPropose(state []byte, extra []byte) error { // verify new proposal ref and full sidecar body before voting
 	log.Debug("OnPropose..")
 	if !s.isRunning() {
 		return types.ErrNotRunning
 	}
-
-	var block *types.Block
-	if state != nil {
-		block = types.DecodeToBlock(state)
-		log.Info("OnPropose", "txNumber", block.NumberU64())
-	}
-	if block != nil {
-		err := s.txService.verifyTxBlock(block)
-		if err != nil {
-			log.Error("verify txblock", "number", block.NumberU64(), "err", err)
-			return err
-		}
-		if block.BlockType() == types.Key_Block {
-			kblock := types.DecodeToKeyBlock(block.KeyInfo())
-			if kblock == nil {
-				return fmt.Errorf("Block's extra (keyblock) is error format!")
-			}
-			err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(extra))
-			if err != nil {
-				log.Error("verify keyblock", "number", kblock.NumberU64(), "err", err)
-				return err
-			}
-		}
-	} else {
-		err := fmt.Errorf("DecodeToBlock(state) error")
-		log.Error("Propose", "error", err)
+	if len(state) == 0 {
+		err := fmt.Errorf("empty hotstuff proposal ref")
+		log.Error("OnPropose", "error", err)
 		return err
 	}
+
+	ref, err := types.DecodeHotstuffProposalRef(state)
+	if err != nil {
+		log.Error("OnPropose decode proposal ref", "err", err)
+		return err
+	}
+	proposalID := ref.ProposalID()
+	log.Info("OnPropose",
+		"number", ref.Number,
+		"proposalID", proposalID,
+		"blockHash", ref.BlockHash,
+		"bodyHash", ref.BodyHash,
+		"bodySize", ref.BodySize)
+
+	body, err := s.waitProposalBody(ref)
+	if err != nil {
+		log.Error("OnPropose wait proposal body", "number", ref.Number, "proposalID", proposalID, "err", err)
+		return err
+	}
+	block := types.DecodeToBlock(body.EncodedBlock)
+	if block == nil {
+		err := fmt.Errorf("DecodeToBlock(proposal body) error")
+		log.Error("OnPropose", "proposalID", proposalID, "error", err)
+		return err
+	}
+	if err := ref.VerifyAgainstBlock(block, body.EncodedBlock); err != nil {
+		log.Error("OnPropose proposal ref mismatch", "number", ref.Number, "proposalID", proposalID, "err", err)
+		return err
+	}
+
+	verified, err := s.txService.verifyHotstuffProposal(ref, block, extra)
+	if err != nil {
+		log.Error("verify hotstuff proposal", "number", block.NumberU64(), "proposalID", proposalID, "err", err)
+		return err
+	}
+	if block.BlockType() == types.Key_Block {
+		kblock := types.DecodeToKeyBlock(block.KeyInfo())
+		if kblock == nil {
+			return fmt.Errorf("Block's extra (keyblock) is error format!")
+		}
+		if err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(extra)); err != nil {
+			log.Error("verify keyblock", "number", kblock.NumberU64(), "proposalID", proposalID, "err", err)
+			return err
+		}
+	}
+	s.storeVerifiedProposal(proposalID, verified)
 	s.pacetMakerTimer.start()
 	return nil
 }
 
 // Propose call by hotstuff
-func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
+func (s *Service) Propose(viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
 	log.Debug("Propose..", "number", s.currentView.TxNumber)
 
 	proposeOK := false
@@ -419,8 +743,16 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 				}
 				return err, nil, nil, nil
 			}
+			proposalRef, err := s.prepareHotstuffProposal(viewID, leaderID, data)
+			if err != nil {
+				log.Warn("prepare keyblock hotstuff proposal", "error", err)
+				if fixedMode {
+					s.abortFixedModeKeyProposal("prepare proposal failed", err)
+				}
+				return err, nil, nil, nil
+			}
 			proposeOK = true
-			return nil, nil, data, extra
+			return nil, nil, proposalRef, extra
 		} else {
 			log.Error("tryProposalChangeCommittee failed", "error", err)
 			if fixedMode {
@@ -449,6 +781,11 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 		log.Warn("tryProposalNewBlock", "error", err)
 		return err, nil, nil, nil
 	}
+	proposalRef, err := s.prepareHotstuffProposal(viewID, leaderID, data)
+	if err != nil {
+		log.Warn("prepare txblock hotstuff proposal", "error", err)
+		return err, nil, nil, nil
+	}
 	now := time.Now()
 	if blockType == types.SlowTx_Block {
 		s.lastSlowBlockTime = now
@@ -456,7 +793,7 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 		s.lastFastBlockTime = now
 	}
 	proposeOK = true
-	return nil, nil, data, nil
+	return nil, nil, proposalRef, nil
 }
 
 func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
@@ -705,12 +1042,35 @@ func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
 		log.Warn("OnViewDone nil!")
 		return nil
 	}
-	block := types.DecodeToBlock(tSign.State)
-	err := s.txService.decideNewBlock(block, tSign.Sign, tSign.Mask, tSign.ViewID, tSign.LeaderID)
+	ref, err := types.DecodeHotstuffProposalRef(tSign.State)
 	if err != nil {
+		log.Error("OnViewDone decode proposal ref", "err", err)
 		return err
 	}
-
+	proposalID := ref.ProposalID()
+	verified := s.getVerifiedProposal(proposalID)
+	if verified == nil {
+		log.Warn("OnViewDone verified proposal cache miss; revalidating before commit", "number", ref.Number, "proposalID", proposalID)
+		body, err := s.waitProposalBody(ref)
+		if err != nil {
+			return err
+		}
+		block := types.DecodeToBlock(body.EncodedBlock)
+		if block == nil {
+			return fmt.Errorf("DecodeToBlock(proposal body) error")
+		}
+		if err := ref.VerifyAgainstBlock(block, body.EncodedBlock); err != nil {
+			return err
+		}
+		verified, err = s.txService.verifyHotstuffProposal(ref, block, nil)
+		if err != nil {
+			return err
+		}
+	}
+	if err := s.txService.decideVerifiedProposal(ref, verified, tSign.Sign, tSign.Mask, tSign.ViewID, tSign.LeaderID); err != nil {
+		return err
+	}
+	s.deleteProposalCaches(proposalID)
 	return nil
 }
 
@@ -740,25 +1100,69 @@ func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
 
 // Broadcast call by hotstuff
 func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
+	if data == nil {
+		return []error{fmt.Errorf("nil hotstuff message")}
+	}
 	log.Debug("Broadcast", "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
+	log.Info("HOTSTUFF BROADCAST",
+		"code", hotstuff.ReadableMsgType(data.Code),
+		"number", data.Number,
+		"viewID", data.ViewId,
+		"dataA", len(data.DataA),
+		"dataB", len(data.DataB),
+		"dataC", len(data.DataC),
+		"dataD", len(data.DataD),
+		"dataE", len(data.DataE),
+		"dataF", len(data.DataF))
+
+	// Local delivery is retained for protocol correctness. Leader self-vote
+	// optimization belongs in hotstuff.go and must preserve quorum accounting.
 	s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, hMsg: data})
-	/*
-		mb := bftview.GetCurrentMember()
-		if mb == nil {
-			return []error{fmt.Errorf("can't find current committee")}
+
+	// Production rule: HotStuff control messages use direct committee delivery.
+	// Large proposal bodies are distributed as proposalBodyMsg sidecars, not in
+	// MsgPrepare.DataB.
+	switch data.Code {
+	case hotstuff.MsgPrepare, hotstuff.MsgDecide:
+		return s.broadcastHotstuffToCommittee(data)
+	default:
+		s.netService.broadcast("", &networkMsg{Hmsg: data})
+		return nil
+	}
+}
+
+func (s *Service) broadcastHotstuffToCommittee(data *hotstuff.HotstuffMessage) []error {
+	mb := bftview.GetCurrentMember()
+	if mb == nil {
+		return []error{fmt.Errorf("can't find current committee")}
+	}
+	var errs []error
+	for _, node := range mb.List {
+		if node == nil || node.Address == "" || IsSelf(node.Address) {
+			continue
 		}
-		for _, node := range mb.List {
-			if IsSelf(node.Address) {
-				continue
-			}
-			s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data})
+		log.Info("HOTSTUFF DIRECT SEND",
+			"to", node.Address,
+			"code", hotstuff.ReadableMsgType(data.Code),
+			"number", data.Number,
+			"viewID", data.ViewId,
+			"dataB", len(data.DataB))
+		if err := s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data}); err != nil {
+			errs = append(errs, err)
+			log.Warn("HOTSTUFF DIRECT SEND failed", "to", node.Address, "number", data.Number, "err", err)
 		}
-	*/
-	s.netService.broadcast("", &networkMsg{Hmsg: data})
-	return nil //return arr
+	}
+	return errs
 }
 
 func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
+	if msg == nil {
+		return
+	}
+	if msg.Pmsg != nil {
+		s.handleProposalBodyMsg(si, msg.Pmsg)
+		return
+	}
 	if msg.Hmsg != nil {
 		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: si, hMsg: msg.Hmsg})
 		return
