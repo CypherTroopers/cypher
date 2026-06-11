@@ -1,3 +1,26 @@
+## Build from source
+
+### Requirements
+
+- Go 1.23 or later
+- Git
+- GCC / build-essential for CGO dependencies
+
+### Clone
+
+```bash
+git clone https://github.com/CypherTroopers/cypher.git
+cd cypher
+git fetch --all
+git checkout commonRPC_Pipe_test_go.Mod
+```
+```bash
+go mod download
+```
+```bash
+make cypher
+```
+
 <img width="1448" height="1086" alt="image" src="https://github.com/user-attachments/assets/dbb7c1bd-f031-41a0-933b-2eeadbeac9ba" />
 
 # Validators and Common Miners
