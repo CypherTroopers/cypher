@@ -44,6 +44,7 @@ const Gossip_MSG = 8
 type heartBeatMsg struct {
 	BlockN uint64
 }
+
 type checkMinerMsg struct {
 	BlockN    uint64
 	KeyblockN uint64
@@ -53,7 +54,7 @@ type checkMinerMsg struct {
 type ackInfo struct {
 	ackTm     time.Time
 	sendTm    time.Time
-	isSending *int32 //atomic int
+	isSending *int32 // atomic int
 }
 
 type msgHeadInfo struct {
@@ -69,7 +70,7 @@ type netService struct {
 	gossipMsg              map[common.Hash]*msgHeadInfo
 	muGossip               sync.Mutex
 
-	goMap             map[string]*int32 //atomic int
+	goMap             map[string]*int32 // atomic int
 	idDataMap         map[string]*common.Queue
 	idPriorityDataMap map[string]*common.Queue
 	ackMap            map[string]*ackInfo
@@ -117,7 +118,7 @@ func (s *netService) StartStop(isStart bool) {
 	if isStart {
 		s.server.Start()
 		go s.heartBeat_Loop()
-	} else { //stop
+	} else { // stop
 		s.isStoping = true
 		//..............................
 	}
@@ -153,11 +154,10 @@ func (s *netService) AdjustConnect(outAddress string) {
 }
 
 func (s *netService) procBlockDone(blockN, keyblockN uint64) {
-
 	atomic.StoreUint64(&s.curBlockN, blockN)
 	atomic.StoreUint64(&s.curKeyBlockN, keyblockN)
 
-	//clear old cache of gossipMsg
+	// clear old cache of gossipMsg
 	s.muGossip.Lock()
 	for k, h := range s.gossipMsg {
 		if (h.blockN > 0 && h.blockN < blockN) || (h.keyblockN > 0 && h.keyblockN < keyblockN) {
@@ -180,7 +180,7 @@ func (s *netService) handleNetworkMsgAck(env *network.Envelope) {
 	}
 	si := env.ServerIdentity
 	address := si.Address.String()
-	//	log.Info("handleNetworkMsgReq Recv", "from address", address)
+	// log.Info("handleNetworkMsgReq Recv", "from address", address)
 	s.getAckInfo(address).ackTm = time.Now()
 
 	if s.IgnoreMsg(msg) {
@@ -248,11 +248,16 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 	mblist := mb.List
 	n := len(mblist)
 	seedIndexs := math.GetRandIntArray(n, n/2+3)
-	for _, idx := range seedIndexs {
-		if idx < 0 || idx >= len(mblist) {
+
+	for i, selected := range seedIndexs {
+		if !selected {
 			continue
 		}
-		node := mblist[idx]
+		if i >= len(mblist) {
+			continue
+		}
+
+		node := mblist[i]
 		if node == nil || node.Address == "" {
 			continue
 		}
@@ -440,7 +445,7 @@ func (s *netService) handleHeartBeatMsgAck(env *network.Envelope) {
 	}
 	si := env.ServerIdentity
 	address := si.Address.String()
-	//log.Info("handleHeartBeatMsgAck Recv", "from address", address, "blockN", msg.blockN)
+	// log.Info("handleHeartBeatMsgAck Recv", "from address", address, "blockN", msg.blockN)
 	s.getAckInfo(address).ackTm = time.Now()
 }
 
@@ -481,7 +486,7 @@ func (s *netService) heartBeat_Loop() {
 						go func(si *network.ServerIdentity, msg interface{}, isRunning *int32) {
 							atomic.StoreInt32(isRunning, 1)
 							s.SendRaw(si, msg, false)
-							//log.Debug("sendHeartBeatMsg", "address", si.Address, "tm", time.Now(), "error", err)
+							// log.Debug("sendHeartBeatMsg", "address", si.Address, "tm", time.Now(), "error", err)
 							atomic.StoreInt32(isRunning, 0)
 						}(si, msg, a.isSending)
 					}
@@ -490,7 +495,7 @@ func (s *netService) heartBeat_Loop() {
 			}
 		}
 		time.Sleep(500 * time.Millisecond)
-	} //end for  !s.isStoping
+	} // end for !s.isStoping
 }
 
 func (s *netService) GetAckTime(addr string) time.Time {
