@@ -71,7 +71,7 @@ const proposalBodyPollInterval = 5 * time.Millisecond
 const proposalBodySidecarMaxBytes = 256 * 1024 * 1024
 
 const (
-	proposalBodyMsgData uint8 = iota + 1
+	proposalBodyMsgData uint32 = iota + 1
 	proposalBodyMsgRequest
 )
 
@@ -87,7 +87,7 @@ type bestCandidateInfo struct {
 }
 
 type proposalBodyMsg struct {
-	Type uint8
+	Type uint32
 
 	ProposalID common.Hash
 	BodyHash   common.Hash
@@ -96,8 +96,8 @@ type proposalBodyMsg struct {
 	LeaderID   string
 	From       string
 
-	EncodedBlock []byte
-	CreatedAt    time.Time
+	EncodedBlock      []byte
+	CreatedAtUnixNano int64
 }
 type cachedCommitteeInfo struct {
 	keyHash   common.Hash
@@ -342,7 +342,7 @@ func cloneProposalBodyMsg(in *proposalBodyMsg) *proposalBodyMsg {
 
 func (s *Service) purgeExpiredProposalCachesLocked(now time.Time) {
 	for id, body := range s.proposalBodies {
-		if body == nil || (!body.CreatedAt.IsZero() && now.Sub(body.CreatedAt) > proposalBodyCacheTTL) {
+		if body == nil || (body.CreatedAtUnixNano > 0 && now.Sub(time.Unix(0, body.CreatedAtUnixNano)) > proposalBodyCacheTTL) {
 			delete(s.proposalBodies, id)
 			delete(s.verifiedProposalByID, id)
 		}
@@ -373,8 +373,8 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 	if cpy.From == "" {
 		cpy.From = s.Self()
 	}
-	if cpy.CreatedAt.IsZero() {
-		cpy.CreatedAt = time.Now()
+	if cpy.CreatedAtUnixNano == 0 {
+		cpy.CreatedAtUnixNano = time.Now().UnixNano()
 	}
 
 	s.muProposalBody.Lock()
@@ -432,15 +432,15 @@ func (s *Service) prepareHotstuffProposal(viewID common.Hash, leaderID string, e
 	}
 	proposalID := ref.ProposalID()
 	body := &proposalBodyMsg{
-		Type:         proposalBodyMsgData,
-		ProposalID:   proposalID,
-		BodyHash:     ref.BodyHash,
-		Number:       ref.Number,
-		ViewID:       ref.ViewID,
-		LeaderID:     ref.LeaderID,
-		From:         s.Self(),
-		EncodedBlock: encodedBlock,
-		CreatedAt:    time.Now(),
+		Type:              proposalBodyMsgData,
+		ProposalID:        proposalID,
+		BodyHash:          ref.BodyHash,
+		Number:            ref.Number,
+		ViewID:            ref.ViewID,
+		LeaderID:          ref.LeaderID,
+		From:              s.Self(),
+		EncodedBlock:      encodedBlock,
+		CreatedAtUnixNano: time.Now().UnixNano(),
 	}
 	if err := s.storeProposalBody(body); err != nil {
 		return nil, err
@@ -495,14 +495,14 @@ func (s *Service) sendProposalBodyRequest(ref *types.HotstuffProposalRef) {
 		return
 	}
 	req := &proposalBodyMsg{
-		Type:       proposalBodyMsgRequest,
-		ProposalID: ref.ProposalID(),
-		BodyHash:   ref.BodyHash,
-		Number:     ref.Number,
-		ViewID:     ref.ViewID,
-		LeaderID:   ref.LeaderID,
-		From:       s.Self(),
-		CreatedAt:  time.Now(),
+		Type:              proposalBodyMsgRequest,
+		ProposalID:        ref.ProposalID(),
+		BodyHash:          ref.BodyHash,
+		Number:            ref.Number,
+		ViewID:            ref.ViewID,
+		LeaderID:          ref.LeaderID,
+		From:              s.Self(),
+		CreatedAtUnixNano: time.Now().UnixNano(),
 	}
 
 	mb := bftview.GetCurrentMember()
