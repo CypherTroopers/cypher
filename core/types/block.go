@@ -54,6 +54,15 @@ const (
 	commonTxRewardDomain    = "CPH_COMMON_TX_REWARD_V1"
 )
 
+const (
+	// HotstuffProposalRefVersion is the production HotStuff proposal format
+	// version. Version 2 signs a compact proposal reference instead of the full
+	// block RLP, while the referenced full block body is distributed separately
+	// and verified by BodyHash before voting.
+	HotstuffProposalRefVersion uint32 = 2
+	hotstuffProposalDomain            = "CPH_HOTSTUFF_PROPOSAL_V2"
+)
+
 // A BlockNonce is a 64-bit hash which proves (combined with the
 // mix-hash) that a sufficient amount of computation has been carried
 // out on a block.
@@ -161,6 +170,253 @@ type CommonTxReward struct {
 	Approver       common.Address
 	ApproverReward *big.Int
 	Burn           *big.Int
+}
+
+// HotstuffProposalRef is the canonical, compact HotStuff proposal object.
+//
+// It is intentionally small and deterministic. Validators sign this reference,
+// not the full block body. The full block RLP is carried out-of-band as a
+// proposal body sidecar and must match BodyHash and all committed header/body
+// fields before a validator returns VotePrepare.
+//
+// Production safety rule:
+//   - never vote for a proposal ref until the sidecar body is available,
+//     BodyHash matches, and the full block has passed state execution.
+//   - never commit a cached execution result unless this ref, viewID, leaderID,
+//     parent hash/root, block hash, and body hash all match.
+type HotstuffProposalRef struct {
+	Version uint32
+
+	ChainID  uint64
+	Number   uint64
+	ViewID   common.Hash
+	LeaderID string
+
+	BlockHash   common.Hash
+	ParentHash  common.Hash
+	StateRoot   common.Hash
+	TxHash      common.Hash
+	ReceiptHash common.Hash
+
+	CommonTxAdmissionRoot common.Hash
+	CommonTxRewardRoot    common.Hash
+
+	BodyHash common.Hash
+	BodySize uint64
+
+	BlockType uint8
+	KeyHash   common.Hash
+	Time      uint64
+	GasLimit  uint64
+	GasUsed   uint64
+}
+
+// HotstuffProposalBodyHash returns the canonical BLAKE3 hash of the exact full
+// block RLP sidecar bytes referenced by HotstuffProposalRef.BodyHash.
+func HotstuffProposalBodyHash(body []byte) common.Hash {
+	var h common.Hash
+	if len(body) == 0 {
+		return h
+	}
+	sum := blake3.Sum256(body)
+	copy(h[:], sum[:])
+	return h
+}
+
+// NewHotstuffProposalRef creates a production HotStuff proposal reference for a
+// full block RLP sidecar. If encodedBlock is nil or empty, the block is encoded
+// here. The returned ref is safe to use as the HotStuff signed proposal state.
+func NewHotstuffProposalRef(chainID uint64, viewID common.Hash, leaderID string, block *Block, encodedBlock []byte) (*HotstuffProposalRef, error) {
+	if block == nil {
+		return nil, fmt.Errorf("nil hotstuff proposal block")
+	}
+	if leaderID == "" {
+		return nil, fmt.Errorf("empty hotstuff proposal leader id")
+	}
+	if len(encodedBlock) == 0 {
+		encodedBlock = block.EncodeToBytes()
+	}
+	if len(encodedBlock) == 0 {
+		return nil, fmt.Errorf("empty hotstuff proposal body")
+	}
+
+	return &HotstuffProposalRef{
+		Version:               HotstuffProposalRefVersion,
+		ChainID:               chainID,
+		Number:                block.NumberU64(),
+		ViewID:                viewID,
+		LeaderID:              leaderID,
+		BlockHash:             block.Hash(),
+		ParentHash:            block.ParentHash(),
+		StateRoot:             block.Root(),
+		TxHash:                block.TxHash(),
+		ReceiptHash:           block.ReceiptHash(),
+		CommonTxAdmissionRoot: block.Header().CommonTxAdmissionRoot,
+		CommonTxRewardRoot:    block.Header().CommonTxRewardRoot,
+		BodyHash:              HotstuffProposalBodyHash(encodedBlock),
+		BodySize:              uint64(len(encodedBlock)),
+		BlockType:             block.BlockType(),
+		KeyHash:               block.KeyHash(),
+		Time:                  block.Time(),
+		GasLimit:              block.GasLimit(),
+		GasUsed:               block.GasUsed(),
+	}, nil
+}
+
+// EncodeToBytes serializes the proposal reference. It intentionally does not
+// include the full block body.
+func (r *HotstuffProposalRef) EncodeToBytes() []byte {
+	if r == nil {
+		return nil
+	}
+	enc, err := rlp.EncodeToBytes(r)
+	if err != nil {
+		return nil
+	}
+	return enc
+}
+
+// DecodeHotstuffProposalRef decodes and validates a production proposal ref.
+func DecodeHotstuffProposalRef(data []byte) (*HotstuffProposalRef, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty hotstuff proposal ref")
+	}
+	var ref HotstuffProposalRef
+	if err := rlp.DecodeBytes(data, &ref); err != nil {
+		return nil, err
+	}
+	if err := ref.Validate(); err != nil {
+		return nil, err
+	}
+	return &ref, nil
+}
+
+// Validate checks local invariants that do not require the sidecar body.
+func (r *HotstuffProposalRef) Validate() error {
+	if r == nil {
+		return fmt.Errorf("nil hotstuff proposal ref")
+	}
+	if r.Version != HotstuffProposalRefVersion {
+		return fmt.Errorf("unsupported hotstuff proposal ref version: have %d want %d", r.Version, HotstuffProposalRefVersion)
+	}
+	if r.ChainID == 0 {
+		return fmt.Errorf("hotstuff proposal ref has zero chain id")
+	}
+	if r.Number == 0 {
+		return fmt.Errorf("hotstuff proposal ref has zero block number")
+	}
+	if r.ViewID == (common.Hash{}) {
+		return fmt.Errorf("hotstuff proposal ref has empty view id")
+	}
+	if r.LeaderID == "" {
+		return fmt.Errorf("hotstuff proposal ref has empty leader id")
+	}
+	if r.BlockHash == (common.Hash{}) {
+		return fmt.Errorf("hotstuff proposal ref has empty block hash")
+	}
+	if r.ParentHash == (common.Hash{}) {
+		return fmt.Errorf("hotstuff proposal ref has empty parent hash")
+	}
+	if r.BodyHash == (common.Hash{}) || r.BodySize == 0 {
+		return fmt.Errorf("hotstuff proposal ref has empty body commitment")
+	}
+	return nil
+}
+
+// ProposalID is the canonical production digest that identifies the proposal
+// independently from transport encoding. It is the value higher-level caches and
+// sidecar stores should use as their primary key.
+func (r *HotstuffProposalRef) ProposalID() common.Hash {
+	if r == nil {
+		return common.Hash{}
+	}
+	return blake3RLPHash([]interface{}{
+		[]byte(hotstuffProposalDomain),
+		r.Version,
+		r.ChainID,
+		r.Number,
+		r.ViewID,
+		r.LeaderID,
+		r.BlockHash,
+		r.ParentHash,
+		r.StateRoot,
+		r.TxHash,
+		r.ReceiptHash,
+		r.CommonTxAdmissionRoot,
+		r.CommonTxRewardRoot,
+		r.BodyHash,
+		r.BodySize,
+		r.BlockType,
+		r.KeyHash,
+		r.Time,
+		r.GasLimit,
+		r.GasUsed,
+	})
+}
+
+// VerifyAgainstBlock verifies that a sidecar full block RLP and decoded block
+// exactly match this proposal ref. It does not execute EVM state; callers must
+// still run full block validation before voting.
+func (r *HotstuffProposalRef) VerifyAgainstBlock(block *Block, encodedBlock []byte) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if block == nil {
+		return fmt.Errorf("nil block for hotstuff proposal ref %s", r.ProposalID())
+	}
+	if len(encodedBlock) == 0 {
+		encodedBlock = block.EncodeToBytes()
+	}
+	if len(encodedBlock) == 0 {
+		return fmt.Errorf("empty sidecar body for hotstuff proposal ref %s", r.ProposalID())
+	}
+	if uint64(len(encodedBlock)) != r.BodySize {
+		return fmt.Errorf("hotstuff proposal body size mismatch: have %d want %d", len(encodedBlock), r.BodySize)
+	}
+	if bodyHash := HotstuffProposalBodyHash(encodedBlock); bodyHash != r.BodyHash {
+		return fmt.Errorf("hotstuff proposal body hash mismatch: have %s want %s", bodyHash, r.BodyHash)
+	}
+	if block.NumberU64() != r.Number {
+		return fmt.Errorf("hotstuff proposal block number mismatch: have %d want %d", block.NumberU64(), r.Number)
+	}
+	if block.Hash() != r.BlockHash {
+		return fmt.Errorf("hotstuff proposal block hash mismatch: have %s want %s", block.Hash(), r.BlockHash)
+	}
+	if block.ParentHash() != r.ParentHash {
+		return fmt.Errorf("hotstuff proposal parent hash mismatch: have %s want %s", block.ParentHash(), r.ParentHash)
+	}
+	if block.Root() != r.StateRoot {
+		return fmt.Errorf("hotstuff proposal state root mismatch: have %s want %s", block.Root(), r.StateRoot)
+	}
+	if block.TxHash() != r.TxHash {
+		return fmt.Errorf("hotstuff proposal tx root mismatch: have %s want %s", block.TxHash(), r.TxHash)
+	}
+	if block.ReceiptHash() != r.ReceiptHash {
+		return fmt.Errorf("hotstuff proposal receipt root mismatch: have %s want %s", block.ReceiptHash(), r.ReceiptHash)
+	}
+	header := block.Header()
+	if header.CommonTxAdmissionRoot != r.CommonTxAdmissionRoot {
+		return fmt.Errorf("hotstuff proposal admission root mismatch: have %s want %s", header.CommonTxAdmissionRoot, r.CommonTxAdmissionRoot)
+	}
+	if header.CommonTxRewardRoot != r.CommonTxRewardRoot {
+		return fmt.Errorf("hotstuff proposal reward root mismatch: have %s want %s", header.CommonTxRewardRoot, r.CommonTxRewardRoot)
+	}
+	if block.BlockType() != r.BlockType {
+		return fmt.Errorf("hotstuff proposal block type mismatch: have %d want %d", block.BlockType(), r.BlockType)
+	}
+	if block.KeyHash() != r.KeyHash {
+		return fmt.Errorf("hotstuff proposal key hash mismatch: have %s want %s", block.KeyHash(), r.KeyHash)
+	}
+	if block.Time() != r.Time {
+		return fmt.Errorf("hotstuff proposal timestamp mismatch: have %d want %d", block.Time(), r.Time)
+	}
+	if block.GasLimit() != r.GasLimit {
+		return fmt.Errorf("hotstuff proposal gas limit mismatch: have %d want %d", block.GasLimit(), r.GasLimit)
+	}
+	if block.GasUsed() != r.GasUsed {
+		return fmt.Errorf("hotstuff proposal gas used mismatch: have %d want %d", block.GasUsed(), r.GasUsed)
+	}
+	return nil
 }
 
 // Hash returns the block hash of the header, which is simply the keccak256 hash of its
