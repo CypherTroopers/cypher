@@ -252,7 +252,9 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 	return data, err
 }
 
-// Verify txBlock
+// Verify txBlock is kept for legacy callers. Production HotStuff v2 uses
+// verifyHotstuffProposal so the execution result can be cached and committed
+// after Decide without running StateProcessor a second time.
 func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 	var retErr error
 	bc := txS.bc
@@ -265,8 +267,12 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 		retErr = fmt.Errorf("invalid header, number:%d, current block number:%d", blockNum, bc.CurrentBlockN())
 		return retErr
 	}
-	if header.KeyHash != kbc.CurrentBlock().Hash() {
-		retErr = fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, kbc.CurrentBlock().Hash())
+	currentKey := kbc.CurrentBlock()
+	if currentKey == nil {
+		return fmt.Errorf("cannot verify txblock: missing current keyblock")
+	}
+	if header.KeyHash != currentKey.Hash() {
+		retErr = fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, currentKey.Hash())
 		return retErr
 	}
 	err = bc.Engine().VerifyHeader(bc, header, false)
@@ -302,7 +308,62 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 	return nil
 }
 
-// New txBlock done, when consensus agreement completed
+// verifyHotstuffProposal is the production HotStuff v2 validation path.
+// A validator must call this only after the ProposalRef has been matched against
+// the sidecar body bytes. The returned VerifiedProposal is cached by ProposalID
+// and later passed to decideVerifiedProposal after a valid Decide QC.
+func (txS *txService) verifyHotstuffProposal(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte) (*core.VerifiedProposal, error) {
+	if ref == nil {
+		return nil, fmt.Errorf("nil hotstuff proposal ref")
+	}
+	if txblock == nil {
+		return nil, fmt.Errorf("nil hotstuff proposal block")
+	}
+	bc := txS.bc
+	kbc := txS.kbc
+	proposalID := ref.ProposalID()
+	blockNum := txblock.NumberU64()
+	header := txblock.Header()
+
+	log.Info("verifyHotstuffProposal",
+		"number", blockNum,
+		"hash", txblock.Hash(),
+		"proposalID", proposalID,
+		"viewID", ref.ViewID,
+		"leaderID", ref.LeaderID,
+		"txs", len(txblock.Transactions()),
+		"blockType", txblock.BlockType())
+
+	if ref.Number != blockNum {
+		return nil, fmt.Errorf("hotstuff proposal number mismatch: ref=%d block=%d", ref.Number, blockNum)
+	}
+	if ref.BlockHash != txblock.Hash() {
+		return nil, fmt.Errorf("hotstuff proposal hash mismatch: ref=%s block=%s", ref.BlockHash, txblock.Hash())
+	}
+	if ref.BlockType != txblock.BlockType() {
+		return nil, fmt.Errorf("hotstuff proposal block type mismatch: ref=%d block=%d", ref.BlockType, txblock.BlockType())
+	}
+	if blockNum <= bc.CurrentBlockN() {
+		return nil, fmt.Errorf("invalid header, number:%d, current block number:%d", blockNum, bc.CurrentBlockN())
+	}
+	currentKey := kbc.CurrentBlock()
+	if currentKey == nil {
+		return nil, fmt.Errorf("cannot verify hotstuff proposal: missing current keyblock")
+	}
+	if header.KeyHash != currentKey.Hash() {
+		return nil, fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, currentKey.Hash())
+	}
+
+	verified, err := bc.ValidateBlockForHotstuff(proposalID, ref.ViewID, ref.LeaderID, txblock)
+	if err != nil {
+		return nil, err
+	}
+	return verified, nil
+}
+
+// New txBlock done, when consensus agreement completed. This legacy path is
+// kept for compatibility with non-v2 callers and still imports through the
+// normal chain insertion path.
 func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte, viewID common.Hash, leaderID string) error {
 	log.Info("decideNewBlock", "TxBlock Number", block.NumberU64(), "txs", len(block.Transactions()))
 	bc := txS.bc
@@ -310,7 +371,6 @@ func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte
 		return nil
 	}
 	block.SetSignature(sig, mask, viewID, leaderID)
-	//	log.Info("decideNewBlock", "extra", block.Extra())
 	_, err := bc.InsertBlock(block)
 	if err != nil {
 		log.Error("decideNewBlock.InsertChain", "error", err)
@@ -318,6 +378,55 @@ func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte
 	}
 	txS.mux.Post(core.NewMinedBlockEvent{Block: block})
 	log.Info("decideNewBlock InsertBlock ok")
+	return nil
+}
+
+// decideVerifiedProposal commits the exact execution result obtained during
+// VotePrepare validation. This is the production HotStuff v2 Decide path and
+// deliberately avoids a second StateProcessor execution.
+func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, sig []byte, mask []byte, viewID common.Hash, leaderID string) error {
+	if ref == nil {
+		return fmt.Errorf("nil hotstuff proposal ref")
+	}
+	if verified == nil {
+		return fmt.Errorf("nil verified hotstuff proposal")
+	}
+	proposalID := ref.ProposalID()
+	if proposalID != verified.ProposalID {
+		return fmt.Errorf("verified proposal id mismatch: have %s want %s", verified.ProposalID, proposalID)
+	}
+	if viewID != ref.ViewID || viewID != verified.ViewID {
+		return fmt.Errorf("verified proposal view mismatch: decide=%s ref=%s verified=%s", viewID, ref.ViewID, verified.ViewID)
+	}
+	if leaderID != ref.LeaderID || leaderID != verified.LeaderID {
+		return fmt.Errorf("verified proposal leader mismatch: decide=%s ref=%s verified=%s", leaderID, ref.LeaderID, verified.LeaderID)
+	}
+	block := verified.Block
+	if block == nil {
+		return fmt.Errorf("verified proposal missing block")
+	}
+	if block.Hash() != ref.BlockHash {
+		return fmt.Errorf("verified proposal block hash mismatch: have %s want %s", block.Hash(), ref.BlockHash)
+	}
+
+	log.Info("decideVerifiedProposal",
+		"number", block.NumberU64(),
+		"hash", block.Hash(),
+		"proposalID", proposalID,
+		"txs", len(block.Transactions()))
+
+	bc := txS.bc
+	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+		log.Info("decideVerifiedProposal already known", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
+		return nil
+	}
+	block.SetSignature(sig, mask, viewID, leaderID)
+	if _, err := bc.CommitVerifiedProposal(verified, false); err != nil {
+		log.Error("decideVerifiedProposal.CommitVerifiedProposal", "number", block.NumberU64(), "proposalID", proposalID, "error", err)
+		return err
+	}
+	txS.mux.Post(core.NewMinedBlockEvent{Block: block})
+	log.Info("decideVerifiedProposal commit ok", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
 	return nil
 }
 
