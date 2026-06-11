@@ -578,10 +578,13 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 			log.Debug("HOTSTUFF PROPOSAL BODY request miss", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID)
 			return
 		}
-		if si == nil || si.Address == nil {
+		if si == nil {
 			return
 		}
 		address := si.Address.String()
+		if address == "" {
+			return
+		}
 		cpy := cloneProposalBodyMsg(body)
 		if cpy != nil {
 			cpy.From = s.Self()
