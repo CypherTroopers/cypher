@@ -1,4 +1,4 @@
-ColossusX supports multiple mining contribution models.
+ multiple mining contribution models.
 
 1. Core Miner
 Core miners perform PoW mining for KeyBlocks generated approximately every 10 minutes.
