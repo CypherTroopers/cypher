@@ -17,6 +17,7 @@
 package reconfig
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
+	"github.com/cypherium/cypher/reconfig/hotstuff"
 	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rnet"
 	"github.com/cypherium/cypher/rnet/network"
@@ -67,10 +69,11 @@ type netService struct {
 	gossipMsg              map[common.Hash]*msgHeadInfo
 	muGossip               sync.Mutex
 
-	goMap     map[string]*int32 //atomic int
-	idDataMap map[string]*common.Queue
-	ackMap    map[string]*ackInfo
-	muIdMap   sync.Mutex
+	goMap             map[string]*int32 //atomic int
+	idDataMap         map[string]*common.Queue
+	idPriorityDataMap map[string]*common.Queue
+	ackMap            map[string]*ackInfo
+	muIdMap           sync.Mutex
 
 	backend       serviceCallback
 	curBlockN     uint64
@@ -100,6 +103,7 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 	s.gossipMsg = make(map[common.Hash]*msgHeadInfo)
 	s.goMap = make(map[string]*int32)
 	s.idDataMap = make(map[string]*common.Queue)
+	s.idPriorityDataMap = make(map[string]*common.Queue)
 	s.ackMap = make(map[string]*ackInfo)
 	s.backend = callback
 	s.candidatepool = backend.CandidatePool()
@@ -170,7 +174,7 @@ func (s *netService) handleNetworkMsgAck(env *network.Envelope) {
 		log.Error("handleNetworkMsgReq failed to cast to ")
 		return
 	}
-	if msg.Cmsg == nil && msg.Bmsg == nil && msg.Hmsg == nil {
+	if msg.Cmsg == nil && msg.Bmsg == nil && msg.Hmsg == nil && msg.Pmsg == nil {
 		log.Error("handleNetworkMsgReq nil message")
 		return
 	}
@@ -199,6 +203,10 @@ func (s *netService) handleNetworkMsgAck(env *network.Envelope) {
 }
 
 func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
+	if msg == nil {
+		log.Error("broadcast", "error", "nil network message")
+		return
+	}
 	mb := msg.GetCommittee()
 	if mb == nil {
 		log.Error("broadcast", "error", "can't find current committee")
@@ -211,9 +219,26 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 			return
 		}
 	}
-	msg.MsgFlag = Gossip_MSG
-	hash := rlpHash(msg)
-	hInfo := s.getMsgHeadInfo(msg)
+
+	// Production rule: HotStuff control messages must not depend on random gossip
+	// fanout. Service.Broadcast and Service.Write deliver them directly. Refuse
+	// to gossip them here if a future caller accidentally routes them through this
+	// data-plane path.
+	if msg.Hmsg != nil {
+		switch msg.Hmsg.Code {
+		case hotstuff.MsgNewView, hotstuff.MsgPrepare, hotstuff.MsgVotePrepare, hotstuff.MsgDecide:
+			log.Warn("refusing to gossip hotstuff control message",
+				"code", hotstuff.ReadableMsgType(msg.Hmsg.Code),
+				"number", msg.Hmsg.Number,
+				"viewID", msg.Hmsg.ViewId)
+			return
+		}
+	}
+
+	gossipMsg := cloneNetworkMsg(msg)
+	gossipMsg.MsgFlag = Gossip_MSG
+	hash := rlpHash(gossipMsg)
+	hInfo := s.getMsgHeadInfo(gossipMsg)
 	log.Info("Gossip_MSG broadcast", "hash", hash, "keyblockN", hInfo.keyblockN, "blockN", hInfo.blockN)
 
 	s.muGossip.Lock()
@@ -223,35 +248,56 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 	mblist := mb.List
 	n := len(mblist)
 	seedIndexs := math.GetRandIntArray(n, n/2+3)
-	for i := range seedIndexs {
-		if mblist[i].Address == "" {
+	for _, idx := range seedIndexs {
+		if idx < 0 || idx >= len(mblist) {
 			continue
 		}
-		if IsSelf(mblist[i].Address) {
+		node := mblist[idx]
+		if node == nil || node.Address == "" {
 			continue
 		}
-		s.SendRawData(mblist[i].Address, msg)
+		if IsSelf(node.Address) {
+			continue
+		}
+		if err := s.SendRawData(node.Address, cloneNetworkMsg(gossipMsg)); err != nil {
+			log.Warn("Gossip_MSG send failed", "to", node.Address, "hash", hash, "err", err)
+		}
 	}
 }
 
 func (s *netService) SendRawData(address string, msg *networkMsg) error {
-	//	log.Info("SendRawData", "to address", address)
+	if msg == nil {
+		return fmt.Errorf("nil network message")
+	}
+	if address == "" {
+		return fmt.Errorf("empty destination address")
+	}
 	if address == s.serverAddress {
 		return nil
 	}
 
 	s.setIsRunning(address, true)
 	s.muIdMap.Lock()
-	q, ok := s.idDataMap[address]
+	q := s.idDataMap[address]
+	pq := s.idPriorityDataMap[address]
 	s.muIdMap.Unlock()
-	if ok && q != nil {
-		q.PushBack(msg)
+
+	if isHighPriorityNetworkMsg(msg) {
+		if pq == nil {
+			return fmt.Errorf("priority queue not found for %s", address)
+		}
+		pq.PushBack(cloneNetworkMsg(msg))
+		return nil
 	}
-	//	log.Info("SendRawData", "to address", address, "msg", msg)
+
+	if q == nil {
+		return fmt.Errorf("queue not found for %s", address)
+	}
+	q.PushBack(cloneNetworkMsg(msg))
 	return nil
 }
 
-func (s *netService) loop_iddata(address string, q *common.Queue) {
+func (s *netService) loop_iddata(address string, priorityQ *common.Queue, q *common.Queue) {
 	log.Debug("loop_iddata start", "address", address)
 	si := network.NewServerIdentity(address)
 
@@ -261,28 +307,37 @@ func (s *netService) loop_iddata(address string, q *common.Queue) {
 
 	for !s.isStoping && atomic.LoadInt32(isRunning) == 1 {
 		if s.GetNetBlocks(si) > 1 {
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
 			continue
 		}
-		msg := q.PopFront()
-		if msg != nil {
-			m, ok := msg.(*networkMsg)
-			if ok && s.IgnoreMsg(m) {
-				continue
-			}
-			err := s.SendRaw(si, msg, false)
-			if err != nil {
-				//if err == SendOverFlowErr {}
-				log.Warn("SendRawData", "couldn't send to", address, "error", err)
-			}
+
+		var msg interface{}
+		if priorityQ != nil {
+			msg = priorityQ.PopFront()
 		}
-		time.Sleep(5 * time.Millisecond)
+		if msg == nil && q != nil {
+			msg = q.PopFront()
+		}
+		if msg == nil {
+			time.Sleep(2 * time.Millisecond)
+			continue
+		}
+
+		m, ok := msg.(*networkMsg)
+		if ok && s.IgnoreMsg(m) {
+			continue
+		}
+		if err := s.SendRaw(si, msg, false); err != nil {
+			log.Warn("SendRawData", "couldn't send to", address, "error", err)
+		}
 	}
+
 	atomic.StoreInt32(isRunning, 0)
 
 	s.muIdMap.Lock()
 	delete(s.goMap, address)
 	delete(s.idDataMap, address)
+	delete(s.idPriorityDataMap, address)
 	delete(s.ackMap, address)
 	s.muIdMap.Unlock()
 
@@ -300,6 +355,9 @@ func (s *netService) getMsgHeadInfo(msg *networkMsg) *msgHeadInfo {
 	} else if msg.Hmsg != nil {
 		hInfo.keyblockN = 0
 		hInfo.blockN = msg.Hmsg.Number
+	} else if msg.Pmsg != nil {
+		hInfo.keyblockN = 0
+		hInfo.blockN = msg.Pmsg.Number
 	}
 	return hInfo
 }
@@ -315,6 +373,10 @@ func (s *netService) IgnoreMsg(m *networkMsg) bool {
 		}
 	} else if m.Hmsg != nil {
 		if m.Hmsg.Number < atomic.LoadUint64(&s.curBlockN) {
+			return true
+		}
+	} else if m.Pmsg != nil {
+		if m.Pmsg.Number < atomic.LoadUint64(&s.curBlockN) {
 			return true
 		}
 	}
@@ -354,8 +416,13 @@ func (s *netService) setIsRunning(id string, isStart bool) {
 				q = common.QueueNew()
 				s.idDataMap[id] = q
 			}
+			pq, ok := s.idPriorityDataMap[id]
+			if !ok {
+				pq = common.QueueNew()
+				s.idPriorityDataMap[id] = pq
+			}
 			s.muIdMap.Unlock()
-			go s.loop_iddata(id, q)
+			go s.loop_iddata(id, pq, q)
 		}
 	} else {
 		if i == 1 {
@@ -445,6 +512,37 @@ func (s *netService) ResetAckTime(addr string) {
 		}
 	}
 	s.muIdMap.Unlock()
+}
+
+func isHighPriorityNetworkMsg(msg *networkMsg) bool {
+	if msg == nil {
+		return false
+	}
+	if msg.Hmsg != nil {
+		// All HotStuff messages are consensus-control traffic and must not wait
+		// behind proposal-body sidecars or other bulk data.
+		return true
+	}
+	if msg.Pmsg != nil && msg.Pmsg.Type == proposalBodyMsgRequest {
+		return true
+	}
+	return false
+}
+
+func cloneNetworkMsg(msg *networkMsg) *networkMsg {
+	if msg == nil {
+		return nil
+	}
+	cpy := *msg
+	if msg.Pmsg != nil {
+		body := *msg.Pmsg
+		if len(msg.Pmsg.EncodedBlock) > 0 {
+			body.EncodedBlock = make([]byte, len(msg.Pmsg.EncodedBlock))
+			copy(body.EncodedBlock, msg.Pmsg.EncodedBlock)
+		}
+		cpy.Pmsg = &body
+	}
+	return &cpy
 }
 
 // --------------------------------------------------------------------------------------------------------------------------
