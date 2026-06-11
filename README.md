@@ -4,7 +4,7 @@ sudo apt update && sudo apt full-upgrade -y && sudo apt autoremove -y && sudo ap
 ```
 ### Requirements
 
-- Go 1.23 or later
+- Go 1.24 or later
 - Git
 - GCC / build-essential for CGO dependencies
 
@@ -16,9 +16,11 @@ cd cypher
 git fetch --all
 git checkout commonRPC_Pipe_test_go.Mod
 ```
+## go mod
 ```bash
 go mod download
 ```
+## build
 ```bash
 make cypher
 ```
