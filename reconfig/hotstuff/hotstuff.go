@@ -188,7 +188,7 @@ type HotStuffApplication interface {
 	OnViewDone(tSign *SignedState) error
 
 	CheckView(currentState []byte) error
-	Propose() (e error, kState []byte, tState []byte, extra []byte)
+	Propose(viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte)
 	CurrentState() ([]byte, string, uint64)
 	CurrentN() uint64
 	GetExtra() []byte // only for new-view procedure
@@ -782,10 +782,14 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 		return ErrViewPhaseNotMatch
 	}
 
-	err, kProposal, tProposal, extra := hsm.app.Propose()
+	err, kProposal, tProposal, extra := hsm.app.Propose(v.hash, v.leaderId)
 	if err != nil {
-		log.Warn("hotstuff application failed to propose")
+		log.Warn("hotstuff application failed to propose", "viewId", v.hash, "number", v.number, "leader", v.leaderId, "err", err)
 		return err
+	}
+	if len(kProposal) == 0 && len(tProposal) == 0 {
+		log.Warn("hotstuff application returned empty proposal", "viewId", v.hash, "number", v.number, "leader", v.leaderId)
+		return ErrInvalidProposal
 	}
 
 	if err := hsm.aggregateQC(v, "high", v.highVoteInfo); err != nil {
@@ -805,7 +809,26 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 		copy(msg.DataF, extra)
 	}
 
-	log.Debug("view broadcast Prepare msg", "viewID", v.hash)
+	if encoded, encErr := rlp.EncodeToBytes(msg); encErr == nil {
+		log.Info("HOTSTUFF PREPARE SIZE",
+			"number", v.number,
+			"viewID", v.hash,
+			"leader", v.leaderId,
+			"kProposal", len(kProposal),
+			"tProposal", len(tProposal),
+			"extra", len(extra),
+			"dataA", len(msg.DataA),
+			"dataB", len(msg.DataB),
+			"dataC", len(msg.DataC),
+			"dataD", len(msg.DataD),
+			"dataE", len(msg.DataE),
+			"dataF", len(msg.DataF),
+			"msgRLP", len(encoded))
+	} else {
+		log.Warn("HOTSTUFF PREPARE SIZE encode failed", "number", v.number, "viewID", v.hash, "err", encErr)
+	}
+
+	log.Debug("view broadcast Prepare msg", "viewID", v.hash, "number", v.number)
 	hsm.app.Broadcast(msg)
 	v.leaderMsg[MsgPrepare] = msg
 
@@ -933,6 +956,7 @@ loop:
 
 // for replica
 func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
+	start := time.Now()
 	if err := hsm.app.CheckView(m.DataE); err != nil {
 		return err
 	}
@@ -981,10 +1005,12 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 		return ErrInvalidHighQC
 	}
 
+	verifyStart := time.Now()
 	if err := hsm.app.OnPropose(state, extra); err != nil {
-		log.Debug("handlePrepareMsg failed to verify proposed data", "viewId", m.ViewId)
+		log.Debug("handlePrepareMsg failed to verify proposed data", "viewId", m.ViewId, "number", m.Number, "elapsed", time.Since(verifyStart), "err", err)
 		return ErrInvalidProposal
 	}
+	log.Info("HOTSTUFF PREPARE VERIFIED", "number", m.Number, "viewID", m.ViewId, "from", m.Id, "verifyElapsed", time.Since(verifyStart), "totalElapsed", time.Since(start), "stateBytes", len(state), "extraBytes", len(extra))
 	hsm.lockView(v)
 
 	kSign := []byte(nil)
@@ -1008,9 +1034,13 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 
 	msg := hsm.newMsg(MsgVotePrepare, v.number, v.hash, nil, kSign, tSign)
 
-	log.Debug("handlePrepareMsg send VotePrepare msg", "viewID", v.hash)
-	hsm.app.Write(m.Id, msg)
+	log.Debug("handlePrepareMsg send VotePrepare msg", "viewID", v.hash, "number", v.number, "to", m.Id)
+	if err := hsm.app.Write(m.Id, msg); err != nil {
+		log.Warn("handlePrepareMsg failed to send VotePrepare msg", "viewID", v.hash, "number", v.number, "to", m.Id, "err", err)
+		return err
+	}
 	v.phaseAsReplica = PhaseDecide
+	log.Info("HOTSTUFF VOTEPREPARE SENT", "number", v.number, "viewID", v.hash, "to", m.Id, "totalElapsed", time.Since(start))
 
 	return nil
 }
@@ -1108,6 +1138,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 	msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
 
 	log.Debug("handlePrepareVoteMsg broadcast Decide msg", "viewId", m.ViewId, "number", v.number)
+	log.Info("HOTSTUFF DECIDE BROADCAST", "number", v.number, "viewID", m.ViewId, "votes", len(v.prepareVoteInfo), "threshold", v.threshold)
 	hsm.app.Broadcast(msg)
 	v.phaseAsLeader = PhaseFinal
 	v.leaderMsg[MsgDecide] = msg
@@ -1117,6 +1148,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 
 // for replica
 func (hsm *HotstuffProtocolManager) handleDecideMsg(m *HotstuffMessage) error {
+	start := time.Now()
 	v, exist := hsm.views[m.ViewId]
 	if !exist {
 		//log.Debug("handleDecideMsg found no match view", "viewId", m.ViewId)
@@ -1142,9 +1174,12 @@ func (hsm *HotstuffProtocolManager) handleDecideMsg(m *HotstuffMessage) error {
 		}
 	}
 
-	log.Debug("handleDecideMsg view done", "viewId", m.ViewId)
+	log.Debug("handleDecideMsg view done", "viewId", m.ViewId, "number", m.Number)
+	log.Info("HOTSTUFF DECIDE VERIFIED", "number", m.Number, "viewID", m.ViewId, "from", m.Id, "elapsed", time.Since(start))
 
-	// execute the command
+	// execute the command. In proposal-ref mode, v.proposedTState is the
+	// canonical ProposalRef bytes. The application is responsible for resolving
+	// the sidecar body and committing a previously verified proposal when present.
 	hsm.viewDone(v, m.DataA, m.DataB, m.DataC, nil)
 	v.phaseAsReplica = PhaseFinal
 
