@@ -1,0 +1,14 @@
+ColossusX supports multiple mining contribution models.
+
+1. Core Miner
+Core miners perform PoW mining for KeyBlocks generated approximately every 10 minutes.
+
+2. Network Miner
+Network miners perform PoW mining while also contributing available RPC capacity for transaction processing and network decentralization.
+
+3. AI Miner
+AI miners perform PoW mining while also serving AI inference workloads. Rewards are calculated based on the number of valid generated tokens.
+
+4. ColossusX Full Miner
+Colossus miners combine all contribution layers: PoW mining, AI inference, and RPC transaction processing. This mode is designed for high-performance 
+machines with sufficient compute power and network bandwidth.
