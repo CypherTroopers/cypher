@@ -40,6 +40,9 @@ import (
 const (
 	txQUICProtocolName = "cypher-tx-quic/1"
 	txQUICPacketV1     = uint(1)
+
+	txQUICForwardIdleTimeout     = 60 * time.Second
+	txQUICForwardKeepAlivePeriod = 10 * time.Second
 )
 
 var (
@@ -56,24 +59,32 @@ type txQUICRateBucket struct {
 	last   time.Time
 }
 
+type txQUICItem struct {
+	Tx        *types.Transaction
+	Admission *types.CommonTxAdmission
+}
+
 type txQUICPacket struct {
-	Version    uint
-	Sender     common.Address
-	Nonce      uint64
-	Timestamp  uint64
-	Txs        []*types.Transaction
-	Admissions []*types.CommonTxAdmission
-	Signature  []byte
+	Version   uint
+	Sender    common.Address
+	Nonce     uint64
+	Timestamp uint64
+	Items     []*txQUICItem
+	Signature []byte
+}
+
+type txQUICSigningItem struct {
+	TxHash          common.Hash
+	AdmissionTxHash common.Hash
+	AdmissionMiner  common.Address
 }
 
 type txQUICSigningData struct {
-	Version         uint
-	Sender          common.Address
-	Nonce           uint64
-	Timestamp       uint64
-	TxHashes        []common.Hash
-	AdmissionHashes []common.Hash
-	AdmissionMiners []common.Address
+	Version   uint
+	Sender    common.Address
+	Nonce     uint64
+	Timestamp uint64
+	Items     []txQUICSigningItem
 }
 
 type txQUICAck struct {
@@ -93,6 +104,13 @@ type txQUICBridgeItem struct {
 
 type txQUICAdmissionItem struct {
 	admission *types.CommonTxAdmission
+}
+
+type txQUICForwardClient struct {
+	endpoint string
+
+	mu   sync.Mutex
+	conn *quic.Conn
 }
 
 type TxQUICIngress struct {
@@ -120,6 +138,8 @@ type TxQUICIngress struct {
 	admissionQueue chan txQUICAdmissionItem
 
 	outboundNonce uint64
+
+	forwardClients sync.Map // map[string]*txQUICForwardClient
 }
 
 func (config *TxQUICConfig) ApplyFixedCommitteeAutoRole(chainConfig *params.ChainConfig) {
@@ -295,7 +315,7 @@ func (q *TxQUICIngress) Start() error {
 		return err
 	}
 	addr := fmt.Sprintf("%s:%d", q.config.Addr, q.config.Port)
-	listener, err := quic.ListenAddr(addr, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{txQUICProtocolName}, MinVersion: tls.VersionTLS13}, &quic.Config{MaxIncomingStreams: q.config.MaxIncomingStreams, KeepAlivePeriod: 10 * time.Second, MaxIdleTimeout: 30 * time.Second})
+	listener, err := quic.ListenAddr(addr, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{txQUICProtocolName}, MinVersion: tls.VersionTLS13}, &quic.Config{MaxIncomingStreams: q.config.MaxIncomingStreams, KeepAlivePeriod: txQUICForwardKeepAlivePeriod, MaxIdleTimeout: txQUICForwardIdleTimeout})
 	if err != nil {
 		return err
 	}
@@ -316,6 +336,12 @@ func (q *TxQUICIngress) Stop() {
 	if q.http3Server != nil {
 		_ = q.http3Server.Close()
 	}
+	q.forwardClients.Range(func(_, value interface{}) bool {
+		if client, ok := value.(*txQUICForwardClient); ok && client != nil {
+			client.close()
+		}
+		return true
+	})
 	q.wg.Wait()
 	log.Info("Stopped QUIC tx ingress")
 }
@@ -555,7 +581,11 @@ func (q *TxQUICIngress) forwardAdmissionBatch(admissions []*types.CommonTxAdmiss
 }
 
 func (q *TxQUICIngress) encodeTxPayload(txs []*types.Transaction, admissions []*types.CommonTxAdmission, am *accounts.Manager) ([]byte, error) {
-	validAdmissions := make([]*types.CommonTxAdmission, 0, len(admissions))
+	if len(txs) == 0 {
+		return nil, fmt.Errorf("no txs to encode")
+	}
+
+	admissionByTx := make(map[common.Hash]*types.CommonTxAdmission)
 	for _, admission := range admissions {
 		if admission == nil {
 			continue
@@ -564,11 +594,46 @@ func (q *TxQUICIngress) encodeTxPayload(txs []*types.Transaction, admissions []*
 			log.Warn("Skip invalid TxQUIC admission sidecar before forward", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
 			continue
 		}
-		validAdmissions = append(validAdmissions, copyCommonTxAdmissionForQUIC(admission))
+		admissionByTx[admission.TxHash] = copyCommonTxAdmissionForQUIC(admission)
 	}
 
-	if !q.config.RequireAuth && len(validAdmissions) == 0 {
-		return rlp.EncodeToBytes(txs)
+	items := make([]*txQUICItem, 0, len(txs))
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		hash := tx.Hash()
+		items = append(items, &txQUICItem{
+			Tx:        tx,
+			Admission: admissionByTx[hash],
+		})
+		delete(admissionByTx, hash)
+	}
+
+	if len(items) == 0 {
+		return nil, fmt.Errorf("no valid txs to encode")
+	}
+
+	for txHash, admission := range admissionByTx {
+		log.Debug("Skip unmatched TxQUIC admission sidecar", "tx", txHash, "miner", admission.Miner)
+	}
+
+	hasAdmission := false
+	for _, item := range items {
+		if item != nil && item.Admission != nil {
+			hasAdmission = true
+			break
+		}
+	}
+
+	if !q.config.RequireAuth && !hasAdmission {
+		plainTxs := make([]*types.Transaction, 0, len(items))
+		for _, item := range items {
+			if item != nil && item.Tx != nil {
+				plainTxs = append(plainTxs, item.Tx)
+			}
+		}
+		return rlp.EncodeToBytes(plainTxs)
 	}
 
 	sender := bftview.GetServerCoinBase()
@@ -582,12 +647,11 @@ func (q *TxQUICIngress) encodeTxPayload(txs []*types.Transaction, admissions []*
 	}
 
 	pkt := &txQUICPacket{
-		Version:    txQUICPacketV1,
-		Sender:     sender,
-		Nonce:      atomic.AddUint64(&q.outboundNonce, 1),
-		Timestamp:  uint64(time.Now().Unix()),
-		Txs:        txs,
-		Admissions: validAdmissions,
+		Version:   txQUICPacketV1,
+		Sender:    sender,
+		Nonce:     atomic.AddUint64(&q.outboundNonce, 1),
+		Timestamp: uint64(time.Now().Unix()),
+		Items:     items,
 	}
 
 	if !q.config.RequireAuth {
@@ -612,7 +676,7 @@ func (q *TxQUICIngress) encodeTxPayload(txs []*types.Transaction, admissions []*
 }
 
 func (q *TxQUICIngress) encodeAdmissionPayload(admissions []*types.CommonTxAdmission) ([]byte, error) {
-	valid := make([]*types.CommonTxAdmission, 0, len(admissions))
+	items := make([]*txQUICItem, 0, len(admissions))
 	for _, admission := range admissions {
 		if admission == nil {
 			continue
@@ -621,12 +685,20 @@ func (q *TxQUICIngress) encodeAdmissionPayload(admissions []*types.CommonTxAdmis
 			log.Warn("Skip invalid TxQUIC admission before forward", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
 			continue
 		}
-		valid = append(valid, copyCommonTxAdmissionForQUIC(admission))
+		items = append(items, &txQUICItem{
+			Tx:        nil,
+			Admission: copyCommonTxAdmissionForQUIC(admission),
+		})
 	}
-	if len(valid) == 0 {
+	if len(items) == 0 {
 		return nil, fmt.Errorf("no valid admissions to forward")
 	}
-	pkt := &txQUICPacket{Version: txQUICPacketV1, Nonce: atomic.AddUint64(&q.outboundNonce, 1), Timestamp: uint64(time.Now().Unix()), Admissions: valid}
+	pkt := &txQUICPacket{
+		Version:   txQUICPacketV1,
+		Nonce:     atomic.AddUint64(&q.outboundNonce, 1),
+		Timestamp: uint64(time.Now().Unix()),
+		Items:     items,
+	}
 	return rlp.EncodeToBytes(pkt)
 }
 
@@ -831,41 +903,145 @@ func (q *TxQUICIngress) routePayload(payload []byte) int {
 }
 
 func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
+	if q == nil {
+		return fmt.Errorf("nil txquic ingress")
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return fmt.Errorf("empty txquic endpoint")
+	}
+	if len(payload) == 0 {
+		return fmt.Errorf("empty txquic payload")
+	}
+
+	value, _ := q.forwardClients.LoadOrStore(endpoint, &txQUICForwardClient{endpoint: endpoint})
+	client, ok := value.(*txQUICForwardClient)
+	if !ok || client == nil {
+		return fmt.Errorf("invalid txquic forward client for %s", endpoint)
+	}
+	return client.send(q, payload)
+}
+
+func (c *txQUICForwardClient) getConn(q *TxQUICIngress, ctx context.Context) (*quic.Conn, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn != nil {
+		select {
+		case <-c.conn.Context().Done():
+			c.conn = nil
+		default:
+			return c.conn, nil
+		}
+	}
+
+	handshakeTimeout := q.config.ForwardTimeout
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = 3 * time.Second
+	}
+
+	conn, err := quic.DialAddr(ctx, c.endpoint, q.clientTLSConfig(), &quic.Config{
+		HandshakeIdleTimeout: handshakeTimeout,
+		MaxIdleTimeout:       txQUICForwardIdleTimeout,
+		KeepAlivePeriod:      txQUICForwardKeepAlivePeriod,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	c.conn = conn
+	return conn, nil
+}
+
+func (c *txQUICForwardClient) send(q *TxQUICIngress, payload []byte) error {
 	timeout := endpointForwardTimeout(q.config.ForwardTimeout, q.config.ReadTimeout, q.config.WriteTimeout)
 	ctx, cancel := context.WithTimeout(q.ctx, timeout)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, endpoint, q.clientTLSConfig(), &quic.Config{MaxIdleTimeout: timeout})
-	if err != nil {
-		return err
-	}
-	defer conn.CloseWithError(0, "done")
-	stream, err := conn.OpenStreamSync(ctx)
-	if err != nil {
-		return err
-	}
-	_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
-	if _, err := stream.Write(payload); err != nil {
-		_ = stream.Close()
-		return err
-	}
-	if err := stream.Close(); err != nil {
-		return err
-	}
-	if !q.config.Ack {
+
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		conn, err := c.getConn(q, ctx)
+		if err != nil {
+			return err
+		}
+
+		stream, err := conn.OpenStreamSync(ctx)
+		if err != nil {
+			c.reset(conn)
+			lastErr = err
+			continue
+		}
+
+		_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
+		if err := writeFullTxQUIC(stream, payload); err != nil {
+			_ = stream.Close()
+			c.reset(conn)
+			lastErr = err
+			continue
+		}
+
+		if err := stream.Close(); err != nil {
+			c.reset(conn)
+			lastErr = err
+			continue
+		}
+
+		if !q.config.Ack {
+			return nil
+		}
+
+		_ = stream.SetReadDeadline(time.Now().Add(q.config.ReadTimeout))
+		var ack txQUICAck
+		if err := rlp.Decode(stream, &ack); err != nil {
+			c.reset(conn)
+			lastErr = fmt.Errorf("txquic ack read failed from %s: %w", c.endpoint, err)
+			continue
+		}
+
+		if len(ack.Errors) > 0 {
+			return fmt.Errorf("txquic ack errors from %s: %v", c.endpoint, ack.Errors)
+		}
+		if ack.Accepted == 0 && ack.Forwarded == 0 {
+			return fmt.Errorf("txquic ack no accepted/forwarded from %s: accepted=%d rejected=%d forwarded=%d", c.endpoint, ack.Accepted, ack.Rejected, ack.Forwarded)
+		}
 		return nil
 	}
-	_ = stream.SetReadDeadline(time.Now().Add(q.config.ReadTimeout))
-	var ack txQUICAck
-	if err := rlp.Decode(stream, &ack); err != nil {
-		return fmt.Errorf("txquic ack read failed from %s: %w", endpoint, err)
-	}
-	if len(ack.Errors) > 0 {
-		return fmt.Errorf("txquic ack errors from %s: %v", endpoint, ack.Errors)
-	}
-	if ack.Accepted == 0 && ack.Forwarded == 0 {
-		return fmt.Errorf("txquic ack no accepted/forwarded from %s: accepted=%d rejected=%d forwarded=%d", endpoint, ack.Accepted, ack.Rejected, ack.Forwarded)
+
+	return lastErr
+}
+
+func writeFullTxQUIC(w io.Writer, payload []byte) error {
+	for len(payload) > 0 {
+		n, err := w.Write(payload)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		payload = payload[n:]
 	}
 	return nil
+}
+
+func (c *txQUICForwardClient) reset(conn *quic.Conn) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn == conn {
+		_ = c.conn.CloseWithError(0, "reset")
+		c.conn = nil
+	}
+}
+
+func (c *txQUICForwardClient) close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn != nil {
+		_ = c.conn.CloseWithError(0, "closed")
+		c.conn = nil
+	}
 }
 
 func endpointForwardTimeout(forwardTimeout time.Duration, readTimeout time.Duration, writeTimeout time.Duration) time.Duration {
@@ -884,21 +1060,33 @@ func endpointForwardTimeout(forwardTimeout time.Duration, readTimeout time.Durat
 
 func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transaction, []*types.CommonTxAdmission, bool, common.Address, error) {
 	var pkt txQUICPacket
-	if err := rlp.DecodeBytes(payload, &pkt); err == nil && pkt.Version == txQUICPacketV1 && (len(pkt.Txs) > 0 || len(pkt.Admissions) > 0) {
-		if len(pkt.Txs) == 0 && len(pkt.Admissions) > 0 && len(pkt.Signature) == 0 {
+	if err := rlp.DecodeBytes(payload, &pkt); err == nil && pkt.Version == txQUICPacketV1 && len(pkt.Items) > 0 {
+		if isAdmissionOnlyPacket(&pkt) && len(pkt.Signature) == 0 {
 			signer, err := verifyAdmissionOnlyPacket(&pkt)
-			return nil, pkt.Admissions, false, signer, err
+			if err != nil {
+				return nil, nil, false, common.Address{}, err
+			}
+			txs, admissions, err := packetItemsToTxsAndAdmissions(&pkt)
+			return txs, admissions, false, signer, err
 		}
+
 		signer, err := q.verifyPacket(&pkt)
-		return pkt.Txs, pkt.Admissions, true, signer, err
+		if err != nil {
+			return nil, nil, true, signer, err
+		}
+		txs, admissions, err := packetItemsToTxsAndAdmissions(&pkt)
+		return txs, admissions, true, signer, err
 	}
+
 	if q.config.RequireAuth {
 		return nil, nil, false, common.Address{}, fmt.Errorf("unsigned txquic payload rejected")
 	}
+
 	var batch []*types.Transaction
 	if err := rlp.DecodeBytes(payload, &batch); err == nil {
 		return batch, nil, false, common.Address{}, nil
 	}
+
 	var single types.Transaction
 	if err := rlp.DecodeBytes(payload, &single); err != nil {
 		return nil, nil, false, common.Address{}, err
@@ -906,20 +1094,81 @@ func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transact
 	return []*types.Transaction{&single}, nil, false, common.Address{}, nil
 }
 
+func isAdmissionOnlyPacket(pkt *txQUICPacket) bool {
+	if pkt == nil || len(pkt.Items) == 0 {
+		return false
+	}
+	for _, item := range pkt.Items {
+		if item == nil || item.Tx != nil || item.Admission == nil {
+			return false
+		}
+	}
+	return true
+}
+
 func verifyAdmissionOnlyPacket(pkt *txQUICPacket) (common.Address, error) {
 	var signer common.Address
-	for _, admission := range pkt.Admissions {
-		if admission == nil {
-			continue
+	if pkt == nil || len(pkt.Items) == 0 {
+		return common.Address{}, fmt.Errorf("empty admission-only packet")
+	}
+	for _, item := range pkt.Items {
+		if item == nil {
+			return common.Address{}, fmt.Errorf("nil admission-only item")
 		}
-		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+		if item.Tx != nil {
+			return common.Address{}, fmt.Errorf("admission-only packet contains tx")
+		}
+		if item.Admission == nil {
+			return common.Address{}, fmt.Errorf("admission-only packet contains nil admission")
+		}
+		if err := types.VerifyCommonTxAdmissionSignature(item.Admission); err != nil {
 			return common.Address{}, err
 		}
 		if signer == (common.Address{}) {
-			signer = admission.Miner
+			signer = item.Admission.Miner
 		}
 	}
+	if signer == (common.Address{}) {
+		return common.Address{}, fmt.Errorf("admission-only packet has no signer")
+	}
 	return signer, nil
+}
+
+func packetItemsToTxsAndAdmissions(pkt *txQUICPacket) ([]*types.Transaction, []*types.CommonTxAdmission, error) {
+	if pkt == nil || len(pkt.Items) == 0 {
+		return nil, nil, fmt.Errorf("empty txquic packet items")
+	}
+
+	txs := make([]*types.Transaction, 0, len(pkt.Items))
+	admissions := make([]*types.CommonTxAdmission, 0, len(pkt.Items))
+
+	for i, item := range pkt.Items {
+		if item == nil {
+			return nil, nil, fmt.Errorf("nil txquic item at index %d", i)
+		}
+		if item.Tx == nil && item.Admission == nil {
+			return nil, nil, fmt.Errorf("empty txquic item at index %d", i)
+		}
+		if item.Admission != nil {
+			if err := types.VerifyCommonTxAdmissionSignature(item.Admission); err != nil {
+				return nil, nil, fmt.Errorf("invalid admission at index %d: %w", i, err)
+			}
+		}
+		if item.Tx != nil && item.Admission != nil {
+			txHash := item.Tx.Hash()
+			if txHash != item.Admission.TxHash {
+				return nil, nil, fmt.Errorf("tx/admission mismatch at index %d: tx=%s admission=%s", i, txHash.Hex(), item.Admission.TxHash.Hex())
+			}
+		}
+		if item.Tx != nil {
+			txs = append(txs, item.Tx)
+		}
+		if item.Admission != nil {
+			admissions = append(admissions, item.Admission)
+		}
+	}
+
+	return txs, admissions, nil
 }
 
 func (q *TxQUICIngress) verifyPacket(pkt *txQUICPacket) (common.Address, error) {
@@ -951,21 +1200,29 @@ func (q *TxQUICIngress) verifyPacket(pkt *txQUICPacket) (common.Address, error) 
 }
 
 func (p *txQUICPacket) signingPayload() ([]byte, error) {
-	hashes := make([]common.Hash, 0, len(p.Txs))
-	for _, tx := range p.Txs {
-		if tx != nil {
-			hashes = append(hashes, tx.Hash())
+	items := make([]txQUICSigningItem, 0, len(p.Items))
+	for _, item := range p.Items {
+		if item == nil {
+			continue
 		}
-	}
-	admissionHashes := make([]common.Hash, 0, len(p.Admissions))
-	admissionMiners := make([]common.Address, 0, len(p.Admissions))
-	for _, admission := range p.Admissions {
-		if admission != nil {
-			admissionHashes = append(admissionHashes, admission.TxHash)
-			admissionMiners = append(admissionMiners, admission.Miner)
+
+		var signingItem txQUICSigningItem
+		if item.Tx != nil {
+			signingItem.TxHash = item.Tx.Hash()
 		}
+		if item.Admission != nil {
+			signingItem.AdmissionTxHash = item.Admission.TxHash
+			signingItem.AdmissionMiner = item.Admission.Miner
+		}
+		items = append(items, signingItem)
 	}
-	return rlp.EncodeToBytes(txQUICSigningData{Version: p.Version, Sender: p.Sender, Nonce: p.Nonce, Timestamp: p.Timestamp, TxHashes: hashes, AdmissionHashes: admissionHashes, AdmissionMiners: admissionMiners})
+	return rlp.EncodeToBytes(txQUICSigningData{
+		Version:   p.Version,
+		Sender:    p.Sender,
+		Nonce:     p.Nonce,
+		Timestamp: p.Timestamp,
+		Items:     items,
+	})
 }
 
 func (p *txQUICPacket) signingHash() common.Hash {
@@ -1145,4 +1402,12 @@ func splitHostPortLoose(address string) (string, int, bool) {
 		return "", 0, false
 	}
 	return host, port, true
+}
+
+// broadcastCommonTxAdmissionsDedicated is the admission-only dedicated dispatcher.
+// QUIC admission-only forwarding is now handled by TxQUICIngress.ForwardAdmissions
+// through core.SetCommonRPCAdmissionDedicatedRelay. If that path is unavailable,
+// this dispatcher keeps KCP as the fallback dedicated admission transport.
+func (pm *ProtocolManager) broadcastCommonTxAdmissionsDedicated(admissions []*types.CommonTxAdmission) bool {
+	return pm.broadcastCommonTxAdmissionsKCPOnly(admissions)
 }
