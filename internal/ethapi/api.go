@@ -1262,7 +1262,10 @@ func isPlainValueTransferCall(ctx context.Context, b Backend, args CallArgs, blo
 	return true, nil
 }
 
-func isPlainValueTransferSendTx(ctx context.Context, b Backend, args SendTxArgs, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
+func isPlainValueTransferSendTx(ctx context.Context, b Backend, args *SendTxArgs, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
+	if args == nil {
+		return false, nil
+	}
 	if args.To == nil {
 		return false, nil
 	}
