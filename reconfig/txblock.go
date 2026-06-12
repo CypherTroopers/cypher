@@ -700,7 +700,7 @@ func (txS *txService) createWork(blockType uint8) *work {
 	parentNumber := parent.Number()
 
 	parentTime := int64(parent.Time())
-	tstamp := time.Now().UnixNano() / 1e6
+	tstamp := time.Now().Unix()
 
 	if parentTime >= tstamp { // Each successive block needs to be after its predecessor.
 		tstamp = parentTime + 1
