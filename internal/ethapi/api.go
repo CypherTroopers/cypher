@@ -88,18 +88,22 @@ type gasTipCapSuggester interface {
 }
 
 func fixedBaseFeePerGas() *big.Int {
-	return big.NewInt(params.FixedBaseFeePerGas)
+	return big.NewInt(params.GWei)
 }
 
 func fixedGasPricePerGas() *big.Int {
 	// Keep public eth_gasPrice stable for normal wallet transfers.
 	// Normal transfer fee: 21000 gas * 1 gwei = 0.000021.
-	return big.NewInt(params.FixedTransferGasPricePerGas)
+	return new(big.Int).Set(big.NewInt(params.GWei))
 }
 
 func fixedMaxPriorityFeePerGas() *big.Int {
-	return big.NewInt(params.FixedPriorityFeePerGas)
-}
+	// 20% of the fixed total gas price goes to reward / priority fee.
+	total := fixedGasPricePerGas()
+	return new(big.Int).Div(
+		new(big.Int).Mul(total, big.NewInt(20)),
+		big.NewInt(100),
+	)
 }
 
 func suggestGasTipCap(ctx context.Context, b Backend) (*big.Int, error) {
