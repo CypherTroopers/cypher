@@ -293,7 +293,7 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 		head.Difficulty = params.GenesisDifficulty
 	}
 	if head.BaseFee == nil && g.Config != nil && g.Config.IsLondon(head.Number) {
-		head.BaseFee = big.NewInt(params.GWei)
+		head.BaseFee = big.NewInt(params.FixedBaseFeePerGas)
 	}
 	statedb.Commit(false)
 	statedb.Database().TrieDB().Commit(root, true, nil)
