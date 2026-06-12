@@ -84,21 +84,31 @@ type hasher func(dest []byte, data []byte)
 // be reused between hash runs instead of requiring new ones to be created. The returned
 // function is not thread safe!
 func makeHasher(h hash.Hash) hasher {
-	// sha3.state supports Read to get the sum, use it to avoid the overhead of Sum.
-	// Read alters the state but we reset the hash before every operation.
+	// Older x/crypto/sha3 implementations exposed Read on the concrete hash state.
+	// Newer versions, including golang.org/x/crypto/sha3 v0.53.0, may return a
+	// standard hash.Hash wrapper that does not expose Read. Keep the fast Read path
+	// when available, but fall back to Sum for compatibility.
 	type readerHash interface {
 		hash.Hash
 		Read([]byte) (int, error)
 	}
-	rh, ok := h.(readerHash)
-	if !ok {
-		panic("can't find Read method on hash")
+
+	if rh, ok := h.(readerHash); ok {
+		outputLen := rh.Size()
+		return func(dest []byte, data []byte) {
+			rh.Reset()
+			_, _ = rh.Write(data)
+			_, _ = rh.Read(dest[:outputLen])
+		}
 	}
-	outputLen := rh.Size()
+
+	outputLen := h.Size()
 	return func(dest []byte, data []byte) {
-		rh.Reset()
-		rh.Write(data)
-		rh.Read(dest[:outputLen])
+		h.Reset()
+		_, _ = h.Write(data)
+
+		sum := h.Sum(nil)
+		copy(dest[:outputLen], sum[:outputLen])
 	}
 }
 
