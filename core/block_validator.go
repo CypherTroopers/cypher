@@ -18,6 +18,7 @@ package core
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
@@ -59,6 +60,21 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	}
 	// Header validity is known at this point, check the uncles and transactions
 	header := block.Header()
+
+	// Fixed-fee policy:
+	// All London-active tx blocks must carry the canonical fixed baseFeePerGas.
+	// This prevents validators from accepting blocks whose actual effectiveGasPrice
+	// would differ from the public RPC policy:
+	//   baseFeePerGas          = 0.8 gwei
+	//   maxPriorityFeePerGas   = 0.2 gwei
+	//   effectiveGasPrice      = 1.0 gwei for normal type-2 transfers
+	if v.config != nil && v.config.IsLondon(header.Number) {
+		wantBaseFee := big.NewInt(params.FixedBaseFeePerGas)
+		if header.BaseFee == nil || header.BaseFee.Cmp(wantBaseFee) != 0 {
+			return fmt.Errorf("invalid fixed baseFeePerGas: have %v want %v", header.BaseFee, wantBaseFee)
+		}
+	}
+
 	/*??
 	if err := v.engine.VerifyUncles(v.bc, block); err != nil {
 		return err
