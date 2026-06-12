@@ -98,12 +98,18 @@ func fixedGasPricePerGas() *big.Int {
 }
 
 func fixedMaxPriorityFeePerGas() *big.Int {
-	return new(big.Int)
+	// 20% of the fixed total gas price goes to reward / priority fee.
+	total := fixedGasPricePerGas()
+	return new(big.Int).Div(
+		new(big.Int).Mul(total, big.NewInt(20)),
+		big.NewInt(100),
+	)
 }
 
 func suggestGasTipCap(ctx context.Context, b Backend) (*big.Int, error) {
-	// Fixed-fee EIP-1559 policy for MetaMask:
-	// baseFeePerGas = 1 gwei, maxPriorityFeePerGas = 0.
+	// Fixed-fee policy for MetaMask-compatible RPC:
+	// eth_gasPrice stays 1 gwei, and the suggested priority fee is 0.2 gwei.
+	// The canonical block baseFeePerGas is handled separately by block/header code.
 	return fixedMaxPriorityFeePerGas(), nil
 }
 
@@ -1236,6 +1242,48 @@ func (s *PublicBlockChainAPI) Call(ctx context.Context, args CallArgs, blockNrOr
 	return result.Return(), result.Err
 }
 
+func hasCallData(data *hexutil.Bytes) bool {
+	return data != nil && len(*data) > 0
+}
+
+func hasAccessList(accessList *types.AccessList) bool {
+	return accessList != nil && len(*accessList) > 0
+}
+
+func isPlainValueTransferCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
+	if args.To == nil {
+		return false, nil
+	}
+	if hasCallData(args.Data) || hasAccessList(args.AccessList) {
+		return false, nil
+	}
+	state, _, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	if state == nil || err != nil {
+		return false, err
+	}
+	if len(state.GetCode(*args.To)) > 0 {
+		return false, nil
+	}
+	return true, nil
+}
+
+func isPlainValueTransferSendTx(ctx context.Context, b Backend, args SendTxArgs, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
+	if args.To == nil {
+		return false, nil
+	}
+	if hasCallData(args.Data) || hasCallData(args.Input) || hasAccessList(args.AccessList) {
+		return false, nil
+	}
+	state, _, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	if state == nil || err != nil {
+		return false, err
+	}
+	if len(state.GetCode(*args.To)) > 0 {
+		return false, nil
+	}
+	return true, nil
+}
+
 func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, gasCap uint64) (hexutil.Uint64, error) {
 	// Binary search the gas requirement, as it may be higher than the amount used
 	var (
@@ -1247,6 +1295,18 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 	if args.From == nil {
 		args.From = new(common.Address)
 	}
+
+	// Keep normal EOA-to-EOA native coin transfers fixed at 21000 gas regardless of txpool load.
+	// Contract calls, contract creation, data transactions, and access-list transactions still use
+	// the regular EVM binary-search estimator below.
+	plainValueTransfer, err := isPlainValueTransferCall(ctx, b, args, blockNrOrHash)
+	if err != nil {
+		return 0, err
+	}
+	if plainValueTransfer {
+		return hexutil.Uint64(params.TxGas), nil
+	}
+
 	// Determine the highest gas limit can be used during the estimation.
 	if args.Gas != nil && uint64(*args.Gas) >= params.TxGas {
 		hi = uint64(*args.Gas)
@@ -2038,6 +2098,17 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 	if args.Data != nil && args.Input != nil && !bytes.Equal(*args.Data, *args.Input) {
 		return errors.New(`both "data" and "input" are set and not equal. Please use "input" to pass transaction call data`)
 	}
+
+	pendingBlockNr := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
+	plainValueTransfer, err := isPlainValueTransferSendTx(ctx, b, args, pendingBlockNr)
+	if err != nil {
+		return err
+	}
+	if plainValueTransfer && args.Gas == nil {
+		gas := hexutil.Uint64(params.TxGas)
+		args.Gas = &gas
+	}
+
 	txType := uint64(types.LegacyTxType)
 	if args.Type != nil {
 		txType = uint64(*args.Type)
@@ -2050,6 +2121,9 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 	forceLegacy := args.Type != nil && txType == types.LegacyTxType
 	forceAccessList := args.Type != nil && txType == types.AccessListTxType
 	forceDynamic := args.Type != nil && txType == types.DynamicFeeTxType
+	if plainValueTransfer && args.GasPrice == nil && args.MaxFeePerGas == nil && args.MaxPriorityFeePerGas == nil && args.Type == nil {
+		args.GasPrice = (*hexutil.Big)(fixedGasPricePerGas())
+	}
 	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
 		return errors.New(`both "gasPrice" and EIP-1559 fee fields are set`)
 	}
