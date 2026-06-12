@@ -239,7 +239,7 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 
 		txS.proposedChain.extend(block)
 
-		elapsed := time.Since(time.Unix(0, int64(header.Time)))
+		elapsed := time.Since(time.Unix(int64(header.Time), 0))
 		log.Info("🔨  Mined block", "number", block.Number(), "hash", fmt.Sprintf("%x", block.Hash().Bytes()[:4]), "elapsed", elapsed)
 		return encodedBlock, nil
 	}()
@@ -706,16 +706,17 @@ func (txS *txService) createWork(blockType uint8) *work {
 		tstamp = parentTime + 1
 	}
 	log.Info("createWork", "parent.Difficulty()", parent.Difficulty())
-header := &types.Header{
-	ParentHash: parent.Hash(),
-	Number:     parentNumber.Add(parentNumber, common.Big1),
-	Difficulty: parent.Difficulty(), //colossusX.CalcDifficulty(txS.config, uint64(tstamp), parent.Header()),
-	GasLimit:   txS.cph.calcGasLimitFunc(parent),
-	GasUsed:    0,
-	Coinbase:   bftview.GetServerCoinBase(),
-	Time:       uint64(tstamp),
-	BaseFee:    big.NewInt(params.FixedBaseFeePerGas),
-}
+
+	header := &types.Header{
+		ParentHash: parent.Hash(),
+		Number:     parentNumber.Add(parentNumber, common.Big1),
+		Difficulty: parent.Difficulty(), //colossusX.CalcDifficulty(txS.config, uint64(tstamp), parent.Header()),
+		GasLimit:   txS.cph.calcGasLimitFunc(parent),
+		GasUsed:    0,
+		Coinbase:   bftview.GetServerCoinBase(),
+		Time:       uint64(tstamp),
+		BaseFee:    big.NewInt(params.FixedBaseFeePerGas),
+	}
 	log.Info("createWork", "GasLimit", header.GasLimit)
 	publicState, err := txS.bc.StateAt(parent.Root())
 	if err != nil {
