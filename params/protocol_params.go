@@ -41,6 +41,13 @@ const (
 	MinGasLimit          uint64 = 3374454134 // Minimum the gas limit may ever be.
 	GenesisGasLimit      uint64 = 3374454134 // Gas limit of the Genesis block.
 
+	// Fixed wallet-transfer fee policy. These values keep normal native transfers
+	// stable at 21000 gas * 1 gwei while preserving an EIP-1559 style split:
+	// baseFeePerGas = 0.8 gwei, priorityFee = 0.2 gwei.
+	FixedTransferGasPricePerGas = GWei
+	FixedBaseFeePerGas          = 800_000_000
+	FixedPriorityFeePerGas      = 200_000_000
+
 	MaximumExtraDataSize  uint64 = 51200 // Maximum size extra data may be after Genesis.
 	ExpByteGas            uint64 = 10    // Times ceil(log256(exponent)) for the EXP instruction.
 	SloadGas              uint64 = 50    // Multiplied by the number of 32-byte words that are copied (round up) for any *COPY operation and added.
