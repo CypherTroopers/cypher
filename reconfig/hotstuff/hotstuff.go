@@ -250,6 +250,7 @@ type View struct {
 	commitVoteInfo    []*VoteInfo
 	qc                map[string]*QC
 	leaderMsg         map[uint64]*HotstuffMessage // record messages from leader to replica: MsgPrepare, MsgPreCommit, MsgCommit, MsgDecide
+	replicaMsg        map[uint64]*HotstuffMessage // record messages from replica to leader: MsgVotePrepare
 
 	groupPublicKey []*bls.PublicKey
 	threshold      int
@@ -402,6 +403,7 @@ func (hsm *HotstuffProtocolManager) newView() (*View, []byte) {
 		commitVoteInfo:    make([]*VoteInfo, 0),
 		qc:                make(map[string]*QC),
 		leaderMsg:         make(map[uint64]*HotstuffMessage),
+		replicaMsg:        make(map[uint64]*HotstuffMessage),
 		extra:             make([][]byte, 0),
 		futureNewViewMsg:  make([]*HotstuffMessage, 0),
 		createdAt:         time.Now(),
@@ -434,6 +436,7 @@ func (hsm *HotstuffProtocolManager) createView(asLeader bool, phase uint32, lead
 		commitVoteInfo:    make([]*VoteInfo, 0),
 		qc:                make(map[string]*QC),
 		leaderMsg:         make(map[uint64]*HotstuffMessage),
+		replicaMsg:        make(map[uint64]*HotstuffMessage),
 		extra:             make([][]byte, 0),
 		futureNewViewMsg:  make([]*HotstuffMessage, 0),
 		createdAt:         time.Now(),
@@ -961,8 +964,28 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	}
 
 	if v.phaseAsReplica != PhasePrepare {
-		log.Trace("handlePrepareMsg discard old-phase message", "viewId", hex.EncodeToString(m.ViewId[:]), "phase", readablePhase(v.phaseAsReplica))
-		//fmt.Println("handlePrepareMsg discard old-phase message", "viewId", hex.EncodeToString(m.ViewId[:]), "phase", readablePhase(v.phaseAsReplica))
+		if v.replicaMsg != nil {
+			if voteMsg, ok := v.replicaMsg[MsgVotePrepare]; ok {
+				log.Warn("handlePrepareMsg resend cached VotePrepare",
+					"viewId", m.ViewId,
+					"number", m.Number,
+					"phase", readablePhase(v.phaseAsReplica),
+					"to", m.Id)
+				if err := hsm.app.Write(m.Id, voteMsg); err != nil {
+					log.Warn("handlePrepareMsg failed to resend cached VotePrepare",
+						"viewId", m.ViewId,
+						"number", m.Number,
+						"to", m.Id,
+						"err", err)
+					return err
+				}
+				return nil
+			}
+		}
+
+		log.Trace("handlePrepareMsg discard old-phase message",
+			"viewId", hex.EncodeToString(m.ViewId[:]),
+			"phase", readablePhase(v.phaseAsReplica))
 		return ErrViewPhaseNotMatch
 	}
 
@@ -1007,9 +1030,20 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	}
 
 	msg := hsm.newMsg(MsgVotePrepare, v.number, v.hash, nil, kSign, tSign)
+	if v.replicaMsg == nil {
+		v.replicaMsg = make(map[uint64]*HotstuffMessage)
+	}
+	v.replicaMsg[MsgVotePrepare] = msg
 
-	log.Debug("handlePrepareMsg send VotePrepare msg", "viewID", v.hash)
-	hsm.app.Write(m.Id, msg)
+	log.Debug("handlePrepareMsg send VotePrepare msg", "viewID", v.hash, "number", v.number, "to", m.Id)
+	if err := hsm.app.Write(m.Id, msg); err != nil {
+		log.Warn("handlePrepareMsg failed to send VotePrepare msg",
+			"viewID", v.hash,
+			"number", v.number,
+			"to", m.Id,
+			"err", err)
+		return err
+	}
 	v.phaseAsReplica = PhaseDecide
 
 	return nil
