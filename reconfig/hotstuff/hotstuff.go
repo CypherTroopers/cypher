@@ -471,6 +471,8 @@ func (hsm *HotstuffProtocolManager) updateViewPublicKey(v *View) {
 	for _, p := range groupPublicKey {
 		v.groupPublicKey = append(v.groupPublicKey, p)
 	}
+	v.cmLen = len(v.groupPublicKey)
+	v.threshold = CalcThreshold(v.cmLen)
 	v.replicaIndex = buildReplicaIndex(v.groupPublicKey)
 }
 
@@ -644,6 +646,29 @@ func (hsm *HotstuffProtocolManager) lookupVoteInfo(pubKey *bls.PublicKey, voteIn
 	}
 
 	return false
+}
+
+func (hsm *HotstuffProtocolManager) rebroadcastPrepare(v *View, reason string) bool {
+	if v == nil {
+		return false
+	}
+	if v.phaseAsLeader != PhasePreCommit {
+		return false
+	}
+	prepareMsg, ok := v.leaderMsg[MsgPrepare]
+	if !ok || prepareMsg == nil {
+		return false
+	}
+
+	log.Warn("HOTSTUFF PREPARE REBROADCAST",
+		"reason", reason,
+		"number", v.number,
+		"viewID", v.hash,
+		"votes", len(v.prepareVoteInfo),
+		"threshold", v.threshold)
+
+	hsm.app.Broadcast(prepareMsg)
+	return true
 }
 
 // for leader
@@ -832,8 +857,6 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 	}
 
 	log.Debug("view broadcast Prepare msg", "viewID", v.hash, "number", v.number)
-	hsm.app.Broadcast(msg)
-	v.leaderMsg[MsgPrepare] = msg
 
 	if kProposal != nil && len(kProposal) > 0 {
 		v.proposedKState = make([]byte, len(kProposal))
@@ -847,8 +870,15 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 		v.proposedTDigest = hotstuffDigest(v.proposedTState)
 	}
 
+	v.leaderMsg[MsgPrepare] = msg
 	v.phaseAsLeader = PhasePreCommit
+	v.waitingMoreVoteInfo = true
+	v.waitingMoreVoteInfoAt = time.Now()
 	hsm.leaderView = nil
+
+	// Broadcast after the leader state is fully prepared. This allows fast
+	// VotePrepare responses to be handled safely.
+	hsm.app.Broadcast(msg)
 
 	hsm.DumpView(v, true)
 	return nil
@@ -1148,12 +1178,26 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 		}
 	*/
 	if hsm.lookupVoteInfo(pubKey, v.prepareVoteInfo) {
-		log.Warn("discard dup prepare-vote message", "from", m.Id, "viewId", m.ViewId)
+		if v.phaseAsLeader == PhasePreCommit && len(v.prepareVoteInfo) < v.threshold {
+			v.waitingMoreVoteInfo = true
+			if v.waitingMoreVoteInfoAt.IsZero() {
+				v.waitingMoreVoteInfoAt = time.Now()
+			}
+		}
+		log.Warn("discard dup prepare-vote message",
+			"from", m.Id,
+			"viewId", m.ViewId,
+			"votes", len(v.prepareVoteInfo),
+			"threshold", v.threshold)
 		return nil
 	}
 
 	v.prepareVoteInfo = append(v.prepareVoteInfo, qrum)
 	if len(v.prepareVoteInfo) < v.threshold {
+		v.waitingMoreVoteInfo = true
+		if v.waitingMoreVoteInfoAt.IsZero() {
+			v.waitingMoreVoteInfoAt = time.Now()
+		}
 		log.Debug("handlePrepareVoteMsg need more voteInfo", "number", v.number, "threshold", v.threshold, "current", len(v.prepareVoteInfo))
 		return ErrInsufficientQC
 	}
@@ -1295,15 +1339,26 @@ func (hsm *HotstuffProtocolManager) HandleMessage(msg *HotstuffMessage) error {
 }
 
 func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
+	now := time.Now()
 	for _, v := range hsm.views {
 		if v.number <= curN {
 			continue
 		}
-		if v.phaseAsLeader == PhaseFinal || !v.waitingMoreVoteInfo || len(v.prepareVoteInfo) < v.threshold {
+		if v.phaseAsLeader == PhaseFinal || !v.waitingMoreVoteInfo {
 			continue
 		}
-		elapsed := time.Now().Sub(v.waitingMoreVoteInfoAt)
+		if v.phaseAsLeader != PhasePreCommit {
+			continue
+		}
+
+		elapsed := now.Sub(v.waitingMoreVoteInfoAt)
 		if elapsed < params.CollectVoteInfoTimeout {
+			continue
+		}
+		v.waitingMoreVoteInfoAt = now
+
+		if len(v.prepareVoteInfo) < v.threshold {
+			hsm.rebroadcastPrepare(v, "collect-vote-timeout")
 			continue
 		}
 

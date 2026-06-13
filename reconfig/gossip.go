@@ -334,6 +334,12 @@ func (s *netService) loop_iddata(address string, priorityQ *common.Queue, q *com
 		}
 		if err := s.SendRaw(si, msg, false); err != nil {
 			log.Warn("SendRawData", "couldn't send to", address, "error", err)
+			if ok && isHighPriorityNetworkMsg(m) && priorityQ != nil && !s.IgnoreMsg(m) {
+				// HotStuff control messages are consensus-critical. Do not drop
+				// them on a transient KCP/UDP send failure.
+				priorityQ.PushBack(cloneNetworkMsg(m))
+				time.Sleep(5 * time.Millisecond)
+			}
 		}
 	}
 

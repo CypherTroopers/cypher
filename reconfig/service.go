@@ -1097,7 +1097,9 @@ func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
 		return err
 	}
 
-	s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data})
+	if err := s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1327,8 +1329,10 @@ func (s *Service) observeHotstuffProgress(msg *hotstuff.HotstuffMessage) {
 	switch msg.Code {
 	case hotstuff.MsgPrepare:
 		rank = 1
-	case hotstuff.MsgDecide:
+	case hotstuff.MsgVotePrepare:
 		rank = 2
+	case hotstuff.MsgDecide:
+		rank = 3
 	default:
 		return
 	}
