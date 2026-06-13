@@ -1,4 +1,4 @@
-## Build from source
+## preparations 
 ```bash
 sudo apt update && sudo apt full-upgrade -y && sudo apt autoremove -y && sudo apt autoclean -y && rm -f go1.26.2.linux-amd64.tar.gz && wget https://go.dev/dl/go1.26.2.linux-amd64.tar.gz && sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz && export PATH=/usr/local/go/bin:$PATH && export GOPATH=$HOME/go && export GO111MODULE=on && go env -w GO111MODULE=on && echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.bashrc && echo 'export GOPATH=$HOME/go' >> ~/.bashrc && echo 'export GO111MODULE=on' >> ~/.bashrc && sudo apt-get install -y gcc cmake libssl-dev openssl libgmp-dev bzip2 m4 build-essential git curl libc-dev wget texinfo nodejs npm pcscd && sudo npm install -g n && sudo n stable && sudo apt purge -y nodejs npm && sudo apt autoremove -y && export PATH="/usr/local/bin:$PATH" && hash -r && sudo npm install -g pm2
 ```
