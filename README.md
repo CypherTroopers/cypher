@@ -14,7 +14,7 @@ sudo apt update && sudo apt full-upgrade -y && sudo apt autoremove -y && sudo ap
 git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
 git fetch --all
-git checkout commonRPC_Pipe_test_go.Mod
+git checkout ColossusX_CommonRPC_TXrewards
 ```
 ## go mod
 ```bash
