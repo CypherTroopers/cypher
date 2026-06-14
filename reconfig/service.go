@@ -80,6 +80,7 @@ type committeeInfo struct {
 	KeyHash   common.Hash
 	KeyNumber uint64
 }
+
 type bestCandidateInfo struct {
 	Node      *common.Cnode
 	KeyHash   common.Hash
@@ -99,17 +100,20 @@ type proposalBodyMsg struct {
 	EncodedBlock      []byte
 	CreatedAtUnixNano int64
 }
+
 type cachedCommitteeInfo struct {
 	keyHash   common.Hash
 	keyNumber uint64
 	committee *bftview.Committee
 	node      *common.Cnode
 }
+
 type committeeMsg struct {
 	sid   *network.ServerIdentity
 	cinfo *committeeInfo
 	best  *bestCandidateInfo
 }
+
 type hotstuffMsg struct {
 	sid   *network.ServerIdentity
 	lastN uint64
@@ -1620,8 +1624,9 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 func (s *Service) GetCurrentView() *bftview.View {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
-	v := &s.currentView
-	return v
+
+	v := s.currentView
+	return &v
 }
 
 func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
