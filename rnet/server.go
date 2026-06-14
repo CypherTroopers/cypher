@@ -42,17 +42,72 @@ func newServer(r *network.Router) *Server {
 }
 
 func NewKcpServer(addr string) *Server {
-	serverIdentity := &network.ServerIdentity{}
-	serverIdentity.Address = network.Address("kcp://" + addr)
+	serverIdentity := network.NewServerIdentityWithTransport(addr, network.PlainKCP)
 	return NewServerKCPWithListenAddr(serverIdentity, "")
+}
+
+func NewQuicServer(addr string) *Server {
+	serverIdentity := network.NewServerIdentityWithTransport(addr, network.PlainQUIC)
+	return NewServerQUICWithListenAddr(serverIdentity, "")
+}
+
+func NewTcpServer(addr string) *Server {
+	serverIdentity := network.NewServerIdentityWithTransport(addr, network.PlainTCP)
+	return NewServerTCPWithListenAddr(serverIdentity, "")
+}
+
+func NewFallbackServer(addr string) *Server {
+	serverIdentity := network.NewServerIdentityWithTransport(addr, network.PlainQUIC)
+	return NewServerFallbackWithListenAddr(serverIdentity, "")
+}
+
+func NewServerWithTransport(addr, transport, fallback string) *Server {
+	switch transport {
+	case "", "quic":
+		if fallback == "" || fallback == "tcp" {
+			return NewFallbackServer(addr)
+		}
+		return NewQuicServer(addr)
+	case "tcp":
+		return NewTcpServer(addr)
+	case "kcp":
+		return NewKcpServer(addr)
+	default:
+		return NewFallbackServer(addr)
+	}
 }
 
 // NewServerKCPWithListenAddr returns a new Server out of a private-key and
 // its related address within the ServerIdentity. The server will use a
 // KcpRouter listening on the given address as Router.
-func NewServerKCPWithListenAddr(e *network.ServerIdentity, listenAddr string) *Server {
-	r, _ := network.NewKCPRouterWithListenAddr(e, listenAddr)
+func newServerFromRouter(r *network.Router, err error, transport string) *Server {
+	if err != nil {
+		panic(fmt.Sprintf("failed to create %s rnet server: %v", transport, err))
+	}
+	if r == nil {
+		panic(fmt.Sprintf("failed to create %s rnet server: nil router", transport))
+	}
 	return newServer(r)
+}
+
+func NewServerKCPWithListenAddr(e *network.ServerIdentity, listenAddr string) *Server {
+	r, err := network.NewKCPRouterWithListenAddr(e, listenAddr)
+	return newServerFromRouter(r, err, "kcp")
+}
+
+func NewServerQUICWithListenAddr(e *network.ServerIdentity, listenAddr string) *Server {
+	r, err := network.NewQUICRouterWithListenAddr(e, listenAddr)
+	return newServerFromRouter(r, err, "quic")
+}
+
+func NewServerTCPWithListenAddr(e *network.ServerIdentity, listenAddr string) *Server {
+	r, err := network.NewTCPRouterWithListenAddr(e, listenAddr)
+	return newServerFromRouter(r, err, "tcp")
+}
+
+func NewServerFallbackWithListenAddr(e *network.ServerIdentity, listenAddr string) *Server {
+	r, err := network.NewFallbackRouterWithListenAddr(e, listenAddr)
+	return newServerFromRouter(r, err, "fallback")
 }
 
 var gover version.Version

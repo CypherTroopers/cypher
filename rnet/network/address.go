@@ -23,6 +23,10 @@ var lookupHost = net.LookupHost
 const (
 	// PlainKCP is an unencrypted KCP connection.
 	PlainKCP ConnType = "kcp"
+	// PlainQUIC is a QUIC connection.
+	PlainQUIC ConnType = "quic"
+	// PlainTCP is a TCP fallback connection.
+	PlainTCP ConnType = "tcp"
 	// TLS is a TLS encrypted connection over KCP.
 	TLS = "tls"
 	// Local is a channel based connection type.
@@ -39,7 +43,7 @@ const typeAddressSep = "://"
 // it returns InvalidConnType.
 func connType(t string) ConnType {
 	ct := ConnType(t)
-	types := []ConnType{PlainKCP, TLS, Local}
+	types := []ConnType{PlainKCP, PlainQUIC, PlainTCP, TLS, Local}
 	for _, t := range types {
 		if t == ct {
 			return ct
@@ -213,8 +217,10 @@ func (a Address) Valid() bool {
 // String returns the address as a string.
 func (a Address) String() string {
 	s := string(a)
-	if s[:6] == "kcp://" {
-		return s[6:]
+	for _, prefix := range []string{"kcp://", "quic://", "tcp://", "tls://"} {
+		if strings.HasPrefix(s, prefix) {
+			return strings.TrimPrefix(s, prefix)
+		}
 	}
 	return s
 }

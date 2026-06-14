@@ -446,13 +446,29 @@ type ChainConfig struct {
 	// to track multiple changes to maxCodeSize
 	MaxCodeSizeConfig []MaxCodeConfigStruct `json:"maxCodeSizeConfig,omitempty"`
 
-	GenCommittee   GenesisCommittee `json:"committee"      gencodec:"required"`
-	RnetPort       string           `json:"rnetport,omitempty"`
-	FixedCommittee bool             `json:"fixedCommittee,omitempty"`
-	FixedLeader    bool             `json:"fixedLeader,omitempty"`
-	EnabledTPS     bool
+	GenCommittee          GenesisCommittee `json:"committee"      gencodec:"required"`
+	RnetPort              string           `json:"rnetport,omitempty"`
+	RnetTransport         string           `json:"rnettransport,omitempty"`
+	RnetFallbackTransport string           `json:"rnetfallbacktransport,omitempty"`
+	FixedCommittee        bool             `json:"fixedCommittee,omitempty"`
+	FixedLeader           bool             `json:"fixedLeader,omitempty"`
+	EnabledTPS            bool
 }
 type GenesisCommittee map[int]common.Cnode
+
+func (c *ChainConfig) EffectiveRnetTransport() string {
+	if c == nil || c.RnetTransport == "" {
+		return "quic"
+	}
+	return c.RnetTransport
+}
+
+func (c *ChainConfig) EffectiveRnetFallbackTransport() string {
+	if c == nil || c.RnetFallbackTransport == "" {
+		return "tcp"
+	}
+	return c.RnetFallbackTransport
+}
 
 // colossusXConfig is the consensus engine configs for proof-of-work based sealing.
 type colossusXConfig struct{}

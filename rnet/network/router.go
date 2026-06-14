@@ -177,17 +177,35 @@ func (r *Router) GetBlocks(e *ServerIdentity) int {
 	return 0
 }
 
+func isOverflowProtectedClass(class uint8) bool {
+	switch class {
+	case NetClassHotstuffControl,
+		NetClassProposalBodyControl,
+		NetClassCommitteeControl,
+		NetClassCandidateMiner,
+		NetClassHeartbeat:
+		return true
+	default:
+		return false
+	}
+}
+
 // Send sends to an ServerIdentity without wrapping the msg into a ProtocolMsg
 func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64, error) {
 	if msg == nil {
 		return 0, errors.New("Can't send nil-packet")
 	}
 
+	class := NetClassBulkGossip
+	if cm, ok := msg.(ClassifiedMessage); ok {
+		class = cm.NetworkClass()
+	}
+
 	r.sendMu.Lock()
 	blocksLen := r.sendsMap[e.ID]
-	if blocksLen > params.MaxSendBlocks { //max queue is 5
+	if !isOverflowProtectedClass(class) && blocksLen > params.MaxSendBlocks { //max queue is 5
 		r.sendMu.Unlock()
-		log.Info("Router.Send", "busy address", e.Address.String())
+		log.Info("Router.Send", "busy address", e.Address.String(), "class", class)
 		return 0, errors.New("Network send queue overflow!")
 	}
 	r.sendsMap[e.ID]++
