@@ -1,16 +1,16 @@
 package hotstuff
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"time"
-
-	"bytes"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto/bls"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
 	"github.com/zeebo/blake3"
 )
@@ -995,13 +995,41 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	}
 
 	expectedState, expectedLeader, expectedNumber := hsm.app.CurrentState()
-	if expectedLeader == "" || expectedLeader != m.Id || expectedNumber != m.Number || !bytes.Equal(expectedState, m.DataE) {
+
+	expectedView := bftview.DecodeToView(expectedState)
+	proposalView := bftview.DecodeToView(m.DataE)
+
+	sameCanonicalView := false
+	if expectedView != nil && proposalView != nil {
+		sameCanonicalView =
+			expectedView.TxNumber == proposalView.TxNumber &&
+				expectedView.TxHash == proposalView.TxHash &&
+				expectedView.KeyNumber == proposalView.KeyNumber &&
+				expectedView.KeyHash == proposalView.KeyHash &&
+				expectedView.CommitteeHash == proposalView.CommitteeHash &&
+				expectedView.LeaderIndex == proposalView.LeaderIndex
+	}
+
+	// Do not reject only because NoDone differs.
+	// In fixed keyblock mode, NoDone can flip locally before/after Prepare propagation.
+	if expectedLeader == "" || expectedLeader != m.Id || expectedNumber != m.Number || !sameCanonicalView {
 		log.Warn("handlePrepareMsg rejected non-canonical leader proposal",
 			"from", m.Id,
 			"expectedLeader", expectedLeader,
 			"number", m.Number,
-			"expectedNumber", expectedNumber)
+			"expectedNumber", expectedNumber,
+			"stateEqual", bytes.Equal(expectedState, m.DataE),
+			"expectedView", expectedView,
+			"proposalView", proposalView)
 		return ErrInvalidLeaderView
+	}
+
+	if !bytes.Equal(expectedState, m.DataE) {
+		log.Warn("handlePrepareMsg accepted proposal with NoDone-only view mismatch",
+			"from", m.Id,
+			"number", m.Number,
+			"expectedView", expectedView,
+			"proposalView", proposalView)
 	}
 
 	v, exist := hsm.views[m.ViewId]
