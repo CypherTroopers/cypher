@@ -45,10 +45,18 @@ type heartBeatMsg struct {
 	BlockN uint64
 }
 
+func (msg *heartBeatMsg) NetworkClass() uint8 {
+	return network.NetClassHeartbeat
+}
+
 type checkMinerMsg struct {
 	BlockN    uint64
 	KeyblockN uint64
 	AckFlag   uint64
+}
+
+func (msg *checkMinerMsg) NetworkClass() uint8 {
+	return network.NetClassCandidateMiner
 }
 
 type ackInfo struct {
@@ -62,6 +70,81 @@ type msgHeadInfo struct {
 	keyblockN uint64
 }
 
+type peerQueues struct {
+	hotstuffControl     *common.Queue
+	proposalBodyControl *common.Queue
+	proposalBodyBulk    *common.Queue
+	committeeControl    *common.Queue
+	candidateMiner      *common.Queue
+	heartbeat           *common.Queue
+	bulkGossip          *common.Queue
+}
+
+func newPeerQueues() *peerQueues {
+	return &peerQueues{
+		hotstuffControl:     common.QueueNew(),
+		proposalBodyControl: common.QueueNew(),
+		proposalBodyBulk:    common.QueueNew(),
+		committeeControl:    common.QueueNew(),
+		candidateMiner:      common.QueueNew(),
+		heartbeat:           common.QueueNew(),
+		bulkGossip:          common.QueueNew(),
+	}
+}
+
+func (q *peerQueues) push(msg *networkMsg) {
+	if q == nil || msg == nil {
+		return
+	}
+	switch msg.NetworkClass() {
+	case network.NetClassHotstuffControl:
+		q.hotstuffControl.PushBack(cloneNetworkMsg(msg))
+	case network.NetClassProposalBodyControl:
+		q.proposalBodyControl.PushBack(cloneNetworkMsg(msg))
+	case network.NetClassProposalBodyBulk:
+		q.proposalBodyBulk.PushBack(cloneNetworkMsg(msg))
+	case network.NetClassCommitteeControl:
+		q.committeeControl.PushBack(cloneNetworkMsg(msg))
+	case network.NetClassCandidateMiner:
+		q.candidateMiner.PushBack(cloneNetworkMsg(msg))
+	case network.NetClassHeartbeat:
+		q.heartbeat.PushBack(cloneNetworkMsg(msg))
+	default:
+		q.bulkGossip.PushBack(cloneNetworkMsg(msg))
+	}
+}
+
+func (q *peerQueues) pushFrontClass(msg *networkMsg) {
+	// common.Queue only exposes PushBack/PopFront. Requeue at the tail of the
+	// same priority class to preserve FIFO within class and avoid busy spinning.
+	q.push(msg)
+}
+
+func (q *peerQueues) popNext() interface{} {
+	if q == nil {
+		return nil
+	}
+	if msg := q.hotstuffControl.PopFront(); msg != nil {
+		return msg
+	}
+	if msg := q.proposalBodyControl.PopFront(); msg != nil {
+		return msg
+	}
+	if msg := q.committeeControl.PopFront(); msg != nil {
+		return msg
+	}
+	if msg := q.candidateMiner.PopFront(); msg != nil {
+		return msg
+	}
+	if msg := q.heartbeat.PopFront(); msg != nil {
+		return msg
+	}
+	if msg := q.proposalBodyBulk.PopFront(); msg != nil {
+		return msg
+	}
+	return q.bulkGossip.PopFront()
+}
+
 type netService struct {
 	*rnet.ServiceProcessor // We need to embed the ServiceProcessor, so that incoming messages are correctly handled.
 	server                 *rnet.Server
@@ -70,11 +153,10 @@ type netService struct {
 	gossipMsg              map[common.Hash]*msgHeadInfo
 	muGossip               sync.Mutex
 
-	goMap             map[string]*int32 // atomic int
-	idDataMap         map[string]*common.Queue
-	idPriorityDataMap map[string]*common.Queue
-	ackMap            map[string]*ackInfo
-	muIdMap           sync.Mutex
+	goMap    map[string]*int32 // atomic int
+	idQueues map[string]*peerQueues
+	ackMap   map[string]*ackInfo
+	muIdMap  sync.Mutex
 
 	backend       serviceCallback
 	curBlockN     uint64
@@ -95,7 +177,13 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 		return s, nil
 	}
 	rnet.RegisterNewService(sName, registerService)
-	server := rnet.NewKcpServer(sIp)
+	transport := "quic"
+	fallback := "tcp"
+	if chainConfig != nil {
+		transport = chainConfig.EffectiveRnetTransport()
+		fallback = chainConfig.EffectiveRnetFallbackTransport()
+	}
+	server := rnet.NewServerWithTransport(sIp, transport, fallback)
 	s := server.Service(sName).(*netService)
 	s.server = server
 	s.serverID = sIp
@@ -103,8 +191,7 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 
 	s.gossipMsg = make(map[common.Hash]*msgHeadInfo)
 	s.goMap = make(map[string]*int32)
-	s.idDataMap = make(map[string]*common.Queue)
-	s.idPriorityDataMap = make(map[string]*common.Queue)
+	s.idQueues = make(map[string]*peerQueues)
 	s.ackMap = make(map[string]*ackInfo)
 	s.backend = callback
 	s.candidatepool = backend.CandidatePool()
@@ -124,11 +211,19 @@ func (s *netService) StartStop(isStart bool) {
 	}
 }
 
+func (s *netService) serverIdentityFor(address string) *network.ServerIdentity {
+	transport := network.PlainKCP
+	if s != nil && s.server != nil && s.server.Address().ConnType() != network.InvalidConnType {
+		transport = s.server.Address().ConnType()
+	}
+	return network.NewServerIdentityWithTransport(address, transport)
+}
+
 // ----------------------------------------------------------------------------------------------------
 func (s *netService) CheckMinerPort(addr string, blockN uint64, keyblockN uint64, ackFlag uint64) {
 	msg := &checkMinerMsg{BlockN: blockN, KeyblockN: keyblockN, AckFlag: ackFlag}
 	log.Info("CheckMinerPort", "addr", addr, "msg", msg)
-	si := network.NewServerIdentity(addr)
+	si := s.serverIdentityFor(addr)
 	go s.SendRaw(si, msg, true)
 }
 
@@ -283,28 +378,19 @@ func (s *netService) SendRawData(address string, msg *networkMsg) error {
 
 	s.setIsRunning(address, true)
 	s.muIdMap.Lock()
-	q := s.idDataMap[address]
-	pq := s.idPriorityDataMap[address]
+	queues := s.idQueues[address]
 	s.muIdMap.Unlock()
 
-	if isHighPriorityNetworkMsg(msg) {
-		if pq == nil {
-			return fmt.Errorf("priority queue not found for %s", address)
-		}
-		pq.PushBack(cloneNetworkMsg(msg))
-		return nil
-	}
-
-	if q == nil {
+	if queues == nil {
 		return fmt.Errorf("queue not found for %s", address)
 	}
-	q.PushBack(cloneNetworkMsg(msg))
+	queues.push(msg)
 	return nil
 }
 
-func (s *netService) loop_iddata(address string, priorityQ *common.Queue, q *common.Queue) {
+func (s *netService) loop_iddata(address string, queues *peerQueues) {
 	log.Debug("loop_iddata start", "address", address)
-	si := network.NewServerIdentity(address)
+	si := s.serverIdentityFor(address)
 
 	s.muIdMap.Lock()
 	isRunning, _ := s.goMap[address]
@@ -316,13 +402,7 @@ func (s *netService) loop_iddata(address string, priorityQ *common.Queue, q *com
 			continue
 		}
 
-		var msg interface{}
-		if priorityQ != nil {
-			msg = priorityQ.PopFront()
-		}
-		if msg == nil && q != nil {
-			msg = q.PopFront()
-		}
+		msg := queues.popNext()
 		if msg == nil {
 			time.Sleep(2 * time.Millisecond)
 			continue
@@ -334,10 +414,10 @@ func (s *netService) loop_iddata(address string, priorityQ *common.Queue, q *com
 		}
 		if err := s.SendRaw(si, msg, false); err != nil {
 			log.Warn("SendRawData", "couldn't send to", address, "error", err)
-			if ok && isHighPriorityNetworkMsg(m) && priorityQ != nil && !s.IgnoreMsg(m) {
-				// HotStuff control messages are consensus-critical. Do not drop
-				// them on a transient KCP/UDP send failure.
-				priorityQ.PushBack(cloneNetworkMsg(m))
+			if ok && isHighPriorityNetworkMsg(m) && queues != nil && !s.IgnoreMsg(m) {
+				// HotStuff and proposal-body control messages are consensus-critical.
+				// Do not drop them on a transient QUIC/TCP send failure.
+				queues.pushFrontClass(m)
 				time.Sleep(5 * time.Millisecond)
 			}
 		}
@@ -347,8 +427,7 @@ func (s *netService) loop_iddata(address string, priorityQ *common.Queue, q *com
 
 	s.muIdMap.Lock()
 	delete(s.goMap, address)
-	delete(s.idDataMap, address)
-	delete(s.idPriorityDataMap, address)
+	delete(s.idQueues, address)
 	delete(s.ackMap, address)
 	s.muIdMap.Unlock()
 
@@ -422,18 +501,13 @@ func (s *netService) setIsRunning(id string, isStart bool) {
 		atomic.StoreInt32(isRunning, 1)
 		if i == 0 {
 			s.muIdMap.Lock()
-			q, ok := s.idDataMap[id]
+			queues, ok := s.idQueues[id]
 			if !ok {
-				q = common.QueueNew()
-				s.idDataMap[id] = q
-			}
-			pq, ok := s.idPriorityDataMap[id]
-			if !ok {
-				pq = common.QueueNew()
-				s.idPriorityDataMap[id] = pq
+				queues = newPeerQueues()
+				s.idQueues[id] = queues
 			}
 			s.muIdMap.Unlock()
-			go s.loop_iddata(id, pq, q)
+			go s.loop_iddata(id, queues)
 		}
 	} else {
 		if i == 1 {
@@ -486,7 +560,7 @@ func (s *netService) heartBeat_Loop() {
 			a := s.getAckInfo(addr)
 			if a != nil && now.Sub(a.sendTm) > heatBeatTimeout {
 				if atomic.LoadInt32(a.isSending) == 0 {
-					si := network.NewServerIdentity(addr)
+					si := s.serverIdentityFor(addr)
 					if s.GetNetBlocks(si) == 0 {
 						a.sendTm = time.Now()
 						go func(si *network.ServerIdentity, msg interface{}, isRunning *int32) {
@@ -529,15 +603,16 @@ func isHighPriorityNetworkMsg(msg *networkMsg) bool {
 	if msg == nil {
 		return false
 	}
-	if msg.Hmsg != nil {
-		// All HotStuff messages are consensus-control traffic and must not wait
-		// behind proposal-body sidecars or other bulk data.
+	switch msg.NetworkClass() {
+	case network.NetClassHotstuffControl,
+		network.NetClassProposalBodyControl,
+		network.NetClassCommitteeControl,
+		network.NetClassCandidateMiner,
+		network.NetClassHeartbeat:
 		return true
+	default:
+		return false
 	}
-	if msg.Pmsg != nil && msg.Pmsg.Type == proposalBodyMsgRequest {
-		return true
-	}
-	return false
 }
 
 func cloneNetworkMsg(msg *networkMsg) *networkMsg {

@@ -124,6 +124,29 @@ type networkMsg struct {
 	Pmsg    *proposalBodyMsg
 }
 
+func (msg *networkMsg) NetworkClass() uint8 {
+	if msg == nil {
+		return network.NetClassBulkGossip
+	}
+	if msg.Hmsg != nil {
+		return network.NetClassHotstuffControl
+	}
+	if msg.Pmsg != nil {
+		switch msg.Pmsg.Type {
+		case proposalBodyMsgRequest:
+			return network.NetClassProposalBodyControl
+		case proposalBodyMsgData:
+			return network.NetClassProposalBodyBulk
+		default:
+			return network.NetClassProposalBodyControl
+		}
+	}
+	if msg.Cmsg != nil || msg.Bmsg != nil {
+		return network.NetClassCommitteeControl
+	}
+	return network.NetClassBulkGossip
+}
+
 func (msg *networkMsg) GetCommittee() *bftview.Committee {
 	var mb *bftview.Committee
 	if msg.Cmsg != nil {

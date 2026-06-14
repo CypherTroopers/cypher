@@ -32,6 +32,23 @@ var ErrTimeout = errors.New("Timeout Error")
 // ErrUnknown is an unknown error.
 var ErrUnknown = errors.New("Unknown Error")
 
+const (
+	NetClassHandshake uint8 = iota
+	NetClassHotstuffControl
+	NetClassProposalBodyControl
+	NetClassProposalBodyBulk
+	NetClassCommitteeControl
+	NetClassCandidateMiner
+	NetClassHeartbeat
+	NetClassBulkGossip
+)
+
+// ClassifiedMessage can be implemented by messages that want transport-level
+// priority or QUIC stream separation.
+type ClassifiedMessage interface {
+	NetworkClass() uint8
+}
+
 // Size is a type to reprensent the size that is sent before every packet to
 // correctly decode it.
 type Size uint32
@@ -88,6 +105,10 @@ func (si *ServerIdentity) String() string {
 	return si.Address.String()
 }
 
+func (si *ServerIdentity) NetworkClass() uint8 {
+	return NetClassHandshake
+}
+
 // ServerIdentityType can be used to recognise an ServerIdentity-message
 var ServerIdentityType = RegisterMessage(ServerIdentity{})
 
@@ -95,10 +116,17 @@ var ServerIdentityType = RegisterMessage(ServerIdentity{})
 // of IP-addresses where to find that entity. The Id is based on a
 // version5-UUID which can include a URL that is based on it's address key.
 func NewServerIdentity(address string) *ServerIdentity {
+	return NewServerIdentityWithTransport(address, PlainKCP)
+}
+
+func NewServerIdentityWithTransport(address string, transport ConnType) *ServerIdentity {
+	rawAddress := Address(address).String()
 	si := &ServerIdentity{
-		Address: Address("kcp://" + address),
+		Address: Address(string(transport) + "://" + rawAddress),
 	}
-	si.ID = ServerIdentityID(uuid.NewV5(uuid.NamespaceURL, NamespaceURL+"id/"+address))
+	// The peer ID intentionally excludes the transport scheme so quic://host:port
+	// and tcp://host:port are treated as the same committee node.
+	si.ID = ServerIdentityID(uuid.NewV5(uuid.NamespaceURL, NamespaceURL+"id/"+rawAddress))
 	return si
 }
 
