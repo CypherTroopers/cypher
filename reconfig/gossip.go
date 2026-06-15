@@ -71,52 +71,86 @@ type msgHeadInfo struct {
 }
 
 type peerQueues struct {
-	hotstuffControl     *common.Queue
-	proposalBodyControl *common.Queue
-	proposalBodyBulk    *common.Queue
-	committeeControl    *common.Queue
-	candidateMiner      *common.Queue
-	heartbeat           *common.Queue
-	bulkGossip          *common.Queue
+	input chan *networkMsg
+	next  chan *networkMsg
+	stop  chan struct{}
+	once  sync.Once
 }
 
 func newPeerQueues() *peerQueues {
-	return &peerQueues{
-		hotstuffControl:     common.QueueNew(),
-		proposalBodyControl: common.QueueNew(),
-		proposalBodyBulk:    common.QueueNew(),
-		committeeControl:    common.QueueNew(),
-		candidateMiner:      common.QueueNew(),
-		heartbeat:           common.QueueNew(),
-		bulkGossip:          common.QueueNew(),
+	q := &peerQueues{
+		input: make(chan *networkMsg, 1024),
+		next:  make(chan *networkMsg),
+		stop:  make(chan struct{}),
+	}
+	go q.run()
+	return q
+}
+
+func (q *peerQueues) run() {
+	var classes [7][]*networkMsg
+	for {
+		var out chan *networkMsg
+		var next *networkMsg
+		for i := range classes {
+			if len(classes[i]) > 0 {
+				out = q.next
+				next = classes[i][0]
+				break
+			}
+		}
+
+		select {
+		case msg := <-q.input:
+			class := peerQueueClass(msg)
+			classes[class] = append(classes[class], msg)
+		case out <- next:
+			class := peerQueueClass(next)
+			classes[class][0] = nil
+			classes[class] = classes[class][1:]
+		case <-q.stop:
+			return
+		}
 	}
 }
 
-func (q *peerQueues) push(msg *networkMsg) {
-	if q == nil || msg == nil {
-		return
+func peerQueueClass(msg *networkMsg) int {
+	if msg == nil {
+		return 6
 	}
 	switch msg.NetworkClass() {
 	case network.NetClassHotstuffControl:
-		q.hotstuffControl.PushBack(cloneNetworkMsg(msg))
+		return 0
 	case network.NetClassProposalBodyControl:
-		q.proposalBodyControl.PushBack(cloneNetworkMsg(msg))
-	case network.NetClassProposalBodyBulk:
-		q.proposalBodyBulk.PushBack(cloneNetworkMsg(msg))
+		return 1
 	case network.NetClassCommitteeControl:
-		q.committeeControl.PushBack(cloneNetworkMsg(msg))
+		return 2
 	case network.NetClassCandidateMiner:
-		q.candidateMiner.PushBack(cloneNetworkMsg(msg))
+		return 3
 	case network.NetClassHeartbeat:
-		q.heartbeat.PushBack(cloneNetworkMsg(msg))
+		return 4
+	case network.NetClassProposalBodyBulk:
+		return 5
 	default:
-		q.bulkGossip.PushBack(cloneNetworkMsg(msg))
+		return 6
+	}
+}
+
+func (q *peerQueues) push(msg *networkMsg) bool {
+	if q == nil || msg == nil {
+		return false
+	}
+	select {
+	case q.input <- cloneNetworkMsg(msg):
+		return true
+	case <-q.stop:
+		return false
 	}
 }
 
 func (q *peerQueues) pushFrontClass(msg *networkMsg) {
-	// common.Queue only exposes PushBack/PopFront. Requeue at the tail of the
-	// same priority class to preserve FIFO within class and avoid busy spinning.
+	// Requeue at the tail of the same priority class to preserve FIFO and avoid
+	// retrying a failed send in a tight loop.
 	q.push(msg)
 }
 
@@ -124,25 +158,20 @@ func (q *peerQueues) popNext() interface{} {
 	if q == nil {
 		return nil
 	}
-	if msg := q.hotstuffControl.PopFront(); msg != nil {
+	select {
+	case msg := <-q.next:
 		return msg
+	case <-q.stop:
+		return nil
+	default:
+		return nil
 	}
-	if msg := q.proposalBodyControl.PopFront(); msg != nil {
-		return msg
+}
+
+func (q *peerQueues) close() {
+	if q != nil {
+		q.once.Do(func() { close(q.stop) })
 	}
-	if msg := q.committeeControl.PopFront(); msg != nil {
-		return msg
-	}
-	if msg := q.candidateMiner.PopFront(); msg != nil {
-		return msg
-	}
-	if msg := q.heartbeat.PopFront(); msg != nil {
-		return msg
-	}
-	if msg := q.proposalBodyBulk.PopFront(); msg != nil {
-		return msg
-	}
-	return q.bulkGossip.PopFront()
 }
 
 type netService struct {
@@ -384,7 +413,9 @@ func (s *netService) SendRawData(address string, msg *networkMsg) error {
 	if queues == nil {
 		return fmt.Errorf("queue not found for %s", address)
 	}
-	queues.push(msg)
+	if !queues.push(msg) {
+		return fmt.Errorf("queue closed for %s", address)
+	}
 	return nil
 }
 
@@ -424,6 +455,7 @@ func (s *netService) loop_iddata(address string, queues *peerQueues) {
 	}
 
 	atomic.StoreInt32(isRunning, 0)
+	queues.close()
 
 	s.muIdMap.Lock()
 	delete(s.goMap, address)

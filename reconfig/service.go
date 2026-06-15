@@ -217,7 +217,7 @@ type Service struct {
 	proposalBodies       map[common.Hash]*proposalBodyMsg
 	verifiedProposalByID map[common.Hash]*core.VerifiedProposal
 
-	hotstuffMsgQ *common.Queue
+	hotstuffMsgQ *hotstuffMessageQueue
 	feed1        event.Feed
 	msgCh1       chan committeeMsg
 	msgSub1      event.Subscription // Subscription for msg event
@@ -241,7 +241,7 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 
 	s.msgCh1 = make(chan committeeMsg, 10)
 	s.msgSub1 = s.feed1.Subscribe(s.msgCh1)
-	s.hotstuffMsgQ = common.QueueNew()
+	s.hotstuffMsgQ = newHotstuffMessageQueue()
 	s.hotstuffProgressAt = time.Now()
 
 	s.protocolMng = hotstuff.NewHotstuffProtocolManager(s, nil, nil)
@@ -257,6 +257,9 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 // OnNewView --------------------------------------------------------------------------
 func (s *Service) OnNewView(data []byte, extraes [][]byte) error { //buf is snapshot, //verify repla' block before newview
 	view := bftview.DecodeToView(data)
+	if view == nil {
+		return fmt.Errorf("invalid new-view state")
+	}
 	log.Info("OnNewView..", "txNumber", view.TxNumber, "keyNumber", view.KeyNumber)
 
 	s.muCurrentView.Lock()
@@ -348,6 +351,9 @@ func (s *Service) CheckView(data []byte) error {
 		return types.ErrNotRunning
 	}
 	view := bftview.DecodeToView(data)
+	if view == nil {
+		return fmt.Errorf("invalid hotstuff view encoding")
+	}
 	knumber := s.kbc.CurrentBlockN()
 	txnumber := s.bc.CurrentBlockN()
 	log.Debug("CheckView..", "txNumber", view.TxNumber, "keyNumber", view.KeyNumber, "local key number", knumber, "tx number", txnumber)
@@ -1025,6 +1031,23 @@ func (s *Service) fixedModeKeyblockViewStateChangedLocked() bool {
 		s.fixedKeyViewKeyHash != s.currentView.KeyHash
 }
 
+func (s *Service) fixedModeKeyblockViewStart(now time.Time) time.Time {
+	start := now
+	if block := s.bc.CurrentBlock(); block != nil {
+		start = time.Unix(int64(block.Time()), 0)
+	}
+	if keyBlock := s.kbc.CurrentBlock(); keyBlock != nil {
+		keyReadyAt := time.Unix(int64(keyBlock.Time()), 0).Add(params.KeyBlockMinInterval)
+		if keyReadyAt.After(start) {
+			start = keyReadyAt
+		}
+	}
+	if start.After(now) {
+		return now
+	}
+	return start
+}
+
 func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.View, curView bftview.View, fallbackRound uint, viewAge time.Duration) {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
@@ -1038,7 +1061,10 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 	primary = s.normalizeLeaderIndex(primary)
 
 	if s.fixedModeKeyblockViewStateChangedLocked() {
-		s.fixedKeyViewStartedAt = now
+		// Derive the timeout origin from committed chain data. Local ACK times and
+		// process start times are not consensus state and previously split nodes
+		// between the primary and fallback leaders for the same view.
+		s.fixedKeyViewStartedAt = s.fixedModeKeyblockViewStart(now)
 		s.fixedKeyViewTxNumber = s.currentView.TxNumber
 		s.fixedKeyViewKeyNumber = s.currentView.KeyNumber
 		s.fixedKeyViewTxHash = s.currentView.TxHash
@@ -1051,7 +1077,10 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 	}
 
 	viewAge = now.Sub(s.fixedKeyViewStartedAt)
-	if s.fixedKeyFallbackRound == 0 && viewAge >= fixedModeKeyblockFallbackDelay() && !s.leaderAckRecent(primary) {
+	if viewAge < 0 {
+		viewAge = 0
+	}
+	if viewAge >= fixedModeKeyblockFallbackDelay() {
 		fallback := primary
 		if s.keyService != nil {
 			fallback = s.keyService.getFallbackLeaderIndex(primary)
@@ -1061,8 +1090,6 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 		if fallback != primary {
 			s.fixedKeyViewLeader = fallback
 			s.fixedKeyFallbackRound = 1
-			s.fixedKeyViewStartedAt = now
-			viewAge = 0
 			if s.keyService != nil {
 				s.keyService.setActiveLeader(fallback)
 			}
@@ -1094,7 +1121,7 @@ func (s *Service) triggerTryPropose(lastN uint64) {
 		return
 	}
 	atomic.StoreInt64(&s.tryProposeQueuedAt, now)
-	s.hotstuffMsgQ.PushBack(&hotstuffMsg{
+	s.hotstuffMsgQ.push(&hotstuffMsg{
 		sid:   nil,
 		lastN: lastN,
 		hMsg:  &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose},
@@ -1244,7 +1271,7 @@ func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
 	log.Info("Write", "to id", id, "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
 
 	if id == s.Self() {
-		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, hMsg: data})
+		s.hotstuffMsgQ.push(&hotstuffMsg{sid: nil, hMsg: data})
 		return nil
 	}
 
@@ -1284,7 +1311,7 @@ func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
 
 	// Local delivery is retained for protocol correctness. Leader self-vote
 	// optimization belongs in hotstuff.go and must preserve quorum accounting.
-	s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, hMsg: data})
+	s.hotstuffMsgQ.push(&hotstuffMsg{sid: nil, hMsg: data})
 
 	// Production rule: HotStuff control messages use direct committee delivery.
 	// Large proposal bodies are distributed as proposalBodyMsg sidecars, not in
@@ -1331,7 +1358,7 @@ func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
 		return
 	}
 	if msg.Hmsg != nil {
-		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: si, hMsg: msg.Hmsg})
+		s.hotstuffMsgQ.push(&hotstuffMsg{sid: si, hMsg: msg.Hmsg})
 		return
 	}
 	s.feed1.Send(committeeMsg{sid: si, cinfo: msg.Cmsg, best: msg.Bmsg})
@@ -1339,7 +1366,7 @@ func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
 
 func (s *Service) handleHotStuffMsg() {
 	for {
-		data := s.hotstuffMsgQ.PopFront()
+		data := s.hotstuffMsgQ.pop()
 		if data == nil {
 			time.Sleep(hotstuffIdleSleep)
 			now := time.Now()
@@ -1443,7 +1470,7 @@ func (s *Service) handleHotStuffMsg() {
 			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
 			continue
 		}
-		msg := data.(*hotstuffMsg)
+		msg := data
 		if msg == nil || msg.hMsg == nil {
 			log.Warn("handleHotStuffMsg received nil message")
 			continue
@@ -1800,7 +1827,7 @@ func (s *Service) sendNewViewMsg(curN uint64) {
 	s.muStartNewView.Unlock()
 
 	if bftview.IamMember() >= 0 && curN >= s.bc.CurrentBlockN() {
-		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
+		s.hotstuffMsgQ.push(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
 	}
 }
 
