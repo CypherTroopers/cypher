@@ -883,6 +883,10 @@ func fixedModeKeyblockFallbackDelay() time.Duration {
 	return delay
 }
 
+func shouldUseFixedModeFallback(viewAge, delay time.Duration, primaryAckRecent bool) bool {
+	return viewAge >= delay && !primaryAckRecent
+}
+
 func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
 	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
 		return false
@@ -1080,7 +1084,20 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 	if viewAge < 0 {
 		viewAge = 0
 	}
-	if viewAge >= fixedModeKeyblockFallbackDelay() {
+	fallbackDelay := fixedModeKeyblockFallbackDelay()
+	primaryAckRecent := s.leaderAckRecent(primary)
+	if primaryAckRecent && s.fixedKeyViewLeader != primary {
+		log.Info("fixed-mode keyblock primary leader heartbeat restored",
+			"from", s.fixedKeyViewLeader,
+			"to", primary,
+			"viewAge", viewAge)
+		s.fixedKeyViewLeader = primary
+		s.fixedKeyFallbackRound = 0
+		if s.keyService != nil {
+			s.keyService.setActiveLeader(primary)
+		}
+	}
+	if shouldUseFixedModeFallback(viewAge, fallbackDelay, primaryAckRecent) {
 		fallback := primary
 		if s.keyService != nil {
 			fallback = s.keyService.getFallbackLeaderIndex(primary)
@@ -1097,7 +1114,8 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 				"primary", primary,
 				"fallback", fallback,
 				"fallbackRound", s.fixedKeyFallbackRound,
-				"delay", fixedModeKeyblockFallbackDelay())
+				"delay", fallbackDelay,
+				"primaryAckRecent", primaryAckRecent)
 		}
 	}
 

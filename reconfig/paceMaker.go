@@ -166,13 +166,13 @@ func (t *paceMakerTimer) loopTimer() {
 			t.mu.Lock()
 			lastKeyTime := t.lastKeyTime
 			if now.Sub(lastKeyTime) >= params.KeyBlockMinInterval {
-				// Do not move lastKeyTime before the keyblock is actually committed.
-				// Otherwise a failed/empty proposal at 10 minutes pushes the next trigger to 20 minutes.
+				// Fixed-mode keyblock view selection is owned by Service. Mutating
+				// the leader here races with Service fallback selection and causes
+				// the active leader to flap between primary and fallback.
 				if t.lastKeyTriggerAt.IsZero() || now.Sub(t.lastKeyTriggerAt) >= 2*time.Second {
 					t.lastKeyTriggerAt = now
 					t.mu.Unlock()
 					log.Warn("paceMakerTimer fixed mode keyblock trigger", "elapsed", now.Sub(lastKeyTime))
-					t.setNextLeader(true)
 					continue
 				}
 				t.mu.Unlock()
