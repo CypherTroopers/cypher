@@ -296,13 +296,13 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	PriceLimit: params.GWei,
 	PriceBump:  10,
 
-	AccountSlots: 8192,
+	AccountSlots: 1000000,
 	GlobalSlots:  3000000,
-	AccountQueue: 32768,
+	AccountQueue: 1000000,
 	GlobalQueue:  3000000,
 
-	RemoteAccountWindow: 8192,
-	LocalAccountWindow:  8192,
+	RemoteAccountWindow: 1000000,
+	LocalAccountWindow:  1000000,
 	FastPendingLifetime: 5 * time.Minute,
 	SlowPendingLifetime: 10 * time.Minute,
 	FastQueuedLifetime:  10 * time.Minute,

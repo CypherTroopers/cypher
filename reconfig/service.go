@@ -64,7 +64,9 @@ const slowEmergencyForcePending = 8192
 const startNewViewDedupWindow = 2 * time.Second
 
 const proposalBodyCacheTTL = 2 * time.Minute
-const proposalBodyWaitTimeout = time.Second
+const proposalBodyWaitBaseTimeout = 2 * time.Second
+const proposalBodyWaitMaxTimeout = 30 * time.Second
+const proposalBodyWaitBytesPerSecond = 2 * 1024 * 1024
 const proposalBodyRequestAfter = 250 * time.Millisecond
 const proposalBodyRequestInterval = 250 * time.Millisecond
 const proposalBodyPollInterval = 5 * time.Millisecond
@@ -618,7 +620,7 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 		return nil, fmt.Errorf("nil proposal ref")
 	}
 	proposalID := ref.ProposalID()
-	deadline := time.Now().Add(proposalBodyWaitTimeout)
+	deadline := time.Now().Add(proposalBodyWaitTimeout(ref.BodySize))
 	nextRequestAt := time.Now().Add(proposalBodyRequestAfter)
 	for {
 		body := s.getProposalBody(proposalID)
@@ -641,6 +643,18 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 		}
 		time.Sleep(proposalBodyPollInterval)
 	}
+}
+
+func proposalBodyWaitTimeout(bodySize uint64) time.Duration {
+	timeout := proposalBodyWaitBaseTimeout
+	if bodySize > 0 {
+		transfer := time.Duration(bodySize) * time.Second / proposalBodyWaitBytesPerSecond
+		timeout += transfer
+	}
+	if timeout > proposalBodyWaitMaxTimeout {
+		return proposalBodyWaitMaxTimeout
+	}
+	return timeout
 }
 
 func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposalBodyMsg) {
