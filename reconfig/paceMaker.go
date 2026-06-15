@@ -158,7 +158,11 @@ func (t *paceMakerTimer) loopTimer() {
 		}
 
 		now := time.Now()
-		if t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee) && bftview.IamMember() >= 0 {
+		fixedMode := t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee)
+		leaderSilentFor := now.Sub(t.service.LeaderAckTime())
+		progressSilentFor := now.Sub(t.service.HotstuffProgressTime())
+
+		if fixedMode && bftview.IamMember() >= 0 {
 			t.mu.Lock()
 			lastKeyTime := t.lastKeyTime
 			if now.Sub(lastKeyTime) >= params.KeyBlockMinInterval {
@@ -175,30 +179,28 @@ func (t *paceMakerTimer) loopTimer() {
 				continue
 			}
 			t.mu.Unlock()
+
+			// FixedLeader/FixedCommittee fallback must not be driven directly by this
+			// local AckTimeout path. A local ack miss can differ per node and split
+			// the committee into different LeaderIndex views. Keyblock fallback is
+			// handled by the fixed-mode keyblock view logic in Service.
+			if leaderSilentFor <= params.AckTimeout || progressSilentFor <= params.AckTimeout {
+				t.resetAckMissCount()
+			}
+			continue
 		}
 
 		diff := now.Sub(startTime)
-		leaderSilentFor := now.Sub(t.service.LeaderAckTime())
-		progressSilentFor := now.Sub(t.service.HotstuffProgressTime())
-		fixedMode := t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee)
 		if leaderSilentFor > params.AckTimeout && bftview.IamMember() >= 0 {
 			if progressSilentFor <= params.AckTimeout {
 				t.resetAckMissCount()
 				continue
 			}
-			if fixedMode {
-				missCount := t.recordAckMiss(now)
-				if missCount < 3 {
-					log.Warn("paceMakerTimer fixed mode suppress fallback", "ackMissCount", missCount, "ackSilentFor", leaderSilentFor, "progressSilentFor", progressSilentFor)
-					continue
-				}
-			}
 			log.Warn("paceMakerTimer Viewchange AckTimeout", "ackSilentFor", leaderSilentFor, "progressSilentFor", progressSilentFor)
 			t.setNextLeader(false)
 			t.service.ResetLeaderAckTime()
 			t.resetAckMissCount()
-		} else if diff > params.PaceMakerTimeout /**time.Duration(retryNumber+1)*/ && bftview.IamMember() >= 0 &&
-			!fixedMode { //timeout
+		} else if diff > params.PaceMakerTimeout /**time.Duration(retryNumber+1)*/ && bftview.IamMember() >= 0 { //timeout
 			t.resetAckMissCount()
 			log.Warn("paceMakerTimer Viewchange PaceMakerTimeout Event is coming", "retryNumber", retryNumber)
 			/*

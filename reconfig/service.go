@@ -192,9 +192,19 @@ type Service struct {
 	serviceStartTime          time.Time
 	lastCadenceWakeup         time.Time
 	lastFixedKeyNewViewWakeup time.Time
+	fixedKeyViewStartedAt     time.Time
+	fixedKeyViewTxNumber      uint64
+	fixedKeyViewKeyNumber     uint64
+	fixedKeyViewTxHash        common.Hash
+	fixedKeyViewKeyHash       common.Hash
+	fixedKeyViewLeader        uint
+	fixedKeyFallbackRound     uint
+	lastCandidateRewardCheck  time.Time
+	lastCandidateRewardReady  bool
 	tryProposeQueuedAt        int64
 	muStartNewView            sync.Mutex
 	lastStartNewViewN         uint64
+	lastStartNewViewHash      common.Hash
 	lastStartNewViewAt        time.Time
 	pacetMakerTimer           *paceMakerTimer
 	muHotstuffProgress        sync.Mutex
@@ -859,6 +869,14 @@ func (s *Service) fixedModeKeyblockIntervalElapsed(now time.Time) bool {
 	return now.Sub(lastKeyTime) >= params.KeyBlockMinInterval
 }
 
+func fixedModeKeyblockFallbackDelay() time.Duration {
+	delay := params.AckTimeout * 3
+	if delay < startNewViewDedupWindow*2 {
+		delay = startNewViewDedupWindow * 2
+	}
+	return delay
+}
+
 func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
 	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
 		return false
@@ -874,7 +892,15 @@ func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
 		return false
 	}
 
-	return s.getBestCandidate(true) != nil
+	// handleHotStuffMsg wakes every 1ms. Refreshing CandidatePool on every idle
+	// loop floods logs and can burn CPU while the keyblock view is waiting.
+	if !s.lastCandidateRewardCheck.IsZero() && now.Sub(s.lastCandidateRewardCheck) < 2*time.Second {
+		return s.lastCandidateRewardReady
+	}
+
+	s.lastCandidateRewardCheck = now
+	s.lastCandidateRewardReady = s.getBestCandidate(true) != nil
+	return s.lastCandidateRewardReady
 }
 
 func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
@@ -947,6 +973,115 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 		s.waittingView.TxNumber = s.currentView.TxNumber
 		s.waittingView.KeyNumber = s.currentView.KeyNumber
 	}
+}
+
+func (s *Service) normalizeLeaderIndex(index uint) uint {
+	mb := bftview.GetCurrentMember()
+	if mb == nil || len(mb.List) == 0 {
+		return 0
+	}
+	if index >= uint(len(mb.List)) {
+		return 0
+	}
+	return index
+}
+
+func (s *Service) leaderAckRecent(index uint) bool {
+	mb := bftview.GetCurrentMember()
+	if mb == nil || len(mb.List) == 0 || index >= uint(len(mb.List)) {
+		return false
+	}
+
+	node := mb.List[index]
+	if node == nil || node.Address == "" {
+		return false
+	}
+	if IsSelf(node.Address) {
+		return true
+	}
+
+	ack := s.netService.GetAckTime(node.Address)
+	if ack.IsZero() {
+		return false
+	}
+	return time.Since(ack) <= params.AckTimeout
+}
+
+func (s *Service) resetFixedModeKeyblockViewLocked() {
+	s.fixedKeyViewStartedAt = time.Time{}
+	s.fixedKeyViewTxNumber = 0
+	s.fixedKeyViewKeyNumber = 0
+	s.fixedKeyViewTxHash = common.Hash{}
+	s.fixedKeyViewKeyHash = common.Hash{}
+	s.fixedKeyViewLeader = 0
+	s.fixedKeyFallbackRound = 0
+}
+
+func (s *Service) fixedModeKeyblockViewStateChangedLocked() bool {
+	return s.fixedKeyViewStartedAt.IsZero() ||
+		s.fixedKeyViewTxNumber != s.currentView.TxNumber ||
+		s.fixedKeyViewKeyNumber != s.currentView.KeyNumber ||
+		s.fixedKeyViewTxHash != s.currentView.TxHash ||
+		s.fixedKeyViewKeyHash != s.currentView.KeyHash
+}
+
+func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.View, curView bftview.View, fallbackRound uint, viewAge time.Duration) {
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+
+	oldView = s.currentView
+
+	primary := uint(0)
+	if s.keyService != nil {
+		primary = s.keyService.getPrimaryLeaderIndex()
+	}
+	primary = s.normalizeLeaderIndex(primary)
+
+	if s.fixedModeKeyblockViewStateChangedLocked() {
+		s.fixedKeyViewStartedAt = now
+		s.fixedKeyViewTxNumber = s.currentView.TxNumber
+		s.fixedKeyViewKeyNumber = s.currentView.KeyNumber
+		s.fixedKeyViewTxHash = s.currentView.TxHash
+		s.fixedKeyViewKeyHash = s.currentView.KeyHash
+		s.fixedKeyViewLeader = primary
+		s.fixedKeyFallbackRound = 0
+		if s.keyService != nil {
+			s.keyService.setActiveLeader(primary)
+		}
+	}
+
+	viewAge = now.Sub(s.fixedKeyViewStartedAt)
+	if s.fixedKeyFallbackRound == 0 && viewAge >= fixedModeKeyblockFallbackDelay() && !s.leaderAckRecent(primary) {
+		fallback := primary
+		if s.keyService != nil {
+			fallback = s.keyService.getFallbackLeaderIndex(primary)
+		}
+		fallback = s.normalizeLeaderIndex(fallback)
+
+		if fallback != primary {
+			s.fixedKeyViewLeader = fallback
+			s.fixedKeyFallbackRound = 1
+			s.fixedKeyViewStartedAt = now
+			viewAge = 0
+			if s.keyService != nil {
+				s.keyService.setActiveLeader(fallback)
+			}
+			log.Warn("fixed-mode keyblock fallback leader selected",
+				"primary", primary,
+				"fallback", fallback,
+				"fallbackRound", s.fixedKeyFallbackRound,
+				"delay", fixedModeKeyblockFallbackDelay())
+		}
+	}
+
+	s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fixedKeyViewLeader)
+	s.currentView.NoDone = false
+	s.waittingView.TxNumber = s.currentView.TxNumber + 1
+	s.waittingView.KeyNumber = s.currentView.KeyNumber + 1
+
+	curView = s.currentView
+	fallbackRound = s.fixedKeyFallbackRound
+	return oldView, curView, fallbackRound, viewAge
 }
 
 func (s *Service) triggerTryPropose(lastN uint64) {
@@ -1225,9 +1360,7 @@ func (s *Service) handleHotStuffMsg() {
 			if keyblockIntervalElapsed {
 				if s.lastFixedKeyNewViewWakeup.IsZero() || now.Sub(s.lastFixedKeyNewViewWakeup) >= 2*time.Second {
 					s.lastFixedKeyNewViewWakeup = now
-					oldView := s.GetCurrentView()
-					s.setNextLeader(true)
-					curView := s.GetCurrentView()
+					oldView, curView, fallbackRound, viewAge := s.prepareFixedModeKeyblockView(now)
 					log.Warn("fixed-mode keyblock start-new-view wakeup",
 						"currentBlock", s.bc.CurrentBlockN(),
 						"currentKey", s.kbc.CurrentBlockN(),
@@ -1235,6 +1368,8 @@ func (s *Service) handleHotStuffMsg() {
 						"oldNoDone", oldView.NoDone,
 						"leaderIndex", curView.LeaderIndex,
 						"noDone", curView.NoDone,
+						"fallbackRound", fallbackRound,
+						"viewAge", viewAge,
 						"isLeader", bftview.IamLeader(curView.LeaderIndex),
 						"candidateReady", candidateRewardReady,
 						"pendingTotal", pendingTotal,
@@ -1594,7 +1729,6 @@ func (s *Service) Committee_Request(kNumber uint64, hash common.Hash) {
 // Update current view data
 func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.KeyBlock, fromKeyBlock bool) { //call by keyblock done
 	s.muCurrentView.Lock()
-	defer s.muCurrentView.Unlock()
 
 	if curBlock == nil {
 		curBlock = s.bc.CurrentBlock()
@@ -1614,10 +1748,19 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 		s.currentView.NoDone = true
 	}
 	log.Debug("updateCurrentView", "TxNumber", s.currentView.TxNumber, "KeyNumber", s.currentView.KeyNumber, "LeaderIndex", s.currentView.LeaderIndex, "NoDone", s.currentView.NoDone)
+	sendNewView := false
+	newViewNumber := s.currentView.TxNumber
 	if fromKeyBlock || (s.currentView.TxNumber >= s.waittingView.TxNumber && s.currentView.KeyNumber >= s.waittingView.KeyNumber) || curBlock.BlockType() == types.Key_Block {
-		s.sendNewViewMsg(s.currentView.TxNumber)
+		sendNewView = true
 		s.waittingView.KeyNumber = s.currentView.KeyNumber
 		s.waittingView.TxNumber = s.currentView.TxNumber
+	}
+	s.muCurrentView.Unlock()
+
+	// sendNewViewMsg snapshots currentView through GetCurrentView, so it must run
+	// after releasing muCurrentView.
+	if sendNewView {
+		s.sendNewViewMsg(newViewNumber)
 	}
 }
 
@@ -1636,16 +1779,23 @@ func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
 // Send new view when new block done
 func (s *Service) sendNewViewMsg(curN uint64) {
 	now := time.Now()
+	curView := s.GetCurrentView()
+	viewHash := curView.Hash()
 
 	s.muStartNewView.Lock()
-	if curN == s.lastStartNewViewN && !s.lastStartNewViewAt.IsZero() && now.Sub(s.lastStartNewViewAt) < startNewViewDedupWindow {
+	if curN == s.lastStartNewViewN &&
+		viewHash == s.lastStartNewViewHash &&
+		!s.lastStartNewViewAt.IsZero() &&
+		now.Sub(s.lastStartNewViewAt) < startNewViewDedupWindow {
 		s.muStartNewView.Unlock()
 		log.Debug("suppress duplicate start-new-view",
 			"curN", curN,
+			"viewHash", viewHash,
 			"since", now.Sub(s.lastStartNewViewAt))
 		return
 	}
 	s.lastStartNewViewN = curN
+	s.lastStartNewViewHash = viewHash
 	s.lastStartNewViewAt = now
 	s.muStartNewView.Unlock()
 
@@ -1659,18 +1809,31 @@ func (s *Service) setNextLeader(isDone bool) {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
 
-	restoredPrimary := false
-	if s.keyService.fixedModeEnabled() && s.shouldRestorePrimaryLeader() {
-		s.keyService.restorePrimaryLeader()
-		restoredPrimary = true
+	fixedMode := s.keyService != nil && s.keyService.fixedModeEnabled()
+	if fixedMode {
+		primary := s.normalizeLeaderIndex(s.keyService.getPrimaryLeaderIndex())
+		leaderIndex := primary
+		if !isDone {
+			leaderIndex = s.normalizeLeaderIndex(s.keyService.getFallbackLeaderIndex(primary))
+		}
+
+		s.currentView.LeaderIndex = leaderIndex
+		s.currentView.NoDone = !isDone
+		s.keyService.setActiveLeader(leaderIndex)
+
+		log.Info("setNextLeader fixed mode",
+			"isDone", isDone,
+			"primary", primary,
+			"index", s.currentView.LeaderIndex)
+
+		s.waittingView.TxNumber = s.currentView.TxNumber + 1
+		s.waittingView.KeyNumber = s.currentView.KeyNumber + 1
+		return
 	}
 
 	if isDone {
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(0)
 	} else {
-		if s.keyService.fixedModeEnabled() && !restoredPrimary {
-			s.keyService.promoteFallbackLeader(s.currentView.LeaderIndex)
-		}
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(s.currentView.LeaderIndex)
 	}
 	s.currentView.NoDone = !isDone
@@ -1681,16 +1844,11 @@ func (s *Service) setNextLeader(isDone bool) {
 }
 
 func (s *Service) shouldRestorePrimaryLeader() bool {
-	mb := bftview.GetCurrentMember()
-	if mb == nil || len(mb.List) == 0 {
+	if s.keyService == nil {
 		return false
 	}
-	primary := s.keyService.getPrimaryLeaderIndex()
-	if primary >= uint(len(mb.List)) {
-		return false
-	}
-	ack := s.netService.GetAckTime(mb.List[primary].Address)
-	return time.Since(ack) <= params.AckTimeout
+	primary := s.normalizeLeaderIndex(s.keyService.getPrimaryLeaderIndex())
+	return s.leaderAckRecent(primary)
 }
 
 func (s *Service) procBlockDone(block *types.Block) {
@@ -1706,6 +1864,12 @@ func (s *Service) procBlockDone(block *types.Block) {
 		s.updateCommittee(keyblock)
 		s.saveCommittee(keyblock)
 		s.updateCurrentView(block, keyblock, true)
+		s.muCurrentView.Lock()
+		s.resetFixedModeKeyblockViewLocked()
+		s.muCurrentView.Unlock()
+		if s.keyService != nil && s.keyService.fixedModeEnabled() {
+			s.keyService.setActiveLeader(0)
+		}
 		s.keyService.clearCandidate(keyblock)
 	} else {
 		log.Info("@TxBlockDone", "number", block.NumberU64(), "keyhash", block.KeyHash())
