@@ -158,6 +158,8 @@ func (c *TCPConn) sendRaw(b []byte) (uint64, error) {
 	if uint64(len(b)) > uint64(def_MaxPacketSize) {
 		return 0, fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize)
 	}
+	_ = c.conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
+	defer c.conn.SetWriteDeadline(time.Time{})
 
 	packetSize := uint32(len(b))
 	headBuf := encodePacketHeader(packetSize)

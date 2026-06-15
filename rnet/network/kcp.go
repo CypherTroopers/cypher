@@ -35,6 +35,7 @@ var (
 // a connection will return an io.EOF after ReadTimeout if nothing has been
 // sent.
 var ReadTimeout = 3 * time.Minute // 60 * time.Second
+var WriteTimeout = 5 * time.Second
 
 // Global lock for 'ReadTimeout'
 // Using a 'RWMutex' to be as efficient as possible, because it will be used
@@ -221,6 +222,8 @@ func (c *KCPConn) sendRaw(b []byte) (uint64, error) {
 	if uint64(len(b)) > uint64(def_MaxPacketSize) {
 		return 0, fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize)
 	}
+	_ = c.conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
+	defer c.conn.SetWriteDeadline(time.Time{})
 
 	// Keep the original 24-bit header for ordinary messages. Transaction block
 	// proposals above that limit use an extended 32-bit packet length.
