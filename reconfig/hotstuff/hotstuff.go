@@ -16,6 +16,7 @@ import (
 )
 
 const hotstuffSignatureDomain = "hotstuff-vote-v1"
+const maxPendingNewViewIDs = 8
 
 var (
 	ErrNewViewFail            = fmt.Errorf("hotstuff new view fail")
@@ -273,21 +274,23 @@ func (v *View) hasTState() bool {
 }
 
 type HotstuffProtocolManager struct {
-	secretKey    *bls.SecretKey
-	publicKey    *bls.PublicKey
-	views        map[common.Hash]*View
-	leaderView   *View
-	app          HotStuffApplication
-	unhandledMsg map[common.Hash]*HotstuffMessage // messages which is not handled(which phase is ahead of local's)
+	secretKey      *bls.SecretKey
+	publicKey      *bls.PublicKey
+	views          map[common.Hash]*View
+	leaderView     *View
+	app            HotStuffApplication
+	unhandledMsg   map[common.Hash]*HotstuffMessage // messages which is not handled(which phase is ahead of local's)
+	pendingNewView map[common.Hash]map[string]*HotstuffMessage
 }
 
 func NewHotstuffProtocolManager(a HotStuffApplication, secretKey *bls.SecretKey, publicKey *bls.PublicKey) *HotstuffProtocolManager {
 	manager := &HotstuffProtocolManager{
-		secretKey:    secretKey,
-		publicKey:    publicKey,
-		app:          a,
-		views:        make(map[common.Hash]*View),
-		unhandledMsg: make(map[common.Hash]*HotstuffMessage),
+		secretKey:      secretKey,
+		publicKey:      publicKey,
+		app:            a,
+		views:          make(map[common.Hash]*View),
+		unhandledMsg:   make(map[common.Hash]*HotstuffMessage),
+		pendingNewView: make(map[common.Hash]map[string]*HotstuffMessage),
 	}
 	return manager
 }
@@ -676,18 +679,33 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 	if msg == nil {
 		return nil, nil, ErrNewViewFail
 	}
-	if bftview.DecodeToView(msg.DataA) == nil {
+	decodedView := bftview.DecodeToView(msg.DataA)
+	if decodedView == nil {
 		return nil, nil, ErrNewViewFail
 	}
-	if err := hsm.app.CheckView(msg.DataA); err != nil {
-		return nil, nil, err
+
+	stateErr := hsm.app.CheckView(msg.DataA)
+	if stateErr != nil && stateErr != ErrFutureState {
+		return nil, nil, stateErr
+	}
+	if stateErr == ErrFutureState && decodedView.TxNumber > hsm.app.CurrentN() {
+		return nil, nil, stateErr
 	}
 
-	expectedState, expectedLeader, expectedNumber := hsm.app.CurrentState()
-	if expectedLeader == "" || expectedLeader != hsm.app.Self() || msg.Number != expectedNumber {
+	committee := bftview.GetCurrentMember()
+	if committee == nil || decodedView.LeaderIndex >= uint(len(committee.List)) {
 		return nil, nil, ErrInvalidLeaderView
 	}
-	if !bytes.Equal(msg.DataA, expectedState) {
+	leader := committee.List[decodedView.LeaderIndex]
+	if leader == nil {
+		return nil, nil, ErrInvalidLeaderView
+	}
+	expectedLeader := bftview.GetNodeID(leader.Address, leader.Public)
+	if expectedLeader == "" || expectedLeader != hsm.app.Self() || msg.Number != decodedView.TxNumber+1 {
+		return nil, nil, ErrInvalidLeaderView
+	}
+	expectedState, _, expectedNumber := hsm.app.CurrentState()
+	if stateErr == nil && (msg.Number != expectedNumber || !bytes.Equal(msg.DataA, expectedState)) {
 		return nil, nil, ErrViewIdNotMatch
 	}
 
@@ -702,22 +720,41 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 	if err != nil {
 		return nil, nil, err
 	}
+	if committee == nil || vote.Index < 0 || vote.Index >= len(committee.List) {
+		return nil, nil, ErrInvalidReplica
+	}
+	replica := committee.List[vote.Index]
+	if replica == nil || bftview.GetNodeID(replica.Address, replica.Public) != msg.Id {
+		return nil, nil, ErrInvalidReplica
+	}
 	if !hsm.verifyVoteSignature(vote.KSign, vote.PubKey, MsgNewView, v.hash, v.leaderId, msg.DataA) {
 		return nil, nil, ErrQCVerification
 	}
-	return v, vote, nil
+	return v, vote, stateErr
 }
 
-func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error {
-	if msg == nil {
-		return ErrNewViewFail
+func (hsm *HotstuffProtocolManager) queueFutureNewView(msg *HotstuffMessage, vote *VoteInfo) {
+	if msg == nil || vote == nil || vote.PubKey == nil {
+		return
 	}
-	log.Info("handleNewViewMsg got new view message", "from", msg.Id, "viewId", msg.ViewId)
+	pending := hsm.pendingNewView[msg.ViewId]
+	if pending == nil {
+		if len(hsm.pendingNewView) >= maxPendingNewViewIDs {
+			log.Warn("drop verified future new-view; pending view limit reached", "viewID", msg.ViewId, "limit", maxPendingNewViewIDs)
+			return
+		}
+		pending = make(map[string]*HotstuffMessage)
+		hsm.pendingNewView[msg.ViewId] = pending
+	}
+	key := hex.EncodeToString(vote.PubKey.Serialize())
+	if _, exists := pending[key]; !exists {
+		pending[key] = msg
+	}
+}
 
-	validatedView, vote, err := hsm.validateNewViewMsg(msg)
-	if err != nil {
-		log.Warn("reject new-view before storage", "from", msg.Id, "viewID", msg.ViewId, "err", err)
-		return err
+func (hsm *HotstuffProtocolManager) acceptValidatedNewView(msg *HotstuffMessage, validatedView *View, vote *VoteInfo) error {
+	if msg == nil || validatedView == nil || vote == nil {
+		return ErrNewViewFail
 	}
 
 	v, exist := hsm.views[msg.ViewId]
@@ -775,6 +812,41 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 	hsm.lockView(v)
 
 	return hsm.TryPropose()
+}
+
+func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error {
+	if msg == nil {
+		return ErrNewViewFail
+	}
+	log.Info("handleNewViewMsg got new view message", "from", msg.Id, "viewId", msg.ViewId)
+
+	validatedView, vote, err := hsm.validateNewViewMsg(msg)
+	if err == ErrFutureState {
+		hsm.queueFutureNewView(msg, vote)
+		log.Info("queue verified future new-view", "from", msg.Id, "viewID", msg.ViewId)
+		return err
+	}
+	if err != nil {
+		log.Warn("reject new-view before storage", "from", msg.Id, "viewID", msg.ViewId, "err", err)
+		return err
+	}
+
+	result := hsm.acceptValidatedNewView(msg, validatedView, vote)
+	pending := hsm.pendingNewView[msg.ViewId]
+	delete(hsm.pendingNewView, msg.ViewId)
+	for _, futureMsg := range pending {
+		futureView, futureVote, futureErr := hsm.validateNewViewMsg(futureMsg)
+		if futureErr != nil {
+			log.Warn("discard queued new-view after replay validation", "from", futureMsg.Id, "viewID", futureMsg.ViewId, "err", futureErr)
+			continue
+		}
+		if err := hsm.acceptValidatedNewView(futureMsg, futureView, futureVote); err != nil && err != ErrInsufficientQC {
+			result = err
+		} else if err == nil {
+			result = nil
+		}
+	}
+	return result
 }
 
 func (hsm *HotstuffProtocolManager) TryPropose() error {

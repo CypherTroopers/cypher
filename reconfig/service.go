@@ -39,7 +39,7 @@ import (
 
 const failedProposalRetry = 20 * time.Millisecond
 const hotstuffIdleSleep = 1 * time.Millisecond
-const tryProposeDebounce = 1 * time.Millisecond
+const tryProposeDebounce = time.Second
 const fastBlockInterval = 70 * time.Millisecond
 const slowBlockInterval = 1 * time.Second
 const slowFallbackMinPending = 1
@@ -1477,9 +1477,6 @@ func (s *Service) handleHotStuffMsg() {
 		}
 		msgCode := msg.hMsg.Code
 		s.observeHotstuffProgress(msg.hMsg)
-		if msgCode == hotstuff.MsgTryPropose {
-			atomic.StoreInt64(&s.tryProposeQueuedAt, 0)
-		}
 		log.Debug("handleHotStuffMsg", "id", msg.hMsg.Id, "code", hotstuff.ReadableMsgType(msgCode), "ViewId", msg.hMsg.ViewId)
 
 		var curN uint64
