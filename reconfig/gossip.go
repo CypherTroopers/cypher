@@ -638,6 +638,7 @@ func isHighPriorityNetworkMsg(msg *networkMsg) bool {
 	switch msg.NetworkClass() {
 	case network.NetClassHotstuffControl,
 		network.NetClassProposalBodyControl,
+		network.NetClassProposalBodyBulk,
 		network.NetClassCommitteeControl,
 		network.NetClassCandidateMiner,
 		network.NetClassHeartbeat:
