@@ -16,7 +16,7 @@ import (
 const (
 	commonRPCAdmissionTTL             = 30 * time.Minute
 	commonRPCAdmissionCleanupInterval = time.Minute
-	commonRPCAdmissionMaxEntries      = 100000
+	commonRPCAdmissionMaxEntries      = 1000000
 )
 
 type commonRPCAdmissionEntry struct {
@@ -131,6 +131,7 @@ func cleanupCommonRPCAdmissions(now time.Time) {
 	type candidate struct {
 		hash     common.Hash
 		storedAt time.Time
+		value    interface{}
 	}
 	candidates := make([]candidate, 0)
 	var total int64
@@ -141,11 +142,12 @@ func cleanupCommonRPCAdmissions(now time.Time) {
 		hash, hashOK := key.(common.Hash)
 		entry, entryOK := value.(*commonRPCAdmissionEntry)
 		if !hashOK || !entryOK || commonRPCAdmissionEntryExpired(entry, now) {
-			commonRPCAdmissions.Delete(key)
-			removed++
+			if commonRPCAdmissions.CompareAndDelete(key, value) {
+				removed++
+			}
 			return true
 		}
-		candidates = append(candidates, candidate{hash: hash, storedAt: entry.storedAt})
+		candidates = append(candidates, candidate{hash: hash, storedAt: entry.storedAt, value: value})
 		return true
 	})
 
@@ -159,8 +161,9 @@ func cleanupCommonRPCAdmissions(now time.Time) {
 			overflow = len(candidates)
 		}
 		for i := 0; i < overflow; i++ {
-			commonRPCAdmissions.Delete(candidates[i].hash)
-			removed++
+			if commonRPCAdmissions.CompareAndDelete(candidates[i].hash, candidates[i].value) {
+				removed++
+			}
 		}
 	}
 
@@ -181,8 +184,9 @@ func loadCommonRPCAdmissionEntry(txHash common.Hash, now time.Time) (*commonRPCA
 	}
 	entry, ok := value.(*commonRPCAdmissionEntry)
 	if !ok || commonRPCAdmissionEntryExpired(entry, now) {
-		commonRPCAdmissions.Delete(txHash)
-		atomic.AddInt64(&commonRPCAdmissionCount, -1)
+		if commonRPCAdmissions.CompareAndDelete(txHash, value) {
+			atomic.AddInt64(&commonRPCAdmissionCount, -1)
+		}
 		return nil, false
 	}
 	return entry, true
@@ -196,12 +200,21 @@ func StoreCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
 		log.Warn("Rejected common RPC admission", "err", err)
 		return false
 	}
+	return storeVerifiedCommonRPCAdmission(admission)
+}
+
+func storeVerifiedCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
 	now := time.Now()
 	maybeCleanupCommonRPCAdmissions(now, false)
 
 	sealed := copyCommonRPCAdmission(admission)
-	value, ok := commonRPCAdmissions.Load(sealed.TxHash)
-	if ok {
+	replacement := &commonRPCAdmissionEntry{admission: sealed, storedAt: now, updatedAt: now}
+	for {
+		value, loaded := commonRPCAdmissions.LoadOrStore(sealed.TxHash, replacement)
+		if !loaded {
+			atomic.AddInt64(&commonRPCAdmissionCount, 1)
+			break
+		}
 		entry, _ := value.(*commonRPCAdmissionEntry)
 		current := (*types.CommonTxAdmission)(nil)
 		if entry != nil {
@@ -210,10 +223,13 @@ func StoreCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
 		if !types.IsBetterCommonTxAdmission(sealed, current) {
 			return false
 		}
-	} else {
-		atomic.AddInt64(&commonRPCAdmissionCount, 1)
+		if entry != nil && !entry.storedAt.IsZero() {
+			replacement.storedAt = entry.storedAt
+		}
+		if commonRPCAdmissions.CompareAndSwap(sealed.TxHash, value, replacement) {
+			break
+		}
 	}
-	commonRPCAdmissions.Store(sealed.TxHash, &commonRPCAdmissionEntry{admission: sealed, storedAt: now, updatedAt: now})
 	if atomic.LoadInt64(&commonRPCAdmissionCount) > commonRPCAdmissionMaxEntries {
 		maybeCleanupCommonRPCAdmissions(now, true)
 	}
@@ -245,7 +261,7 @@ func SignAndRecordCommonRPCAdmission(txHash common.Hash, miner common.Address, c
 	if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
 		return nil, err
 	}
-	StoreCommonRPCAdmission(admission)
+	storeVerifiedCommonRPCAdmission(admission)
 	return copyCommonRPCAdmission(admission), nil
 }
 

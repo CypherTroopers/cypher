@@ -486,15 +486,15 @@ const (
 	slowPerAccountTierSmall  = 64
 	fastPerAccountTierMedium = 128
 	slowPerAccountTierMedium = 128
-	fastPerAccountTierLarge  = 512
-	slowPerAccountTierLarge  = 512
-	fastBlockMaxTxCount      = uint64(1000000)
-	slowBlockMaxTxCount      = uint64(1000000)
+	fastPerAccountTierLarge  = 16384
+	slowPerAccountTierLarge  = 16384
+	fastBlockMaxTxCount      = uint64(16384)
+	slowBlockMaxTxCount      = uint64(16384)
 	fastBlockGasTargetPct    = uint64(95)
 	slowBlockGasTargetPct    = uint64(99)
 
-	fastTxBlockProposalMaxBytes = 128 * 1024 * 1024
-	slowTxBlockProposalMaxBytes = 256 * 1024 * 1024
+	fastTxBlockProposalMaxBytes = 64 * 1024 * 1024
+	slowTxBlockProposalMaxBytes = 64 * 1024 * 1024
 
 	deployBlockGasTargetPct = uint64(10)
 	heavyBlockGasTargetPct  = uint64(5)
@@ -527,7 +527,7 @@ const (
 	deployBlockMaxTxCount = uint64(4)
 	heavyBlockMaxTxCount  = uint64(8)
 	dataBlockMaxTxCount   = uint64(8)
-	dexBlockMaxTxCount    = uint64(1000000)
+	dexBlockMaxTxCount    = uint64(16384)
 
 	deployDrainMaxTxCount = uint64(16)
 	heavyDrainMaxTxCount  = uint64(32)
