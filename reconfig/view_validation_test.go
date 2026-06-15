@@ -55,3 +55,28 @@ func TestObserveHotstuffProgressAcceptsDifferentCanonicalView(t *testing.T) {
 		t.Fatalf("progress timestamp was not refreshed: %s", s.hotstuffProgressAt)
 	}
 }
+
+func TestValidateViewNormalizesProposalMode(t *testing.T) {
+	current := bftview.View{
+		TxNumber:      974,
+		TxHash:        common.HexToHash("0x01"),
+		KeyNumber:     15,
+		KeyHash:       common.HexToHash("0x02"),
+		CommitteeHash: common.HexToHash("0x03"),
+		LeaderIndex:   0,
+		NoDone:        true,
+	}
+	wire := current
+	wire.NoDone = false
+
+	expected, number, err := validateViewAgainstSnapshot(wire.EncodeConsensusToBytes(), current)
+	if err != nil {
+		t.Fatalf("proposal-mode-only difference rejected: %v", err)
+	}
+	if number != current.TxNumber+1 {
+		t.Fatalf("expected number = %d, want %d", number, current.TxNumber+1)
+	}
+	if string(expected) != string(current.EncodeConsensusToBytes()) {
+		t.Fatal("validation returned non-canonical consensus state")
+	}
+}

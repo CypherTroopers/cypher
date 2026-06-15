@@ -1123,16 +1123,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	expectedView := bftview.DecodeToView(expectedState)
 	proposalView := bftview.DecodeToView(m.DataE)
 
-	sameCanonicalView := false
-	if expectedView != nil && proposalView != nil {
-		sameCanonicalView =
-			expectedView.TxNumber == proposalView.TxNumber &&
-				expectedView.TxHash == proposalView.TxHash &&
-				expectedView.KeyNumber == proposalView.KeyNumber &&
-				expectedView.KeyHash == proposalView.KeyHash &&
-				expectedView.CommitteeHash == proposalView.CommitteeHash &&
-				expectedView.LeaderIndex == proposalView.LeaderIndex
-	}
+	sameCanonicalView := expectedView.EqualConsensus(proposalView)
 
 	// Do not reject only because NoDone differs.
 	// In fixed keyblock mode, NoDone can flip locally before/after Prepare propagation.
