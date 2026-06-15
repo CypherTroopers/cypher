@@ -23,10 +23,13 @@ type FallbackHost struct {
 	quicHost *QUICHost
 	tcpHost  *TCPHost
 
-	mu        sync.Mutex
-	listening bool
-	closed    bool
+	mu                sync.Mutex
+	listening         bool
+	closed            bool
+	tcpPreferredUntil map[string]time.Time
 }
+
+const fallbackQUICRetryDelay = time.Minute
 
 func NewFallbackHost(sid *ServerIdentity) (*FallbackHost, error) {
 	return NewFallbackHostWithListenAddr(sid, "")
@@ -52,36 +55,90 @@ func NewFallbackHostWithListenAddr(sid *ServerIdentity, listenAddr string) (*Fal
 	}
 
 	h := &FallbackHost{
-		sid:      sid,
-		address:  NewAddress(PlainQUIC, raw),
-		quicHost: qh,
-		tcpHost:  th,
+		sid:               sid,
+		address:           NewAddress(PlainQUIC, raw),
+		quicHost:          qh,
+		tcpHost:           th,
+		tcpPreferredUntil: make(map[string]time.Time),
 	}
 	return h, nil
+}
+
+func (h *FallbackHost) markQUICFailure(raw string) {
+	h.mu.Lock()
+	if h.tcpPreferredUntil == nil {
+		h.tcpPreferredUntil = make(map[string]time.Time)
+	}
+	h.tcpPreferredUntil[raw] = time.Now().Add(fallbackQUICRetryDelay)
+	h.mu.Unlock()
+}
+
+func (h *FallbackHost) prefersTCP(raw string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	until, ok := h.tcpPreferredUntil[raw]
+	if !ok {
+		return false
+	}
+	if time.Now().Before(until) {
+		return true
+	}
+	delete(h.tcpPreferredUntil, raw)
+	return false
+}
+
+func (h *FallbackHost) wrap(conn Conn, raw string) Conn {
+	return newFallbackConn(conn, raw, func() { h.markQUICFailure(raw) })
+}
+
+func (h *FallbackHost) connectTCP(raw string) (Conn, error) {
+	if h.tcpHost == nil {
+		return nil, errors.New("fallback tcp transport unavailable")
+	}
+	tcpSID := NewServerIdentityWithTransport(raw, PlainTCP)
+	conn, err := h.tcpHost.Connect(tcpSID)
+	if err != nil {
+		return nil, err
+	}
+	return h.wrap(conn, raw), nil
+}
+
+func (h *FallbackHost) connectQUIC(raw string) (Conn, error) {
+	if h.quicHost == nil {
+		return nil, errors.New("fallback quic transport unavailable")
+	}
+	quicSID := NewServerIdentityWithTransport(raw, PlainQUIC)
+	conn, err := h.quicHost.Connect(quicSID)
+	if err != nil {
+		h.markQUICFailure(raw)
+		return nil, err
+	}
+	return h.wrap(conn, raw), nil
 }
 
 func (h *FallbackHost) Connect(si *ServerIdentity) (Conn, error) {
 	raw := si.Address.String()
 
-	if h.quicHost != nil {
-		quicSID := NewServerIdentityWithTransport(raw, PlainQUIC)
-		if conn, err := h.quicHost.Connect(quicSID); err == nil {
-			return newFallbackConn(conn, h.tcpHost, raw), nil
+	if h.prefersTCP(raw) {
+		if conn, err := h.connectTCP(raw); err == nil {
+			log.Warn("fallback transport using tcp after quic failure", "to", raw)
+			return conn, nil
 		} else {
-			log.Warn("fallback transport quic connect failed", "to", raw, "err", err)
+			log.Warn("fallback transport tcp connect failed", "to", raw, "err", err)
 		}
 	}
 
-	if h.tcpHost != nil {
-		tcpSID := NewServerIdentityWithTransport(raw, PlainTCP)
-		conn, err := h.tcpHost.Connect(tcpSID)
-		if err != nil {
-			return nil, err
-		}
-		return newFallbackConn(conn, h.tcpHost, raw), nil
+	if conn, err := h.connectQUIC(raw); err == nil {
+		return conn, nil
+	} else {
+		log.Warn("fallback transport quic connect failed", "to", raw, "err", err)
 	}
 
-	return nil, errors.New("fallback host has no available transport")
+	if conn, err := h.connectTCP(raw); err == nil {
+		return conn, nil
+	} else {
+		return nil, err
+	}
 }
 
 func (h *FallbackHost) Listen(fn func(Conn)) error {
@@ -180,28 +237,18 @@ func (h *FallbackHost) WaitListening(timeout time.Duration) bool {
 	return false
 }
 
-// FallbackConn wraps the currently active transport. It normally starts on QUIC
-// but switches to TCP when the first QUIC send fails. This also covers Router's
-// initial ServerIdentity handshake because Router calls Send immediately after
-// Host.Connect.
+// FallbackConn reports QUIC send failures to its host. Router then reconnects
+// over TCP and performs a fresh ServerIdentity handshake before retrying.
 type FallbackConn struct {
-	mu      sync.Mutex
-	active  Conn
-	tcpHost *TCPHost
-	raw     string
-	closed  bool
+	mu            sync.Mutex
+	active        Conn
+	raw           string
+	onQUICFailure func()
+	closed        bool
 }
 
-func newFallbackConn(active Conn, tcpHost *TCPHost, raw string) *FallbackConn {
-	return &FallbackConn{active: active, tcpHost: tcpHost, raw: raw}
-}
-
-func (c *FallbackConn) dialTCP() (Conn, error) {
-	if c.tcpHost == nil {
-		return nil, errors.New("fallback tcp transport unavailable")
-	}
-	tcpSID := NewServerIdentityWithTransport(c.raw, PlainTCP)
-	return c.tcpHost.Connect(tcpSID)
+func newFallbackConn(active Conn, raw string, onQUICFailure func()) *FallbackConn {
+	return &FallbackConn{active: active, raw: raw, onQUICFailure: onQUICFailure}
 }
 
 func (c *FallbackConn) Send(msg Message) (uint64, error) {
@@ -217,10 +264,15 @@ func (c *FallbackConn) Send(msg Message) (uint64, error) {
 		return 0, ErrClosed
 	}
 
-	// Do not switch transports inside Send.
-	// Router.connect owns ServerIdentity negotiation. If a send fails, Router.Send
-	// will reconnect and perform the negotiation again before resending.
-	return active.Send(msg)
+	n, err := active.Send(msg)
+	if err != nil && active.Type() == PlainQUIC {
+		if c.onQUICFailure != nil {
+			c.onQUICFailure()
+		}
+		log.Warn("fallback transport marked tcp preferred after quic send failure", "to", c.raw, "err", err)
+		_ = active.Close()
+	}
+	return n, err
 }
 
 func (c *FallbackConn) Receive() (*Envelope, error) {

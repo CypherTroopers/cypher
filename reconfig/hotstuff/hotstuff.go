@@ -672,103 +672,81 @@ func (hsm *HotstuffProtocolManager) rebroadcastPrepare(v *View, reason string) b
 }
 
 // for leader
+func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*View, *VoteInfo, error) {
+	if msg == nil {
+		return nil, nil, ErrNewViewFail
+	}
+	if bftview.DecodeToView(msg.DataA) == nil {
+		return nil, nil, ErrNewViewFail
+	}
+	if err := hsm.app.CheckView(msg.DataA); err != nil {
+		return nil, nil, err
+	}
+
+	expectedState, expectedLeader, expectedNumber := hsm.app.CurrentState()
+	if expectedLeader == "" || expectedLeader != hsm.app.Self() || msg.Number != expectedNumber {
+		return nil, nil, ErrInvalidLeaderView
+	}
+	if !bytes.Equal(msg.DataA, expectedState) {
+		return nil, nil, ErrViewIdNotMatch
+	}
+
+	expectedViewID := hotstuffDigestHash([]byte(expectedLeader), msg.DataA)
+	if msg.ViewId != expectedViewID {
+		return nil, nil, ErrViewIdNotMatch
+	}
+
+	v := hsm.createView(true, PhasePrepare, expectedLeader, msg.DataA, msg.Number)
+	hsm.updateViewPublicKey(v)
+	err, vote := v.msgToVoteInfo(msg)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !hsm.verifyVoteSignature(vote.KSign, vote.PubKey, MsgNewView, v.hash, v.leaderId, msg.DataA) {
+		return nil, nil, ErrQCVerification
+	}
+	return v, vote, nil
+}
+
 func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error {
-
-	//start := time.Now()
-	//defer func() {
-	//	handleTime := time.Now().Sub(start).Nanoseconds() / 1000000
-	//	log.Debug("handleNewViewMsg handle time", "ellpased", handleTime)
-	//}()
-
+	if msg == nil {
+		return ErrNewViewFail
+	}
 	log.Info("handleNewViewMsg got new view message", "from", msg.Id, "viewId", msg.ViewId)
-	err := hsm.app.CheckView(msg.DataA)
-	if err == ErrOldState {
-		log.Warn("check new view failed, discard", "viewID", msg.ViewId)
+
+	validatedView, vote, err := hsm.validateNewViewMsg(msg)
+	if err != nil {
+		log.Warn("reject new-view before storage", "from", msg.Id, "viewID", msg.ViewId, "err", err)
 		return err
 	}
 
 	v, exist := hsm.views[msg.ViewId]
 	if !exist {
-		v = hsm.createView(true, PhasePrepare, hsm.app.Self(), msg.DataA, msg.Number)
-		log.Debug("create new view", "leader", v.leaderId, "viewID", v.hash)
+		v = validatedView
+		log.Debug("create validated new view", "leader", v.leaderId, "viewID", v.hash)
 		hsm.views[v.hash] = v
+	} else {
+		hsm.updateViewPublicKey(v)
 	}
 
-	v.futureNewViewMsg = append(v.futureNewViewMsg, msg)
-	if err == ErrFutureState {
-		log.Warn("new view got future state ", "viewID", msg.ViewId)
-		return err
-	}
-
-	hsm.updateViewPublicKey(v)
-
-	for _, m := range v.futureNewViewMsg {
-		err, qrum := v.msgToVoteInfo(m)
-		if err != nil {
-			log.Debug("New view message failed to convert to voteInfo", "error", err)
-			continue
-		}
-
-		if !hsm.verifyVoteSignature(qrum.KSign, qrum.PubKey, MsgNewView, v.hash, v.leaderId, m.DataA) {
-			log.Debug("New view message failed to verify voteInfo")
-			err = ErrQCVerification
-			continue
-		}
-
-		if v.hash != m.ViewId {
-			log.Debug("handleNewViewMsg got new-view message with un-matched view id", "from", m.Id, "viewId", m.ViewId)
-			err = ErrViewIdNotMatch
-			continue
-		}
-
-		// check if the new view is already received
-		pubKey := bls.GetPublicKey(m.PubKey)
-		if pubKey == nil {
-			log.Debug("new-view message has invalid public key", "from", m.Id, "viewId", m.ViewId, "pubKey", hex.EncodeToString(m.PubKey))
-			continue
-		}
-		/*
-			var pubKey bls.PublicKey
-			if err := pubKey.Deserialize(m.PubKey); err != nil {
-				log.Debug("new-view message has invalid public key", "from", m.Id, "viewId", m.ViewId, "pubKey", hex.EncodeToString(m.PubKey))
-				continue
-			}
-		*/
-		if hsm.lookupVoteInfo(pubKey, v.highVoteInfo) {
-			log.Warn("receive dup new-view meesage", "from", m.Id, "viewId", m.ViewId)
-			continue
-		}
-
-		if v.phaseAsLeader != PhasePrepare {
-			log.Debug("handleNewViewMsg view phase not match", "viewID", hex.EncodeToString(v.hash[:]), "phase", readablePhase(v.phaseAsLeader), "shouldBe", readablePhase(PhasePrepare))
-
-			if prepareMsg, ok := v.leaderMsg[MsgPrepare]; ok {
-				log.Debug("handleNewViewMsg load prepare message and send to replica", "replicaId", m.Id)
-				hsm.app.Write(m.Id, prepareMsg)
-			}
-
-			continue
-		}
-
-		v.highVoteInfo = append(v.highVoteInfo, qrum)
-		if len(v.currentState) != len(m.DataA) {
-			v.currentState = make([]byte, len(m.DataA))
-			copy(v.currentState, m.DataA)
-		}
-
-		if m.DataC != nil && len(m.DataC) > 0 {
-			extra := make([]byte, len(m.DataC))
-			copy(extra, m.DataC)
-
-			v.extra = append(v.extra, extra)
-		}
-	}
-
-	v.futureNewViewMsg = make([]*HotstuffMessage, 0)
-	if v.phaseAsLeader != PhasePrepare {
-		// this happens when leader receives more new-view messages than (2f + 1) threshold
-		// the leader should write the Prepare message to these late replica too
+	if hsm.lookupVoteInfo(vote.PubKey, v.highVoteInfo) {
+		log.Warn("receive dup new-view message", "from", msg.Id, "viewId", msg.ViewId)
 		return nil
+	}
+
+	if v.phaseAsLeader != PhasePrepare {
+		if prepareMsg, ok := v.leaderMsg[MsgPrepare]; ok {
+			log.Debug("send cached prepare to late replica", "replicaId", msg.Id)
+			hsm.app.Write(msg.Id, prepareMsg)
+		}
+		return nil
+	}
+
+	v.highVoteInfo = append(v.highVoteInfo, vote)
+	if len(msg.DataC) > 0 {
+		extra := make([]byte, len(msg.DataC))
+		copy(extra, msg.DataC)
+		v.extra = append(v.extra, extra)
 	}
 
 	hsm.leaderView = v
