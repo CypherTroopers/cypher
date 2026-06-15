@@ -23,6 +23,12 @@ import (
 
 const quicNextProto = "cypher-rnet-quic-v1"
 
+const (
+	quicStreamOpenTimeout  = 5 * time.Second
+	quicStreamWriteTimeout = 5 * time.Second
+	quicMaxIncomingStreams = 1024
+)
+
 // NewQUICAddress returns a new Address that has type PlainQUIC with the given
 // address addr.
 func NewQUICAddress(addr string) Address {
@@ -113,26 +119,107 @@ func classifyReceivedMessage(msg Message) uint8 {
 }
 
 func (c *QUICConn) Receive() (env *Envelope, e error) {
-	stream, err := c.conn.AcceptStream(context.Background())
-	if err != nil {
-		return nil, handleError(err)
+	c.recvOnce.Do(func() {
+		go c.acceptStreams()
+	})
+
+	for {
+		if result, ok := tryQUICResult(c.recvHandshake); ok {
+			return result.env, result.err
+		}
+		if result, ok := tryQUICResult(c.recvControl); ok {
+			return result.env, result.err
+		}
+		if result, ok := tryQUICResult(c.recvMeta); ok {
+			return result.env, result.err
+		}
+		if result, ok := tryQUICResult(c.recvBulk); ok {
+			return result.env, result.err
+		}
+
+		select {
+		case result := <-c.recvHandshake:
+			return result.env, result.err
+		case result := <-c.recvControl:
+			return result.env, result.err
+		case result := <-c.recvMeta:
+			return result.env, result.err
+		case result := <-c.recvBulk:
+			return result.env, result.err
+		case err := <-c.recvErr:
+			return nil, err
+		}
 	}
+}
+
+func tryQUICResult(ch <-chan quicEnvelopeResult) (quicEnvelopeResult, bool) {
+	select {
+	case result := <-ch:
+		return result, true
+	default:
+		return quicEnvelopeResult{}, false
+	}
+}
+
+func (c *QUICConn) acceptStreams() {
+	first := true
+	for {
+		stream, err := c.conn.AcceptStream(context.Background())
+		if err != nil {
+			c.reportReceiveError(handleError(err))
+			return
+		}
+		// The first stream on an accepted connection carries ServerIdentity.
+		// Decode it before accepting later streams so negotiation cannot be
+		// reordered behind a smaller control message.
+		if first {
+			first = false
+			c.receiveStream(stream)
+			continue
+		}
+		go c.receiveStream(stream)
+	}
+}
+
+func (c *QUICConn) receiveStream(stream *quic.Stream) {
 	defer stream.Close()
 
 	buff, err := c.receiveRaw(stream)
 	if err != nil {
-		return nil, err
+		c.reportReceiveError(handleError(err))
+		return
 	}
 
 	id, body, err := Unmarshal(buff)
 	if err != nil {
-		return nil, err
+		c.reportReceiveError(err)
+		return
 	}
 
-	return &Envelope{
-		MsgType: id,
-		Msg:     body,
-	}, nil
+	result := quicEnvelopeResult{
+		env: &Envelope{
+			MsgType: id,
+			Msg:     body,
+		},
+	}
+
+	switch classifyReceivedMessage(body) {
+	case NetClassHandshake:
+		c.recvHandshake <- result
+	case NetClassHotstuffControl:
+		c.recvControl <- result
+	case NetClassProposalBodyControl, NetClassCommitteeControl, NetClassCandidateMiner, NetClassHeartbeat:
+		c.recvMeta <- result
+	default:
+		c.recvBulk <- result
+	}
+}
+
+func (c *QUICConn) reportReceiveError(err error) {
+	select {
+	case c.recvErr <- err:
+	default:
+	}
 }
 
 func (c *QUICConn) receiveRaw(stream *quic.Stream) ([]byte, error) {
@@ -227,11 +314,16 @@ func (c *QUICConn) sendRaw(b []byte) (uint64, error) {
 		return 0, fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize)
 	}
 
-	stream, err := c.conn.OpenStreamSync(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), quicStreamOpenTimeout)
+	defer cancel()
+
+	stream, err := c.conn.OpenStreamSync(ctx)
 	if err != nil {
 		return 0, handleError(err)
 	}
 	defer stream.Close()
+	_ = stream.SetWriteDeadline(time.Now().Add(quicStreamWriteTimeout))
+	defer stream.SetWriteDeadline(time.Time{})
 
 	packetSize := uint32(len(b))
 	headBuf := encodePacketHeader(packetSize)
@@ -434,8 +526,9 @@ func (t *QUICHost) Connect(si *ServerIdentity) (Conn, error) {
 
 func quicTransportConfig() *quic.Config {
 	return &quic.Config{
-		KeepAlivePeriod: 15 * time.Second,
-		MaxIdleTimeout:  3 * time.Minute,
+		KeepAlivePeriod:    15 * time.Second,
+		MaxIdleTimeout:     3 * time.Minute,
+		MaxIncomingStreams: quicMaxIncomingStreams,
 	}
 }
 
