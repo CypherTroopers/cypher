@@ -89,15 +89,20 @@ func (keyS *keyService) promoteFallbackLeader(current uint) {
 	defer keyS.muLeaderState.Unlock()
 
 	keyS.syncPrimaryLeaderLocked(mb)
-	if keyS.activeLeader >= uint(len(mb.List)) {
-		keyS.activeLeader = keyS.primaryLeader % uint(len(mb.List))
+	size := uint(len(mb.List))
+	if size == 0 {
+		return
 	}
-	next := current + 1
-	if next >= uint(len(mb.List)) {
-		next = 0
+	primary := keyS.primaryLeader % size
+	next := primary
+	if size > 1 {
+		next = primary + 1
+		if next >= size {
+			next = 0
+		}
 	}
 	keyS.activeLeader = next
-	log.Warn("fixed-mode leader fallback activated", "primary", keyS.primaryLeader, "active", keyS.activeLeader, "committeeSize", len(mb.List))
+	log.Warn("fixed-mode leader fallback activated", "primary", keyS.primaryLeader, "active", keyS.activeLeader, "committeeSize", len(mb.List), "oldCurrent", current)
 }
 
 func (keyS *keyService) restorePrimaryLeader() {
@@ -118,6 +123,53 @@ func (keyS *keyService) getPrimaryLeaderIndex() uint {
 	mb := bftview.GetCurrentMember()
 	keyS.syncPrimaryLeaderLocked(mb)
 	return keyS.primaryLeader
+}
+
+func (keyS *keyService) setActiveLeader(index uint) {
+	if !keyS.fixedModeEnabled() {
+		return
+	}
+	mb := bftview.GetCurrentMember()
+
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+
+	keyS.syncPrimaryLeaderLocked(mb)
+	if mb != nil && len(mb.List) > 0 {
+		if index >= uint(len(mb.List)) {
+			index = keyS.primaryLeader % uint(len(mb.List))
+		}
+	}
+	if keyS.activeLeader != index {
+		log.Info("fixed-mode active leader updated", "from", keyS.activeLeader, "to", index, "primary", keyS.primaryLeader)
+	}
+	keyS.activeLeader = index
+}
+
+func (keyS *keyService) getFallbackLeaderIndex(primary uint) uint {
+	mb := bftview.GetCurrentMember()
+
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+
+	keyS.syncPrimaryLeaderLocked(mb)
+	if mb == nil || len(mb.List) == 0 {
+		return primary
+	}
+
+	size := uint(len(mb.List))
+	if primary >= size {
+		primary = keyS.primaryLeader % size
+	}
+	if size <= 1 {
+		return primary
+	}
+
+	next := primary + 1
+	if next >= size {
+		next = 0
+	}
+	return next
 }
 
 func (keyS *keyService) syncPrimaryLeaderLocked(mb *bftview.Committee) {
@@ -415,7 +467,7 @@ func (keyS *keyService) getNextLeaderIndex(leaderIndex uint) uint {
 		keyS.syncPrimaryLeaderLocked(mb)
 		if mb != nil && len(mb.List) > 0 {
 			if keyS.activeLeader >= uint(len(mb.List)) {
-				keyS.activeLeader = keyS.primaryLeader
+				keyS.activeLeader = keyS.primaryLeader % uint(len(mb.List))
 			}
 		}
 		return keyS.activeLeader
