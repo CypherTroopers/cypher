@@ -324,7 +324,7 @@ func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 
 	log.Info("CurrentState", "TxNumber", curView.TxNumber, "KeyNumber", curView.KeyNumber, "LeaderIndex", curView.LeaderIndex, "NoDone", curView.NoDone)
 
-	return curView.EncodeToBytes(), leaderID, curView.TxNumber + 1
+	return curView.EncodeConsensusToBytes(), leaderID, curView.TxNumber + 1
 }
 
 // GetExtra call by hotstuff
@@ -364,7 +364,7 @@ func validateViewAgainstSnapshot(data []byte, current bftview.View) ([]byte, uin
 		return nil, 0, fmt.Errorf("invalid hotstuff view encoding")
 	}
 
-	expectedState := current.EncodeToBytes()
+	expectedState := current.EncodeConsensusToBytes()
 	expectedNumber := current.TxNumber + 1
 	if view.KeyNumber < current.KeyNumber ||
 		(view.KeyNumber == current.KeyNumber && view.TxNumber < current.TxNumber) {
@@ -782,7 +782,7 @@ func (s *Service) Propose(viewID common.Hash, leaderID string) (e error, kState 
 	s.muCurrentView.Lock()
 	leaderIndex := s.currentView.LeaderIndex
 	noDone := s.currentView.NoDone
-	if !s.replicaView.EqualAll(&s.currentView) {
+	if !s.replicaView.EqualConsensus(&s.currentView) {
 		log.Error("Propose", "replica view not equal to local current view txNumber", s.currentView.TxNumber, "keyNumber", s.currentView.KeyNumber, "LeaderIndex", leaderIndex, "NoDone",
 			s.currentView.NoDone, "replica txNumber", s.replicaView.TxNumber, "keyNumber", s.replicaView.KeyNumber, "LeaderIndex", s.replicaView.LeaderIndex, "NoDone", s.replicaView.NoDone)
 		s.muCurrentView.Unlock()
@@ -1848,7 +1848,7 @@ func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
 func (s *Service) sendNewViewMsg(curN uint64) {
 	now := time.Now()
 	curView := s.GetCurrentView()
-	viewHash := curView.Hash()
+	viewHash := curView.ConsensusHash()
 
 	s.muStartNewView.Lock()
 	if curN == s.lastStartNewViewN &&
