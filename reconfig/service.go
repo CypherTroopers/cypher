@@ -17,7 +17,6 @@
 package reconfig
 
 import (
-	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -65,8 +64,9 @@ const slowEmergencyForcePending = 8192
 const startNewViewDedupWindow = 2 * time.Second
 
 const proposalBodyCacheTTL = 2 * time.Minute
-const proposalBodyWaitTimeout = 30 * time.Second
+const proposalBodyWaitTimeout = time.Second
 const proposalBodyRequestAfter = 250 * time.Millisecond
+const proposalBodyRequestInterval = 250 * time.Millisecond
 const proposalBodyPollInterval = 5 * time.Millisecond
 const proposalBodySidecarMaxBytes = 256 * 1024 * 1024
 
@@ -305,13 +305,18 @@ func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 	curView := s.GetCurrentView()
 	leaderID := ""
 	mb := bftview.GetCurrentMember()
+	committeeSize := 0
 	if mb != nil {
+		committeeSize = len(mb.List)
+	}
+	if mb != nil && curView.LeaderIndex < uint(len(mb.List)) && mb.List[curView.LeaderIndex] != nil {
 		leader := mb.List[curView.LeaderIndex]
-		//leader := mb.List[0]
 		log.Info("CurrentState.NextLeader", "index", curView.LeaderIndex, "ip", leader.Address)
 		leaderID = bftview.GetNodeID(leader.Address, leader.Public)
 	} else {
-		log.Error("CurrentState.NextLeader: can't get current committee!, set dedault")
+		log.Error("CurrentState.NextLeader: invalid committee or leader index",
+			"index", curView.LeaderIndex,
+			"committeeSize", committeeSize)
 		s.Committee_Request(curView.KeyNumber, curView.KeyHash)
 	}
 
@@ -347,28 +352,63 @@ func (s *Service) Self() string {
 
 // CheckView call by hotstuff
 func (s *Service) CheckView(data []byte) error {
+	_, _, _, err := s.ValidateView(data)
+	return err
+}
+
+func validateViewAgainstSnapshot(data []byte, current bftview.View) ([]byte, uint64, error) {
+	view := bftview.DecodeToView(data)
+	if view == nil {
+		return nil, 0, fmt.Errorf("invalid hotstuff view encoding")
+	}
+
+	expectedState := current.EncodeToBytes()
+	expectedNumber := current.TxNumber + 1
+	if view.KeyNumber < current.KeyNumber ||
+		(view.KeyNumber == current.KeyNumber && view.TxNumber < current.TxNumber) {
+		return expectedState, expectedNumber, hotstuff.ErrOldState
+	}
+	if view.KeyNumber > current.KeyNumber ||
+		(view.KeyNumber == current.KeyNumber && view.TxNumber > current.TxNumber) {
+		return expectedState, expectedNumber, hotstuff.ErrFutureState
+	}
+	return expectedState, expectedNumber, nil
+}
+
+// ValidateView returns validation and the expected state from one currentView
+// snapshot. Reading the blockchain height first and currentView afterwards can
+// observe a block between insertion and procBlockDone, incorrectly turning a
+// future NewView into a mismatched current view and permanently dropping it.
+func (s *Service) ValidateView(data []byte) ([]byte, string, uint64, error) {
 	if !s.isRunning() {
-		return types.ErrNotRunning
+		return nil, "", 0, types.ErrNotRunning
 	}
 	view := bftview.DecodeToView(data)
 	if view == nil {
-		return fmt.Errorf("invalid hotstuff view encoding")
-	}
-	knumber := s.kbc.CurrentBlockN()
-	txnumber := s.bc.CurrentBlockN()
-	log.Debug("CheckView..", "txNumber", view.TxNumber, "keyNumber", view.KeyNumber, "local key number", knumber, "tx number", txnumber)
-	if view.KeyNumber < knumber {
-		return hotstuff.ErrOldState
-	} else if view.KeyNumber > knumber {
-		return hotstuff.ErrFutureState
-	}
-	if view.TxNumber < txnumber {
-		return hotstuff.ErrOldState
-	} else if view.TxNumber > txnumber {
-		return hotstuff.ErrFutureState
+		return nil, "", 0, fmt.Errorf("invalid hotstuff view encoding")
 	}
 
-	return nil
+	s.muCurrentView.Lock()
+	current := s.currentView
+	s.muCurrentView.Unlock()
+
+	leaderID := ""
+	committee := bftview.GetCurrentMember()
+	if committee != nil && current.LeaderIndex < uint(len(committee.List)) {
+		leader := committee.List[current.LeaderIndex]
+		if leader != nil {
+			leaderID = bftview.GetNodeID(leader.Address, leader.Public)
+		}
+	}
+
+	log.Debug("ValidateView..",
+		"txNumber", view.TxNumber,
+		"keyNumber", view.KeyNumber,
+		"local key number", current.KeyNumber,
+		"tx number", current.TxNumber)
+
+	expectedState, expectedNumber, err := validateViewAgainstSnapshot(data, current)
+	return expectedState, leaderID, expectedNumber, err
 }
 
 func cloneProposalBodyMsg(in *proposalBodyMsg) *proposalBodyMsg {
@@ -579,8 +619,7 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 	}
 	proposalID := ref.ProposalID()
 	deadline := time.Now().Add(proposalBodyWaitTimeout)
-	requestAt := time.Now().Add(proposalBodyRequestAfter)
-	requested := false
+	nextRequestAt := time.Now().Add(proposalBodyRequestAfter)
 	for {
 		body := s.getProposalBody(proposalID)
 		if body != nil {
@@ -593,9 +632,9 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 			return body, nil
 		}
 		now := time.Now()
-		if !requested && !now.Before(requestAt) {
+		if !now.Before(nextRequestAt) {
 			s.sendProposalBodyRequest(ref)
-			requested = true
+			nextRequestAt = now.Add(proposalBodyRequestInterval)
 		}
 		if now.After(deadline) {
 			return nil, fmt.Errorf("proposal body timeout: number=%d proposalID=%s bodyHash=%s", ref.Number, proposalID, ref.BodyHash)
@@ -704,7 +743,7 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { // verify new pr
 
 // Propose call by hotstuff
 func (s *Service) Propose(viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
-	log.Debug("Propose..", "number", s.currentView.TxNumber)
+	log.Debug("Propose..", "number", s.GetCurrentView().TxNumber)
 
 	proposeOK := false
 	defer func() {
@@ -875,18 +914,6 @@ func (s *Service) fixedModeKeyblockIntervalElapsed(now time.Time) bool {
 	return now.Sub(lastKeyTime) >= params.KeyBlockMinInterval
 }
 
-func fixedModeKeyblockFallbackDelay() time.Duration {
-	delay := params.AckTimeout * 3
-	if delay < startNewViewDedupWindow*2 {
-		delay = startNewViewDedupWindow * 2
-	}
-	return delay
-}
-
-func shouldUseFixedModeFallback(viewAge, delay time.Duration, primaryAckRecent bool) bool {
-	return viewAge >= delay && !primaryAckRecent
-}
-
 func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
 	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
 		return false
@@ -1052,6 +1079,10 @@ func (s *Service) fixedModeKeyblockViewStart(now time.Time) time.Time {
 	return start
 }
 
+func fixedModeKeyblockLeader(primary uint) (leader uint, fallbackRound uint) {
+	return primary, 0
+}
+
 func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.View, curView bftview.View, fallbackRound uint, viewAge time.Duration) {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
@@ -1084,39 +1115,19 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 	if viewAge < 0 {
 		viewAge = 0
 	}
-	fallbackDelay := fixedModeKeyblockFallbackDelay()
-	primaryAckRecent := s.leaderAckRecent(primary)
-	if primaryAckRecent && s.fixedKeyViewLeader != primary {
-		log.Info("fixed-mode keyblock primary leader heartbeat restored",
+	if s.fixedKeyViewLeader != primary {
+		log.Info("fixed-mode keyblock restoring deterministic primary leader",
 			"from", s.fixedKeyViewLeader,
 			"to", primary,
 			"viewAge", viewAge)
-		s.fixedKeyViewLeader = primary
-		s.fixedKeyFallbackRound = 0
-		if s.keyService != nil {
-			s.keyService.setActiveLeader(primary)
-		}
 	}
-	if shouldUseFixedModeFallback(viewAge, fallbackDelay, primaryAckRecent) {
-		fallback := primary
-		if s.keyService != nil {
-			fallback = s.keyService.getFallbackLeaderIndex(primary)
-		}
-		fallback = s.normalizeLeaderIndex(fallback)
-
-		if fallback != primary {
-			s.fixedKeyViewLeader = fallback
-			s.fixedKeyFallbackRound = 1
-			if s.keyService != nil {
-				s.keyService.setActiveLeader(fallback)
-			}
-			log.Warn("fixed-mode keyblock fallback leader selected",
-				"primary", primary,
-				"fallback", fallback,
-				"fallbackRound", s.fixedKeyFallbackRound,
-				"delay", fallbackDelay,
-				"primaryAckRecent", primaryAckRecent)
-		}
+	// Local heartbeat/ACK observations are not consensus state. Using them to
+	// select a fallback split healthy nodes across different LeaderIndex values.
+	// With protocol-level retransmission, a live primary self-recovers without a
+	// leader change. A future down-node fallback must be quorum-certified.
+	s.fixedKeyViewLeader, s.fixedKeyFallbackRound = fixedModeKeyblockLeader(primary)
+	if s.keyService != nil {
+		s.keyService.setActiveLeader(primary)
 	}
 
 	s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fixedKeyViewLeader)
@@ -1494,7 +1505,6 @@ func (s *Service) handleHotStuffMsg() {
 			continue
 		}
 		msgCode := msg.hMsg.Code
-		s.observeHotstuffProgress(msg.hMsg)
 		log.Debug("handleHotStuffMsg", "id", msg.hMsg.Id, "code", hotstuff.ReadableMsgType(msgCode), "ViewId", msg.hMsg.ViewId)
 
 		var curN uint64
@@ -1516,6 +1526,9 @@ func (s *Service) handleHotStuffMsg() {
 		}
 
 		err := s.protocolMng.HandleMessage(msg.hMsg)
+		if err == nil || err == hotstuff.ErrInsufficientQC {
+			s.observeHotstuffProgress(msg.hMsg)
+		}
 		if err != nil && msgCode == hotstuff.MsgStartNewView {
 			go func(curN uint64) {
 				time.Sleep(failedProposalRetry)
@@ -1543,10 +1556,9 @@ func (s *Service) observeHotstuffProgress(msg *hotstuff.HotstuffMessage) {
 
 	s.muHotstuffProgress.Lock()
 	defer s.muHotstuffProgress.Unlock()
-	viewCompare := bytes.Compare(msg.ViewId[:], s.lastProgressViewID[:])
 	if msg.Number > s.lastProgressN ||
-		(msg.Number == s.lastProgressN && viewCompare > 0) ||
-		(msg.Number == s.lastProgressN && viewCompare == 0 && rank > s.lastProgressRank) {
+		(msg.Number == s.lastProgressN && msg.ViewId != s.lastProgressViewID) ||
+		(msg.Number == s.lastProgressN && msg.ViewId == s.lastProgressViewID && rank > s.lastProgressRank) {
 		s.lastProgressN = msg.Number
 		s.lastProgressViewID = msg.ViewId
 		s.lastProgressRank = rank

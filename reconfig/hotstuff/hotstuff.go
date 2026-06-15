@@ -17,6 +17,10 @@ import (
 
 const hotstuffSignatureDomain = "hotstuff-vote-v1"
 const maxPendingNewViewIDs = 8
+const maxPendingNewViewsPerID = 128
+const hotstuffRecoveryInterval = 5 * time.Second
+const finalizedRecoveryRetention = 2 * time.Minute
+const maxFinalizedRecoveryViews = 16
 
 var (
 	ErrNewViewFail            = fmt.Errorf("hotstuff new view fail")
@@ -188,7 +192,7 @@ type HotStuffApplication interface {
 	OnPropose(state []byte, extra []byte) error
 	OnViewDone(tSign *SignedState) error
 
-	CheckView(currentState []byte) error
+	ValidateView(currentState []byte) (expectedState []byte, expectedLeader string, expectedNumber uint64, err error)
 	Propose(viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte)
 	CurrentState() ([]byte, string, uint64)
 	CurrentN() uint64
@@ -263,6 +267,8 @@ type View struct {
 
 	waitingMoreVoteInfo   bool
 	waitingMoreVoteInfoAt time.Time
+	lastLeaderRecoveryAt  time.Time
+	lastReplicaRecoveryAt time.Time
 }
 
 func (v *View) hasKState() bool {
@@ -281,6 +287,15 @@ type HotstuffProtocolManager struct {
 	app            HotStuffApplication
 	unhandledMsg   map[common.Hash]*HotstuffMessage // messages which is not handled(which phase is ahead of local's)
 	pendingNewView map[common.Hash]map[string]*HotstuffMessage
+	finalized      map[common.Hash]*finalizedRecovery
+}
+
+type finalizedRecovery struct {
+	number      uint64
+	prepare     *HotstuffMessage
+	decide      *HotstuffMessage
+	finalizedAt time.Time
+	lastSentAt  time.Time
 }
 
 func NewHotstuffProtocolManager(a HotStuffApplication, secretKey *bls.SecretKey, publicKey *bls.PublicKey) *HotstuffProtocolManager {
@@ -291,6 +306,7 @@ func NewHotstuffProtocolManager(a HotStuffApplication, secretKey *bls.SecretKey,
 		views:          make(map[common.Hash]*View),
 		unhandledMsg:   make(map[common.Hash]*HotstuffMessage),
 		pendingNewView: make(map[common.Hash]map[string]*HotstuffMessage),
+		finalized:      make(map[common.Hash]*finalizedRecovery),
 	}
 	return manager
 }
@@ -515,10 +531,10 @@ func (hsm *HotstuffProtocolManager) lockView(v *View) {
 	}
 }
 
-func (hsm *HotstuffProtocolManager) viewDone(v *View, kSign []byte, tSign []byte, mask []byte, e error) {
+func (hsm *HotstuffProtocolManager) viewDone(v *View, kSign []byte, tSign []byte, mask []byte, e error) error {
 	if e != nil {
 		log.Warn("view finished with error", "error", e, "ViewId", v.hash)
-		hsm.app.OnViewDone(nil)
+		return hsm.app.OnViewDone(nil)
 	} else {
 		elapsed := time.Now().Sub(v.createdAt).Nanoseconds() / 1000000
 
@@ -535,8 +551,15 @@ func (hsm *HotstuffProtocolManager) viewDone(v *View, kSign []byte, tSign []byte
 			}
 		}
 
-		hsm.app.OnViewDone(tSignedState)
+		if err := hsm.app.OnViewDone(tSignedState); err != nil {
+			log.Warn("view commit failed; keeping view retryable",
+				"ViewId", v.hash,
+				"number", v.number,
+				"err", err)
+			return err
+		}
 	}
+	return nil
 }
 
 func (hsm *HotstuffProtocolManager) clearTimeoutView(curN uint64) error {
@@ -545,7 +568,9 @@ func (hsm *HotstuffProtocolManager) clearTimeoutView(curN uint64) error {
 		if v.number < curN {
 			log.Debug("Remove timeout view", "viewId", v.hash, "phase", readablePhase(v.phaseAsReplica), "pas time", now.Sub(v.createdAt).Seconds())
 			if v.phaseAsReplica < PhaseFinal {
-				hsm.viewDone(v, nil, nil, nil, ErrViewTimeout)
+				if err := hsm.viewDone(v, nil, nil, nil, ErrViewTimeout); err != nil {
+					log.Warn("timeout view cleanup callback failed", "viewId", v.hash, "err", err)
+				}
 			}
 			delete(hsm.views, v.hash)
 		}
@@ -574,6 +599,8 @@ func (hsm *HotstuffProtocolManager) NewView() error {
 
 	sig := hsm.SignHashByMessage(MsgNewView, v.hash, v.leaderId, v.currentState)
 	msg := hsm.newMsg(MsgNewView, v.number, v.hash, v.currentState, sig, extra)
+	v.replicaMsg[MsgNewView] = msg
+	v.lastReplicaRecoveryAt = time.Now()
 
 	log.Debug("New View", "leader", v.leaderId, "ViewID", common.HexString(v.hash[:]))
 	err := hsm.app.Write(v.leaderId, msg)
@@ -674,6 +701,35 @@ func (hsm *HotstuffProtocolManager) rebroadcastPrepare(v *View, reason string) b
 	return true
 }
 
+func (hsm *HotstuffProtocolManager) cacheFinalizedRecovery(v *View, decide *HotstuffMessage) {
+	if v == nil || decide == nil {
+		return
+	}
+	entry := &finalizedRecovery{
+		number:      v.number,
+		decide:      decide,
+		finalizedAt: time.Now(),
+		lastSentAt:  time.Now(),
+	}
+	entry.prepare = v.leaderMsg[MsgPrepare]
+	hsm.finalized[v.hash] = entry
+
+	if len(hsm.finalized) <= maxFinalizedRecoveryViews {
+		return
+	}
+	var oldestID common.Hash
+	var oldest time.Time
+	for id, candidate := range hsm.finalized {
+		if candidate == nil || oldest.IsZero() || candidate.finalizedAt.Before(oldest) {
+			oldestID = id
+			if candidate != nil {
+				oldest = candidate.finalizedAt
+			}
+		}
+	}
+	delete(hsm.finalized, oldestID)
+}
+
 // for leader
 func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*View, *VoteInfo, error) {
 	if msg == nil {
@@ -684,11 +740,11 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 		return nil, nil, ErrNewViewFail
 	}
 
-	stateErr := hsm.app.CheckView(msg.DataA)
+	expectedState, _, expectedNumber, stateErr := hsm.app.ValidateView(msg.DataA)
 	if stateErr != nil && stateErr != ErrFutureState {
 		return nil, nil, stateErr
 	}
-	if stateErr == ErrFutureState && decodedView.TxNumber > hsm.app.CurrentN() {
+	if stateErr == ErrFutureState {
 		return nil, nil, stateErr
 	}
 
@@ -704,7 +760,6 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 	if expectedLeader == "" || expectedLeader != hsm.app.Self() || msg.Number != decodedView.TxNumber+1 {
 		return nil, nil, ErrInvalidLeaderView
 	}
-	expectedState, _, expectedNumber := hsm.app.CurrentState()
 	if stateErr == nil && (msg.Number != expectedNumber || !bytes.Equal(msg.DataA, expectedState)) {
 		return nil, nil, ErrViewIdNotMatch
 	}
@@ -734,7 +789,7 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 }
 
 func (hsm *HotstuffProtocolManager) queueFutureNewView(msg *HotstuffMessage, vote *VoteInfo) {
-	if msg == nil || vote == nil || vote.PubKey == nil {
+	if msg == nil {
 		return
 	}
 	pending := hsm.pendingNewView[msg.ViewId]
@@ -746,7 +801,17 @@ func (hsm *HotstuffProtocolManager) queueFutureNewView(msg *HotstuffMessage, vot
 		pending = make(map[string]*HotstuffMessage)
 		hsm.pendingNewView[msg.ViewId] = pending
 	}
-	key := hex.EncodeToString(vote.PubKey.Serialize())
+	if len(pending) >= maxPendingNewViewsPerID {
+		log.Warn("drop future new-view; per-view limit reached",
+			"viewID", msg.ViewId,
+			"limit", maxPendingNewViewsPerID)
+		return
+	}
+
+	key := msg.Id + ":" + hex.EncodeToString(msg.PubKey)
+	if vote != nil && vote.PubKey != nil {
+		key = hex.EncodeToString(vote.PubKey.Serialize())
+	}
 	if _, exists := pending[key]; !exists {
 		pending[key] = msg
 	}
@@ -798,7 +863,13 @@ func (hsm *HotstuffProtocolManager) acceptValidatedNewView(msg *HotstuffMessage,
 		return ErrInsufficientQC
 	}
 
-	v.phaseAsLeader = PhaseTryPropose
+	return hsm.activateLeaderView(v)
+}
+
+func (hsm *HotstuffProtocolManager) activateLeaderView(v *View) error {
+	if v == nil {
+		return ErrInvalidLeaderView
+	}
 	elapsed := time.Now().Sub(v.createdAt).Nanoseconds() / 1000000
 
 	log.Debug("on new view", "ViewId", v.hash, "timeElapsed", elapsed)
@@ -806,9 +877,12 @@ func (hsm *HotstuffProtocolManager) acceptValidatedNewView(msg *HotstuffMessage,
 	// notify app the new view only when leader has (n - f) votes
 	if err := hsm.app.OnNewView(v.currentState, v.extra); err != nil {
 		log.Debug("New view message failed verification", "error", err)
+		v.lastLeaderRecoveryAt = time.Now()
 		return err
 	}
 
+	v.phaseAsLeader = PhaseTryPropose
+	v.lastLeaderRecoveryAt = time.Now()
 	hsm.lockView(v)
 
 	return hsm.TryPropose()
@@ -924,6 +998,7 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 	v.phaseAsLeader = PhasePreCommit
 	v.waitingMoreVoteInfo = true
 	v.waitingMoreVoteInfoAt = time.Now()
+	v.lastLeaderRecoveryAt = v.waitingMoreVoteInfoAt
 	hsm.leaderView = nil
 
 	// Broadcast after the leader state is fully prepared. This allows fast
@@ -1040,11 +1115,10 @@ loop:
 // for replica
 func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	start := time.Now()
-	if err := hsm.app.CheckView(m.DataE); err != nil {
+	expectedState, expectedLeader, expectedNumber, err := hsm.app.ValidateView(m.DataE)
+	if err != nil {
 		return err
 	}
-
-	expectedState, expectedLeader, expectedNumber := hsm.app.CurrentState()
 
 	expectedView := bftview.DecodeToView(expectedState)
 	proposalView := bftview.DecodeToView(m.DataE)
@@ -1169,6 +1243,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 
 	// Cache VotePrepare so the replica can resend it if the leader retransmits Prepare.
 	v.replicaMsg[MsgVotePrepare] = msg
+	v.lastReplicaRecoveryAt = time.Now()
 
 	log.Debug("handlePrepareMsg send VotePrepare msg", "viewID", v.hash, "number", v.number, "to", m.Id)
 	if err := hsm.app.Write(m.Id, msg); err != nil {
@@ -1200,6 +1275,19 @@ func (hsm *HotstuffProtocolManager) createSignatureMsg(v *View, code uint32, pha
 func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) error {
 	v, exist := hsm.views[m.ViewId]
 	if !exist {
+		if finalized := hsm.finalized[m.ViewId]; finalized != nil {
+			log.Warn("HOTSTUFF RECOVERY answer late vote from finalized cache",
+				"number", finalized.number,
+				"viewID", m.ViewId,
+				"to", m.Id)
+			if finalized.prepare != nil {
+				_ = hsm.app.Write(m.Id, finalized.prepare)
+			}
+			if finalized.decide != nil {
+				return hsm.app.Write(m.Id, finalized.decide)
+			}
+			return nil
+		}
 		log.Debug("handlePrepareVoteMsg found no matched view", "viewId", m.ViewId)
 		return ErrMissingView
 	}
@@ -1293,6 +1381,8 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 	hsm.app.Broadcast(msg)
 	v.phaseAsLeader = PhaseFinal
 	v.leaderMsg[MsgDecide] = msg
+	v.lastLeaderRecoveryAt = time.Now()
+	hsm.cacheFinalizedRecovery(v, msg)
 
 	return nil
 }
@@ -1331,7 +1421,9 @@ func (hsm *HotstuffProtocolManager) handleDecideMsg(m *HotstuffMessage) error {
 	// execute the command. In proposal-ref mode, v.proposedTState is the
 	// canonical ProposalRef bytes. The application is responsible for resolving
 	// the sidecar body and committing a previously verified proposal when present.
-	hsm.viewDone(v, m.DataA, m.DataB, m.DataC, nil)
+	if err := hsm.viewDone(v, m.DataA, m.DataB, m.DataC, nil); err != nil {
+		return err
+	}
 	v.phaseAsReplica = PhaseFinal
 
 	// start new view
@@ -1422,36 +1514,133 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 		if v.number <= curN {
 			continue
 		}
-		if v.phaseAsLeader == PhaseFinal || !v.waitingMoreVoteInfo {
-			continue
+
+		if now.Sub(v.lastReplicaRecoveryAt) >= hotstuffRecoveryInterval {
+			switch v.phaseAsReplica {
+			case PhasePrepare:
+				if msg, ok := v.replicaMsg[MsgNewView]; ok && msg != nil {
+					v.lastReplicaRecoveryAt = now
+					log.Warn("HOTSTUFF RECOVERY resend NewView",
+						"number", v.number,
+						"viewID", v.hash,
+						"to", v.leaderId)
+					if err := hsm.app.Write(v.leaderId, msg); err != nil {
+						log.Warn("HOTSTUFF RECOVERY NewView resend failed",
+							"number", v.number,
+							"viewID", v.hash,
+							"to", v.leaderId,
+							"err", err)
+					}
+				}
+			case PhaseDecide:
+				if msg, ok := v.replicaMsg[MsgVotePrepare]; ok && msg != nil {
+					v.lastReplicaRecoveryAt = now
+					log.Warn("HOTSTUFF RECOVERY resend VotePrepare",
+						"number", v.number,
+						"viewID", v.hash,
+						"to", v.leaderId)
+					if err := hsm.app.Write(v.leaderId, msg); err != nil {
+						log.Warn("HOTSTUFF RECOVERY VotePrepare resend failed",
+							"number", v.number,
+							"viewID", v.hash,
+							"to", v.leaderId,
+							"err", err)
+					}
+				}
+			}
 		}
-		if v.phaseAsLeader != PhasePreCommit {
+
+		if v.leaderId != hsm.app.Self() || now.Sub(v.lastLeaderRecoveryAt) < hotstuffRecoveryInterval {
 			continue
 		}
 
-		elapsed := now.Sub(v.waitingMoreVoteInfoAt)
-		if elapsed < params.CollectVoteInfoTimeout {
+		switch v.phaseAsLeader {
+		case PhasePrepare:
+			threshold := v.threshold
+			if threshold > len(v.groupPublicKey) {
+				threshold = len(v.groupPublicKey)
+			}
+			if threshold <= 0 || len(v.highVoteInfo) < threshold {
+				continue
+			}
+			v.lastLeaderRecoveryAt = now
+			log.Warn("HOTSTUFF RECOVERY retry OnNewView",
+				"number", v.number,
+				"viewID", v.hash)
+			if err := hsm.activateLeaderView(v); err != nil {
+				log.Warn("HOTSTUFF RECOVERY OnNewView retry failed",
+					"number", v.number,
+					"viewID", v.hash,
+					"err", err)
+			}
+
+		case PhaseTryPropose:
+			v.lastLeaderRecoveryAt = now
+			log.Warn("HOTSTUFF RECOVERY retry proposal",
+				"number", v.number,
+				"viewID", v.hash)
+			hsm.leaderView = v
+			if err := hsm.TryPropose(); err != nil {
+				log.Warn("HOTSTUFF RECOVERY proposal retry failed",
+					"number", v.number,
+					"viewID", v.hash,
+					"err", err)
+			}
+
+		case PhasePreCommit:
+			if !v.waitingMoreVoteInfo {
+				continue
+			}
+			elapsed := now.Sub(v.waitingMoreVoteInfoAt)
+			if elapsed < params.CollectVoteInfoTimeout {
+				continue
+			}
+			v.waitingMoreVoteInfoAt = now
+			v.lastLeaderRecoveryAt = now
+
+			if len(v.prepareVoteInfo) < v.threshold {
+				hsm.rebroadcastPrepare(v, "collect-vote-timeout")
+				continue
+			}
+
+			log.Debug("@@@handleTimerMsg", "curN", curN, "number", v.number, "elapsed(s)", elapsed)
+			if err := hsm.aggregateQC(v, "prepare", v.prepareVoteInfo); err != nil {
+				log.Debug("aggregate prepare voteInfo failed")
+				continue
+			}
+
+			log.Debug("handleTimerMsg handlePrepareVoteMsg broadcast Decide msg", "number", v.number)
+			v.waitingMoreVoteInfo = false
+			msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
+			hsm.app.Broadcast(msg)
+			v.phaseAsLeader = PhaseFinal
+			v.leaderMsg[MsgDecide] = msg
+			hsm.cacheFinalizedRecovery(v, msg)
+
+		}
+	}
+
+	for id, finalized := range hsm.finalized {
+		if finalized == nil || now.Sub(finalized.finalizedAt) > finalizedRecoveryRetention {
+			delete(hsm.finalized, id)
 			continue
 		}
-		v.waitingMoreVoteInfoAt = now
-
-		if len(v.prepareVoteInfo) < v.threshold {
-			hsm.rebroadcastPrepare(v, "collect-vote-timeout")
+		if now.Sub(finalized.lastSentAt) < hotstuffRecoveryInterval {
 			continue
 		}
-
-		log.Debug("@@@handleTimerMsg", "curN", curN, "number", v.number, "elapsed(s)", elapsed)
-		if err := hsm.aggregateQC(v, "prepare", v.prepareVoteInfo); err != nil {
-			log.Debug("aggregate prepare voteInfo failed")
-			continue
+		finalized.lastSentAt = now
+		if finalized.prepare != nil {
+			log.Warn("HOTSTUFF RECOVERY rebroadcast retained Prepare",
+				"number", finalized.number,
+				"viewID", id)
+			hsm.app.Broadcast(finalized.prepare)
 		}
-
-		log.Debug("handleTimerMsg handlePrepareVoteMsg broadcast Decide msg", "number", v.number)
-		v.waitingMoreVoteInfo = false
-		msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
-		hsm.app.Broadcast(msg)
-		v.phaseAsLeader = PhaseFinal
-		v.leaderMsg[MsgDecide] = msg
+		if finalized.decide != nil {
+			log.Warn("HOTSTUFF RECOVERY rebroadcast retained Decide",
+				"number", finalized.number,
+				"viewID", id)
+			hsm.app.Broadcast(finalized.decide)
+		}
 	}
 
 	return nil
