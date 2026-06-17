@@ -586,6 +586,33 @@ func (hsm *HotstuffProtocolManager) clearTimeoutView(curN uint64) error {
 	return nil
 }
 
+func (hsm *HotstuffProtocolManager) discardStaleReplicaNewViews(number uint64, keep common.Hash) {
+	for id, view := range hsm.views {
+		if id == keep || view == nil || view.number != number {
+			continue
+		}
+		if view.phaseAsReplica != PhasePrepare {
+			continue
+		}
+		if _, ok := view.replicaMsg[MsgNewView]; !ok {
+			continue
+		}
+		if len(view.leaderMsg) > 0 ||
+			len(view.highVoteInfo) > 0 ||
+			len(view.prepareVoteInfo) > 0 ||
+			len(view.preCommitVoteInfo) > 0 ||
+			len(view.commitVoteInfo) > 0 {
+			continue
+		}
+
+		log.Debug("discard stale replica new-view",
+			"number", number,
+			"viewID", id,
+			"keep", keep)
+		delete(hsm.views, id)
+	}
+}
+
 // for replica
 func (hsm *HotstuffProtocolManager) NewView() error {
 	v, extra := hsm.newView()
@@ -593,8 +620,15 @@ func (hsm *HotstuffProtocolManager) NewView() error {
 		return ErrNewViewFail
 	}
 
-	if _, exist := hsm.views[v.hash]; !exist {
+	hsm.discardStaleReplicaNewViews(v.number, v.hash)
+	if existing, exist := hsm.views[v.hash]; exist {
+		v = existing
+		hsm.updateViewPublicKey(v)
+	} else {
 		hsm.views[v.hash] = v
+	}
+	if v.replicaMsg == nil {
+		v.replicaMsg = make(map[uint64]*HotstuffMessage)
 	}
 
 	sig := hsm.SignHashByMessage(MsgNewView, v.hash, v.leaderId, v.currentState)

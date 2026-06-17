@@ -42,9 +42,9 @@ func (v *View) EqualAll(other *View) bool {
 	return v.TxNumber == other.TxNumber && v.TxHash == other.TxHash && v.KeyNumber == other.KeyNumber && v.KeyHash == other.KeyHash && v.CommitteeHash == other.CommitteeHash && v.LeaderIndex == other.LeaderIndex && v.NoDone == other.NoDone && v.Round == other.Round
 }
 
-// EqualConsensus compares only fields that identify a HotStuff view. NoDone is
-// a local proposal-mode flag and may change at the keyblock time boundary while
-// an otherwise identical view is still in flight.
+// EqualConsensus compares only fields that identify a HotStuff view. NoDone and
+// Round are local liveness/proposal-mode fields and may change while an
+// otherwise identical view is still in flight.
 func (v *View) EqualConsensus(other *View) bool {
 	if v == nil || other == nil {
 		return v == other
@@ -54,13 +54,12 @@ func (v *View) EqualConsensus(other *View) bool {
 		v.KeyNumber == other.KeyNumber &&
 		v.KeyHash == other.KeyHash &&
 		v.CommitteeHash == other.CommitteeHash &&
-		v.LeaderIndex == other.LeaderIndex &&
-		v.Round == other.Round
+		v.LeaderIndex == other.LeaderIndex
 }
 
 // Check for identity except index
 func (v *View) EqualNoIndex(other *View) bool {
-	return v.TxNumber == other.TxNumber && v.TxHash == other.TxHash && v.KeyNumber == other.KeyNumber && v.KeyHash == other.KeyHash && v.Round == other.Round
+	return v.TxNumber == other.TxNumber && v.TxHash == other.TxHash && v.KeyNumber == other.KeyNumber && v.KeyHash == other.KeyHash
 }
 
 func (v *View) Hash() (h common.Hash) {
@@ -128,15 +127,16 @@ func (v *View) EncodeToBytes() []byte {
 	return buff.Bytes()
 }
 
-// ConsensusView returns the state signed by HotStuff. NoDone intentionally is
-// normalized because it controls what the leader proposes, not which chain
-// state and committee the replicas are voting for.
+// ConsensusView returns the state signed by HotStuff. NoDone and Round are
+// intentionally normalized because they control local proposal/recovery timing,
+// not which chain state and committee the replicas are voting for.
 func (v *View) ConsensusView() View {
 	if v == nil {
 		return View{}
 	}
 	consensus := *v
 	consensus.NoDone = false
+	consensus.Round = 0
 	return consensus
 }
 
