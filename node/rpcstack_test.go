@@ -73,17 +73,25 @@ func TestWebsocketOrigins(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestHTTPServerListenAddrSupportsIPv6(t *testing.T) {
+	srv := newHTTPServer(testlog.Logger(t, log.LvlDebug), rpc.DefaultHTTPTimeouts)
+	assert.NoError(t, srv.setListenAddr("::1", 8545))
+	assert.Equal(t, "[::1]:8545", srv.listenAddr())
+	assert.NoError(t, srv.setListenAddr("[::1]", 8546))
+	assert.Equal(t, "[::1]:8546", srv.listenAddr())
+}
+
 func createAndStartServer(t *testing.T, conf httpConfig, ws bool, wsConf wsConfig) *httpServer {
 	t.Helper()
 
 	srv := newHTTPServer(testlog.Logger(t, log.LvlDebug), rpc.DefaultHTTPTimeouts)
 
-	assert.NoError(t, srv.enableRPC(nil, conf, nil))
+	assert.NoError(t, srv.enableRPC(nil, conf))
 	if ws {
-		assert.NoError(t, srv.enableWS(nil, wsConf, nil))
+		assert.NoError(t, srv.enableWS(nil, wsConf))
 	}
 	assert.NoError(t, srv.setListenAddr("localhost", 0))
-	assert.NoError(t, srv.start(nil))
+	assert.NoError(t, srv.start())
 
 	return srv
 }

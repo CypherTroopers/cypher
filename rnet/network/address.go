@@ -13,9 +13,8 @@ type ConnType string
 
 // Address contains the ConnType and the actual network address. It is used to connect
 // to a remote host with a Conn and to listen by a Listener.
-// A network address holds an IP address and the port number joined
-// by a colon.
-// It doesn't support IPv6 yet.
+// A network address holds a host and port. IPv6 literals must use the
+// bracketed host:port form accepted by net.SplitHostPort.
 type Address string
 
 var lookupHost = net.LookupHost
@@ -59,7 +58,7 @@ func (a Address) ConnType() ConnType {
 	if !a.Valid() {
 		return InvalidConnType
 	}
-	vals := strings.Split(string(a), typeAddressSep)
+	vals := strings.SplitN(string(a), typeAddressSep, 2)
 	return connType(vals[0])
 }
 
@@ -80,7 +79,7 @@ func (a Address) NetworkAddress() string {
 	if !a.Valid() {
 		return ""
 	}
-	vals := strings.Split(string(a), typeAddressSep)
+	vals := strings.SplitN(string(a), typeAddressSep, 2)
 	return vals[1]
 }
 
@@ -104,10 +103,6 @@ func (a Address) Resolve() string {
 		return ""
 	}
 	host := a.Host()
-	// Ipv6 not handled properly yet
-	if host == "[::]" {
-		return "::"
-	}
 	// If the address is defined by an IP address, return it
 	if net.ParseIP(host) != nil {
 		return host
@@ -119,6 +114,9 @@ func (a Address) Resolve() string {
 
 	ipAddress, err := lookupHost(host)
 	if err != nil {
+		return ""
+	}
+	if len(ipAddress) == 0 {
 		return ""
 	}
 
@@ -184,7 +182,7 @@ func validHostname(s string) bool {
 // The IP address is validated by net.ParseIP & the port must be included in the
 // range [0;65536]. For example, "tls://192.168.1.10:5678".
 func (a Address) Valid() bool {
-	vals := strings.Split(string(a), typeAddressSep)
+	vals := strings.SplitN(string(a), typeAddressSep, 2)
 	if len(vals) != 2 {
 		return false
 	}

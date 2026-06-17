@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1805,7 +1806,11 @@ func SetupMetrics(ctx *cli.Context) {
 		}
 
 		if ctx.GlobalIsSet(MetricsHTTPFlag.Name) {
-			address := fmt.Sprintf("%s:%d", ctx.GlobalString(MetricsHTTPFlag.Name), ctx.GlobalInt(MetricsPortFlag.Name))
+			host := strings.TrimSpace(ctx.GlobalString(MetricsHTTPFlag.Name))
+			if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+				host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+			}
+			address := net.JoinHostPort(host, strconv.Itoa(ctx.GlobalInt(MetricsPortFlag.Name)))
 			log.Info("Enabling stand-alone metrics HTTP endpoint", "address", address)
 			exp.Setup(address)
 		}

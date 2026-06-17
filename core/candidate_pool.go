@@ -344,7 +344,7 @@ func (cp *CandidatePool) add(candidate *types.Candidate, local bool, isPlaintext
 			"pubkey", candidate.PubKey,
 			"hash", candidate.Hash(),
 		)
-		cp.CheckMinerPort(net.IP(candidate.IP).String()+":"+strconv.Itoa(candidate.Port), cp.backend.BlockChain().CurrentBlockN(), cp.backend.KeyBlockChain().CurrentBlockN())
+		cp.CheckMinerPort(net.JoinHostPort(net.IP(candidate.IP).String(), strconv.Itoa(candidate.Port)), cp.backend.BlockChain().CurrentBlockN(), cp.backend.KeyBlockChain().CurrentBlockN())
 	}
 	return nil
 }

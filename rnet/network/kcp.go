@@ -486,23 +486,25 @@ func getListenAddress(addr Address, listenAddr string) (string, error) {
 		return "", err
 	}
 
-	// If 'listenAddr' only contains the host, combine it with the port
-	// of 'addr'.
-	splitted := strings.Split(listenAddr, ":")
-	if len(splitted) == 1 && port != "" {
-		return splitted[0] + ":" + port, nil
-	}
-
 	// If host and port in `listenAddr`, choose this one.
 	hostListen, portListen, err := net.SplitHostPort(listenAddr)
-	if err != nil {
-		return "", err
-	}
-	if hostListen != "" && portListen != "" {
-		return listenAddr, nil
+	if err == nil {
+		if portListen != "" {
+			return net.JoinHostPort(hostListen, portListen), nil
+		}
+		return "", fmt.Errorf("Invalid combination of 'addr' (%s) and 'listenAddr' (%s)", addr.NetworkAddress(), listenAddr)
 	}
 
-	return "", fmt.Errorf("Invalid combination of 'addr' (%s) and 'listenAddr' (%s)", addr.NetworkAddress(), listenAddr)
+	// If 'listenAddr' only contains the host, combine it with the port
+	// of 'addr'. IPv6 literals may be passed either as "::1" or "[::1]".
+	hostListen = strings.TrimSpace(listenAddr)
+	if strings.HasPrefix(hostListen, "[") && strings.HasSuffix(hostListen, "]") {
+		hostListen = strings.TrimPrefix(strings.TrimSuffix(hostListen, "]"), "[")
+	}
+	if hostListen == "" {
+		return "", fmt.Errorf("Invalid combination of 'addr' (%s) and 'listenAddr' (%s)", addr.NetworkAddress(), listenAddr)
+	}
+	return net.JoinHostPort(hostListen, port), nil
 }
 
 // KCPHost implements the Host interface using KCP connections.

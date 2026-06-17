@@ -104,3 +104,31 @@ func TestEnqueueQuarterMillionTransactionsWithoutDrop(t *testing.T) {
 		t.Fatalf("bridge queue contains %d transactions, want %d", got, count)
 	}
 }
+
+func TestTxQUICEndpointFromCommitteeAddressSupportsIPv6(t *testing.T) {
+	endpoint, ok := txQUICEndpointFromCommitteeAddress("[2001:db8::10]:7102", 2000)
+	if !ok {
+		t.Fatal("IPv6 committee address was not accepted")
+	}
+	if endpoint != "[2001:db8::10]:9102" {
+		t.Fatalf("endpoint = %q, want %q", endpoint, "[2001:db8::10]:9102")
+	}
+}
+
+func TestSplitHostPortLooseRejectsAmbiguousRawIPv6(t *testing.T) {
+	if _, _, ok := splitHostPortLoose("2001:db8::10:7102"); ok {
+		t.Fatal("ambiguous raw IPv6 host:port should be rejected")
+	}
+}
+
+func TestTxQUICJoinHostPortSupportsIPv6(t *testing.T) {
+	if got := txQUICJoinHostPort("::", 4444); got != "[::]:4444" {
+		t.Fatalf("listen address = %q, want %q", got, "[::]:4444")
+	}
+	if got := txQUICJoinHostPort("[::1]", 4444); got != "[::1]:4444" {
+		t.Fatalf("listen address = %q, want %q", got, "[::1]:4444")
+	}
+	if got := txQUICJoinHostPort("0.0.0.0", 4444); got != "0.0.0.0:4444" {
+		t.Fatalf("listen address = %q, want %q", got, "0.0.0.0:4444")
+	}
+}

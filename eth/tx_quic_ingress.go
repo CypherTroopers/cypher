@@ -314,7 +314,7 @@ func (q *TxQUICIngress) Start() error {
 	if err != nil {
 		return err
 	}
-	addr := fmt.Sprintf("%s:%d", q.config.Addr, q.config.Port)
+	addr := txQUICJoinHostPort(q.config.Addr, q.config.Port)
 	listener, err := quic.ListenAddr(addr, &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{txQUICProtocolName}, MinVersion: tls.VersionTLS13}, &quic.Config{MaxIncomingStreams: q.config.MaxIncomingStreams, KeepAlivePeriod: txQUICForwardKeepAlivePeriod, MaxIdleTimeout: txQUICForwardIdleTimeout})
 	if err != nil {
 		return err
@@ -770,7 +770,7 @@ func (q *TxQUICIngress) startHTTP3RPC() error {
 	if err != nil {
 		return err
 	}
-	addr := fmt.Sprintf("%s:%d", q.config.HTTP3Addr, q.config.HTTP3Port)
+	addr := txQUICJoinHostPort(q.config.HTTP3Addr, q.config.HTTP3Port)
 	q.http3Server = &http3.Server{Addr: addr, Handler: q.http3Handler, TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}, NextProtos: []string{"h3"}, MinVersion: tls.VersionTLS13}}
 	q.wg.Add(1)
 	go func() {
@@ -1477,8 +1477,12 @@ func txQUICEndpointFromCommitteeAddress(address string, offset int) (string, boo
 }
 
 func splitHostPortLoose(address string) (string, int, bool) {
+	address = strings.TrimSpace(address)
 	host, portText, err := net.SplitHostPort(address)
 	if err != nil {
+		if strings.Count(address, ":") != 1 {
+			return "", 0, false
+		}
 		idx := strings.LastIndex(address, ":")
 		if idx <= 0 || idx == len(address)-1 {
 			return "", 0, false
@@ -1491,6 +1495,14 @@ func splitHostPortLoose(address string) (string, int, bool) {
 		return "", 0, false
 	}
 	return host, port, true
+}
+
+func txQUICJoinHostPort(host string, port int) string {
+	host = strings.TrimSpace(host)
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // broadcastCommonTxAdmissionsDedicated is the admission-only dedicated dispatcher.

@@ -20,6 +20,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -236,7 +237,7 @@ func (c *Config) HTTPEndpoint() string {
 	if c.HTTPHost == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s:%d", c.HTTPHost, c.HTTPPort)
+	return joinHostPort(c.HTTPHost, c.HTTPPort)
 }
 
 // DefaultHTTPEndpoint returns the HTTP endpoint used by default.
@@ -251,7 +252,15 @@ func (c *Config) WSEndpoint() string {
 	if c.WSHost == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s:%d", c.WSHost, c.WSPort)
+	return joinHostPort(c.WSHost, c.WSPort)
+}
+
+func joinHostPort(host string, port int) string {
+	host = strings.TrimSpace(host)
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
 }
 
 // DefaultWSEndpoint returns the websocket endpoint used by default.

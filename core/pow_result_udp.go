@@ -54,14 +54,14 @@ func powResultUDPAddrFromCommitteeNode(node *common.Cnode, fallbackPort int) (*n
 
 	host, portText, err := net.SplitHostPort(address)
 	if err != nil {
-		return net.ResolveUDPAddr("udp4", net.JoinHostPort(address, strconv.Itoa(fallbackPort)))
+		return net.ResolveUDPAddr("udp", net.JoinHostPort(address, strconv.Itoa(fallbackPort)))
 	}
 
 	rnetPort, err := strconv.Atoi(portText)
 	if err != nil {
 		return nil, err
 	}
-	return net.ResolveUDPAddr("udp4", net.JoinHostPort(host, strconv.Itoa(rnetPort+1)))
+	return net.ResolveUDPAddr("udp", net.JoinHostPort(host, strconv.Itoa(rnetPort+1)))
 }
 
 func tunePoWResultKCPSession(session *kcp.UDPSession) {
@@ -162,6 +162,7 @@ func BroadcastPoWResultUDP(rnetPort string, validators []*common.Cnode, result *
 	// Keep localhost for same-host tests. Broadcast packets are intentionally not
 	// used here because KCP is connection-oriented over UDP.
 	addrs = appendPoWResultUDPAddr(addrs, seen, net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
+	addrs = appendPoWResultUDPAddr(addrs, seen, net.UDPAddr{IP: net.IPv6loopback, Port: port})
 
 	var firstErr error
 	sent := 0

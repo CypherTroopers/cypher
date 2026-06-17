@@ -209,7 +209,6 @@ func (pm *ProtocolManager) broadcastCommonTxAdmissionsKCPOnly(admissions []*type
 	return relay.Broadcast(admissions)
 }
 
-
 func (pm *ProtocolManager) broadcastAcceptedCommonTxAdmissions(admissions []*types.CommonTxAdmission, exceptPeerID string) {
 	pm.broadcastCommonTxAdmissionsDedicated(admissions)
 	pm.broadcastCommonTxAdmissionsExcept(admissions, exceptPeerID)
