@@ -84,6 +84,7 @@ Write-Host "==> Start Cypher node"
 & $CYPHER_BIN `
   --verbosity 1 `
   --rnetport 7200 `
+  --nat extip:127.0.0.1 `
   --syncmode full `
   --ws `
   --ws.addr 0.0.0.0 `
