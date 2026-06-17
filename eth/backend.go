@@ -140,11 +140,15 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	config.TxQUIC.ApplyHTTP3RPCDefaults(stack.Config().HTTPHost, stack.Config().HTTPPort)
 
 	log.Info("Initialised chain configuration", "config id", chainConfig.ChainID)
-	extIP := net.ParseIP(config.ExternalIp).To4()
+	extIP := net.ParseIP(config.ExternalIp)
 	if extIP == nil {
 		extIP = net.ParseIP(p2pnat.GetExternalIp())
 	}
-	log.Info("extIP address", "IP", extIP.String())
+	if extIP != nil {
+		log.Info("extIP address", "IP", extIP.String())
+	} else {
+		log.Warn("extIP address is not configured")
+	}
 
 	eth := &Ethereum{
 		config:                          config,

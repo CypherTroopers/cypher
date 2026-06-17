@@ -1,81 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Always use this script's directory as root
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "${SCRIPT_DIR}"
+DATADIR="chaindbname"
 
-DATADIR_NAME="chaindbname"
-DATADIR="${SCRIPT_DIR}/${DATADIR_NAME}"
+BOOTNODE_HOST="${CYPHER_BOOTNODE_HOST:-13.140.169.170}"
+BOOTNODE_HOST="${BOOTNODE_HOST#[}"
+BOOTNODE_HOST="${BOOTNODE_HOST%]}"
+BOOTNODE_ADDR="${BOOTNODE_HOST}"
+if [[ "${BOOTNODE_ADDR}" == *:* ]]; then
+  BOOTNODE_ADDR="[${BOOTNODE_ADDR}]"
+fi
 
-CYPHER_BIN="${SCRIPT_DIR}/build/bin/cypher-linux-amd64"
-GENESIS_FILE="${SCRIPT_DIR}/genesistest.json"
+BOOTNODES=(
+  "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@${BOOTNODE_ADDR}:6000"
+  "enode://0c8a37a7803c358d8ae68784ef247a0c8b4df542d925b23491dd92f4c2172a146a124171ec5bbdcc2e5932e4cead917505ce3b5dbd72155a78e830ebd8e37b07@${BOOTNODE_ADDR}:6001"
+  "enode://65ebdea1e99c440bb5463b68565e7422ab332ef8d1472daa956d23b70245ef9703c23ea110291eeb6fe0b60c7e55fed08f76e71fb980ae9b3e2fe583a115e7f3@${BOOTNODE_ADDR}:6002"
+  "enode://c7a724e53dc21ff034e628bb4e50d720e6bbc276bd17cc15cc9a28149a5f0a6bd90c0e50f862f5546fa9bc153c7ea818cdf3d133d06356e76b99726754a6b3da@${BOOTNODE_ADDR}:6003"
+  "enode://a99ba2027de40c50220e45af60698d7e04237c128258065261fae82cef723837f00ce8611c3164b9efdfc15f0480a308ac65058db9a3abdf83aae05604c9a495@${BOOTNODE_ADDR}:6004"
+  "enode://8a3aad9282f773ddd38b05516c2c5847ef168b8b5095f57312a458e0a5b358655cb971d1ba193999b0454fc4ae5642f31c6f6bce311a8da11b0a6d9940719a5e@${BOOTNODE_ADDR}:6005"
+  "enode://7eb6bd844e05f64114ea6e6f06ae04e075df0a8a6d783620344f3535df2f2115ad2ad09dab69cf3515ee2d0ac50379c0825a0abfa5a50216d8e4b97823acbd67@${BOOTNODE_ADDR}:6006"
+)
+BOOTNODES_CSV="$(IFS=,; echo "${BOOTNODES[*]}")"
 
-PEER_DIR="${DATADIR}/cypher"
+RPC_BIND="${CYPHER_RPC_BIND:-0.0.0.0}"
+WS_BIND="${CYPHER_WS_BIND:-${RPC_BIND}}"
+
+PEER_DIR="./${DATADIR}/cypher"
 CHAINDATA_DIR="${PEER_DIR}/chaindata"
 STATIC_NODES_FILE="${PEER_DIR}/static-nodes.json"
 TRUSTED_NODES_FILE="${PEER_DIR}/trusted-nodes.json"
-
-BOOTNODES_ARRAY=(
-  "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@13.140.169.170:6000"
-  "enode://0c8a37a7803c358d8ae68784ef247a0c8b4df542d925b23491dd92f4c2172a146a124171ec5bbdcc2e5932e4cead917505ce3b5dbd72155a78e830ebd8e37b07@13.140.169.170:6001"
-  "enode://65ebdea1e99c440bb5463b68565e7422ab332ef8d1472daa956d23b70245ef9703c23ea110291eeb6fe0b60c7e55fed08f76e71fb980ae9b3e2fe583a115e7f3@13.140.169.170:6002"
-  "enode://c7a724e53dc21ff034e628bb4e50d720e6bbc276bd17cc15cc9a28149a5f0a6bd90c0e50f862f5546fa9bc153c7ea818cdf3d133d06356e76b99726754a6b3da@13.140.169.170:6003"
-  "enode://a99ba2027de40c50220e45af60698d7e04237c128258065261fae82cef723837f00ce8611c3164b9efdfc15f0480a308ac65058db9a3abdf83aae05604c9a495@13.140.169.170:6004"
-  "enode://8a3aad9282f773ddd38b05516c2c5847ef168b8b5095f57312a458e0a5b358655cb971d1ba193999b0454fc4ae5642f31c6f6bce311a8da11b0a6d9940719a5e@13.140.169.170:6005"
-  "enode://7eb6bd844e05f64114ea6e6f06ae04e075df0a8a6d783620344f3535df2f2115ad2ad09dab69cf3515ee2d0ac50379c0825a0abfa5a50216d8e4b97823acbd67@13.140.169.170:6006"
-)
-
-BOOTNODES="$(IFS=,; echo "${BOOTNODES_ARRAY[*]}")"
-
-echo "==> Script dir: ${SCRIPT_DIR}"
-echo "==> Datadir   : ${DATADIR}"
-
-if [ ! -f "${CYPHER_BIN}" ]; then
-  echo "ERROR: Cypher binary not found: ${CYPHER_BIN}"
-  exit 1
-fi
-
-if [ ! -x "${CYPHER_BIN}" ]; then
-  echo "ERROR: Cypher binary is not executable: ${CYPHER_BIN}"
-  echo "Run: chmod +x ${CYPHER_BIN}"
-  exit 1
-fi
-
-if [ ! -f "${GENESIS_FILE}" ]; then
-  echo "ERROR: Genesis file not found: ${GENESIS_FILE}"
-  exit 1
-fi
-
-mkdir -p "${PEER_DIR}"
 
 if [ ! -d "${CHAINDATA_DIR}" ]; then
   echo "==> Chaindata not found: ${CHAINDATA_DIR}"
   echo "==> Init genesis"
 
-  "${CYPHER_BIN}" \
+  ./build/bin/cypher-linux-amd64 \
     --datadir "${DATADIR}" \
-    init "${GENESIS_FILE}"
+    init ./genesistest.json
 else
   echo "==> Existing chaindata detected: ${CHAINDATA_DIR}"
   echo "==> Skip init genesis"
 fi
+
+mkdir -p "${PEER_DIR}"
 
 if [ ! -f "${STATIC_NODES_FILE}" ]; then
   echo "==> static-nodes.json not found"
   echo "==> Write static peers: ${STATIC_NODES_FILE}"
 
   {
-    echo "["
-    for i in "${!BOOTNODES_ARRAY[@]}"; do
-      if [ "$i" -lt "$((${#BOOTNODES_ARRAY[@]} - 1))" ]; then
-        printf '  "%s",\n' "${BOOTNODES_ARRAY[$i]}"
-      else
-        printf '  "%s"\n' "${BOOTNODES_ARRAY[$i]}"
+    printf '[\n'
+    for i in "${!BOOTNODES[@]}"; do
+      comma=","
+      if [ "${i}" -eq "$((${#BOOTNODES[@]} - 1))" ]; then
+        comma=""
       fi
+      printf '  "%s"%s\n' "${BOOTNODES[$i]}" "${comma}"
     done
-    echo "]"
+    printf ']\n'
   } > "${STATIC_NODES_FILE}"
+
 else
   echo "==> Existing static-nodes.json detected: ${STATIC_NODES_FILE}"
   echo "==> Skip static-nodes.json generation"
@@ -91,34 +75,31 @@ else
   echo "==> Skip trusted-nodes.json generation"
 fi
 
-PUBLIC_IP=""
-if command -v curl >/dev/null 2>&1; then
-  PUBLIC_IP="$(curl -4 -fsS https://ifconfig.io 2>/dev/null || true)"
-fi
+PUBLIC_IP="${CYPHER_PUBLIC_IP:-${CYPHER_PUBLIC_IPV6:-$(curl -4 -fsS --max-time 5 ifconfig.io || curl -6 -fsS --max-time 5 ifconfig.io || true)}}"
+PUBLIC_IP="$(printf '%s' "${PUBLIC_IP}" | tr -d '[:space:]')"
 
-NAT_ARGS=()
-if [ -n "${PUBLIC_IP}" ]; then
-  echo "==> Public IP: ${PUBLIC_IP}"
-  NAT_ARGS=(--nat "extip:${PUBLIC_IP}")
-else
-  echo "WARN: Failed to detect public IPv4 address"
-  echo "WARN: Continue without --nat extip"
+if [ -z "${PUBLIC_IP}" ]; then
+  echo "ERROR: Failed to detect public IPv4/IPv6 address"
+  exit 1
 fi
+NAT_IP="${PUBLIC_IP#[}"
+NAT_IP="${NAT_IP%]}"
 
+echo "==> Public IP: ${NAT_IP}"
 echo "==> Start Cypher node"
 
-"${CYPHER_BIN}" \
+./build/bin/cypher-linux-amd64 \
   --verbosity 4 \
   --rnetport 7200 \
   --syncmode full \
-  "${NAT_ARGS[@]}" \
+  --nat "extip:${NAT_IP}" \
   --ws \
-  --ws.addr 0.0.0.0 \
+  --ws.addr "${WS_BIND}" \
   --ws.port 9251 \
   --ws.origins "*" \
   --metrics \
   --http \
-  --http.addr 0.0.0.0 \
+  --http.addr "${RPC_BIND}" \
   --http.port 8000 \
   --http.api eth,web3,net,txpool \
   --http.corsdomain "*" \
@@ -127,5 +108,5 @@ echo "==> Start Cypher node"
   --datadir "${DATADIR}" \
   --networkid 10101919 \
   --gcmode archive \
-  --bootnodes "${BOOTNODES}" \
+  --bootnodes "${BOOTNODES_CSV}" \
   console

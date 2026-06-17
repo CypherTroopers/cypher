@@ -220,7 +220,7 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	var newNode *common.Cnode
 	if keyblock.HasNewNode() {
 		newNode = &common.Cnode{
-			Address:  net.IP(bestCandi.IP).String() + ":" + strconv.Itoa(bestCandi.Port),
+			Address:  net.JoinHostPort(net.IP(bestCandi.IP).String(), strconv.Itoa(bestCandi.Port)),
 			CoinBase: keyblock.InAddress(),
 			Public:   keyblock.InPubKey(),
 		}
@@ -418,7 +418,7 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 		ck := best.KeyCandidate
 		header.Time, header.Difficulty, header.MixDigest, header.Nonce = ck.Time, ck.Difficulty, ck.MixDigest, ck.Nonce
 		newNode := &common.Cnode{
-			Address:  net.IP(best.IP).String() + ":" + strconv.Itoa(best.Port),
+			Address:  net.JoinHostPort(net.IP(best.IP).String(), strconv.Itoa(best.Port)),
 			CoinBase: best.Coinbase,
 			Public:   best.PubKey,
 		}

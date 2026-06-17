@@ -53,3 +53,24 @@ func TestConsensusStateStillBindsLeader(t *testing.T) {
 		t.Fatal("leader change must produce a different consensus view hash")
 	}
 }
+
+func TestConsensusStateBindsRecoveryRound(t *testing.T) {
+	first := &View{TxNumber: 1, LeaderIndex: 0, NoDone: true}
+	second := *first
+	second.Round = 1
+
+	if first.EqualConsensus(&second) {
+		t.Fatal("recovery round must be part of the consensus view")
+	}
+	if first.ConsensusHash() == second.ConsensusHash() {
+		t.Fatal("recovery round must produce a different consensus view hash")
+	}
+
+	decoded := DecodeToView(second.EncodeConsensusToBytes())
+	if decoded == nil {
+		t.Fatal("failed to decode rounded consensus state")
+	}
+	if decoded.Round != second.Round {
+		t.Fatalf("decoded round = %d, want %d", decoded.Round, second.Round)
+	}
+}

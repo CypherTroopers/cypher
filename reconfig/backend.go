@@ -117,7 +117,7 @@ func New(stack *node.Node, chainConfig *params.ChainConfig, e Backend) (*Reconfi
 	core.SetCommonRPCAdmissionSigner(func(admission *types.CommonTxAdmission) error {
 		return signCommonRPCAdmission(backend.accountManager, admission)
 	})
-	sIp := e.ExtIP().String() + ":" + chainConfig.RnetPort
+	sIp := net.JoinHostPort(e.ExtIP().String(), chainConfig.RnetPort)
 	//backend.minter = newMinter(chainConfig, backend, blockTime)
 	backend.service = newService("cypherBFTService", sIp, chainConfig, backend)
 	backend.candidatePool.CheckMinerPort = backend.CheckMinerPort

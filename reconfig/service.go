@@ -62,6 +62,7 @@ const slowPressureMinPending = 512
 const slowEmergencyForcePending = 8192
 
 const startNewViewDedupWindow = 2 * time.Second
+const fixedModeKeyblockViewRoundDuration = 2 * params.CollectVoteInfoTimeout
 
 const proposalBodyCacheTTL = 2 * time.Minute
 const proposalBodyWaitBaseTimeout = 2 * time.Second
@@ -1129,6 +1130,10 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 	if viewAge < 0 {
 		viewAge = 0
 	}
+	nextRound := uint64(0)
+	if fixedModeKeyblockViewRoundDuration > 0 {
+		nextRound = uint64(viewAge / fixedModeKeyblockViewRoundDuration)
+	}
 	if s.fixedKeyViewLeader != primary {
 		log.Info("fixed-mode keyblock restoring deterministic primary leader",
 			"from", s.fixedKeyViewLeader,
@@ -1146,6 +1151,16 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 
 	s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fixedKeyViewLeader)
 	s.currentView.NoDone = false
+	if s.currentView.Round != nextRound {
+		log.Warn("fixed-mode keyblock advancing recovery round",
+			"oldRound", s.currentView.Round,
+			"round", nextRound,
+			"viewAge", viewAge,
+			"roundDuration", fixedModeKeyblockViewRoundDuration,
+			"currentBlock", s.bc.CurrentBlockN(),
+			"currentKey", s.kbc.CurrentBlockN())
+		s.currentView.Round = nextRound
+	}
 	s.waittingView.TxNumber = s.currentView.TxNumber + 1
 	s.waittingView.KeyNumber = s.currentView.KeyNumber + 1
 
@@ -1438,6 +1453,7 @@ func (s *Service) handleHotStuffMsg() {
 						"oldNoDone", oldView.NoDone,
 						"leaderIndex", curView.LeaderIndex,
 						"noDone", curView.NoDone,
+						"round", curView.Round,
 						"fallbackRound", fallbackRound,
 						"viewAge", viewAge,
 						"isLeader", bftview.IamLeader(curView.LeaderIndex),
@@ -1810,12 +1826,13 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 	s.currentView.KeyNumber = curKeyBlock.NumberU64()
 	s.currentView.KeyHash = curKeyBlock.Hash()
 	s.currentView.CommitteeHash = curKeyBlock.CommitteeHash()
+	s.currentView.Round = 0
 
 	if fromKeyBlock || curBlock.NumberU64() > curKeyBlock.T_Number() {
 		s.currentView.LeaderIndex = 0
 		s.currentView.NoDone = true
 	}
-	log.Debug("updateCurrentView", "TxNumber", s.currentView.TxNumber, "KeyNumber", s.currentView.KeyNumber, "LeaderIndex", s.currentView.LeaderIndex, "NoDone", s.currentView.NoDone)
+	log.Debug("updateCurrentView", "TxNumber", s.currentView.TxNumber, "KeyNumber", s.currentView.KeyNumber, "LeaderIndex", s.currentView.LeaderIndex, "NoDone", s.currentView.NoDone, "Round", s.currentView.Round)
 	sendNewView := false
 	newViewNumber := s.currentView.TxNumber
 	if fromKeyBlock || (s.currentView.TxNumber >= s.waittingView.TxNumber && s.currentView.KeyNumber >= s.waittingView.KeyNumber) || curBlock.BlockType() == types.Key_Block {

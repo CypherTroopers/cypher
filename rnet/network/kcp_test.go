@@ -52,3 +52,25 @@ func TestPacketHeaderRejectsInvalidInput(t *testing.T) {
 		}
 	}
 }
+
+func TestGetListenAddressSupportsIPv6HostOnly(t *testing.T) {
+	addr := NewAddress(PlainQUIC, "[2001:db8::1]:7102")
+	tests := []struct {
+		listen string
+		want   string
+	}{
+		{"::", "[::]:7102"},
+		{"[::1]", "[::1]:7102"},
+		{"[::1]:7200", "[::1]:7200"},
+		{"0.0.0.0", "0.0.0.0:7102"},
+	}
+	for _, test := range tests {
+		got, err := getListenAddress(addr, test.listen)
+		if err != nil {
+			t.Fatalf("getListenAddress(%q) failed: %v", test.listen, err)
+		}
+		if got != test.want {
+			t.Fatalf("getListenAddress(%q) = %q, want %q", test.listen, got, test.want)
+		}
+	}
+}

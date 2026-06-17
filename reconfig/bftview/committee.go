@@ -20,7 +20,7 @@ package bftview
 import (
 	"bytes"
 	"encoding/hex"
-	"strings"
+	"net"
 	"sync"
 	"sync/atomic"
 
@@ -397,12 +397,11 @@ func (committee *Committee) Add(r *common.Cnode, leaderIndex int, outAddress str
 			outAddress = outAddress[1:]
 		}
 		outAddrI := 0
-		isIp := strings.Contains(outAddress, ".")
 		var outer *common.Cnode
 		if leaderIndex > 0 {
 			for i := leaderIndex; i < n-1; i++ {
 				committee.List[i] = committee.List[i+1]
-				if outAddress != "" && outAddrI == 0 && ((isIp && committee.List[i].Address == outAddress) || (!isIp && committee.List[i].CoinBase == outAddress)) {
+				if outAddress != "" && outAddrI == 0 && committeeOutMatches(committee.List[i], outAddress) {
 					outAddrI = i
 				}
 			}
@@ -433,6 +432,37 @@ func (committee *Committee) Add(r *common.Cnode, leaderIndex int, outAddress str
 		return nil
 	}
 	return nil
+}
+
+func committeeOutMatches(node *common.Cnode, outAddress string) bool {
+	if node == nil || outAddress == "" {
+		return false
+	}
+	if node.CoinBase == outAddress || node.Address == outAddress {
+		return true
+	}
+	outHost, outPort, ok := splitCommitteeEndpoint(outAddress)
+	if !ok {
+		return false
+	}
+	nodeHost, nodePort, ok := splitCommitteeEndpoint(node.Address)
+	if !ok || outPort != nodePort {
+		return false
+	}
+	if outHost == nodeHost {
+		return true
+	}
+	outIP := net.ParseIP(outHost)
+	nodeIP := net.ParseIP(nodeHost)
+	return outIP != nil && nodeIP != nil && outIP.Equal(nodeIP)
+}
+
+func splitCommitteeEndpoint(address string) (string, string, bool) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || host == "" || port == "" {
+		return "", "", false
+	}
+	return host, port, true
 }
 
 func (committee *Committee) RlpHash() (h common.Hash) {
