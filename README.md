@@ -9,10 +9,8 @@
 ### Clone
 
 ```bash
-git clone https://github.com/CypherTroopers/cypher.git
+git clone -b ColossusX_CommonRPC_TXrewards --single-branch https://github.com/CypherTroopers/cypher.git
 cd cypher
-git fetch --all
-git checkout ColossusX_CommonRPC_TXrewards
 ```
 ## go mod
 ```bash
