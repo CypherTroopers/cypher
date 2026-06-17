@@ -85,6 +85,57 @@ func TestRecoveryResendsReplicaMessages(t *testing.T) {
 	}
 }
 
+func TestDiscardStaleReplicaNewViewsKeepsOnlyRetryableCanonicalView(t *testing.T) {
+	app := &recoveryTestApp{self: "replica"}
+	manager := NewHotstuffProtocolManager(app, nil, nil)
+	number := uint64(5197)
+	keepID := common.HexToHash("0x01")
+	staleID := common.HexToHash("0x02")
+	progressID := common.HexToHash("0x03")
+	otherNumberID := common.HexToHash("0x04")
+
+	manager.views[keepID] = &View{
+		hash:           keepID,
+		number:         number,
+		phaseAsReplica: PhasePrepare,
+		replicaMsg:     map[uint64]*HotstuffMessage{MsgNewView: {Code: MsgNewView, Number: number, ViewId: keepID}},
+	}
+	manager.views[staleID] = &View{
+		hash:           staleID,
+		number:         number,
+		phaseAsReplica: PhasePrepare,
+		replicaMsg:     map[uint64]*HotstuffMessage{MsgNewView: {Code: MsgNewView, Number: number, ViewId: staleID}},
+	}
+	manager.views[progressID] = &View{
+		hash:            progressID,
+		number:          number,
+		phaseAsReplica:  PhasePrepare,
+		replicaMsg:      map[uint64]*HotstuffMessage{MsgNewView: {Code: MsgNewView, Number: number, ViewId: progressID}},
+		prepareVoteInfo: []*VoteInfo{{}},
+	}
+	manager.views[otherNumberID] = &View{
+		hash:           otherNumberID,
+		number:         number + 1,
+		phaseAsReplica: PhasePrepare,
+		replicaMsg:     map[uint64]*HotstuffMessage{MsgNewView: {Code: MsgNewView, Number: number + 1, ViewId: otherNumberID}},
+	}
+
+	manager.discardStaleReplicaNewViews(number, keepID)
+
+	if _, ok := manager.views[staleID]; ok {
+		t.Fatal("stale same-number NewView was not discarded")
+	}
+	if _, ok := manager.views[keepID]; !ok {
+		t.Fatal("canonical NewView was discarded")
+	}
+	if _, ok := manager.views[progressID]; !ok {
+		t.Fatal("view with progress was discarded")
+	}
+	if _, ok := manager.views[otherNumberID]; !ok {
+		t.Fatal("different-number view was discarded")
+	}
+}
+
 func TestRecoveryRebroadcastsFinalizedMessages(t *testing.T) {
 	app := &recoveryTestApp{self: "leader"}
 	manager := NewHotstuffProtocolManager(app, nil, nil)

@@ -80,3 +80,33 @@ func TestValidateViewNormalizesProposalMode(t *testing.T) {
 		t.Fatal("validation returned non-canonical consensus state")
 	}
 }
+
+func TestValidateViewNormalizesRecoveryRound(t *testing.T) {
+	current := bftview.View{
+		TxNumber:      5196,
+		TxHash:        common.HexToHash("0x11"),
+		KeyNumber:     304,
+		KeyHash:       common.HexToHash("0x22"),
+		CommitteeHash: common.HexToHash("0x33"),
+		LeaderIndex:   0,
+		NoDone:        false,
+		Round:         1020,
+	}
+	wire := current
+	wire.Round = 0
+
+	expected, number, err := validateViewAgainstSnapshot(wire.EncodeConsensusToBytes(), current)
+	if err != nil {
+		t.Fatalf("recovery-round-only difference rejected: %v", err)
+	}
+	if number != current.TxNumber+1 {
+		t.Fatalf("expected number = %d, want %d", number, current.TxNumber+1)
+	}
+	decoded := bftview.DecodeToView(expected)
+	if decoded == nil {
+		t.Fatal("validation returned undecodable consensus state")
+	}
+	if decoded.Round != 0 {
+		t.Fatalf("validation returned round = %d, want 0", decoded.Round)
+	}
+}
