@@ -1,8 +1,6 @@
 ## preparations 
-
 ### Requirements
-
-- Go 1.24 or later
+- Go ver 1.24 or later
 - Git
 - GCC / build-essential for CGO dependencies
 - Minimum requirement is 48GB RAM(VRAM is preferred)
@@ -14,15 +12,6 @@ For stable operation, 96GB or more is recommended.
 git clone -b ColossusX_CommonRPC_TXrewards --single-branch https://github.com/CypherTroopers/cypher.git
 cd cypher
 ```
-## go mod（tions 
-
-### Requirements
-
-- Go 1.24 or later
-- Git
-- GCC / build-essential for CGO dependencies
-- Minimum requirement is 48GB RAM(VRAM is preferred)
-For stable operation, 96GB or more is recommended.
 
 ### Clone
 
@@ -30,6 +19,40 @@ For stable operation, 96GB or more is recommended.
 git clone -b ColossusX_CommonRPC_TXrewards --single-branch https://github.com/CypherTroopers/cypher.git
 cd cypher
 ```
+run a node on Linux
+```bash
+./colossusX_linux.sh
+```
+run a node on Mac
+```bash
+./colossusX_mac.sh
+```
+run a node on Windows
+```bash
+./colossusX_windows.ps1
+```
+## Mining
+1.
+~~~
+personal.newAccount("your password")
+~~~
+2.
+~~~
+miner.start(5, "your address", "your password")
+~~~
+3.(optional)change mining reward wallet
+~~~
+miner.setEtherbase("")
+~~~
+4.check wallet balance
+~~~
+web3.fromWei(eth.getBalance("your address"), "ether")
+~~~
+5.unlock your account for Tx Approval rewards 
+~~~
+personal.unlockAccount("your address", "your password", 0)
+~~~
+
 ## go mod（Only if you continue development）
 ```bash
 go mod download
