@@ -58,7 +58,7 @@ make cypher
 ## setting http/3 QUIC RPC port(example)
 Low-latency high-speed communicati
 ```
-https://raw.githubusercontent.com/CypherTroopers/cypher/commonRPC_Pipe_test_go.Mod/nginx%20example
+https://github.com/CypherTroopers/cypher/blob/ColossusX_CommonRPC_TXrewards/nginx%20example
 ```
 <img width="1448" height="1086" alt="image" src="https://github.com/user-attachments/assets/dbb7c1bd-f031-41a0-933b-2eeadbeac9ba" />
 
