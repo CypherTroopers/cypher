@@ -62,6 +62,8 @@ const slowPressureMinPending = 512
 const slowEmergencyForcePending = 8192
 
 const startNewViewDedupWindow = 2 * time.Second
+const fixedModeKeyblockWakeupInterval = 2 * time.Second
+const fixedModeKeyblockWatchdogInterval = 250 * time.Millisecond
 const fixedModeKeyblockViewRoundDuration = 2 * params.CollectVoteInfoTimeout
 
 const proposalBodyCacheTTL = 2 * time.Minute
@@ -71,7 +73,9 @@ const proposalBodyWaitBytesPerSecond = 2 * 1024 * 1024
 const proposalBodyRequestAfter = 250 * time.Millisecond
 const proposalBodyRequestInterval = 250 * time.Millisecond
 const proposalBodyPollInterval = 5 * time.Millisecond
+const proposalBodyControlMaxBytes = 512 * 1024
 const proposalBodySidecarMaxBytes = 256 * 1024 * 1024
+const proposalBodyKeyblockLivenessTimeout = time.Second
 
 const (
 	proposalBodyMsgData uint32 = iota + 1
@@ -143,6 +147,9 @@ func (msg *networkMsg) NetworkClass() uint8 {
 		case proposalBodyMsgRequest:
 			return network.NetClassProposalBodyControl
 		case proposalBodyMsgData:
+			if len(msg.Pmsg.EncodedBlock) <= proposalBodyControlMaxBytes {
+				return network.NetClassProposalBodyControl
+			}
 			return network.NetClassProposalBodyBulk
 		default:
 			return network.NetClassProposalBodyControl
@@ -254,6 +261,7 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 
 	go s.handleHotStuffMsg()
 	go s.handleCommitteeMsg()
+	go s.keyblockLivenessLoop()
 	return s
 }
 
@@ -433,6 +441,12 @@ func (s *Service) purgeExpiredProposalCachesLocked(now time.Time) {
 			delete(s.verifiedProposalByID, id)
 		}
 	}
+}
+
+func (s *Service) purgeExpiredProposalCaches(now time.Time) {
+	s.muProposalBody.Lock()
+	s.purgeExpiredProposalCachesLocked(now)
+	s.muProposalBody.Unlock()
 }
 
 func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
@@ -621,7 +635,13 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 		return nil, fmt.Errorf("nil proposal ref")
 	}
 	proposalID := ref.ProposalID()
-	deadline := time.Now().Add(proposalBodyWaitTimeout(ref.BodySize))
+	start := time.Now()
+	deadline := start.Add(proposalBodyWaitTimeout(ref.BodySize))
+	shortenedForKeyblock := false
+	if s.fixedModeKeyblockIntervalElapsed(start) && start.Add(proposalBodyKeyblockLivenessTimeout).Before(deadline) {
+		deadline = start.Add(proposalBodyKeyblockLivenessTimeout)
+		shortenedForKeyblock = true
+	}
 	nextRequestAt := time.Now().Add(proposalBodyRequestAfter)
 	for {
 		body := s.getProposalBody(proposalID)
@@ -635,6 +655,19 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 			return body, nil
 		}
 		now := time.Now()
+		if !shortenedForKeyblock && s.fixedModeKeyblockIntervalElapsed(now) {
+			keyblockDeadline := now.Add(proposalBodyKeyblockLivenessTimeout)
+			if keyblockDeadline.Before(deadline) {
+				deadline = keyblockDeadline
+				shortenedForKeyblock = true
+				log.Warn("HOTSTUFF PROPOSAL BODY wait shortened for keyblock liveness",
+					"number", ref.Number,
+					"proposalID", proposalID,
+					"bodyHash", ref.BodyHash,
+					"bodySize", ref.BodySize,
+					"deadline", deadline.Sub(now))
+			}
+		}
 		if !now.Before(nextRequestAt) {
 			s.sendProposalBodyRequest(ref)
 			nextRequestAt = now.Add(proposalBodyRequestInterval)
@@ -1169,6 +1202,20 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 	return oldView, curView, fallbackRound, viewAge
 }
 
+func (s *Service) enqueueHotstuffPriority(msg *hotstuffMsg) {
+	if s == nil || s.hotstuffMsgQ == nil || msg == nil {
+		return
+	}
+	s.hotstuffMsgQ.pushPriority(msg)
+}
+
+func (s *Service) enqueueHotstuff(msg *hotstuffMsg) {
+	if s == nil || s.hotstuffMsgQ == nil || msg == nil {
+		return
+	}
+	s.hotstuffMsgQ.push(msg)
+}
+
 func (s *Service) triggerTryPropose(lastN uint64) {
 	if atomic.LoadInt32(&s.runningState) != 1 {
 		return
@@ -1179,11 +1226,79 @@ func (s *Service) triggerTryPropose(lastN uint64) {
 		return
 	}
 	atomic.StoreInt64(&s.tryProposeQueuedAt, now)
-	s.hotstuffMsgQ.push(&hotstuffMsg{
+	s.enqueueHotstuffPriority(&hotstuffMsg{
 		sid:   nil,
 		lastN: lastN,
 		hMsg:  &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose},
 	})
+}
+
+func (s *Service) enqueueTimerPriority(curN uint64) {
+	s.enqueueHotstuffPriority(&hotstuffMsg{
+		sid:   nil,
+		lastN: curN,
+		hMsg:  &hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: curN},
+	})
+}
+
+func (s *Service) wakeFixedModeKeyblock(now time.Time, reason string, candidateRewardReady bool, pendingTotal, fastPending, slowPending int) bool {
+	if atomic.LoadInt32(&s.runningState) != 1 || bftview.IamMember() < 0 {
+		return false
+	}
+	if !s.fixedModeKeyblockIntervalElapsed(now) {
+		return false
+	}
+
+	s.muCurrentView.Lock()
+	if !s.lastFixedKeyNewViewWakeup.IsZero() && now.Sub(s.lastFixedKeyNewViewWakeup) < fixedModeKeyblockWakeupInterval {
+		s.muCurrentView.Unlock()
+		return true
+	}
+	s.lastFixedKeyNewViewWakeup = now
+	s.muCurrentView.Unlock()
+
+	oldView, curView, fallbackRound, viewAge := s.prepareFixedModeKeyblockView(now)
+	log.Warn("fixed-mode keyblock start-new-view wakeup",
+		"reason", reason,
+		"currentBlock", s.bc.CurrentBlockN(),
+		"currentKey", s.kbc.CurrentBlockN(),
+		"oldLeaderIndex", oldView.LeaderIndex,
+		"oldNoDone", oldView.NoDone,
+		"leaderIndex", curView.LeaderIndex,
+		"noDone", curView.NoDone,
+		"round", curView.Round,
+		"fallbackRound", fallbackRound,
+		"viewAge", viewAge,
+		"isLeader", bftview.IamLeader(curView.LeaderIndex),
+		"candidateReady", candidateRewardReady,
+		"pendingTotal", pendingTotal,
+		"fastPending", fastPending,
+		"slowPending", slowPending)
+
+	curN := s.bc.CurrentBlockN()
+	s.sendNewViewMsg(curN)
+	s.enqueueTimerPriority(curN)
+	return true
+}
+
+func (s *Service) keyblockLivenessLoop() {
+	ticker := time.NewTicker(fixedModeKeyblockWatchdogInterval)
+	defer ticker.Stop()
+	for now := range ticker.C {
+		if atomic.LoadInt32(&s.runningState) != 1 || bftview.IamMember() < 0 {
+			continue
+		}
+		if !s.fixedModeKeyblockIntervalElapsed(now) {
+			continue
+		}
+		fastPending, slowPending := s.lanePendingCounts()
+		pendingTotal := 0
+		if s.txPool != nil {
+			pendingTotal, _ = s.txPool.Stats()
+		}
+		s.purgeExpiredProposalCaches(now)
+		s.wakeFixedModeKeyblock(now, "watchdog", false, pendingTotal, fastPending, slowPending)
+	}
 }
 
 func readableTxBlockType(blockType uint8) string {
@@ -1329,7 +1444,7 @@ func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
 	log.Info("Write", "to id", id, "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
 
 	if id == s.Self() {
-		s.hotstuffMsgQ.push(&hotstuffMsg{sid: nil, hMsg: data})
+		s.enqueueHotstuffPriority(&hotstuffMsg{sid: nil, hMsg: data})
 		return nil
 	}
 
@@ -1369,7 +1484,7 @@ func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
 
 	// Local delivery is retained for protocol correctness. Leader self-vote
 	// optimization belongs in hotstuff.go and must preserve quorum accounting.
-	s.hotstuffMsgQ.push(&hotstuffMsg{sid: nil, hMsg: data})
+	s.enqueueHotstuffPriority(&hotstuffMsg{sid: nil, hMsg: data})
 
 	// Production rule: HotStuff control messages use direct committee delivery.
 	// Large proposal bodies are distributed as proposalBodyMsg sidecars, not in
@@ -1416,7 +1531,7 @@ func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
 		return
 	}
 	if msg.Hmsg != nil {
-		s.hotstuffMsgQ.push(&hotstuffMsg{sid: si, hMsg: msg.Hmsg})
+		s.enqueueHotstuff(&hotstuffMsg{sid: si, hMsg: msg.Hmsg})
 		return
 	}
 	s.feed1.Send(committeeMsg{sid: si, cinfo: msg.Cmsg, best: msg.Bmsg})
@@ -1443,26 +1558,7 @@ func (s *Service) handleHotStuffMsg() {
 			// before sending MsgNewView. If only the leader flips NoDone, replicas vote
 			// for a different view hash and the leader never reaches the new-view quorum.
 			if keyblockIntervalElapsed {
-				if s.lastFixedKeyNewViewWakeup.IsZero() || now.Sub(s.lastFixedKeyNewViewWakeup) >= 2*time.Second {
-					s.lastFixedKeyNewViewWakeup = now
-					oldView, curView, fallbackRound, viewAge := s.prepareFixedModeKeyblockView(now)
-					log.Warn("fixed-mode keyblock start-new-view wakeup",
-						"currentBlock", s.bc.CurrentBlockN(),
-						"currentKey", s.kbc.CurrentBlockN(),
-						"oldLeaderIndex", oldView.LeaderIndex,
-						"oldNoDone", oldView.NoDone,
-						"leaderIndex", curView.LeaderIndex,
-						"noDone", curView.NoDone,
-						"round", curView.Round,
-						"fallbackRound", fallbackRound,
-						"viewAge", viewAge,
-						"isLeader", bftview.IamLeader(curView.LeaderIndex),
-						"candidateReady", candidateRewardReady,
-						"pendingTotal", pendingTotal,
-						"fastPending", fastPending,
-						"slowPending", slowPending)
-					s.sendNewViewMsg(s.bc.CurrentBlockN())
-				}
+				s.wakeFixedModeKeyblock(now, "hotstuff-idle", candidateRewardReady, pendingTotal, fastPending, slowPending)
 
 				// Keyblock interval has priority over tx/candidate liveness wakeups.
 				// Let MsgStartNewView drive HotStuff to PhaseTryPropose instead of
@@ -1885,7 +1981,7 @@ func (s *Service) sendNewViewMsg(curN uint64) {
 	s.muStartNewView.Unlock()
 
 	if bftview.IamMember() >= 0 && curN >= s.bc.CurrentBlockN() {
-		s.hotstuffMsgQ.push(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
+		s.enqueueHotstuffPriority(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
 	}
 }
 

@@ -71,17 +71,19 @@ type msgHeadInfo struct {
 }
 
 type peerQueues struct {
-	input chan *networkMsg
-	next  chan *networkMsg
-	stop  chan struct{}
-	once  sync.Once
+	input         chan *networkMsg
+	priorityInput chan *networkMsg
+	next          chan *networkMsg
+	stop          chan struct{}
+	once          sync.Once
 }
 
 func newPeerQueues() *peerQueues {
 	q := &peerQueues{
-		input: make(chan *networkMsg, 1024),
-		next:  make(chan *networkMsg),
-		stop:  make(chan struct{}),
+		input:         make(chan *networkMsg, 8192),
+		priorityInput: make(chan *networkMsg, 8192),
+		next:          make(chan *networkMsg),
+		stop:          make(chan struct{}),
 	}
 	go q.run()
 	return q
@@ -90,6 +92,14 @@ func newPeerQueues() *peerQueues {
 func (q *peerQueues) run() {
 	var classes [7][]*networkMsg
 	for {
+		select {
+		case msg := <-q.priorityInput:
+			class := peerQueueClass(msg)
+			classes[class] = append(classes[class], msg)
+			continue
+		default:
+		}
+
 		var out chan *networkMsg
 		var next *networkMsg
 		for i := range classes {
@@ -101,6 +111,9 @@ func (q *peerQueues) run() {
 		}
 
 		select {
+		case msg := <-q.priorityInput:
+			class := peerQueueClass(msg)
+			classes[class] = append(classes[class], msg)
 		case msg := <-q.input:
 			class := peerQueueClass(msg)
 			classes[class] = append(classes[class], msg)
@@ -140,8 +153,12 @@ func (q *peerQueues) push(msg *networkMsg) bool {
 	if q == nil || msg == nil {
 		return false
 	}
+	input := q.input
+	if isHighPriorityNetworkMsg(msg) {
+		input = q.priorityInput
+	}
 	select {
-	case q.input <- cloneNetworkMsg(msg):
+	case input <- cloneNetworkMsg(msg):
 		return true
 	case <-q.stop:
 		return false
@@ -428,11 +445,6 @@ func (s *netService) loop_iddata(address string, queues *peerQueues) {
 	s.muIdMap.Unlock()
 
 	for !s.isStoping && atomic.LoadInt32(isRunning) == 1 {
-		if s.GetNetBlocks(si) > 1 {
-			time.Sleep(2 * time.Millisecond)
-			continue
-		}
-
 		msg := queues.popNext()
 		if msg == nil {
 			time.Sleep(2 * time.Millisecond)
@@ -441,6 +453,13 @@ func (s *netService) loop_iddata(address string, queues *peerQueues) {
 
 		m, ok := msg.(*networkMsg)
 		if ok && s.IgnoreMsg(m) {
+			continue
+		}
+		if s.GetNetBlocks(si) > 1 && (!ok || !isHighPriorityNetworkMsg(m)) {
+			if ok && queues != nil && !s.IgnoreMsg(m) {
+				queues.pushFrontClass(m)
+			}
+			time.Sleep(2 * time.Millisecond)
 			continue
 		}
 		if err := s.SendRaw(si, msg, false); err != nil {
@@ -638,7 +657,6 @@ func isHighPriorityNetworkMsg(msg *networkMsg) bool {
 	switch msg.NetworkClass() {
 	case network.NetClassHotstuffControl,
 		network.NetClassProposalBodyControl,
-		network.NetClassProposalBodyBulk,
 		network.NetClassCommitteeControl,
 		network.NetClassCandidateMiner,
 		network.NetClassHeartbeat:

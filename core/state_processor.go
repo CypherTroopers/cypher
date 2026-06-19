@@ -72,7 +72,21 @@ func effectiveTxGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
 	return new(big.Int).Add(baseFee, tip)
 }
 
-func buildCommonAdmissionIndex(admissions []*types.CommonTxAdmission, chainID *big.Int) (map[common.Hash]common.Address, error) {
+func commonRPCAdmissionKeyBlockNumberForHeader(bc *BlockChain, header *types.Header) (uint64, error) {
+	if bc == nil || bc.keyBlockChain == nil {
+		return 0, fmt.Errorf("key block chain is not available for common tx admission validation")
+	}
+	if header == nil {
+		return 0, fmt.Errorf("missing header for common tx admission validation")
+	}
+	keyBlock := bc.keyBlockChain.GetBlockByHash(header.KeyHash)
+	if keyBlock == nil {
+		return 0, fmt.Errorf("unknown key block for common tx admission validation: keyHash=%s", header.KeyHash)
+	}
+	return keyBlock.NumberU64(), nil
+}
+
+func buildCommonAdmissionIndex(admissions []*types.CommonTxAdmission, chainID *big.Int, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) (map[common.Hash]common.Address, error) {
 	indexed := make(map[common.Hash]common.Address, len(admissions))
 	for _, admission := range admissions {
 		if admission == nil {
@@ -88,6 +102,9 @@ func buildCommonAdmissionIndex(admissions []*types.CommonTxAdmission, chainID *b
 			return nil, fmt.Errorf("invalid common tx admission chain id for %s: have %v want %v", admission.TxHash, admission.ChainID, chainID)
 		}
 		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+			return nil, err
+		}
+		if err := validateCommonRPCAdmissionForBlock(admission, keyBlockNumber, txBlockNumber, timestamp); err != nil {
 			return nil, err
 		}
 		if _, exists := indexed[admission.TxHash]; exists {
@@ -174,7 +191,19 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if root := types.DeriveCommonTxRewardRoot(block.CommonTxRewards()); root != header.CommonTxRewardRoot {
 		return nil, nil, 0, fmt.Errorf("common tx reward root mismatch: have %s want %s", root, header.CommonTxRewardRoot)
 	}
-	admissionByTx, err := buildCommonAdmissionIndex(block.CommonTxAdmissions(), p.config.ChainID)
+	commonTxAdmissions := block.CommonTxAdmissions()
+	keyBlockNumber := uint64(0)
+	if len(commonTxAdmissions) > 0 {
+		var err error
+		keyBlockNumber, err = commonRPCAdmissionKeyBlockNumberForHeader(p.bc, header)
+		if err != nil {
+			return nil, nil, 0, err
+		}
+	}
+	if header.Number == nil {
+		return nil, nil, 0, fmt.Errorf("missing block number for common tx admission validation")
+	}
+	admissionByTx, err := buildCommonAdmissionIndex(commonTxAdmissions, p.config.ChainID, keyBlockNumber, header.Number.Uint64(), header.Time)
 	if err != nil {
 		return nil, nil, 0, err
 	}

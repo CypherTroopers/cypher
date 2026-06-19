@@ -296,14 +296,31 @@ func (b *EthAPIBackend) shouldRecordCommonRPCAdmission() bool {
 	return true
 }
 
+func (b *EthAPIBackend) currentCommonRPCAdmissionKeyBlockNumber() (uint64, error) {
+	if b == nil || b.eth == nil || b.eth.keyBlockChain == nil {
+		return 0, fmt.Errorf("key block chain is not available")
+	}
+	currentKey := b.eth.keyBlockChain.CurrentBlock()
+	if currentKey == nil {
+		return 0, fmt.Errorf("current key block is not available")
+	}
+	return currentKey.NumberU64(), nil
+}
+
 func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction, sync bool) error {
 	if b.shouldRecordCommonRPCAdmission() && b.eth.txQUICIngress != nil {
+		timestamp := uint64(time.Now().Unix())
+		keyBlockNumber, err := b.currentCommonRPCAdmissionKeyBlockNumber()
+		if err != nil {
+			log.Error("Failed to bind common RPC admission to key block", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
+			return err
+		}
 		admission, err := core.SignAndRecordCommonRPCAdmission(
 			signedTx.Hash(),
 			bftview.GetServerCoinBase(),
 			b.ChainConfig().ChainID,
-			0,
-			uint64(time.Now().Unix()),
+			keyBlockNumber,
+			timestamp,
 		)
 		if err != nil {
 			log.Error("Failed to sign common RPC admission", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
