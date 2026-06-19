@@ -5,6 +5,8 @@
 - Go 1.24 or later
 - Git
 - GCC / build-essential for CGO dependencies
+- Minimum requirement is 48GB RAM(VRAM is preferred)
+For stable operation, 96GB or more is recommended.
 
 ### Clone
 
@@ -12,11 +14,27 @@
 git clone -b ColossusX_CommonRPC_TXrewards --single-branch https://github.com/CypherTroopers/cypher.git
 cd cypher
 ```
-## go mod
+## go mod（tions 
+
+### Requirements
+
+- Go 1.24 or later
+- Git
+- GCC / build-essential for CGO dependencies
+- Minimum requirement is 48GB RAM(VRAM is preferred)
+For stable operation, 96GB or more is recommended.
+
+### Clone
+
+```bash
+git clone -b ColossusX_CommonRPC_TXrewards --single-branch https://github.com/CypherTroopers/cypher.git
+cd cypher
+```
+## go mod（Only if you continue development）
 ```bash
 go mod download
 ```
-## build
+## build（Only if you continue development）
 ```bash
 make cypher
 ```
