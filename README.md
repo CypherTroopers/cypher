@@ -6,12 +6,6 @@
 - Minimum requirement is 48GB RAM(VRAM is preferred)
 For stable operation, 96GB or more is recommended.
 
-### Clone
-
-```bash
-git clone -b ColossusX_CommonRPC_TXrewards --single-branch https://github.com/CypherTroopers/cypher.git
-cd cypher
-```
 
 ### Clone
 
@@ -19,15 +13,15 @@ cd cypher
 git clone -b ColossusX_CommonRPC_TXrewards --single-branch https://github.com/CypherTroopers/cypher.git
 cd cypher
 ```
-run a node on Linux
+## run a node on Linux
 ```bash
 ./colossusX_linux.sh
 ```
-run a node on Mac
+## run a node on Mac
 ```bash
 ./colossusX_mac.sh
 ```
-run a node on Windows
+## run a node on Windows
 ```bash
 ./colossusX_windows.ps1
 ```
