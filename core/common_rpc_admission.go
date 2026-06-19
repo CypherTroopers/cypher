@@ -17,6 +17,8 @@ const (
 	commonRPCAdmissionTTL             = 30 * time.Minute
 	commonRPCAdmissionCleanupInterval = time.Minute
 	commonRPCAdmissionMaxEntries      = 1000000
+	commonRPCAdmissionBoundaryGrace   = 2 * time.Minute
+	commonRPCAdmissionFutureClockSkew = 30 * time.Second
 )
 
 type commonRPCAdmissionEntry struct {
@@ -236,6 +238,52 @@ func storeVerifiedCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
 	return true
 }
 
+func commonRPCAdmissionDurationSeconds(d time.Duration) uint64 {
+	if d <= 0 {
+		return 0
+	}
+	return uint64(d / time.Second)
+}
+
+func commonRPCAdmissionAddSeconds(value uint64, seconds uint64) uint64 {
+	if ^uint64(0)-value < seconds {
+		return ^uint64(0)
+	}
+	return value + seconds
+}
+
+func validateCommonRPCAdmissionForBlock(admission *types.CommonTxAdmission, keyBlockNumber uint64, txBlockNumber uint64, blockTimestamp uint64) error {
+	if admission == nil {
+		return fmt.Errorf("nil common RPC admission")
+	}
+	if admission.TxBlockNumber != 0 {
+		return fmt.Errorf("common RPC admission for %s has tx block number %d before finalization", admission.TxHash, admission.TxBlockNumber)
+	}
+	if admission.Timestamp == 0 {
+		return fmt.Errorf("common RPC admission for %s has empty timestamp", admission.TxHash)
+	}
+	if blockTimestamp == 0 {
+		return fmt.Errorf("common RPC admission for %s cannot be boundary-checked without block timestamp", admission.TxHash)
+	}
+	if admission.Timestamp > commonRPCAdmissionAddSeconds(blockTimestamp, commonRPCAdmissionDurationSeconds(commonRPCAdmissionFutureClockSkew)) {
+		return fmt.Errorf("common RPC admission for %s is from the future: admission=%d block=%d", admission.TxHash, admission.Timestamp, blockTimestamp)
+	}
+	if admission.KeyBlockNumber == keyBlockNumber {
+		return nil
+	}
+	if admission.KeyBlockNumber < keyBlockNumber && keyBlockNumber-admission.KeyBlockNumber == 1 {
+		graceUntil := commonRPCAdmissionAddSeconds(admission.Timestamp, commonRPCAdmissionDurationSeconds(commonRPCAdmissionBoundaryGrace))
+		if blockTimestamp <= graceUntil {
+			return nil
+		}
+		return fmt.Errorf("common RPC admission for %s crossed key block boundary outside grace: admissionKey=%d blockKey=%d admissionTime=%d blockTime=%d grace=%s", admission.TxHash, admission.KeyBlockNumber, keyBlockNumber, admission.Timestamp, blockTimestamp, commonRPCAdmissionBoundaryGrace)
+	}
+	if admission.KeyBlockNumber > keyBlockNumber {
+		return fmt.Errorf("common RPC admission for %s is bound to future key block: admissionKey=%d blockKey=%d", admission.TxHash, admission.KeyBlockNumber, keyBlockNumber)
+	}
+	return fmt.Errorf("common RPC admission for %s is bound to stale key block: admissionKey=%d blockKey=%d", admission.TxHash, admission.KeyBlockNumber, keyBlockNumber)
+}
+
 // SignAndRecordCommonRPCAdmission signs and stores a local common RPC tx
 // admission. TxBlockNumber is intentionally zero here because the block proposer
 // has not selected the tx block yet. The signed record is later carried unchanged
@@ -306,6 +354,10 @@ func BuildCommonTxAdmissions(txs types.Transactions, keyBlockNumber uint64, txBl
 		sealed := copyCommonRPCAdmission(entry.admission)
 		if err := types.VerifyCommonTxAdmissionSignature(sealed); err != nil {
 			log.Warn("Invalid common RPC admission signature", "tx", txHash, "miner", sealed.Miner, "err", err)
+			continue
+		}
+		if err := validateCommonRPCAdmissionForBlock(sealed, keyBlockNumber, txBlockNumber, timestamp); err != nil {
+			log.Debug("Skipping common RPC admission outside key block boundary", "tx", txHash, "miner", sealed.Miner, "err", err)
 			continue
 		}
 		admissions = append(admissions, sealed)
