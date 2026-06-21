@@ -711,6 +711,20 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 		*/
 		if hsm.lookupVoteInfo(pubKey, v.highVoteInfo) {
 			log.Warn("receive dup new-view meesage", "from", m.Id, "viewId", m.ViewId)
+			if v.phaseAsLeader != PhasePrepare {
+				if prepareMsg, ok := v.leaderMsg[MsgPrepare]; ok {
+					log.Debug("handleNewViewMsg resend cached Prepare for dup new-view",
+						"viewID", hex.EncodeToString(v.hash[:]),
+						"phase", readablePhase(v.phaseAsLeader),
+						"replicaId", m.Id)
+					if err := hsm.app.Write(m.Id, prepareMsg); err != nil {
+						log.Warn("handleNewViewMsg failed to resend cached Prepare",
+							"viewID", hex.EncodeToString(v.hash[:]),
+							"replicaId", m.Id,
+							"err", err)
+					}
+				}
+			}
 			continue
 		}
 
@@ -1129,7 +1143,11 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 
 	v.prepareVoteInfo = append(v.prepareVoteInfo, qrum)
 	if len(v.prepareVoteInfo) < v.threshold {
-		log.Debug("handlePrepareVoteMsg need more voteInfo", "number", v.number, "threshold", v.threshold, "current", len(v.prepareVoteInfo))
+		if !v.waitingMoreVoteInfo {
+			v.waitingMoreVoteInfo = true
+			v.waitingMoreVoteInfoAt = time.Now()
+		}
+		log.Debug("handlePrepareVoteMsg need more voteInfo", "number", v.number, "threshold", v.threshold, "current", len(v.prepareVoteInfo), "waitingSince", v.waitingMoreVoteInfoAt)
 		return ErrInsufficientQC
 	}
 
@@ -1269,11 +1287,27 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 		if v.number <= curN {
 			continue
 		}
-		if v.phaseAsLeader == PhaseFinal || !v.waitingMoreVoteInfo || len(v.prepareVoteInfo) < v.threshold {
+		if v.phaseAsLeader == PhaseFinal || !v.waitingMoreVoteInfo {
 			continue
 		}
 		elapsed := time.Now().Sub(v.waitingMoreVoteInfoAt)
 		if elapsed < params.CollectVoteInfoTimeout {
+			continue
+		}
+		if v.phaseAsLeader != PhasePreCommit {
+			continue
+		}
+		if len(v.prepareVoteInfo) < v.threshold {
+			if prepareMsg, ok := v.leaderMsg[MsgPrepare]; ok {
+				log.Warn("handleTimerMsg rebroadcast Prepare for stalled view",
+					"viewId", v.hash,
+					"number", v.number,
+					"threshold", v.threshold,
+					"current", len(v.prepareVoteInfo),
+					"elapsed", elapsed)
+				hsm.app.Broadcast(prepareMsg)
+				v.waitingMoreVoteInfoAt = time.Now()
+			}
 			continue
 		}
 
