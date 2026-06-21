@@ -7,7 +7,7 @@ import (
 
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/metrics"
-	"github.com/influxdata/influxdb/client"
+	"github.com/influxdata/influxdb1-client"
 )
 
 type reporter struct {

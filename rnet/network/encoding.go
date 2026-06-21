@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/cypherium/cypher/log"
-	"github.com/dedis/protobuf"
+	"go.dedis.ch/protobuf"
 	uuid "gopkg.in/satori/go.uuid.v1"
 )
 

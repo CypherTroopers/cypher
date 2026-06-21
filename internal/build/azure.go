@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"os"
 
-	storage "github.com/Azure/azure-storage-go"
+	storage "github.com/Azure/azure-sdk-for-go/storage"
 )
 
 // AzureBlobstoreConfig is an authentication and configuration struct containing
@@ -50,12 +50,7 @@ func AzureBlobstoreUpload(path string, name string, config AzureBlobstoreConfig)
 		return err
 	}
 	defer in.Close()
-
-	info, err := in.Stat()
-	if err != nil {
-		return err
-	}
-	return client.CreateBlockBlobFromReader(config.Container, name, uint64(info.Size()), in, nil)
+	return client.GetContainerReference(config.Container).GetBlobReference(name).CreateBlockBlobFromReader(in, nil)
 }
 
 // AzureBlobstoreList lists all the files contained within an azure blobstore.
@@ -98,7 +93,7 @@ func AzureBlobstoreDelete(config AzureBlobstoreConfig, blobs []storage.Blob) err
 
 	// Iterate over the blobs and delete them
 	for _, blob := range blobs {
-		if err := client.DeleteBlob(config.Container, blob.Name, nil); err != nil {
+		if err := client.GetContainerReference(config.Container).GetBlobReference(blob.Name).Delete(nil); err != nil {
 			return err
 		}
 	}

@@ -10,15 +10,15 @@
 
 GOBIN = ./build/bin
 GO ?= latest
-GORUN = env GO111MODULE=off go run
+GORUN = env GO111MODULE=on GOFLAGS=-mod=mod go run
 
 cypher:
-	build/env.sh go run build/ci.go install ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go install ./cmd/cypher
 	@echo "Done building."
 	@echo "Run \"$(GOBIN)/cypher\" to launch cypher."
 
 bootnode:
-	build/env.sh go run build/ci.go install ./cmd/bootnode
+	build/env.sh $(GORUN) build/ci.go install ./cmd/bootnode
 	@echo "Done building."
 	@echo "Run \"$(GOBIN)/bootnode\" to launch bootnode."
 
@@ -81,23 +81,23 @@ LFG:
 	'' \
 	'     AI NODES NETWORK ACTIVE (GLOBAL CONSENSUS)'
 all:
-	build/env.sh go run build/ci.go install
+	build/env.sh $(GORUN) build/ci.go install
 
 android:
-	build/env.sh go run build/ci.go aar --local
+	build/env.sh $(GORUN) build/ci.go aar --local
 	@echo "Done building."
 	@echo "Import \"$(GOBIN)/cypher.aar\" to use the library."
 
 ios:
-	build/env.sh go run build/ci.go xcode --local
+	build/env.sh $(GORUN) build/ci.go xcode --local
 	@echo "Done building."
 	@echo "Import \"$(GOBIN)/Geth.framework\" to use the library."
 
 test: all
-	build/env.sh go run build/ci.go test
+	build/env.sh $(GORUN) build/ci.go test
 
 lint: ## Run linters.
-	build/env.sh go run build/ci.go lint
+	build/env.sh $(GORUN) build/ci.go lint
 
 clean:
 	env GO111MODULE=on go clean -cache
@@ -127,12 +127,12 @@ cypher-linux: cypher-linux-386 cypher-linux-amd64 cypher-linux-arm cypher-linux-
 	@ls -ld $(GOBIN)/cypher-linux-*
 
 cypher-linux-386:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/386 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/386 -v ./cmd/cypher
 	@echo "Linux 386 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep 386
 
 cypher-linux-amd64:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/amd64 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/amd64 -v ./cmd/cypher
 	@echo "Linux amd64 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep amd64
 
@@ -141,7 +141,7 @@ cypher-linux-arm: cypher-linux-arm-5 cypher-linux-arm-6 cypher-linux-arm-7 cyphe
 	@ls -ld $(GOBIN)/cypher-linux-* | grep arm
 
 cypher-linux-arm-5:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/arm-5 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/arm-5 -v ./cmd/cypher
 	@echo "Linux ARMv5 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep arm-5
 
@@ -151,32 +151,32 @@ cypher-linux-arm-6:
 	@ls -ld $(GOBIN)/cypher-linux-* | grep arm-6
 
 cypher-linux-arm-7:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/arm-7 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/arm-7 -v ./cmd/cypher
 	@echo "Linux ARMv7 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep arm-7
 
 cypher-linux-arm64:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/arm64 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/arm64 -v ./cmd/cypher
 	@echo "Linux ARM64 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep arm64
 
 cypher-linux-mips:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/mips --ldflags '-extldflags "-static"' -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/mips --ldflags '-extldflags "-static"' -v ./cmd/cypher
 	@echo "Linux MIPS cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep mips
 
 cypher-linux-mipsle:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/mipsle --ldflags '-extldflags "-static"' -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/mipsle --ldflags '-extldflags "-static"' -v ./cmd/cypher
 	@echo "Linux MIPSle cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep mipsle
 
 cypher-linux-mips64:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/mips64 --ldflags '-extldflags "-static"' -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/mips64 --ldflags '-extldflags "-static"' -v ./cmd/cypher
 	@echo "Linux MIPS64 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep mips64
 
 cypher-linux-mips64le:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=linux/mips64le --ldflags '-extldflags "-static"' -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=linux/mips64le --ldflags '-extldflags "-static"' -v ./cmd/cypher
 	@echo "Linux MIPS64le cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-linux-* | grep mips64le
 
@@ -185,12 +185,12 @@ cypher-darwin: cypher-darwin-386 cypher-darwin-amd64
 	@ls -ld $(GOBIN)/cypher-darwin-*
 
 cypher-darwin-386:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=darwin/386 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=darwin/386 -v ./cmd/cypher
 	@echo "Darwin 386 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-darwin-* | grep 386
 
 cypher-darwin-amd64:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=darwin/amd64 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=darwin/amd64 -v ./cmd/cypher
 	@echo "Darwin amd64 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-darwin-* | grep amd64
 
@@ -199,11 +199,11 @@ cypher-windows: cypher-windows-386 cypher-windows-amd64
 	@ls -ld $(GOBIN)/cypher-windows-*
 
 cypher-windows-386:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=windows/386 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=windows/386 -v ./cmd/cypher
 	@echo "Windows 386 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-windows-* | grep 386
 
 cypher-windows-amd64:
-	build/env.sh go run build/ci.go xgo -- --go=$(GO) --targets=windows/amd64 -v ./cmd/cypher
+	build/env.sh $(GORUN) build/ci.go xgo -- --go=$(GO) --targets=windows/amd64 -v ./cmd/cypher
 	@echo "Windows amd64 cross compilation done:"
 	@ls -ld $(GOBIN)/cypher-windows-* | grep amd64
