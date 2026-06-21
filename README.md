@@ -15,6 +15,14 @@ If the added files still contain PoS-related settings, please comment out the Po
 git clone https://github.com/CypherTroopers/cypher.git
 cd cypher
  ```
+## go mod（Only if you continue development）
+```bash
+go mod download
+```
+## build（Only if you continue development）
+```bash
+make cypher
+```
 ## start node
 
 ***Linux***
