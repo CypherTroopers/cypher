@@ -63,6 +63,7 @@ const slowPressureMinPending = 512
 const slowEmergencyForcePending = 8192
 
 const startNewViewDedupWindow = 2 * time.Second
+const fixedModeTxProposalStaleTimeout = 500 * time.Millisecond
 const fixedModeKeyblockStaleTimeout = 3 * params.AckTimeout
 const fixedModeKeyblockWatchdogInterval = 10 * time.Second
 
@@ -345,6 +346,9 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 		if !proposeOK {
 			go func() {
 				time.Sleep(failedProposalRetry)
+				if !s.shouldRetryFailedProposal(time.Now()) {
+					return
+				}
 				curView := s.GetCurrentView()
 				if bftview.IamLeader(curView.LeaderIndex) {
 					s.triggerTryPropose(s.bc.CurrentBlockN())
@@ -461,6 +465,18 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 	}
 	proposeOK = true
 	return nil, nil, data, nil
+}
+
+func (s *Service) shouldRetryFailedProposal(now time.Time) bool {
+	pendingTotal := 0
+	if s.txPool != nil {
+		pendingTotal, _ = s.txPool.Stats()
+	}
+	if pendingTotal > 0 {
+		return true
+	}
+
+	return s.fixedModeCandidateRewardReady(now)
 }
 
 func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
@@ -889,6 +905,7 @@ func (s *Service) handleHotStuffMsg() {
 				if txProposalViewReady && (s.lastFixedTxNewViewWakeup.IsZero() || now.Sub(s.lastFixedTxNewViewWakeup) >= startNewViewDedupWindow) {
 					s.lastFixedTxNewViewWakeup = now
 					curView := s.GetCurrentView()
+					recovered := s.protocolMng.RecoverStaleViews(s.bc.CurrentBlockN(), fixedModeTxProposalStaleTimeout)
 					log.Warn("fixed-mode tx start-new-view wakeup",
 						"currentBlock", s.bc.CurrentBlockN(),
 						"currentKey", s.kbc.CurrentBlockN(),
@@ -897,7 +914,8 @@ func (s *Service) handleHotStuffMsg() {
 						"slowPending", slowPending,
 						"leaderIndex", curView.LeaderIndex,
 						"noDone", curView.NoDone,
-						"isLeader", bftview.IamLeader(curView.LeaderIndex))
+						"isLeader", bftview.IamLeader(curView.LeaderIndex),
+						"hotstuffRecovered", recovered)
 					s.sendNewViewMsg(s.bc.CurrentBlockN())
 				}
 
