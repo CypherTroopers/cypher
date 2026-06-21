@@ -1282,6 +1282,103 @@ func (hsm *HotstuffProtocolManager) HandleMessage(msg *HotstuffMessage) error {
 	return err
 }
 
+func (hsm *HotstuffProtocolManager) RecoverStaleViews(curN uint64, staleFor time.Duration) bool {
+	now := time.Now()
+	recovered := false
+
+	for hash, v := range hsm.views {
+		if v == nil || v.number <= curN {
+			continue
+		}
+		age := now.Sub(v.createdAt)
+		if age < staleFor {
+			continue
+		}
+
+		if decideMsg, ok := v.leaderMsg[MsgDecide]; ok {
+			log.Warn("RecoverStaleViews rebroadcast cached Decide",
+				"viewId", v.hash,
+				"number", v.number,
+				"age", age,
+				"phase", readablePhase(v.phaseAsLeader))
+			hsm.app.Broadcast(decideMsg)
+			recovered = true
+			continue
+		}
+
+		if prepareMsg, ok := v.leaderMsg[MsgPrepare]; ok {
+			log.Warn("RecoverStaleViews rebroadcast cached Prepare",
+				"viewId", v.hash,
+				"number", v.number,
+				"age", age,
+				"phase", readablePhase(v.phaseAsLeader),
+				"threshold", v.threshold,
+				"current", len(v.prepareVoteInfo))
+			hsm.app.Broadcast(prepareMsg)
+			if v.phaseAsLeader != PhaseFinal {
+				v.phaseAsLeader = PhasePreCommit
+			}
+			v.waitingMoreVoteInfo = true
+			v.waitingMoreVoteInfoAt = now
+			recovered = true
+			continue
+		}
+
+		if voteMsg, ok := v.replicaMsg[MsgVotePrepare]; ok {
+			log.Warn("RecoverStaleViews resend cached VotePrepare",
+				"viewId", v.hash,
+				"number", v.number,
+				"age", age,
+				"phase", readablePhase(v.phaseAsReplica),
+				"leader", v.leaderId)
+			if err := hsm.app.Write(v.leaderId, voteMsg); err != nil {
+				log.Warn("RecoverStaleViews failed to resend cached VotePrepare",
+					"viewId", v.hash,
+					"leader", v.leaderId,
+					"err", err)
+			}
+			recovered = true
+			continue
+		}
+
+		isLocalLeaderView := v.leaderId == hsm.app.Self()
+		if isLocalLeaderView && v.phaseAsLeader == PhaseTryPropose {
+			log.Warn("RecoverStaleViews retry TryPropose for stale leader view",
+				"viewId", v.hash,
+				"number", v.number,
+				"age", age,
+				"highVotes", len(v.highVoteInfo),
+				"threshold", v.threshold)
+			hsm.leaderView = v
+			if err := hsm.TryPropose(); err != nil {
+				log.Warn("RecoverStaleViews TryPropose failed",
+					"viewId", v.hash,
+					"number", v.number,
+					"err", err)
+			} else {
+				recovered = true
+			}
+			continue
+		}
+
+		if isLocalLeaderView && v.phaseAsLeader == PhasePrepare && !v.hasKState() && !v.hasTState() {
+			log.Warn("RecoverStaleViews drop unproposed stale leader view",
+				"viewId", v.hash,
+				"number", v.number,
+				"age", age,
+				"highVotes", len(v.highVoteInfo),
+				"threshold", v.threshold)
+			if hsm.leaderView == v {
+				hsm.leaderView = nil
+			}
+			delete(hsm.views, hash)
+			recovered = true
+		}
+	}
+
+	return recovered
+}
+
 func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 	for _, v := range hsm.views {
 		if v.number <= curN {

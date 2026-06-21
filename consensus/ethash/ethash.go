@@ -34,11 +34,11 @@ import (
 	"time"
 	"unsafe"
 
-	mmap "github.com/edsrzf/mmap-go"
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/metrics"
 	"github.com/cypherium/cypher/rpc"
+	mmap "github.com/edsrzf/mmap-go"
 	"github.com/hashicorp/golang-lru/simplelru"
 )
 

@@ -25,13 +25,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/cypherium/cypher/common/mclock"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/internal/testlog"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/p2p/enode"
 	"github.com/cypherium/cypher/p2p/enr"
+	"github.com/davecgh/go-spew/spew"
 )
 
 const (

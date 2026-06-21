@@ -112,12 +112,44 @@ func (keyS *keyService) restorePrimaryLeader() {
 	keyS.activeLeader = keyS.primaryLeader
 }
 
+func (keyS *keyService) noteCommittedKeyBlockLeader(keyblock *types.KeyBlock) {
+	if !keyS.fixedModeEnabled() || keyblock == nil {
+		return
+	}
+	mb := bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), false)
+
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+
+	if mb != nil {
+		keyS.syncPrimaryLeaderLocked(mb)
+	}
+	if keyS.activeLeader != 0 {
+		log.Info("fixed-mode active leader synced to committed keyblock leader",
+			"from", keyS.activeLeader,
+			"to", 0,
+			"leader", keyblock.LeaderPubKey(),
+			"primary", keyS.primaryLeader)
+	}
+	keyS.activeLeader = 0
+}
+
 func (keyS *keyService) getPrimaryLeaderIndex() uint {
 	keyS.muLeaderState.Lock()
 	defer keyS.muLeaderState.Unlock()
 	mb := bftview.GetCurrentMember()
 	keyS.syncPrimaryLeaderLocked(mb)
 	return keyS.primaryLeader
+}
+
+func (keyS *keyService) isPrimaryLeaderPubKey(pubKey string) bool {
+	if !keyS.fixedModeEnabled() {
+		return false
+	}
+	keyS.muLeaderState.Lock()
+	defer keyS.muLeaderState.Unlock()
+	keyS.syncPrimaryLeaderLocked(bftview.GetCurrentMember())
+	return keyS.primaryLeaderPK != "" && pubKey == keyS.primaryLeaderPK
 }
 
 func (keyS *keyService) syncPrimaryLeaderLocked(mb *bftview.Committee) {
@@ -207,7 +239,13 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	viewleaderIndex := keyS.s.GetCurrentView().LeaderIndex
 	index := bftview.GetMemberIndex(keyblock.LeaderPubKey())
 	if index != int(viewleaderIndex) {
-		return fmt.Errorf("verifyKeyBlock,leaderindex(%d) error, nowIndex:%d", viewleaderIndex, index)
+		if !keyS.isPrimaryLeaderPubKey(keyblock.LeaderPubKey()) {
+			return fmt.Errorf("verifyKeyBlock,leaderindex(%d) error, nowIndex:%d", viewleaderIndex, index)
+		}
+		log.Warn("verifyKeyBlock fixed-mode primary restore handoff",
+			"proposerLeaderIndex", viewleaderIndex,
+			"nextLeaderIndex", index,
+			"leader", keyblock.LeaderPubKey())
 	}
 	if keyblock.InAddress() == "" || keyblock.InPubKey() == "" || keyblock.LeaderPubKey() == "" || keyblock.LeaderAddress() == "" {
 		return fmt.Errorf("verifyKeyBlock,in or leader public key is empty")
@@ -316,6 +354,22 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	return nil
 }
 
+func (keyS *keyService) fixedModeNextKeyblockLeaderIndex(proposerIndex uint) (uint, bool) {
+	if !keyS.fixedModeEnabled() {
+		return proposerIndex, false
+	}
+	svc, ok := keyS.s.(*Service)
+	if !ok || !svc.shouldRestorePrimaryLeader() {
+		return proposerIndex, false
+	}
+	primary := keyS.getPrimaryLeaderIndex()
+	mb := bftview.GetCurrentMember()
+	if mb == nil || primary >= uint(len(mb.List)) || primary == proposerIndex {
+		return proposerIndex, false
+	}
+	return primary, true
+}
+
 // Try to change committee and proposal a new keyblock
 func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool) (*types.KeyBlock, *bftview.Committee, *types.Candidate, error) {
 	log.Info("tryProposalChangeCommittee", "tx number", keyS.bc.CurrentBlockN(), "isDone", isDone, "leaderIndex", leaderIndex)
@@ -362,6 +416,8 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	}
 	header.BlockType = reconfigType
 
+	nextLeaderIndex, restorePrimary := keyS.fixedModeNextKeyblockLeaderIndex(leaderIndex)
+
 	if reconfigType == types.PowReconfig || reconfigType == types.PacePowReconfig {
 		ck := best.KeyCandidate
 		header.Time, header.Difficulty, header.MixDigest, header.Nonce = ck.Time, ck.Difficulty, ck.MixDigest, ck.Nonce
@@ -372,7 +428,7 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 		}
 
 		badAddress := keyS.getBadAddress()
-		outer := mb.Add(newNode, int(leaderIndex), badAddress)
+		outer := mb.Add(newNode, int(nextLeaderIndex), badAddress)
 		if outer == nil { //not new add
 			return nil, nil, nil, fmt.Errorf("not new best candidate")
 		}
@@ -387,7 +443,7 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 			header.Time, header.Difficulty, header.MixDigest, header.Nonce = ck.Time, ck.Difficulty, ck.MixDigest, ck.Nonce
 			outerPublic, outerCoinBase = powSubmitter.PubKey, powSubmitter.Coinbase
 		}
-		mb.Add(nil, int(leaderIndex), "")
+		mb.Add(nil, int(nextLeaderIndex), "")
 	}
 
 	header.CommitteeHash = mb.RlpHash()
@@ -395,7 +451,10 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	log.Info("fixed-mode pow submitter status",
 		"fixedMode", keyS.fixedModeEnabled(),
 		"hasPowSubmitter", powSubmitter != nil,
-		"outerCoinBase", outerCoinBase)
+		"outerCoinBase", outerCoinBase,
+		"proposerLeaderIndex", leaderIndex,
+		"nextLeaderIndex", nextLeaderIndex,
+		"restorePrimary", restorePrimary)
 
 	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)

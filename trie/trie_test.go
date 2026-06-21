@@ -28,12 +28,12 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/ethdb/leveldb"
 	"github.com/cypherium/cypher/ethdb/memorydb"
 	"github.com/cypherium/cypher/rlp"
+	"github.com/davecgh/go-spew/spew"
 )
 
 func init() {

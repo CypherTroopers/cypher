@@ -63,6 +63,8 @@ const slowPressureMinPending = 512
 const slowEmergencyForcePending = 8192
 
 const startNewViewDedupWindow = 2 * time.Second
+const fixedModeKeyblockStaleTimeout = 3 * params.AckTimeout
+const fixedModeKeyblockWatchdogInterval = 10 * time.Second
 
 type committeeInfo struct {
 	Committee *bftview.Committee
@@ -137,6 +139,7 @@ type Service struct {
 	serviceStartTime          time.Time
 	lastCadenceWakeup         time.Time
 	lastFixedKeyNewViewWakeup time.Time
+	lastFixedKeyWatchdogAt    time.Time
 	tryProposeQueuedAt        int64
 	muStartNewView            sync.Mutex
 	lastStartNewViewN         uint64
@@ -510,6 +513,66 @@ func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
 	return s.getBestCandidate(true) != nil
 }
 
+func (s *Service) repairFixedModeKeyblockViewIfStale(now time.Time, pendingTotal, fastPending, slowPending int) bool {
+	if s.keyService == nil || !s.keyService.fixedModeEnabled() || bftview.IamMember() < 0 {
+		return false
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return false
+	}
+
+	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+	overdue := now.Sub(lastKeyTime) - params.KeyBlockMinInterval
+	if overdue < fixedModeKeyblockStaleTimeout {
+		return false
+	}
+	if !s.lastFixedKeyWatchdogAt.IsZero() && now.Sub(s.lastFixedKeyWatchdogAt) < fixedModeKeyblockWatchdogInterval {
+		return false
+	}
+
+	leaderSilentFor := now.Sub(s.LeaderAckTime())
+	progressSilentFor := now.Sub(s.HotstuffProgressTime())
+	if leaderSilentFor > params.AckTimeout {
+		s.lastFixedKeyWatchdogAt = now
+		log.Warn("fixed-mode keyblock stale but leader ack is silent; waiting for fallback",
+			"currentBlock", s.bc.CurrentBlockN(),
+			"currentKey", s.kbc.CurrentBlockN(),
+			"overdue", overdue,
+			"leaderSilentFor", leaderSilentFor,
+			"progressSilentFor", progressSilentFor)
+		return false
+	}
+	if progressSilentFor < fixedModeKeyblockStaleTimeout {
+		return false
+	}
+
+	s.lastFixedKeyWatchdogAt = now
+	oldView := s.GetCurrentView()
+	s.setNextLeader(true)
+	curView := s.GetCurrentView()
+	recovered := s.protocolMng.RecoverStaleViews(s.bc.CurrentBlockN(), fixedModeKeyblockStaleTimeout)
+
+	log.Warn("fixed-mode keyblock stale watchdog triggered",
+		"currentBlock", s.bc.CurrentBlockN(),
+		"currentKey", s.kbc.CurrentBlockN(),
+		"overdue", overdue,
+		"leaderSilentFor", leaderSilentFor,
+		"progressSilentFor", progressSilentFor,
+		"oldLeaderIndex", oldView.LeaderIndex,
+		"oldNoDone", oldView.NoDone,
+		"leaderIndex", curView.LeaderIndex,
+		"noDone", curView.NoDone,
+		"isLeader", bftview.IamLeader(curView.LeaderIndex),
+		"hotstuffRecovered", recovered,
+		"pendingTotal", pendingTotal,
+		"fastPending", fastPending,
+		"slowPending", slowPending)
+
+	s.sendNewViewMsg(s.bc.CurrentBlockN())
+	return recovered
+}
+
 func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 	if pendingTotal <= 0 || s.keyService == nil || !s.keyService.fixedModeEnabled() {
 		return
@@ -787,6 +850,8 @@ func (s *Service) handleHotStuffMsg() {
 			// before sending MsgNewView. If only the leader flips NoDone, replicas vote
 			// for a different view hash and the leader never reaches the new-view quorum.
 			if keyblockIntervalElapsed {
+				s.repairFixedModeKeyblockViewIfStale(now, pendingTotal, fastPending, slowPending)
+
 				if s.lastFixedKeyNewViewWakeup.IsZero() || now.Sub(s.lastFixedKeyNewViewWakeup) >= 2*time.Second {
 					s.lastFixedKeyNewViewWakeup = now
 					oldView := s.GetCurrentView()
@@ -1220,16 +1285,10 @@ func (s *Service) setNextLeader(isDone bool) {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
 
-	restoredPrimary := false
-	if s.keyService.fixedModeEnabled() && s.shouldRestorePrimaryLeader() {
-		s.keyService.restorePrimaryLeader()
-		restoredPrimary = true
-	}
-
 	if isDone {
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(0)
 	} else {
-		if s.keyService.fixedModeEnabled() && !restoredPrimary {
+		if s.keyService.fixedModeEnabled() {
 			s.keyService.promoteFallbackLeader(s.currentView.LeaderIndex)
 		}
 		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(s.currentView.LeaderIndex)
@@ -1266,6 +1325,7 @@ func (s *Service) procBlockDone(block *types.Block) {
 		log.Info("@KeyBlockDone", "number", keyblock.NumberU64(), "T_number", keyblock.T_Number())
 		s.updateCommittee(keyblock)
 		s.saveCommittee(keyblock)
+		s.keyService.noteCommittedKeyBlockLeader(keyblock)
 		s.updateCurrentView(block, keyblock, true)
 		s.keyService.clearCandidate(keyblock)
 	} else {

@@ -23,13 +23,13 @@ import (
 	"sort"
 	"time"
 
-	mapset "github.com/deckarep/golang-set"
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/mclock"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/metrics"
+	mapset "github.com/deckarep/golang-set"
 )
 
 const (

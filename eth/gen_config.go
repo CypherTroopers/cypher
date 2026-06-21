@@ -44,7 +44,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		TrieTimeout             time.Duration
 		SnapshotCache           int
 		Miner                   miner.Config
-		colossusX                  colossusX.Config
+		colossusX               colossusX.Config
 		TxPool                  core.TxPoolConfig
 		GPO                     gasprice.Config
 		EnablePreimageRecording bool
@@ -128,7 +128,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		TrieTimeout             *time.Duration
 		SnapshotCache           *int
 		Miner                   *miner.Config
-		colossusX                  *colossusX.Config
+		colossusX               *colossusX.Config
 		TxPool                  *core.TxPoolConfig
 		GPO                     *gasprice.Config
 		EnablePreimageRecording *bool
