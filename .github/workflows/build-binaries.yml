@@ -29,6 +29,7 @@ jobs:
     env:
       GOPATH: ${{ github.workspace }}/go
       GO111MODULE: 'on'
+      GOFLAGS: '-mod=mod'
       CGO_ENABLED: '1'
       CC: clang
       CXX: clang++
@@ -42,7 +43,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.2'
-          cache: false
+          cache: true
+          cache-dependency-path: go/src/github.com/cypherium/cypher/go.sum
 
       - name: Setup macOS native libs
         shell: bash
@@ -69,56 +71,31 @@ jobs:
           export AR="$(xcrun -f ar)"
           export RANLIB="$(xcrun -f ranlib)"
 
-          mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
-          cd "$GOPATH/src/github.com/VictoriaMetrics"
-          [ -d fastcache ] || git clone https://github.com/VictoriaMetrics/fastcache.git
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+          GMP_PREFIX="$(brew --prefix gmp)"
 
-          mkdir -p "$GOPATH/src/github.com/shirou"
-          cd "$GOPATH/src/github.com/shirou"
-          [ -d gopsutil ] || git clone https://github.com/shirou/gopsutil.git
+          export CGO_CFLAGS="-I$OPENSSL_PREFIX/include -I$GMP_PREFIX/include"
+          export CGO_CXXFLAGS="$CGO_CFLAGS"
+          export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
+          export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
 
-          mkdir -p "$GOPATH/src/github.com/dlclark"
-          cd "$GOPATH/src/github.com/dlclark"
-          [ -d regexp2 ] || git clone https://github.com/dlclark/regexp2.git
+          go env -w GO111MODULE=on
+          go mod download
 
-          mkdir -p "$GOPATH/src/github.com/go-sourcemap"
-          cd "$GOPATH/src/github.com/go-sourcemap"
-          [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
+          rm -rf "$RUNNER_TEMP/bls-build"
+          mkdir -p "$RUNNER_TEMP/bls-build"
 
-          mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
-          cd "$GOPATH/src/github.com/yusufpapurcu"
-          [ -d wmi ] || git clone https://github.com/yusufpapurcu/wmi.git
+          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$RUNNER_TEMP/bls-build/bls"
 
-          mkdir -p "$GOPATH/src/github.com/go-ole"
-          cd "$GOPATH/src/github.com/go-ole"
-          [ -d go-ole ] || git clone https://github.com/go-ole/go-ole.git
-
-          mkdir -p "$GOPATH/src/github.com/ebitengine"
-          cd "$GOPATH/src/github.com/ebitengine"
-          [ -d purego ] || git clone https://github.com/ebitengine/purego.git
-
-          mkdir -p "$GOPATH/src/github.com/tklauser"
-          cd "$GOPATH/src/github.com/tklauser"
-          [ -d go-sysconf ] || git clone https://github.com/tklauser/go-sysconf.git
-          [ -d numcpus ] || git clone https://github.com/tklauser/numcpus.git
-
-          mkdir -p "$GOPATH/src/golang.org/x"
-          cd "$GOPATH/src/golang.org/x"
-          [ -d sys ] || git clone https://go.googlesource.com/sys
-
-          rm -rf "$GOPATH/src/github.com/herumi"
-          mkdir -p "$GOPATH/src/github.com/herumi"
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
-
-          cd "$GOPATH/src/github.com/herumi/bls"
+          cd "$RUNNER_TEMP/bls-build/bls"
           git submodule update --init --recursive
 
-          cd "$GOPATH/src/github.com/herumi/bls/mcl"
+          cd "$RUNNER_TEMP/bls-build/bls/mcl"
           rm -f src/bint_switch.hpp src/llvm_proto.hpp
           python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
           make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256 AR="$AR" RANLIB="$RANLIB"
 
-          cd "$GOPATH/src/github.com/herumi/bls"
+          cd "$RUNNER_TEMP/bls-build/bls"
           rm -f obj/*.d obj/*.o lib/libbls256.a
           make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a AR="$AR" RANLIB="$RANLIB"
 
@@ -130,8 +107,8 @@ jobs:
           rm -f crypto/bls/lib/libbls256.a
           rm -f crypto/bls/lib/libmcl.a
 
-          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
-          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
+          cp "$RUNNER_TEMP/bls-build/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
+          cp "$RUNNER_TEMP/bls-build/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
 
           "$RANLIB" crypto/bls/lib/darwin/libbls256.a || true
           "$RANLIB" crypto/bls/lib/darwin/libmcl.a || true
@@ -147,31 +124,6 @@ jobs:
           file crypto/bls/lib/libmcl.a
           "$AR" -t crypto/bls/lib/libbls256.a | head
           "$AR" -t crypto/bls/lib/libmcl.a | head
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("vendor/gopkg.in/olebedev/go-duktape.v3/duk_logging.c")
-
-          if p.exists():
-              s = p.read_text()
-              s = s.replace("duk_uint8_t date_buf[32]", "duk_uint8_t date_buf[64]")
-              s = s.replace("snprintf((char *) date_buf, sizeof(date_buf),, ", "snprintf((char *) date_buf, sizeof(date_buf), ")
-              s = s.replace('sprintf((char *) date_buf, "', 'snprintf((char *) date_buf, sizeof(date_buf), "')
-              p.write_text(s)
-          PY
-
-          go env -w GO111MODULE=on
-
-          OPENSSL_PREFIX=$(brew --prefix openssl@3)
-          GMP_PREFIX=$(brew --prefix gmp)
-
-          export CGO_CFLAGS="-I$OPENSSL_PREFIX/include -I$GMP_PREFIX/include"
-          export CGO_CXXFLAGS="$CGO_CFLAGS"
-          export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
-          export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
-
-          go mod download
 
           make cypher
 
@@ -193,6 +145,7 @@ jobs:
     env:
       GOPATH: ${{ github.workspace }}/go
       GO111MODULE: 'on'
+      GOFLAGS: '-mod=mod'
       CGO_ENABLED: '1'
       CC: gcc
       CXX: g++
@@ -203,88 +156,29 @@ jobs:
           ref: ${{ github.ref }}
           path: go/src/github.com/cypherium/cypher
 
-      - name: Update and clean packages
-        shell: bash
-        run: |
-          set -e
-
-          sudo apt update
-          sudo apt upgrade -y
-          sudo apt full-upgrade -y
-          sudo apt autoremove -y
-          sudo apt autoclean -y
-
-      - name: Install Go 1.26.2 manually
-        shell: bash
-        run: |
-          set -e
-
-          wget https://go.dev/dl/go1.26.2.linux-amd64.tar.gz
-          sudo rm -rf /usr/local/go
-          sudo tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz
-
-          echo "/usr/local/go/bin" >> "$GITHUB_PATH"
-
-          /usr/local/go/bin/go version
-
-      - name: Configure Go environment
-        shell: bash
-        run: |
-          set -e
-
-          echo "GOPATH=${GITHUB_WORKSPACE}/go" >> "$GITHUB_ENV"
-          echo "GO111MODULE=on" >> "$GITHUB_ENV"
-          echo "GOFLAGS=-mod=mod" >> "$GITHUB_ENV"
-          echo "CGO_ENABLED=1" >> "$GITHUB_ENV"
-          echo "CC=gcc" >> "$GITHUB_ENV"
-          echo "CXX=g++" >> "$GITHUB_ENV"
-
-          /usr/local/go/bin/go env -w GO111MODULE=on
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.2'
+          cache: true
+          cache-dependency-path: go/src/github.com/cypherium/cypher/go.sum
 
       - name: Install required development packages
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           sudo apt-get update
-          sudo apt-get install -y gcc cmake libssl-dev openssl libgmp-dev \
+          sudo apt-get install -y \
+            gcc g++ cmake libssl-dev openssl libgmp-dev \
             bzip2 m4 build-essential git curl libc-dev \
             wget texinfo nodejs npm pcscd
-
-      - name: Build and install GMP 6.1.2
-        shell: bash
-        run: |
-          set -e
-
-          wget -4 https://ftp.gnu.org/gnu/gmp/gmp-6.1.2.tar.bz2
-          tar -xjf gmp-6.1.2.tar.bz2
-
-          cd gmp-6.1.2
-
-          ./configure \
-            --prefix=/usr \
-            --enable-cxx \
-            --disable-static \
-            --docdir=/usr/share/doc/gmp-6.1.2
-
-          make
-          make check || echo "※ Some tests may fail and can be ignored."
-          make html
-          sudo make install
-          sudo make install-html
-
-          cd ..
-
-          sudo cp -rf /usr/lib/libgmp* /usr/local/lib/ || true
 
       - name: Build cypher linux amd64
         working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          export PATH="/usr/local/go/bin:$PATH"
-          export GOPATH="${GITHUB_WORKSPACE}/go"
           export GO111MODULE=on
           export GOFLAGS=-mod=mod
           export GOOS=linux
@@ -293,45 +187,19 @@ jobs:
           export CC=gcc
           export CXX=g++
 
+          go env -w GO111MODULE=on
+          go mod download
+
+          mkdir -p crypto/bls/lib
+
+          rm -f crypto/bls/lib/libbls256.a
+          rm -f crypto/bls/lib/libmcl.a
+
           cp ./crypto/bls/lib/linux/* ./crypto/bls/lib/
 
-          mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
-          cd "$GOPATH/src/github.com/VictoriaMetrics"
-          [ -d fastcache ] || git clone https://github.com/VictoriaMetrics/fastcache.git
-
-          mkdir -p "$GOPATH/src/github.com/shirou"
-          cd "$GOPATH/src/github.com/shirou"
-          [ -d gopsutil ] || git clone https://github.com/shirou/gopsutil.git
-
-          mkdir -p "$GOPATH/src/github.com/dlclark"
-          cd "$GOPATH/src/github.com/dlclark"
-          [ -d regexp2 ] || git clone https://github.com/dlclark/regexp2.git
-
-          mkdir -p "$GOPATH/src/github.com/go-sourcemap"
-          cd "$GOPATH/src/github.com/go-sourcemap"
-          [ -d sourcemap ] || git clone https://github.com/go-sourcemap/sourcemap.git
-
-          mkdir -p "$GOPATH/src/github.com/tklauser"
-          cd "$GOPATH/src/github.com/tklauser"
-          [ -d go-sysconf ] || git clone https://github.com/tklauser/go-sysconf.git
-          [ -d numcpus ] || git clone https://github.com/tklauser/numcpus.git
-
-          mkdir -p "$GOPATH/src/golang.org/x"
-          cd "$GOPATH/src/golang.org/x"
-          [ -d sys ] || git clone https://go.googlesource.com/sys
-
-          cd "${GITHUB_WORKSPACE}/go/src/github.com/cypherium/cypher"
-
-          DUK_LOGGING_PATH="$GOPATH/src/github.com/cypherium/cypher/vendor/gopkg.in/olebedev/go-duktape.v3/duk_logging.c"
-
-          if [ -f "$DUK_LOGGING_PATH" ]; then
-            sed -i 's/duk_uint8_t date_buf\[32\]/duk_uint8_t date_buf[64]/' "$DUK_LOGGING_PATH"
-            sed -i 's/sprintf((char *) date_buf/snprintf((char *) date_buf, sizeof(date_buf),/' "$DUK_LOGGING_PATH"
-          fi
-
-          go env -w GO111MODULE=on
-
-          go mod download
+          echo "===== Linux BLS libs ====="
+          file crypto/bls/lib/libbls256.a || true
+          file crypto/bls/lib/libmcl.a || true
 
           make cypher
 
@@ -358,6 +226,7 @@ jobs:
     env:
       GOPATH: ${{ github.workspace }}\go
       GO111MODULE: 'on'
+      GOFLAGS: '-mod=mod'
       CGO_ENABLED: '1'
       CC: gcc
       CXX: g++
@@ -378,7 +247,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.2'
-          cache: false
+          cache: true
+          cache-dependency-path: go/src/github.com/cypherium/cypher/go.sum
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
@@ -406,36 +276,23 @@ jobs:
           export CC=gcc
           export CXX=g++
 
-          mkdir -p "$GOPATH/src/github.com/VictoriaMetrics"
-          mkdir -p "$GOPATH/src/github.com/shirou"
-          mkdir -p "$GOPATH/src/golang.org/x"
-          mkdir -p "$GOPATH/src/github.com/go-sourcemap"
-          mkdir -p "$GOPATH/src/github.com/yusufpapurcu"
-          mkdir -p "$GOPATH/src/github.com/go-ole"
-          mkdir -p "$GOPATH/src/github.com/dlclark"
+          go env -w GO111MODULE=on
+          go mod download
 
-          [ -d "$GOPATH/src/github.com/VictoriaMetrics/fastcache" ] || git clone --depth 1 https://github.com/VictoriaMetrics/fastcache.git "$GOPATH/src/github.com/VictoriaMetrics/fastcache"
-          [ -d "$GOPATH/src/github.com/shirou/gopsutil" ] || git clone --depth 1 https://github.com/shirou/gopsutil.git "$GOPATH/src/github.com/shirou/gopsutil"
-          [ -d "$GOPATH/src/golang.org/x/sys" ] || git clone --depth 1 https://github.com/golang/sys.git "$GOPATH/src/golang.org/x/sys"
+          rm -rf "$RUNNER_TEMP/bls-build"
+          mkdir -p "$RUNNER_TEMP/bls-build"
 
-          [ -d "$GOPATH/src/github.com/go-sourcemap/sourcemap" ] || git clone --depth 1 https://github.com/go-sourcemap/sourcemap.git "$GOPATH/src/github.com/go-sourcemap/sourcemap"
-          [ -d "$GOPATH/src/github.com/yusufpapurcu/wmi" ] || git clone --depth 1 https://github.com/yusufpapurcu/wmi.git "$GOPATH/src/github.com/yusufpapurcu/wmi"
-          [ -d "$GOPATH/src/github.com/go-ole/go-ole" ] || git clone --depth 1 https://github.com/go-ole/go-ole.git "$GOPATH/src/github.com/go-ole/go-ole"
-          [ -d "$GOPATH/src/github.com/dlclark/regexp2" ] || git clone --depth 1 https://github.com/dlclark/regexp2.git "$GOPATH/src/github.com/dlclark/regexp2"
+          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$RUNNER_TEMP/bls-build/bls"
 
-          rm -rf "$GOPATH/src/github.com/herumi"
-          mkdir -p "$GOPATH/src/github.com/herumi"
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
-
-          cd "$GOPATH/src/github.com/herumi/bls"
+          cd "$RUNNER_TEMP/bls-build/bls"
           git submodule update --init --recursive
 
-          cd "$GOPATH/src/github.com/herumi/bls/mcl"
+          cd "$RUNNER_TEMP/bls-build/bls/mcl"
           rm -f src/bint_switch.hpp src/llvm_proto.hpp
           python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
           make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
 
-          cd "$GOPATH/src/github.com/herumi/bls"
+          cd "$RUNNER_TEMP/bls-build/bls"
           rm -f obj/*.d obj/*.o lib/libbls256.a
           make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
 
@@ -443,12 +300,14 @@ jobs:
 
           mkdir -p crypto/bls/lib/win
           mkdir -p crypto/bls/lib
+          mkdir -p build/bin
 
           rm -f crypto/bls/lib/libbls256.a
           rm -f crypto/bls/lib/libmcl.a
 
-          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/win/libbls256.a
-          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/win/libmcl.a
+          cp "$RUNNER_TEMP/bls-build/bls/lib/libbls256.a" crypto/bls/lib/win/libbls256.a
+          cp "$RUNNER_TEMP/bls-build/bls/mcl/lib/libmcl.a" crypto/bls/lib/win/libmcl.a
+
           cp crypto/bls/lib/win/libbls256.a crypto/bls/lib/libbls256.a
           cp crypto/bls/lib/win/libmcl.a crypto/bls/lib/libmcl.a
 
@@ -459,10 +318,6 @@ jobs:
 
           COMMIT=$(git rev-parse HEAD)
           DATE=$(date +%Y%m%d)
-
-          go env -w GO111MODULE=on
-
-          go mod download
 
           go build -trimpath -v \
             -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
