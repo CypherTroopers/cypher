@@ -760,14 +760,15 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 		return nil
 	}
 
-	hsm.leaderView = v
-
 	threshold := v.threshold
 	if threshold > len(v.groupPublicKey) {
 		threshold = len(v.groupPublicKey)
 	}
 
 	if len(v.highVoteInfo) < threshold {
+		if hsm.leaderView == v {
+			hsm.leaderView = nil
+		}
 		log.Info("handleNewViewMsg need more voteInfo", "threshold", v.threshold, "current", len(v.highVoteInfo))
 		return ErrInsufficientQC
 	}
@@ -785,6 +786,7 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 
 	hsm.lockView(v)
 
+	hsm.leaderView = v
 	return hsm.TryPropose()
 }
 

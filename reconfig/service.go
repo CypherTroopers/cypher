@@ -139,6 +139,7 @@ type Service struct {
 	serviceStartTime          time.Time
 	lastCadenceWakeup         time.Time
 	lastFixedKeyNewViewWakeup time.Time
+	lastFixedTxNewViewWakeup  time.Time
 	lastFixedKeyWatchdogAt    time.Time
 	tryProposeQueuedAt        int64
 	muStartNewView            sync.Mutex
@@ -573,13 +574,13 @@ func (s *Service) repairFixedModeKeyblockViewIfStale(now time.Time, pendingTotal
 	return recovered
 }
 
-func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
+func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) bool {
 	if pendingTotal <= 0 || s.keyService == nil || !s.keyService.fixedModeEnabled() {
-		return
+		return false
 	}
 	curKeyBlock := s.kbc.CurrentBlock()
 	if curKeyBlock == nil {
-		return
+		return false
 	}
 
 	now := time.Now()
@@ -588,7 +589,7 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 
 	// If keyblock interval has elapsed, do not interfere with normal keyblock proposal.
 	if elapsed >= params.KeyBlockMinInterval {
-		return
+		return false
 	}
 
 	// Do not repair immediately after a tx block proposal was generated.
@@ -617,7 +618,7 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 			"leaderIndex", leaderIndex,
 			"noDone", noDone)
 
-		return
+		return false
 	}
 
 	s.muCurrentView.Lock()
@@ -643,6 +644,7 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 		s.waittingView.TxNumber = s.currentView.TxNumber
 		s.waittingView.KeyNumber = s.currentView.KeyNumber
 	}
+	return s.currentView.NoDone
 }
 
 func (s *Service) triggerTryPropose(lastN uint64) {
@@ -882,7 +884,29 @@ func (s *Service) handleHotStuffMsg() {
 			// Fixed-mode liveness repair must run before IamLeader check.
 			// If currentView is stuck in keyblock-wait state, IamLeader may be false
 			// or tx proposal may be suppressed until the next 10-minute keyblock.
-			s.repairFixedModeTxProposalViewIfPending(pendingTotal)
+			if pendingTotal > 0 && s.keyService != nil && s.keyService.fixedModeEnabled() {
+				txProposalViewReady := s.repairFixedModeTxProposalViewIfPending(pendingTotal)
+				if txProposalViewReady && (s.lastFixedTxNewViewWakeup.IsZero() || now.Sub(s.lastFixedTxNewViewWakeup) >= startNewViewDedupWindow) {
+					s.lastFixedTxNewViewWakeup = now
+					curView := s.GetCurrentView()
+					log.Warn("fixed-mode tx start-new-view wakeup",
+						"currentBlock", s.bc.CurrentBlockN(),
+						"currentKey", s.kbc.CurrentBlockN(),
+						"pendingTotal", pendingTotal,
+						"fastPending", fastPending,
+						"slowPending", slowPending,
+						"leaderIndex", curView.LeaderIndex,
+						"noDone", curView.NoDone,
+						"isLeader", bftview.IamLeader(curView.LeaderIndex))
+					s.sendNewViewMsg(s.bc.CurrentBlockN())
+				}
+
+				// Let MsgStartNewView collect quorum and move the leader view to
+				// PhaseTryPropose. Direct MsgTryPropose can hit a PhasePrepare
+				// leader view and loop until pending transactions become stale.
+				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+				continue
+			}
 
 			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
 				cadenceReady := false

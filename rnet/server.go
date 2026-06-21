@@ -42,8 +42,7 @@ func newServer(r *network.Router) *Server {
 }
 
 func NewKcpServer(addr string) *Server {
-	serverIdentity := &network.ServerIdentity{}
-	serverIdentity.Address = network.Address("kcp://" + addr)
+	serverIdentity := network.NewServerIdentity(addr)
 	return NewServerKCPWithListenAddr(serverIdentity, "")
 }
 

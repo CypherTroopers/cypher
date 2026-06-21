@@ -241,6 +241,7 @@ func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64
 	totSentLen += sentLen
 	if err != nil {
 		log.Warn("Send msg try again", "address", r.address, "Couldn't send to", e, "error", err)
+		r.discardConnection(e.ID, c)
 		c, sentLen, err := r.connect(e)
 		totSentLen += sentLen
 		if err != nil {
@@ -249,6 +250,7 @@ func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64
 		sentLen, err = c.Send(msg)
 		totSentLen += sentLen
 		if err != nil {
+			r.discardConnection(e.ID, c)
 			return totSentLen, err
 		}
 	}
@@ -282,7 +284,7 @@ func (r *Router) connect(si *ServerIdentity) (Conn, uint64, error) {
 
 }
 
-func (r *Router) removeConnection(id ServerIdentityID, c Conn) {
+func (r *Router) removeConnection(id ServerIdentityID, c Conn) bool {
 	r.Lock()
 	defer r.Unlock()
 
@@ -295,13 +297,18 @@ func (r *Router) removeConnection(id ServerIdentityID, c Conn) {
 	}
 
 	if toDelete == -1 {
-		log.Error("Remove a connection which is not registered !?")
-		return
+		return false
 	}
 
 	arr[toDelete] = arr[len(arr)-1]
 	arr[len(arr)-1] = nil
-	r.connections[id] = arr[:len(arr)-1]
+	arr = arr[:len(arr)-1]
+	if len(arr) == 0 {
+		delete(r.connections, id)
+	} else {
+		r.connections[id] = arr
+	}
+	return true
 }
 
 // triggerConnectionErrorHandlers trigger all registered connectionsErrorHandlers
@@ -378,10 +385,21 @@ func (r *Router) connection(sid ServerIdentityID) Conn {
 	r.Lock()
 	defer r.Unlock()
 	arr := r.connections[sid]
-	if len(arr) == 0 {
-		return nil
+	for i := len(arr) - 1; i >= 0; i-- {
+		c := arr[i]
+		if c != nil && !c.IsClosed() {
+			return c
+		}
+		arr[i] = arr[len(arr)-1]
+		arr[len(arr)-1] = nil
+		arr = arr[:len(arr)-1]
 	}
-	return arr[0]
+	if len(arr) == 0 {
+		delete(r.connections, sid)
+	} else {
+		r.connections[sid] = arr
+	}
+	return nil
 }
 
 // registerConnection registers a ServerIdentity for a new connection, mapped with the
@@ -394,12 +412,31 @@ func (r *Router) registerConnection(remote *ServerIdentity, c Conn) error {
 	if r.isClosed {
 		return ErrClosed
 	}
-	_, okc := r.connections[remote.ID]
-	if okc {
-		log.Debug("Connection already registered. Appending new connection to same identity.")
+	arr := r.connections[remote.ID]
+	if len(arr) > 0 {
+		keep := arr[:0]
+		for _, existing := range arr {
+			if existing != nil && !existing.IsClosed() {
+				keep = append(keep, existing)
+			}
+		}
+		arr = keep
+		if len(arr) > 0 {
+			log.Debug("Connection already registered. Appending new connection to same identity.")
+		}
 	}
-	r.connections[remote.ID] = append(r.connections[remote.ID], c)
+	r.connections[remote.ID] = append(arr, c)
 	return nil
+}
+
+func (r *Router) discardConnection(id ServerIdentityID, c Conn) {
+	if c == nil {
+		return
+	}
+	if err := c.Close(); err != nil && err != ErrClosed {
+		log.Debug("discardConnection close failed", "remote", c.Remote(), "err", err)
+	}
+	r.removeConnection(id, c)
 }
 
 func (r *Router) launchHandleRoutine(dst *ServerIdentity, c Conn) error {
@@ -505,7 +542,9 @@ func (r *Router) CloseConnectByID(id ServerIdentityID) {
 
 func (r *Router) closeConnect(id ServerIdentityID, c Conn) {
 	if err := c.Close(); err != nil {
-		log.Error("CloseConnect", "", r.address, "having error closing conn to", c.Remote(), "error", err)
+		if err != ErrClosed {
+			log.Error("CloseConnect", "", r.address, "having error closing conn to", c.Remote(), "error", err)
+		}
 	}
 	rx, tx := c.Rx(), c.Tx()
 	r.traffic.updateRx(rx)
