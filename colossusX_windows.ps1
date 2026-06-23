@@ -8,42 +8,30 @@ $GENESIS_FILE = ".\genesistest.json"
 
 function Normalize-IpLiteral {
   param([string]$Address)
+
   if ([string]::IsNullOrWhiteSpace($Address)) {
     return ""
   }
+
   $Value = $Address.Trim()
+
   if ($Value.StartsWith("[") -and $Value.EndsWith("]")) {
     return $Value.Substring(1, $Value.Length - 2)
   }
+
   return $Value
 }
 
 function Format-EndpointHost {
   param([string]$Address)
+
   $Value = Normalize-IpLiteral $Address
+
   if ($Value.Contains(":")) {
     return "[$Value]"
   }
-  return $Value
-}
 
-function Get-PublicIP {
-  if (![string]::IsNullOrWhiteSpace($env:CYPHER_PUBLIC_IP)) {
-    return $env:CYPHER_PUBLIC_IP
-  }
-  if (![string]::IsNullOrWhiteSpace($env:CYPHER_PUBLIC_IPV6)) {
-    return $env:CYPHER_PUBLIC_IPV6
-  }
-  foreach ($Uri in @("https://api.ipify.org", "https://api64.ipify.org", "https://ifconfig.io/ip")) {
-    try {
-      $Result = (Invoke-RestMethod -Uri $Uri -TimeoutSec 5).ToString().Trim()
-      if (![string]::IsNullOrWhiteSpace($Result)) {
-        return $Result
-      }
-    } catch {
-    }
-  }
-  return ""
+  return $Value
 }
 
 if ([string]::IsNullOrWhiteSpace($env:CYPHER_BOOTNODE_HOST)) {
@@ -51,12 +39,15 @@ if ([string]::IsNullOrWhiteSpace($env:CYPHER_BOOTNODE_HOST)) {
 } else {
   $BOOTNODE_HOST = Normalize-IpLiteral $env:CYPHER_BOOTNODE_HOST
 }
+
 $BOOTNODE_ADDR = Format-EndpointHost $BOOTNODE_HOST
+
 if ([string]::IsNullOrWhiteSpace($env:CYPHER_RPC_BIND)) {
   $RPC_BIND = "0.0.0.0"
 } else {
   $RPC_BIND = $env:CYPHER_RPC_BIND
 }
+
 if ([string]::IsNullOrWhiteSpace($env:CYPHER_WS_BIND)) {
   $WS_BIND = $RPC_BIND
 } else {
@@ -114,6 +105,7 @@ if (!(Test-Path -Path $STATIC_NODES_FILE -PathType Leaf)) {
     $Comma = if ($i -lt $BOOTNODES_ARRAY.Count - 1) { "," } else { "" }
     "  `"$($BOOTNODES_ARRAY[$i])`"$Comma"
   }
+
   $StaticNodesJson = "[`r`n" + ($StaticNodeLines -join "`r`n") + "`r`n]"
 
   $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
@@ -134,20 +126,15 @@ if (!(Test-Path -Path $TRUSTED_NODES_FILE -PathType Leaf)) {
   Write-Host "==> Skip trusted-nodes.json generation"
 }
 
-$PUBLIC_IP = Normalize-IpLiteral (Get-PublicIP)
-if ([string]::IsNullOrWhiteSpace($PUBLIC_IP)) {
-  Write-Host "ERROR: Failed to detect public IPv4/IPv6 address"
-  exit 1
-}
-
-Write-Host "==> Public IP: $PUBLIC_IP"
 Write-Host "==> Start Cypher node"
+Write-Host "==> Bootnode host: $BOOTNODE_HOST"
+Write-Host "==> RPC bind: $RPC_BIND"
+Write-Host "==> WS bind: $WS_BIND"
 
 & $CYPHER_BIN `
   --verbosity 1 `
   --rnetport 7200 `
   --syncmode full `
-  --nat "extip:${PUBLIC_IP}" `
   --ws `
   --ws.addr "$WS_BIND" `
   --ws.port 9251 `
