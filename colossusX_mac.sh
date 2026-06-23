@@ -3,11 +3,12 @@ set -euo pipefail
 
 DATADIR="chaindbname"
 
-CYTHER_BIN="./build/bin/cypher-darwin-arm64"
+CYPHER_BIN="./build/bin/cypher-darwin-arm64"
 
 BOOTNODE_HOST="${CYPHER_BOOTNODE_HOST:-13.140.169.170}"
 BOOTNODE_HOST="${BOOTNODE_HOST#[}"
 BOOTNODE_HOST="${BOOTNODE_HOST%]}"
+
 BOOTNODE_ADDR="${BOOTNODE_HOST}"
 if [[ "${BOOTNODE_ADDR}" == *:* ]]; then
   BOOTNODE_ADDR="[${BOOTNODE_ADDR}]"
@@ -22,6 +23,7 @@ BOOTNODES_ARRAY=(
   "enode://8a3aad9282f773ddd38b05516c2c5847ef168b8b5095f57312a458e0a5b358655cb971d1ba193999b0454fc4ae5642f31c6f6bce311a8da11b0a6d9940719a5e@${BOOTNODE_ADDR}:6005"
   "enode://7eb6bd844e05f64114ea6e6f06ae04e075df0a8a6d783620344f3535df2f2115ad2ad09dab69cf3515ee2d0ac50379c0825a0abfa5a50216d8e4b97823acbd67@${BOOTNODE_ADDR}:6006"
 )
+
 BOOTNODES="$(IFS=,; echo "${BOOTNODES_ARRAY[*]}")"
 
 RPC_BIND="${CYPHER_RPC_BIND:-0.0.0.0}"
@@ -32,9 +34,9 @@ CHAINDATA_DIR="${PEER_DIR}/chaindata"
 STATIC_NODES_FILE="${PEER_DIR}/static-nodes.json"
 TRUSTED_NODES_FILE="${PEER_DIR}/trusted-nodes.json"
 
-if [ ! -x "${CYTHER_BIN}" ]; then
-  echo "ERROR: Cypher binary not found or not executable: ${CYTHER_BIN}"
-  echo "Run: chmod +x ${CYTHER_BIN}"
+if [ ! -x "${CYPHER_BIN}" ]; then
+  echo "ERROR: Cypher binary not found or not executable: ${CYPHER_BIN}"
+  echo "Run: chmod +x ${CYPHER_BIN}"
   exit 1
 fi
 
@@ -47,7 +49,7 @@ if [ ! -d "${CHAINDATA_DIR}" ]; then
   echo "==> Chaindata not found: ${CHAINDATA_DIR}"
   echo "==> Init genesis"
 
-  "${CYTHER_BIN}" \
+  "${CYPHER_BIN}" \
     --datadir "${DATADIR}" \
     init ./genesistest.json
 else
@@ -72,7 +74,6 @@ if [ ! -f "${STATIC_NODES_FILE}" ]; then
     done
     printf ']\n'
   } > "${STATIC_NODES_FILE}"
-
 else
   echo "==> Existing static-nodes.json detected: ${STATIC_NODES_FILE}"
   echo "==> Skip static-nodes.json generation"
@@ -88,24 +89,15 @@ else
   echo "==> Skip trusted-nodes.json generation"
 fi
 
-PUBLIC_IP="${CYPHER_PUBLIC_IP:-${CYPHER_PUBLIC_IPV6:-$(curl -4 -fsS --max-time 5 ifconfig.io || curl -6 -fsS --max-time 5 ifconfig.io || true)}}"
-PUBLIC_IP="$(printf '%s' "${PUBLIC_IP}" | tr -d '[:space:]')"
-
-if [ -z "${PUBLIC_IP}" ]; then
-  echo "ERROR: Failed to detect public IPv4/IPv6 address"
-  exit 1
-fi
-NAT_IP="${PUBLIC_IP#[}"
-NAT_IP="${NAT_IP%]}"
-
-echo "==> Public IP: ${NAT_IP}"
 echo "==> Start Cypher node"
+echo "==> Bootnode host: ${BOOTNODE_HOST}"
+echo "==> RPC bind: ${RPC_BIND}"
+echo "==> WS bind: ${WS_BIND}"
 
-"${CYTHER_BIN}" \
+"${CYPHER_BIN}" \
   --verbosity 1 \
   --rnetport 7200 \
   --syncmode full \
-  --nat "extip:${NAT_IP}" \
   --ws \
   --ws.addr "${WS_BIND}" \
   --ws.port 9251 \
