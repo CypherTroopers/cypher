@@ -7,6 +7,8 @@ BOOTNODE_HOST="${CYPHER_BOOTNODE_HOST:-13.140.169.170}"
 BOOTNODE_HOST="${BOOTNODE_HOST#[}"
 BOOTNODE_HOST="${BOOTNODE_HOST%]}"
 BOOTNODE_ADDR="${BOOTNODE_HOST}"
+
+# IPv6 enode requires [IPv6]:port
 if [[ "${BOOTNODE_ADDR}" == *:* ]]; then
   BOOTNODE_ADDR="[${BOOTNODE_ADDR}]"
 fi
@@ -20,6 +22,7 @@ BOOTNODES=(
   "enode://8a3aad9282f773ddd38b05516c2c5847ef168b8b5095f57312a458e0a5b358655cb971d1ba193999b0454fc4ae5642f31c6f6bce311a8da11b0a6d9940719a5e@${BOOTNODE_ADDR}:6005"
   "enode://7eb6bd844e05f64114ea6e6f06ae04e075df0a8a6d783620344f3535df2f2115ad2ad09dab69cf3515ee2d0ac50379c0825a0abfa5a50216d8e4b97823acbd67@${BOOTNODE_ADDR}:6006"
 )
+
 BOOTNODES_CSV="$(IFS=,; echo "${BOOTNODES[*]}")"
 
 RPC_BIND="${CYPHER_RPC_BIND:-0.0.0.0}"
@@ -75,24 +78,14 @@ else
   echo "==> Skip trusted-nodes.json generation"
 fi
 
-PUBLIC_IP="${CYPHER_PUBLIC_IP:-${CYPHER_PUBLIC_IPV6:-$(curl -4 -fsS --max-time 5 ifconfig.io || curl -6 -fsS --max-time 5 ifconfig.io || true)}}"
-PUBLIC_IP="$(printf '%s' "${PUBLIC_IP}" | tr -d '[:space:]')"
-
-if [ -z "${PUBLIC_IP}" ]; then
-  echo "ERROR: Failed to detect public IPv4/IPv6 address"
-  exit 1
-fi
-NAT_IP="${PUBLIC_IP#[}"
-NAT_IP="${NAT_IP%]}"
-
-echo "==> Public IP: ${NAT_IP}"
+echo "==> Bootnode host: ${BOOTNODE_ADDR}"
 echo "==> Start Cypher node"
 
 ./build/bin/cypher-linux-amd64 \
   --verbosity 4 \
   --rnetport 7200 \
   --syncmode full \
-  --nat "extip:${NAT_IP}" \
+  --nat none \
   --ws \
   --ws.addr "${WS_BIND}" \
   --ws.port 9251 \
