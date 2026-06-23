@@ -3,9 +3,13 @@ set -euo pipefail
 
 DATADIR="chaindbname"
 
+CYPHER_BIN="./build/bin/cypher-linux-amd64"
+GENESIS_FILE="./genesistest.json"
+
 BOOTNODE_HOST="${CYPHER_BOOTNODE_HOST:-13.140.169.170}"
 BOOTNODE_HOST="${BOOTNODE_HOST#[}"
 BOOTNODE_HOST="${BOOTNODE_HOST%]}"
+
 BOOTNODE_ADDR="${BOOTNODE_HOST}"
 
 # IPv6 enode requires [IPv6]:port
@@ -33,13 +37,24 @@ CHAINDATA_DIR="${PEER_DIR}/chaindata"
 STATIC_NODES_FILE="${PEER_DIR}/static-nodes.json"
 TRUSTED_NODES_FILE="${PEER_DIR}/trusted-nodes.json"
 
+if [ ! -x "${CYPHER_BIN}" ]; then
+  echo "ERROR: Cypher binary not found or not executable: ${CYPHER_BIN}"
+  echo "Run: chmod +x ${CYPHER_BIN}"
+  exit 1
+fi
+
+if [ ! -f "${GENESIS_FILE}" ]; then
+  echo "ERROR: Genesis file not found: ${GENESIS_FILE}"
+  exit 1
+fi
+
 if [ ! -d "${CHAINDATA_DIR}" ]; then
   echo "==> Chaindata not found: ${CHAINDATA_DIR}"
   echo "==> Init genesis"
 
-  ./build/bin/cypher-linux-amd64 \
+  "${CYPHER_BIN}" \
     --datadir "${DATADIR}" \
-    init ./genesistest.json
+    init "${GENESIS_FILE}"
 else
   echo "==> Existing chaindata detected: ${CHAINDATA_DIR}"
   echo "==> Skip init genesis"
@@ -62,7 +77,6 @@ if [ ! -f "${STATIC_NODES_FILE}" ]; then
     done
     printf ']\n'
   } > "${STATIC_NODES_FILE}"
-
 else
   echo "==> Existing static-nodes.json detected: ${STATIC_NODES_FILE}"
   echo "==> Skip static-nodes.json generation"
@@ -78,14 +92,16 @@ else
   echo "==> Skip trusted-nodes.json generation"
 fi
 
-echo "==> Bootnode host: ${BOOTNODE_ADDR}"
+echo "==> Bootnode host: ${BOOTNODE_HOST}"
+echo "==> Bootnode addr: ${BOOTNODE_ADDR}"
+echo "==> RPC bind: ${RPC_BIND}"
+echo "==> WS bind: ${WS_BIND}"
 echo "==> Start Cypher node"
 
-./build/bin/cypher-linux-amd64 \
+"${CYPHER_BIN}" \
   --verbosity 4 \
   --rnetport 7200 \
   --syncmode full \
-  --nat none \
   --ws \
   --ws.addr "${WS_BIND}" \
   --ws.port 9251 \
