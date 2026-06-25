@@ -108,6 +108,7 @@ echo "==> Start Cypher node"
   --ws.origins "*" \
   --metrics \
   --http \
+  --allow-insecure-unlock \
   --http.addr "${RPC_BIND}" \
   --http.port 8000 \
   --http.api eth,web3,net,txpool \
