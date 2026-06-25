@@ -2,9 +2,20 @@
 
 $ErrorActionPreference = "Stop"
 
-$DATADIR = "chaindbname"
-$CYPHER_BIN = ".\build\bin\cypher.exe"
-$GENESIS_FILE = ".\genesistest.json"
+$SCRIPT_DIR = $PSScriptRoot
+
+if ([string]::IsNullOrWhiteSpace($SCRIPT_DIR)) {
+  $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+
+if ([string]::IsNullOrWhiteSpace($SCRIPT_DIR)) {
+  $SCRIPT_DIR = (Get-Location).Path
+}
+
+$DATADIR_NAME = "chaindbname"
+$DATADIR = Join-Path $SCRIPT_DIR $DATADIR_NAME
+$CYPHER_BIN = Join-Path $SCRIPT_DIR "build\bin\cypher.exe"
+$GENESIS_FILE = Join-Path $SCRIPT_DIR "genesistest.json"
 
 function Normalize-IpLiteral {
   param([string]$Address)
@@ -71,6 +82,9 @@ $BOOTNODES_ARRAY = @(
 
 $BOOTNODES = $BOOTNODES_ARRAY -join ","
 
+Write-Host "==> Script dir: $SCRIPT_DIR"
+Write-Host "==> Datadir: $DATADIR"
+
 if (!(Test-Path -Path $CYPHER_BIN -PathType Leaf)) {
   Write-Host "ERROR: Cypher binary not found: $CYPHER_BIN"
   exit 1
@@ -81,13 +95,17 @@ if (!(Test-Path -Path $GENESIS_FILE -PathType Leaf)) {
   exit 1
 }
 
+if (!(Test-Path -Path $DATADIR -PathType Container)) {
+  New-Item -ItemType Directory -Force -Path $DATADIR | Out-Null
+}
+
 if (!(Test-Path -Path $CHAINDATA_DIR -PathType Container)) {
   Write-Host "==> Chaindata not found: $CHAINDATA_DIR"
   Write-Host "==> Init genesis"
 
   & $CYPHER_BIN `
-    --datadir $DATADIR `
-    init $GENESIS_FILE
+    --datadir "$DATADIR" `
+    init "$GENESIS_FILE"
 } else {
   Write-Host "==> Existing chaindata detected: $CHAINDATA_DIR"
   Write-Host "==> Skip init genesis"
@@ -146,7 +164,7 @@ Write-Host "==> WS bind: $WS_BIND"
   --http.api eth,web3,net,txpool `
   --http.corsdomain "*" `
   --port 6000 `
-  --datadir ".\$DATADIR" `
+  --datadir "$DATADIR" `
   --networkid 10101919 `
   --gcmode archive `
   --bootnodes "$BOOTNODES" `
