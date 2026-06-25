@@ -1,11 +1,9 @@
 ## preparations 
 ### Requirements
 - Go ver 1.24 or later
-- Git
-- GCC / build-essential for CGO dependencies
-- Minimum requirement is 48GB RAM(VRAM is preferred)
+-miner- Minimum requirement is 48GB RAM(VRAM is preferred)
 For stable operation, 96GB or more is recommended.
-
+-RPC only Minimum 8GB RAM or more is recommended.
 
 ### Clone
 
