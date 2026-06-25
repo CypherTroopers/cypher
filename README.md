@@ -22,12 +22,12 @@ cd cypher
 ```bash
 ./colossusX_windows.ps1
 ```
-## Mining
+## get RPC owner rewards
 1.
 ~~~
 personal.newAccount("your password")
 ~~~
-2.
+2.(If you want to mining)
 ~~~
 miner.start(5, "your address", "your password")
 ~~~
@@ -39,7 +39,7 @@ miner.setEtherbase("")
 ~~~
 web3.fromWei(eth.getBalance("your address"), "ether")
 ~~~
-5.unlock your account for Tx Approval rewards 
+5.unlock your account for Tx Approval RPC rewards
 ~~~
 personal.unlockAccount("your address", "your password", 0)
 ~~~
