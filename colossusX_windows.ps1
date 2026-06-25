@@ -157,6 +157,7 @@ Write-Host "==> WS bind: $WS_BIND"
   --ws.addr "$WS_BIND" `
   --ws.port 9251 `
   --ws.origins "*" `
+  --allow-insecure-unlock `
   --metrics `
   --http `
   --http.addr "$RPC_BIND" `
