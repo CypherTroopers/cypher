@@ -1,9 +1,8 @@
 ## preparations 
 ### Requirements
 - Go ver 1.24 or later
--miner- Minimum requirement is 48GB RAM(VRAM is preferred)
-For stable operation, 96GB or more is recommended.
--RPC only Minimum 8GB RAM or more is recommended.
+- miner Minimum requirement is 48GB RAM(VRAM is preferred)For stable operation, 96GB or more is recommended.
+- RPC only Minimum 8GB RAM or more is recommended(RPC reward Tx fee 20%)
 
 ### Clone
 
