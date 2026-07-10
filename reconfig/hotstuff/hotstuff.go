@@ -182,6 +182,39 @@ type SignedState struct {
 	Mask     []byte
 	ViewID   common.Hash
 	LeaderID string
+	Number   uint64
+}
+
+func CloneSignedState(in *SignedState) *SignedState {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.State = append([]byte(nil), in.State...)
+	out.Sign = append([]byte(nil), in.Sign...)
+	out.Mask = append([]byte(nil), in.Mask...)
+	return &out
+}
+
+func EncodeSignedState(in *SignedState) ([]byte, error) {
+	if in == nil {
+		return nil, nil
+	}
+	return rlp.EncodeToBytes(in)
+}
+
+func DecodeSignedState(data []byte) (*SignedState, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var out SignedState
+	if err := rlp.DecodeBytes(data, &out); err != nil {
+		return nil, err
+	}
+	if len(out.State) == 0 || len(out.Sign) == 0 || len(out.Mask) == 0 || out.ViewID == (common.Hash{}) || out.LeaderID == "" || out.Number == 0 {
+		return nil, ErrInvalidHighQC
+	}
+	return &out, nil
 }
 
 type HotStuffApplication interface {
@@ -192,16 +225,19 @@ type HotStuffApplication interface {
 	GetPublicKey() []*bls.PublicKey
 
 	OnNewView(currentState []byte, extra [][]byte) error
-	OnPropose(state []byte, extra []byte) error
+	OnPropose(state []byte, extra []byte, viewNumber uint64, parentQC *SignedState) error
+	OnCertified(tSign *SignedState) error
 	OnViewDone(tSign *SignedState) error
+	HighestCertified() *SignedState
 
 	ValidateView(currentState []byte) (expectedState []byte, expectedLeader string, expectedNumber uint64, err error)
-	Propose(viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte)
+	Propose(viewNumber uint64, viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte)
 	CurrentState() ([]byte, string, uint64)
 	CurrentN() uint64
 	GetExtra() []byte // only for new-view procedure
 	ChainID() uint64
 	UseContextSignatures() bool
+	UseFHS2Chain() bool
 }
 
 type VoteInfo struct {
@@ -234,6 +270,7 @@ type HotstuffMessage struct {
 	DataD []byte
 	DataE []byte
 	DataF []byte
+	DataG []byte // FHS parent certified state and QC
 
 	ReceivedAt time.Time
 }
@@ -272,6 +309,7 @@ type View struct {
 	waitingMoreVoteInfoAt time.Time
 	lastLeaderRecoveryAt  time.Time
 	lastReplicaRecoveryAt time.Time
+	certified             bool
 }
 
 func (v *View) hasKState() bool {
@@ -552,6 +590,7 @@ func (hsm *HotstuffProtocolManager) viewDone(v *View, kSign []byte, tSign []byte
 				Mask:     mask,
 				ViewID:   v.hash,
 				LeaderID: v.leaderId,
+				Number:   v.number,
 			}
 		}
 
@@ -740,7 +779,7 @@ func (hsm *HotstuffProtocolManager) rebroadcastPrepare(v *View, reason string) b
 }
 
 func (hsm *HotstuffProtocolManager) cacheFinalizedRecovery(v *View, decide *HotstuffMessage) {
-	if v == nil || decide == nil {
+	if v == nil {
 		return
 	}
 	entry := &finalizedRecovery{
@@ -751,6 +790,9 @@ func (hsm *HotstuffProtocolManager) cacheFinalizedRecovery(v *View, decide *Hots
 	}
 	entry.prepare = v.leaderMsg[MsgPrepare]
 	entry.qcBroadcast = v.leaderMsg[MsgQCBroadcast]
+	if entry.qcBroadcast == nil && decide == nil {
+		return
+	}
 	hsm.finalized[v.hash] = entry
 
 	if len(hsm.finalized) <= maxFinalizedRecoveryViews {
@@ -796,7 +838,11 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 		return nil, nil, ErrInvalidLeaderView
 	}
 	expectedLeader := bftview.GetNodeID(leader.Address, leader.Public)
-	if expectedLeader == "" || expectedLeader != hsm.app.Self() || msg.Number != decodedView.TxNumber+1 {
+	expectedMsgNumber := decodedView.TxNumber + 1
+	if hsm.app.UseFHS2Chain() {
+		expectedMsgNumber = decodedView.ViewNumber + 1
+	}
+	if expectedLeader == "" || expectedLeader != hsm.app.Self() || msg.Number != expectedMsgNumber {
 		return nil, nil, ErrInvalidLeaderView
 	}
 	if stateErr == nil && (msg.Number != expectedNumber || !bytes.Equal(msg.DataA, expectedState)) {
@@ -973,7 +1019,7 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 		return ErrViewPhaseNotMatch
 	}
 
-	err, kProposal, tProposal, extra := hsm.app.Propose(v.hash, v.leaderId)
+	err, kProposal, tProposal, extra := hsm.app.Propose(v.number, v.hash, v.leaderId)
 	if err != nil {
 		log.Warn("hotstuff application failed to propose", "viewId", v.hash, "number", v.number, "leader", v.leaderId, "err", err)
 		return err
@@ -999,6 +1045,19 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 		msg.DataF = make([]byte, len(extra))
 		copy(msg.DataF, extra)
 	}
+	if hsm.app.UseFHS2Chain() {
+		parentQC := hsm.app.HighestCertified()
+		if parentQC != nil {
+			if parentQC.Number >= v.number {
+				return ErrInvalidHighQC
+			}
+			encodedQC, err := EncodeSignedState(parentQC)
+			if err != nil {
+				return err
+			}
+			msg.DataG = encodedQC
+		}
+	}
 
 	if encoded, encErr := rlp.EncodeToBytes(msg); encErr == nil {
 		log.Info("HOTSTUFF PREPARE SIZE",
@@ -1014,6 +1073,7 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 			"dataD", len(msg.DataD),
 			"dataE", len(msg.DataE),
 			"dataF", len(msg.DataF),
+			"dataG", len(msg.DataG),
 			"msgRLP", len(encoded))
 	} else {
 		log.Warn("HOTSTUFF PREPARE SIZE encode failed", "number", v.number, "viewID", v.hash, "err", encErr)
@@ -1242,8 +1302,24 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 		return ErrInvalidHighQC
 	}
 
+	var parentQC *SignedState
+	if hsm.app.UseFHS2Chain() {
+		var err error
+		parentQC, err = DecodeSignedState(m.DataG)
+		if err != nil {
+			log.Debug("handlePrepareMsg failed to decode FHS parent QC", "viewId", m.ViewId, "err", err)
+			return ErrInvalidHighQC
+		}
+		if parentQC != nil {
+			if parentQC.Number >= v.number || !hsm.verifyAggregatedSignature(parentQC.Sign, parentQC.Mask, MsgVotePrepare, parentQC.ViewID, parentQC.LeaderID, parentQC.State, v.groupPublicKey, v.threshold) {
+				log.Debug("handlePrepareMsg failed to verify FHS parent QC", "viewId", m.ViewId, "parentView", parentQC.Number)
+				return ErrInvalidHighQC
+			}
+		}
+	}
+
 	verifyStart := time.Now()
-	if err := hsm.app.OnPropose(state, extra); err != nil {
+	if err := hsm.app.OnPropose(state, extra, v.number, parentQC); err != nil {
 		log.Debug("handlePrepareMsg failed to verify proposed data", "viewId", m.ViewId, "number", m.Number, "elapsed", time.Since(verifyStart), "err", err)
 		return ErrInvalidProposal
 	}
@@ -1333,6 +1409,31 @@ func (hsm *HotstuffProtocolManager) verifyPrepareQCMessage(v *View, m *HotstuffM
 	return nil
 }
 
+func (hsm *HotstuffProtocolManager) certifyView(v *View, m *HotstuffMessage) error {
+	if v == nil || m == nil {
+		return ErrMissingView
+	}
+	if v.certified {
+		return nil
+	}
+	if !v.hasTState() {
+		return ErrInvalidProposal
+	}
+	certified := &SignedState{
+		State:    append([]byte(nil), v.proposedTState...),
+		Sign:     append([]byte(nil), m.DataB...),
+		Mask:     append([]byte(nil), m.DataC...),
+		ViewID:   v.hash,
+		LeaderID: v.leaderId,
+		Number:   v.number,
+	}
+	if err := hsm.app.OnCertified(certified); err != nil {
+		return err
+	}
+	v.certified = true
+	return nil
+}
+
 // for leader
 func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) error {
 	v, exist := hsm.views[m.ViewId]
@@ -1393,6 +1494,10 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 
 			return nil
 		}
+		if qcMsg, ok := v.leaderMsg[MsgQCBroadcast]; ok {
+			log.Debug("handlePrepareVoteMsg load PrepareQC message and send to replica", "replicaId", m.Id)
+			return hsm.app.Write(m.Id, qcMsg)
+		}
 
 		return ErrViewPhaseNotMatch
 	}
@@ -1440,6 +1545,15 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 	}
 
 	qcMsg := hsm.broadcastPrepareQC(v)
+	if hsm.app.UseFHS2Chain() {
+		v.phaseAsLeader = PhaseFinal
+		if qcMsg != nil {
+			v.leaderMsg[MsgQCBroadcast] = qcMsg
+		}
+		v.lastLeaderRecoveryAt = time.Now()
+		hsm.cacheFinalizedRecovery(v, nil)
+		return nil
+	}
 	msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
 
 	log.Debug("handlePrepareVoteMsg broadcast Decide msg", "viewId", m.ViewId, "number", v.number)
@@ -1467,6 +1581,12 @@ func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) err
 	}
 
 	v.leaderMsg[MsgQCBroadcast] = m
+	if hsm.app.UseFHS2Chain() {
+		if err := hsm.certifyView(v, m); err != nil {
+			return err
+		}
+		v.phaseAsReplica = PhaseFinal
+	}
 	log.Info("HOTSTUFF PREPARE QC VERIFIED",
 		"number", m.Number,
 		"viewID", m.ViewId,
@@ -1477,6 +1597,10 @@ func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) err
 
 // for replica
 func (hsm *HotstuffProtocolManager) handleDecideMsg(m *HotstuffMessage) error {
+	if hsm.app.UseFHS2Chain() {
+		log.Warn("ignore MsgDecide in FHS 2-chain mode", "number", m.Number, "viewID", m.ViewId, "from", m.Id)
+		return nil
+	}
 	start := time.Now()
 	v, exist := hsm.views[m.ViewId]
 	if !exist {
@@ -1701,7 +1825,15 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 
 			log.Debug("handleTimerMsg handlePrepareVoteMsg broadcast Decide msg", "number", v.number)
 			v.waitingMoreVoteInfo = false
-			hsm.broadcastPrepareQC(v)
+			qcMsg := hsm.broadcastPrepareQC(v)
+			if hsm.app.UseFHS2Chain() {
+				v.phaseAsLeader = PhaseFinal
+				if qcMsg != nil {
+					v.leaderMsg[MsgQCBroadcast] = qcMsg
+				}
+				hsm.cacheFinalizedRecovery(v, nil)
+				continue
+			}
 			msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
 			hsm.app.Broadcast(msg)
 			v.phaseAsLeader = PhaseFinal

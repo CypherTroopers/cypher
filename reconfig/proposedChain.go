@@ -42,6 +42,24 @@ func (chain *proposedChain) extend(block *types.Block) {
 	chain.unappliedBlocks.Append(block)
 }
 
+func (chain *proposedChain) adoptCertified(block *types.Block) {
+	if block == nil {
+		return
+	}
+	if chain.head != nil && chain.head.Hash() == block.Hash() {
+		return
+	}
+	chain.extend(block)
+}
+
+func (chain *proposedChain) markCommitted(block *types.Block) {
+	if block == nil {
+		return
+	}
+	chain.removeProposedTxes(block)
+	chain.cleanupExpiredProposedTxes(time.Now())
+}
+
 // Set the parent of the speculative chain
 //
 // Note: This is only called when not minter

@@ -195,7 +195,13 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 		failedTxes = failed
 		txCount := len(committedTxes)
 
-		if txCount == 0 {
+		allowFHSFinalityBlock := false
+		if txS.config != nil && txS.config.FairHotstuff {
+			if svc, ok := txS.s.(*Service); ok {
+				allowFHSFinalityBlock = svc.needsFHSFinalityBlock()
+			}
+		}
+		if txCount == 0 && !allowFHSFinalityBlock {
 			log.Info("Not minting a new block since there are no pending transactions")
 			return nil, fmt.Errorf("Not minting a new block since there are no pending transactions")
 		}
@@ -308,7 +314,7 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 	return nil
 }
 
-// verifyHotstuffProposal is the production HotStuff v2 validation path.
+// verifyHotstuffProposal is the production HotStuff proposal validation path.
 // A validator must call this only after the ProposalRef has been matched against
 // the sidecar body bytes. The returned VerifiedProposal is cached by ProposalID
 // and later passed to decideVerifiedProposal after a valid Decide QC.
@@ -354,7 +360,13 @@ func (txS *txService) verifyHotstuffProposal(ref *types.HotstuffProposalRef, txb
 		return nil, fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, currentKey.Hash())
 	}
 
-	verified, err := bc.ValidateBlockForHotstuff(proposalID, ref.ViewID, ref.LeaderID, txblock)
+	var parentVerified *core.VerifiedProposal
+	if txS.config != nil && txS.config.FairHotstuff {
+		if svc, ok := txS.s.(*Service); ok {
+			parentVerified = svc.getFHSCertifiedVerified(ref.ParentHash)
+		}
+	}
+	verified, err := bc.ValidateBlockForHotstuffWithParent(proposalID, ref.ViewNumber, ref.ViewID, ref.LeaderID, txblock, parentVerified)
 	if err != nil {
 		return nil, err
 	}
@@ -370,7 +382,7 @@ func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte
 	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return nil
 	}
-	block.SetSignature(sig, mask, viewID, leaderID)
+	block.SetSignature(sig, mask, viewID, leaderID, block.NumberU64())
 	_, err := bc.InsertBlock(block)
 	if err != nil {
 		log.Error("decideNewBlock.InsertChain", "error", err)
@@ -382,9 +394,9 @@ func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte
 }
 
 // decideVerifiedProposal commits the exact execution result obtained during
-// VotePrepare validation. This is the production HotStuff v2 Decide path and
-// deliberately avoids a second StateProcessor execution.
-func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, sig []byte, mask []byte, viewID common.Hash, leaderID string) error {
+// VotePrepare validation. It is used by legacy Decide and by delayed FHS
+// 2-chain commit, and deliberately avoids a second StateProcessor execution.
+func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, sig []byte, mask []byte, viewNumber uint64, viewID common.Hash, leaderID string) error {
 	if ref == nil {
 		return fmt.Errorf("nil hotstuff proposal ref")
 	}
@@ -397,6 +409,9 @@ func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, ver
 	}
 	if viewID != ref.ViewID || viewID != verified.ViewID {
 		return fmt.Errorf("verified proposal view mismatch: decide=%s ref=%s verified=%s", viewID, ref.ViewID, verified.ViewID)
+	}
+	if viewNumber != ref.ViewNumber || viewNumber != verified.ViewNumber {
+		return fmt.Errorf("verified proposal view number mismatch: decide=%d ref=%d verified=%d", viewNumber, ref.ViewNumber, verified.ViewNumber)
 	}
 	if leaderID != ref.LeaderID || leaderID != verified.LeaderID {
 		return fmt.Errorf("verified proposal leader mismatch: decide=%s ref=%s verified=%s", leaderID, ref.LeaderID, verified.LeaderID)
@@ -420,7 +435,7 @@ func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, ver
 		log.Info("decideVerifiedProposal already known", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
 		return nil
 	}
-	block.SetSignature(sig, mask, viewID, leaderID)
+	block.SetSignature(sig, mask, viewID, leaderID, viewNumber)
 	if _, err := bc.CommitVerifiedProposal(verified, false); err != nil {
 		log.Error("decideVerifiedProposal.CommitVerifiedProposal", "number", block.NumberU64(), "proposalID", proposalID, "error", err)
 		return err
@@ -436,7 +451,11 @@ func (txS *txService) procBlockDone(newBlock *types.Block) {
 	txS.txPool.RemoveBatch(newBlock.Transactions())
 	core.DropCommonRPCAdmissions(newBlock.Transactions())
 
-	if txS.s.isRunning() {
+	if txS.config != nil && txS.config.FairHotstuff {
+		txS.mu.Lock()
+		txS.proposedChain.markCommitted(newBlock)
+		txS.mu.Unlock()
+	} else if txS.s.isRunning() {
 		txS.updateChainPerNewHead(newBlock)
 	} else {
 		txS.proposedChain.setHead(newBlock)
@@ -697,6 +716,17 @@ func (txS *txService) updateChainPerNewHead(newBlock *types.Block) {
 // Assumes mu is held.
 func (txS *txService) createWork(blockType uint8) *work {
 	parent := txS.bc.CurrentBlock()
+	var publicState *state.StateDB
+	if txS.config != nil && txS.config.FairHotstuff {
+		if svc, ok := txS.s.(*Service); ok {
+			if certified := svc.highestFHSCertifiedProposal(); certified != nil && certified.Block != nil {
+				parent = certified.Block
+				if certified.StateDB != nil {
+					publicState = certified.StateDB.Copy()
+				}
+			}
+		}
+	}
 	parentNumber := parent.Number()
 
 	parentTime := int64(parent.Time())
@@ -718,9 +748,12 @@ func (txS *txService) createWork(blockType uint8) *work {
 		BaseFee:    big.NewInt(params.FixedBaseFeePerGas),
 	}
 	log.Info("createWork", "GasLimit", header.GasLimit)
-	publicState, err := txS.bc.StateAt(parent.Root())
-	if err != nil {
-		panic(fmt.Sprint("failed to get parent state: ", err))
+	if publicState == nil {
+		var err error
+		publicState, err = txS.bc.StateAt(parent.Root())
+		if err != nil {
+			panic(fmt.Sprint("failed to get parent state: ", err))
+		}
 	}
 
 	gasTarget := blockGasTarget(blockType, header.GasLimit)
@@ -807,7 +840,7 @@ func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) 
 	// If txpool returned executable candidates but proposedChain filtered all of them,
 	// the proposedChain cache may be stale from proposals that were not finally committed.
 	// In that case, clear proposedChain to current head and use the raw txpool candidates.
-	if availableBeforeFilter > 0 && availableTxs == 0 {
+	if availableBeforeFilter > 0 && availableTxs == 0 && (txS.config == nil || !txS.config.FairHotstuff) {
 		log.Warn("proposedChain filtered all txpool candidates; clearing stale proposed cache",
 			"blockType", readableTxBlockType(blockType),
 			"pendingTotal", pendingTotal,

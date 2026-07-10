@@ -17,6 +17,7 @@
 package reconfig
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -108,6 +109,12 @@ type proposalBodyMsg struct {
 
 	EncodedBlock      []byte
 	CreatedAtUnixNano int64
+}
+
+type fhsCertifiedProposal struct {
+	ref      *types.HotstuffProposalRef
+	verified *core.VerifiedProposal
+	qc       *hotstuff.SignedState
 }
 
 type cachedCommitteeInfo struct {
@@ -228,6 +235,9 @@ type Service struct {
 	muProposalBody       sync.RWMutex
 	proposalBodies       map[common.Hash]*proposalBodyMsg
 	verifiedProposalByID map[common.Hash]*core.VerifiedProposal
+	fhsCertifiedByHash   map[common.Hash]*fhsCertifiedProposal
+	fhsCertifiedByID     map[common.Hash]*fhsCertifiedProposal
+	fhsHighest           *fhsCertifiedProposal
 
 	hotstuffMsgQ *hotstuffMessageQueue
 	feed1        event.Feed
@@ -250,6 +260,8 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.lastCmInfoMap = make(map[common.Hash]*cachedCommitteeInfo)
 	s.proposalBodies = make(map[common.Hash]*proposalBodyMsg)
 	s.verifiedProposalByID = make(map[common.Hash]*core.VerifiedProposal)
+	s.fhsCertifiedByHash = make(map[common.Hash]*fhsCertifiedProposal)
+	s.fhsCertifiedByID = make(map[common.Hash]*fhsCertifiedProposal)
 
 	s.msgCh1 = make(chan committeeMsg, 10)
 	s.msgSub1 = s.feed1.Subscribe(s.msgCh1)
@@ -299,6 +311,9 @@ func (s *Service) OnNewView(data []byte, extraes [][]byte) error { //buf is snap
 
 func (s *Service) CurrentN() uint64 {
 	curView := s.GetCurrentView()
+	if s.fairHotstuffEnabled() {
+		return curView.ViewNumber + 1
+	}
 	return curView.TxNumber + 1
 }
 
@@ -311,6 +326,10 @@ func (s *Service) ChainID() uint64 {
 
 func (s *Service) UseContextSignatures() bool {
 	return true
+}
+
+func (s *Service) UseFHS2Chain() bool {
+	return s.fairHotstuffEnabled()
 }
 
 // CurrentState call by hotstuff
@@ -335,7 +354,11 @@ func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 
 	log.Info("CurrentState", "TxNumber", curView.TxNumber, "KeyNumber", curView.KeyNumber, "LeaderIndex", curView.LeaderIndex, "NoDone", curView.NoDone)
 
-	return curView.EncodeConsensusToBytes(), leaderID, curView.TxNumber + 1
+	number := curView.TxNumber + 1
+	if s.fairHotstuffEnabled() {
+		number = curView.ViewNumber + 1
+	}
+	return curView.EncodeConsensusToBytes(), leaderID, number
 }
 
 // GetExtra call by hotstuff
@@ -369,7 +392,7 @@ func (s *Service) CheckView(data []byte) error {
 	return err
 }
 
-func validateViewAgainstSnapshot(data []byte, current bftview.View) ([]byte, uint64, error) {
+func validateViewAgainstSnapshot(data []byte, current bftview.View, useFHS2Chain bool) ([]byte, uint64, error) {
 	view := bftview.DecodeToView(data)
 	if view == nil {
 		return nil, 0, fmt.Errorf("invalid hotstuff view encoding")
@@ -377,6 +400,15 @@ func validateViewAgainstSnapshot(data []byte, current bftview.View) ([]byte, uin
 
 	expectedState := current.EncodeConsensusToBytes()
 	expectedNumber := current.TxNumber + 1
+	if useFHS2Chain {
+		expectedNumber = current.ViewNumber + 1
+		if view.ViewNumber < current.ViewNumber {
+			return expectedState, expectedNumber, hotstuff.ErrOldState
+		}
+		if view.ViewNumber > current.ViewNumber {
+			return expectedState, expectedNumber, hotstuff.ErrFutureState
+		}
+	}
 	if view.KeyNumber < current.KeyNumber ||
 		(view.KeyNumber == current.KeyNumber && view.TxNumber < current.TxNumber) {
 		return expectedState, expectedNumber, hotstuff.ErrOldState
@@ -420,7 +452,7 @@ func (s *Service) ValidateView(data []byte) ([]byte, string, uint64, error) {
 		"local key number", current.KeyNumber,
 		"tx number", current.TxNumber)
 
-	expectedState, expectedNumber, err := validateViewAgainstSnapshot(data, current)
+	expectedState, expectedNumber, err := validateViewAgainstSnapshot(data, current, s.fairHotstuffEnabled())
 	return expectedState, leaderID, expectedNumber, err
 }
 
@@ -439,6 +471,9 @@ func cloneProposalBodyMsg(in *proposalBodyMsg) *proposalBodyMsg {
 func (s *Service) purgeExpiredProposalCachesLocked(now time.Time) {
 	for id, body := range s.proposalBodies {
 		if body == nil || (body.CreatedAtUnixNano > 0 && now.Sub(time.Unix(0, body.CreatedAtUnixNano)) > proposalBodyCacheTTL) {
+			if _, certified := s.fhsCertifiedByID[id]; certified {
+				continue
+			}
 			delete(s.proposalBodies, id)
 			delete(s.verifiedProposalByID, id)
 		}
@@ -517,7 +552,255 @@ func (s *Service) deleteProposalCaches(proposalID common.Hash) {
 	s.muProposalBody.Unlock()
 }
 
-func (s *Service) prepareHotstuffProposal(viewID common.Hash, leaderID string, encodedBlock []byte) ([]byte, error) {
+func signedStateEqual(a, b *hotstuff.SignedState) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.ViewID == b.ViewID &&
+		a.LeaderID == b.LeaderID &&
+		a.Number == b.Number &&
+		bytes.Equal(a.State, b.State) &&
+		bytes.Equal(a.Sign, b.Sign) &&
+		bytes.Equal(a.Mask, b.Mask)
+}
+
+func (s *Service) HighestCertified() *hotstuff.SignedState {
+	s.muProposalBody.RLock()
+	defer s.muProposalBody.RUnlock()
+	if s.fhsHighest == nil {
+		return nil
+	}
+	return hotstuff.CloneSignedState(s.fhsHighest.qc)
+}
+
+func (s *Service) highestFHSCertifiedProposal() *core.VerifiedProposal {
+	s.muProposalBody.RLock()
+	defer s.muProposalBody.RUnlock()
+	if s.fhsHighest == nil {
+		return nil
+	}
+	return s.fhsHighest.verified
+}
+
+func (s *Service) getFHSCertifiedVerified(hash common.Hash) *core.VerifiedProposal {
+	s.muProposalBody.RLock()
+	defer s.muProposalBody.RUnlock()
+	if certified := s.fhsCertifiedByHash[hash]; certified != nil {
+		return certified.verified
+	}
+	return nil
+}
+
+func (s *Service) validateFHSProposalParent(ref *types.HotstuffProposalRef, parentQC *hotstuff.SignedState) error {
+	if ref == nil {
+		return fmt.Errorf("nil FHS proposal ref")
+	}
+	current := s.GetCurrentView()
+	if ref.ParentHash != current.TxHash {
+		return fmt.Errorf("FHS proposal parent is not highest certified block: have %s want %s", ref.ParentHash, current.TxHash)
+	}
+
+	s.muProposalBody.RLock()
+	highest := s.fhsHighest
+	s.muProposalBody.RUnlock()
+	if highest == nil {
+		if parentQC != nil {
+			return fmt.Errorf("unexpected FHS parent QC without a locally certified parent")
+		}
+		if ref.ParentHash != s.bc.CurrentBlock().Hash() {
+			return fmt.Errorf("first FHS proposal must extend canonical head: have %s want %s", ref.ParentHash, s.bc.CurrentBlock().Hash())
+		}
+		return nil
+	}
+	if parentQC == nil {
+		return fmt.Errorf("FHS proposal missing highest parent QC")
+	}
+	if !signedStateEqual(parentQC, highest.qc) {
+		return fmt.Errorf("FHS proposal parent QC is not the highest certified QC")
+	}
+	parentRef, err := types.DecodeHotstuffProposalRef(parentQC.State)
+	if err != nil {
+		return fmt.Errorf("invalid FHS parent proposal ref: %w", err)
+	}
+	if parentRef.BlockHash != ref.ParentHash || parentRef.BlockHash != highest.ref.BlockHash {
+		return fmt.Errorf("FHS proposal does not extend QC-certified parent")
+	}
+	if ref.Number != parentRef.Number+1 {
+		return fmt.Errorf("FHS proposal block height is not contiguous: have %d parent %d", ref.Number, parentRef.Number)
+	}
+	if ref.ViewNumber <= parentRef.ViewNumber {
+		return fmt.Errorf("FHS proposal view is not newer: have %d parent %d", ref.ViewNumber, parentRef.ViewNumber)
+	}
+	return nil
+}
+
+func (s *Service) OnCertified(cert *hotstuff.SignedState) error {
+	if !s.fairHotstuffEnabled() {
+		return nil
+	}
+	if cert == nil {
+		return fmt.Errorf("nil FHS certified state")
+	}
+	ref, err := types.DecodeHotstuffProposalRef(cert.State)
+	if err != nil {
+		return err
+	}
+	if ref.ViewNumber != cert.Number || ref.ViewID != cert.ViewID || ref.LeaderID != cert.LeaderID {
+		return fmt.Errorf("FHS certified state context mismatch")
+	}
+	proposalID := ref.ProposalID()
+	verified := s.getVerifiedProposal(proposalID)
+	if verified == nil || verified.Block == nil {
+		return fmt.Errorf("FHS certified proposal missing verified execution: proposalID=%s", proposalID)
+	}
+	verified.Block.SetSignature(cert.Sign, cert.Mask, cert.ViewID, cert.LeaderID, cert.Number)
+	record := &fhsCertifiedProposal{ref: ref, verified: verified, qc: hotstuff.CloneSignedState(cert)}
+
+	s.muProposalBody.Lock()
+	if existing := s.fhsCertifiedByHash[ref.BlockHash]; existing != nil {
+		s.muProposalBody.Unlock()
+		if signedStateEqual(existing.qc, cert) {
+			return nil
+		}
+		return fmt.Errorf("conflicting FHS QC for block %s", ref.BlockHash)
+	}
+	if s.fhsHighest != nil {
+		if ref.ParentHash != s.fhsHighest.ref.BlockHash || ref.Number != s.fhsHighest.ref.Number+1 {
+			s.muProposalBody.Unlock()
+			return fmt.Errorf("FHS certified block does not extend highest certified block")
+		}
+		if cert.Number <= s.fhsHighest.qc.Number {
+			s.muProposalBody.Unlock()
+			return fmt.Errorf("FHS certified view did not advance")
+		}
+	} else if ref.ParentHash != s.bc.CurrentBlock().Hash() {
+		s.muProposalBody.Unlock()
+		return fmt.Errorf("first FHS certified block does not extend canonical head")
+	}
+	s.fhsCertifiedByHash[ref.BlockHash] = record
+	s.fhsCertifiedByID[proposalID] = record
+	s.fhsHighest = record
+	s.muProposalBody.Unlock()
+
+	s.txService.mu.Lock()
+	s.txService.proposedChain.adoptCertified(verified.Block)
+	s.txService.mu.Unlock()
+
+	curKeyBlock := s.kbc.CurrentBlock()
+	s.muCurrentView.Lock()
+	s.currentView.TxNumber = ref.Number
+	s.currentView.TxHash = ref.BlockHash
+	s.currentView.ViewNumber = cert.Number
+	s.currentView.Round = 0
+	if curKeyBlock != nil {
+		s.currentView.KeyNumber = curKeyBlock.NumberU64()
+		s.currentView.KeyHash = curKeyBlock.Hash()
+		s.currentView.CommitteeHash = curKeyBlock.CommitteeHash()
+	}
+	s.currentView.NoDone = true
+	s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fairHotstuffLeaderIndexFromBlockLocked(verified.Block))
+	s.waittingView.TxNumber = ref.Number
+	s.waittingView.KeyNumber = s.currentView.KeyNumber
+	s.muCurrentView.Unlock()
+
+	log.Info("FHS BLOCK CERTIFIED",
+		"number", ref.Number,
+		"view", cert.Number,
+		"hash", ref.BlockHash,
+		"parent", ref.ParentHash)
+	s.pacetMakerTimer.start()
+	s.sendNewViewMsg(cert.Number)
+	return nil
+}
+
+func (s *Service) needsFHSFinalityBlock() bool {
+	if !s.fairHotstuffEnabled() {
+		return false
+	}
+	s.muProposalBody.RLock()
+	defer s.muProposalBody.RUnlock()
+	for _, certified := range s.fhsCertifiedByHash {
+		if certified == nil || certified.verified == nil || certified.verified.Block == nil {
+			continue
+		}
+		block := certified.verified.Block
+		if s.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+			continue
+		}
+		if block.BlockType() == types.Key_Block || len(block.Transactions()) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func fhs2ChainCommitTarget(certifiedByHash map[common.Hash]*fhsCertifiedProposal, proposal *types.HotstuffProposalRef) *fhsCertifiedProposal {
+	if proposal == nil {
+		return nil
+	}
+	parent := certifiedByHash[proposal.ParentHash]
+	if parent == nil || parent.ref == nil || parent.qc == nil {
+		return nil
+	}
+	first := certifiedByHash[parent.ref.ParentHash]
+	if first == nil || first.ref == nil || first.qc == nil {
+		return nil
+	}
+	if first.ref.BlockHash != parent.ref.ParentHash || first.qc.Number+1 != parent.qc.Number {
+		return nil
+	}
+	return first
+}
+
+func (s *Service) commitFHS2ChainForProposal(ref *types.HotstuffProposalRef) error {
+	if ref == nil {
+		return fmt.Errorf("nil FHS proposal ref")
+	}
+	s.muProposalBody.RLock()
+	target := fhs2ChainCommitTarget(s.fhsCertifiedByHash, ref)
+	if target == nil {
+		s.muProposalBody.RUnlock()
+		return nil
+	}
+
+	currentHash := s.bc.CurrentBlock().Hash()
+	chain := make([]*fhsCertifiedProposal, 0, 2)
+	for cursor := target; cursor != nil && cursor.ref.BlockHash != currentHash; cursor = s.fhsCertifiedByHash[cursor.ref.ParentHash] {
+		chain = append(chain, cursor)
+		if cursor.ref.ParentHash == currentHash {
+			break
+		}
+		if s.fhsCertifiedByHash[cursor.ref.ParentHash] == nil {
+			s.muProposalBody.RUnlock()
+			return fmt.Errorf("FHS commit prefix missing certified ancestor %s", cursor.ref.ParentHash)
+		}
+	}
+	s.muProposalBody.RUnlock()
+
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+	for _, certified := range chain {
+		if err := s.txService.decideVerifiedProposal(certified.ref, certified.verified, certified.qc.Sign, certified.qc.Mask, certified.qc.Number, certified.qc.ViewID, certified.qc.LeaderID); err != nil {
+			return err
+		}
+		proposalID := certified.ref.ProposalID()
+		s.muProposalBody.Lock()
+		delete(s.fhsCertifiedByHash, certified.ref.BlockHash)
+		delete(s.fhsCertifiedByID, proposalID)
+		delete(s.proposalBodies, proposalID)
+		delete(s.verifiedProposalByID, proposalID)
+		s.muProposalBody.Unlock()
+		log.Info("FHS 2-CHAIN COMMIT",
+			"number", certified.ref.Number,
+			"view", certified.qc.Number,
+			"hash", certified.ref.BlockHash,
+			"trigger", ref.BlockHash)
+	}
+	return nil
+}
+
+func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash, leaderID string, encodedBlock []byte) ([]byte, error) {
 	if len(encodedBlock) == 0 {
 		return nil, fmt.Errorf("empty encoded block proposal")
 	}
@@ -528,7 +811,16 @@ func (s *Service) prepareHotstuffProposal(viewID common.Hash, leaderID string, e
 	if block == nil {
 		return nil, fmt.Errorf("failed to decode encoded block proposal")
 	}
-	ref, err := types.NewHotstuffProposalRef(s.ChainID(), viewID, leaderID, block, encodedBlock)
+	if s.fairHotstuffEnabled() {
+		current := s.GetCurrentView()
+		if viewNumber != current.ViewNumber+1 {
+			return nil, fmt.Errorf("FHS proposal view mismatch: have %d want %d", viewNumber, current.ViewNumber+1)
+		}
+		if block.ParentHash() != current.TxHash {
+			return nil, fmt.Errorf("FHS proposal does not extend highest certified block: parent=%s highest=%s", block.ParentHash(), current.TxHash)
+		}
+	}
+	ref, err := types.NewHotstuffProposalRef(s.ChainID(), viewNumber, viewID, leaderID, block, encodedBlock)
 	if err != nil {
 		return nil, err
 	}
@@ -731,7 +1023,7 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 }
 
 // OnPropose call by hotstuff
-func (s *Service) OnPropose(state []byte, extra []byte) error { // verify new proposal ref and full sidecar body before voting
+func (s *Service) OnPropose(state []byte, extra []byte, viewNumber uint64, parentQC *hotstuff.SignedState) error { // verify new proposal ref and full sidecar body before voting
 	log.Debug("OnPropose..")
 	if !s.isRunning() {
 		return types.ErrNotRunning
@@ -746,6 +1038,17 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { // verify new pr
 	if err != nil {
 		log.Error("OnPropose decode proposal ref", "err", err)
 		return err
+	}
+	if ref.ChainID != s.ChainID() {
+		return fmt.Errorf("hotstuff proposal chain id mismatch: have %d want %d", ref.ChainID, s.ChainID())
+	}
+	if ref.ViewNumber != viewNumber {
+		return fmt.Errorf("hotstuff proposal view number mismatch: have %d want %d", ref.ViewNumber, viewNumber)
+	}
+	if s.fairHotstuffEnabled() {
+		if err := s.validateFHSProposalParent(ref, parentQC); err != nil {
+			return err
+		}
 	}
 	proposalID := ref.ProposalID()
 	log.Info("OnPropose",
@@ -787,12 +1090,17 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { // verify new pr
 		}
 	}
 	s.storeVerifiedProposal(proposalID, verified)
+	if s.fairHotstuffEnabled() {
+		if err := s.commitFHS2ChainForProposal(ref); err != nil {
+			return err
+		}
+	}
 	s.pacetMakerTimer.start()
 	return nil
 }
 
 // Propose call by hotstuff
-func (s *Service) Propose(viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
+func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
 	log.Debug("Propose..", "number", s.GetCurrentView().TxNumber)
 
 	proposeOK := false
@@ -878,7 +1186,7 @@ func (s *Service) Propose(viewID common.Hash, leaderID string) (e error, kState 
 				}
 				return err, nil, nil, nil
 			}
-			proposalRef, err := s.prepareHotstuffProposal(viewID, leaderID, data)
+			proposalRef, err := s.prepareHotstuffProposal(viewNumber, viewID, leaderID, data)
 			if err != nil {
 				log.Warn("prepare keyblock hotstuff proposal", "error", err)
 				if fixedMode {
@@ -916,7 +1224,7 @@ func (s *Service) Propose(viewID common.Hash, leaderID string) (e error, kState 
 		log.Warn("tryProposalNewBlock", "error", err)
 		return err, nil, nil, nil
 	}
-	proposalRef, err := s.prepareHotstuffProposal(viewID, leaderID, data)
+	proposalRef, err := s.prepareHotstuffProposal(viewNumber, viewID, leaderID, data)
 	if err != nil {
 		log.Warn("prepare txblock hotstuff proposal", "error", err)
 		return err, nil, nil, nil
@@ -1043,7 +1351,7 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 	if !s.currentView.NoDone {
 		leaderIndex := s.keyService.getPrimaryLeaderIndex()
 		if s.fairHotstuffEnabled() {
-			leaderIndex = s.fairHotstuffLeaderIndexFromBlockLocked(s.bc.CurrentBlock())
+			leaderIndex = s.fairHotstuffLeaderIndexForCurrentLocked()
 		}
 		if mb := bftview.GetCurrentMember(); mb != nil && len(mb.List) > 0 && leaderIndex >= uint(len(mb.List)) {
 			leaderIndex = 0
@@ -1105,6 +1413,18 @@ func (s *Service) fairHotstuffLeaderIndexFromBlockLocked(block *types.Block) uin
 	)
 }
 
+func (s *Service) fairHotstuffLeaderIndexForCurrentLocked() uint {
+	s.muProposalBody.RLock()
+	highest := s.fhsHighest
+	if highest != nil && highest.qc != nil {
+		qc := hotstuff.CloneSignedState(highest.qc)
+		s.muProposalBody.RUnlock()
+		return s.fairHotstuffLeaderIndexLocked(qc.Sign, qc.Mask, qc.ViewID[:], []byte(qc.LeaderID))
+	}
+	s.muProposalBody.RUnlock()
+	return s.fairHotstuffLeaderIndexFromBlockLocked(s.bc.CurrentBlock())
+}
+
 func (s *Service) fairHotstuffLeaderSeedLocked(extraEntropy ...[]byte) [32]byte {
 	h := sha256.New()
 	var buf [8]byte
@@ -1114,6 +1434,7 @@ func (s *Service) fairHotstuffLeaderSeedLocked(extraEntropy ...[]byte) [32]byte 
 	}
 
 	h.Write([]byte("cypher-fhs-d-leader-v1"))
+	writeUint64(s.currentView.ViewNumber)
 	writeUint64(s.currentView.TxNumber)
 	h.Write(s.currentView.TxHash[:])
 	writeUint64(s.currentView.KeyNumber)
@@ -1198,7 +1519,7 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 
 	primary := uint(0)
 	if s.fairHotstuffEnabled() {
-		primary = s.fairHotstuffLeaderIndexFromBlockLocked(s.bc.CurrentBlock())
+		primary = s.fairHotstuffLeaderIndexForCurrentLocked()
 	} else if s.keyService != nil {
 		primary = s.keyService.getPrimaryLeaderIndex()
 	}
@@ -1281,6 +1602,9 @@ func (s *Service) triggerTryPropose(lastN uint64) {
 	if atomic.LoadInt32(&s.runningState) != 1 {
 		return
 	}
+	if s.fairHotstuffEnabled() {
+		lastN = s.GetCurrentView().ViewNumber
+	}
 	now := time.Now().UnixNano()
 	prev := atomic.LoadInt64(&s.tryProposeQueuedAt)
 	if prev != 0 && time.Duration(now-prev) < tryProposeDebounce {
@@ -1295,6 +1619,9 @@ func (s *Service) triggerTryPropose(lastN uint64) {
 }
 
 func (s *Service) enqueueTimerPriority(curN uint64) {
+	if s.fairHotstuffEnabled() {
+		curN = s.GetCurrentView().ViewNumber
+	}
 	s.enqueueHotstuffPriority(&hotstuffMsg{
 		sid:   nil,
 		lastN: curN,
@@ -1468,6 +1795,9 @@ func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
 		log.Warn("OnViewDone nil!")
 		return nil
 	}
+	if s.fairHotstuffEnabled() {
+		return fmt.Errorf("MsgDecide commit is disabled in FHS 2-chain mode")
+	}
 	ref, err := types.DecodeHotstuffProposalRef(tSign.State)
 	if err != nil {
 		log.Error("OnViewDone decode proposal ref", "err", err)
@@ -1493,7 +1823,7 @@ func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
 			return err
 		}
 	}
-	if err := s.txService.decideVerifiedProposal(ref, verified, tSign.Sign, tSign.Mask, tSign.ViewID, tSign.LeaderID); err != nil {
+	if err := s.txService.decideVerifiedProposal(ref, verified, tSign.Sign, tSign.Mask, tSign.Number, tSign.ViewID, tSign.LeaderID); err != nil {
 		return err
 	}
 	s.deleteProposalCaches(proposalID)
@@ -1541,7 +1871,8 @@ func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
 		"dataC", len(data.DataC),
 		"dataD", len(data.DataD),
 		"dataE", len(data.DataE),
-		"dataF", len(data.DataF))
+		"dataF", len(data.DataF),
+		"dataG", len(data.DataG))
 
 	// Local delivery is retained for protocol correctness. Leader self-vote
 	// optimization belongs in hotstuff.go and must preserve quorum accounting.
@@ -1624,7 +1955,7 @@ func (s *Service) handleHotStuffMsg() {
 				// Keyblock interval has priority over tx/candidate liveness wakeups.
 				// Let MsgStartNewView drive HotStuff to PhaseTryPropose instead of
 				// enqueueing MsgTryPropose against a stale or nil leader view.
-				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.currentHotstuffBaseNumber()})
 				continue
 			}
 
@@ -1683,7 +2014,7 @@ func (s *Service) handleHotStuffMsg() {
 					}
 				}
 			}
-			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.currentHotstuffBaseNumber()})
 			continue
 		}
 		msg := data
@@ -1696,7 +2027,7 @@ func (s *Service) handleHotStuffMsg() {
 
 		var curN uint64
 		if msgCode == hotstuff.MsgTryPropose || msgCode == hotstuff.MsgStartNewView {
-			curN = s.bc.CurrentBlockN()
+			curN = s.currentHotstuffBaseNumber()
 			if msg.lastN < curN {
 				log.Debug("handleHotStuffMsg", "code", hotstuff.ReadableMsgType(msgCode), "lastN", msg.lastN, "curN", curN)
 				continue
@@ -1988,6 +2319,11 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 	s.currentView.Round = 0
 
 	if s.fairHotstuffEnabled() {
+		viewNumber := curBlock.NumberU64()
+		if signInfo := curBlock.SignInfo(); signInfo != nil && signInfo.ViewNumber > viewNumber {
+			viewNumber = signInfo.ViewNumber
+		}
+		s.currentView.ViewNumber = viewNumber
 		s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fairHotstuffLeaderIndexFromBlockLocked(curBlock))
 		s.currentView.NoDone = true
 	} else if fromKeyBlock || curBlock.NumberU64() > curKeyBlock.T_Number() {
@@ -2019,6 +2355,13 @@ func (s *Service) GetCurrentView() *bftview.View {
 	return &v
 }
 
+func (s *Service) currentHotstuffBaseNumber() uint64 {
+	if s.fairHotstuffEnabled() {
+		return s.GetCurrentView().ViewNumber
+	}
+	return s.bc.CurrentBlockN()
+}
+
 func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
 	return s.keyService.getBestCandidate(refresh)
 }
@@ -2027,6 +2370,9 @@ func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
 func (s *Service) sendNewViewMsg(curN uint64) {
 	now := time.Now()
 	curView := s.GetCurrentView()
+	if s.fairHotstuffEnabled() {
+		curN = curView.ViewNumber
+	}
 	viewHash := curView.ConsensusHash()
 
 	s.muStartNewView.Lock()
@@ -2046,7 +2392,7 @@ func (s *Service) sendNewViewMsg(curN uint64) {
 	s.lastStartNewViewAt = now
 	s.muStartNewView.Unlock()
 
-	if bftview.IamMember() >= 0 && curN >= s.bc.CurrentBlockN() {
+	if bftview.IamMember() >= 0 && (s.fairHotstuffEnabled() || curN >= s.bc.CurrentBlockN()) {
 		s.enqueueHotstuffPriority(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
 	}
 }
@@ -2057,13 +2403,12 @@ func (s *Service) setNextLeader(isDone bool) {
 	defer s.muCurrentView.Unlock()
 
 	if s.fairHotstuffEnabled() {
-		if isDone {
-			s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fairHotstuffLeaderIndexFromBlockLocked(s.bc.CurrentBlock()))
-		} else if s.keyService != nil {
-			s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(s.currentView.LeaderIndex)
-		} else {
-			s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.currentView.LeaderIndex + 1)
+		if !isDone {
+			// The failed proposal view is consumed even though the certified parent
+			// remains unchanged. The next proposal therefore gets a fresh view number.
+			s.currentView.ViewNumber++
 		}
+		s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fairHotstuffLeaderIndexForCurrentLocked())
 		s.currentView.NoDone = !isDone
 
 		log.Info("setNextLeader fair hotstuff",
@@ -2131,7 +2476,15 @@ func (s *Service) procBlockDone(block *types.Block) {
 		log.Info("@KeyBlockDone", "number", keyblock.NumberU64(), "T_number", keyblock.T_Number())
 		s.updateCommittee(keyblock)
 		s.saveCommittee(keyblock)
-		s.updateCurrentView(block, keyblock, true)
+		if s.fairHotstuffEnabled() {
+			s.muCurrentView.Lock()
+			s.currentView.KeyNumber = keyblock.NumberU64()
+			s.currentView.KeyHash = keyblock.Hash()
+			s.currentView.CommitteeHash = keyblock.CommitteeHash()
+			s.muCurrentView.Unlock()
+		} else {
+			s.updateCurrentView(block, keyblock, true)
+		}
 		s.muCurrentView.Lock()
 		s.resetFixedModeKeyblockViewLocked()
 		s.muCurrentView.Unlock()
@@ -2142,7 +2495,9 @@ func (s *Service) procBlockDone(block *types.Block) {
 	} else {
 		log.Info("@TxBlockDone", "number", block.NumberU64(), "keyhash", block.KeyHash())
 		s.updateCommittee(nil)
-		s.updateCurrentView(block, keyblock, false)
+		if !s.fairHotstuffEnabled() {
+			s.updateCurrentView(block, keyblock, false)
+		}
 		keyblock = s.kbc.CurrentBlock()
 		//s.txPool.RemoveBatch(block.Transactions())
 	}

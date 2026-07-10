@@ -10,11 +10,15 @@ import (
 )
 
 type recoveryTestApp struct {
-	self       string
-	writes     []*HotstuffMessage
-	broadcasts []*HotstuffMessage
-	viewDone   func(*SignedState) error
-	onNewView  func([]byte, [][]byte) error
+	self        string
+	writes      []*HotstuffMessage
+	broadcasts  []*HotstuffMessage
+	viewDone    func(*SignedState) error
+	onCertified func(*SignedState) error
+	onNewView   func([]byte, [][]byte) error
+	highest     *SignedState
+	fhs         bool
+	publicKeys  []*bls.PublicKey
 }
 
 func (a *recoveryTestApp) Self() string { return a.self }
@@ -26,14 +30,20 @@ func (a *recoveryTestApp) Broadcast(msg *HotstuffMessage) []error {
 	a.broadcasts = append(a.broadcasts, msg)
 	return nil
 }
-func (a *recoveryTestApp) GetPublicKey() []*bls.PublicKey { return nil }
+func (a *recoveryTestApp) GetPublicKey() []*bls.PublicKey { return a.publicKeys }
 func (a *recoveryTestApp) OnNewView(state []byte, extra [][]byte) error {
 	if a.onNewView != nil {
 		return a.onNewView(state, extra)
 	}
 	return nil
 }
-func (a *recoveryTestApp) OnPropose([]byte, []byte) error { return nil }
+func (a *recoveryTestApp) OnPropose([]byte, []byte, uint64, *SignedState) error { return nil }
+func (a *recoveryTestApp) OnCertified(state *SignedState) error {
+	if a.onCertified != nil {
+		return a.onCertified(state)
+	}
+	return nil
+}
 func (a *recoveryTestApp) OnViewDone(state *SignedState) error {
 	if a.viewDone != nil {
 		return a.viewDone(state)
@@ -43,7 +53,8 @@ func (a *recoveryTestApp) OnViewDone(state *SignedState) error {
 func (a *recoveryTestApp) ValidateView([]byte) ([]byte, string, uint64, error) {
 	return nil, "", 0, nil
 }
-func (a *recoveryTestApp) Propose(common.Hash, string) (error, []byte, []byte, []byte) {
+func (a *recoveryTestApp) HighestCertified() *SignedState { return CloneSignedState(a.highest) }
+func (a *recoveryTestApp) Propose(uint64, common.Hash, string) (error, []byte, []byte, []byte) {
 	return nil, nil, nil, nil
 }
 func (a *recoveryTestApp) CurrentState() ([]byte, string, uint64) { return nil, "", 0 }
@@ -51,6 +62,7 @@ func (a *recoveryTestApp) CurrentN() uint64                       { return 0 }
 func (a *recoveryTestApp) GetExtra() []byte                       { return nil }
 func (a *recoveryTestApp) ChainID() uint64                        { return 1 }
 func (a *recoveryTestApp) UseContextSignatures() bool             { return true }
+func (a *recoveryTestApp) UseFHS2Chain() bool                     { return a.fhs }
 
 func TestRecoveryResendsReplicaMessages(t *testing.T) {
 	app := &recoveryTestApp{self: "replica"}
@@ -348,5 +360,105 @@ func TestOnNewViewFailureRemainsRetryable(t *testing.T) {
 	}
 	if view.phaseAsLeader != PhaseTryPropose {
 		t.Fatalf("phase after OnNewView recovery = %d, want PhaseTryPropose", view.phaseAsLeader)
+	}
+}
+
+func TestFHSPrepareQCCertifiesWithoutDecideCommit(t *testing.T) {
+	certifiedCalls := 0
+	decideCalls := 0
+	app := &recoveryTestApp{
+		self: "replica",
+		fhs:  true,
+		onCertified: func(state *SignedState) error {
+			certifiedCalls++
+			if state.Number != 9 || string(state.State) != "proposal-ref" {
+				t.Fatalf("unexpected certified state: %+v", state)
+			}
+			return nil
+		},
+		viewDone: func(*SignedState) error {
+			decideCalls++
+			return nil
+		},
+	}
+	manager := NewHotstuffProtocolManager(app, nil, nil)
+	viewID := common.HexToHash("0x99")
+	view := &View{
+		hash:           viewID,
+		number:         9,
+		leaderId:       "leader",
+		proposedTState: []byte("proposal-ref"),
+		leaderMsg:      make(map[uint64]*HotstuffMessage),
+	}
+	manager.views[viewID] = view
+	qc := &HotstuffMessage{
+		Code:   MsgQCBroadcast,
+		Number: 9,
+		ViewId: viewID,
+		DataB:  []byte("prepare-qc-signature"),
+		DataC:  []byte{0x07},
+	}
+
+	if err := manager.certifyView(view, qc); err != nil {
+		t.Fatal(err)
+	}
+	if certifiedCalls != 1 || !view.certified {
+		t.Fatalf("certified calls = %d, certified = %t", certifiedCalls, view.certified)
+	}
+	if err := manager.handleDecideMsg(&HotstuffMessage{Code: MsgDecide, Number: 9, ViewId: viewID}); err != nil {
+		t.Fatal(err)
+	}
+	if decideCalls != 0 {
+		t.Fatalf("same-view Decide committed %d times in FHS mode", decideCalls)
+	}
+}
+
+func TestFHSLeaderBroadcastsPrepareQCWithoutDecide(t *testing.T) {
+	var secret bls.SecretKey
+	secret.SetByCSPRNG()
+	public := secret.GetPublicKey()
+	app := &recoveryTestApp{self: "leader", fhs: true, publicKeys: []*bls.PublicKey{public}}
+	manager := NewHotstuffProtocolManager(app, &secret, public)
+	viewID := common.HexToHash("0x100")
+	state := []byte("proposal-ref")
+	view := &View{
+		hash:            viewID,
+		number:          10,
+		leaderId:        "leader",
+		phaseAsLeader:   PhasePreCommit,
+		proposedTState:  state,
+		groupPublicKey:  []*bls.PublicKey{public},
+		threshold:       1,
+		replicaIndex:    buildReplicaIndex([]*bls.PublicKey{public}),
+		prepareVoteInfo: make([]*VoteInfo, 0, 1),
+		qc:              make(map[string]*QC),
+		leaderMsg:       make(map[uint64]*HotstuffMessage),
+	}
+	manager.views[viewID] = view
+	vote := &HotstuffMessage{
+		Code:   MsgVotePrepare,
+		Number: 10,
+		ViewId: viewID,
+		Id:     "leader",
+		PubKey: public.Serialize(),
+		DataC:  manager.SignHashByMessage(MsgVotePrepare, viewID, "leader", state),
+	}
+
+	if err := manager.handlePrepareVoteMsg(vote); err != nil {
+		t.Fatal(err)
+	}
+	if view.phaseAsLeader != PhaseFinal {
+		t.Fatalf("leader phase = %d, want PhaseFinal", view.phaseAsLeader)
+	}
+	if _, ok := view.leaderMsg[MsgQCBroadcast]; !ok {
+		t.Fatal("leader did not retain Prepare QC broadcast")
+	}
+	if _, ok := view.leaderMsg[MsgDecide]; ok {
+		t.Fatal("leader generated same-view MsgDecide in FHS mode")
+	}
+	for _, msg := range app.broadcasts {
+		if msg.Code == MsgDecide {
+			t.Fatal("leader broadcast same-view MsgDecide in FHS mode")
+		}
 	}
 }

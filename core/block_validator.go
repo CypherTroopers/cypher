@@ -54,6 +54,16 @@ func NewBlockValidator(config *params.ChainConfig, blockchain *BlockChain, engin
 // header's transaction and uncle roots. The headers are assumed to be already
 // validated at this point.
 func (v *BlockValidator) ValidateBody(block *types.Block) error {
+	return v.validateBody(block, false)
+}
+
+// ValidateBodyWithHotstuffParent validates a proposal whose parent is a
+// certified, locally executed HotStuff block that has not been committed yet.
+func (v *BlockValidator) ValidateBodyWithHotstuffParent(block *types.Block) error {
+	return v.validateBody(block, true)
+}
+
+func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailable bool) error {
 	// Check whether the block's known, and if not, that it's linkable
 	if v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return ErrKnownBlock
@@ -95,7 +105,7 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 	if err := ValidateBlockBlobBody(v.config, header, block.Transactions()); err != nil {
 		return err
 	}
-	if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
+	if !hotstuffParentAvailable && !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
 		if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
 			return consensus.ErrUnknownAncestor
 		}
@@ -173,7 +183,7 @@ func CalcGasLimit(parent *types.Block, gasFloor, gasCeil uint64) uint64 {
 }
 
 func (v *BlockValidator) VerifySignature(block *types.Block) error {
-	// HotStuff v2 production signature verification.
+	// HotStuff proposal-reference signature verification.
 	//
 	// Validators now sign the compact HotstuffProposalRef carried in
 	// MsgPrepare.DataB, not the full block RLP.
@@ -214,7 +224,7 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 		chainID = v.config.ChainID.Uint64()
 	}
 
-	proposalRef, err := types.NewHotstuffProposalRef(chainID, si.ViewID, si.LeaderID, unsignedBlock, encodedUnsignedBlock)
+	proposalRef, err := types.NewHotstuffProposalRef(chainID, si.ViewNumber, si.ViewID, si.LeaderID, unsignedBlock, encodedUnsignedBlock)
 	if err != nil {
 		return types.ErrInvalidSignature
 	}
