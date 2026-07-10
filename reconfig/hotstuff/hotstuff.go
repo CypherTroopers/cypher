@@ -109,6 +109,7 @@ const (
 	MsgCommit
 	MsgVoteCommit
 	MsgDecide
+	MsgQCBroadcast
 
 	// pseudo messages
 	MsgStartNewView // for handling new view from app
@@ -134,6 +135,8 @@ func ReadableMsgType(m uint32) string {
 		return "MsgVoteCommit"
 	case m == MsgDecide:
 		return "MsgDecide"
+	case m == MsgQCBroadcast:
+		return "MsgQCBroadcast"
 	case m == MsgStartNewView:
 		return "MsgStartNewView"
 	case m == MsgTryPropose:
@@ -254,7 +257,7 @@ type View struct {
 	preCommitVoteInfo []*VoteInfo
 	commitVoteInfo    []*VoteInfo
 	qc                map[string]*QC
-	leaderMsg         map[uint64]*HotstuffMessage // record messages from leader to replica: MsgPrepare, MsgPreCommit, MsgCommit, MsgDecide
+	leaderMsg         map[uint64]*HotstuffMessage // record messages from leader to replica: MsgPrepare, MsgPreCommit, MsgCommit, MsgDecide, MsgQCBroadcast
 	replicaMsg        map[uint64]*HotstuffMessage // record messages from replica to leader: MsgVotePrepare
 
 	groupPublicKey []*bls.PublicKey
@@ -293,6 +296,7 @@ type HotstuffProtocolManager struct {
 type finalizedRecovery struct {
 	number      uint64
 	prepare     *HotstuffMessage
+	qcBroadcast *HotstuffMessage
 	decide      *HotstuffMessage
 	finalizedAt time.Time
 	lastSentAt  time.Time
@@ -746,6 +750,7 @@ func (hsm *HotstuffProtocolManager) cacheFinalizedRecovery(v *View, decide *Hots
 		lastSentAt:  time.Now(),
 	}
 	entry.prepare = v.leaderMsg[MsgPrepare]
+	entry.qcBroadcast = v.leaderMsg[MsgQCBroadcast]
 	hsm.finalized[v.hash] = entry
 
 	if len(hsm.finalized) <= maxFinalizedRecoveryViews {
@@ -1296,6 +1301,38 @@ func (hsm *HotstuffProtocolManager) createSignatureMsg(v *View, code uint32, pha
 	return hsm.newMsg(code, v.number, v.hash, bKSign, bTSign, v.qc[phase].mask)
 }
 
+func (hsm *HotstuffProtocolManager) broadcastPrepareQC(v *View) *HotstuffMessage {
+	if v == nil || v.qc["prepare"] == nil {
+		return nil
+	}
+	msg := hsm.createSignatureMsg(v, MsgQCBroadcast, "prepare")
+	v.leaderMsg[MsgQCBroadcast] = msg
+
+	log.Info("HOTSTUFF PREPARE QC BROADCAST",
+		"number", v.number,
+		"viewID", v.hash,
+		"votes", len(v.prepareVoteInfo),
+		"threshold", v.threshold)
+	hsm.app.Broadcast(msg)
+	return msg
+}
+
+func (hsm *HotstuffProtocolManager) verifyPrepareQCMessage(v *View, m *HotstuffMessage) error {
+	if v == nil || m == nil {
+		return ErrMissingView
+	}
+	if !v.hasKState() && !v.hasTState() {
+		return ErrUnhandledMsg
+	}
+	if v.hasKState() && !hsm.verifyAggregatedSignature(m.DataA, m.DataC, MsgVotePrepare, v.hash, v.leaderId, v.proposedKState, v.groupPublicKey, v.threshold) {
+		return ErrInvalidPrepareQC
+	}
+	if v.hasTState() && !hsm.verifyAggregatedSignature(m.DataB, m.DataC, MsgVotePrepare, v.hash, v.leaderId, v.proposedTState, v.groupPublicKey, v.threshold) {
+		return ErrInvalidPrepareQC
+	}
+	return nil
+}
+
 // for leader
 func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) error {
 	v, exist := hsm.views[m.ViewId]
@@ -1307,6 +1344,9 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 				"to", m.Id)
 			if finalized.prepare != nil {
 				_ = hsm.app.Write(m.Id, finalized.prepare)
+			}
+			if finalized.qcBroadcast != nil {
+				_ = hsm.app.Write(m.Id, finalized.qcBroadcast)
 			}
 			if finalized.decide != nil {
 				return hsm.app.Write(m.Id, finalized.decide)
@@ -1399,6 +1439,7 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 		return err
 	}
 
+	qcMsg := hsm.broadcastPrepareQC(v)
 	msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
 
 	log.Debug("handlePrepareVoteMsg broadcast Decide msg", "viewId", m.ViewId, "number", v.number)
@@ -1406,9 +1447,31 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 	hsm.app.Broadcast(msg)
 	v.phaseAsLeader = PhaseFinal
 	v.leaderMsg[MsgDecide] = msg
+	if qcMsg != nil {
+		v.leaderMsg[MsgQCBroadcast] = qcMsg
+	}
 	v.lastLeaderRecoveryAt = time.Now()
 	hsm.cacheFinalizedRecovery(v, msg)
 
+	return nil
+}
+
+// for replica
+func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) error {
+	v, exist := hsm.views[m.ViewId]
+	if !exist {
+		return ErrUnhandledMsg
+	}
+	if err := hsm.verifyPrepareQCMessage(v, m); err != nil {
+		return err
+	}
+
+	v.leaderMsg[MsgQCBroadcast] = m
+	log.Info("HOTSTUFF PREPARE QC VERIFIED",
+		"number", m.Number,
+		"viewID", m.ViewId,
+		"from", m.Id,
+		"maskBytes", len(m.DataC))
 	return nil
 }
 
@@ -1482,6 +1545,8 @@ func (hsm *HotstuffProtocolManager) handleMessage(m *HotstuffMessage) error {
 		*/
 	case m.Code == MsgDecide:
 		return hsm.handleDecideMsg(m)
+	case m.Code == MsgQCBroadcast:
+		return hsm.handleQCBroadcastMsg(m)
 	//empty message
 	case m.Code == MsgStartNewView:
 		log.Debug("handler handleStartNewView")
@@ -1636,6 +1701,7 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 
 			log.Debug("handleTimerMsg handlePrepareVoteMsg broadcast Decide msg", "number", v.number)
 			v.waitingMoreVoteInfo = false
+			hsm.broadcastPrepareQC(v)
 			msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
 			hsm.app.Broadcast(msg)
 			v.phaseAsLeader = PhaseFinal
@@ -1659,6 +1725,12 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 				"number", finalized.number,
 				"viewID", id)
 			hsm.app.Broadcast(finalized.prepare)
+		}
+		if finalized.qcBroadcast != nil {
+			log.Warn("HOTSTUFF RECOVERY rebroadcast retained PrepareQC",
+				"number", finalized.number,
+				"viewID", id)
+			hsm.app.Broadcast(finalized.qcBroadcast)
 		}
 		if finalized.decide != nil {
 			log.Warn("HOTSTUFF RECOVERY rebroadcast retained Decide",

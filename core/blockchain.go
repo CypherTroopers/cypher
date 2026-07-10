@@ -19,6 +19,7 @@ package core
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -231,13 +232,11 @@ func hasContextSignInfo(si *types.SignInfo) bool {
 	return si.ViewID != (common.Hash{}) && si.LeaderID != ""
 }
 
-// preferCandidateOnEqualTD defines a deterministic canonical preference rule when TD/number are equal.
+// preferCandidateOnEqualTD defines a fair canonical preference rule when TD/number are equal.
 // Priority:
 // 1) block carrying contextual sign metadata (ViewID + LeaderID)
 // 2) stronger QC mask (more signers)
-// 3) ViewID (lexicographic)
-// 4) LeaderID (lexicographic)
-// 5) block hash (lexicographic)
+// 3) uniform deterministic tie-break over the competing block hashes
 func preferCandidateOnEqualTD(candidate *types.Block, current *types.Block) bool {
 	candidateSI := candidate.SignInfo()
 	currentSI := current.SignInfo()
@@ -254,16 +253,28 @@ func preferCandidateOnEqualTD(candidate *types.Block, current *types.Block) bool
 		return candidateSigners > currentSigners
 	}
 
-	if cmp := bytes.Compare(candidateSI.ViewID[:], currentSI.ViewID[:]); cmp != 0 {
-		return cmp < 0
+	return fairEqualTDTieBreak(candidate.Hash(), current.Hash())
+}
+
+func fairEqualTDTieBreak(candidateHash common.Hash, currentHash common.Hash) bool {
+	if candidateHash == currentHash {
+		return false
 	}
-	if candidateSI.LeaderID != currentSI.LeaderID {
-		return candidateSI.LeaderID < currentSI.LeaderID
+	first := candidateHash
+	second := currentHash
+	candidateIsFirst := true
+	if bytes.Compare(first[:], second[:]) > 0 {
+		first, second = second, first
+		candidateIsFirst = false
 	}
 
-	candidateHash := candidate.Hash()
-	currentHash := current.Hash()
-	return bytes.Compare(candidateHash[:], currentHash[:]) < 0
+	h := sha256.New()
+	h.Write([]byte("cypher-fhs-d-equal-td-v1"))
+	h.Write(first[:])
+	h.Write(second[:])
+	sum := h.Sum(nil)
+	pickFirst := sum[0]&1 == 0
+	return pickFirst == candidateIsFirst
 }
 
 // NewBlockChain returns a fully initialised block chain using information

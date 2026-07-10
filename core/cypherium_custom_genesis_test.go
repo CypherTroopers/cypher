@@ -9,8 +9,8 @@ import (
 
 // TestCypheriumCustomGenesisConfigPinsUpgradeSurface locks the Cypherium-specific
 // genesis fields that must survive the EVM/fork upgrade. The modern Geth EVM
-// migration must not remove or reinterpret the committee, fixed committee/leader,
-// transaction size, or max-code-size custom surfaces.
+// migration must not remove or reinterpret the committee, fixed committee,
+// Fair HotStuff, transaction size, or max-code-size custom surfaces.
 func TestCypheriumCustomGenesisConfigPinsUpgradeSurface(t *testing.T) {
 	blob, err := os.ReadFile("../genesistest.json")
 	if err != nil {
@@ -30,8 +30,11 @@ func TestCypheriumCustomGenesisConfigPinsUpgradeSurface(t *testing.T) {
 	if !genesis.Config.FixedCommittee {
 		t.Fatal("fixedCommittee must remain enabled for this test genesis")
 	}
-	if !genesis.Config.FixedLeader {
-		t.Fatal("fixedLeader must remain enabled for this test genesis")
+	if genesis.Config.FixedLeader {
+		t.Fatal("fixedLeader must remain disabled for Fair HotStuff genesis")
+	}
+	if !genesis.Config.FairHotstuff {
+		t.Fatal("fairHotstuff must remain enabled for this test genesis")
 	}
 	if len(genesis.Config.GenCommittee) == 0 {
 		t.Fatal("committee must not be removed during EVM upgrade")

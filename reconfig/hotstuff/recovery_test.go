@@ -141,18 +141,20 @@ func TestRecoveryRebroadcastsFinalizedMessages(t *testing.T) {
 	manager := NewHotstuffProtocolManager(app, nil, nil)
 	viewID := common.HexToHash("0x2")
 	prepare := &HotstuffMessage{Code: MsgPrepare, Number: 2, ViewId: viewID}
+	qcBroadcast := &HotstuffMessage{Code: MsgQCBroadcast, Number: 2, ViewId: viewID}
 	decide := &HotstuffMessage{Code: MsgDecide, Number: 2, ViewId: viewID}
 	manager.views[viewID] = &View{
 		hash:                 viewID,
 		number:               2,
 		leaderId:             "leader",
 		phaseAsLeader:        PhaseFinal,
-		leaderMsg:            map[uint64]*HotstuffMessage{MsgPrepare: prepare, MsgDecide: decide},
+		leaderMsg:            map[uint64]*HotstuffMessage{MsgPrepare: prepare, MsgQCBroadcast: qcBroadcast, MsgDecide: decide},
 		lastLeaderRecoveryAt: time.Now().Add(-hotstuffRecoveryInterval),
 	}
 	manager.finalized[viewID] = &finalizedRecovery{
 		number:      2,
 		prepare:     prepare,
+		qcBroadcast: qcBroadcast,
 		decide:      decide,
 		finalizedAt: time.Now(),
 		lastSentAt:  time.Now().Add(-hotstuffRecoveryInterval),
@@ -161,8 +163,8 @@ func TestRecoveryRebroadcastsFinalizedMessages(t *testing.T) {
 	if err := manager.handleTimerMsg(1); err != nil {
 		t.Fatal(err)
 	}
-	if len(app.broadcasts) != 2 || app.broadcasts[0] != prepare || app.broadcasts[1] != decide {
-		t.Fatalf("final recovery broadcasts = %v, want Prepare then Decide", app.broadcasts)
+	if len(app.broadcasts) != 3 || app.broadcasts[0] != prepare || app.broadcasts[1] != qcBroadcast || app.broadcasts[2] != decide {
+		t.Fatalf("final recovery broadcasts = %v, want Prepare then QCBroadcast then Decide", app.broadcasts)
 	}
 }
 
@@ -283,10 +285,12 @@ func TestLateVoteUsesFinalizedRecoveryCache(t *testing.T) {
 	manager := NewHotstuffProtocolManager(app, nil, nil)
 	viewID := common.HexToHash("0x7")
 	prepare := &HotstuffMessage{Code: MsgPrepare, Number: 2, ViewId: viewID}
+	qcBroadcast := &HotstuffMessage{Code: MsgQCBroadcast, Number: 2, ViewId: viewID}
 	decide := &HotstuffMessage{Code: MsgDecide, Number: 2, ViewId: viewID}
 	manager.finalized[viewID] = &finalizedRecovery{
 		number:      2,
 		prepare:     prepare,
+		qcBroadcast: qcBroadcast,
 		decide:      decide,
 		finalizedAt: time.Now(),
 	}
@@ -295,8 +299,8 @@ func TestLateVoteUsesFinalizedRecoveryCache(t *testing.T) {
 	if err := manager.handlePrepareVoteMsg(vote); err != nil {
 		t.Fatal(err)
 	}
-	if len(app.writes) != 2 || app.writes[0] != prepare || app.writes[1] != decide {
-		t.Fatalf("late-vote recovery writes = %v, want Prepare then Decide", app.writes)
+	if len(app.writes) != 3 || app.writes[0] != prepare || app.writes[1] != qcBroadcast || app.writes[2] != decide {
+		t.Fatalf("late-vote recovery writes = %v, want Prepare then QCBroadcast then Decide", app.writes)
 	}
 }
 

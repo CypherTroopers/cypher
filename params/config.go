@@ -255,6 +255,7 @@ var (
 		RnetPort:               "",
 		FixedCommittee:         false,
 		FixedLeader:            false,
+		FairHotstuff:           false,
 		EnabledTPS:             false,
 	}
 
@@ -291,6 +292,7 @@ var (
 		RnetPort:               "",
 		FixedCommittee:         false,
 		FixedLeader:            false,
+		FairHotstuff:           false,
 		EnabledTPS:             false,
 	}
 
@@ -322,6 +324,7 @@ var (
 		RnetPort:               "",
 		FixedCommittee:         false,
 		FixedLeader:            false,
+		FairHotstuff:           false,
 		EnabledTPS:             false,
 	}
 	TestRules = TestChainConfig.Rules(new(big.Int))
@@ -354,6 +357,7 @@ var (
 		RnetPort:               "",
 		FixedCommittee:         false,
 		FixedLeader:            false,
+		FairHotstuff:           false,
 		EnabledTPS:             false,
 	}
 )
@@ -452,6 +456,7 @@ type ChainConfig struct {
 	RnetFallbackTransport string           `json:"rnetfallbacktransport,omitempty"`
 	FixedCommittee        bool             `json:"fixedCommittee,omitempty"`
 	FixedLeader           bool             `json:"fixedLeader,omitempty"`
+	FairHotstuff          bool             `json:"fairHotstuff,omitempty"`
 	EnabledTPS            bool
 }
 type GenesisCommittee map[int]common.Cnode
@@ -558,7 +563,7 @@ func (c *ChainConfig) String() string {
 		return fmt.Sprintf("{Cancun:%v Prague:%v Osaka:%v}", formatBlobConfig(v.Cancun), formatBlobConfig(v.Prague), formatBlobConfig(v.Osaka))
 	}
 
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Berlin: %v London: %v ArrowGlacier: %v GrayGlacier: %v ShanghaiTime: %v CancunTime: %v PragueTime: %v OsakaTime: %v BlobSchedule: %v Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Berlin: %v London: %v ArrowGlacier: %v GrayGlacier: %v ShanghaiTime: %v CancunTime: %v PragueTime: %v OsakaTime: %v BlobSchedule: %v FairHotstuff: %v Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -584,6 +589,7 @@ func (c *ChainConfig) String() string {
 		formatUint64Ptr(pragueTime),
 		formatUint64Ptr(osakaTime),
 		formatBlobSchedule(blobSchedule),
+		c.FairHotstuff,
 		engine,
 	)
 }

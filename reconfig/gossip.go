@@ -367,7 +367,7 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 	// data-plane path.
 	if msg.Hmsg != nil {
 		switch msg.Hmsg.Code {
-		case hotstuff.MsgNewView, hotstuff.MsgPrepare, hotstuff.MsgVotePrepare, hotstuff.MsgDecide:
+		case hotstuff.MsgNewView, hotstuff.MsgPrepare, hotstuff.MsgVotePrepare, hotstuff.MsgQCBroadcast, hotstuff.MsgDecide:
 			log.Warn("refusing to gossip hotstuff control message",
 				"code", hotstuff.ReadableMsgType(msg.Hmsg.Code),
 				"number", msg.Hmsg.Number,
