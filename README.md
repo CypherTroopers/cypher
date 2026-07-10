@@ -9,7 +9,7 @@ https://arxiv.org/html/2501.02970v3
 ### Clone
 
 ```bash
-git clone -b ColossusX_CommonRPC_TXrewards --single-branch https://github.com/CypherTroopers/cypher.git
+git clone -b Fair-HotStuff-FHS-D --single-branch https://github.com/CypherTroopers/cypher.git
 cd cypher
 ```
 ## run a node on Linux
