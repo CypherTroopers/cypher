@@ -76,8 +76,12 @@ func (keyS *keyService) fixedModeEnabled() bool {
 	return keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee)
 }
 
+func (keyS *keyService) fixedLeaderModeEnabled() bool {
+	return keyS.config != nil && keyS.config.FixedLeader && !keyS.config.FairHotstuff
+}
+
 func (keyS *keyService) promoteFallbackLeader(current uint) {
-	if !keyS.fixedModeEnabled() {
+	if !keyS.fixedLeaderModeEnabled() {
 		return
 	}
 	mb := bftview.GetCurrentMember()
@@ -106,7 +110,7 @@ func (keyS *keyService) promoteFallbackLeader(current uint) {
 }
 
 func (keyS *keyService) restorePrimaryLeader() {
-	if !keyS.fixedModeEnabled() {
+	if !keyS.fixedLeaderModeEnabled() {
 		return
 	}
 	keyS.muLeaderState.Lock()
@@ -126,7 +130,7 @@ func (keyS *keyService) getPrimaryLeaderIndex() uint {
 }
 
 func (keyS *keyService) setActiveLeader(index uint) {
-	if !keyS.fixedModeEnabled() {
+	if !keyS.fixedLeaderModeEnabled() {
 		return
 	}
 	mb := bftview.GetCurrentMember()
@@ -460,7 +464,7 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 }
 
 func (keyS *keyService) getNextLeaderIndex(leaderIndex uint) uint {
-	if keyS.fixedModeEnabled() {
+	if keyS.fixedLeaderModeEnabled() {
 		mb := bftview.GetCurrentMember()
 		keyS.muLeaderState.Lock()
 		defer keyS.muLeaderState.Unlock()

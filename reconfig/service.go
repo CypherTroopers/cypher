@@ -17,6 +17,8 @@
 package reconfig
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1040,6 +1042,9 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 
 	if !s.currentView.NoDone {
 		leaderIndex := s.keyService.getPrimaryLeaderIndex()
+		if s.fairHotstuffEnabled() {
+			leaderIndex = s.fairHotstuffLeaderIndexFromBlockLocked(s.bc.CurrentBlock())
+		}
 		if mb := bftview.GetCurrentMember(); mb != nil && len(mb.List) > 0 && leaderIndex >= uint(len(mb.List)) {
 			leaderIndex = 0
 		}
@@ -1069,6 +1074,60 @@ func (s *Service) normalizeLeaderIndex(index uint) uint {
 		return 0
 	}
 	return index
+}
+
+func (s *Service) fairHotstuffEnabled() bool {
+	return s.chainConfig != nil && s.chainConfig.FairHotstuff
+}
+
+func (s *Service) fairHotstuffLeaderIndexLocked(extraEntropy ...[]byte) uint {
+	mb := bftview.GetCurrentMember()
+	if mb == nil || len(mb.List) == 0 {
+		return 0
+	}
+	seed := s.fairHotstuffLeaderSeedLocked(extraEntropy...)
+	return uint(binary.BigEndian.Uint64(seed[:8]) % uint64(len(mb.List)))
+}
+
+func (s *Service) fairHotstuffLeaderIndexFromBlockLocked(block *types.Block) uint {
+	if block == nil {
+		return s.fairHotstuffLeaderIndexLocked()
+	}
+	si := block.SignInfo()
+	if si == nil {
+		return s.fairHotstuffLeaderIndexLocked()
+	}
+	return s.fairHotstuffLeaderIndexLocked(
+		si.Signature,
+		si.Exceptions,
+		si.ViewID[:],
+		[]byte(si.LeaderID),
+	)
+}
+
+func (s *Service) fairHotstuffLeaderSeedLocked(extraEntropy ...[]byte) [32]byte {
+	h := sha256.New()
+	var buf [8]byte
+	writeUint64 := func(v uint64) {
+		binary.BigEndian.PutUint64(buf[:], v)
+		h.Write(buf[:])
+	}
+
+	h.Write([]byte("cypher-fhs-d-leader-v1"))
+	writeUint64(s.currentView.TxNumber)
+	h.Write(s.currentView.TxHash[:])
+	writeUint64(s.currentView.KeyNumber)
+	h.Write(s.currentView.KeyHash[:])
+	h.Write(s.currentView.CommitteeHash[:])
+	for _, entropy := range extraEntropy {
+		if len(entropy) > 0 {
+			h.Write(entropy)
+		}
+	}
+
+	var out [32]byte
+	copy(out[:], h.Sum(nil))
+	return out
 }
 
 func (s *Service) leaderAckRecent(index uint) bool {
@@ -1138,7 +1197,9 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 	oldView = s.currentView
 
 	primary := uint(0)
-	if s.keyService != nil {
+	if s.fairHotstuffEnabled() {
+		primary = s.fairHotstuffLeaderIndexFromBlockLocked(s.bc.CurrentBlock())
+	} else if s.keyService != nil {
 		primary = s.keyService.getPrimaryLeaderIndex()
 	}
 	primary = s.normalizeLeaderIndex(primary)
@@ -1490,7 +1551,7 @@ func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
 	// Large proposal bodies are distributed as proposalBodyMsg sidecars, not in
 	// MsgPrepare.DataB.
 	switch data.Code {
-	case hotstuff.MsgPrepare, hotstuff.MsgDecide:
+	case hotstuff.MsgPrepare, hotstuff.MsgQCBroadcast, hotstuff.MsgDecide:
 		return s.broadcastHotstuffToCommittee(data)
 	default:
 		s.netService.broadcast("", &networkMsg{Hmsg: data})
@@ -1674,8 +1735,10 @@ func (s *Service) observeHotstuffProgress(msg *hotstuff.HotstuffMessage) {
 		rank = 1
 	case hotstuff.MsgVotePrepare:
 		rank = 2
-	case hotstuff.MsgDecide:
+	case hotstuff.MsgQCBroadcast:
 		rank = 3
+	case hotstuff.MsgDecide:
+		rank = 4
 	default:
 		return
 	}
@@ -1924,7 +1987,10 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 	s.currentView.CommitteeHash = curKeyBlock.CommitteeHash()
 	s.currentView.Round = 0
 
-	if fromKeyBlock || curBlock.NumberU64() > curKeyBlock.T_Number() {
+	if s.fairHotstuffEnabled() {
+		s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fairHotstuffLeaderIndexFromBlockLocked(curBlock))
+		s.currentView.NoDone = true
+	} else if fromKeyBlock || curBlock.NumberU64() > curKeyBlock.T_Number() {
 		s.currentView.LeaderIndex = 0
 		s.currentView.NoDone = true
 	}
@@ -1990,8 +2056,29 @@ func (s *Service) setNextLeader(isDone bool) {
 	s.muCurrentView.Lock()
 	defer s.muCurrentView.Unlock()
 
-	fixedMode := s.keyService != nil && s.keyService.fixedModeEnabled()
-	if fixedMode {
+	if s.fairHotstuffEnabled() {
+		if isDone {
+			s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.fairHotstuffLeaderIndexFromBlockLocked(s.bc.CurrentBlock()))
+		} else if s.keyService != nil {
+			s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(s.currentView.LeaderIndex)
+		} else {
+			s.currentView.LeaderIndex = s.normalizeLeaderIndex(s.currentView.LeaderIndex + 1)
+		}
+		s.currentView.NoDone = !isDone
+
+		log.Info("setNextLeader fair hotstuff",
+			"isDone", isDone,
+			"index", s.currentView.LeaderIndex,
+			"txNumber", s.currentView.TxNumber,
+			"keyNumber", s.currentView.KeyNumber)
+
+		s.waittingView.TxNumber = s.currentView.TxNumber + 1
+		s.waittingView.KeyNumber = s.currentView.KeyNumber + 1
+		return
+	}
+
+	fixedLeaderMode := s.keyService != nil && s.keyService.fixedLeaderModeEnabled()
+	if fixedLeaderMode {
 		primary := s.normalizeLeaderIndex(s.keyService.getPrimaryLeaderIndex())
 		leaderIndex := primary
 		if !isDone {
@@ -2025,7 +2112,7 @@ func (s *Service) setNextLeader(isDone bool) {
 }
 
 func (s *Service) shouldRestorePrimaryLeader() bool {
-	if s.keyService == nil {
+	if s.keyService == nil || !s.keyService.fixedLeaderModeEnabled() {
 		return false
 	}
 	primary := s.normalizeLeaderIndex(s.keyService.getPrimaryLeaderIndex())
@@ -2048,7 +2135,7 @@ func (s *Service) procBlockDone(block *types.Block) {
 		s.muCurrentView.Lock()
 		s.resetFixedModeKeyblockViewLocked()
 		s.muCurrentView.Unlock()
-		if s.keyService != nil && s.keyService.fixedModeEnabled() {
+		if s.keyService != nil && s.keyService.fixedLeaderModeEnabled() {
 			s.keyService.setActiveLeader(0)
 		}
 		s.keyService.clearCandidate(keyblock)

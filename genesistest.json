@@ -35,7 +35,8 @@
     "colossusX": {},
 
     "fixedCommittee": true,
-    "fixedLeader": true,
+    "fixedLeader": false,
+    "fairHotstuff": true,
 
     "committee": {
       "0": {

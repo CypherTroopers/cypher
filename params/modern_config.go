@@ -175,6 +175,7 @@ type chainConfigJSON struct {
 	RnetPort               string                `json:"rnetport,omitempty"`
 	FixedCommittee         bool                  `json:"fixedCommittee,omitempty"`
 	FixedLeader            bool                  `json:"fixedLeader,omitempty"`
+	FairHotstuff           bool                  `json:"fairHotstuff,omitempty"`
 	EnabledTPS             bool                  `json:"enabledTPS,omitempty"`
 }
 
@@ -210,6 +211,7 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 	c.RnetPort = dec.RnetPort
 	c.FixedCommittee = dec.FixedCommittee
 	c.FixedLeader = dec.FixedLeader
+	c.FairHotstuff = dec.FairHotstuff
 	c.EnabledTPS = dec.EnabledTPS
 	c.SetModernForkConfig(&ModernForkConfig{
 		BerlinBlock:       dec.BerlinBlock,
@@ -254,6 +256,7 @@ func (c *ChainConfig) MarshalJSON() ([]byte, error) {
 		RnetPort:               c.RnetPort,
 		FixedCommittee:         c.FixedCommittee,
 		FixedLeader:            c.FixedLeader,
+		FairHotstuff:           c.FairHotstuff,
 		EnabledTPS:             c.EnabledTPS,
 	}
 	if cfg := c.ModernForkConfig(); cfg != nil {
