@@ -1,3 +1,5 @@
+https://arxiv.org/html/2501.02970v3
+
 ## preparations 
 ### Requirements
 - Go ver 1.24 or later
