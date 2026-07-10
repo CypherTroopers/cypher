@@ -77,3 +77,24 @@ func TestConsensusStateIgnoresRecoveryRound(t *testing.T) {
 		t.Fatalf("decoded consensus round = %d, want 0", decoded.Round)
 	}
 }
+
+func TestConsensusStatePreservesFHSViewNumber(t *testing.T) {
+	view := &View{
+		TxNumber:   12,
+		TxHash:     common.HexToHash("0x12"),
+		KeyNumber:  3,
+		KeyHash:    common.HexToHash("0x03"),
+		Round:      7,
+		ViewNumber: 41,
+	}
+	decoded := DecodeToView(view.EncodeConsensusToBytes())
+	if decoded == nil {
+		t.Fatal("failed to decode consensus view")
+	}
+	if decoded.Round != 0 {
+		t.Fatalf("consensus recovery round = %d, want 0", decoded.Round)
+	}
+	if decoded.ViewNumber != 41 {
+		t.Fatalf("consensus FHS view number = %d, want 41", decoded.ViewNumber)
+	}
+}

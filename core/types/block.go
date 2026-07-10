@@ -56,11 +56,12 @@ const (
 
 const (
 	// HotstuffProposalRefVersion is the production HotStuff proposal format
-	// version. Version 2 signs a compact proposal reference instead of the full
+	// version. Version 3 signs a compact proposal reference, including the FHS
+	// view number, instead of the full
 	// block RLP, while the referenced full block body is distributed separately
 	// and verified by BodyHash before voting.
-	HotstuffProposalRefVersion uint32 = 2
-	hotstuffProposalDomain            = "CPH_HOTSTUFF_PROPOSAL_V2"
+	HotstuffProposalRefVersion uint32 = 3
+	hotstuffProposalDomain            = "CPH_HOTSTUFF_PROPOSAL_V3"
 )
 
 // A BlockNonce is a 64-bit hash which proves (combined with the
@@ -149,6 +150,7 @@ type SignInfo struct {
 	Exceptions []byte      `json:"exceptions"       gencodec:"required"`
 	ViewID     common.Hash `json:"viewId"`
 	LeaderID   string      `json:"leaderId"`
+	ViewNumber uint64      `json:"viewNumber"`
 }
 
 // CommonTxAdmission records the common RPC miner that accepted and relayed a tx.
@@ -187,10 +189,11 @@ type CommonTxReward struct {
 type HotstuffProposalRef struct {
 	Version uint32
 
-	ChainID  uint64
-	Number   uint64
-	ViewID   common.Hash
-	LeaderID string
+	ChainID    uint64
+	Number     uint64
+	ViewNumber uint64
+	ViewID     common.Hash
+	LeaderID   string
 
 	BlockHash   common.Hash
 	ParentHash  common.Hash
@@ -226,12 +229,15 @@ func HotstuffProposalBodyHash(body []byte) common.Hash {
 // NewHotstuffProposalRef creates a production HotStuff proposal reference for a
 // full block RLP sidecar. If encodedBlock is nil or empty, the block is encoded
 // here. The returned ref is safe to use as the HotStuff signed proposal state.
-func NewHotstuffProposalRef(chainID uint64, viewID common.Hash, leaderID string, block *Block, encodedBlock []byte) (*HotstuffProposalRef, error) {
+func NewHotstuffProposalRef(chainID uint64, viewNumber uint64, viewID common.Hash, leaderID string, block *Block, encodedBlock []byte) (*HotstuffProposalRef, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal block")
 	}
 	if leaderID == "" {
 		return nil, fmt.Errorf("empty hotstuff proposal leader id")
+	}
+	if viewNumber == 0 {
+		return nil, fmt.Errorf("empty hotstuff proposal view number")
 	}
 	if len(encodedBlock) == 0 {
 		encodedBlock = block.EncodeToBytes()
@@ -244,6 +250,7 @@ func NewHotstuffProposalRef(chainID uint64, viewID common.Hash, leaderID string,
 		Version:               HotstuffProposalRefVersion,
 		ChainID:               chainID,
 		Number:                block.NumberU64(),
+		ViewNumber:            viewNumber,
 		ViewID:                viewID,
 		LeaderID:              leaderID,
 		BlockHash:             block.Hash(),
@@ -305,6 +312,9 @@ func (r *HotstuffProposalRef) Validate() error {
 	if r.Number == 0 {
 		return fmt.Errorf("hotstuff proposal ref has zero block number")
 	}
+	if r.ViewNumber == 0 {
+		return fmt.Errorf("hotstuff proposal ref has zero view number")
+	}
 	if r.ViewID == (common.Hash{}) {
 		return fmt.Errorf("hotstuff proposal ref has empty view id")
 	}
@@ -335,6 +345,7 @@ func (r *HotstuffProposalRef) ProposalID() common.Hash {
 		r.Version,
 		r.ChainID,
 		r.Number,
+		r.ViewNumber,
 		r.ViewID,
 		r.LeaderID,
 		r.BlockHash,
@@ -441,6 +452,7 @@ func (h *Header) SetSignInfoNull() {
 	h.SignInfo.Exceptions = nil
 	h.SignInfo.ViewID = common.Hash{}
 	h.SignInfo.LeaderID = ""
+	h.SignInfo.ViewNumber = 0
 }
 
 var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
@@ -966,11 +978,12 @@ func (b *Block) Hash() common.Hash {
 	return v
 }
 
-func (b *Block) SetSignature(sig []byte, exceptions []byte, viewID common.Hash, leaderID string) {
+func (b *Block) SetSignature(sig []byte, exceptions []byte, viewID common.Hash, leaderID string, viewNumber uint64) {
 	b.header.SignInfo.Signature = sig
 	b.header.SignInfo.Exceptions = exceptions
 	b.header.SignInfo.ViewID = viewID
 	b.header.SignInfo.LeaderID = leaderID
+	b.header.SignInfo.ViewNumber = viewNumber
 }
 
 func (b *Block) SetKeyblock(keyblock *KeyBlock) {

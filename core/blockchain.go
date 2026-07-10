@@ -1103,6 +1103,7 @@ const (
 // StateDB inside it is mutable and becomes committed after CommitVerifiedProposal.
 type VerifiedProposal struct {
 	ProposalID common.Hash
+	ViewNumber uint64
 	ViewID     common.Hash
 	LeaderID   string
 
@@ -1138,6 +1139,9 @@ func (vp *VerifiedProposal) SanityCheck() error {
 	}
 	if vp.ProposalID == (common.Hash{}) {
 		return fmt.Errorf("verified proposal missing proposal id")
+	}
+	if vp.ViewNumber == 0 {
+		return fmt.Errorf("verified proposal missing view number")
 	}
 	if vp.ViewID == (common.Hash{}) {
 		return fmt.Errorf("verified proposal missing view id")
@@ -1566,17 +1570,39 @@ func (bc *BlockChain) WriteBlockWithState(block *types.Block, receipts []*types.
 
 // ValidateBlockForHotstuff executes and validates a proposed block during the
 // HotStuff Prepare phase. The returned VerifiedProposal is safe to cache by
-// ProposalID and later pass to CommitVerifiedProposal after a valid Decide QC.
+// ProposalID and later pass to CommitVerifiedProposal after a legacy Decide QC
+// or when the FHS 2-chain rule selects the proposal's certified prefix.
 //
 // This method is deliberately strict: a node must not sign VotePrepare until
 // this function succeeds. It verifies header/body/state and returns the exact
 // receipts/logs/state generated from the parent root used for validation.
-func (bc *BlockChain) ValidateBlockForHotstuff(proposalID common.Hash, viewID common.Hash, leaderID string, block *types.Block) (*VerifiedProposal, error) {
+func (bc *BlockChain) ValidateBlockForHotstuff(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block) (*VerifiedProposal, error) {
+	return bc.ValidateBlockForHotstuffWithParent(proposalID, viewNumber, viewID, leaderID, block, nil)
+}
+
+type hotstuffHeaderReader struct {
+	consensus.ChainHeaderReader
+	parent *types.Header
+}
+
+func (r *hotstuffHeaderReader) GetHeader(hash common.Hash, number uint64) *types.Header {
+	if r != nil && r.parent != nil && r.parent.Number != nil && r.parent.Number.Uint64() == number && r.parent.Hash() == hash {
+		return types.CopyHeader(r.parent)
+	}
+	return r.ChainHeaderReader.GetHeader(hash, number)
+}
+
+// ValidateBlockForHotstuffWithParent validates a proposal on top of a
+// certified parent that may still be outside the canonical database.
+func (bc *BlockChain) ValidateBlockForHotstuffWithParent(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block, parentProposal *VerifiedProposal) (*VerifiedProposal, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal block")
 	}
 	if proposalID == (common.Hash{}) {
 		return nil, fmt.Errorf("empty hotstuff proposal id")
+	}
+	if viewNumber == 0 {
+		return nil, fmt.Errorf("empty hotstuff view number")
 	}
 	if viewID == (common.Hash{}) {
 		return nil, fmt.Errorf("empty hotstuff view id")
@@ -1594,30 +1620,63 @@ func (bc *BlockChain) ValidateBlockForHotstuff(proposalID common.Hash, viewID co
 	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		log.Info("HOTSTUFF VERIFY already known block", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
 		return &VerifiedProposal{
-			ProposalID: proposalID,
-			ViewID:     viewID,
-			LeaderID:   leaderID,
-			Block:      block,
-			ParentHash: block.ParentHash(),
-			CreatedAt:  time.Now(),
+			ProposalID:   proposalID,
+			ViewNumber:   viewNumber,
+			ViewID:       viewID,
+			LeaderID:     leaderID,
+			Block:        block,
+			ParentHash:   block.ParentHash(),
+			ParentNumber: block.NumberU64() - 1,
+			CreatedAt:    time.Now(),
 		}, nil
 	}
 
 	start := time.Now()
 	header := block.Header()
-	if err := bc.engine.VerifyHeader(bc, header, false); err != nil {
+	var (
+		parent            *types.Header
+		statedb           *state.StateDB
+		headerReader      consensus.ChainHeaderReader = bc
+		hasHotstuffParent bool
+	)
+	if parentProposal != nil {
+		if err := parentProposal.SanityCheck(); err != nil {
+			return nil, fmt.Errorf("invalid hotstuff parent proposal: %w", err)
+		}
+		if parentProposal.BlockHash() != block.ParentHash() || parentProposal.Block.NumberU64()+1 != block.NumberU64() {
+			return nil, fmt.Errorf("hotstuff proposal does not extend certified parent: block=%s parent=%s", block.Hash(), parentProposal.BlockHash())
+		}
+		parent = parentProposal.Block.Header()
+		headerReader = &hotstuffHeaderReader{ChainHeaderReader: bc, parent: parent}
+		hasHotstuffParent = true
+		if parentProposal.StateDB != nil {
+			statedb = parentProposal.StateDB.Copy()
+		}
+	}
+	if err := bc.engine.VerifyHeader(headerReader, header, false); err != nil {
 		return nil, fmt.Errorf("hotstuff proposal header invalid: %w", err)
 	}
-	if err := bc.validator.ValidateBody(block); err != nil {
-		return nil, fmt.Errorf("hotstuff proposal body invalid: %w", err)
+	var bodyErr error
+	if hasHotstuffParent {
+		bodyErr = bc.validator.ValidateBodyWithHotstuffParent(block)
+	} else {
+		bodyErr = bc.validator.ValidateBody(block)
 	}
-	parent := bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
+	if bodyErr != nil {
+		return nil, fmt.Errorf("hotstuff proposal body invalid: %w", bodyErr)
+	}
+	if parent == nil {
+		parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
+	}
 	if parent == nil {
 		return nil, fmt.Errorf("hotstuff proposal unknown parent: number=%d hash=%s", block.NumberU64()-1, block.ParentHash())
 	}
-	statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
-	if err != nil {
-		return nil, fmt.Errorf("hotstuff proposal parent state unavailable: root=%s err=%w", parent.Root, err)
+	if statedb == nil {
+		var err error
+		statedb, err = state.New(parent.Root, bc.stateCache, bc.snaps)
+		if err != nil {
+			return nil, fmt.Errorf("hotstuff proposal parent state unavailable: root=%s err=%w", parent.Root, err)
+		}
 	}
 
 	processStart := time.Now()
@@ -1637,6 +1696,7 @@ func (bc *BlockChain) ValidateBlockForHotstuff(proposalID common.Hash, viewID co
 
 	verified := &VerifiedProposal{
 		ProposalID:   proposalID,
+		ViewNumber:   viewNumber,
 		ViewID:       viewID,
 		LeaderID:     leaderID,
 		Block:        block,

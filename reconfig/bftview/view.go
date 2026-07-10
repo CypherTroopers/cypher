@@ -35,11 +35,12 @@ type View struct {
 	LeaderIndex   uint
 	NoDone        bool
 	Round         uint64
+	ViewNumber    uint64
 }
 
 // Check for identity
 func (v *View) EqualAll(other *View) bool {
-	return v.TxNumber == other.TxNumber && v.TxHash == other.TxHash && v.KeyNumber == other.KeyNumber && v.KeyHash == other.KeyHash && v.CommitteeHash == other.CommitteeHash && v.LeaderIndex == other.LeaderIndex && v.NoDone == other.NoDone && v.Round == other.Round
+	return v.TxNumber == other.TxNumber && v.TxHash == other.TxHash && v.KeyNumber == other.KeyNumber && v.KeyHash == other.KeyHash && v.CommitteeHash == other.CommitteeHash && v.LeaderIndex == other.LeaderIndex && v.NoDone == other.NoDone && v.Round == other.Round && v.ViewNumber == other.ViewNumber
 }
 
 // EqualConsensus compares only fields that identify a HotStuff view. NoDone and
@@ -54,20 +55,23 @@ func (v *View) EqualConsensus(other *View) bool {
 		v.KeyNumber == other.KeyNumber &&
 		v.KeyHash == other.KeyHash &&
 		v.CommitteeHash == other.CommitteeHash &&
-		v.LeaderIndex == other.LeaderIndex
+		v.LeaderIndex == other.LeaderIndex &&
+		v.ViewNumber == other.ViewNumber
 }
 
 // Check for identity except index
 func (v *View) EqualNoIndex(other *View) bool {
-	return v.TxNumber == other.TxNumber && v.TxHash == other.TxHash && v.KeyNumber == other.KeyNumber && v.KeyHash == other.KeyHash
+	return v.TxNumber == other.TxNumber && v.TxHash == other.TxHash && v.KeyNumber == other.KeyNumber && v.KeyHash == other.KeyHash && v.ViewNumber == other.ViewNumber
 }
 
 func (v *View) Hash() (h common.Hash) {
 	hw := sha3.NewLegacyKeccak256()
-	if v.Round == 0 {
+	if v.Round == 0 && v.ViewNumber == 0 {
 		rlp.Encode(hw, []interface{}{v.TxNumber, v.TxHash, v.KeyNumber, v.KeyHash, v.CommitteeHash, v.LeaderIndex, v.NoDone})
-	} else {
+	} else if v.ViewNumber == 0 {
 		rlp.Encode(hw, []interface{}{v.TxNumber, v.TxHash, v.KeyNumber, v.KeyHash, v.CommitteeHash, v.LeaderIndex, v.NoDone, v.Round})
+	} else {
+		rlp.Encode(hw, []interface{}{v.TxNumber, v.TxHash, v.KeyNumber, v.KeyHash, v.CommitteeHash, v.LeaderIndex, v.NoDone, v.Round, v.ViewNumber})
 	}
 	hw.Sum(h[:0])
 	return h
@@ -81,7 +85,7 @@ type ViewExt struct {
 	CommitteeHash common.Hash
 	LeaderIndex   uint
 	NoDone        bool
-	Round         []uint64 `rlp:"tail"`
+	Tail          []uint64 `rlp:"tail"`
 }
 
 func (v *View) DecodeRLP(s *rlp.Stream) error {
@@ -92,17 +96,23 @@ func (v *View) DecodeRLP(s *rlp.Stream) error {
 	v.KeyNumber, v.KeyHash, v.TxNumber, v.TxHash = eb.KeyNumber, eb.KeyHash, eb.TxNumber, eb.TxHash
 	v.CommitteeHash, v.LeaderIndex, v.NoDone = eb.CommitteeHash, eb.LeaderIndex, eb.NoDone
 	v.Round = 0
-	if len(eb.Round) > 0 {
-		v.Round = eb.Round[0]
+	v.ViewNumber = 0
+	if len(eb.Tail) > 0 {
+		v.Round = eb.Tail[0]
+	}
+	if len(eb.Tail) > 1 {
+		v.ViewNumber = eb.Tail[1]
 	}
 
 	return nil
 }
 
 func (v *View) EncodeRLP(w io.Writer) error {
-	var round []uint64
-	if v.Round != 0 {
-		round = []uint64{v.Round}
+	var tail []uint64
+	if v.ViewNumber != 0 {
+		tail = []uint64{v.Round, v.ViewNumber}
+	} else if v.Round != 0 {
+		tail = []uint64{v.Round}
 	}
 	return rlp.Encode(w, ViewExt{
 		TxNumber:      v.TxNumber,
@@ -112,7 +122,7 @@ func (v *View) EncodeRLP(w io.Writer) error {
 		CommitteeHash: v.CommitteeHash,
 		LeaderIndex:   v.LeaderIndex,
 		NoDone:        v.NoDone,
-		Round:         round,
+		Tail:          tail,
 	})
 }
 

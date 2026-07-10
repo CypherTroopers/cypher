@@ -158,7 +158,7 @@ func (t *paceMakerTimer) loopTimer() {
 		}
 
 		now := time.Now()
-		fixedMode := t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee)
+		fixedMode := t.config != nil && (t.config.FixedLeader || t.config.FixedCommittee) && !t.config.FairHotstuff
 		leaderSilentFor := now.Sub(t.service.LeaderAckTime())
 		progressSilentFor := now.Sub(t.service.HotstuffProgressTime())
 

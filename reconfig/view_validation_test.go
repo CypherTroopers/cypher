@@ -24,7 +24,7 @@ func TestValidateViewUsesCurrentViewSnapshot(t *testing.T) {
 	// ValidateView must classify against currentView, which is the state encoded
 	// by CurrentState. The blockchain may already be at 302 while procBlockDone
 	// has not advanced currentView yet.
-	_, number, err := validateViewAgainstSnapshot(future.EncodeToBytes(), s.currentView)
+	_, number, err := validateViewAgainstSnapshot(future.EncodeToBytes(), s.currentView, false)
 	if err != hotstuff.ErrFutureState {
 		t.Fatalf("ValidateView snapshot error = %v, want %v", err, hotstuff.ErrFutureState)
 	}
@@ -69,7 +69,7 @@ func TestValidateViewNormalizesProposalMode(t *testing.T) {
 	wire := current
 	wire.NoDone = false
 
-	expected, number, err := validateViewAgainstSnapshot(wire.EncodeConsensusToBytes(), current)
+	expected, number, err := validateViewAgainstSnapshot(wire.EncodeConsensusToBytes(), current, false)
 	if err != nil {
 		t.Fatalf("proposal-mode-only difference rejected: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestValidateViewNormalizesRecoveryRound(t *testing.T) {
 	wire := current
 	wire.Round = 0
 
-	expected, number, err := validateViewAgainstSnapshot(wire.EncodeConsensusToBytes(), current)
+	expected, number, err := validateViewAgainstSnapshot(wire.EncodeConsensusToBytes(), current, false)
 	if err != nil {
 		t.Fatalf("recovery-round-only difference rejected: %v", err)
 	}
