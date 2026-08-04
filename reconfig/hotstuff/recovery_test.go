@@ -10,15 +10,20 @@ import (
 )
 
 type recoveryTestApp struct {
-	self        string
-	writes      []*HotstuffMessage
-	broadcasts  []*HotstuffMessage
-	viewDone    func(*SignedState) error
-	onCertified func(*SignedState) error
-	onNewView   func([]byte, [][]byte) error
-	highest     *SignedState
-	fhs         bool
-	publicKeys  []*bls.PublicKey
+	self             string
+	writes           []*HotstuffMessage
+	broadcasts       []*HotstuffMessage
+	viewDone         func(*SignedState) error
+	onCertified      func(*SignedState) error
+	onNewView        func([]byte, [][]byte) error
+	highest          *SignedState
+	fhs              bool
+	publicKeys       []*bls.PublicKey
+	publicKeysByHash map[common.Hash][]*bls.PublicKey
+	keyLookups       []common.Hash
+	validateState    []byte
+	validateLeader   string
+	validateNumber   uint64
 }
 
 func (a *recoveryTestApp) Self() string { return a.self }
@@ -30,7 +35,20 @@ func (a *recoveryTestApp) Broadcast(msg *HotstuffMessage) []error {
 	a.broadcasts = append(a.broadcasts, msg)
 	return nil
 }
-func (a *recoveryTestApp) GetPublicKey() []*bls.PublicKey { return a.publicKeys }
+func (a *recoveryTestApp) GetPublicKey(keyHash common.Hash) ([]*bls.PublicKey, error) {
+	a.keyLookups = append(a.keyLookups, keyHash)
+	if a.publicKeysByHash != nil {
+		keys, ok := a.publicKeysByHash[keyHash]
+		if !ok {
+			return nil, errors.New("committee not found")
+		}
+		return keys, nil
+	}
+	if len(a.publicKeys) == 0 {
+		return nil, errors.New("committee not found")
+	}
+	return a.publicKeys, nil
+}
 func (a *recoveryTestApp) OnNewView(state []byte, extra [][]byte) error {
 	if a.onNewView != nil {
 		return a.onNewView(state, extra)
@@ -51,7 +69,7 @@ func (a *recoveryTestApp) OnViewDone(state *SignedState) error {
 	return nil
 }
 func (a *recoveryTestApp) ValidateView([]byte) ([]byte, string, uint64, error) {
-	return nil, "", 0, nil
+	return a.validateState, a.validateLeader, a.validateNumber, nil
 }
 func (a *recoveryTestApp) HighestCertified() *SignedState { return CloneSignedState(a.highest) }
 func (a *recoveryTestApp) Propose(uint64, common.Hash, string) (error, []byte, []byte, []byte) {
