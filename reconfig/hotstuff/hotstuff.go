@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/crypto/bls"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
@@ -222,7 +223,7 @@ type HotStuffApplication interface {
 	Write(string, *HotstuffMessage) error
 	Broadcast(*HotstuffMessage) []error
 
-	GetPublicKey() []*bls.PublicKey
+	GetPublicKey(keyHash common.Hash) ([]*bls.PublicKey, error)
 
 	OnNewView(currentState []byte, extra [][]byte) error
 	OnPropose(state []byte, extra []byte, viewNumber uint64, parentQC *SignedState) error
@@ -276,15 +277,16 @@ type HotstuffMessage struct {
 }
 
 type View struct {
-	hash           common.Hash // hash on "currentState + leaderId", hence should be unique and equal for the same view and leader
-	createdAt      time.Time
-	number         uint64
-	leaderId       string
-	phaseAsLeader  uint32
-	phaseAsReplica uint32
-	currentState   []byte
-	proposedKState []byte
-	proposedTState []byte
+	hash             common.Hash // hash on "currentState + leaderId", hence should be unique and equal for the same view and leader
+	createdAt        time.Time
+	number           uint64
+	leaderId         string
+	committeeKeyHash common.Hash
+	phaseAsLeader    uint32
+	phaseAsReplica   uint32
+	currentState     []byte
+	proposedKState   []byte
+	proposedTState   []byte
 
 	proposedKDigest   []byte
 	proposedTDigest   []byte
@@ -448,10 +450,10 @@ func (hsm *HotstuffProtocolManager) newMsg(code uint32, number uint64, viewId co
 	return msg
 }
 
-func (hsm *HotstuffProtocolManager) newView() (*View, []byte) {
+func (hsm *HotstuffProtocolManager) newView() (*View, []byte, error) {
 	currentState, leaderId, number := hsm.app.CurrentState()
 	if leaderId == "" {
-		return nil, nil
+		return nil, nil, ErrNewViewFail
 	}
 
 	v := &View{
@@ -475,19 +477,14 @@ func (hsm *HotstuffProtocolManager) newView() (*View, []byte) {
 
 	v.hash = hotstuffDigestHash([]byte(v.leaderId), v.currentState)
 
-	groupPublicKey := hsm.app.GetPublicKey()
-	v.groupPublicKey = make([]*bls.PublicKey, 0)
-	for _, p := range groupPublicKey {
-		v.groupPublicKey = append(v.groupPublicKey, p)
+	if err := hsm.initViewCommittee(v); err != nil {
+		return nil, nil, err
 	}
-	v.cmLen = len(groupPublicKey)
-	v.threshold = CalcThreshold(v.cmLen)
-	v.replicaIndex = buildReplicaIndex(v.groupPublicKey)
 
-	return v, hsm.app.GetExtra()
+	return v, hsm.app.GetExtra(), nil
 }
 
-func (hsm *HotstuffProtocolManager) createView(asLeader bool, phase uint32, leaderId string, currentState []byte, number uint64) *View {
+func (hsm *HotstuffProtocolManager) createView(asLeader bool, phase uint32, leaderId string, currentState []byte, number uint64) (*View, error) {
 	v := &View{
 		number:            number,
 		leaderId:          leaderId,
@@ -514,27 +511,61 @@ func (hsm *HotstuffProtocolManager) createView(asLeader bool, phase uint32, lead
 
 	v.hash = hotstuffDigestHash([]byte(v.leaderId), v.currentState)
 
-	groupPublicKey := hsm.app.GetPublicKey()
-	v.groupPublicKey = make([]*bls.PublicKey, 0)
-	for _, p := range groupPublicKey {
-		v.groupPublicKey = append(v.groupPublicKey, p)
+	if err := hsm.initViewCommittee(v); err != nil {
+		return nil, err
 	}
-	v.cmLen = len(groupPublicKey)
-	v.threshold = CalcThreshold(v.cmLen)
-	v.replicaIndex = buildReplicaIndex(v.groupPublicKey)
 
-	return v
+	return v, nil
 }
 
-func (hsm *HotstuffProtocolManager) updateViewPublicKey(v *View) {
-	groupPublicKey := hsm.app.GetPublicKey()
-	v.groupPublicKey = make([]*bls.PublicKey, 0)
-	for _, p := range groupPublicKey {
-		v.groupPublicKey = append(v.groupPublicKey, p)
+// initViewCommittee snapshots the signer order identified by the view state.
+// The snapshot must never be replaced with the latest committee: QC mask bits
+// are positional and keep the meaning they had when the view was created.
+func snapshotPublicKeys(groupPublicKey []*bls.PublicKey) ([]*bls.PublicKey, error) {
+	if len(groupPublicKey) == 0 {
+		return nil, fmt.Errorf("%w: empty committee", ErrInvalidPublicKey)
 	}
+	seen := make(map[string]struct{}, len(groupPublicKey))
+	snapshot := make([]*bls.PublicKey, 0, len(groupPublicKey))
+	for _, p := range groupPublicKey {
+		if p == nil {
+			return nil, fmt.Errorf("%w: nil committee key", ErrInvalidPublicKey)
+		}
+		encoded := hex.EncodeToString(p.Serialize())
+		if _, exists := seen[encoded]; exists {
+			return nil, fmt.Errorf("%w: duplicate committee key", ErrInvalidPublicKey)
+		}
+		seen[encoded] = struct{}{}
+		snapshot = append(snapshot, p)
+	}
+	return snapshot, nil
+}
+
+func (hsm *HotstuffProtocolManager) initViewCommittee(v *View) error {
+	if v == nil {
+		return ErrMissingView
+	}
+	if len(v.groupPublicKey) > 0 {
+		return nil
+	}
+
+	viewState := bftview.DecodeToView(v.currentState)
+	if viewState == nil || viewState.KeyHash == (common.Hash{}) {
+		return fmt.Errorf("%w: view has no committee key hash", ErrInvalidPublicKey)
+	}
+	groupPublicKey, err := hsm.app.GetPublicKey(viewState.KeyHash)
+	if err != nil {
+		return fmt.Errorf("%w: load committee %s: %v", ErrInvalidPublicKey, viewState.KeyHash, err)
+	}
+	v.groupPublicKey, err = snapshotPublicKeys(groupPublicKey)
+	if err != nil {
+		return fmt.Errorf("committee %s: %w", viewState.KeyHash, err)
+	}
+	v.committeeKeyHash = viewState.KeyHash
 	v.cmLen = len(v.groupPublicKey)
 	v.threshold = CalcThreshold(v.cmLen)
 	v.replicaIndex = buildReplicaIndex(v.groupPublicKey)
+	return nil
 }
 
 func (hsm *HotstuffProtocolManager) DumpView(v *View, asLeader bool) {
@@ -658,15 +689,14 @@ func (hsm *HotstuffProtocolManager) discardStaleReplicaNewViews(number uint64, k
 
 // for replica
 func (hsm *HotstuffProtocolManager) NewView() error {
-	v, extra := hsm.newView()
-	if v == nil {
-		return ErrNewViewFail
+	v, extra, err := hsm.newView()
+	if err != nil {
+		return err
 	}
 
 	hsm.discardStaleReplicaNewViews(v.number, v.hash)
 	if existing, exist := hsm.views[v.hash]; exist {
 		v = existing
-		hsm.updateViewPublicKey(v)
 	} else {
 		hsm.views[v.hash] = v
 	}
@@ -680,7 +710,7 @@ func (hsm *HotstuffProtocolManager) NewView() error {
 	v.lastReplicaRecoveryAt = time.Now()
 
 	log.Debug("New View", "leader", v.leaderId, "ViewID", common.HexString(v.hash[:]))
-	err := hsm.app.Write(v.leaderId, msg)
+	err = hsm.app.Write(v.leaderId, msg)
 	if err != nil {
 		hsm.clearTimeoutView(v.number) //clear old view
 	}
@@ -829,8 +859,8 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 		return nil, nil, stateErr
 	}
 
-	committee := bftview.GetCurrentMember()
-	if committee == nil || decodedView.LeaderIndex >= uint(len(committee.List)) {
+	committee := bftview.LoadMember(decodedView.KeyNumber, decodedView.KeyHash, true)
+	if committee == nil || committee.RlpHash() != decodedView.CommitteeHash || decodedView.LeaderIndex >= uint(len(committee.List)) {
 		return nil, nil, ErrInvalidLeaderView
 	}
 	leader := committee.List[decodedView.LeaderIndex]
@@ -854,8 +884,10 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 		return nil, nil, ErrViewIdNotMatch
 	}
 
-	v := hsm.createView(true, PhasePrepare, expectedLeader, msg.DataA, msg.Number)
-	hsm.updateViewPublicKey(v)
+	v, err := hsm.createView(true, PhasePrepare, expectedLeader, msg.DataA, msg.Number)
+	if err != nil {
+		return nil, nil, err
+	}
 	err, vote := v.msgToVoteInfo(msg)
 	if err != nil {
 		return nil, nil, err
@@ -912,8 +944,6 @@ func (hsm *HotstuffProtocolManager) acceptValidatedNewView(msg *HotstuffMessage,
 		v = validatedView
 		log.Debug("create validated new view", "leader", v.leaderId, "viewID", v.hash)
 		hsm.views[v.hash] = v
-	} else {
-		hsm.updateViewPublicKey(v)
 	}
 
 	if hsm.lookupVoteInfo(vote.PubKey, v.highVoteInfo) {
@@ -1116,6 +1146,40 @@ func VerifySignatureWithContext(bSign []byte, bMask []byte, data []byte, groupPu
 	return verifySignatureDigest(bSign, bMask, hotstuffContextDigest(chainID, msgCode, viewID, leaderID, data), groupPublicKey, threshold)
 }
 
+func (hsm *HotstuffProtocolManager) verifyFHSParentQC(parentQC *SignedState, childViewNumber uint64) error {
+	if parentQC == nil {
+		return fmt.Errorf("%w: nil FHS parent QC", ErrInvalidHighQC)
+	}
+	if parentQC.Number >= childViewNumber {
+		return fmt.Errorf("%w: parent view %d is not older than child view %d", ErrInvalidHighQC, parentQC.Number, childViewNumber)
+	}
+
+	parentRef, err := types.DecodeHotstuffProposalRef(parentQC.State)
+	if err != nil {
+		return fmt.Errorf("%w: decode parent proposal ref: %v", ErrInvalidHighQC, err)
+	}
+	if parentRef.ChainID != hsm.app.ChainID() ||
+		parentRef.ViewNumber != parentQC.Number ||
+		parentRef.ViewID != parentQC.ViewID ||
+		parentRef.LeaderID != parentQC.LeaderID {
+		return fmt.Errorf("%w: parent proposal/QC context mismatch", ErrInvalidHighQC)
+	}
+
+	parentKeys, err := hsm.app.GetPublicKey(parentRef.KeyHash)
+	if err != nil {
+		return fmt.Errorf("%w: load parent committee %s: %v", ErrInvalidHighQC, parentRef.KeyHash, err)
+	}
+	parentKeys, err = snapshotPublicKeys(parentKeys)
+	if err != nil {
+		return fmt.Errorf("%w: parent committee %s: %v", ErrInvalidHighQC, parentRef.KeyHash, err)
+	}
+	parentThreshold := CalcThreshold(len(parentKeys))
+	if !hsm.verifyAggregatedSignature(parentQC.Sign, parentQC.Mask, MsgVotePrepare, parentQC.ViewID, parentQC.LeaderID, parentQC.State, parentKeys, parentThreshold) {
+		return fmt.Errorf("%w: parent QC signature invalid for committee %s", ErrInvalidHighQC, parentRef.KeyHash)
+	}
+	return nil
+}
+
 func verifySignatureDigest(bSign []byte, bMask []byte, digest []byte, groupPublicKey []*bls.PublicKey, threshold int) bool {
 	var sign bls.Sign
 	if err := sign.Deserialize(bSign); err != nil {
@@ -1248,7 +1312,12 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 
 	v, exist := hsm.views[m.ViewId]
 	if !exist {
-		v = hsm.createView(false, PhasePrepare, expectedLeader, m.DataE, m.Number)
+		createdView, createErr := hsm.createView(false, PhasePrepare, expectedLeader, m.DataE, m.Number)
+		if createErr != nil {
+			log.Warn("handlePrepareMsg failed to load view committee", "viewId", m.ViewId, "err", createErr)
+			return createErr
+		}
+		v = createdView
 		hsm.views[v.hash] = v
 		log.Debug("handlePrepareMsg create view", "viewId", m.ViewId)
 	}
@@ -1311,8 +1380,8 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 			return ErrInvalidHighQC
 		}
 		if parentQC != nil {
-			if parentQC.Number >= v.number || !hsm.verifyAggregatedSignature(parentQC.Sign, parentQC.Mask, MsgVotePrepare, parentQC.ViewID, parentQC.LeaderID, parentQC.State, v.groupPublicKey, v.threshold) {
-				log.Debug("handlePrepareMsg failed to verify FHS parent QC", "viewId", m.ViewId, "parentView", parentQC.Number)
+			if err := hsm.verifyFHSParentQC(parentQC, v.number); err != nil {
+				log.Debug("handlePrepareMsg failed to verify FHS parent QC", "viewId", m.ViewId, "parentView", parentQC.Number, "err", err)
 				return ErrInvalidHighQC
 			}
 		}

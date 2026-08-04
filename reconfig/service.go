@@ -332,11 +332,32 @@ func (s *Service) UseFHS2Chain() bool {
 	return s.fairHotstuffEnabled()
 }
 
+func (s *Service) loadViewCommittee(view *bftview.View, needIP bool) (*bftview.Committee, error) {
+	if view == nil || view.KeyHash == (common.Hash{}) {
+		return nil, fmt.Errorf("view has no committee key block")
+	}
+	keyblock := s.kbc.GetBlock(view.KeyHash, view.KeyNumber)
+	if keyblock == nil {
+		return nil, fmt.Errorf("unknown committee key block number=%d hash=%s", view.KeyNumber, view.KeyHash)
+	}
+	if keyblock.CommitteeHash() != view.CommitteeHash {
+		return nil, fmt.Errorf("view committee hash mismatch: view=%s keyblock=%s", view.CommitteeHash, keyblock.CommitteeHash())
+	}
+	committee := bftview.LoadMember(view.KeyNumber, view.KeyHash, needIP)
+	if committee == nil {
+		return nil, fmt.Errorf("committee unavailable for key block number=%d hash=%s", view.KeyNumber, view.KeyHash)
+	}
+	if committee.RlpHash() != keyblock.CommitteeHash() {
+		return nil, fmt.Errorf("stored committee hash mismatch for key block %s", view.KeyHash)
+	}
+	return committee, nil
+}
+
 // CurrentState call by hotstuff
 func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 	curView := s.GetCurrentView()
 	leaderID := ""
-	mb := bftview.GetCurrentMember()
+	mb, committeeErr := s.loadViewCommittee(curView, true)
 	committeeSize := 0
 	if mb != nil {
 		committeeSize = len(mb.List)
@@ -348,7 +369,8 @@ func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 	} else {
 		log.Error("CurrentState.NextLeader: invalid committee or leader index",
 			"index", curView.LeaderIndex,
-			"committeeSize", committeeSize)
+			"committeeSize", committeeSize,
+			"err", committeeErr)
 		s.Committee_Request(curView.KeyNumber, curView.KeyHash)
 	}
 
@@ -370,15 +392,27 @@ func (s *Service) GetExtra() []byte {
 	return best.EncodeToBytes()
 }
 
-// GetPublicKey call by hotstuff
-func (s *Service) GetPublicKey() []*bls.PublicKey {
-	keyblock := s.kbc.CurrentBlock()
-	keyNumber := keyblock.NumberU64()
-	c := bftview.LoadMember(keyNumber, keyblock.Hash(), false)
-	if c == nil {
-		return nil
+// GetPublicKey resolves the exact historical signer order for a key block.
+func (s *Service) GetPublicKey(keyHash common.Hash) ([]*bls.PublicKey, error) {
+	if keyHash == (common.Hash{}) {
+		return nil, fmt.Errorf("empty committee key block hash")
 	}
-	return c.ToBlsPublicKeys(keyblock.Hash())
+	keyblock := s.kbc.GetBlockByHash(keyHash)
+	if keyblock == nil {
+		return nil, fmt.Errorf("unknown committee key block %s", keyHash)
+	}
+	committee := bftview.LoadMember(keyblock.NumberU64(), keyHash, false)
+	if committee == nil {
+		return nil, fmt.Errorf("missing committee for key block %s", keyHash)
+	}
+	if committee.RlpHash() != keyblock.CommitteeHash() {
+		return nil, fmt.Errorf("committee hash mismatch for key block %s", keyHash)
+	}
+	publicKeys := committee.ToBlsPublicKeys(keyHash)
+	if len(publicKeys) == 0 || len(publicKeys) != len(committee.List) {
+		return nil, fmt.Errorf("invalid committee public keys for key block %s", keyHash)
+	}
+	return append([]*bls.PublicKey(nil), publicKeys...), nil
 }
 
 // Self call by hotstuff
@@ -437,15 +471,6 @@ func (s *Service) ValidateView(data []byte) ([]byte, string, uint64, error) {
 	current := s.currentView
 	s.muCurrentView.Unlock()
 
-	leaderID := ""
-	committee := bftview.GetCurrentMember()
-	if committee != nil && current.LeaderIndex < uint(len(committee.List)) {
-		leader := committee.List[current.LeaderIndex]
-		if leader != nil {
-			leaderID = bftview.GetNodeID(leader.Address, leader.Public)
-		}
-	}
-
 	log.Debug("ValidateView..",
 		"txNumber", view.TxNumber,
 		"keyNumber", view.KeyNumber,
@@ -453,7 +478,22 @@ func (s *Service) ValidateView(data []byte) ([]byte, string, uint64, error) {
 		"tx number", current.TxNumber)
 
 	expectedState, expectedNumber, err := validateViewAgainstSnapshot(data, current, s.fairHotstuffEnabled())
-	return expectedState, leaderID, expectedNumber, err
+	if err != nil {
+		return expectedState, "", expectedNumber, err
+	}
+	committee, err := s.loadViewCommittee(&current, true)
+	if err != nil {
+		return expectedState, "", expectedNumber, err
+	}
+	if current.LeaderIndex >= uint(len(committee.List)) || committee.List[current.LeaderIndex] == nil {
+		return expectedState, "", expectedNumber, fmt.Errorf("invalid leader index %d for committee %s", current.LeaderIndex, current.KeyHash)
+	}
+	leader := committee.List[current.LeaderIndex]
+	leaderID := bftview.GetNodeID(leader.Address, leader.Public)
+	if leaderID == "" {
+		return expectedState, "", expectedNumber, fmt.Errorf("empty leader id for committee %s", current.KeyHash)
+	}
+	return expectedState, leaderID, expectedNumber, nil
 }
 
 func cloneProposalBodyMsg(in *proposalBodyMsg) *proposalBodyMsg {
