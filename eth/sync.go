@@ -163,8 +163,10 @@ type chainSyncOp struct {
 // newChainSyncer creates a chainSyncer.
 func newChainSyncer(pm *ProtocolManager) *chainSyncer {
 	return &chainSyncer{
-		pm:          pm,
-		peerEventCh: make(chan struct{}),
+		pm: pm,
+		// Coalesce wakeups so HotStuff future-view handling can request a sync
+		// without blocking on the chain sync loop.
+		peerEventCh: make(chan struct{}, 1),
 	}
 }
 

@@ -57,10 +57,18 @@ func newKeyService(s serviceI, backend *ReconfigBackend, config *params.ChainCon
 	return keyS
 }
 
-// Verify keyblock
-func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *types.Candidate) error { //
+// Verify keyblock. prepareView is the view authenticated by the Prepare high
+// QC; it must not be replaced by the replica's mutable local pacemaker view.
+func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *types.Candidate, prepareView *bftview.View) error { //
 	log.Info("@verifyKeyBlock", "number", keyblock.NumberU64())
 	kbc := keyS.kbc
+	var prepareCommittee *bftview.Committee
+	if prepareView != nil {
+		prepareCommittee = bftview.LoadMember(prepareView.KeyNumber, prepareView.KeyHash, false)
+	}
+	if err := verifyKeyBlockLeaderForCommittee(prepareView, prepareCommittee, keyblock.LeaderPubKey()); err != nil {
+		return err
+	}
 	if keyblock.LeaderPubKey() == bftview.GetServerInfo(bftview.PublicKey) {
 		curKeyblock := kbc.CurrentBlock()
 		if keyblock.NumberU64() != curKeyblock.NumberU64()+1 {
@@ -108,11 +116,6 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	}
 	if keyblock.T_Number() != keyS.bc.CurrentBlockN() {
 		return fmt.Errorf("verifyKeyBlock, T_Number is not current, cur tx number:%d, k_t_number:%d", keyS.bc.CurrentBlockN(), keyblock.T_Number())
-	}
-	viewleaderIndex := keyS.s.GetCurrentView().LeaderIndex
-	index := bftview.GetMemberIndex(keyblock.LeaderPubKey())
-	if index != int(viewleaderIndex) {
-		return fmt.Errorf("verifyKeyBlock,leaderindex(%d) error, nowIndex:%d", viewleaderIndex, index)
 	}
 	if keyblock.InAddress() == "" || keyblock.InPubKey() == "" || keyblock.LeaderPubKey() == "" || keyblock.LeaderAddress() == "" {
 		return fmt.Errorf("verifyKeyBlock,in or leader public key is empty")
@@ -189,15 +192,39 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		return fmt.Errorf("keyblock verify failed, in is not correct")
 	}
 	if bftview.InRescueMode(keyblock.NumberU64(), keyblock.Hash()) {
-        bftview.ClearRescueMode()
-        log.Info("Rescue mode cleared after processing block", 
-            "number", keyblock.NumberU64())
-    }
+		bftview.ClearRescueMode()
+		log.Info("Rescue mode cleared after processing block",
+			"number", keyblock.NumberU64())
+	}
 	if bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true) == nil {
 		mb.Store(keyblock)
 	}
 	keyS.s.syncCommittee(mb, keyblock)
 
+	return nil
+}
+
+func verifyKeyBlockLeaderForCommittee(prepareView *bftview.View, committee *bftview.Committee, leaderPublicKey string) error {
+	if prepareView == nil {
+		return fmt.Errorf("verifyKeyBlock, Prepare view is nil")
+	}
+	if committee == nil {
+		return fmt.Errorf("verifyKeyBlock, committee for authenticated Prepare view is missing")
+	}
+	_, index := committee.Get(leaderPublicKey, bftview.PublicKey)
+	if index < 0 {
+		return fmt.Errorf("verifyKeyBlock, leader is not in authenticated Prepare committee")
+	}
+	return verifyKeyBlockLeaderIndex(prepareView, index)
+}
+
+func verifyKeyBlockLeaderIndex(prepareView *bftview.View, keyBlockLeaderIndex int) error {
+	if prepareView == nil {
+		return fmt.Errorf("verifyKeyBlock, Prepare view is nil")
+	}
+	if keyBlockLeaderIndex != int(prepareView.LeaderIndex) {
+		return fmt.Errorf("verifyKeyBlock,leaderindex(%d) error, nowIndex:%d", prepareView.LeaderIndex, keyBlockLeaderIndex)
+	}
 	return nil
 }
 

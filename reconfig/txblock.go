@@ -18,11 +18,13 @@
 package reconfig
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/consensus/ethash"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/state"
@@ -34,6 +36,15 @@ import (
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/trie"
 )
+
+func isRecoverableBlockValidationError(err error) bool {
+	return errors.Is(err, consensus.ErrFutureBlock) ||
+		errors.Is(err, consensus.ErrUnknownAncestor) ||
+		errors.Is(err, consensus.ErrPrunedAncestor) ||
+		errors.Is(err, types.ErrFutureBlock) ||
+		errors.Is(err, types.ErrUnknownAncestor) ||
+		errors.Is(err, types.ErrPrunedAncestor)
+}
 
 type txService struct {
 	s               serviceI
@@ -167,13 +178,22 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 	}
 	err := bc.Engine().VerifyHeader(bc, header, false)
 	if err != nil {
-		retErr = fmt.Errorf("invalid header, error:%s", err.Error())
-		return retErr
+		if isRecoverableBlockValidationError(err) {
+			return err
+		}
+		return fmt.Errorf("invalid header: %w", err)
 	}
 	err = bc.Validator().ValidateBody(txblock)
-	if err == types.ErrFutureBlock || err == types.ErrUnknownAncestor || err == types.ErrPrunedAncestor {
-		retErr = fmt.Errorf("invalid body, error:%s", err.Error())
-		return retErr
+	if err != nil {
+		if errors.Is(err, core.ErrKnownBlock) {
+			return nil
+		}
+		if isRecoverableBlockValidationError(err) {
+			// Preserve the sentinel so HotStuff can retain and retry a Prepare
+			// after its parent is imported by the canonical chain syncer.
+			return err
+		}
+		return fmt.Errorf("invalid body: %w", err)
 	}
 	/*
 		statedb, _, err := bc.State()
@@ -197,6 +217,9 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 
 // New txBlock done, when consensus agreement completed
 func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte) error {
+	if block == nil {
+		return fmt.Errorf("cannot decide nil block")
+	}
 	log.Info("decideNewBlock", "TxBlock Number", block.NumberU64(), "txs", len(block.Transactions()))
 	bc := txS.bc
 	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {

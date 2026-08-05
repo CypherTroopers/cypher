@@ -1,8 +1,12 @@
 package common
 
+import "sync"
+
 // Queue represents a double-ended queue.
 // The zero value is an empty queue ready to use.
 type Queue struct {
+	mu sync.Mutex
+
 	// PushBack writes to rep[back] then increments back; PushFront
 	// decrements front then writes to rep[front]; len(rep) is a power
 	// of two; unused slots are nil and not garbage.
@@ -19,9 +23,16 @@ func QueueNew() *Queue {
 
 // Init initializes or clears queue q.
 func (q *Queue) Init() *Queue {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.init()
+	return q
+}
+
+// init initializes q. The caller must hold q.mu.
+func (q *Queue) init() {
 	q.rep = make([]interface{}, 1)
 	q.front, q.back, q.length = 0, 0, 0
-	return q
 }
 
 // lazyInit lazily initializes a zero Queue value.
@@ -32,12 +43,14 @@ func (q *Queue) Init() *Queue {
 // But that's the price for making zero values useful immediately.
 func (q *Queue) lazyInit() {
 	if q.rep == nil {
-		q.Init()
+		q.init()
 	}
 }
 
 // Len returns the number of elements of queue q.
 func (q *Queue) Len() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return q.length
 }
 
@@ -98,18 +111,26 @@ func (q *Queue) dec(i int) int {
 
 // Front returns the first element of queue q or nil.
 func (q *Queue) Front() interface{} {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.lazyInit()
 	// no need to check q.empty(), unused slots are nil
 	return q.rep[q.front]
 }
 
 // Back returns the last element of queue q or nil.
 func (q *Queue) Back() interface{} {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.lazyInit()
 	// no need to check q.empty(), unused slots are nil
 	return q.rep[q.dec(q.back)]
 }
 
 // PushFront inserts a new value v at the front of queue q.
 func (q *Queue) PushFront(v interface{}) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.lazyInit()
 	q.lazyGrow()
 	q.front = q.dec(q.front)
@@ -119,6 +140,8 @@ func (q *Queue) PushFront(v interface{}) {
 
 // PushBack inserts a new value v at the back of queue q.
 func (q *Queue) PushBack(v interface{}) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.lazyInit()
 	q.lazyGrow()
 	q.rep[q.back] = v
@@ -128,6 +151,8 @@ func (q *Queue) PushBack(v interface{}) {
 
 // PopFront removes and returns the first element of queue q or nil.
 func (q *Queue) PopFront() interface{} {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	if q.empty() {
 		return nil
 	}
@@ -141,6 +166,8 @@ func (q *Queue) PopFront() interface{} {
 
 // PopBack removes and returns the last element of queue q or nil.
 func (q *Queue) PopBack() interface{} {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	if q.empty() {
 		return nil
 	}

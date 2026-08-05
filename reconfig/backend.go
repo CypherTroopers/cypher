@@ -33,6 +33,7 @@ type Backend interface {
 	CandidatePool() *core.CandidatePool
 	Engine() consensus.Engine
 	ExtIP() net.IP
+	RequestSync()
 }
 
 type ReconfigBackend struct {
@@ -43,6 +44,7 @@ type ReconfigBackend struct {
 	txPool         *core.TxPool
 	accountManager *accounts.Manager
 	downloader     *downloader.Downloader
+	requestSync    func()
 
 	// we need an event mux to instantiate the blockchain
 	eventMux         *event.TypeMux
@@ -82,6 +84,7 @@ func New(stack *node.Node, chainConfig *params.ChainConfig, e Backend) (*Reconfi
 		pendingLogsFeed:  e.ConsensusServicePendingLogsFeed(),
 		candidatePool:    e.CandidatePool(),
 		engine:           e.Engine(),
+		requestSync:      e.RequestSync,
 	}
 	sIp := e.ExtIP().String() + ":" + chainConfig.RnetPort
 	//backend.minter = newMinter(chainConfig, backend, blockTime)
@@ -117,6 +120,11 @@ func (backend *ReconfigBackend) EventMux() *event.TypeMux           { return bac
 func (backend *ReconfigBackend) TxPool() *core.TxPool               { return backend.txPool }
 func (backend *ReconfigBackend) CandidatePool() *core.CandidatePool { return backend.candidatePool }
 func (backend *ReconfigBackend) Engine() consensus.Engine           { return backend.engine }
+func (backend *ReconfigBackend) RequestSync() {
+	if backend.requestSync != nil {
+		backend.requestSync()
+	}
+}
 func (backend *ReconfigBackend) ConsensusServicePendingLogsFeed() *event.Feed {
 	return backend.pendingLogsFeed
 }
@@ -145,7 +153,10 @@ func (backend *ReconfigBackend) Stop() error {
 
 //------------------------------------------------------------------
 func (backend *ReconfigBackend) MinerStart(config *common.NodeConfig) error {
-	backend.service.start(config)
+	if err := backend.service.start(config); err != nil {
+		log.Error("reconfig start failed", "error", err)
+		return err
+	}
 	log.Info("reconfig start")
 	return nil
 }

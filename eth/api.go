@@ -158,7 +158,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 		pubKey ed25519.PublicKey
 	)
 
-	if api.e.IsMining() {
+	if api.e.IsMining() || api.e.ServiceIsRunning() {
 		return fmt.Errorf("Miner is running...")
 	}
 	//log.Info("miner.start", "threads", threads, "addr", addr, "passwd", password)
@@ -194,7 +194,12 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	server.Ip = api.e.ExtIP().String()
 	server.Port = api.e.config.RnetPort
 	server.Coinbase = eb.Hex()
-	api.e.reconfig.MinerStart(server)
+	if err := api.e.WaitForConsensusSync(consensusSyncWaitTimeout); err != nil {
+		return err
+	}
+	if err := api.e.reconfig.MinerStart(server); err != nil {
+		return err
+	}
 	// Start the miner and return
 	// Set the number of threads if the seal engine supports it
 	//if threads == nil {
@@ -209,7 +214,11 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	//	log.Info("Updated mining threads", "threads", *threads)
 	//	th.SetThreads(*threads)
 	//}
-	return api.e.StartMining(true, eb, pubKey)
+	if err := api.e.StartMining(true, eb, pubKey); err != nil {
+		api.e.reconfig.MinerStop()
+		return err
+	}
+	return nil
 }
 
 // Stop terminates the miner, both at the consensus engine level as well as at

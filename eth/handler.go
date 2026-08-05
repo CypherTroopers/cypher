@@ -47,6 +47,9 @@ const (
 	softResponseLimit = 2 * 1024 * 1024 // Target maximum size of returned blocks, headers or node data.
 	estHeaderRlpSize  = 500             // Approximate size of an RLP encoded block header
 
+	// Keep the mining gate aligned with the short-range fetcher's queue limit.
+	maxObservedFetcherDistance = 32
+
 	// txChanSize is the size of channel listening to NewTxsEvent.
 	// The number is referenced from the size of tx pool.
 	txChanSize = 4096
@@ -66,6 +69,9 @@ type ProtocolManager struct {
 
 	fastSync  uint32 // Flag whether fast sync is enabled (gets disabled if we already have blocks)
 	acceptTxs uint32 // Flag whether we're considered synchronised (enables transaction processing)
+	// observedHead tracks block announcements handled by the short-range fetcher.
+	// Downloader.Synchronising alone does not cover this import path.
+	observedHead uint64
 
 	checkpointNumber uint64      // Block number for the sync progress validator to cross reference
 	checkpointHash   common.Hash // Block hash for the sync progress validator to cross reference
@@ -103,6 +109,72 @@ type ProtocolManager struct {
 	broadcastTxAnnouncesOnly bool // Testing field, disable transaction propagation
 }
 
+func (pm *ProtocolManager) observeHead(number uint64) {
+	local := pm.blockchain.CurrentBlock().NumberU64()
+	if number > local && number-local > maxObservedFetcherDistance {
+		number = local + maxObservedFetcherDistance
+	}
+	raiseObservedHead(&pm.observedHead, number)
+}
+
+func raiseObservedHead(observed *uint64, number uint64) {
+	for {
+		current := atomic.LoadUint64(observed)
+		if number <= current {
+			return
+		}
+		if atomic.CompareAndSwapUint64(observed, current, number) {
+			return
+		}
+	}
+}
+
+// resolveTrustedCheckpoint validates the fields needed by the full-node sync
+// gates. It deliberately rejects incomplete, overflowing, or locally
+// contradictory checkpoints instead of guessing replacement values.
+func resolveTrustedCheckpoint(checkpoint *params.TrustedCheckpoint, localHead uint64, canonicalHash func(uint64) common.Hash) (uint64, common.Hash, error) {
+	if checkpoint == nil {
+		return 0, common.Hash{}, errors.New("nil trusted checkpoint")
+	}
+	if checkpoint.Empty() {
+		return 0, common.Hash{}, errors.New("incomplete trusted checkpoint")
+	}
+	maxUint64 := ^uint64(0)
+	if checkpoint.SectionIndex == maxUint64 || checkpoint.SectionIndex+1 > maxUint64/params.CHTFrequency {
+		return 0, common.Hash{}, errors.New("trusted checkpoint number overflows uint64")
+	}
+	number := (checkpoint.SectionIndex+1)*params.CHTFrequency - 1
+	if localHead >= number {
+		if canonicalHash == nil {
+			return 0, common.Hash{}, errors.New("cannot validate trusted checkpoint against local chain")
+		}
+		if hash := canonicalHash(number); hash != checkpoint.SectionHead {
+			return 0, common.Hash{}, fmt.Errorf("trusted checkpoint section head mismatch at block %d", number)
+		}
+	}
+	return number, checkpoint.SectionHead, nil
+}
+
+// promotePeerHead records the full announced block, not merely its parent. A
+// strict TD increase is required so stale announcements cannot move metadata
+// backwards. The caller uses the return value to wake the chain downloader.
+func promotePeerHead(p *peer, head common.Hash, td *big.Int) bool {
+	if p == nil || td == nil {
+		return false
+	}
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	if p.td != nil && td.Cmp(p.td) <= 0 {
+		return false
+	}
+	copy(p.head[:], head[:])
+	if p.td == nil {
+		p.td = new(big.Int)
+	}
+	p.td.Set(td)
+	return true
+}
+
 // NewProtocolManager returns a new Ethereum sub protocol manager. The Ethereum sub protocol manages peers capable
 // with the Ethereum network.
 func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCheckpoint, mode downloader.SyncMode, networkID uint64, mux *event.TypeMux, txpool txPool, engine consensus.Engine, blockchain *core.BlockChain, chaindb ethdb.Database, cacheLimit int, whitelist map[uint64]common.Hash, candidatePool *core.CandidatePool) (*ProtocolManager, error) {
@@ -119,6 +191,7 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 		whitelist:     whitelist,
 		txsyncCh:      make(chan *txsync),
 		quitSync:      make(chan struct{}),
+		observedHead:  blockchain.CurrentBlock().NumberU64(),
 	}
 
 	if mode == downloader.FullSync {
@@ -145,10 +218,23 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 		}
 	}
 
-	// If we have trusted checkpoints, enforce them on the chain
+	// If we have a complete and internally consistent trusted checkpoint,
+	// enforce it on the chain. Invalid configuration must not suppress normal
+	// short-range block imports.
 	if checkpoint != nil {
-		manager.checkpointNumber = (checkpoint.SectionIndex+1)*params.CHTFrequency - 1
-		manager.checkpointHash = checkpoint.SectionHead
+		number, hash, err := resolveTrustedCheckpoint(checkpoint, blockchain.CurrentHeader().Number.Uint64(), func(number uint64) common.Hash {
+			header := blockchain.GetHeaderByNumber(number)
+			if header == nil {
+				return common.Hash{}
+			}
+			return header.Hash()
+		})
+		if err != nil {
+			log.Warn("Ignoring unusable trusted checkpoint", "section", checkpoint.SectionIndex, "err", err)
+		} else {
+			manager.checkpointNumber = number
+			manager.checkpointHash = hash
+		}
 	}
 
 	// Construct the downloader (long sync) and its backing state bloom if fast
@@ -711,6 +797,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			}
 		}
 		for _, block := range unknown {
+			pm.observeHead(block.Number)
 			pm.blockFetcher.Notify(p.id, block.Hash, block.Number, time.Now(), p.RequestOneHeader, p.RequestBodies)
 		}
 
@@ -733,20 +820,16 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		}
 		request.Block.ReceivedAt = msg.ReceivedAt
 		request.Block.ReceivedFrom = p
+		pm.observeHead(request.Block.NumberU64())
 
 		// Mark the peer as owning the block and schedule it for import
 		p.MarkBlock(request.Block.Hash())
 		pm.blockFetcher.Enqueue(p.id, request.Block)
 
-		// Assuming the block is importable by the peer, but possibly not yet done so,
-		// calculate the head hash and TD that the peer truly must have.
-		var (
-			trueHead = request.Block.ParentHash()
-			trueTD   = new(big.Int).Sub(request.TD, request.Block.Difficulty())
-		)
-		// Update the peer's total difficulty if better than the previous
-		if _, td := p.Head(); trueTD.Cmp(td) > 0 {
-			p.SetHead(trueHead, trueTD)
+		// Record the full announced block as the peer's head. In particular, when
+		// local is exactly the parent, recording only the parent leaves both TDs
+		// equal and prevents the downloader from rescuing a failed fetcher import.
+		if promotePeerHead(p, request.Block.Hash(), request.TD) {
 			pm.chainSync.handlePeerEvent(p)
 		}
 

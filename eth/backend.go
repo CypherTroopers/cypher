@@ -25,8 +25,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
-
-	//	"time"
+	"time"
 
 	"github.com/cypherium/cypher/accounts"
 	"github.com/cypherium/cypher/common"
@@ -230,6 +229,13 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	checkpoint := config.Checkpoint
 	if checkpoint == nil {
 		checkpoint = params.TrustedCheckpoints[genesisHash]
+	}
+	// A partially populated checkpoint is explicitly unusable according to
+	// TrustedCheckpoint.Empty. Do not turn it into a large artificial sync gate
+	// or guess replacement fields from another checkpoint.
+	if checkpoint != nil && checkpoint.Empty() {
+		log.Warn("Ignoring incomplete trusted checkpoint", "section", checkpoint.SectionIndex)
+		checkpoint = nil
 	}
 
 	if eth.protocolManager, err = NewProtocolManager(chainConfig, checkpoint, config.SyncMode, config.NetworkId, eth.eventMux, eth.txPool, eth.engine, eth.blockchain, chainDb, cacheLimit, config.Whitelist, eth.candidatePool); err != nil {
@@ -515,6 +521,162 @@ func (s *Ethereum) StopMining() {
 }
 */
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
+
+const (
+	consensusSyncWaitTimeout  = 15 * time.Second
+	consensusSyncPollInterval = 100 * time.Millisecond
+	consensusSyncSettleTime   = 300 * time.Millisecond
+)
+
+// consensusSyncState is a point-in-time view of the two block import paths.
+// The downloader handles long range sync while the fetcher imports announced
+// blocks. Mining must wait for both of them.
+type consensusSyncState struct {
+	downloading    bool
+	hasPeer        bool
+	standalone     bool
+	localNumber    uint64
+	observedNumber uint64
+	localHash      common.Hash
+	peerHash       common.Hash
+	localTD        *big.Int
+	peerTD         *big.Int
+}
+
+func (state consensusSyncState) ready() bool {
+	if state.downloading || state.observedNumber > state.localNumber {
+		return false
+	}
+	if !state.hasPeer {
+		// A transient lack of peers is not proof of synchronisation. Only an
+		// explicitly peerless node may start without comparing a remote head.
+		return state.standalone
+	}
+	if state.localTD == nil || state.peerTD == nil {
+		return false
+	}
+	switch state.peerTD.Cmp(state.localTD) {
+	case 1:
+		return false
+	case -1:
+		return true
+	default:
+		// Equal TD on different heads is not a safe point at which to vote.
+		return state.peerHash == state.localHash
+	}
+}
+
+func requiredObservedHeight(local, observed uint64) uint64 {
+	if observed > local {
+		return observed
+	}
+	return local
+}
+
+func waitForConsensusSync(timeout, pollInterval, settleTime time.Duration, snapshot func() consensusSyncState) (consensusSyncState, error) {
+	if pollInterval <= 0 {
+		pollInterval = time.Millisecond
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	var (
+		state            consensusSyncState
+		readySince       time.Time
+		requiredObserved uint64
+	)
+	for {
+		state = snapshot()
+		// Once this wait observes an announced head, keep it as a floor for
+		// the entire invocation. A concurrent snapshot must never relax the
+		// safety condition halfway through this attempt.
+		if state.observedNumber > requiredObserved {
+			requiredObserved = state.observedNumber
+		}
+		if requiredObserved > state.observedNumber {
+			state.observedNumber = requiredObserved
+		}
+		if state.ready() {
+			if (!state.hasPeer && state.standalone) || settleTime <= 0 {
+				return state, nil
+			}
+			if readySince.IsZero() {
+				readySince = time.Now()
+			} else if time.Since(readySince) >= settleTime {
+				return state, nil
+			}
+		} else {
+			readySince = time.Time{}
+		}
+
+		select {
+		case <-ticker.C:
+		case <-deadline.C:
+			return state, fmt.Errorf("timed out waiting for canonical chain sync")
+		}
+	}
+}
+
+func (s *Ethereum) consensusSyncState() consensusSyncState {
+	block := s.blockchain.CurrentBlock()
+	state := consensusSyncState{
+		localNumber:    block.NumberU64(),
+		observedNumber: block.NumberU64(),
+		localHash:      block.Hash(),
+		localTD:        s.blockchain.GetTd(block.Hash(), block.NumberU64()),
+		standalone:     s.p2pServer != nil && s.p2pServer.MaxPeers == 0,
+	}
+	if s.protocolManager == nil {
+		return state
+	}
+	if s.protocolManager.downloader != nil {
+		state.downloading = s.protocolManager.downloader.Synchronising()
+	}
+	// A known ahead height remains a startup requirement until the canonical
+	// chain reaches it. Elapsed wall time and later lower announcements are not
+	// evidence that this node caught up.
+	state.observedNumber = requiredObservedHeight(state.localNumber, atomic.LoadUint64(&s.protocolManager.observedHead))
+	peer := s.protocolManager.peers.BestPeer()
+	if peer == nil {
+		return state
+	}
+	state.hasPeer = true
+	state.peerHash, state.peerTD = peer.Head()
+	return state
+}
+
+// RequestSync asks the normal Ethereum chain syncer to immediately re-evaluate
+// the best peer. The send is best-effort because peer announcements also wake
+// the same loop and callers must never block HotStuff message handling.
+func (s *Ethereum) RequestSync() {
+	if s.protocolManager == nil || s.protocolManager.chainSync == nil {
+		return
+	}
+	select {
+	case s.protocolManager.chainSync.peerEventCh <- struct{}{}:
+	default:
+	}
+}
+
+// WaitForConsensusSync prevents a committee member from voting on a stale
+// canonical head after mining is resumed.
+func (s *Ethereum) WaitForConsensusSync(timeout time.Duration) error {
+	state, err := waitForConsensusSync(timeout, consensusSyncPollInterval, consensusSyncSettleTime, func() consensusSyncState {
+		state := s.consensusSyncState()
+		if !state.ready() {
+			s.RequestSync()
+		}
+		return state
+	})
+	if err != nil {
+		return fmt.Errorf("cannot start mining before chain sync completes (local block %d, observed block %d, peer available %t, standalone %t, downloading %t): %w",
+			state.localNumber, state.observedNumber, state.hasPeer, state.standalone, state.downloading, err)
+	}
+	return nil
+}
+
 func (s *Ethereum) StartMining(local bool, eb common.Address, pubKey ed25519.PublicKey) error {
 	// If the miner was not running, initialize it
 	if !s.IsMining() {

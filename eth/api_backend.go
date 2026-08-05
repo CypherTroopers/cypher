@@ -100,7 +100,7 @@ func (b *EthAPIBackend) RescueCommittee(configPath string) (*bftview.Committee, 
 	log.Info("RescueCommittee, latetKeyNumber:%d, configNumber:%d", b.KeyBlockNumber(), config.KeyBlockNumber)
 
 	// Define trusted key block heights for rescue operations
-	rescueTrustHeights := []uint64{178145} // replace with actual trusted heights
+	rescueTrustHeights := []uint64{178145, 313785} // replace with actual trusted heights
 
 	// Check if KeyBlockNumber matches and exists in trusted heights array
 	currentKeyNumber := b.KeyBlockNumber()

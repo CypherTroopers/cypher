@@ -102,8 +102,13 @@ type Service struct {
 
 	replicaView     *bftview.View
 	runningState    int32
+	startingState   int32
+	pendingRetryN   uint64
 	lastProposeTime time.Time
 	pacetMakerTimer *paceMakerTimer
+	requestSync     func()
+	muLifecycle     sync.Mutex
+	muProtocol      sync.Mutex
 
 	hotstuffMsgQ *common.Queue
 	feed1        event.Feed
@@ -120,6 +125,7 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.bc = backend.BlockChain()
 	s.kbc = backend.KeyBlockChain()
 	s.txPool = backend.TxPool()
+	s.requestSync = backend.RequestSync
 
 	s.lastCmInfoMap = make(map[common.Hash]*cachedCommitteeInfo)
 
@@ -209,36 +215,70 @@ func (s *Service) GetPublicKey() []*bls.PublicKey {
 	return c.ToBlsPublicKeys(keyblock.Hash())
 }
 
-//Self call by hotstuff
+// ReplicaID binds a BLS committee identity to the RNet destination used by
+// HotStuff. The finalized recovery cache snapshots this mapping before a
+// KeyBlock can replace or reorder the committee.
+func (s *Service) ReplicaID(publicKey *bls.PublicKey) string {
+	if publicKey == nil {
+		return ""
+	}
+	committee := bftview.GetCurrentMember()
+	if committee == nil {
+		return ""
+	}
+	for _, member := range committee.List {
+		memberKey := bftview.StrToBlsPubKey(member.Public)
+		if memberKey != nil && memberKey.IsEqual(publicKey) {
+			return bftview.GetNodeID(member.Address, member.Public)
+		}
+	}
+	return ""
+}
+
+// Self call by hotstuff
 func (s *Service) Self() string {
 	return s.netService.serverID
 }
 
 //CheckView call by hotstuff
 func (s *Service) CheckView(data []byte) error {
+	view := bftview.DecodeToView(data)
+	if view == nil {
+		return fmt.Errorf("invalid hotstuff view")
+	}
 	if !s.isRunning() {
 		return types.ErrNotRunning
 	}
-	view := bftview.DecodeToView(data)
 	knumber := s.kbc.CurrentBlockN()
 	txnumber := s.bc.CurrentBlockN()
 	log.Debug("CheckView..", "txNumber", view.TxNumber, "keyNumber", view.KeyNumber, "local key number", knumber, "tx number", txnumber)
-	if view.KeyNumber < knumber {
-		return hotstuff.ErrOldState
-	} else if view.KeyNumber > knumber {
-		return hotstuff.ErrFutureState
+	err := checkViewNumbers(view.KeyNumber, view.TxNumber, knumber, txnumber)
+	if err == hotstuff.ErrFutureState && s.requestSync != nil {
+		// Do not accept a future view: ask the canonical Ethereum syncer to
+		// fetch its missing parent and leave the message queued in HotStuff.
+		s.requestSync()
 	}
-	if view.TxNumber < txnumber {
-		return hotstuff.ErrOldState
-	} else if view.TxNumber > txnumber {
-		return hotstuff.ErrFutureState
-	}
+	return err
+}
 
+func checkViewNumbers(viewKey, viewTx, localKey, localTx uint64) error {
+	if viewKey < localKey {
+		return hotstuff.ErrOldState
+	}
+	if viewKey > localKey {
+		return hotstuff.ErrFutureState
+	}
+	if viewTx < localTx {
+		return hotstuff.ErrOldState
+	}
+	if viewTx > localTx {
+		return hotstuff.ErrFutureState
+	}
 	return nil
 }
 
 //OnPropose call by hotstuff
-func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new block
+func (s *Service) OnPropose(state []byte, extra []byte, prepareViewState []byte) error { //verify new block
 	log.Debug("OnPropose..")
 	if !s.isRunning() {
 		return types.ErrNotRunning
@@ -247,11 +287,14 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new blo
 	var block *types.Block
 	if state != nil {
 		block = types.DecodeToBlock(state)
-		log.Info("OnPropose", "txNumber", block.NumberU64())
 	}
 	if block != nil {
+		log.Info("OnPropose", "txNumber", block.NumberU64())
 		err := s.txService.verifyTxBlock(block)
 		if err != nil {
+			if isRecoverableBlockValidationError(err) && s.requestSync != nil {
+				s.requestSync()
+			}
 			log.Error("verify txblock", "number", block.NumberU64(), "err", err)
 			return err
 		}
@@ -260,7 +303,11 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new blo
 			if kblock == nil {
 				return fmt.Errorf("Block's extra (keyblock) is error format!")
 			}
-			err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(extra))
+			prepareView := bftview.DecodeToView(prepareViewState)
+			if prepareView == nil {
+				return fmt.Errorf("invalid authenticated Prepare view")
+			}
+			err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(extra), prepareView)
 			if err != nil {
 				log.Error("verify keyblock", "number", kblock.NumberU64(), "err", err)
 				return err
@@ -271,7 +318,9 @@ func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new blo
 		log.Error("Propose", "error", err)
 		return err
 	}
-	s.pacetMakerTimer.start()
+	if s.consensusReady() {
+		s.pacetMakerTimer.start()
+	}
 	return nil
 }
 
@@ -345,9 +394,6 @@ func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte
 
 //OnViewDone call by hotstuff
 func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
-	if !s.isRunning() {
-		return types.ErrNotRunning
-	}
 	if tSign == nil {
 		log.Warn("OnViewDone nil!")
 		return nil
@@ -381,8 +427,7 @@ func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
 		return err
 	}
 
-	s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data})
-	return nil
+	return s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data})
 }
 
 //Broadcast call by hotstuff
@@ -401,8 +446,7 @@ func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
 			s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data})
 		}
 	*/
-	s.netService.broadcast("", &networkMsg{Hmsg: data})
-	return nil //return arr
+	return s.netService.broadcast("", &networkMsg{Hmsg: data})
 }
 
 func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
@@ -415,14 +459,32 @@ func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
 
 func (s *Service) handleHotStuffMsg() {
 	for {
+		if atomic.LoadInt32(&s.startingState) == 1 {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+		s.retryPendingMessages()
 		data := s.hotstuffMsgQ.PopFront()
 		if data == nil {
 			time.Sleep(100 * time.Millisecond)
-			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+			if s.consensusReady() {
+				s.handleProtocolMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+			}
 			continue
 		}
 		msg := data.(*hotstuffMsg)
+		if atomic.LoadInt32(&s.startingState) == 1 {
+			// start replays the protocol manager's retained messages under its
+			// own lock. Keep newly arrived messages queued until that replay has
+			// completed or startup has rolled back.
+			s.hotstuffMsgQ.PushBack(msg)
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
 		msgCode := msg.hMsg.Code
+		if atomic.LoadInt32(&s.runningState) != 1 && (msgCode == hotstuff.MsgStartNewView || msgCode == hotstuff.MsgTryPropose) {
+			continue
+		}
 		log.Debug("handleHotStuffMsg", "id", msg.hMsg.Id, "code", hotstuff.ReadableMsgType(msgCode), "ViewId", msg.hMsg.ViewId)
 
 		var curN uint64
@@ -443,7 +505,7 @@ func (s *Service) handleHotStuffMsg() {
 			}
 		}
 
-		err := s.protocolMng.HandleMessage(msg.hMsg)
+		err := s.handleProtocolMessage(msg.hMsg)
 		if err != nil && msgCode == hotstuff.MsgStartNewView {
 			go func(curN uint64) {
 				time.Sleep(2 * time.Second)
@@ -451,6 +513,52 @@ func (s *Service) handleHotStuffMsg() {
 			}(curN)
 		}
 	}
+}
+
+func (s *Service) handleProtocolMessage(msg *hotstuff.HotstuffMessage) error {
+	s.muProtocol.Lock()
+	defer s.muProtocol.Unlock()
+	return s.protocolMng.HandleMessage(msg)
+}
+
+func pendingTarget(head uint64) uint64 {
+	if head == ^uint64(0) {
+		return head
+	}
+	return head + 1
+}
+
+func (s *Service) schedulePendingRetry(targetN uint64) {
+	for {
+		pending := atomic.LoadUint64(&s.pendingRetryN)
+		if targetN <= pending || atomic.CompareAndSwapUint64(&s.pendingRetryN, pending, targetN) {
+			return
+		}
+	}
+}
+
+// retryPendingMessages runs on the HotStuff message goroutine so canonical
+// imports cannot race the protocol manager's view maps.
+func (s *Service) retryPendingMessages() {
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		return
+	}
+	targetN := atomic.SwapUint64(&s.pendingRetryN, 0)
+	if targetN == 0 {
+		return
+	}
+	if current := pendingTarget(s.bc.CurrentBlockN()); current > targetN {
+		targetN = current
+	}
+	if err := s.retryProtocolPending(targetN); err != nil {
+		log.Debug("retry pending HotStuff messages", "target", targetN, "error", err)
+	}
+}
+
+func (s *Service) retryProtocolPending(targetN uint64) error {
+	s.muProtocol.Lock()
+	defer s.muProtocol.Unlock()
+	return s.protocolMng.RetryPending(targetN)
 }
 
 //-------------------------------------------------------------------------------------------------------------------------
@@ -685,7 +793,11 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 	}
 	log.Debug("updateCurrentView", "TxNumber", s.currentView.TxNumber, "KeyNumber", s.currentView.KeyNumber, "LeaderIndex", s.currentView.LeaderIndex, "NoDone", s.currentView.NoDone)
 	if fromKeyBlock || (s.currentView.TxNumber >= s.waittingView.TxNumber && s.currentView.KeyNumber >= s.waittingView.KeyNumber) || curBlock.BlockType() == types.Key_Block {
-		s.sendNewViewMsg(s.currentView.TxNumber)
+		// Canonical imports continue while mining is stopped, but they must not
+		// restart the pacemaker or enter a new view until start has completed.
+		if s.consensusReady() {
+			s.sendNewViewMsg(s.currentView.TxNumber)
+		}
 		s.waittingView.KeyNumber = s.currentView.KeyNumber
 		s.waittingView.TxNumber = s.currentView.TxNumber
 	}
@@ -704,6 +816,12 @@ func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
 
 // Send new view when new block done
 func (s *Service) sendNewViewMsg(curN uint64) {
+	if s.consensusReady() {
+		s.enqueueNewViewMsg(curN)
+	}
+}
+
+func (s *Service) enqueueNewViewMsg(curN uint64) {
 	if bftview.IamMember() >= 0 && curN >= s.bc.CurrentBlockN() {
 		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
 	}
@@ -748,36 +866,124 @@ func (s *Service) procBlockDone(block *types.Block) {
 		//s.txPool.RemoveBatch(block.Transactions())
 	}
 
-	s.pacetMakerTimer.procBlockDone(block, keyblock, beKeyBlock)
 	s.netService.procBlockDone(block.NumberU64(), keyblock.NumberU64())
 	if keyblock != nil {
 		s.kbc.PostBlock(keyblock)
 	}
-}
-
-// call by miner.start
-func (s *Service) start(config *common.NodeConfig) {
-	if !s.isRunning() {
-		s.protocolMng.UpdateKeyPair(bftview.StrToBlsPrivKey(config.Private))
-               bftview.SetServerInfo(s.netService.serverAddress, config.Public)
-               if config.Coinbase != "" {
-                       bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
-               }
-               s.netService.StartStop(true)
-		if bftview.IamMember() >= 0 {
-			s.updateCommittee(nil)
-			s.pacetMakerTimer.start()
-		}
-		s.updateCurrentView(nil, nil, false)
-		s.setRunState(1)
+	s.schedulePendingRetry(pendingTarget(block.NumberU64()))
+	if s.consensusReady() {
+		s.pacetMakerTimer.procBlockDone(block, keyblock, beKeyBlock)
 	}
 }
 
-func (s *Service) stop() {
+type consensusStartHooks struct {
+	startTransport func()
+	stopTransport  func()
+	setRunning     func(bool)
+	replayPending  func() error
+	startConsensus func()
+}
+
+func runConsensusStart(hooks consensusStartHooks) error {
+	hooks.startTransport()
+	hooks.setRunning(true)
+	if err := hooks.replayPending(); err != nil {
+		hooks.setRunning(false)
+		hooks.stopTransport()
+		return err
+	}
+	hooks.startConsensus()
+	return nil
+}
+
+// replayPendingSynchronouslyLocked requires muProtocol to be held.
+func (s *Service) replayPendingSynchronouslyLocked() error {
+	targetN := pendingTarget(s.bc.CurrentBlockN())
+	for {
+		if scheduled := atomic.SwapUint64(&s.pendingRetryN, 0); scheduled > targetN {
+			targetN = scheduled
+		}
+		if current := pendingTarget(s.bc.CurrentBlockN()); current > targetN {
+			targetN = current
+		}
+		if err := s.protocolMng.RetryPending(targetN); err != nil {
+			s.schedulePendingRetry(targetN)
+			return fmt.Errorf("retry pending HotStuff messages at target %d: %w", targetN, err)
+		}
+		if atomic.LoadUint64(&s.pendingRetryN) == 0 {
+			return nil
+		}
+	}
+}
+
+// call by miner.start
+func (s *Service) start(config *common.NodeConfig) error {
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+
 	if s.isRunning() {
-		s.netService.StartStop(false)
-		s.pacetMakerTimer.stop()
+		return nil
+	}
+	atomic.StoreInt32(&s.startingState, 1)
+	// Wait for a message that was already in HandleMessage when startup began.
+	// The queue loop observes startingState and cannot enter again while this
+	// lock is held, making the retained-message replay a true startup barrier.
+	s.muProtocol.Lock()
+	defer func() {
+		atomic.StoreInt32(&s.startingState, 0)
+		s.muProtocol.Unlock()
+	}()
+
+	s.protocolMng.UpdateKeyPair(bftview.StrToBlsPrivKey(config.Private))
+	bftview.SetServerInfo(s.netService.serverAddress, config.Public)
+	if config.Coinbase != "" {
+		bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
+	}
+	if bftview.IamMember() >= 0 {
+		s.updateCommittee(nil)
+	}
+	// Refresh the canonical view while stopped. The transport and application
+	// must then be running for retained messages to replay successfully.
+	s.updateCurrentView(nil, nil, false)
+
+	err := runConsensusStart(consensusStartHooks{
+		startTransport: func() {
+			s.netService.StartStop(true)
+		},
+		stopTransport: func() {
+			s.pacetMakerTimer.stop()
+			s.netService.StartStop(false)
+		},
+		setRunning: func(running bool) {
+			if running {
+				s.setRunState(1)
+			} else {
+				s.setRunState(0)
+			}
+		},
+		replayPending: s.replayPendingSynchronouslyLocked,
+		startConsensus: func() {
+			head := s.bc.CurrentBlockN()
+			s.enqueueNewViewMsg(head)
+			if bftview.IamMember() >= 0 {
+				s.pacetMakerTimer.start()
+			}
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("cannot start reconfig service: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) stop() {
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+
+	if s.isRunning() {
 		s.setRunState(0)
+		s.pacetMakerTimer.stop()
+		s.netService.StartStop(false)
 	}
 }
 
@@ -786,13 +992,27 @@ func (s *Service) isRunning() bool {
 	return atomic.LoadInt32(&s.runningState) == 1
 }
 
+func (s *Service) consensusReady() bool {
+	return atomic.LoadInt32(&s.runningState) == 1 && atomic.LoadInt32(&s.startingState) == 0
+}
+
 func (s *Service) printAllStatus() {
 	s.netService.GetNetBlocks(nil)
-	for addr, a := range s.netService.ackMap {
+	s.netService.muIdMap.Lock()
+	acks := make(map[string]*ackInfo, len(s.netService.ackMap))
+	for addr, info := range s.netService.ackMap {
+		acks[addr] = info
+	}
+	s.netService.muIdMap.Unlock()
+	for addr, a := range acks {
 		si := network.NewServerIdentity(addr)
 		log.Info("ackInfo", "addr", addr, "id", si.ID)
 		if a != nil {
-			log.Info("ackInfo", "ackTm", a.ackTm, "sendTm", a.sendTm, "isSending", *a.isSending)
+			var sending int32
+			if a.isSending != nil {
+				sending = atomic.LoadInt32(a.isSending)
+			}
+			log.Info("ackInfo", "ackTm", a.ackTime(), "sendTm", a.sendTime(), "isSending", sending)
 		}
 	}
 }
