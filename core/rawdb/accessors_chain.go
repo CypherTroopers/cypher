@@ -23,7 +23,6 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
-	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
@@ -268,17 +267,32 @@ func WriteFastTxLookupLimit(db ethdb.KeyValueWriter, number uint64) {
 	}
 }
 
+// readAncientHeaderRLP retrieves a canonical header from the ancient store.
+// Cypherium's Header.Hash excludes SignInfo, so hashing the stored RLP directly
+// would reject every signed header. The freezer hash table contains the
+// canonical Header.Hash for the corresponding block number.
+func readAncientHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue {
+	data, err := db.Ancient(freezerHeaderTable, number)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	canonical, err := db.Ancient(freezerHashTable, number)
+	if err != nil || len(canonical) != common.HashLength || common.BytesToHash(canonical) != hash {
+		return nil
+	}
+	return data
+}
+
 // ReadHeaderRLP retrieves a block header in its raw RLP database encoding.
 func ReadHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue {
 	// First try to look up the data in ancient database. Extra hash
 	// comparison is necessary since ancient database only maintains
 	// the canonical data.
-	data, _ := db.Ancient(freezerHeaderTable, number)
-	if len(data) > 0 && crypto.Keccak256Hash(data) == hash {
+	if data := readAncientHeaderRLP(db, hash, number); len(data) > 0 {
 		return data
 	}
 	// Then try to look up the data in leveldb.
-	data, _ = db.Get(headerKey(number, hash))
+	data, _ := db.Get(headerKey(number, hash))
 	if len(data) > 0 {
 		return data
 	}
@@ -286,8 +300,7 @@ func ReadHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValu
 	// So during the first check for ancient db, the data is not yet in there,
 	// but when we reach into leveldb, the data was already moved. That would
 	// result in a not found error.
-	data, _ = db.Ancient(freezerHeaderTable, number)
-	if len(data) > 0 && crypto.Keccak256Hash(data) == hash {
+	if data := readAncientHeaderRLP(db, hash, number); len(data) > 0 {
 		return data
 	}
 	return nil // Can't find the data anywhere.
