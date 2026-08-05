@@ -27,24 +27,21 @@ jobs:
     runs-on: macos-latest
 
     env:
-      GOPATH: ${{ github.workspace }}/go
-      GO111MODULE: 'on'
       GOFLAGS: '-mod=mod'
       CGO_ENABLED: '1'
       CC: clang
       CXX: clang++
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          path: go/src/github.com/cypherium/cypher
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.26.2'
           cache: true
-          cache-dependency-path: go/src/github.com/cypherium/cypher/go.sum
+          cache-dependency-path: go.sum
 
       - name: Setup macOS native libs
         shell: bash
@@ -54,15 +51,22 @@ jobs:
           brew update
           brew install openssl@3 gmp cmake
 
+      - name: Download Go modules
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          go version
+          go env GOMOD
+          go mod download
+          go mod verify
+
       - name: Build cypher darwin arm64
-        working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
         shell: bash
         run: |
           set -euo pipefail
 
           export PATH="$(go env GOROOT)/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
-          export GO111MODULE=on
-          export GOFLAGS=-mod=mod
           export GOOS=darwin
           export GOARCH=arm64
           export CGO_ENABLED=1
@@ -79,27 +83,38 @@ jobs:
           export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
           export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
 
-          go env -w GO111MODULE=on
-          go mod download
+          BLS_BUILD_DIR="$RUNNER_TEMP/bls-build"
 
-          rm -rf "$RUNNER_TEMP/bls-build"
-          mkdir -p "$RUNNER_TEMP/bls-build"
+          rm -rf "$BLS_BUILD_DIR"
+          mkdir -p "$BLS_BUILD_DIR"
 
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$RUNNER_TEMP/bls-build/bls"
+          git clone --depth 1 --recursive \
+            https://github.com/herumi/bls.git \
+            "$BLS_BUILD_DIR/bls"
 
-          cd "$RUNNER_TEMP/bls-build/bls"
+          cd "$BLS_BUILD_DIR/bls"
           git submodule update --init --recursive
 
-          cd "$RUNNER_TEMP/bls-build/bls/mcl"
+          cd "$BLS_BUILD_DIR/bls/mcl"
           rm -f src/bint_switch.hpp src/llvm_proto.hpp
           python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256 AR="$AR" RANLIB="$RANLIB"
+          make -j4 \
+            lib/libmcl.a \
+            MCL_FP_BIT=256 \
+            MCL_FR_BIT=256 \
+            AR="$AR" \
+            RANLIB="$RANLIB"
 
-          cd "$RUNNER_TEMP/bls-build/bls"
+          cd "$BLS_BUILD_DIR/bls"
           rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a AR="$AR" RANLIB="$RANLIB"
+          make -j4 \
+            MCL_FP_BIT=256 \
+            MCL_FR_BIT=256 \
+            lib/libbls256.a \
+            AR="$AR" \
+            RANLIB="$RANLIB"
 
-          cd "${{ github.workspace }}/go/src/github.com/cypherium/cypher"
+          cd "$GITHUB_WORKSPACE"
 
           mkdir -p crypto/bls/lib/darwin
           mkdir -p crypto/bls/lib
@@ -107,8 +122,10 @@ jobs:
           rm -f crypto/bls/lib/libbls256.a
           rm -f crypto/bls/lib/libmcl.a
 
-          cp "$RUNNER_TEMP/bls-build/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
-          cp "$RUNNER_TEMP/bls-build/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
+          cp "$BLS_BUILD_DIR/bls/lib/libbls256.a" \
+            crypto/bls/lib/darwin/libbls256.a
+          cp "$BLS_BUILD_DIR/bls/mcl/lib/libmcl.a" \
+            crypto/bls/lib/darwin/libmcl.a
 
           "$RANLIB" crypto/bls/lib/darwin/libbls256.a || true
           "$RANLIB" crypto/bls/lib/darwin/libmcl.a || true
@@ -136,31 +153,28 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cypher-macos-arm64
-          path: ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-darwin-arm64
+          path: build/bin/cypher-darwin-arm64
 
   build-linux-amd64:
     name: Build Linux amd64
     runs-on: ubuntu-latest
 
     env:
-      GOPATH: ${{ github.workspace }}/go
-      GO111MODULE: 'on'
       GOFLAGS: '-mod=mod'
       CGO_ENABLED: '1'
       CC: gcc
       CXX: g++
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          path: go/src/github.com/cypherium/cypher
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.26.2'
           cache: true
-          cache-dependency-path: go/src/github.com/cypherium/cypher/go.sum
+          cache-dependency-path: go.sum
 
       - name: Install required development packages
         shell: bash
@@ -173,22 +187,26 @@ jobs:
             bzip2 m4 build-essential git curl libc-dev \
             wget texinfo nodejs npm pcscd
 
-      - name: Build cypher linux amd64
-        working-directory: ${{ github.workspace }}/go/src/github.com/cypherium/cypher
+      - name: Download Go modules
         shell: bash
         run: |
           set -euo pipefail
 
-          export GO111MODULE=on
-          export GOFLAGS=-mod=mod
+          go version
+          go env GOMOD
+          go mod download
+          go mod verify
+
+      - name: Build cypher linux amd64
+        shell: bash
+        run: |
+          set -euo pipefail
+
           export GOOS=linux
           export GOARCH=amd64
           export CGO_ENABLED=1
           export CC=gcc
           export CXX=g++
-
-          go env -w GO111MODULE=on
-          go mod download
 
           mkdir -p crypto/bls/lib
 
@@ -216,16 +234,14 @@ jobs:
         with:
           name: cypher-linux-amd64
           path: |
-            ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher
-            ${{ github.workspace }}/go/src/github.com/cypherium/cypher/build/bin/cypher-linux-amd64
+            build/bin/cypher
+            build/bin/cypher-linux-amd64
 
   build-windows:
     name: Build Windows
     runs-on: windows-2022
 
     env:
-      GOPATH: ${{ github.workspace }}\go
-      GO111MODULE: 'on'
       GOFLAGS: '-mod=mod'
       CGO_ENABLED: '1'
       CC: gcc
@@ -239,16 +255,15 @@ jobs:
           git config --global core.longpaths true
           git config --show-origin --get-all core.longpaths
 
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          path: go/src/github.com/cypherium/cypher
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.26.2'
           cache: true
-          cache-dependency-path: go/src/github.com/cypherium/cypher/go.sum
+          cache-dependency-path: go.sum
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
@@ -264,39 +279,58 @@ jobs:
             git
             python
 
-      - name: Build cypher.exe
+      - name: Download Go modules
         shell: msys2 {0}
-        working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
         run: |
           set -e
 
-          export GO111MODULE=on
-          export GOFLAGS=-mod=mod
+          go version
+          go env GOMOD
+          go mod download
+          go mod verify
+
+      - name: Build cypher.exe
+        shell: msys2 {0}
+        run: |
+          set -e
+
+          export GOOS=windows
+          export GOARCH=amd64
           export CGO_ENABLED=1
           export CC=gcc
           export CXX=g++
 
-          go env -w GO111MODULE=on
-          go mod download
+          REPO_DIR="$(pwd)"
+          RUNNER_TEMP_UNIX="$(cygpath -u "$RUNNER_TEMP")"
+          BLS_BUILD_DIR="$RUNNER_TEMP_UNIX/bls-build"
 
-          rm -rf "$RUNNER_TEMP/bls-build"
-          mkdir -p "$RUNNER_TEMP/bls-build"
+          rm -rf "$BLS_BUILD_DIR"
+          mkdir -p "$BLS_BUILD_DIR"
 
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$RUNNER_TEMP/bls-build/bls"
+          git clone --depth 1 --recursive \
+            https://github.com/herumi/bls.git \
+            "$BLS_BUILD_DIR/bls"
 
-          cd "$RUNNER_TEMP/bls-build/bls"
+          cd "$BLS_BUILD_DIR/bls"
           git submodule update --init --recursive
 
-          cd "$RUNNER_TEMP/bls-build/bls/mcl"
+          cd "$BLS_BUILD_DIR/bls/mcl"
           rm -f src/bint_switch.hpp src/llvm_proto.hpp
           python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
+          make -j4 \
+            OS=mingw64 \
+            lib/libmcl.a \
+            MCL_FP_BIT=256 \
+            MCL_FR_BIT=256
 
-          cd "$RUNNER_TEMP/bls-build/bls"
+          cd "$BLS_BUILD_DIR/bls"
           rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
+          make -j4 \
+            MCL_FP_BIT=256 \
+            MCL_FR_BIT=256 \
+            lib/libbls256.a
 
-          cd "${{ github.workspace }}\go\src\github.com\cypherium\cypher"
+          cd "$REPO_DIR"
 
           mkdir -p crypto/bls/lib/win
           mkdir -p crypto/bls/lib
@@ -305,8 +339,10 @@ jobs:
           rm -f crypto/bls/lib/libbls256.a
           rm -f crypto/bls/lib/libmcl.a
 
-          cp "$RUNNER_TEMP/bls-build/bls/lib/libbls256.a" crypto/bls/lib/win/libbls256.a
-          cp "$RUNNER_TEMP/bls-build/bls/mcl/lib/libmcl.a" crypto/bls/lib/win/libmcl.a
+          cp "$BLS_BUILD_DIR/bls/lib/libbls256.a" \
+            crypto/bls/lib/win/libbls256.a
+          cp "$BLS_BUILD_DIR/bls/mcl/lib/libmcl.a" \
+            crypto/bls/lib/win/libmcl.a
 
           cp crypto/bls/lib/win/libbls256.a crypto/bls/lib/libbls256.a
           cp crypto/bls/lib/win/libmcl.a crypto/bls/lib/libmcl.a
@@ -316,8 +352,8 @@ jobs:
           file crypto/bls/lib/libbls256.a || true
           file crypto/bls/lib/libmcl.a || true
 
-          COMMIT=$(git rev-parse HEAD)
-          DATE=$(date +%Y%m%d)
+          COMMIT="$(git rev-parse HEAD)"
+          DATE="$(date +%Y%m%d)"
 
           go build -trimpath -v \
             -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
@@ -337,8 +373,8 @@ jobs:
         with:
           name: cypher-windows
           path: |
-            ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\cypher.exe
-            ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\*.dll
+            build/bin/cypher.exe
+            build/bin/*.dll
 
   commit-binaries:
     name: Commit binaries
@@ -349,9 +385,10 @@ jobs:
       - build-windows
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout source branch
+        uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
 
       - name: Download macOS binary
@@ -398,7 +435,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TARGET_BRANCH="${GITHUB_REF_NAME}"
+          TARGET_BRANCH="$GITHUB_REF_NAME"
 
           echo "Target branch: $TARGET_BRANCH"
 
@@ -447,8 +484,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          TARGET="${{ github.workspace }}/ColossusX-Miner"
-          SRC="${{ github.workspace }}/build/bin"
+          TARGET="$GITHUB_WORKSPACE/ColossusX-Miner"
+          SRC="$GITHUB_WORKSPACE/build/bin"
 
           rm -rf "$TARGET/build/bin"
           mkdir -p "$TARGET/build/bin"
@@ -459,7 +496,7 @@ jobs:
           cp -f "$SRC/cypher.exe" "$TARGET/build/bin/" || true
           find "$SRC" -maxdepth 1 -name '*.dll' -exec cp -f {} "$TARGET/build/bin/" \;
 
-          cp -f "${{ github.workspace }}/genesistest.json" "$TARGET/genesistest.json"
+          cp -f "$GITHUB_WORKSPACE/genesistest.json" "$TARGET/genesistest.json"
 
           cd "$TARGET"
 
