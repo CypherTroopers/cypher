@@ -6,14 +6,21 @@ Public iP for VPS is needed
 Your ip of your machine or VPS which used to deploy cypher node  must be `public IP`.such AWS ec2 which has `public IP` to deploy your cypher node!
 Please open 8000,6000,9090,7100 ports for UDP and TCP rule for VPS.
 
-go version and module
+Go version
 --
-To build the source,you need to install go1.18.1 language.
+To build the source,you need to install Go 1.26.2.
  ```
-wget https://dl.google.com/go/go1.18.1.linux-amd64.tar.gz
-tar -C /usr/local -zxvf go1.18.1.linux-amd64.tar.gz
-go env -w GO111MODULE=off
+wget https://dl.google.com/go/go1.26.2.linux-amd64.tar.gz
+tar -C /usr/local -zxvf go1.26.2.linux-amd64.tar.gz
  ```
+
+This repository uses Go modules and declares Go 1.26.2 as its toolchain.
+If `GO111MODULE=off` was previously saved globally, remove that override once:
+
+```
+go env -u GO111MODULE
+```
+
 Bls crypto gmplib 
 --
  ``` 
@@ -201,4 +208,3 @@ More APIs
 Example scripts to run cypher quickly
 ---
 You can copy the `./build/bin/cypher` to the [cypher-bin](https://github.com/cypherium/cypher-bin.git) repo's corresponding directory such as `linux or darwin`
-

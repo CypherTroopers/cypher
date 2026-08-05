@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dedis/protobuf"
+	"go.dedis.ch/protobuf"
 	uuid "gopkg.in/satori/go.uuid.v1"
 )
 

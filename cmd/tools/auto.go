@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cypherium/cypherBFT/common"
-	"github.com/cypherium/cypherBFT/common/hexutil"
-	"github.com/cypherium/cypherBFT/rpc"
+	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/common/hexutil"
+	"github.com/cypherium/cypher/rpc"
 	cli "gopkg.in/urfave/cli.v1"
 )
 
