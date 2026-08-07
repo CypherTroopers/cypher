@@ -184,8 +184,8 @@ validate_native_archives() {
   local mcl_description
 
   if [[ "${TARGET_OS}/${TARGET_ARCH}" == "darwin/arm64" ]]; then
-    lipo -verify_arch arm64 "${NATIVE_LIB_DIR}/libbls256.a"
-    lipo -verify_arch arm64 "${NATIVE_LIB_DIR}/libmcl.a"
+    lipo "${NATIVE_LIB_DIR}/libbls256.a" -verify_arch arm64
+    lipo "${NATIVE_LIB_DIR}/libmcl.a" -verify_arch arm64
   fi
 
   bls_description="$(archive_description "${NATIVE_LIB_DIR}/libbls256.a" bls)"
@@ -378,7 +378,7 @@ case "${TARGET_OS}/${TARGET_ARCH}" in
     [[ "${BINARY_DESCRIPTION}" == *"Mach-O 64-bit"* &&
       "${BINARY_DESCRIPTION}" == *"arm64"* ]] ||
       die "Unexpected macOS binary: ${BINARY_DESCRIPTION}"
-    lipo -verify_arch arm64 "${NEW_OUTPUT}"
+    lipo "${NEW_OUTPUT}" -verify_arch arm64
     MACOS_DEPENDENCIES="$(otool -L "${NEW_OUTPUT}")"
     [[ "${MACOS_DEPENDENCIES}" != *"${HOMEBREW_PREFIX}/"* ]] ||
       die "macOS binary still depends on a Homebrew dynamic library"
