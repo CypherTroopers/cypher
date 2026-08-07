@@ -167,25 +167,27 @@ archive_description() {
   [[ -s "${archive}" ]] || die "Missing native archive: ${archive}"
   mkdir -p "${inspect_dir}"
   ar -t "${archive}" > "${inspect_dir}/members.txt"
-  member="$(sed -n '1p' "${inspect_dir}/members.txt")"
-  [[ -n "${member}" ]] || die "Empty native archive: ${archive}"
+  member="$(awk '{ sub(/\r$/, ""); if ($0 ~ /\.o$/) { print; exit } }' \
+    "${inspect_dir}/members.txt")"
+  [[ -n "${member}" ]] || die "No object member found in native archive: ${archive}"
   (
     cd "${inspect_dir}"
     ar -x "${archive}" "${member}"
   )
-  object=""
-  for candidate in "${inspect_dir}"/*; do
-    [[ -f "${candidate}" && "${candidate}" != "${inspect_dir}/members.txt" ]] || continue
-    object="${candidate}"
-    break
-  done
-  [[ -n "${object}" ]] || die "Unable to inspect archive: ${archive}"
+  object="${inspect_dir}/${member##*/}"
+  [[ -f "${object}" ]] || die "Unable to extract object ${member} from ${archive}"
   file -b "${object}"
 }
 
 validate_native_archives() {
   local bls_description
   local mcl_description
+
+  if [[ "${TARGET_OS}/${TARGET_ARCH}" == "darwin/arm64" ]]; then
+    lipo -verify_arch arm64 "${NATIVE_LIB_DIR}/libbls256.a"
+    lipo -verify_arch arm64 "${NATIVE_LIB_DIR}/libmcl.a"
+  fi
+
   bls_description="$(archive_description "${NATIVE_LIB_DIR}/libbls256.a" bls)"
   mcl_description="$(archive_description "${NATIVE_LIB_DIR}/libmcl.a" mcl)"
 
@@ -197,12 +199,14 @@ validate_native_archives() {
         die "Unexpected Linux MCL archive: ${mcl_description}"
       ;;
     darwin/arm64)
-      [[ "${bls_description}" == *"Mach-O 64-bit arm64"* ]] ||
+      [[ "${bls_description}" == *"Mach-O 64-bit"* &&
+        "${bls_description}" == *"arm64"* &&
+        "${bls_description}" == *"object"* ]] ||
         die "Unexpected macOS BLS archive: ${bls_description}"
-      [[ "${mcl_description}" == *"Mach-O 64-bit arm64"* ]] ||
+      [[ "${mcl_description}" == *"Mach-O 64-bit"* &&
+        "${mcl_description}" == *"arm64"* &&
+        "${mcl_description}" == *"object"* ]] ||
         die "Unexpected macOS MCL archive: ${mcl_description}"
-      lipo -verify_arch arm64 "${NATIVE_LIB_DIR}/libbls256.a"
-      lipo -verify_arch arm64 "${NATIVE_LIB_DIR}/libmcl.a"
       ;;
     windows/amd64)
       [[ "${bls_description}" == *"COFF"* &&
@@ -371,7 +375,8 @@ case "${TARGET_OS}/${TARGET_ARCH}" in
       die "Unexpected Linux binary: ${BINARY_DESCRIPTION}"
     ;;
   darwin/arm64)
-    [[ "${BINARY_DESCRIPTION}" == *"Mach-O 64-bit arm64"* ]] ||
+    [[ "${BINARY_DESCRIPTION}" == *"Mach-O 64-bit"* &&
+      "${BINARY_DESCRIPTION}" == *"arm64"* ]] ||
       die "Unexpected macOS binary: ${BINARY_DESCRIPTION}"
     lipo -verify_arch arm64 "${NEW_OUTPUT}"
     MACOS_DEPENDENCIES="$(otool -L "${NEW_OUTPUT}")"
