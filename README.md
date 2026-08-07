@@ -1,8 +1,12 @@
 https://arxiv.org/html/2501.02970v3
 
-## preparations 
+## Preparations
+
 ### Requirements
-- Go ver 1.24 or later
+
+- Git
+- Go 1.25.6 or later. GitHub Actions uses Go 1.26.2.
+- A supported native build host: Linux amd64, macOS arm64, or Windows amd64.
 - miner Minimum requirement is 48GB RAM(VRAM is preferred)For stable operation, 96GB or more is recommended.
 - RPC only Minimum 8GB RAM or more is recommended(RPC reward Tx fee 20%)
 
@@ -12,6 +16,120 @@ https://arxiv.org/html/2501.02970v3
 git clone -b Fair-HotStuff-FHS-D --single-branch https://github.com/CypherTroopers/cypher.git
 cd cypher
 ```
+
+## Build from source
+
+`make cypher` is the single build entry point on every supported operating system. It performs a native build for the current host; it does not cross-compile another operating system.
+
+The build downloads and verifies Go modules, builds the pinned BLS/MCL native libraries, runs the BLS tests, validates the resulting architecture, and places the final files in `build/bin`.
+
+### Linux amd64
+
+Install the native dependencies:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential git python3 file ca-certificates \
+  libgmp-dev libssl-dev
+```
+
+Build Cypher:
+
+```bash
+make cypher
+```
+
+Generated files:
+
+```text
+build/bin/cypher
+build/bin/cypher-linux-amd64
+```
+
+The explicit native alias is `make cypher-linux-amd64`.
+
+### macOS Apple Silicon arm64
+
+Install the Xcode command-line tools if they are not already installed, then install the Homebrew build dependencies:
+
+```bash
+xcode-select --install
+brew install openssl@3 gmp python
+```
+
+Build Cypher:
+
+```bash
+make cypher
+```
+
+Generated files:
+
+```text
+build/bin/cypher
+build/bin/cypher-darwin-arm64
+```
+
+The explicit native alias is `make cypher-darwin-arm64`. Intel Macs are not a supported build target.
+
+### Windows amd64
+
+Use an **MSYS2 MINGW64** shell for the build. PowerShell and `cmd.exe` are not supported build shells.
+
+Update MSYS2 first:
+
+```bash
+pacman -Syu
+```
+
+If MSYS2 asks you to close the terminal, reopen the MINGW64 shell and run `pacman -Syu` again. When no further system update is pending, install the build dependencies:
+
+```bash
+pacman -S --needed \
+  mingw-w64-x86_64-gcc \
+  mingw-w64-x86_64-gmp \
+  mingw-w64-x86_64-openssl \
+  git make python file
+```
+
+Ensure that the installed Windows Go toolchain is available inside the MINGW64 shell:
+
+```bash
+go version
+```
+
+From the repository directory, build Cypher:
+
+```bash
+make cypher
+```
+
+Generated files:
+
+```text
+build/bin/cypher.exe
+build/bin/libcrypto-3-x64.dll
+build/bin/libgmp-10.dll
+build/bin/libstdc++-6.dll
+build/bin/libgcc_s_seh-1.dll
+build/bin/libwinpthread-1.dll
+```
+
+The explicit native alias is `make cypher-windows-amd64`.
+
+### GitHub Actions native builds
+
+The [`Build Binaries`](.github/workflows/build-binaries.yml) workflow uses one native matrix:
+
+| Target | GitHub-hosted runner | Build command |
+| --- | --- | --- |
+| Linux amd64 | `ubuntu-24.04` | `make cypher TARGET_OS=linux TARGET_ARCH=amd64` |
+| macOS arm64 | `macos-15` | `make cypher TARGET_OS=darwin TARGET_ARCH=arm64` |
+| Windows amd64 | `windows-2022` with MSYS2 MINGW64 | `make cypher TARGET_OS=windows TARGET_ARCH=amd64` |
+
+Each matrix job uploads only freshly staged and checksummed artifacts. After all three native builds succeed, the default-branch publish job validates their source commit, architecture, toolchain version, BLS revision, and checksums before automatically committing and pushing the files under `build/bin`.
+
 ## run a node on Linux
 ```bash
 ./colossusX_linux.sh
@@ -46,14 +164,6 @@ web3.fromWei(eth.getBalance("your address"), "ether")
 personal.unlockAccount("your address", "your password", 0)
 ~~~
 
-## go mod（Only if you continue development）
-```bash
-go mod download
-```
-## build（Only if you continue development）
-```bash
-make cypher
-```
 ## setting http/3 QUIC RPC port(example)
 Low-latency high-speed communicati
 ```
@@ -314,6 +424,3 @@ This feature does not make common miners validator consensus members.
 Common miners only provide public RPC transaction admission and receive a fee share when their admitted transaction is included in a finalized block.
 
 Validator nodes still verify all admission records, reward records, roots, signatures, chain ID, and final state before accepting the block.
-```bash
-sudo apt update && sudo apt full-upgrade -y && sudo apt autoremove -y && sudo apt autoclean -y && rm -f go1.26.2.linux-amd64.tar.gz && wget https://go.dev/dl/go1.26.2.linux-amd64.tar.gz && sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz && export PATH=/usr/local/go/bin:$PATH && export GOPATH=$HOME/go && export GO111MODULE=on && go env -w GO111MODULE=on && echo 'export PATH=/usr/local/go/bin:$PATH' >> ~/.bashrc && echo 'export GOPATH=$HOME/go' >> ~/.bashrc && echo 'export GO111MODULE=on' >> ~/.bashrc && sudo apt-get install -y gcc cmake libssl-dev openssl libgmp-dev bzip2 m4 build-essential git curl libc-dev wget texinfo nodejs npm pcscd && sudo npm install -g n && sudo n stable && sudo apt purge -y nodejs npm && sudo apt autoremove -y && export PATH="/usr/local/bin:$PATH" && hash -r && sudo npm install -g pm2
-```

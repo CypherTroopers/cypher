@@ -40,8 +40,8 @@ if [ ! -x "${CYPHER_BIN}" ]; then
   exit 1
 fi
 
-if [ ! -f "./genesistest.json" ]; then
-  echo "ERROR: genesistest.json not found"
+if [ ! -f "./genesis.json" ]; then
+  echo "ERROR: genesis.json not found"
   exit 1
 fi
 
@@ -51,7 +51,7 @@ if [ ! -d "${CHAINDATA_DIR}" ]; then
 
   "${CYPHER_BIN}" \
     --datadir "${DATADIR}" \
-    init ./genesistest.json
+    init ./genesis.json
 else
   echo "==> Existing chaindata detected: ${CHAINDATA_DIR}"
   echo "==> Skip init genesis"
