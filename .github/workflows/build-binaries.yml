@@ -7,7 +7,6 @@ on:
     branches:
       - '**'
     paths-ignore:
-      - 'README.md'
       - 'build/bin/cypher'
       - 'build/bin/cypher-linux-*'
       - 'build/bin/cypher-darwin-*'
@@ -15,7 +14,7 @@ on:
       - 'build/bin/*.dll'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: build-binaries-${{ github.ref }}
@@ -23,253 +22,87 @@ concurrency:
 
 env:
   GO_VERSION: '1.26.2'
-  GO111MODULE: 'on'
-  CGO_ENABLED: '1'
 
 jobs:
-  build-macos-arm64:
-    name: Build macOS Apple Silicon
-    runs-on: macos-latest
+  build-native:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux amd64
+            id: linux-amd64
+            runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            artifact: cypher-linux-amd64
+
+          - name: macOS arm64
+            id: darwin-arm64
+            runner: macos-15
+            goos: darwin
+            goarch: arm64
+            artifact: cypher-macos-arm64
+
+          - name: Windows amd64
+            id: windows-amd64
+            runner: windows-2022
+            goos: windows
+            goarch: amd64
+            artifact: cypher-windows-amd64
 
     env:
-      CC: clang
-      CXX: clang++
+      TARGET_OS: ${{ matrix.goos }}
+      TARGET_ARCH: ${{ matrix.goarch }}
+      SOURCE_SHA: ${{ github.sha }}
+      CGO_ENABLED: '1'
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
+      - name: Enable Windows long paths
+        if: matrix.id == 'windows-amd64'
+        shell: pwsh
+        run: git config --global core.longpaths true
 
-      - uses: actions/setup-go@v5
+      - name: Check out exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
           cache-dependency-path: go.sum
 
-      - name: Setup macOS native libs
+      - name: Install Linux native dependencies
+        if: matrix.id == 'linux-amd64'
         shell: bash
         run: |
           set -euo pipefail
-
-          brew update
-          brew install openssl@3 gmp cmake
-
-      - name: Build herumi BLS libs for macOS arm64
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          rm -rf "$RUNNER_TEMP/herumi"
-          mkdir -p "$RUNNER_TEMP/herumi"
-
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$RUNNER_TEMP/herumi/bls"
-
-          cd "$RUNNER_TEMP/herumi/bls"
-          git submodule update --init --recursive
-
-          cd "$RUNNER_TEMP/herumi/bls/mcl"
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          cd "$RUNNER_TEMP/herumi/bls"
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
-
-          echo "Repacking static archives with Apple libtool"
-
-          rm -rf "$RUNNER_TEMP/herumi/repack"
-          mkdir -p "$RUNNER_TEMP/herumi/repack/mcl"
-          mkdir -p "$RUNNER_TEMP/herumi/repack/bls"
-
-          cd "$RUNNER_TEMP/herumi/repack/mcl"
-          ar -x "$RUNNER_TEMP/herumi/bls/mcl/lib/libmcl.a"
-          /usr/bin/libtool -static -o "$RUNNER_TEMP/herumi/bls/mcl/lib/libmcl.a" ./*.o
-
-          cd "$RUNNER_TEMP/herumi/repack/bls"
-          ar -x "$RUNNER_TEMP/herumi/bls/lib/libbls256.a"
-          /usr/bin/libtool -static -o "$RUNNER_TEMP/herumi/bls/lib/libbls256.a" ./*.o
-
-          cd "${{ github.workspace }}"
-
-          mkdir -p crypto/bls/lib/darwin
-          cp "$RUNNER_TEMP/herumi/bls/lib/libbls256.a" crypto/bls/lib/darwin/libbls256.a
-          cp "$RUNNER_TEMP/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/darwin/libmcl.a
-          cp crypto/bls/lib/darwin/* crypto/bls/lib/
-
-          file crypto/bls/lib/libbls256.a || true
-          file crypto/bls/lib/libmcl.a || true
-          lipo -info crypto/bls/lib/libbls256.a || true
-          lipo -info crypto/bls/lib/libmcl.a || true
-
-      - name: Download Go modules
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          go env -w GO111MODULE=on
-          go mod download
-
-      - name: Build cypher darwin arm64
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
-          GMP_PREFIX="$(brew --prefix gmp)"
-
-          export GO111MODULE=on
-          export GOOS=darwin
-          export GOARCH=arm64
-          export CGO_ENABLED=1
-          export CC=clang
-          export CXX=clang++
-          export CGO_CFLAGS="-I$OPENSSL_PREFIX/include -I$GMP_PREFIX/include"
-          export CGO_CXXFLAGS="$CGO_CFLAGS"
-          export CGO_LDFLAGS="-L$OPENSSL_PREFIX/lib -L$GMP_PREFIX/lib"
-          export LIBRARY_PATH="$OPENSSL_PREFIX/lib:$GMP_PREFIX/lib:${LIBRARY_PATH:-}"
-
-          make cypher
-
-          cp -f build/bin/cypher build/bin/cypher-darwin-arm64
-          chmod +x build/bin/cypher-darwin-arm64
-
-          file build/bin/cypher-darwin-arm64
-
-      - name: Upload macOS binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypher-macos-arm64
-          path: build/bin/cypher-darwin-arm64
-
-  build-linux-amd64:
-    name: Build Linux amd64
-    runs-on: ubuntu-latest
-
-    env:
-      CC: gcc
-      CXX: g++
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-          cache-dependency-path: go.sum
-
-      - name: Install required development packages
-        shell: bash
-        run: |
-          set -euo pipefail
-
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            gcc \
-            g++ \
-            make \
-            cmake \
-            libssl-dev \
-            openssl \
-            libgmp-dev \
-            bzip2 \
-            m4 \
             build-essential \
-            git \
-            curl \
-            libc6-dev \
-            wget \
-            texinfo \
-            nodejs \
-            npm \
-            pcscd \
             ca-certificates \
-            pkg-config
+            file \
+            libgmp-dev \
+            libssl-dev \
+            python3
 
-      - name: Prepare Linux native BLS libs
+      - name: Install macOS native dependencies
+        if: matrix.id == 'darwin-arm64'
         shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
         run: |
           set -euo pipefail
+          brew install openssl@3 gmp
 
-          ls -lah crypto/bls/lib/linux
-
-          cp -f crypto/bls/lib/linux/* crypto/bls/lib/
-
-          file crypto/bls/lib/libbls256.a || true
-          file crypto/bls/lib/libmcl.a || true
-
-      - name: Download Go modules
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          go env -w GO111MODULE=on
-          go mod download
-
-      - name: Build cypher linux amd64
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          export GO111MODULE=on
-          export GOOS=linux
-          export GOARCH=amd64
-          export CGO_ENABLED=1
-          export CC=gcc
-          export CXX=g++
-
-          make cypher
-
-          cp -f build/bin/cypher build/bin/cypher-linux-amd64
-
-          chmod +x build/bin/cypher
-          chmod +x build/bin/cypher-linux-amd64
-
-          file build/bin/cypher
-          file build/bin/cypher-linux-amd64
-
-      - name: Upload Linux binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: cypher-linux-amd64
-          path: |
-            build/bin/cypher
-            build/bin/cypher-linux-amd64
-
-  build-windows:
-    name: Build Windows
-    runs-on: windows-2022
-
-    env:
-      GOPATH: ${{ github.workspace }}\go
-      GO111MODULE: 'on'
-      CGO_ENABLED: '1'
-      CC: gcc
-      CXX: g++
-
-    steps:
-      - name: Enable Git long paths
-        shell: powershell
-        run: |
-          git config --system core.longpaths true
-          git config --global core.longpaths true
-          git config --show-origin --get-all core.longpaths
-
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref }}
-          path: go/src/github.com/cypherium/cypher
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-          cache-dependency-path: go/src/github.com/cypherium/cypher/go.sum
-
-      - name: Setup MSYS2
+      - name: Set up MSYS2
+        if: matrix.id == 'windows-amd64'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -279,160 +112,61 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-gmp
             mingw-w64-x86_64-openssl
-            make
+            file
             git
+            make
             python
 
-      - name: Build cypher.exe
-        shell: msys2 {0}
-        working-directory: ${{ github.workspace }}\go\src\github.com\cypherium\cypher
+      - name: Build native Cypher
+        if: matrix.id != 'windows-amd64'
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          make cypher TARGET_OS="${TARGET_OS}" TARGET_ARCH="${TARGET_ARCH}"
 
-          export GOPATH="${{ github.workspace }}\\go"
-          export GO111MODULE=on
-          export GOOS=windows
-          export GOARCH=amd64
-          export CGO_ENABLED=1
-          export CC=gcc
-          export CXX=g++
+      - name: Build native Cypher
+        if: matrix.id == 'windows-amd64'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          make cypher TARGET_OS="${TARGET_OS}" TARGET_ARCH="${TARGET_ARCH}"
 
-          rm -rf "$GOPATH/src/github.com/herumi"
-          mkdir -p "$GOPATH/src/github.com/herumi"
-
-          git clone --depth 1 --recursive https://github.com/herumi/bls.git "$GOPATH/src/github.com/herumi/bls"
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          git submodule update --init --recursive
-
-          cd "$GOPATH/src/github.com/herumi/bls/mcl"
-          rm -f src/bint_switch.hpp src/llvm_proto.hpp
-          python3 src/gen_llvm_proto.py > src/llvm_proto.hpp
-          make -j4 OS=mingw64 lib/libmcl.a MCL_FP_BIT=256 MCL_FR_BIT=256
-
-          cd "$GOPATH/src/github.com/herumi/bls"
-          rm -f obj/*.d obj/*.o lib/libbls256.a
-          make -j4 MCL_FP_BIT=256 MCL_FR_BIT=256 lib/libbls256.a
-
-          cd "${{ github.workspace }}\\go\\src\\github.com\\cypherium\\cypher"
-
-          mkdir -p crypto/bls/lib/win
-          cp "$GOPATH/src/github.com/herumi/bls/lib/libbls256.a" crypto/bls/lib/win/libbls256.a
-          cp "$GOPATH/src/github.com/herumi/bls/mcl/lib/libmcl.a" crypto/bls/lib/win/libmcl.a
-          cp crypto/bls/lib/win/* crypto/bls/lib/
-
-          echo "Checking Windows BLS/MCL libs"
-          ls -lah crypto/bls/lib/
-          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputeG2' || true
-          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop' || true
-          nm -g crypto/bls/lib/libmcl.a | grep 'mclBn_precomputedMillerLoop2' || true
-
-          COMMIT=$(git rev-parse HEAD)
-          DATE=$(date +%Y%m%d)
-
-          go env -w GO111MODULE=on
-          go mod download
-
-          mkdir -p build/bin
-
-          go build -mod=mod -trimpath -v \
-            -ldflags "-X main.gitCommit=$COMMIT -X main.gitDate=$DATE -extldflags=-Wl,--disable-dynamicbase" \
-            -o build/bin/cypher.exe \
-            ./cmd/cypher
-
-          cp /mingw64/bin/libcrypto-3-x64.dll build/bin/ || true
-          cp /mingw64/bin/libgmp-10.dll build/bin/ || true
-          cp /mingw64/bin/libstdc++-6.dll build/bin/ || true
-          cp /mingw64/bin/libgcc_s_seh-1.dll build/bin/ || true
-          cp /mingw64/bin/libwinpthread-1.dll build/bin/ || true
-
-          ls -lah build/bin/cypher.exe
-          file build/bin/cypher.exe || true
-
-      - name: Upload Windows binary
+      - name: Upload native artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cypher-windows
-          path: |
-            ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\cypher.exe
-            ${{ github.workspace }}\go\src\github.com\cypherium\cypher\build\bin\*.dll
+          name: ${{ matrix.artifact }}
+          path: build/stage/${{ matrix.id }}/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
 
   commit-binaries:
     name: Commit binaries
-    runs-on: ubuntu-latest
-    needs:
-      - build-macos-arm64
-      - build-linux-amd64
-      - build-windows
+    if: >-
+      github.ref_type == 'branch' &&
+      github.ref_name == github.event.repository.default_branch
+    needs: build-native
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out exact source
+        uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
-      - name: Download macOS binary
+      - name: Download native artifacts
         uses: actions/download-artifact@v4
         with:
-          name: cypher-macos-arm64
-          path: artifacts/macos
+          pattern: cypher-*
+          path: artifacts
 
-      - name: Download Linux binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: cypher-linux-amd64
-          path: artifacts/linux
-
-      - name: Download Windows binary
-        uses: actions/download-artifact@v4
-        with:
-          name: cypher-windows
-          path: artifacts/windows
-
-      - name: Copy binaries
+      - name: Validate and commit binaries
         shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p build/bin
-
-          find artifacts/macos -type f -name 'cypher-darwin-arm64' -exec cp {} build/bin/ \;
-
-          find artifacts/linux -type f -name 'cypher' -exec cp {} build/bin/ \;
-          find artifacts/linux -type f -name 'cypher-linux-amd64' -exec cp {} build/bin/ \;
-
-          find artifacts/windows -type f -name 'cypher.exe' -exec cp {} build/bin/ \;
-          find artifacts/windows -type f -name '*.dll' -exec cp {} build/bin/ \;
-
-          find build/bin -maxdepth 1 -type f -exec chmod +x {} \;
-
-          ls -lah build/bin/
-
-      - name: Commit built binaries
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          TARGET_BRANCH="${GITHUB_REF_NAME}"
-
-          echo "Target branch: $TARGET_BRANCH"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          find build/bin -maxdepth 1 -type f -print0 | xargs -0 -r chmod +x
-          find build/bin -maxdepth 1 -type f -print0 | xargs -0 -r git add --chmod=+x
-
-          git ls-files -s build/bin
-
-          if git diff --cached --quiet; then
-            echo "No binary changes to commit"
-            exit 0
-          fi
-
-          git commit -m "Update macOS Linux and Windows binaries"
-
-          git fetch origin "$TARGET_BRANCH:refs/remotes/origin/$TARGET_BRANCH"
-          git rebase "origin/$TARGET_BRANCH"
-
-          git push origin HEAD:"$TARGET_BRANCH"
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          TARGET_BRANCH: ${{ github.ref_name }}
+        run: ./build/publish-binaries.sh

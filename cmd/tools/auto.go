@@ -117,11 +117,11 @@ func reset_data(c *cli.Context) error {
 		"rm -rf ../cypher/data3/cypher",
 		"rm -rf ../cypher/data4/cypher",
 		"rm -rf ../cypher/data5/cypher",
-		"../cypher/cypher.exe init ../cypher/genesisTest.json --datadir ../cypher/data1",
-		"../cypher/cypher.exe init ../cypher/genesisTest.json --datadir ../cypher/data2",
-		"../cypher/cypher.exe init ../cypher/genesisTest.json --datadir ../cypher/data3",
-		"../cypher/cypher.exe init ../cypher/genesisTest.json --datadir ../cypher/data4",
-		"../cypher/cypher.exe init ../cypher/genesisTest.json --datadir ../cypher/data5",
+		"../cypher/cypher.exe init ../cypher/genesis.json --datadir ../cypher/data1",
+		"../cypher/cypher.exe init ../cypher/genesis.json --datadir ../cypher/data2",
+		"../cypher/cypher.exe init ../cypher/genesis.json --datadir ../cypher/data3",
+		"../cypher/cypher.exe init ../cypher/genesis.json --datadir ../cypher/data4",
+		"../cypher/cypher.exe init ../cypher/genesis.json --datadir ../cypher/data5",
 	}
 	for _, s := range cmds {
 		ret, err := execCmd(s)

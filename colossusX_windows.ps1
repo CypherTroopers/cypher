@@ -15,7 +15,7 @@ if ([string]::IsNullOrWhiteSpace($SCRIPT_DIR)) {
 $DATADIR_NAME = "chaindbname"
 $DATADIR = Join-Path $SCRIPT_DIR $DATADIR_NAME
 $CYPHER_BIN = Join-Path $SCRIPT_DIR "build\bin\cypher.exe"
-$GENESIS_FILE = Join-Path $SCRIPT_DIR "genesistest.json"
+$GENESIS_FILE = Join-Path $SCRIPT_DIR "genesis.json"
 
 function Normalize-IpLiteral {
   param([string]$Address)

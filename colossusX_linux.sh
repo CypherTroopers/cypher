@@ -4,7 +4,7 @@ set -euo pipefail
 DATADIR="chaindbname"
 
 CYPHER_BIN="./build/bin/cypher-linux-amd64"
-GENESIS_FILE="./genesistest.json"
+GENESIS_FILE="./genesis.json"
 
 BOOTNODE_HOST="${CYPHER_BOOTNODE_HOST:-13.140.169.170}"
 BOOTNODE_HOST="${BOOTNODE_HOST#[}"

@@ -10,3 +10,6 @@ chaindb*/
 
 # Local start scripts
 start-cypher*.sh
+
+# Ephemeral native-build staging
+build/stage/
