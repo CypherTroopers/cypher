@@ -410,7 +410,9 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	server.Ip = api.e.ExtIP().String()
 	server.Port = api.e.config.RnetPort
 	server.Coinbase = eb.Hex()
-	api.e.reconfig.MinerStart(server)
+	if err := api.e.reconfig.MinerStart(server); err != nil {
+		return "", err
+	}
 
 	if err := api.e.StartMining(miningThreads, true, eb, pubKey); err != nil {
 		return "", err

@@ -22,6 +22,52 @@ func testFHSContext() FHSViewContext {
 	}
 }
 
+func TestAttachFHSContextCertificatePreservesTimeoutOnReusedView(t *testing.T) {
+	tc := &TimeoutCertificate{
+		Statement: TimeoutStatement{
+			Version:       fhsWireVersion,
+			ChainID:       10101919,
+			TimedOutView:  11,
+			KeyNumber:     3,
+			KeyHash:       common.HexToHash("0x1001"),
+			CommitteeHash: common.HexToHash("0x2002"),
+		},
+		Sign: []byte{0x01},
+		Mask: []byte{0x1f},
+	}
+	ctx := testFHSContext()
+	ctx.EntryKind = FHSViewFromTimeout
+	ctx.EntryID = tc.Statement.ID()
+
+	// The local replica can create the target View before the leader receives
+	// remote reports. Reusing that View must retain the TC that authorizes the
+	// timeout transition; otherwise tryFHSPropose emits an empty DataD.
+	reused := &View{fhsContext: &ctx}
+	if err := attachFHSContextCertificate(reused, &ctx, tc); err != nil {
+		t.Fatalf("attach timeout certificate: %v", err)
+	}
+	if reused.fhsTimeout == nil || reused.fhsTimeout == tc {
+		t.Fatal("timeout certificate was not retained as an independent copy")
+	}
+	encoded, err := EncodeTimeoutCertificate(reused.fhsTimeout)
+	if err != nil {
+		t.Fatalf("encode retained timeout certificate: %v", err)
+	}
+	if len(encoded) == 0 {
+		t.Fatal("retained timeout certificate would produce an empty Prepare.DataD")
+	}
+
+	// Merging another validated report for the same context is idempotent.
+	if err := attachFHSContextCertificate(reused, &ctx, CloneTimeoutCertificate(tc)); err != nil {
+		t.Fatalf("reattach equivalent timeout certificate: %v", err)
+	}
+	conflicting := CloneTimeoutCertificate(tc)
+	conflicting.Statement.KeyHash = common.HexToHash("0xdead")
+	if err := attachFHSContextCertificate(reused, &ctx, conflicting); err == nil {
+		t.Fatal("conflicting timeout certificate was accepted for a reused View")
+	}
+}
+
 func aggregateNewViewReports(t *testing.T, secrets []bls.SecretKey, signerIndexes []int, context FHSViewContext) *AggregateQC {
 	t.Helper()
 	aggregate := &AggregateQC{Context: context, Mask: make([]byte, canonicalMaskLength(len(secrets)))}

@@ -328,10 +328,37 @@ func (txS *txService) verifyHotstuffProposal(ref *types.HotstuffProposalRef, txb
 	return txS.verifyHotstuffProposalWithParent(ref, txblock, extra, parentVerified)
 }
 
+// verifyHistoricalCertifiedProposal executes a proposal whose QC has already
+// been verified against the committee identified by ref.KeyHash. This is used
+// only for FHS catch-up and WAL replay: a pipelined block may have been
+// certified immediately before a key-block commit and therefore legitimately
+// refer to the previous canonical committee after the live key head advances.
+func (txS *txService) verifyHistoricalCertifiedProposal(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte) (*core.VerifiedProposal, error) {
+	var parentVerified *core.VerifiedProposal
+	if ref != nil && txS.config != nil && txS.config.FairHotstuff {
+		if svc, ok := txS.s.(*Service); ok {
+			parentVerified = svc.getFHSCertifiedVerified(ref.ParentHash)
+		}
+	}
+	return txS.verifyHistoricalCertifiedProposalWithParent(ref, txblock, extra, parentVerified)
+}
+
 // verifyHotstuffProposalWithParent is also used by fail-closed WAL recovery,
 // where an entire uncommitted chain must be validated before any record is
 // published into the live certified-proposal maps.
 func (txS *txService) verifyHotstuffProposalWithParent(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentVerified *core.VerifiedProposal) (*core.VerifiedProposal, error) {
+	return txS.verifyHotstuffProposalWithKeyContext(ref, txblock, extra, parentVerified, false)
+}
+
+// verifyHistoricalCertifiedProposalWithParent is deliberately separate from
+// the live Prepare verifier. It accepts an older KeyHash only when that key
+// block is present on the local canonical key chain. The caller must first
+// verify the proposal QC with the committee selected by ref.KeyHash.
+func (txS *txService) verifyHistoricalCertifiedProposalWithParent(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentVerified *core.VerifiedProposal) (*core.VerifiedProposal, error) {
+	return txS.verifyHotstuffProposalWithKeyContext(ref, txblock, extra, parentVerified, true)
+}
+
+func (txS *txService) verifyHotstuffProposalWithKeyContext(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentVerified *core.VerifiedProposal, allowHistoricalKey bool) (*core.VerifiedProposal, error) {
 	if ref == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal ref")
 	}
@@ -362,6 +389,9 @@ func (txS *txService) verifyHotstuffProposalWithParent(ref *types.HotstuffPropos
 	if ref.BlockType != txblock.BlockType() {
 		return nil, fmt.Errorf("hotstuff proposal block type mismatch: ref=%d block=%d", ref.BlockType, txblock.BlockType())
 	}
+	if ref.KeyHash != header.KeyHash {
+		return nil, fmt.Errorf("hotstuff proposal key hash mismatch: ref=%s block=%s", ref.KeyHash, header.KeyHash)
+	}
 	if blockNum <= bc.CurrentBlockN() {
 		return nil, fmt.Errorf("invalid header, number:%d, current block number:%d", blockNum, bc.CurrentBlockN())
 	}
@@ -370,7 +400,17 @@ func (txS *txService) verifyHotstuffProposalWithParent(ref *types.HotstuffPropos
 		return nil, fmt.Errorf("cannot verify hotstuff proposal: missing current keyblock")
 	}
 	if header.KeyHash != currentKey.Hash() {
-		return nil, fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, currentKey.Hash())
+		if !allowHistoricalKey {
+			return nil, fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, currentKey.Hash())
+		}
+		historicalKey := kbc.GetBlockByHash(header.KeyHash)
+		if historicalKey == nil {
+			return nil, fmt.Errorf("historical keyhash is unknown: %x", header.KeyHash)
+		}
+		canonicalKey := kbc.GetBlockByNumber(historicalKey.NumberU64())
+		if canonicalKey == nil || canonicalKey.Hash() != historicalKey.Hash() {
+			return nil, fmt.Errorf("historical keyhash is not canonical: %x", header.KeyHash)
+		}
 	}
 
 	verified, err := bc.ValidateBlockForHotstuffWithParent(proposalID, ref.ViewNumber, ref.ViewID, ref.LeaderID, txblock, parentVerified)
