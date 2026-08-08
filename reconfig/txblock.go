@@ -319,6 +319,19 @@ func (txS *txService) verifyTxBlock(txblock *types.Block) error {
 // the sidecar body bytes. The returned VerifiedProposal is cached by ProposalID
 // and later passed to decideVerifiedProposal after a valid Decide QC.
 func (txS *txService) verifyHotstuffProposal(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte) (*core.VerifiedProposal, error) {
+	var parentVerified *core.VerifiedProposal
+	if ref != nil && txS.config != nil && txS.config.FairHotstuff {
+		if svc, ok := txS.s.(*Service); ok {
+			parentVerified = svc.getFHSCertifiedVerified(ref.ParentHash)
+		}
+	}
+	return txS.verifyHotstuffProposalWithParent(ref, txblock, extra, parentVerified)
+}
+
+// verifyHotstuffProposalWithParent is also used by fail-closed WAL recovery,
+// where an entire uncommitted chain must be validated before any record is
+// published into the live certified-proposal maps.
+func (txS *txService) verifyHotstuffProposalWithParent(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentVerified *core.VerifiedProposal) (*core.VerifiedProposal, error) {
 	if ref == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal ref")
 	}
@@ -360,12 +373,6 @@ func (txS *txService) verifyHotstuffProposal(ref *types.HotstuffProposalRef, txb
 		return nil, fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, currentKey.Hash())
 	}
 
-	var parentVerified *core.VerifiedProposal
-	if txS.config != nil && txS.config.FairHotstuff {
-		if svc, ok := txS.s.(*Service); ok {
-			parentVerified = svc.getFHSCertifiedVerified(ref.ParentHash)
-		}
-	}
 	verified, err := bc.ValidateBlockForHotstuffWithParent(proposalID, ref.ViewNumber, ref.ViewID, ref.LeaderID, txblock, parentVerified)
 	if err != nil {
 		return nil, err
@@ -435,7 +442,11 @@ func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, ver
 		log.Info("decideVerifiedProposal already known", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
 		return nil
 	}
-	block.SetSignature(sig, mask, viewID, leaderID, viewNumber)
+	if txS.config != nil && txS.config.FairHotstuff {
+		block.SetFHSSignature(sig, mask, viewID, leaderID, viewNumber, ref.ExtraHash, ref.ParentQCID)
+	} else {
+		block.SetSignature(sig, mask, viewID, leaderID, viewNumber)
+	}
 	if _, err := bc.CommitVerifiedProposal(verified, false); err != nil {
 		log.Error("decideVerifiedProposal.CommitVerifiedProposal", "number", block.NumberU64(), "proposalID", proposalID, "error", err)
 		return err

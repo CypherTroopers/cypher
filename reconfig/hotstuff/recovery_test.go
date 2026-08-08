@@ -254,7 +254,7 @@ func TestRecoveryRetriesProposal(t *testing.T) {
 	}
 }
 
-func TestFutureNewViewQueuesBeforeCommitteeValidation(t *testing.T) {
+func TestFutureNewViewRequiresCommitteeValidationBeforeQueue(t *testing.T) {
 	app := &recoveryTestApp{self: "leader"}
 	manager := NewHotstuffProtocolManager(app, nil, nil)
 	viewID := common.HexToHash("0x4")
@@ -268,8 +268,18 @@ func TestFutureNewViewQueuesBeforeCommitteeValidation(t *testing.T) {
 
 	manager.queueFutureNewView(msg, nil)
 	pending := manager.pendingNewView[viewID]
-	if len(pending) != 1 {
-		t.Fatalf("future NewView queue length = %d, want 1", len(pending))
+	if len(pending) != 0 {
+		t.Fatalf("unverified future NewView queue length = %d, want 0", len(pending))
+	}
+}
+
+func TestQCBroadcastRejectsNumberViewMismatchBeforeVerification(t *testing.T) {
+	manager := NewHotstuffProtocolManager(&recoveryTestApp{}, nil, nil)
+	viewID := common.HexToHash("0x44")
+	manager.views[viewID] = &View{hash: viewID, number: 2}
+	err := manager.handleQCBroadcastMsg(&HotstuffMessage{Code: MsgQCBroadcast, Number: 3, ViewId: viewID})
+	if !errors.Is(err, ErrViewIdNotMatch) {
+		t.Fatalf("wrong-number QC error = %v, want %v", err, ErrViewIdNotMatch)
 	}
 }
 
@@ -310,7 +320,7 @@ func TestDecideCommitFailureRemainsRetryable(t *testing.T) {
 	}
 }
 
-func TestLateVoteUsesFinalizedRecoveryCache(t *testing.T) {
+func TestUnauthenticatedLateVoteCannotUseFinalizedRecoveryCache(t *testing.T) {
 	app := &recoveryTestApp{self: "leader"}
 	manager := NewHotstuffProtocolManager(app, nil, nil)
 	viewID := common.HexToHash("0x7")
@@ -326,11 +336,11 @@ func TestLateVoteUsesFinalizedRecoveryCache(t *testing.T) {
 	}
 
 	vote := &HotstuffMessage{Code: MsgVotePrepare, Number: 2, ViewId: viewID, Id: "replica"}
-	if err := manager.handlePrepareVoteMsg(vote); err != nil {
-		t.Fatal(err)
+	if err := manager.handlePrepareVoteMsg(vote); err != ErrMissingView {
+		t.Fatalf("late unauthenticated vote error = %v, want %v", err, ErrMissingView)
 	}
-	if len(app.writes) != 3 || app.writes[0] != prepare || app.writes[1] != qcBroadcast || app.writes[2] != decide {
-		t.Fatalf("late-vote recovery writes = %v, want Prepare then QCBroadcast then Decide", app.writes)
+	if len(app.writes) != 0 {
+		t.Fatalf("late unauthenticated vote triggered %d recovery writes", len(app.writes))
 	}
 }
 
@@ -423,8 +433,8 @@ func TestFHSPrepareQCCertifiesWithoutDecideCommit(t *testing.T) {
 	if certifiedCalls != 1 || !view.certified {
 		t.Fatalf("certified calls = %d, certified = %t", certifiedCalls, view.certified)
 	}
-	if err := manager.handleDecideMsg(&HotstuffMessage{Code: MsgDecide, Number: 9, ViewId: viewID}); err != nil {
-		t.Fatal(err)
+	if err := manager.handleDecideMsg(&HotstuffMessage{Code: MsgDecide, Number: 9, ViewId: viewID}); err != ErrViewPhaseNotMatch {
+		t.Fatalf("FHS Decide error = %v, want %v", err, ErrViewPhaseNotMatch)
 	}
 	if decideCalls != 0 {
 		t.Fatalf("same-view Decide committed %d times in FHS mode", decideCalls)

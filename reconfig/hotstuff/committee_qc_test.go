@@ -43,7 +43,15 @@ func aggregateContextSignatures(t *testing.T, secrets []bls.SecretKey, signerInd
 		if index < 0 || index >= len(secrets) {
 			t.Fatalf("signer index %d is out of range", index)
 		}
-		signature := secrets[index].SignHash(digest)
+		signerDigest := digest
+		if msgCode == MsgVotePrepare {
+			var err error
+			signerDigest, err = fhsSignerDigest(digest, secrets[index].GetPublicKey())
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		signature := secrets[index].SignHash(signerDigest)
 		if aggregate == nil {
 			aggregate = signature
 		} else {
@@ -96,6 +104,7 @@ func newFHSParentQCFixture(t *testing.T, includeHistoricalCommittee bool) *fhsPa
 		ParentHash: common.HexToHash("0x4009"),
 		BodyHash:   common.HexToHash("0x4011"),
 		BodySize:   1,
+		ExtraHash:  types.HotstuffProposalExtraHash(nil),
 		KeyHash:    oldKeyHash,
 	}).EncodeToBytes()
 	parentMask := []byte{0x07}
@@ -154,7 +163,7 @@ func newFHSParentQCFixture(t *testing.T, includeHistoricalCommittee bool) *fhsPa
 func TestFHSPrepareUsesHistoricalCommitteeForParentQC(t *testing.T) {
 	fixture := newFHSParentQCFixture(t, true)
 
-	if !VerifySignatureWithContext(
+	if !VerifyFHSSignatureWithContext(
 		fixture.parentQC.Sign,
 		fixture.parentQC.Mask,
 		fixture.parentQC.State,
@@ -167,7 +176,7 @@ func TestFHSPrepareUsesHistoricalCommitteeForParentQC(t *testing.T) {
 	) {
 		t.Fatal("test parent QC does not verify with its historical committee")
 	}
-	if VerifySignatureWithContext(
+	if VerifyFHSSignatureWithContext(
 		fixture.parentQC.Sign,
 		fixture.parentQC.Mask,
 		fixture.parentQC.State,

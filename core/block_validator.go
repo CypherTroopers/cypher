@@ -224,7 +224,13 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 		chainID = v.config.ChainID.Uint64()
 	}
 
-	proposalRef, err := types.NewHotstuffProposalRef(chainID, si.ViewNumber, si.ViewID, si.LeaderID, unsignedBlock, encodedUnsignedBlock)
+	var proposalRef *types.HotstuffProposalRef
+	var err error
+	if v.config != nil && v.config.FairHotstuff {
+		proposalRef, err = types.NewHotstuffProposalRefWithCommitments(chainID, si.ViewNumber, si.ViewID, si.LeaderID, unsignedBlock, encodedUnsignedBlock, si.ExtraHash, si.ParentQCID)
+	} else {
+		proposalRef, err = types.NewHotstuffProposalRef(chainID, si.ViewNumber, si.ViewID, si.LeaderID, unsignedBlock, encodedUnsignedBlock)
+	}
 	if err != nil {
 		return types.ErrInvalidSignature
 	}
@@ -233,7 +239,13 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 		return types.ErrEncodeRLP
 	}
 
-	if !hotstuff.VerifySignatureWithContext(si.Signature, si.Exceptions, proposalBytes, pubs, threshold, chainID, hotstuff.MsgVotePrepare, si.ViewID, si.LeaderID) {
+	var validSignature bool
+	if v.config != nil && v.config.FairHotstuff {
+		validSignature = hotstuff.VerifyFHSSignatureWithContext(si.Signature, si.Exceptions, proposalBytes, pubs, threshold, chainID, hotstuff.MsgVotePrepare, si.ViewID, si.LeaderID)
+	} else {
+		validSignature = hotstuff.VerifySignatureWithContext(si.Signature, si.Exceptions, proposalBytes, pubs, threshold, chainID, hotstuff.MsgVotePrepare, si.ViewID, si.LeaderID)
+	}
+	if !validSignature {
 		return types.ErrInvalidSignature
 	}
 	return nil

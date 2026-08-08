@@ -234,6 +234,13 @@ func (t *paceMakerTimer) triggerTryPropose() {
 }
 
 func (t *paceMakerTimer) setNextLeader(isDone bool) {
+	if !isDone && t.config != nil && t.config.FairHotstuff {
+		if service, ok := t.service.(*Service); ok && service.protocolMng != nil {
+			service.enqueueFHSTimeout()
+			t.start()
+			return
+		}
+	}
 	curView := t.service.GetCurrentView()
 	t.service.setNextLeader(isDone)
 	t.service.sendNewViewMsg(curView.TxNumber)

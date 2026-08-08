@@ -56,12 +56,13 @@ const (
 
 const (
 	// HotstuffProposalRefVersion is the production HotStuff proposal format
-	// version. Version 3 signs a compact proposal reference, including the FHS
-	// view number, instead of the full
-	// block RLP, while the referenced full block body is distributed separately
-	// and verified by BodyHash before voting.
-	HotstuffProposalRefVersion uint32 = 3
-	hotstuffProposalDomain            = "CPH_HOTSTUFF_PROPOSAL_V3"
+	// version. Version 4 signs a compact proposal reference including the FHS
+	// view number, proposal-extra commitment, and parent-QC identity instead of
+	// the full block RLP. The referenced body is distributed separately and
+	// verified against all commitments before voting.
+	HotstuffProposalRefVersion  uint32 = 4
+	hotstuffProposalDomain             = "CPH_HOTSTUFF_PROPOSAL_V4"
+	hotstuffProposalExtraDomain        = "CPH_HOTSTUFF_PROPOSAL_EXTRA_V1"
 )
 
 // A BlockNonce is a 64-bit hash which proves (combined with the
@@ -151,6 +152,10 @@ type SignInfo struct {
 	ViewID     common.Hash `json:"viewId"`
 	LeaderID   string      `json:"leaderId"`
 	ViewNumber uint64      `json:"viewNumber"`
+	// FHS v3 signs the complete proposal reference. Persist these commitments
+	// with the QC so a syncing node can reconstruct exactly the signed bytes.
+	ExtraHash  common.Hash `json:"extraHash"`
+	ParentQCID common.Hash `json:"parentQcId"`
 }
 
 // CommonTxAdmission records the common RPC miner that accepted and relayed a tx.
@@ -206,6 +211,11 @@ type HotstuffProposalRef struct {
 
 	BodyHash common.Hash
 	BodySize uint64
+	// ExtraHash and ParentQCID bind every application proof used while voting
+	// into the state certified by the QC. ParentQCID is the semantic QC identity
+	// and deliberately excludes signer/signature bytes.
+	ExtraHash  common.Hash
+	ParentQCID common.Hash
 
 	BlockType uint8
 	KeyHash   common.Hash
@@ -226,10 +236,28 @@ func HotstuffProposalBodyHash(body []byte) common.Hash {
 	return h
 }
 
+// HotstuffProposalExtraHash commits an optional application proof, including
+// the empty proof, to a non-zero domain-separated value.
+func HotstuffProposalExtraHash(extra []byte) common.Hash {
+	return blake3RLPHash([]interface{}{[]byte(hotstuffProposalExtraDomain), extra})
+}
+
 // NewHotstuffProposalRef creates a production HotStuff proposal reference for a
 // full block RLP sidecar. If encodedBlock is nil or empty, the block is encoded
 // here. The returned ref is safe to use as the HotStuff signed proposal state.
 func NewHotstuffProposalRef(chainID uint64, viewNumber uint64, viewID common.Hash, leaderID string, block *Block, encodedBlock []byte) (*HotstuffProposalRef, error) {
+	return NewHotstuffProposalRefWithProof(chainID, viewNumber, viewID, leaderID, block, encodedBlock, nil, common.Hash{})
+}
+
+// NewHotstuffProposalRefWithProof additionally binds the application proof and
+// semantic parent QC identity used to validate the proposal.
+func NewHotstuffProposalRefWithProof(chainID uint64, viewNumber uint64, viewID common.Hash, leaderID string, block *Block, encodedBlock, extra []byte, parentQCID common.Hash) (*HotstuffProposalRef, error) {
+	return NewHotstuffProposalRefWithCommitments(chainID, viewNumber, viewID, leaderID, block, encodedBlock, HotstuffProposalExtraHash(extra), parentQCID)
+}
+
+// NewHotstuffProposalRefWithCommitments reconstructs the exact proposal
+// reference from commitments persisted alongside an FHS quorum certificate.
+func NewHotstuffProposalRefWithCommitments(chainID uint64, viewNumber uint64, viewID common.Hash, leaderID string, block *Block, encodedBlock []byte, extraHash, parentQCID common.Hash) (*HotstuffProposalRef, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal block")
 	}
@@ -262,6 +290,8 @@ func NewHotstuffProposalRef(chainID uint64, viewNumber uint64, viewID common.Has
 		CommonTxRewardRoot:    block.Header().CommonTxRewardRoot,
 		BodyHash:              HotstuffProposalBodyHash(encodedBlock),
 		BodySize:              uint64(len(encodedBlock)),
+		ExtraHash:             extraHash,
+		ParentQCID:            parentQCID,
 		BlockType:             block.BlockType(),
 		KeyHash:               block.KeyHash(),
 		Time:                  block.Time(),
@@ -330,6 +360,9 @@ func (r *HotstuffProposalRef) Validate() error {
 	if r.BodyHash == (common.Hash{}) || r.BodySize == 0 {
 		return fmt.Errorf("hotstuff proposal ref has empty body commitment")
 	}
+	if r.ExtraHash == (common.Hash{}) {
+		return fmt.Errorf("hotstuff proposal ref has empty extra commitment")
+	}
 	return nil
 }
 
@@ -357,6 +390,8 @@ func (r *HotstuffProposalRef) ProposalID() common.Hash {
 		r.CommonTxRewardRoot,
 		r.BodyHash,
 		r.BodySize,
+		r.ExtraHash,
+		r.ParentQCID,
 		r.BlockType,
 		r.KeyHash,
 		r.Time,
@@ -453,6 +488,8 @@ func (h *Header) SetSignInfoNull() {
 	h.SignInfo.ViewID = common.Hash{}
 	h.SignInfo.LeaderID = ""
 	h.SignInfo.ViewNumber = 0
+	h.SignInfo.ExtraHash = common.Hash{}
+	h.SignInfo.ParentQCID = common.Hash{}
 }
 
 var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
@@ -460,7 +497,7 @@ var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
 // Size returns the approximate memory used by all internal contents. It is used
 // to approximate and limit the memory consumption of various caches.
 func (h *Header) Size() common.StorageSize {
-	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions)+len(h.SignInfo.LeaderID)+common.HashLength)
+	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions)+len(h.SignInfo.LeaderID)+3*common.HashLength)
 	if h.BaseFee != nil {
 		s += common.StorageSize(h.BaseFee.BitLen() / 8)
 	}
@@ -984,6 +1021,16 @@ func (b *Block) SetSignature(sig []byte, exceptions []byte, viewID common.Hash, 
 	b.header.SignInfo.ViewID = viewID
 	b.header.SignInfo.LeaderID = leaderID
 	b.header.SignInfo.ViewNumber = viewNumber
+	b.header.SignInfo.ExtraHash = common.Hash{}
+	b.header.SignInfo.ParentQCID = common.Hash{}
+}
+
+// SetFHSSignature stores the QC and the two proposal-proof commitments needed
+// to reconstruct its public-key-augmented signed statement during block sync.
+func (b *Block) SetFHSSignature(sig []byte, exceptions []byte, viewID common.Hash, leaderID string, viewNumber uint64, extraHash, parentQCID common.Hash) {
+	b.SetSignature(sig, exceptions, viewID, leaderID, viewNumber)
+	b.header.SignInfo.ExtraHash = extraHash
+	b.header.SignInfo.ParentQCID = parentQCID
 }
 
 func (b *Block) SetKeyblock(keyblock *KeyBlock) {

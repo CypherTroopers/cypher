@@ -175,7 +175,9 @@ func (backend *ReconfigBackend) Stop() error {
 
 // ------------------------------------------------------------------
 func (backend *ReconfigBackend) MinerStart(config *common.NodeConfig) error {
-	backend.service.start(config)
+	if err := backend.service.start(config); err != nil {
+		return err
+	}
 	log.Info("reconfig start")
 	return nil
 }
