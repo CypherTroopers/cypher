@@ -151,6 +151,34 @@ func (hsm *HotstuffProtocolManager) verifyFHSContextCertificate(ctx *FHSViewCont
 	return VerifyTimeoutCertificate(tc, keys, CalcThreshold(len(keys)))
 }
 
+// attachFHSContextCertificate keeps the transition certificate on the View
+// that will eventually produce a Prepare. A replica may create this View when
+// it sends its own NewView before the leader receives the first remote report,
+// so acceptFHSNewView can legitimately reuse an existing View. Losing the TC
+// in that merge produces a timeout-derived Prepare without DataD, which every
+// correct replica must reject.
+func attachFHSContextCertificate(v *View, ctx *FHSViewContext, tc *TimeoutCertificate) error {
+	if v == nil || ctx == nil {
+		return ErrInvalidHighQC
+	}
+	if ctx.EntryKind == FHSViewFromQC {
+		if tc != nil || ctx.EntryID != (common.Hash{}) {
+			return ErrInvalidHighQC
+		}
+		v.fhsTimeout = nil
+		return nil
+	}
+	if tc == nil || tc.Statement.ID() != ctx.EntryID ||
+		tc.Statement.TimedOutView+1 != ctx.TargetView {
+		return ErrInvalidHighQC
+	}
+	if v.fhsTimeout != nil && v.fhsTimeout.Statement.ID() != tc.Statement.ID() {
+		return ErrInvalidHighQC
+	}
+	v.fhsTimeout = CloneTimeoutCertificate(tc)
+	return nil
+}
+
 func (hsm *HotstuffProtocolManager) newFHSNewView() error {
 	app, ok := hsm.fhsApplication()
 	if !ok {
@@ -209,6 +237,9 @@ func (hsm *HotstuffProtocolManager) newFHSNewView() error {
 		v = existing
 	} else {
 		hsm.views[v.hash] = v
+	}
+	if err := attachFHSContextCertificate(v, ctx, tc); err != nil {
+		return err
 	}
 	v.replicaMsg[MsgNewView] = msg
 	v.lastReplicaRecoveryAt = time.Now()
@@ -310,6 +341,9 @@ func (hsm *HotstuffProtocolManager) acceptFHSNewView(msg *HotstuffMessage, valid
 	}
 	if v.fhsContext == nil || *v.fhsContext != report.Context {
 		return ErrViewIdNotMatch
+	}
+	if err := attachFHSContextCertificate(v, &report.Context, validated.fhsTimeout); err != nil {
+		return err
 	}
 	if _, duplicate := v.fhsReports[report.SignerIndex]; duplicate {
 		return nil
@@ -422,6 +456,13 @@ func (hsm *HotstuffProtocolManager) tryFHSPropose() error {
 	v := hsm.leaderView
 	if v == nil || v.fhsContext == nil || v.fhsAggregate == nil || v.phaseAsLeader != PhaseTryPropose {
 		return ErrInvalidLeaderView
+	}
+	_, keys, err := hsm.fhsCommittee(v.fhsContext, true)
+	if err != nil {
+		return err
+	}
+	if err := hsm.verifyFHSContextCertificate(v.fhsContext, v.fhsTimeout, keys); err != nil {
+		return err
 	}
 	err, kProposal, tProposal, extra := hsm.app.Propose(v.number, v.hash, v.leaderId)
 	if err != nil {

@@ -670,7 +670,7 @@ func (s *Service) adoptFHSHighQC(qc *hotstuff.SignedState, notify bool) error {
 		if err := ref.VerifyAgainstBlock(block, body.EncodedBlock); err != nil {
 			return err
 		}
-		verified, err = s.txService.verifyHotstuffProposal(ref, block, body.Extra)
+		verified, err = s.txService.verifyHistoricalCertifiedProposal(ref, block, body.Extra)
 		if err != nil {
 			return err
 		}
@@ -876,7 +876,7 @@ func (s *Service) loadFHSWAL() error {
 				return fmt.Errorf("restored FHS chain has non-contiguous parent proof at %s", record.ref.BlockHash)
 			}
 		}
-		verified, err := s.txService.verifyHotstuffProposalWithParent(record.ref, block, record.extra, parentVerified)
+		verified, err := s.txService.verifyHistoricalCertifiedProposalWithParent(record.ref, block, record.extra, parentVerified)
 		if err != nil {
 			return fmt.Errorf("replay restored FHS proposal %s: %w", record.ref.BlockHash, err)
 		}

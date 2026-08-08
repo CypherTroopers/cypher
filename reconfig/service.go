@@ -2311,6 +2311,14 @@ func (s *Service) handleHotStuffMsg() {
 		if err == nil || (err == hotstuff.ErrInsufficientQC && msgCode != hotstuff.MsgTimeout) {
 			s.observeHotstuffProgress(msg.hMsg)
 		}
+		if err != nil && err != hotstuff.ErrInsufficientQC && err != hotstuff.ErrUnhandledMsg && err != hotstuff.ErrOldState {
+			log.Warn("HotStuff message rejected",
+				"from", msg.hMsg.Id,
+				"code", hotstuff.ReadableMsgType(msgCode),
+				"number", msg.hMsg.Number,
+				"viewID", msg.hMsg.ViewId,
+				"err", err)
+		}
 		if err != nil && msgCode == hotstuff.MsgStartNewView {
 			go func(curN uint64) {
 				time.Sleep(failedProposalRetry)
@@ -2761,13 +2769,18 @@ func (s *Service) procBlockDone(block *types.Block) {
 				s.pacetMakerTimer.stop()
 				return
 			}
-			if err := s.netService.server.UpdatePeerAuthorization(peers); err != nil {
-				log.Error("stop Fair HotStuff after peer authorization update failure", "err", err)
-				s.setRunState(0)
-				s.pacetMakerTimer.stop()
-				return
+			// A non-validator can import key blocks while its Fair HotStuff
+			// service is intentionally stopped. Keep its committee/view state
+			// current, but do not update an unconfigured consensus transport.
+			if s.isRunning() {
+				if err := s.netService.server.UpdatePeerAuthorization(peers); err != nil {
+					log.Error("stop Fair HotStuff after peer authorization update failure", "err", err)
+					s.setRunState(0)
+					s.pacetMakerTimer.stop()
+					return
+				}
+				s.netService.setAuthenticatedPeerKeys(peers)
 			}
-			s.netService.setAuthenticatedPeerKeys(peers)
 			s.muCurrentView.Lock()
 			s.currentView.KeyNumber = keyblock.NumberU64()
 			s.currentView.KeyHash = keyblock.Hash()
@@ -2869,8 +2882,20 @@ func (s *Service) start(config *common.NodeConfig) error {
 		if config.Coinbase != "" {
 			bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
 		}
-		if bftview.IamMember() >= 0 {
+		isCommitteeMember := bftview.IamMember() >= 0
+		if isCommitteeMember {
 			s.updateCommittee(nil)
+		}
+		// Common PoW miners are deliberately outside the BFT committee. They
+		// still call miner.start, but must not start a validator transport or
+		// participate in HotStuff. Treat that role as a successful no-op so
+		// the caller can start PoW mining without hiding genuine start errors.
+		if s.fairHotstuffEnabled() && !isCommitteeMember {
+			s.updateCurrentView(nil, nil, false)
+			log.Info("Fair HotStuff service remains stopped for non-committee miner",
+				"address", s.netService.serverAddress,
+				"coinbase", config.Coinbase)
+			return nil
 		}
 		if s.fairHotstuffEnabled() {
 			peers, err := activeFHSAuthorizedPeers(bftview.GetCurrentMember())
