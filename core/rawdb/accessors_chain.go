@@ -23,7 +23,6 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
-	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
@@ -269,12 +268,23 @@ func WriteFastTxLookupLimit(db ethdb.KeyValueWriter, number uint64) {
 }
 
 // ReadHeaderRLP retrieves a block header in its raw RLP database encoding.
+func headerRLPMatchesHash(data rlp.RawValue, hash common.Hash) bool {
+	if len(data) == 0 {
+		return false
+	}
+	var header types.Header
+	if err := rlp.DecodeBytes(data, &header); err != nil {
+		return false
+	}
+	return header.Hash() == hash
+}
+
 func ReadHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValue {
 	// First try to look up the data in ancient database. Extra hash
 	// comparison is necessary since ancient database only maintains
 	// the canonical data.
 	data, _ := db.Ancient(freezerHeaderTable, number)
-	if len(data) > 0 && crypto.Keccak256Hash(data) == hash {
+	if headerRLPMatchesHash(data, hash) {
 		return data
 	}
 	// Then try to look up the data in leveldb.
@@ -287,7 +297,7 @@ func ReadHeaderRLP(db ethdb.Reader, hash common.Hash, number uint64) rlp.RawValu
 	// but when we reach into leveldb, the data was already moved. That would
 	// result in a not found error.
 	data, _ = db.Ancient(freezerHeaderTable, number)
-	if len(data) > 0 && crypto.Keccak256Hash(data) == hash {
+	if headerRLPMatchesHash(data, hash) {
 		return data
 	}
 	return nil // Can't find the data anywhere.

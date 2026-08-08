@@ -137,6 +137,39 @@ type GenesisMismatchError struct {
 	Stored, New common.Hash
 }
 
+func validateFairHotstuffGenesisCommitment(header *types.Header, config *params.ChainConfig) error {
+	if config == nil || !config.FairHotstuff {
+		return nil
+	}
+	if header == nil {
+		return fmt.Errorf("missing stored genesis header for Fair HotStuff")
+	}
+	commitment, err := params.FairHotstuffGenesisCommitment(config)
+	if err != nil {
+		return err
+	}
+	if header.MixDigest != commitment {
+		return fmt.Errorf("stored genesis mixHash does not commit the complete Fair HotStuff configuration")
+	}
+	return nil
+}
+
+func validateFairHotstuffConfigTransition(header *types.Header, stored, next *params.ChainConfig) error {
+	if err := validateFairHotstuffGenesisCommitment(header, stored); err != nil {
+		return err
+	}
+	if err := validateFairHotstuffGenesisCommitment(header, next); err != nil {
+		return err
+	}
+	if stored == nil || next == nil {
+		return nil
+	}
+	if stored.FairHotstuff != next.FairHotstuff {
+		return fmt.Errorf("cannot change Fair HotStuff activation after genesis")
+	}
+	return nil
+}
+
 func (e *GenesisMismatchError) Error() string {
 	return fmt.Sprintf("database contains incompatible genesis (have %x, new %x)", e.Stored, e.New)
 }
@@ -187,6 +220,9 @@ func SetupGenesisBlock(db ethdb.Database, genesis *Genesis) (*params.ChainConfig
 	// We have the genesis block in database(perhaps in ancient database)
 	// but the corresponding state is missing.
 	header := rawdb.ReadHeader(db, stored, 0)
+	if header == nil {
+		return genesis.configOrDefault(stored), stored, fmt.Errorf("missing stored genesis header %s", stored)
+	}
 	if _, err := state.New(header.Root, state.NewDatabaseWithCache(db, 0, ""), nil); err != nil {
 		if genesis == nil {
 			genesis = DefaultGenesisBlock()
@@ -216,14 +252,15 @@ func SetupGenesisBlock(db ethdb.Database, genesis *Genesis) (*params.ChainConfig
 	}
 	storedcfg := rawdb.ReadChainConfig(db, stored)
 	if storedcfg == nil {
-		log.Warn("Found genesis block without chain config")
-		rawdb.WriteChainConfig(db, stored, newcfg)
-		return newcfg, stored, nil
+		return newcfg, stored, fmt.Errorf("missing stored chain config; cannot verify genesis consensus commitment")
 	}
 	// Special case: don't change the existing config of a non-mainnet chain if no new
 	// config is supplied. These chains would get AllProtocolChanges (and a compat error)
 	// if we just continued here.
 	if genesis == nil && stored != params.MainnetGenesisHash {
+		if err := validateFairHotstuffConfigTransition(header, storedcfg, storedcfg); err != nil {
+			return storedcfg, stored, err
+		}
 		return storedcfg, stored, nil
 	}
 	// Check config compatibility and write the config. Compatibility errors
@@ -231,6 +268,9 @@ func SetupGenesisBlock(db ethdb.Database, genesis *Genesis) (*params.ChainConfig
 	height := rawdb.ReadHeaderNumber(db, rawdb.ReadHeadHeaderHash(db))
 	if height == nil {
 		return newcfg, stored, fmt.Errorf("missing block number for head header hash")
+	}
+	if err := validateFairHotstuffConfigTransition(header, storedcfg, newcfg); err != nil {
+		return newcfg, stored, err
 	}
 	rawdb.WriteChainConfig(db, stored, newcfg)
 
@@ -304,16 +344,26 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 // Commit writes the block and state of a genesis specification to the database.
 // The block is committed as the canonical head block.
 func (g *Genesis) Commit(db ethdb.Database) (*types.Block, error) {
-	block := g.ToBlock(db)
-	if block.Number().Sign() != 0 {
-		return nil, fmt.Errorf("can't commit genesis block with number > 0")
-	}
 	config := g.Config
 	if config == nil {
 		config = params.AllcolossusXProtocolChanges
 	}
 	if err := config.CheckConfigForkOrder(); err != nil {
 		return nil, err
+	}
+	if config.FairHotstuff {
+		commitment, err := params.FairHotstuffGenesisCommitment(config)
+		if err != nil {
+			return nil, err
+		}
+		if g.Mixhash != commitment {
+			return nil, fmt.Errorf("genesis mixHash must commit the complete Fair HotStuff configuration: have %s want %s", g.Mixhash, commitment)
+		}
+	}
+	// Validate the FHS security configuration before ToBlock commits trie state.
+	block := g.ToBlock(db)
+	if block.Number().Sign() != 0 {
+		return nil, fmt.Errorf("can't commit genesis block with number > 0")
 	}
 	rawdb.WriteTd(db, block.Hash(), block.NumberU64(), g.Difficulty)
 	rawdb.WriteBlock(db, block)

@@ -82,6 +82,7 @@ func TestFHSProposalMustCarryHighestParentQC(t *testing.T) {
 		ParentHash: b1Hash,
 		BodyHash:   common.HexToHash("0x99"),
 		BodySize:   1,
+		ExtraHash:  types.HotstuffProposalExtraHash(nil),
 	}
 	parentQC := &hotstuff.SignedState{
 		State:    parentRef.EncodeToBytes(),

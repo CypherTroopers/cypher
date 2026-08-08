@@ -1199,6 +1199,58 @@ type numberHash struct {
 	hash   common.Hash
 }
 
+// verifyFHSBlockProof validates consensus metadata that is deliberately not
+// part of Header.Hash. Every path that can persist a full Fair HotStuff block
+// must call this before the first database mutation, including fast-sync and
+// pruned-sidechain paths.
+func (bc *BlockChain) verifyFHSBlockProof(block *types.Block) error {
+	if bc.chainConfig == nil || !bc.chainConfig.FairHotstuff || block.NumberU64() == 0 {
+		return nil
+	}
+	if bc.validator == nil {
+		return errors.New("Fair HotStuff block import has no signature validator")
+	}
+	if err := bc.validator.VerifySignature(block); err != nil {
+		return fmt.Errorf("invalid Fair HotStuff proof at block %d %s: %w", block.NumberU64(), block.Hash(), err)
+	}
+	return nil
+}
+
+// preflightFHSReceiptChain verifies every Fair HotStuff proof before fast-sync
+// receipt import mutates either the active database or the freezer. Header.Hash
+// excludes SignInfo, so the verified header representation must also replace
+// any same-hash header downloaded earlier.
+func (bc *BlockChain) preflightFHSReceiptChain(blockChain types.Blocks) error {
+	if bc.chainConfig == nil || !bc.chainConfig.FairHotstuff {
+		return nil
+	}
+	for index, block := range blockChain {
+		if block == nil {
+			return fmt.Errorf("nil Fair HotStuff receipt block at index %d", index)
+		}
+		if !rawdb.HasHeader(bc.db, block.Hash(), block.NumberU64()) {
+			return fmt.Errorf("containing header #%d [%x…] unknown", block.NumberU64(), block.Hash().Bytes()[:4])
+		}
+		if err := bc.verifyFHSBlockProof(block); err != nil {
+			return err
+		}
+	}
+	batch := bc.db.NewBatch()
+	for _, block := range blockChain {
+		rawdb.WriteHeader(batch, block.Header())
+	}
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("persist verified Fair HotStuff receipt headers: %w", err)
+	}
+	if bc.hc != nil {
+		bc.hc.headerCache.Purge()
+	}
+	if bc.blockCache != nil {
+		bc.blockCache.Purge()
+	}
+	return nil
+}
+
 // InsertReceiptChain attempts to complete an already existing header chain with
 // transaction and receipt data.
 func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain []types.Receipts, ancientLimit uint64) (int, error) {
@@ -1206,6 +1258,12 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 	// concurrency of header insertion and receipt insertion.
 	bc.wg.Add(1)
 	defer bc.wg.Done()
+	if len(blockChain) != len(receiptChain) {
+		return 0, fmt.Errorf("receipt chain length mismatch: blocks=%d receipts=%d", len(blockChain), len(receiptChain))
+	}
+	if len(blockChain) == 0 {
+		return 0, nil
+	}
 
 	var (
 		ancientBlocks, liveBlocks     types.Blocks
@@ -1213,6 +1271,9 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 	)
 	// Do a sanity check that the provided chain is actually ordered and linked
 	for i := 0; i < len(blockChain); i++ {
+		if blockChain[i] == nil {
+			return 0, fmt.Errorf("nil receipt block at index %d", i)
+		}
 		if i != 0 {
 			if blockChain[i].NumberU64() != blockChain[i-1].NumberU64()+1 || blockChain[i].ParentHash() != blockChain[i-1].Hash() {
 				log.Error("Non contiguous receipt insert", "number", blockChain[i].Number(), "hash", blockChain[i].Hash(), "parent", blockChain[i].ParentHash(),
@@ -1226,6 +1287,9 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 		} else {
 			liveBlocks, liveReceipts = append(liveBlocks, blockChain[i]), append(liveReceipts, receiptChain[i])
 		}
+	}
+	if err := bc.preflightFHSReceiptChain(blockChain); err != nil {
+		return 0, err
 	}
 
 	var (
@@ -1558,6 +1622,26 @@ func (bc *BlockChain) writeKnownBlock(block *types.Block) error {
 	}
 	bc.writeHeadBlock(block)
 	return nil
+}
+
+// resolveKnownBlock returns the exact block representation already committed
+// to the database. A block hash deliberately excludes HotStuff SignInfo, so an
+// untrusted same-hash block must never replace the persisted QC/view metadata
+// when a known block is made canonical again.
+func (bc *BlockChain) resolveKnownBlock(block *types.Block, verifySign bool) (*types.Block, error) {
+	if block == nil {
+		return nil, errors.New("nil known block")
+	}
+	stored := rawdb.ReadBlock(bc.db, block.Hash(), block.NumberU64())
+	if stored == nil || stored.Hash() != block.Hash() {
+		return nil, fmt.Errorf("known block %d %s is missing from the database", block.NumberU64(), block.Hash())
+	}
+	if verifySign && bc.chainConfig != nil && bc.chainConfig.FairHotstuff {
+		if err := bc.validator.VerifySignature(stored); err != nil {
+			return nil, fmt.Errorf("invalid persisted HotStuff proof for known block %d %s: %w", stored.NumberU64(), stored.Hash(), err)
+		}
+	}
+	return stored, nil
 }
 
 // WriteBlockWithState writes the block and all associated state to the database.
@@ -2075,6 +2159,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool, verifySi
 		// head full block(new pivot point).
 		for block != nil && err == ErrKnownBlock {
 			log.Debug("Writing previously known block", "number", block.Number(), "hash", block.Hash())
+			block, err = bc.resolveKnownBlock(block, verifySign)
+			if err != nil {
+				return it.index, err
+			}
 			if err := bc.writeKnownBlock(block); err != nil {
 				return it.index, err
 			}
@@ -2131,6 +2219,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals bool, verifySi
 		// just skip the block (we already validated it once fully (and crashed), since
 		// its header and body was already in the database).
 		if err == ErrKnownBlock {
+			block, err = bc.resolveKnownBlock(block, verifySign)
+			if err != nil {
+				return it.index, err
+			}
 			logger := log.Debug
 			if bc.chainConfig.Clique == nil {
 				logger = log.Warn
@@ -2325,6 +2417,9 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator) (i
 	// to disk.
 	err := consensus.ErrPrunedAncestor
 	for ; block != nil && errors.Is(err, consensus.ErrPrunedAncestor); block, err = it.next() {
+		if err := bc.verifyFHSBlockProof(block); err != nil {
+			return it.index, err
+		}
 		// Check the canonical state root for that number
 		if number := block.NumberU64(); current.NumberU64() >= number {
 			canonical := bc.GetBlockByNumber(number)

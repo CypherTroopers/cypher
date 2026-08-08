@@ -1,6 +1,7 @@
 package network
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -60,6 +61,19 @@ type Router struct {
 
 	sendsMap map[ServerIdentityID]int
 	sendMu   sync.Mutex
+
+	peerAuthConfigured bool
+	authorizedPeers    map[string][]byte
+}
+
+const maxAuthenticatedConnectionsPerPeer = 2
+
+func clonePeerAuthorization(peers map[string][]byte) map[string][]byte {
+	cloned := make(map[string][]byte, len(peers))
+	for address, publicKey := range peers {
+		cloned[address] = append([]byte(nil), publicKey...)
+	}
+	return cloned
 }
 
 // NewRouter returns a new Router attached to a ServerIdentity and the host we want to
@@ -76,6 +90,59 @@ func NewRouter(own *ServerIdentity, h Host) *Router {
 	r.sendsMap = make(map[ServerIdentityID]int)
 	log.Info("New router", "address", r.address)
 	return r
+}
+
+func (r *Router) ConfigurePeerAuthentication(chainID uint64, address, privateKeyHex, publicKeyHex string, authorizedPeers map[string][]byte) error {
+	configurer, ok := r.host.(PeerAuthConfigurer)
+	if !ok {
+		return fmt.Errorf("network host does not support cryptographic peer authentication")
+	}
+	if err := configurer.ConfigurePeerAuthentication(chainID, address, privateKeyHex, publicKeyHex, authorizedPeers); err != nil {
+		return err
+	}
+	r.Lock()
+	r.peerAuthConfigured = true
+	r.authorizedPeers = clonePeerAuthorization(authorizedPeers)
+	r.Unlock()
+	if identity, ok := r.host.(interface{ LocalAuthenticationPublicKey() []byte }); ok {
+		r.ServerIdentity.PublicKey = identity.LocalAuthenticationPublicKey()
+	}
+	return nil
+}
+
+func (r *Router) UpdatePeerAuthorization(authorizedPeers map[string][]byte) error {
+	configurer, ok := r.host.(PeerAuthConfigurer)
+	if !ok {
+		return fmt.Errorf("network host does not support cryptographic peer authentication")
+	}
+	if err := configurer.UpdatePeerAuthorization(authorizedPeers); err != nil {
+		return err
+	}
+	// Do not let a connection authenticated under an old committee survive a
+	// reconfiguration. Snapshot first because closeConnect mutates the map.
+	r.Lock()
+	r.peerAuthConfigured = true
+	r.authorizedPeers = clonePeerAuthorization(authorizedPeers)
+	connections := make([]Conn, 0)
+	for _, group := range r.connections {
+		for _, conn := range group {
+			connections = append(connections, conn)
+		}
+	}
+	r.Unlock()
+	for _, conn := range connections {
+		authenticated, ok := conn.(AuthenticatedConn)
+		if !ok {
+			_ = conn.Close()
+			continue
+		}
+		address, publicKey, available := authenticated.AuthenticatedPeer()
+		expected, allowed := authorizedPeers[address]
+		if !available || !allowed || !bytes.Equal(publicKey, expected) {
+			_ = conn.Close()
+		}
+	}
+	return nil
 }
 
 // Pause casues the router to stop after reading the next incoming message. It
@@ -118,6 +185,7 @@ func (r *Router) Start() {
 		}
 		if err := r.registerConnection(dst, c); err != nil {
 			log.Warn("does not accept incoming connection because it's closed", "address", r.address, "from", c.Remote())
+			_ = c.Close()
 			return
 		}
 		// start handleConn in a go routine that waits for incoming messages and
@@ -242,7 +310,7 @@ func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64
 	var totSentLen uint64
 	var c Conn
 	if !bForeConnect {
-		c = r.connection(e.ID)
+		c = r.connection(e)
 	}
 	if c == nil {
 		var sentLen uint64
@@ -277,6 +345,20 @@ func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64
 // connect starts a new connection and launches the listener for incoming
 // messages.
 func (r *Router) connect(si *ServerIdentity) (Conn, uint64, error) {
+	if si == nil {
+		return nil, 0, fmt.Errorf("nil remote ServerIdentity")
+	}
+	expectedIdentity := NewServerIdentityWithTransport(si.Address.String(), si.Address.ConnType())
+	if !si.ID.Equal(expectedIdentity.ID) {
+		return nil, 0, fmt.Errorf("remote ServerIdentity ID does not match its address")
+	}
+	r.Lock()
+	configured := r.peerAuthConfigured
+	expectedKey, allowed := r.authorizedPeers[si.Address.String()]
+	r.Unlock()
+	if configured && (!allowed || !bytes.Equal(expectedKey, si.PublicKey)) {
+		return nil, 0, fmt.Errorf("remote ServerIdentity is not in the active peer authorization set")
+	}
 	log.Debug("Connect", "Connecting to", si.Address)
 	c, err := r.host.Connect(si)
 	if err != nil {
@@ -286,14 +368,17 @@ func (r *Router) connect(si *ServerIdentity) (Conn, uint64, error) {
 	log.Info("Connect", "Connected to", si.Address)
 	var sentLen uint64
 	if sentLen, err = c.Send(r.ServerIdentity); err != nil {
+		_ = c.Close()
 		return nil, sentLen, err
 	}
 
 	if err = r.registerConnection(si, c); err != nil {
+		_ = c.Close()
 		return nil, sentLen, err
 	}
 
 	if err = r.launchHandleRoutine(si, c); err != nil {
+		_ = c.Close()
 		return nil, sentLen, err
 	}
 	return c, sentLen, nil
@@ -392,25 +477,68 @@ func (r *Router) handleConn(remote *ServerIdentity, c Conn) {
 
 // connection returns the first connection associated with this ServerIdentity.
 // If no connection is found, it returns nil.
-func (r *Router) connection(sid ServerIdentityID) Conn {
+func (r *Router) connection(expected *ServerIdentity) Conn {
+	if expected == nil {
+		return nil
+	}
 	r.Lock()
-	defer r.Unlock()
-	arr := r.connections[sid]
+	arr := append([]Conn(nil), r.connections[expected.ID]...)
+	configured := r.peerAuthConfigured
+	expectedKey, allowed := r.authorizedPeers[expected.Address.String()]
+	r.Unlock()
+	if configured && (!allowed || !bytes.Equal(expectedKey, expected.PublicKey)) {
+		return nil
+	}
 	if len(arr) == 0 {
 		return nil
 	}
-	return arr[0]
+	for _, conn := range arr {
+		if authenticated, ok := conn.(AuthenticatedConn); ok {
+			address, publicKey, available := authenticated.AuthenticatedPeer()
+			if !available || address != expected.Address.String() || !bytes.Equal(publicKey, expected.PublicKey) {
+				_ = conn.Close()
+				continue
+			}
+		} else if configured {
+			_ = conn.Close()
+			continue
+		}
+		return conn
+	}
+	return nil
 }
 
 // registerConnection registers a ServerIdentity for a new connection, mapped with the
 // real physical address of the connection and the connection itself.
 // It uses the networkLock mutex.
 func (r *Router) registerConnection(remote *ServerIdentity, c Conn) error {
+	if remote == nil || c == nil {
+		return fmt.Errorf("nil remote identity or connection")
+	}
+	expectedIdentity := NewServerIdentityWithTransport(remote.Address.String(), c.Type())
+	if !remote.ID.Equal(expectedIdentity.ID) {
+		return fmt.Errorf("remote ServerIdentity ID does not match its authenticated address")
+	}
 	log.Debug("registerConnection", "", r.address, "Registers", remote.Address)
 	r.Lock()
 	defer r.Unlock()
 	if r.isClosed {
 		return ErrClosed
+	}
+	if r.peerAuthConfigured {
+		authenticated, ok := c.(AuthenticatedConn)
+		if !ok {
+			return fmt.Errorf("authenticated router rejected an unauthenticated connection")
+		}
+		address, publicKey, available := authenticated.AuthenticatedPeer()
+		expectedKey, allowed := r.authorizedPeers[address]
+		if !available || !allowed || address != remote.Address.String() ||
+			!bytes.Equal(publicKey, expectedKey) || !bytes.Equal(remote.PublicKey, expectedKey) {
+			return fmt.Errorf("connection peer is not in the current authorization set")
+		}
+		if len(r.connections[remote.ID]) >= maxAuthenticatedConnectionsPerPeer {
+			return fmt.Errorf("too many authenticated connections for peer %s", remote.Address)
+		}
 	}
 	_, okc := r.connections[remote.ID]
 	if okc {
@@ -490,6 +618,24 @@ func (r *Router) receiveServerIdentity(c Conn) (*ServerIdentity, error) {
 
 	// Set the ServerIdentity for this connection
 	dst := nm.Msg.(*ServerIdentity)
+	if dst == nil || dst.Address.ConnType() != c.Type() {
+		return nil, fmt.Errorf("ServerIdentity transport does not match the connection")
+	}
+	expectedIdentity := NewServerIdentityWithTransport(dst.Address.String(), c.Type())
+	if !dst.ID.Equal(expectedIdentity.ID) {
+		return nil, fmt.Errorf("ServerIdentity ID does not match its address")
+	}
+	if authenticated, ok := c.(AuthenticatedConn); ok {
+		address, publicKey, available := authenticated.AuthenticatedPeer()
+		if !available {
+			return nil, fmt.Errorf("transport did not expose its authenticated peer identity")
+		}
+		if dst.Address.String() != address || !bytes.Equal(dst.PublicKey, publicKey) {
+			return nil, fmt.Errorf("transport certificate identity does not match ServerIdentity handshake")
+		}
+	} else if c.Type() == PlainQUIC {
+		return nil, fmt.Errorf("QUIC connection is missing cryptographic peer authentication")
+	}
 
 	log.Debug("receiveServerIdentity", "", r.address, "from", dst.Address)
 	return dst, nil

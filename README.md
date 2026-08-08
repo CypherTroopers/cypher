@@ -1,4 +1,4 @@
-https://arxiv.org/html/2501.02970v3
+[Fair Byzantine Fault-Tolerant Consensus (FHS-C), arXiv:2501.02970v3](https://arxiv.org/html/2501.02970v3)
 
 ## Preparations
 
@@ -130,6 +130,22 @@ The [`Build Binaries`](.github/workflows/build-binaries.yml) workflow uses one n
 
 Each matrix job uploads only freshly staged and checksummed artifacts. After all three native builds succeed, the default-branch publish job validates their source commit, architecture, toolchain version, BLS revision, and checksums before automatically committing and pushing the files under `build/bin`.
 
+## Hardened Fair HotStuff consensus
+
+This branch implements the FHS-C current-leader QC-broadcast change and the safety machinery needed to operate it outside the paper's crash-free model:
+
+- Fair HotStuff requires a committee of `n = 3f + 1` validators (`4 <= n <= 100`) and rejects malformed, duplicate, or invalid BLS committee keys at genesis. The upper bound keeps the quorum proof within the authenticated control-message budget.
+- Every signer mask has one canonical encoding. Extra bytes, committee-external bits, and under-quorum masks are rejected.
+- `NewView` carries each replica's latest QC. A leader must include `n - f` independently signed reports in its aggregate proof, and a lagging replica verifies and adopts the highest valid QC before voting.
+- A local timer cannot change views by itself. A view changes only after a verified `2f + 1` timeout certificate; timeout votes and certificates are bounded and persisted.
+- Prepare, vote, QC, NewView, and timeout envelopes are signed by their committee BLS key. QUIC uses mutual, short-lived TLS certificates whose chain ID, node address, and TLS public key are attested by the same BLS identity. Fair HotStuff disables TCP fallback.
+- Votes, timeout votes, QCs, certified proposal bodies, and the highest safety state are synchronously written before the corresponding message or state transition becomes visible. Restart restores this WAL and fails closed on corruption or conflicting same-view votes.
+- The QC producer cannot grind the next leader by choosing a signature or signer subset. Leader selection is a domain-separated PRF of the genesis seed, chain ID, absolute view, and historical committee hash, with unbiased rejection sampling.
+
+The supplied [`genesis.json`](genesis.json) commits the complete Fair HotStuff configuration in the genesis header `mixHash`, including the chain ID, committee, fork settings, transport policy, and `fairHotstuffSeed`. This intentionally changes the genesis block hash; existing databases from the old protocol must not be reused.
+
+The committed seed is a trusted-genesis implementation of the paper's fair-election assumption for a static Byzantine set. It removes current-leader QC grinding, but the schedule is predictable after genesis and the seed creator must generate the seed honestly. Deployments that require resistance to a malicious seed ceremony, adaptive corruption, or targeted future-leader denial of service should replace it with a DKG-backed threshold beacon or an independently verified external beacon.
+
 ## run a node on Linux
 ```bash
 ./colossusX_linux.sh
@@ -143,32 +159,39 @@ Each matrix job uploads only freshly staged and checksummed artifacts. After all
 ./colossusX_windows.ps1
 ```
 ## get RPC owner rewards
-1.
-~~~
+
+1. Create an account:
+
+```javascript
 personal.newAccount("your password")
-~~~
-2.(If you want to mining)
-~~~
+```
+
+2. Start mining if required:
+
+```javascript
 miner.start(5, "your address", "your password")
-~~~
-3.(optional)change mining reward wallet
-~~~
+```
+
+3. Optionally change the mining reward wallet:
+
+```javascript
 miner.setEtherbase("")
-~~~
-4.check wallet balance
-~~~
+```
+
+4. Check the wallet balance:
+
+```javascript
 web3.fromWei(eth.getBalance("your address"), "ether")
-~~~
-5.unlock your account for Tx Approval RPC rewards
-~~~
+```
+
+5. Unlock the account for transaction-approval RPC rewards:
+
+```javascript
 personal.unlockAccount("your address", "your password", 0)
-~~~
+```
 
 ## setting http/3 QUIC RPC port(example)
-Low-latency high-speed communicati
-```
-https://github.com/CypherTroopers/cypher/blob/ColossusX_CommonRPC_TXrewards/nginx%20example
-```
+Low-latency, high-speed communication example: [nginx HTTP/3 configuration](https://github.com/CypherTroopers/cypher/blob/ColossusX_CommonRPC_TXrewards/nginx%20example).
 <img width="1448" height="1086" alt="image" src="https://github.com/user-attachments/assets/dbb7c1bd-f031-41a0-933b-2eeadbeac9ba" />
 
 # Validators and Common Miners

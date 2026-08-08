@@ -27,6 +27,20 @@ type Server struct {
 	IsStarted      bool
 }
 
+func (c *Server) ConfigurePeerAuthentication(chainID uint64, address, privateKeyHex, publicKeyHex string, authorizedPeers map[string][]byte) error {
+	if c == nil || c.Router == nil {
+		return fmt.Errorf("nil rnet server")
+	}
+	return c.Router.ConfigurePeerAuthentication(chainID, address, privateKeyHex, publicKeyHex, authorizedPeers)
+}
+
+func (c *Server) UpdatePeerAuthorization(authorizedPeers map[string][]byte) error {
+	if c == nil || c.Router == nil {
+		return fmt.Errorf("nil rnet server")
+	}
+	return c.Router.UpdatePeerAuthorization(authorizedPeers)
+}
+
 // NewServer returns a fresh Server tied to a given Router.
 // If dbPath is "", the server will write its database to the default
 // location. If dbPath is != "", it is considered a temp dir, and the

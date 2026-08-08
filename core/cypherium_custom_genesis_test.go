@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"os"
 	"testing"
+
+	"github.com/cypherium/cypher/params"
 )
 
 // TestCypheriumCustomGenesisConfigPinsUpgradeSurface locks the Cypherium-specific
@@ -35,6 +37,13 @@ func TestCypheriumCustomGenesisConfigPinsUpgradeSurface(t *testing.T) {
 	}
 	if !genesis.Config.FairHotstuff {
 		t.Fatal("fairHotstuff must remain enabled for this test genesis")
+	}
+	commitment, err := params.FairHotstuffGenesisCommitment(genesis.Config)
+	if err != nil {
+		t.Fatalf("compute Fair HotStuff genesis commitment: %v", err)
+	}
+	if genesis.Mixhash != commitment {
+		t.Fatalf("genesis mixHash does not commit the complete Fair HotStuff configuration: have %s want %s", genesis.Mixhash.Hex(), commitment.Hex())
 	}
 	if len(genesis.Config.GenCommittee) == 0 {
 		t.Fatal("committee must not be removed during EVM upgrade")

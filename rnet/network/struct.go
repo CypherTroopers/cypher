@@ -81,6 +81,10 @@ type ServerIdentity struct {
 	Address Address
 	// Description of the server
 	Description string
+	// PublicKey is the serialized committee BLS key that authenticates the
+	// transport certificate and consensus envelopes. It is public metadata;
+	// private key material is never placed in ServerIdentity.
+	PublicKey []byte
 }
 
 // ServerIdentityID uniquely identifies an ServerIdentity struct

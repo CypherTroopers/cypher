@@ -37,6 +37,9 @@
     "fixedCommittee": true,
     "fixedLeader": false,
     "fairHotstuff": true,
+    "rnettransport": "quic",
+    "rnetfallbacktransport": "none",
+    "fairHotstuffSeed": "0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627",
 
     "committee": {
       "0": {
@@ -116,7 +119,7 @@
 
   "nonce": "0x0",
 
-  "mixHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "mixHash": "0x20cb28ea65294d4d20465d4b736b1c1c938a78e3dd3805d47b0b4050571fc3e1",
 
   "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 

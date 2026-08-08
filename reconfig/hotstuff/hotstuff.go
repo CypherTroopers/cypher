@@ -19,6 +19,13 @@ import (
 const hotstuffSignatureDomain = "hotstuff-vote-v1"
 const maxPendingNewViewIDs = 8
 const maxPendingNewViewsPerID = 128
+const maxUnhandledMessages = 256
+const maxUnhandledPerSender = 16
+const maxUnhandledBytes = 4 * 1024 * 1024
+const maxUnhandledFutureViews = 16
+const maxTimeoutStates = 32
+const maxHotstuffControlBytes = MaxHotstuffControlBytes
+const pendingMessageTTL = 2 * time.Minute
 const hotstuffRecoveryInterval = 5 * time.Second
 const finalizedRecoveryRetention = 2 * time.Minute
 const maxFinalizedRecoveryViews = 16
@@ -111,11 +118,14 @@ const (
 	MsgVoteCommit
 	MsgDecide
 	MsgQCBroadcast
+	MsgTimeout
+	MsgTimeoutQC
 
 	// pseudo messages
 	MsgStartNewView // for handling new view from app
 	MsgTryPropose
 	MsgTimer
+	MsgLocalTimeout
 )
 
 func ReadableMsgType(m uint32) string {
@@ -138,10 +148,16 @@ func ReadableMsgType(m uint32) string {
 		return "MsgDecide"
 	case m == MsgQCBroadcast:
 		return "MsgQCBroadcast"
+	case m == MsgTimeout:
+		return "MsgTimeout"
+	case m == MsgTimeoutQC:
+		return "MsgTimeoutQC"
 	case m == MsgStartNewView:
 		return "MsgStartNewView"
 	case m == MsgTryPropose:
 		return "MsgTryPropose"
+	case m == MsgLocalTimeout:
+		return "MsgLocalTimeout"
 
 	default:
 		return "unknown"
@@ -268,10 +284,11 @@ type HotstuffMessage struct {
 	DataB []byte
 	DataC []byte
 
-	DataD []byte
-	DataE []byte
-	DataF []byte
-	DataG []byte // FHS parent certified state and QC
+	DataD   []byte
+	DataE   []byte
+	DataF   []byte
+	DataG   []byte // FHS parent certified state and QC
+	AuthSig []byte
 
 	ReceivedAt time.Time
 }
@@ -312,6 +329,18 @@ type View struct {
 	lastLeaderRecoveryAt  time.Time
 	lastReplicaRecoveryAt time.Time
 	certified             bool
+
+	// Fair HotStuff keeps the common target-view context separate from
+	// each replica's latest-QC report. This is required because honest
+	// replicas can legitimately have different highest certificates during a
+	// view change.
+	fhsContext     *FHSViewContext
+	fhsReports     map[uint32]*NewViewReport
+	fhsReportSigns map[uint32]*bls.Sign
+	fhsReportBytes int
+	fhsAggregate   *AggregateQC
+	fhsHighest     *SignedState
+	fhsTimeout     *TimeoutCertificate
 }
 
 func (v *View) hasKState() bool {
@@ -329,8 +358,15 @@ type HotstuffProtocolManager struct {
 	leaderView     *View
 	app            HotStuffApplication
 	unhandledMsg   map[common.Hash]*HotstuffMessage // messages which is not handled(which phase is ahead of local's)
+	unhandledSize  map[common.Hash]int
+	unhandledBytes int
 	pendingNewView map[common.Hash]map[string]*HotstuffMessage
 	finalized      map[common.Hash]*finalizedRecovery
+	timeoutVotes   map[common.Hash]map[int]*bls.Sign
+	timeoutEchoed  map[common.Hash]bool
+	timeoutQC      map[common.Hash]*TimeoutCertificate
+	timeoutSeen    map[common.Hash]time.Time
+	timeoutView    map[common.Hash]uint64
 }
 
 type finalizedRecovery struct {
@@ -349,14 +385,27 @@ func NewHotstuffProtocolManager(a HotStuffApplication, secretKey *bls.SecretKey,
 		app:            a,
 		views:          make(map[common.Hash]*View),
 		unhandledMsg:   make(map[common.Hash]*HotstuffMessage),
+		unhandledSize:  make(map[common.Hash]int),
 		pendingNewView: make(map[common.Hash]map[string]*HotstuffMessage),
 		finalized:      make(map[common.Hash]*finalizedRecovery),
+		timeoutVotes:   make(map[common.Hash]map[int]*bls.Sign),
+		timeoutEchoed:  make(map[common.Hash]bool),
+		timeoutQC:      make(map[common.Hash]*TimeoutCertificate),
+		timeoutSeen:    make(map[common.Hash]time.Time),
+		timeoutView:    make(map[common.Hash]uint64),
 	}
 	return manager
 }
 
 func CalcThreshold(size int) int {
 	return (size + 1) * 2 / 3
+}
+
+func ValidateBFTCommitteeSize(size int) error {
+	if size <= 0 || size > params.MaxFairHotstuffCommitteeSize || (size != 1 && (size-1)%3 != 0) {
+		return fmt.Errorf("invalid BFT committee size %d: require n=3f+1 and n<=%d", size, params.MaxFairHotstuffCommitteeSize)
+	}
+	return nil
 }
 
 func (hsm *HotstuffProtocolManager) UpdateKeyPair(sec *bls.SecretKey) {
@@ -563,6 +612,9 @@ func (hsm *HotstuffProtocolManager) initViewCommittee(v *View) error {
 	}
 	v.committeeKeyHash = viewState.KeyHash
 	v.cmLen = len(v.groupPublicKey)
+	if err := ValidateBFTCommitteeSize(v.cmLen); err != nil {
+		return err
+	}
 	v.threshold = CalcThreshold(v.cmLen)
 	v.replicaIndex = buildReplicaIndex(v.groupPublicKey)
 	return nil
@@ -653,7 +705,7 @@ func (hsm *HotstuffProtocolManager) clearTimeoutView(curN uint64) error {
 	for k, m := range hsm.unhandledMsg {
 		if m.Number < curN {
 			log.Debug("Remove unhandled hotstuff message", "viewId", m.ViewId, "code", m.Code, "from", m.Id, "past time", now.Sub(m.ReceivedAt).Seconds())
-			delete(hsm.unhandledMsg, k)
+			hsm.removeUnhandled(k, m)
 		}
 	}
 
@@ -689,6 +741,9 @@ func (hsm *HotstuffProtocolManager) discardStaleReplicaNewViews(number uint64, k
 
 // for replica
 func (hsm *HotstuffProtocolManager) NewView() error {
+	if hsm.usesFHSProtocolV2() {
+		return hsm.newFHSNewView()
+	}
 	v, extra, err := hsm.newView()
 	if err != nil {
 		return err
@@ -706,6 +761,9 @@ func (hsm *HotstuffProtocolManager) NewView() error {
 
 	sig := hsm.SignHashByMessage(MsgNewView, v.hash, v.leaderId, v.currentState)
 	msg := hsm.newMsg(MsgNewView, v.number, v.hash, v.currentState, sig, extra)
+	if err := hsm.sealMessage(msg); err != nil {
+		return err
+	}
 	v.replicaMsg[MsgNewView] = msg
 	v.lastReplicaRecoveryAt = time.Now()
 
@@ -843,6 +901,9 @@ func (hsm *HotstuffProtocolManager) cacheFinalizedRecovery(v *View, decide *Hots
 
 // for leader
 func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*View, *VoteInfo, error) {
+	if hsm.usesFHSProtocolV2() {
+		return hsm.validateFHSNewViewMsg(msg)
+	}
 	if msg == nil {
 		return nil, nil, ErrNewViewFail
 	}
@@ -853,9 +914,6 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 
 	expectedState, _, expectedNumber, stateErr := hsm.app.ValidateView(msg.DataA)
 	if stateErr != nil && stateErr != ErrFutureState {
-		return nil, nil, stateErr
-	}
-	if stateErr == ErrFutureState {
 		return nil, nil, stateErr
 	}
 
@@ -899,6 +957,9 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 	if replica == nil || bftview.GetNodeID(replica.Address, replica.Public) != msg.Id {
 		return nil, nil, ErrInvalidReplica
 	}
+	if err := hsm.verifyMessageAuth(msg, msg.Id, vote.PubKey); err != nil {
+		return nil, nil, err
+	}
 	if !hsm.verifyVoteSignature(vote.KSign, vote.PubKey, MsgNewView, v.hash, v.leaderId, msg.DataA) {
 		return nil, nil, ErrQCVerification
 	}
@@ -906,8 +967,27 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 }
 
 func (hsm *HotstuffProtocolManager) queueFutureNewView(msg *HotstuffMessage, vote *VoteInfo) {
-	if msg == nil {
+	if msg == nil || vote == nil || vote.PubKey == nil {
 		return
+	}
+	if msg.Number > hsm.app.CurrentN()+maxPendingNewViewIDs {
+		log.Warn("drop far-future new-view", "number", msg.Number, "current", hsm.app.CurrentN())
+		return
+	}
+	encoded, err := rlp.EncodeToBytes(msg)
+	if err != nil || len(encoded) > maxHotstuffControlBytes {
+		return
+	}
+	now := time.Now()
+	for id, entries := range hsm.pendingNewView {
+		for key, pendingMsg := range entries {
+			if pendingMsg == nil || (!pendingMsg.ReceivedAt.IsZero() && now.Sub(pendingMsg.ReceivedAt) > pendingMessageTTL) {
+				delete(entries, key)
+			}
+		}
+		if len(entries) == 0 {
+			delete(hsm.pendingNewView, id)
+		}
 	}
 	pending := hsm.pendingNewView[msg.ViewId]
 	if pending == nil {
@@ -930,11 +1010,15 @@ func (hsm *HotstuffProtocolManager) queueFutureNewView(msg *HotstuffMessage, vot
 		key = hex.EncodeToString(vote.PubKey.Serialize())
 	}
 	if _, exists := pending[key]; !exists {
+		msg.ReceivedAt = now
 		pending[key] = msg
 	}
 }
 
 func (hsm *HotstuffProtocolManager) acceptValidatedNewView(msg *HotstuffMessage, validatedView *View, vote *VoteInfo) error {
+	if hsm.usesFHSProtocolV2() {
+		return hsm.acceptFHSNewView(msg, validatedView, vote)
+	}
 	if msg == nil || validatedView == nil || vote == nil {
 		return ErrNewViewFail
 	}
@@ -982,6 +1066,9 @@ func (hsm *HotstuffProtocolManager) acceptValidatedNewView(msg *HotstuffMessage,
 }
 
 func (hsm *HotstuffProtocolManager) activateLeaderView(v *View) error {
+	if hsm.usesFHSProtocolV2() {
+		return hsm.activateFHSLeaderView(v)
+	}
 	if v == nil {
 		return ErrInvalidLeaderView
 	}
@@ -1039,6 +1126,9 @@ func (hsm *HotstuffProtocolManager) handleNewViewMsg(msg *HotstuffMessage) error
 }
 
 func (hsm *HotstuffProtocolManager) TryPropose() error {
+	if hsm.usesFHSProtocolV2() {
+		return hsm.tryFHSPropose()
+	}
 	v := hsm.leaderView
 	if v == nil {
 		return ErrInvalidLeaderView
@@ -1087,6 +1177,9 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 			}
 			msg.DataG = encodedQC
 		}
+	}
+	if err := hsm.sealMessage(msg); err != nil {
+		return err
 	}
 
 	if encoded, encErr := rlp.EncodeToBytes(msg); encErr == nil {
@@ -1173,6 +1266,9 @@ func (hsm *HotstuffProtocolManager) verifyFHSParentQC(parentQC *SignedState, chi
 	if err != nil {
 		return fmt.Errorf("%w: parent committee %s: %v", ErrInvalidHighQC, parentRef.KeyHash, err)
 	}
+	if err := ValidateBFTCommitteeSize(len(parentKeys)); err != nil {
+		return fmt.Errorf("%w: parent committee: %v", ErrInvalidHighQC, err)
+	}
 	parentThreshold := CalcThreshold(len(parentKeys))
 	if !hsm.verifyAggregatedSignature(parentQC.Sign, parentQC.Mask, MsgVotePrepare, parentQC.ViewID, parentQC.LeaderID, parentQC.State, parentKeys, parentThreshold) {
 		return fmt.Errorf("%w: parent QC signature invalid for committee %s", ErrInvalidHighQC, parentRef.KeyHash)
@@ -1181,6 +1277,10 @@ func (hsm *HotstuffProtocolManager) verifyFHSParentQC(parentQC *SignedState, chi
 }
 
 func verifySignatureDigest(bSign []byte, bMask []byte, digest []byte, groupPublicKey []*bls.PublicKey, threshold int) bool {
+	if err := ValidateCanonicalSignerMask(bMask, len(groupPublicKey), threshold); err != nil {
+		log.Debug("reject non-canonical signer mask", "err", err)
+		return false
+	}
 	var sign bls.Sign
 	if err := sign.Deserialize(bSign); err != nil {
 		return false
@@ -1277,6 +1377,9 @@ loop:
 
 // for replica
 func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
+	if hsm.usesFHSProtocolV2() {
+		return hsm.handleFHSPrepareMsg(m)
+	}
 	start := time.Now()
 	expectedState, expectedLeader, expectedNumber, err := hsm.app.ValidateView(m.DataE)
 	if err != nil {
@@ -1328,6 +1431,13 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 			"expectedLeader", expectedLeader,
 			"viewLeader", v.leaderId)
 		return ErrInvalidLeaderView
+	}
+	proposalState := bftview.DecodeToView(v.currentState)
+	if proposalState == nil || proposalState.LeaderIndex >= uint(len(v.groupPublicKey)) {
+		return ErrInvalidLeaderView
+	}
+	if err := hsm.verifyMessageAuth(m, v.leaderId, v.groupPublicKey[proposalState.LeaderIndex]); err != nil {
+		return err
 	}
 
 	if v.phaseAsReplica != PhasePrepare {
@@ -1415,6 +1525,9 @@ func (hsm *HotstuffProtocolManager) handlePrepareMsg(m *HotstuffMessage) error {
 	}
 
 	msg := hsm.newMsg(MsgVotePrepare, v.number, v.hash, nil, kSign, tSign)
+	if err := hsm.sealMessage(msg); err != nil {
+		return err
+	}
 
 	// Cache VotePrepare so the replica can resend it if the leader retransmits Prepare.
 	v.replicaMsg[MsgVotePrepare] = msg
@@ -1443,15 +1556,32 @@ func (hsm *HotstuffProtocolManager) createSignatureMsg(v *View, code uint32, pha
 	}
 
 	// DataA: kSign, DataB: tSign, DataC: mask
-	return hsm.newMsg(code, v.number, v.hash, bKSign, bTSign, v.qc[phase].mask)
-}
-
-func (hsm *HotstuffProtocolManager) broadcastPrepareQC(v *View) *HotstuffMessage {
-	if v == nil || v.qc["prepare"] == nil {
+	msg := hsm.newMsg(code, v.number, v.hash, bKSign, bTSign, v.qc[phase].mask)
+	if err := hsm.sealMessage(msg); err != nil {
+		log.Error("failed to authenticate hotstuff QC message", "code", code, "err", err)
 		return nil
 	}
+	return msg
+}
+
+func (hsm *HotstuffProtocolManager) broadcastPrepareQC(v *View) (*HotstuffMessage, error) {
+	if v == nil || v.qc["prepare"] == nil {
+		return nil, ErrMissingView
+	}
 	msg := hsm.createSignatureMsg(v, MsgQCBroadcast, "prepare")
+	if msg == nil {
+		return nil, fmt.Errorf("failed to authenticate prepare QC")
+	}
 	v.leaderMsg[MsgQCBroadcast] = msg
+	if hsm.app.UseFHS2Chain() {
+		// The leader must durably adopt its own QC before any peer can observe
+		// it. Otherwise a crash between broadcast and local self-delivery loses
+		// the highest certificate and can violate restart safety.
+		if err := hsm.certifyView(v, msg); err != nil {
+			delete(v.leaderMsg, MsgQCBroadcast)
+			return nil, err
+		}
+	}
 
 	log.Info("HOTSTUFF PREPARE QC BROADCAST",
 		"number", v.number,
@@ -1459,7 +1589,7 @@ func (hsm *HotstuffProtocolManager) broadcastPrepareQC(v *View) *HotstuffMessage
 		"votes", len(v.prepareVoteInfo),
 		"threshold", v.threshold)
 	hsm.app.Broadcast(msg)
-	return msg
+	return msg, nil
 }
 
 func (hsm *HotstuffProtocolManager) verifyPrepareQCMessage(v *View, m *HotstuffMessage) error {
@@ -1507,22 +1637,6 @@ func (hsm *HotstuffProtocolManager) certifyView(v *View, m *HotstuffMessage) err
 func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) error {
 	v, exist := hsm.views[m.ViewId]
 	if !exist {
-		if finalized := hsm.finalized[m.ViewId]; finalized != nil {
-			log.Warn("HOTSTUFF RECOVERY answer late vote from finalized cache",
-				"number", finalized.number,
-				"viewID", m.ViewId,
-				"to", m.Id)
-			if finalized.prepare != nil {
-				_ = hsm.app.Write(m.Id, finalized.prepare)
-			}
-			if finalized.qcBroadcast != nil {
-				_ = hsm.app.Write(m.Id, finalized.qcBroadcast)
-			}
-			if finalized.decide != nil {
-				return hsm.app.Write(m.Id, finalized.decide)
-			}
-			return nil
-		}
 		log.Debug("handlePrepareVoteMsg found no matched view", "viewId", m.ViewId)
 		return ErrMissingView
 	}
@@ -1531,6 +1645,20 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 	if err != nil {
 		log.Debug("handlePrepareVoteMsg failed to convert msg to voteInfo", "error", err)
 		return err
+	}
+	if hsm.requiresMessageAuth() {
+		voteView := bftview.DecodeToView(v.currentState)
+		committee := (*bftview.Committee)(nil)
+		if voteView != nil {
+			committee = bftview.LoadMember(voteView.KeyNumber, voteView.KeyHash, true)
+		}
+		if committee == nil || qrum.Index < 0 || qrum.Index >= len(committee.List) || committee.List[qrum.Index] == nil ||
+			bftview.GetNodeID(committee.List[qrum.Index].Address, committee.List[qrum.Index].Public) != m.Id {
+			return ErrInvalidReplica
+		}
+		if err := hsm.verifyMessageAuth(m, m.Id, qrum.PubKey); err != nil {
+			return err
+		}
 	}
 
 	if v.hasKState() {
@@ -1613,7 +1741,10 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 		return err
 	}
 
-	qcMsg := hsm.broadcastPrepareQC(v)
+	qcMsg, err := hsm.broadcastPrepareQC(v)
+	if err != nil {
+		return err
+	}
 	if hsm.app.UseFHS2Chain() {
 		v.phaseAsLeader = PhaseFinal
 		if qcMsg != nil {
@@ -1624,6 +1755,9 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 		return nil
 	}
 	msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
+	if msg == nil {
+		return fmt.Errorf("failed to authenticate decide message")
+	}
 
 	log.Debug("handlePrepareVoteMsg broadcast Decide msg", "viewId", m.ViewId, "number", v.number)
 	log.Info("HOTSTUFF DECIDE BROADCAST", "number", v.number, "viewID", m.ViewId, "votes", len(v.prepareVoteInfo), "threshold", v.threshold)
@@ -1644,6 +1778,18 @@ func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) err
 	v, exist := hsm.views[m.ViewId]
 	if !exist {
 		return ErrUnhandledMsg
+	}
+	if m.Number != v.number {
+		return ErrViewIdNotMatch
+	}
+	if hsm.requiresMessageAuth() {
+		qcView := bftview.DecodeToView(v.currentState)
+		if qcView == nil || qcView.LeaderIndex >= uint(len(v.groupPublicKey)) {
+			return ErrInvalidLeaderView
+		}
+		if err := hsm.verifyMessageAuth(m, v.leaderId, v.groupPublicKey[qcView.LeaderIndex]); err != nil {
+			return err
+		}
 	}
 	if err := hsm.verifyPrepareQCMessage(v, m); err != nil {
 		return err
@@ -1667,8 +1813,8 @@ func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) err
 // for replica
 func (hsm *HotstuffProtocolManager) handleDecideMsg(m *HotstuffMessage) error {
 	if hsm.app.UseFHS2Chain() {
-		log.Warn("ignore MsgDecide in FHS 2-chain mode", "number", m.Number, "viewID", m.ViewId, "from", m.Id)
-		return nil
+		log.Warn("reject MsgDecide in FHS 2-chain mode", "number", m.Number, "viewID", m.ViewId, "from", m.Id)
+		return ErrViewPhaseNotMatch
 	}
 	start := time.Now()
 	v, exist := hsm.views[m.ViewId]
@@ -1676,6 +1822,18 @@ func (hsm *HotstuffProtocolManager) handleDecideMsg(m *HotstuffMessage) error {
 		//log.Debug("handleDecideMsg found no match view", "viewId", m.ViewId)
 		return ErrMissingView
 		//return ErrUnhandledMsg
+	}
+	if m.Number != v.number {
+		return ErrViewIdNotMatch
+	}
+	if hsm.requiresMessageAuth() {
+		decideView := bftview.DecodeToView(v.currentState)
+		if decideView == nil || decideView.LeaderIndex >= uint(len(v.groupPublicKey)) {
+			return ErrInvalidLeaderView
+		}
+		if err := hsm.verifyMessageAuth(m, v.leaderId, v.groupPublicKey[decideView.LeaderIndex]); err != nil {
+			return err
+		}
 	}
 
 	//if v.phaseAsReplica < PhaseDecide {
@@ -1740,6 +1898,16 @@ func (hsm *HotstuffProtocolManager) handleMessage(m *HotstuffMessage) error {
 		return hsm.handleDecideMsg(m)
 	case m.Code == MsgQCBroadcast:
 		return hsm.handleQCBroadcastMsg(m)
+	case m.Code == MsgTimeout:
+		if !hsm.usesFHSProtocolV2() {
+			return ErrInvalidLeaderView
+		}
+		return hsm.handleTimeoutMsg(m)
+	case m.Code == MsgTimeoutQC:
+		if !hsm.usesFHSProtocolV2() {
+			return ErrInvalidLeaderView
+		}
+		return hsm.handleTimeoutQCMsg(m)
 	//empty message
 	case m.Code == MsgStartNewView:
 		log.Debug("handler handleStartNewView")
@@ -1747,6 +1915,8 @@ func (hsm *HotstuffProtocolManager) handleMessage(m *HotstuffMessage) error {
 	case m.Code == MsgTryPropose:
 		log.Debug("handler MsgTryPropose")
 		return hsm.TryPropose()
+	case m.Code == MsgLocalTimeout:
+		return hsm.LocalTimeout()
 
 	default:
 		log.Warn("unknown hotstuff message", "code", m.Code)
@@ -1755,21 +1925,115 @@ func (hsm *HotstuffProtocolManager) handleMessage(m *HotstuffMessage) error {
 }
 
 func (hsm *HotstuffProtocolManager) addToUnhandled(m *HotstuffMessage) {
-	if m.Number < hsm.app.CurrentN() {
+	if m == nil || m.Code != MsgQCBroadcast {
 		return
 	}
+	current := hsm.app.CurrentN()
+	if m.Number < current || m.Number > current+maxUnhandledFutureViews {
+		return
+	}
+	if hsm.requiresMessageAuth() {
+		state, _, _ := hsm.app.CurrentState()
+		view := bftview.DecodeToView(state)
+		if view == nil {
+			return
+		}
+		committee := bftview.LoadMember(view.KeyNumber, view.KeyHash, true)
+		keys, err := hsm.app.GetPublicKey(view.KeyHash)
+		if err != nil || committee == nil || len(keys) != len(committee.List) {
+			return
+		}
+		index := -1
+		for i := range committee.List {
+			if committee.List[i] != nil && bftview.GetNodeID(committee.List[i].Address, committee.List[i].Public) == m.Id {
+				index = i
+				break
+			}
+		}
+		if index < 0 || hsm.verifyMessageAuth(m, m.Id, keys[index]) != nil {
+			return
+		}
+	}
 	bs, err := rlp.EncodeToBytes(m)
-	if err != nil {
+	if err != nil || len(bs) > maxHotstuffControlBytes {
 		log.Warn("failed to encode hotstuff message to bytes, discarded")
 		return
 	}
-	m.ReceivedAt = time.Now() //??
-
-	k := hotstuffDigestHash(bs)
+	now := time.Now()
+	for key, pending := range hsm.unhandledMsg {
+		if pending == nil || (!pending.ReceivedAt.IsZero() && now.Sub(pending.ReceivedAt) > pendingMessageTTL) || pending.Number < current {
+			hsm.removeUnhandled(key, pending)
+		}
+	}
+	perSender := 0
+	for _, pending := range hsm.unhandledMsg {
+		if pending != nil && pending.Id == m.Id {
+			perSender++
+		}
+	}
+	if perSender >= maxUnhandledPerSender {
+		return
+	}
+	if len(hsm.unhandledMsg) >= maxUnhandledMessages || hsm.unhandledBytes+len(bs) > maxUnhandledBytes {
+		if m.Code != MsgQCBroadcast || !hsm.evictUnhandledNonQC() {
+			log.Warn("drop unhandled hotstuff message; queue limit reached", "count", len(hsm.unhandledMsg), "bytes", hsm.unhandledBytes)
+			return
+		}
+	}
+	canonical := *m
+	canonical.ReceivedAt = time.Time{}
+	canonicalBytes, err := rlp.EncodeToBytes(&canonical)
+	if err != nil {
+		return
+	}
+	k := hotstuffDigestHash(canonicalBytes)
+	if _, exists := hsm.unhandledMsg[k]; exists {
+		return
+	}
+	m.ReceivedAt = now
 	hsm.unhandledMsg[k] = m
+	hsm.unhandledSize[k] = len(bs)
+	hsm.unhandledBytes += len(bs)
+}
+
+func (hsm *HotstuffProtocolManager) removeUnhandled(key common.Hash, msg *HotstuffMessage) {
+	if size := hsm.unhandledSize[key]; size > 0 {
+		hsm.unhandledBytes -= size
+		if hsm.unhandledBytes < 0 {
+			hsm.unhandledBytes = 0
+		}
+	}
+	delete(hsm.unhandledSize, key)
+	delete(hsm.unhandledMsg, key)
+}
+
+func (hsm *HotstuffProtocolManager) evictUnhandledNonQC() bool {
+	var oldestKey common.Hash
+	var oldestMsg *HotstuffMessage
+	for key, candidate := range hsm.unhandledMsg {
+		if candidate == nil || candidate.Code == MsgQCBroadcast {
+			continue
+		}
+		if oldestMsg == nil || candidate.ReceivedAt.Before(oldestMsg.ReceivedAt) {
+			oldestKey, oldestMsg = key, candidate
+		}
+	}
+	if oldestMsg == nil {
+		return false
+	}
+	hsm.removeUnhandled(oldestKey, oldestMsg)
+	return true
 }
 
 func (hsm *HotstuffProtocolManager) HandleMessage(msg *HotstuffMessage) error {
+	if msg == nil {
+		return fmt.Errorf("nil hotstuff message")
+	}
+	if IsHotstuffWireCode(msg.Code) {
+		if err := ValidateHotstuffWireMessage(msg); err != nil {
+			return err
+		}
+	}
 	if msg.Code != MsgTimer {
 		log.Debug("HandleMessage", "Number", msg.Number, "viewId", msg.ViewId, "code", ReadableMsgType(msg.Code), "from", msg.Id)
 	}
@@ -1782,9 +2046,12 @@ func (hsm *HotstuffProtocolManager) HandleMessage(msg *HotstuffMessage) error {
 	}
 
 	for k, m := range hsm.unhandledMsg {
+		if m == nil || m.ViewId != msg.ViewId {
+			continue
+		}
 		if e := hsm.handleMessage(m); e != ErrUnhandledMsg {
 			log.Debug("Remove unhandled hotstuff message", "viewId", msg.ViewId, "code", msg.Code, "from", msg.Id)
-			delete(hsm.unhandledMsg, k)
+			hsm.removeUnhandled(k, m)
 		}
 	}
 
@@ -1894,7 +2161,11 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 
 			log.Debug("handleTimerMsg handlePrepareVoteMsg broadcast Decide msg", "number", v.number)
 			v.waitingMoreVoteInfo = false
-			qcMsg := hsm.broadcastPrepareQC(v)
+			qcMsg, err := hsm.broadcastPrepareQC(v)
+			if err != nil {
+				log.Warn("persist/broadcast PrepareQC failed", "number", v.number, "err", err)
+				continue
+			}
 			if hsm.app.UseFHS2Chain() {
 				v.phaseAsLeader = PhaseFinal
 				if qcMsg != nil {
@@ -1904,6 +2175,9 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 				continue
 			}
 			msg := hsm.createSignatureMsg(v, MsgDecide, "prepare")
+			if msg == nil {
+				continue
+			}
 			hsm.app.Broadcast(msg)
 			v.phaseAsLeader = PhaseFinal
 			v.leaderMsg[MsgDecide] = msg
@@ -1957,6 +2231,19 @@ func (hsm *HotstuffProtocolManager) SignHashWithContext(msgCode uint32, viewID c
 }
 
 func (hsm *HotstuffProtocolManager) SignHashByMessage(msgCode uint32, viewID common.Hash, leaderID string, data []byte) []byte {
+	if hsm.app.UseFHS2Chain() && msgCode == MsgVotePrepare {
+		baseDigest := hotstuffContextDigest(hsm.app.ChainID(), msgCode, viewID, leaderID, data)
+		digest, err := fhsSignerDigest(baseDigest, hsm.publicKey)
+		if err != nil {
+			log.Error("failed to build FHS signer digest", "err", err)
+			return nil
+		}
+		signature := hsm.secretKey.SignHash(digest)
+		if signature == nil {
+			return nil
+		}
+		return signature.Serialize()
+	}
 	if hsm.app.UseContextSignatures() {
 		return hsm.SignHashWithContext(msgCode, viewID, leaderID, data)
 	}
@@ -1964,6 +2251,11 @@ func (hsm *HotstuffProtocolManager) SignHashByMessage(msgCode uint32, viewID com
 }
 
 func (hsm *HotstuffProtocolManager) verifyVoteSignature(sig bls.Sign, pub *bls.PublicKey, msgCode uint32, viewID common.Hash, leaderID string, data []byte) bool {
+	if hsm.app.UseFHS2Chain() && msgCode == MsgVotePrepare {
+		baseDigest := hotstuffContextDigest(hsm.app.ChainID(), msgCode, viewID, leaderID, data)
+		digest, err := fhsSignerDigest(baseDigest, pub)
+		return err == nil && sig.VerifyHash(pub, digest)
+	}
 	if hsm.app.UseContextSignatures() {
 		return sig.VerifyHash(pub, hotstuffContextDigest(hsm.app.ChainID(), msgCode, viewID, leaderID, data))
 	}
@@ -1971,6 +2263,9 @@ func (hsm *HotstuffProtocolManager) verifyVoteSignature(sig bls.Sign, pub *bls.P
 }
 
 func (hsm *HotstuffProtocolManager) verifyAggregatedSignature(bSign []byte, bMask []byte, msgCode uint32, viewID common.Hash, leaderID string, data []byte, groupPublicKey []*bls.PublicKey, threshold int) bool {
+	if hsm.app.UseFHS2Chain() && msgCode == MsgVotePrepare {
+		return VerifyFHSSignatureWithContext(bSign, bMask, data, groupPublicKey, threshold, hsm.app.ChainID(), msgCode, viewID, leaderID)
+	}
 	if hsm.app.UseContextSignatures() {
 		return VerifySignatureWithContext(bSign, bMask, data, groupPublicKey, threshold, hsm.app.ChainID(), msgCode, viewID, leaderID)
 	}

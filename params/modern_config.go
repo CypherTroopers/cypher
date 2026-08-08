@@ -173,9 +173,12 @@ type chainConfigJSON struct {
 	MaxCodeSizeConfig      []MaxCodeConfigStruct `json:"maxCodeSizeConfig,omitempty"`
 	GenCommittee           GenesisCommittee      `json:"committee"`
 	RnetPort               string                `json:"rnetport,omitempty"`
+	RnetTransport          string                `json:"rnettransport,omitempty"`
+	RnetFallbackTransport  string                `json:"rnetfallbacktransport,omitempty"`
 	FixedCommittee         bool                  `json:"fixedCommittee,omitempty"`
 	FixedLeader            bool                  `json:"fixedLeader,omitempty"`
 	FairHotstuff           bool                  `json:"fairHotstuff,omitempty"`
+	FairHotstuffSeed       common.Hash           `json:"fairHotstuffSeed,omitempty"`
 	EnabledTPS             bool                  `json:"enabledTPS,omitempty"`
 }
 
@@ -209,9 +212,12 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 	c.MaxCodeSizeConfig = dec.MaxCodeSizeConfig
 	c.GenCommittee = dec.GenCommittee
 	c.RnetPort = dec.RnetPort
+	c.RnetTransport = dec.RnetTransport
+	c.RnetFallbackTransport = dec.RnetFallbackTransport
 	c.FixedCommittee = dec.FixedCommittee
 	c.FixedLeader = dec.FixedLeader
 	c.FairHotstuff = dec.FairHotstuff
+	c.FairHotstuffSeed = dec.FairHotstuffSeed
 	c.EnabledTPS = dec.EnabledTPS
 	c.SetModernForkConfig(&ModernForkConfig{
 		BerlinBlock:       dec.BerlinBlock,
@@ -254,9 +260,12 @@ func (c *ChainConfig) MarshalJSON() ([]byte, error) {
 		MaxCodeSizeConfig:      c.MaxCodeSizeConfig,
 		GenCommittee:           c.GenCommittee,
 		RnetPort:               c.RnetPort,
+		RnetTransport:          c.RnetTransport,
+		RnetFallbackTransport:  c.RnetFallbackTransport,
 		FixedCommittee:         c.FixedCommittee,
 		FixedLeader:            c.FixedLeader,
 		FairHotstuff:           c.FairHotstuff,
+		FairHotstuffSeed:       c.FairHotstuffSeed,
 		EnabledTPS:             c.EnabledTPS,
 	}
 	if cfg := c.ModernForkConfig(); cfg != nil {

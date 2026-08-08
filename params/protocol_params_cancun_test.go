@@ -74,7 +74,7 @@ func TestCalcBlobBaseFee(t *testing.T) {
 	if zero.Uint64() != MinBlobGasPrice {
 		t.Fatalf("zero excess blob base fee = %s, want %d", zero, MinBlobGasPrice)
 	}
-	high := CalcBlobBaseFee(cfg, DefaultCancunBlobConfig().BaseFeeUpdateFraction*2)
+	high := CalcBlobBaseFee(cfg, uint64(DefaultCancunBlobConfig().BaseFeeUpdateFraction*2))
 	if high.Cmp(zero) <= 0 {
 		t.Fatalf("expected blob base fee to increase: zero=%s high=%s", zero, high)
 	}

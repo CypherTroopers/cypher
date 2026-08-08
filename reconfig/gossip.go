@@ -17,6 +17,8 @@
 package reconfig
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -40,6 +42,27 @@ type serviceCallback interface {
 }
 
 const Gossip_MSG = 8
+
+const (
+	peerQueueInputCapacity     = 64
+	peerQueueControlMaxEntries = 4096
+	peerQueueControlMaxBytes   = 16 * 1024 * 1024
+	// Production queues share a global budget. Keep every peer below 1/100 of
+	// that budget so even all f Byzantine peers cannot consume the slots that
+	// an honest member needs. Fair HotStuff limits committees to 100 members.
+	peerQueueFairControlMaxEntries = 8
+	peerQueueFairControlMaxBytes   = 640 * 1024
+	peerQueueBulkMaxEntries        = 16
+	peerQueueBulkMaxBytes          = proposalBodySidecarMaxBytes + 1024*1024
+	peerQueueProducerWait          = 100 * time.Millisecond
+	peerQueueRetryTTL              = 2 * time.Minute
+	peerQueueMessageOverhead       = 512
+
+	outboundControlMaxEntries = 1024
+	outboundControlMaxBytes   = 64 * 1024 * 1024
+	outboundBulkMaxReferences = 256
+	outboundBulkMaxBytes      = 2 * peerQueueBulkMaxBytes
+)
 
 type heartBeatMsg struct {
 	BlockN uint64
@@ -71,19 +94,144 @@ type msgHeadInfo struct {
 }
 
 type peerQueues struct {
-	input         chan *networkMsg
-	priorityInput chan *networkMsg
-	next          chan *networkMsg
-	stop          chan struct{}
-	once          sync.Once
+	input           chan *networkMsg
+	priorityInput   chan *networkMsg
+	next            chan *networkMsg
+	stop            chan struct{}
+	once            sync.Once
+	lifecycleMu     sync.Mutex
+	mu              sync.Mutex
+	closed          bool
+	controlCount    int
+	controlBytes    int
+	bulkCount       int
+	bulkBytes       int
+	budget          *outboundQueueBudget
+	controlDigests  map[[32]byte]struct{}
+	controlMaxCount int
+	controlMaxBytes int
+}
+
+type outboundBulkRef struct {
+	refs int
+	size int
+}
+
+// outboundQueueBudget bounds the aggregate memory retained across all peer
+// queues. Proposal bodies are immutable after sealing and are shared between
+// destinations, so their bytes are charged once while every queued reference
+// is still counted.
+type outboundQueueBudget struct {
+	mu sync.Mutex
+
+	controlCount int
+	controlBytes int
+	bulkRefs     int
+	bulkBytes    int
+	bulkPayloads map[*proposalBodyMsg]*outboundBulkRef
+}
+
+func newOutboundQueueBudget() *outboundQueueBudget {
+	return &outboundQueueBudget{bulkPayloads: make(map[*proposalBodyMsg]*outboundBulkRef)}
+}
+
+func (budget *outboundQueueBudget) reserve(msg *networkMsg) bool {
+	if budget == nil || msg == nil {
+		return budget == nil
+	}
+	size := peerQueueMessageBytes(msg)
+	budget.mu.Lock()
+	defer budget.mu.Unlock()
+	if isHighPriorityNetworkMsg(msg) {
+		if size > outboundControlMaxBytes || budget.controlCount >= outboundControlMaxEntries || budget.controlBytes > outboundControlMaxBytes-size {
+			return false
+		}
+		budget.controlCount++
+		budget.controlBytes += size
+		return true
+	}
+	if budget.bulkRefs >= outboundBulkMaxReferences {
+		return false
+	}
+	if msg.Pmsg != nil {
+		if ref := budget.bulkPayloads[msg.Pmsg]; ref != nil {
+			ref.refs++
+			budget.bulkRefs++
+			return true
+		}
+	}
+	if size > outboundBulkMaxBytes || budget.bulkBytes > outboundBulkMaxBytes-size {
+		return false
+	}
+	budget.bulkRefs++
+	budget.bulkBytes += size
+	if msg.Pmsg != nil {
+		budget.bulkPayloads[msg.Pmsg] = &outboundBulkRef{refs: 1, size: size}
+	}
+	return true
+}
+
+func (budget *outboundQueueBudget) release(msg *networkMsg) {
+	if budget == nil || msg == nil {
+		return
+	}
+	size := peerQueueMessageBytes(msg)
+	budget.mu.Lock()
+	defer budget.mu.Unlock()
+	if isHighPriorityNetworkMsg(msg) {
+		if budget.controlCount > 0 {
+			budget.controlCount--
+		}
+		if size >= budget.controlBytes {
+			budget.controlBytes = 0
+		} else {
+			budget.controlBytes -= size
+		}
+		return
+	}
+	if budget.bulkRefs > 0 {
+		budget.bulkRefs--
+	}
+	if msg.Pmsg != nil {
+		if ref := budget.bulkPayloads[msg.Pmsg]; ref != nil {
+			ref.refs--
+			if ref.refs > 0 {
+				return
+			}
+			if ref.size >= budget.bulkBytes {
+				budget.bulkBytes = 0
+			} else {
+				budget.bulkBytes -= ref.size
+			}
+			delete(budget.bulkPayloads, msg.Pmsg)
+			return
+		}
+	}
+	if size >= budget.bulkBytes {
+		budget.bulkBytes = 0
+	} else {
+		budget.bulkBytes -= size
+	}
 }
 
 func newPeerQueues() *peerQueues {
+	return newPeerQueuesWithBudget(nil)
+}
+
+func newPeerQueuesWithBudget(budget *outboundQueueBudget) *peerQueues {
+	maxCount, maxBytes := peerQueueControlMaxEntries, peerQueueControlMaxBytes
+	if budget != nil {
+		maxCount, maxBytes = peerQueueFairControlMaxEntries, peerQueueFairControlMaxBytes
+	}
 	q := &peerQueues{
-		input:         make(chan *networkMsg, 8192),
-		priorityInput: make(chan *networkMsg, 8192),
-		next:          make(chan *networkMsg),
-		stop:          make(chan struct{}),
+		input:           make(chan *networkMsg, peerQueueInputCapacity),
+		priorityInput:   make(chan *networkMsg, peerQueueInputCapacity),
+		next:            make(chan *networkMsg),
+		stop:            make(chan struct{}),
+		budget:          budget,
+		controlDigests:  make(map[[32]byte]struct{}),
+		controlMaxCount: maxCount,
+		controlMaxBytes: maxBytes,
 	}
 	go q.run()
 	return q
@@ -122,6 +270,32 @@ func (q *peerQueues) run() {
 			classes[class][0] = nil
 			classes[class] = classes[class][1:]
 		case <-q.stop:
+			q.releasePending(classes)
+			return
+		}
+	}
+}
+
+func (q *peerQueues) releasePending(classes [7][]*networkMsg) {
+	for i := range classes {
+		for _, msg := range classes[i] {
+			q.release(msg)
+		}
+	}
+	for {
+		select {
+		case msg := <-q.priorityInput:
+			q.release(msg)
+		default:
+			goto drainNormal
+		}
+	}
+drainNormal:
+	for {
+		select {
+		case msg := <-q.input:
+			q.release(msg)
+		default:
 			return
 		}
 	}
@@ -150,25 +324,188 @@ func peerQueueClass(msg *networkMsg) int {
 }
 
 func (q *peerQueues) push(msg *networkMsg) bool {
+	return q.pushMessage(msg, true)
+}
+
+func peerQueueMessageBytes(msg *networkMsg) int {
+	if msg == nil {
+		return peerQueueMessageOverhead
+	}
+	if err := validateNetworkMsgShape(msg); err != nil {
+		return peerQueueControlMaxBytes + peerQueueBulkMaxBytes + 1
+	}
+	if msg.Hmsg != nil {
+		return queuedHotstuffMessageBytes(&hotstuffMsg{hMsg: msg.Hmsg}) + peerQueueMessageOverhead
+	}
+	if msg.Pmsg != nil {
+		return peerQueueMessageOverhead + len(msg.Pmsg.From) + len(msg.Pmsg.LeaderID) +
+			len(msg.Pmsg.EncodedBlock) + len(msg.Pmsg.Extra) + len(msg.Pmsg.ParentQC) + len(msg.Pmsg.AuthSig)
+	}
+	encoded, err := rlp.EncodeToBytes(msg)
+	if err != nil {
+		return peerQueueControlMaxBytes + 1
+	}
+	return peerQueueMessageOverhead + len(encoded)
+}
+
+func outboundControlDigest(msg *networkMsg) ([32]byte, bool) {
+	if msg == nil || !isHighPriorityNetworkMsg(msg) {
+		return [32]byte{}, false
+	}
+	var (
+		encoded []byte
+		err     error
+	)
+	if msg.Hmsg != nil {
+		canonical := *msg.Hmsg
+		canonical.ReceivedAt = time.Time{}
+		encoded, err = rlp.EncodeToBytes([]interface{}{msg.MsgFlag, &canonical})
+	} else {
+		encoded, err = rlp.EncodeToBytes(msg)
+	}
+	if err != nil {
+		return [32]byte{}, false
+	}
+	return sha256.Sum256(encoded), true
+}
+
+func (q *peerQueues) reserve(msg *networkMsg) (bool, bool) {
+	if q == nil || msg == nil {
+		return false, false
+	}
+	size := peerQueueMessageBytes(msg)
+	priority := isHighPriorityNetworkMsg(msg)
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return false, false
+	}
+	if priority {
+		digest, hasDigest := outboundControlDigest(msg)
+		if hasDigest {
+			if _, duplicate := q.controlDigests[digest]; duplicate {
+				return false, true
+			}
+		}
+		if size > q.controlMaxBytes || q.controlCount >= q.controlMaxCount || q.controlBytes > q.controlMaxBytes-size {
+			return false, false
+		}
+		q.controlCount++
+		q.controlBytes += size
+		if q.budget == nil || q.budget.reserve(msg) {
+			if hasDigest {
+				q.controlDigests[digest] = struct{}{}
+			}
+			return true, false
+		}
+		q.controlCount--
+		q.controlBytes -= size
+		return false, false
+	}
+	if size > peerQueueBulkMaxBytes || q.bulkCount >= peerQueueBulkMaxEntries || q.bulkBytes > peerQueueBulkMaxBytes-size {
+		return false, false
+	}
+	q.bulkCount++
+	q.bulkBytes += size
+	if q.budget == nil || q.budget.reserve(msg) {
+		return true, false
+	}
+	q.bulkCount--
+	q.bulkBytes -= size
+	return false, false
+}
+
+func (q *peerQueues) release(msg *networkMsg) {
+	if q == nil || msg == nil {
+		return
+	}
+	size := peerQueueMessageBytes(msg)
+	q.mu.Lock()
+	if isHighPriorityNetworkMsg(msg) {
+		if digest, ok := outboundControlDigest(msg); ok {
+			delete(q.controlDigests, digest)
+		}
+		if q.controlCount > 0 {
+			q.controlCount--
+		}
+		if size >= q.controlBytes {
+			q.controlBytes = 0
+		} else {
+			q.controlBytes -= size
+		}
+	} else {
+		if q.bulkCount > 0 {
+			q.bulkCount--
+		}
+		if size >= q.bulkBytes {
+			q.bulkBytes = 0
+		} else {
+			q.bulkBytes -= size
+		}
+	}
+	if q.budget != nil {
+		q.budget.release(msg)
+	}
+	q.mu.Unlock()
+}
+
+func (q *peerQueues) pushMessage(msg *networkMsg, clone bool) bool {
 	if q == nil || msg == nil {
 		return false
 	}
+	if err := validateNetworkMsgShape(msg); err != nil {
+		return false
+	}
+	q.lifecycleMu.Lock()
+	defer q.lifecycleMu.Unlock()
+	reserved, coalesced := q.reserve(msg)
+	if coalesced {
+		return true
+	}
+	if !reserved {
+		return false
+	}
+	queued := msg
+	if clone {
+		queued = cloneNetworkMsgForQueue(msg)
+	}
+	if queued == nil {
+		q.release(msg)
+		return false
+	}
+	if queued.queueSince.IsZero() {
+		queued.queueSince = time.Now()
+	}
 	input := q.input
-	if isHighPriorityNetworkMsg(msg) {
+	if isHighPriorityNetworkMsg(queued) {
 		input = q.priorityInput
 	}
+	timer := time.NewTimer(peerQueueProducerWait)
+	defer timer.Stop()
 	select {
-	case input <- cloneNetworkMsg(msg):
+	case input <- queued:
 		return true
 	case <-q.stop:
+		q.release(queued)
+		return false
+	case <-timer.C:
+		q.release(queued)
 		return false
 	}
 }
 
-func (q *peerQueues) pushFrontClass(msg *networkMsg) {
+func (q *peerQueues) pushFrontClass(msg *networkMsg) bool {
 	// Requeue at the tail of the same priority class to preserve FIFO and avoid
 	// retrying a failed send in a tight loop.
-	q.push(msg)
+	if msg == nil || msg.queueSince.IsZero() || time.Since(msg.queueSince) > peerQueueRetryTTL {
+		return false
+	}
+	msg.queueAttempts++
+	return q.pushMessage(msg, false)
+}
+
+func outboundMessageExpired(msg *networkMsg, now time.Time) bool {
+	return msg != nil && !msg.queueSince.IsZero() && now.Sub(msg.queueSince) > peerQueueRetryTTL
 }
 
 func (q *peerQueues) popNext() interface{} {
@@ -187,7 +524,14 @@ func (q *peerQueues) popNext() interface{} {
 
 func (q *peerQueues) close() {
 	if q != nil {
-		q.once.Do(func() { close(q.stop) })
+		q.once.Do(func() {
+			q.lifecycleMu.Lock()
+			defer q.lifecycleMu.Unlock()
+			q.mu.Lock()
+			q.closed = true
+			q.mu.Unlock()
+			close(q.stop)
+		})
 	}
 }
 
@@ -204,10 +548,20 @@ type netService struct {
 	ackMap   map[string]*ackInfo
 	muIdMap  sync.Mutex
 
+	peerAuthMu     sync.RWMutex
+	peerAuthKeys   map[string][]byte
+	outboundBudget *outboundQueueBudget
+
+	lifecycleMu     sync.Mutex
+	workerWG        sync.WaitGroup
+	lifecycleActive bool
+	networkStarted  bool
+	generation      atomic.Uint64
+
 	backend       serviceCallback
 	curBlockN     uint64
 	curKeyBlockN  uint64
-	isStoping     bool
+	isStoping     atomic.Bool
 	candidatepool *core.CandidatePool
 	bc            *core.BlockChain
 	kbc           *core.KeyBlockChain
@@ -239,6 +593,8 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 	s.goMap = make(map[string]*int32)
 	s.idQueues = make(map[string]*peerQueues)
 	s.ackMap = make(map[string]*ackInfo)
+	s.peerAuthKeys = make(map[string][]byte)
+	s.outboundBudget = newOutboundQueueBudget()
 	s.backend = callback
 	s.candidatepool = backend.CandidatePool()
 	s.bc = backend.BlockChain()
@@ -249,12 +605,62 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 
 func (s *netService) StartStop(isStart bool) {
 	if isStart {
-		s.server.Start()
-		go s.heartBeat_Loop()
-	} else { // stop
-		s.isStoping = true
-		//..............................
+		// A restart must not revive workers from the previous generation after
+		// isStoping becomes false. Stopping prevents new WaitGroup additions, so
+		// waiting here is safe and gives the next generation empty queue maps.
+		s.lifecycleMu.Lock()
+		if s.lifecycleActive {
+			s.lifecycleMu.Unlock()
+			return
+		}
+		wasStopping := s.isStoping.Load()
+		s.lifecycleMu.Unlock()
+		if wasStopping {
+			s.workerWG.Wait()
+		}
+
+		s.lifecycleMu.Lock()
+		if s.lifecycleActive {
+			s.lifecycleMu.Unlock()
+			return
+		}
+		s.isStoping.Store(false)
+		generation := s.generation.Add(1)
+		s.lifecycleActive = true
+		if !s.networkStarted {
+			s.server.Start()
+			s.networkStarted = true
+		}
+		s.workerWG.Add(1)
+		go func() {
+			defer s.workerWG.Done()
+			s.heartBeat_Loop(generation)
+		}()
+		s.lifecycleMu.Unlock()
+		return
 	}
+
+	s.lifecycleMu.Lock()
+	if !s.lifecycleActive {
+		s.lifecycleMu.Unlock()
+		return
+	}
+	s.lifecycleActive = false
+	s.isStoping.Store(true)
+	s.generation.Add(1)
+	s.muIdMap.Lock()
+	queues := make([]*peerQueues, 0, len(s.idQueues))
+	for address, queue := range s.idQueues {
+		if running := s.goMap[address]; running != nil {
+			atomic.StoreInt32(running, 2)
+		}
+		queues = append(queues, queue)
+	}
+	s.muIdMap.Unlock()
+	for _, queue := range queues {
+		queue.close()
+	}
+	s.lifecycleMu.Unlock()
 }
 
 func (s *netService) serverIdentityFor(address string) *network.ServerIdentity {
@@ -262,7 +668,36 @@ func (s *netService) serverIdentityFor(address string) *network.ServerIdentity {
 	if s != nil && s.server != nil && s.server.Address().ConnType() != network.InvalidConnType {
 		transport = s.server.Address().ConnType()
 	}
-	return network.NewServerIdentityWithTransport(address, transport)
+	identity := network.NewServerIdentityWithTransport(address, transport)
+	s.peerAuthMu.RLock()
+	if publicKey := s.peerAuthKeys[address]; len(publicKey) > 0 {
+		identity.PublicKey = append([]byte(nil), publicKey...)
+	}
+	s.peerAuthMu.RUnlock()
+	if len(identity.PublicKey) > 0 {
+		return identity
+	}
+	if committee := bftview.GetCurrentMember(); committee != nil {
+		if node, _ := committee.Get(address, bftview.Address); node != nil {
+			if publicKey, err := hex.DecodeString(node.Public); err == nil {
+				identity.PublicKey = publicKey
+			}
+		}
+	}
+	return identity
+}
+
+func (s *netService) setAuthenticatedPeerKeys(peers map[string][]byte) {
+	if s == nil {
+		return
+	}
+	copyPeers := make(map[string][]byte, len(peers))
+	for address, publicKey := range peers {
+		copyPeers[address] = append([]byte(nil), publicKey...)
+	}
+	s.peerAuthMu.Lock()
+	s.peerAuthKeys = copyPeers
+	s.peerAuthMu.Unlock()
 }
 
 // ----------------------------------------------------------------------------------------------------
@@ -315,8 +750,8 @@ func (s *netService) handleNetworkMsgAck(env *network.Envelope) {
 		log.Error("handleNetworkMsgReq failed to cast to ")
 		return
 	}
-	if msg.Cmsg == nil && msg.Bmsg == nil && msg.Hmsg == nil && msg.Pmsg == nil {
-		log.Error("handleNetworkMsgReq nil message")
+	if err := validateNetworkMsgShape(msg); err != nil {
+		log.Warn("reject malformed network message", "err", err)
 		return
 	}
 	si := env.ServerIdentity
@@ -348,6 +783,10 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 		log.Error("broadcast", "error", "nil network message")
 		return
 	}
+	if err := validateNetworkMsgShape(msg); err != nil {
+		log.Warn("refusing to broadcast malformed network message", "err", err)
+		return
+	}
 	mb := msg.GetCommittee()
 	if mb == nil {
 		log.Error("broadcast", "error", "can't find current committee")
@@ -367,7 +806,8 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 	// data-plane path.
 	if msg.Hmsg != nil {
 		switch msg.Hmsg.Code {
-		case hotstuff.MsgNewView, hotstuff.MsgPrepare, hotstuff.MsgVotePrepare, hotstuff.MsgQCBroadcast, hotstuff.MsgDecide:
+		case hotstuff.MsgNewView, hotstuff.MsgPrepare, hotstuff.MsgVotePrepare, hotstuff.MsgQCBroadcast, hotstuff.MsgDecide,
+			hotstuff.MsgTimeout, hotstuff.MsgTimeoutQC:
 			log.Warn("refusing to gossip hotstuff control message",
 				"code", hotstuff.ReadableMsgType(msg.Hmsg.Code),
 				"number", msg.Hmsg.Number,
@@ -415,6 +855,9 @@ func (s *netService) SendRawData(address string, msg *networkMsg) error {
 	if msg == nil {
 		return fmt.Errorf("nil network message")
 	}
+	if err := validateNetworkMsgShape(msg); err != nil {
+		return err
+	}
 	if address == "" {
 		return fmt.Errorf("empty destination address")
 	}
@@ -436,15 +879,11 @@ func (s *netService) SendRawData(address string, msg *networkMsg) error {
 	return nil
 }
 
-func (s *netService) loop_iddata(address string, queues *peerQueues) {
+func (s *netService) loop_iddata(address string, queues *peerQueues, isRunning *int32, generation uint64) {
 	log.Debug("loop_iddata start", "address", address)
-	si := s.serverIdentityFor(address)
 
-	s.muIdMap.Lock()
-	isRunning, _ := s.goMap[address]
-	s.muIdMap.Unlock()
-
-	for !s.isStoping && atomic.LoadInt32(isRunning) == 1 {
+	for !s.isStoping.Load() && s.generation.Load() == generation && atomic.LoadInt32(isRunning) == 1 {
+		si := s.serverIdentityFor(address)
 		msg := queues.popNext()
 		if msg == nil {
 			time.Sleep(2 * time.Millisecond)
@@ -452,22 +891,38 @@ func (s *netService) loop_iddata(address string, queues *peerQueues) {
 		}
 
 		m, ok := msg.(*networkMsg)
-		if ok && s.IgnoreMsg(m) {
+		if !ok || m == nil {
 			continue
 		}
-		if s.GetNetBlocks(si) > 1 && (!ok || !isHighPriorityNetworkMsg(m)) {
-			if ok && queues != nil && !s.IgnoreMsg(m) {
-				queues.pushFrontClass(m)
+		if outboundMessageExpired(m, time.Now()) {
+			queues.release(m)
+			log.Warn("drop expired outbound network message before send", "to", address, "class", m.NetworkClass())
+			continue
+		}
+		if s.IgnoreMsg(m) {
+			queues.release(m)
+			continue
+		}
+		if s.GetNetBlocks(si) > 1 && !isHighPriorityNetworkMsg(m) {
+			queues.release(m)
+			if queues != nil && !s.IgnoreMsg(m) {
+				if !queues.pushFrontClass(m) {
+					log.Warn("drop expired or saturated outbound network message", "to", address, "class", m.NetworkClass())
+				}
 			}
 			time.Sleep(2 * time.Millisecond)
 			continue
 		}
-		if err := s.SendRaw(si, msg, false); err != nil {
-			log.Warn("SendRawData", "couldn't send to", address, "error", err)
-			if ok && isHighPriorityNetworkMsg(m) && queues != nil && !s.IgnoreMsg(m) {
+		sendErr := s.SendRaw(si, msg, false)
+		queues.release(m)
+		if sendErr != nil {
+			log.Warn("SendRawData", "couldn't send to", address, "error", sendErr)
+			if isHighPriorityNetworkMsg(m) && queues != nil && !s.IgnoreMsg(m) {
 				// HotStuff and proposal-body control messages are consensus-critical.
 				// Do not drop them on a transient QUIC/TCP send failure.
-				queues.pushFrontClass(m)
+				if !queues.pushFrontClass(m) {
+					log.Warn("drop expired or saturated consensus retry", "to", address, "class", m.NetworkClass())
+				}
 				time.Sleep(5 * time.Millisecond)
 			}
 		}
@@ -476,13 +931,23 @@ func (s *netService) loop_iddata(address string, queues *peerQueues) {
 	atomic.StoreInt32(isRunning, 0)
 	queues.close()
 
+	s.removePeerWorkerIfOwned(address, queues, isRunning)
+
+	log.Debug("loop_iddata exit", "id", address)
+}
+
+func (s *netService) removePeerWorkerIfOwned(address string, queues *peerQueues, isRunning *int32) bool {
 	s.muIdMap.Lock()
+	defer s.muIdMap.Unlock()
+	// A send can replace a stopping worker with a fresh queue. An old worker
+	// must only remove the exact map entry it owns, never its successor.
+	if s.goMap[address] != isRunning || s.idQueues[address] != queues {
+		return false
+	}
 	delete(s.goMap, address)
 	delete(s.idQueues, address)
 	delete(s.ackMap, address)
-	s.muIdMap.Unlock()
-
-	log.Debug("loop_iddata exit", "id", address)
+	return true
 }
 
 func (s *netService) getMsgHeadInfo(msg *networkMsg) *msgHeadInfo {
@@ -536,35 +1001,42 @@ func (s *netService) isRunning(id string) int32 {
 }
 
 func (s *netService) setIsRunning(id string, isStart bool) {
+	s.lifecycleMu.Lock()
+	if isStart && (!s.lifecycleActive || s.isStoping.Load()) {
+		s.lifecycleMu.Unlock()
+		return
+	}
+	generation := s.generation.Load()
 	s.muIdMap.Lock()
-	isRunning, ok := s.goMap[id]
-	if !ok {
-		if isStart == false {
-			s.muIdMap.Unlock()
-			return
+	isRunning := s.goMap[id]
+	if !isStart {
+		if isRunning != nil {
+			atomic.CompareAndSwapInt32(isRunning, 1, 2)
 		}
-		isRunning = new(int32)
-		s.goMap[id] = isRunning
+		s.muIdMap.Unlock()
+		s.lifecycleMu.Unlock()
+		return
 	}
+	if isRunning != nil && atomic.LoadInt32(isRunning) == 1 {
+		s.muIdMap.Unlock()
+		s.lifecycleMu.Unlock()
+		return
+	}
+	// Missing, stopped, or stopping workers are replaced as one map
+	// transaction. loop_iddata receives these exact identities so its cleanup
+	// cannot delete a later replacement.
+	isRunning = new(int32)
+	atomic.StoreInt32(isRunning, 1)
+	queues := newPeerQueuesWithBudget(s.outboundBudget)
+	s.goMap[id] = isRunning
+	s.idQueues[id] = queues
 	s.muIdMap.Unlock()
-	i := atomic.LoadInt32(isRunning)
-	if isStart {
-		atomic.StoreInt32(isRunning, 1)
-		if i == 0 {
-			s.muIdMap.Lock()
-			queues, ok := s.idQueues[id]
-			if !ok {
-				queues = newPeerQueues()
-				s.idQueues[id] = queues
-			}
-			s.muIdMap.Unlock()
-			go s.loop_iddata(id, queues)
-		}
-	} else {
-		if i == 1 {
-			atomic.StoreInt32(isRunning, 2)
-		}
-	}
+	s.workerWG.Add(1)
+	go func() {
+		defer s.workerWG.Done()
+		s.loop_iddata(id, queues, isRunning, generation)
+	}()
+	s.lifecycleMu.Unlock()
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------------------
@@ -593,9 +1065,9 @@ func (s *netService) getAckInfo(addr string) *ackInfo {
 	return a
 }
 
-func (s *netService) heartBeat_Loop() {
+func (s *netService) heartBeat_Loop(generation uint64) {
 	heatBeatTimeout := params.HeatBeatTimeout
-	for !s.isStoping {
+	for !s.isStoping.Load() && s.generation.Load() == generation {
 		mb := bftview.GetCurrentMember()
 		if mb == nil {
 			time.Sleep(200 * time.Millisecond)
@@ -671,15 +1143,64 @@ func cloneNetworkMsg(msg *networkMsg) *networkMsg {
 		return nil
 	}
 	cpy := *msg
+	cpy.Hmsg = cloneHotstuffMessage(msg.Hmsg)
 	if msg.Pmsg != nil {
-		body := *msg.Pmsg
-		if len(msg.Pmsg.EncodedBlock) > 0 {
-			body.EncodedBlock = make([]byte, len(msg.Pmsg.EncodedBlock))
-			copy(body.EncodedBlock, msg.Pmsg.EncodedBlock)
-		}
-		cpy.Pmsg = &body
+		cpy.Pmsg = cloneProposalBodyMsg(msg.Pmsg)
 	}
 	return &cpy
+}
+
+// cloneNetworkMsgForQueue gives the queue ownership of its mutable retry
+// metadata while sharing already-sealed payloads. Consensus and proposal-body
+// messages are immutable after authentication, so duplicating a 256 MiB body
+// once per destination would only amplify memory without adding isolation.
+func cloneNetworkMsgForQueue(msg *networkMsg) *networkMsg {
+	if msg == nil {
+		return nil
+	}
+	cpy := *msg
+	cpy.Hmsg = cloneHotstuffMessage(msg.Hmsg)
+	return &cpy
+}
+
+func cloneHotstuffMessage(msg *hotstuff.HotstuffMessage) *hotstuff.HotstuffMessage {
+	if msg == nil {
+		return nil
+	}
+	cpy := *msg
+	cpy.PubKey = append([]byte(nil), msg.PubKey...)
+	cpy.DataA = append([]byte(nil), msg.DataA...)
+	cpy.DataB = append([]byte(nil), msg.DataB...)
+	cpy.DataC = append([]byte(nil), msg.DataC...)
+	cpy.DataD = append([]byte(nil), msg.DataD...)
+	cpy.DataE = append([]byte(nil), msg.DataE...)
+	cpy.DataF = append([]byte(nil), msg.DataF...)
+	cpy.DataG = append([]byte(nil), msg.DataG...)
+	cpy.AuthSig = append([]byte(nil), msg.AuthSig...)
+	cpy.ReceivedAt = time.Time{}
+	return &cpy
+}
+
+// validateNetworkMsgShape enforces networkMsg as an explicit one-of. Without
+// this check an attacker can select a cheap control class with Hmsg while
+// smuggling a large proposal body in another field that accounting ignores.
+func validateNetworkMsgShape(msg *networkMsg) error {
+	if msg == nil {
+		return fmt.Errorf("nil network message")
+	}
+	payloads := 0
+	for _, present := range []bool{msg.Hmsg != nil, msg.Cmsg != nil, msg.Bmsg != nil, msg.Pmsg != nil} {
+		if present {
+			payloads++
+		}
+	}
+	if payloads != 1 {
+		return fmt.Errorf("network message must contain exactly one payload, got %d", payloads)
+	}
+	if (msg.Hmsg != nil || msg.Pmsg != nil) && msg.MsgFlag&Gossip_MSG != 0 {
+		return fmt.Errorf("authenticated consensus messages cannot use gossip delivery")
+	}
+	return nil
 }
 
 // --------------------------------------------------------------------------------------------------------------------------

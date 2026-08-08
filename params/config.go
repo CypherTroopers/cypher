@@ -17,13 +17,17 @@
 package params
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/crypto/bls"
 )
 
 // Genesis hashes to enforce below configs on.
@@ -457,9 +461,38 @@ type ChainConfig struct {
 	FixedCommittee        bool             `json:"fixedCommittee,omitempty"`
 	FixedLeader           bool             `json:"fixedLeader,omitempty"`
 	FairHotstuff          bool             `json:"fairHotstuff,omitempty"`
+	FairHotstuffSeed      common.Hash      `json:"fairHotstuffSeed,omitempty"`
 	EnabledTPS            bool
 }
 type GenesisCommittee map[int]common.Cnode
+
+const fairHotstuffGenesisConfigDomain = "cypher-fhs-genesis-config-v2"
+
+// MaxFairHotstuffCommitteeSize keeps the n-f NewView proof below the bounded
+// HotStuff control-message limit, even when every report carries the maximum
+// permitted candidate metadata.
+const MaxFairHotstuffCommitteeSize = 100
+
+// FairHotstuffGenesisCommitment binds every serialized chain-configuration
+// field (including the committee, chain ID, fork schedule, transport policy and
+// election seed) to the genesis header. Encoding/json deterministically sorts
+// map keys, so every conforming node derives the same commitment.
+func FairHotstuffGenesisCommitment(c *ChainConfig) (common.Hash, error) {
+	if c == nil || !c.FairHotstuff {
+		return common.Hash{}, errors.New("fairHotstuff genesis commitment requires an enabled config")
+	}
+	// Commit semantic transport values, not their optional JSON spelling. This
+	// prevents a future change to code-side defaults from changing the network
+	// security policy while retaining the same genesis hash.
+	normalized := *c
+	normalized.RnetTransport = c.EffectiveRnetTransport()
+	normalized.RnetFallbackTransport = c.EffectiveRnetFallbackTransport()
+	encoded, err := json.Marshal(&normalized)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("encode fairHotstuff genesis config: %w", err)
+	}
+	return crypto.Keccak256Hash([]byte(fairHotstuffGenesisConfigDomain), encoded), nil
+}
 
 func (c *ChainConfig) EffectiveRnetTransport() string {
 	if c == nil || c.RnetTransport == "" {
@@ -469,6 +502,9 @@ func (c *ChainConfig) EffectiveRnetTransport() string {
 }
 
 func (c *ChainConfig) EffectiveRnetFallbackTransport() string {
+	if c != nil && c.FairHotstuff && c.RnetFallbackTransport == "" {
+		return "none"
+	}
 	if c == nil || c.RnetFallbackTransport == "" {
 		return "tcp"
 	}
@@ -780,6 +816,55 @@ func isMaxCodeSizeConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (error, *
 // CheckConfigForkOrder checks that we don't "skip" any forks, cypher isn't pluggable enough
 // to guarantee that forks
 func (c *ChainConfig) CheckConfigForkOrder() error {
+	if c.FairHotstuff {
+		if c.ChainID == nil || c.ChainID.Sign() <= 0 || !c.ChainID.IsUint64() {
+			return errors.New("fairHotstuff requires a positive uint64 chain ID")
+		}
+		if c.FairHotstuffSeed == (common.Hash{}) {
+			return errors.New("fairHotstuff requires a non-zero genesis-committed fairHotstuffSeed")
+		}
+		if c.EffectiveRnetTransport() != "quic" {
+			return fmt.Errorf("fairHotstuff requires authenticated QUIC transport")
+		}
+		if fallback := c.EffectiveRnetFallbackTransport(); fallback != "none" {
+			return fmt.Errorf("fairHotstuff forbids unauthenticated transport fallback %q", fallback)
+		}
+		if len(c.GenCommittee) < 4 || len(c.GenCommittee) > MaxFairHotstuffCommitteeSize || (len(c.GenCommittee)-1)%3 != 0 {
+			return fmt.Errorf("fairHotstuff committee size %d is invalid: require n=3f+1 and 4<=n<=%d", len(c.GenCommittee), MaxFairHotstuffCommitteeSize)
+		}
+		seenAddress := make(map[string]struct{}, len(c.GenCommittee))
+		seenPublic := make(map[string]struct{}, len(c.GenCommittee))
+		for index := 0; index < len(c.GenCommittee); index++ {
+			node, exists := c.GenCommittee[index]
+			if !exists || node.Address == "" || node.Public == "" {
+				return fmt.Errorf("fairHotstuff committee index %d is missing or incomplete", index)
+			}
+			if _, duplicate := seenAddress[node.Address]; duplicate {
+				return fmt.Errorf("fairHotstuff committee contains duplicate address %q", node.Address)
+			}
+			serialized, err := hex.DecodeString(node.Public)
+			if err != nil || len(serialized) != 64 {
+				return fmt.Errorf("fairHotstuff committee index %d has an invalid BLS public key encoding", index)
+			}
+			allZero := true
+			for _, value := range serialized {
+				allZero = allZero && value == 0
+			}
+			if allZero {
+				return fmt.Errorf("fairHotstuff committee index %d has a zero BLS public key", index)
+			}
+			public := bls.GetPublicKey(serialized)
+			if public == nil || !bytes.Equal(public.Serialize(), serialized) {
+				return fmt.Errorf("fairHotstuff committee index %d has an invalid or non-canonical BLS public key", index)
+			}
+			publicID := string(serialized)
+			if _, duplicate := seenPublic[publicID]; duplicate {
+				return errors.New("fairHotstuff committee contains duplicate public key")
+			}
+			seenAddress[node.Address] = struct{}{}
+			seenPublic[publicID] = struct{}{}
+		}
+	}
 	type fork struct {
 		name     string
 		block    *big.Int
