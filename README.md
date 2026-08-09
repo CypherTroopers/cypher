@@ -1,4 +1,8 @@
+Chained
 [Fair Byzantine Fault-Tolerant Consensus (FHS-C), arXiv:2501.02970v3](https://arxiv.org/html/2501.02970v3)
+
+### PoW x EVM(〜OSAKA) x RPC reward x Mining Reward
+
 
 ## Preparations
 
