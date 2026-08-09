@@ -56,12 +56,14 @@ const (
 
 const (
 	// HotstuffProposalRefVersion is the production HotStuff proposal format
-	// version. Version 4 signs a compact proposal reference including the FHS
+	// version. Version 5 signs a compact proposal reference including the FHS
 	// view number, proposal-extra commitment, and parent-QC identity instead of
-	// the full block RLP. The referenced body is distributed separately and
+	// the full block RLP. Version 5 also separates the header schema which can
+	// carry post-certification finality metadata (always excluded from the
+	// signed proposal). The referenced body is distributed separately and
 	// verified against all commitments before voting.
-	HotstuffProposalRefVersion  uint32 = 4
-	hotstuffProposalDomain             = "CPH_HOTSTUFF_PROPOSAL_V4"
+	HotstuffProposalRefVersion  uint32 = 5
+	hotstuffProposalDomain             = "CPH_HOTSTUFF_PROPOSAL_V5"
 	hotstuffProposalExtraDomain        = "CPH_HOTSTUFF_PROPOSAL_EXTRA_V1"
 )
 
@@ -156,7 +158,16 @@ type SignInfo struct {
 	// with the QC so a syncing node can reconstruct exactly the signed bytes.
 	ExtraHash  common.Hash `json:"extraHash"`
 	ParentQCID common.Hash `json:"parentQcId"`
+	// FHSFinalityProof is the RLP-encoded direct-child QC which finalizes this
+	// block under the 2-chain rule. It is attached only after the proposal has
+	// been certified, so Hash and CopyOrg must always exclude it. A syncing
+	// common node verifies this committee-produced proof; it never creates one.
+	FHSFinalityProof []byte `json:"fhsFinalityProof"`
 }
+
+// MaxFHSFinalityProofSize bounds untrusted finality metadata carried by a
+// header. A SignedState for a committee QC is normally only a few kilobytes.
+const MaxFHSFinalityProofSize = 64 * 1024
 
 // CommonTxAdmission records the common RPC miner that accepted and relayed a tx.
 // It is carried in the block body and committed by CommonTxAdmissionRoot.
@@ -490,6 +501,7 @@ func (h *Header) SetSignInfoNull() {
 	h.SignInfo.ViewNumber = 0
 	h.SignInfo.ExtraHash = common.Hash{}
 	h.SignInfo.ParentQCID = common.Hash{}
+	h.SignInfo.FHSFinalityProof = nil
 }
 
 var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
@@ -497,7 +509,7 @@ var headerSize = common.StorageSize(reflect.TypeOf(Header{}).Size())
 // Size returns the approximate memory used by all internal contents. It is used
 // to approximate and limit the memory consumption of various caches.
 func (h *Header) Size() common.StorageSize {
-	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions)+len(h.SignInfo.LeaderID)+3*common.HashLength)
+	s := headerSize + common.StorageSize(len(h.Extra)+(h.Difficulty.BitLen()+h.Number.BitLen())/8+len(h.SignInfo.Signature)+len(h.SignInfo.Exceptions)+len(h.SignInfo.LeaderID)+len(h.SignInfo.FHSFinalityProof)+3*common.HashLength)
 	if h.BaseFee != nil {
 		s += common.StorageSize(h.BaseFee.BitLen() / 8)
 	}
@@ -524,6 +536,9 @@ func (h *Header) SanityCheck() error {
 	}
 	if eLen := len(h.Extra); eLen > 100*1024 {
 		return fmt.Errorf("too large block extradata: size %d", eLen)
+	}
+	if proofLen := len(h.SignInfo.FHSFinalityProof); proofLen > MaxFHSFinalityProofSize {
+		return fmt.Errorf("too large FHS finality proof: size %d", proofLen)
 	}
 	return nil
 }
@@ -831,6 +846,10 @@ func CopyHeader(h *Header) *Header {
 		cpy.SignInfo.Exceptions = make([]byte, len(h.SignInfo.Exceptions))
 		copy(cpy.SignInfo.Exceptions, h.SignInfo.Exceptions)
 	}
+	if len(h.SignInfo.FHSFinalityProof) > 0 {
+		cpy.SignInfo.FHSFinalityProof = make([]byte, len(h.SignInfo.FHSFinalityProof))
+		copy(cpy.SignInfo.FHSFinalityProof, h.SignInfo.FHSFinalityProof)
+	}
 	return &cpy
 }
 
@@ -1023,6 +1042,8 @@ func (b *Block) SetSignature(sig []byte, exceptions []byte, viewID common.Hash, 
 	b.header.SignInfo.ViewNumber = viewNumber
 	b.header.SignInfo.ExtraHash = common.Hash{}
 	b.header.SignInfo.ParentQCID = common.Hash{}
+	b.header.SignInfo.FHSFinalityProof = nil
+	b.size = atomic.Value{}
 }
 
 // SetFHSSignature stores the QC and the two proposal-proof commitments needed
@@ -1031,6 +1052,23 @@ func (b *Block) SetFHSSignature(sig []byte, exceptions []byte, viewID common.Has
 	b.SetSignature(sig, exceptions, viewID, leaderID, viewNumber)
 	b.header.SignInfo.ExtraHash = extraHash
 	b.header.SignInfo.ParentQCID = parentQCID
+}
+
+// SetFHSFinalityProof attaches a verified direct-child QC to a certified
+// target. The proof is finality metadata, not part of the proposal or block
+// hash, and is copied to avoid caller mutation after persistence.
+func (b *Block) SetFHSFinalityProof(proof []byte) error {
+	if len(proof) > MaxFHSFinalityProofSize {
+		return fmt.Errorf("FHS finality proof exceeds %d bytes", MaxFHSFinalityProofSize)
+	}
+	b.header.SignInfo.FHSFinalityProof = common.CopyBytes(proof)
+	b.size = atomic.Value{}
+	return nil
+}
+
+// FHSFinalityProof returns a defensive copy of the embedded direct-child QC.
+func (b *Block) FHSFinalityProof() []byte {
+	return common.CopyBytes(b.header.SignInfo.FHSFinalityProof)
 }
 
 func (b *Block) SetKeyblock(keyblock *KeyBlock) {

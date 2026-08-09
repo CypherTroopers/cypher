@@ -76,6 +76,13 @@ func (s *Service) AcceptFHSTimeoutCertificate(tc *hotstuff.TimeoutCertificate) e
 		store.mu.Unlock()
 		return err
 	}
+	// A QC for this or a later view already supersedes the timeout proof. Do
+	// not let a delayed/replayed TC recreate stale pacemaker state after the QC
+	// and its committee transition were durably installed.
+	if highest := store.state.HighestQC; highest != nil && tc.Statement.TimedOutView <= highest.Number {
+		store.mu.Unlock()
+		return nil
+	}
 	alreadyPersisted := false
 	if highest := store.state.HighestTC; highest != nil {
 		if tc.Statement.TimedOutView < highest.Statement.TimedOutView {

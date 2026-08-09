@@ -199,6 +199,26 @@ func VerifyFHSSignatureWithContext(signature, mask, data []byte, groupPublicKey 
 	return verifyFHSAggregateDigest(signature, mask, baseDigest, groupPublicKey, threshold)
 }
 
+// SignFHSSignatureWithContext signs the public-key-augmented digest used by an
+// independently generated committee key. It is exported so block-sync proof
+// tests and other consensus components cannot accidentally recreate a legacy
+// same-message BLS signature.
+func SignFHSSignatureWithContext(secret *bls.SecretKey, public *bls.PublicKey, data []byte, chainID uint64, msgCode uint32, viewID common.Hash, leaderID string) (*bls.Sign, error) {
+	if secret == nil || public == nil {
+		return nil, fmt.Errorf("missing FHS signer key")
+	}
+	baseDigest := hotstuffContextDigest(chainID, msgCode, viewID, leaderID, data)
+	digest, err := fhsSignerDigest(baseDigest, public)
+	if err != nil {
+		return nil, err
+	}
+	signature := secret.SignHash(digest)
+	if signature == nil {
+		return nil, fmt.Errorf("failed to sign FHS context")
+	}
+	return signature, nil
+}
+
 func SignedStateID(qc *SignedState) (QCID, error) {
 	if qc == nil {
 		return QCID{}, fmt.Errorf("nil QC")

@@ -458,7 +458,7 @@ func (ps *peerSet) HeaderIdlePeers() ([]*peerConnection, int) {
 		defer p.lock.RUnlock()
 		return p.headerThroughput
 	}
-	return ps.idlePeers(63, 65, idle, throughput)
+	return ps.idlePeers(63, idle, throughput)
 }
 
 // BodyIdlePeers retrieves a flat list of all the currently body-idle peers within
@@ -472,7 +472,7 @@ func (ps *peerSet) BodyIdlePeers() ([]*peerConnection, int) {
 		defer p.lock.RUnlock()
 		return p.blockThroughput
 	}
-	return ps.idlePeers(63, 65, idle, throughput)
+	return ps.idlePeers(63, idle, throughput)
 }
 
 // ReceiptIdlePeers retrieves a flat list of all the currently receipt-idle peers
@@ -486,7 +486,7 @@ func (ps *peerSet) ReceiptIdlePeers() ([]*peerConnection, int) {
 		defer p.lock.RUnlock()
 		return p.receiptThroughput
 	}
-	return ps.idlePeers(63, 65, idle, throughput)
+	return ps.idlePeers(63, idle, throughput)
 }
 
 // NodeDataIdlePeers retrieves a flat list of all the currently node-data-idle
@@ -500,20 +500,24 @@ func (ps *peerSet) NodeDataIdlePeers() ([]*peerConnection, int) {
 		defer p.lock.RUnlock()
 		return p.stateThroughput
 	}
-	return ps.idlePeers(63, 65, idle, throughput)
+	return ps.idlePeers(63, idle, throughput)
 }
 
 // idlePeers retrieves a flat list of all currently idle peers satisfying the
-// protocol version constraints, using the provided function to check idleness.
+// minimum protocol version, using the provided function to check idleness.
 // The resulting set of peers are sorted by their measure throughput.
-func (ps *peerSet) idlePeers(minProtocol, maxProtocol int, idleCheck func(*peerConnection) bool, throughput func(*peerConnection) float64) ([]*peerConnection, int) {
+func (ps *peerSet) idlePeers(minProtocol int, idleCheck func(*peerConnection) bool, throughput func(*peerConnection) float64) ([]*peerConnection, int) {
 	ps.lock.RLock()
 	defer ps.lock.RUnlock()
 
 	idle, total := make([]*peerConnection, 0, len(ps.peers)), 0
 	tps := make([]float64, 0, len(ps.peers))
 	for _, p := range ps.peers {
-		if p.version >= minProtocol && p.version <= maxProtocol || p.version == consensus.Istanbul99 {
+		// The protocol manager only registers negotiated peers, so newer protocol
+		// versions retain all retrieval capabilities of their predecessors. Do not
+		// impose a stale upper bound here: doing so makes every newer peer invisible
+		// to the downloader and causes fetchParts to report errPeersUnavailable.
+		if p.version >= minProtocol || p.version == consensus.Istanbul99 {
 			if idleCheck(p) {
 				idle = append(idle, p)
 				tps = append(tps, throughput(p))

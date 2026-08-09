@@ -45,7 +45,6 @@ import (
 
 const (
 	softResponseLimit = 256 * 1024 * 1024 // Target maximum size of returned blocks, headers or node data.
-	estHeaderRlpSize  = 500               // Approximate size of an RLP encoded block header
 
 	// txChanSize is the size of channel listening to NewTxsEvent.
 	// The number is referenced from the size of the tx pool.
@@ -435,7 +434,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 				break
 			}
 			headers = append(headers, origin)
-			bytes += estHeaderRlpSize
+			bytes += origin.Size()
 
 			// Advance to the next header of the query
 			switch {
@@ -491,6 +490,17 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		var headers []*types.Header
 		if err := msg.Decode(&headers); err != nil {
 			return errResp(ErrDecode, "msg %v: %v", msg, err)
+		}
+		if len(headers) > downloader.MaxHeaderFetch {
+			return errResp(ErrDecode, "too many block headers: %d", len(headers))
+		}
+		for index, header := range headers {
+			if header == nil {
+				return errResp(ErrDecode, "nil block header at index %d", index)
+			}
+			if err := header.SanityCheck(); err != nil {
+				return errResp(ErrDecode, "insane block header at index %d: %v", index, err)
+			}
 		}
 		// If no headers were received, but we're expencting a checkpoint header, consider it that
 		if len(headers) == 0 && p.syncDrop != nil {

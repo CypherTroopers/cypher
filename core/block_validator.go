@@ -54,18 +54,25 @@ func NewBlockValidator(config *params.ChainConfig, blockchain *BlockChain, engin
 // header's transaction and uncle roots. The headers are assumed to be already
 // validated at this point.
 func (v *BlockValidator) ValidateBody(block *types.Block) error {
-	return v.validateBody(block, false)
+	return v.validateBody(block, false, false)
 }
 
 // ValidateBodyWithHotstuffParent validates a proposal whose parent is a
 // certified, locally executed HotStuff block that has not been committed yet.
 func (v *BlockValidator) ValidateBodyWithHotstuffParent(block *types.Block) error {
-	return v.validateBody(block, true)
+	return v.validateBody(block, true, false)
 }
 
-func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailable bool) error {
+// ValidateBodyForHotstuffSync revalidates a downloaded FHS block even when a
+// crash left the same hash and state root in the database before the canonical
+// head marker was advanced. A raw block is not a 2-chain finality proof.
+func (v *BlockValidator) ValidateBodyForHotstuffSync(block *types.Block, hotstuffParentAvailable bool) error {
+	return v.validateBody(block, hotstuffParentAvailable, true)
+}
+
+func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailable, revalidateKnown bool) error {
 	// Check whether the block's known, and if not, that it's linkable
-	if v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+	if !revalidateKnown && v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return ErrKnownBlock
 	}
 	// Header validity is known at this point, check the uncles and transactions
@@ -247,6 +254,104 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 	}
 	if !validSignature {
 		return types.ErrInvalidSignature
+	}
+	return nil
+}
+
+// ReconstructFHSQC verifies a block's own FHS signature and reconstructs the
+// exact semantic QC committed in SignInfo. Header.Hash deliberately excludes
+// SignInfo, so callers must use this verified representation rather than a
+// same-hash block received from an untrusted peer.
+func (v *BlockValidator) ReconstructFHSQC(block *types.Block) (*types.HotstuffProposalRef, *hotstuff.SignedState, error) {
+	if block == nil || v.config == nil || !v.config.FairHotstuff {
+		return nil, nil, types.ErrInvalidSignature
+	}
+	if err := v.VerifySignature(block); err != nil {
+		return nil, nil, err
+	}
+	si := block.SignInfo()
+	unsigned := block.CopyOrg()
+	encoded := unsigned.EncodeToBytes()
+	chainID := uint64(0)
+	if v.config.ChainID != nil {
+		chainID = v.config.ChainID.Uint64()
+	}
+	ref, err := types.NewHotstuffProposalRefWithCommitments(chainID, si.ViewNumber, si.ViewID, si.LeaderID, unsigned, encoded, si.ExtraHash, si.ParentQCID)
+	if err != nil {
+		return nil, nil, err
+	}
+	qc := &hotstuff.SignedState{
+		State:    ref.EncodeToBytes(),
+		Sign:     append([]byte(nil), si.Signature...),
+		Mask:     append([]byte(nil), si.Exceptions...),
+		ViewID:   si.ViewID,
+		LeaderID: si.LeaderID,
+		Number:   si.ViewNumber,
+	}
+	return ref, qc, nil
+}
+
+// VerifyFHS2ChainCommitProof verifies that childQC certifies the direct child
+// of target and therefore finalizes target under the Fast-HotStuff 2-chain
+// rule. Generic block sync must never advance the FHS canonical head from the
+// target's own one-chain QC alone.
+func (v *BlockValidator) VerifyFHS2ChainCommitProof(target *types.Block, childQC *hotstuff.SignedState) error {
+	if target == nil || childQC == nil || v.config == nil || !v.config.FairHotstuff {
+		return fmt.Errorf("incomplete Fair HotStuff 2-chain commit proof")
+	}
+	targetRef, targetQC, err := v.ReconstructFHSQC(target)
+	if err != nil {
+		return fmt.Errorf("invalid target FHS QC: %w", err)
+	}
+	childRef, err := types.DecodeHotstuffProposalRef(childQC.State)
+	if err != nil {
+		return fmt.Errorf("invalid child FHS proposal reference: %w", err)
+	}
+	chainID := uint64(0)
+	if v.config.ChainID != nil {
+		chainID = v.config.ChainID.Uint64()
+	}
+	if childRef.ChainID != chainID || childQC.Number != childRef.ViewNumber || childQC.ViewID != childRef.ViewID || childQC.LeaderID != childRef.LeaderID {
+		return fmt.Errorf("child FHS QC context mismatch")
+	}
+	if childRef.ParentHash != target.Hash() || childRef.Number != target.NumberU64()+1 || childRef.ViewNumber <= targetRef.ViewNumber {
+		return fmt.Errorf("child FHS QC does not directly extend target")
+	}
+	targetID, err := hotstuff.SignedStateID(targetQC)
+	if err != nil {
+		return fmt.Errorf("invalid target FHS QC identity: %w", err)
+	}
+	if childRef.ParentQCID != targetID.Hash() {
+		return fmt.Errorf("child FHS QC does not bind the target QC")
+	}
+
+	committee := &bftview.Committee{List: v.bc.keyBlockChain.GetCommitteeByHash(childRef.KeyHash)}
+	if committee == nil || len(committee.List) < 2 {
+		return types.ErrInvalidCommittee
+	}
+	pubs := committee.ToBlsPublicKeys(childRef.KeyHash)
+	threshold := hotstuff.CalcThreshold(len(pubs))
+	if err := hotstuff.ValidateCanonicalSignerMask(childQC.Mask, len(pubs), threshold); err != nil {
+		return fmt.Errorf("invalid child FHS signer mask: %w", err)
+	}
+	if !hotstuff.VerifyFHSSignatureWithContext(childQC.Sign, childQC.Mask, childQC.State, pubs, threshold, chainID, hotstuff.MsgVotePrepare, childQC.ViewID, childQC.LeaderID) {
+		return fmt.Errorf("invalid child FHS QC signature")
+	}
+
+	latestKey := v.bc.keyBlockChain.CurrentBlock()
+	if target.BlockType() == types.Key_Block {
+		latestKey = types.DecodeToKeyBlock(target.KeyInfo())
+	}
+	if latestKey == nil {
+		return fmt.Errorf("missing Fair HotStuff key activation state")
+	}
+	latestHash := latestKey.Hash()
+	if childRef.KeyHash != target.KeyHash() && childRef.KeyHash != latestHash {
+		return fmt.Errorf("child FHS QC uses an invalid signing key transition")
+	}
+	if childRef.KeyHash != latestHash && target.KeyHash() != latestHash &&
+		(latestKey.T_Number() > ^uint64(0)-2 || childRef.Number > latestKey.T_Number()+2) {
+		return fmt.Errorf("child FHS QC continues an expired signing key")
 	}
 	return nil
 }

@@ -263,9 +263,6 @@ func (hsm *HotstuffProtocolManager) validateFHSNewViewMsg(msg *HotstuffMessage) 
 	if ctx.ChainID != hsm.app.ChainID() || msg.Number != ctx.TargetView || msg.ViewId != ctx.ID() || ctx.LeaderID != hsm.app.Self() {
 		return nil, nil, ErrInvalidLeaderView
 	}
-	if ctx.TargetView > hsm.app.CurrentN()+maxPendingNewViewIDs {
-		return nil, nil, ErrFutureState
-	}
 	committee, keys, err := hsm.fhsCommittee(ctx, true)
 	if err != nil {
 		return nil, nil, err
@@ -295,17 +292,27 @@ func (hsm *HotstuffProtocolManager) validateFHSNewViewMsg(msg *HotstuffMessage) 
 		return nil, nil, ErrInvalidHighQC
 	}
 
-	// A valid QC/TC is itself sufficient proof to advance a lagging replica.
-	// Persist it before accepting the report into any volatile queue.
+	// Both proofs have passed cryptographic verification above. A TC is an
+	// independent 2f+1 pacemaker proof, so persist it before adopting HighQC:
+	// proposal-body catch-up for a valid HighQC may fail transiently, but that
+	// must not prevent a lagging replica from retaining the proven view jump.
+	if tc != nil {
+		if err := app.AcceptFHSTimeoutCertificate(tc); err != nil {
+			return nil, nil, err
+		}
+	}
 	if report.HighQC != nil {
 		if err := app.AdoptFHSHighQC(report.HighQC); err != nil {
 			return nil, nil, err
 		}
 	}
-	if tc != nil {
-		if err := app.AcceptFHSTimeoutCertificate(tc); err != nil {
-			return nil, nil, err
-		}
+	// Apply the anti-DoS distance gate only after the sender, report and any
+	// carried quorum proof have fully verified. A 2f+1 TC may legitimately move
+	// a restarted replica by more than the volatile pending-window distance;
+	// AcceptFHSTimeoutCertificate has now durably advanced CurrentN in that
+	// case. A far report without such proof remains outside the bounded queue.
+	if ctx.TargetView > hsm.app.CurrentN()+maxPendingNewViewIDs {
+		return nil, &VoteInfo{Index: index, PubKey: keys[index], KSign: sign, ValidKSign: true}, ErrFutureState
 	}
 	if err := app.ValidateFHSContext(ctx); err != nil {
 		return nil, nil, err
@@ -744,7 +751,15 @@ func (hsm *HotstuffProtocolManager) validateTimeoutSender(msg *HotstuffMessage, 
 		if statement.TimedOutView != active {
 			return -1, nil, ErrViewIdNotMatch
 		}
-	} else if statement.TimedOutView+1 < active || statement.TimedOutView > active+maxPendingNewViewIDs {
+	} else if msg.Code == MsgTimeoutQC {
+		// A single timeout vote never advances the pacemaker, but a complete
+		// 2f+1 timeout certificate is safe at any forward distance. Do not cap it
+		// by the volatile pending-view window; handleTimeoutQCMsg authenticates
+		// the sender and cryptographically verifies the TC before adoption.
+		if statement.TimedOutView < active {
+			return -1, nil, ErrOldState
+		}
+	} else {
 		return -1, nil, ErrViewIdNotMatch
 	}
 	ctx := &FHSViewContext{

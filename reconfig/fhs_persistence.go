@@ -11,11 +11,12 @@ import (
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/ethdb"
+	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/reconfig/hotstuff"
 	"github.com/cypherium/cypher/rlp"
 )
 
-const fhsDiskVersion = uint32(3)
+const fhsDiskVersion = uint32(5)
 
 type fhsDiskSafety struct {
 	Version          uint32
@@ -23,6 +24,7 @@ type fhsDiskSafety struct {
 	GenesisHash      common.Hash
 	State            *hotstuff.FHSSafetyState
 	HighestBlockHash common.Hash
+	PendingBroadcast *hotstuff.SignedState `rlp:"nil"`
 }
 
 type fhsDiskProposal struct {
@@ -49,6 +51,7 @@ type fhsSafetyStore struct {
 	loaded             bool
 	state              *hotstuff.FHSSafetyState
 	highestBlockHash   common.Hash
+	pendingBroadcast   *hotstuff.SignedState
 	lastPersistenceErr error
 }
 
@@ -92,6 +95,7 @@ func (store *fhsSafetyStore) loadLocked() error {
 	}
 	store.state = hotstuff.CloneFHSSafetyState(disk.State)
 	store.highestBlockHash = disk.HighestBlockHash
+	store.pendingBroadcast = hotstuff.CloneSignedState(disk.PendingBroadcast)
 	store.lastPersistenceErr = nil
 	store.loaded = true
 	return nil
@@ -118,13 +122,100 @@ func (store *fhsSafetyStore) snapshot() (*hotstuff.FHSSafetyState, common.Hash, 
 	return hotstuff.CloneFHSSafetyState(store.state), store.highestBlockHash, nil
 }
 
+func (store *fhsSafetyStore) pendingBroadcastSnapshot() (*hotstuff.SignedState, error) {
+	if store == nil {
+		return nil, fmt.Errorf("nil FHS safety store")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.loadLocked(); err != nil {
+		return nil, err
+	}
+	return hotstuff.CloneSignedState(store.pendingBroadcast), nil
+}
+
+// clearPendingBroadcast durably completes an outbox entry after its QC is
+// already part of the canonical chain. Replaying it after every restart would
+// only make peers request a proposal that no longer needs dissemination.
+func (store *fhsSafetyStore) clearPendingBroadcast(qc *hotstuff.SignedState) error {
+	if store == nil || qc == nil {
+		return fmt.Errorf("invalid FHS pending broadcast completion")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.loadLocked(); err != nil {
+		return err
+	}
+	if store.pendingBroadcast == nil {
+		return nil
+	}
+	if !hotstuff.SignedStateSemanticEqual(store.pendingBroadcast, qc) {
+		return fmt.Errorf("FHS pending broadcast completion mismatch")
+	}
+	encoded, err := store.encodeSafetyWithPending(store.state, store.highestBlockHash, nil)
+	if err != nil {
+		return err
+	}
+	batch := store.db.NewBatch()
+	if err := rawdb.WriteFHSSafetyState(batch, encoded); err != nil {
+		return err
+	}
+	if err := writeFHSBatchSync(batch); err != nil {
+		store.lastPersistenceErr = err
+		return err
+	}
+	store.pendingBroadcast = nil
+	return nil
+}
+
+// recoverySnapshot also upgrades WALs written before superseded timeout
+// evidence was cleared with the replacing QC. The normalized record is synced
+// before it is exposed to recovery so live memory and durable state agree.
+func (store *fhsSafetyStore) recoverySnapshot() (*hotstuff.FHSSafetyState, common.Hash, error) {
+	if store == nil {
+		return nil, common.Hash{}, fmt.Errorf("nil FHS safety store")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.loadLocked(); err != nil {
+		return nil, common.Hash{}, err
+	}
+	next := hotstuff.CloneFHSSafetyState(store.state)
+	changed, err := clearSupersededFHSTimeouts(next)
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+	if !changed {
+		return next, store.highestBlockHash, nil
+	}
+	encoded, err := store.encodeSafety(next, store.highestBlockHash)
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+	batch := store.db.NewBatch()
+	if err := rawdb.WriteFHSSafetyState(batch, encoded); err != nil {
+		return nil, common.Hash{}, err
+	}
+	if err := writeFHSBatchSync(batch); err != nil {
+		store.lastPersistenceErr = err
+		return nil, common.Hash{}, err
+	}
+	store.state = next
+	return hotstuff.CloneFHSSafetyState(next), store.highestBlockHash, nil
+}
+
 func (store *fhsSafetyStore) encodeSafety(state *hotstuff.FHSSafetyState, highest common.Hash) ([]byte, error) {
+	return store.encodeSafetyWithPending(state, highest, store.pendingBroadcast)
+}
+
+func (store *fhsSafetyStore) encodeSafetyWithPending(state *hotstuff.FHSSafetyState, highest common.Hash, pending *hotstuff.SignedState) ([]byte, error) {
 	return rlp.EncodeToBytes(&fhsDiskSafety{
 		Version:          fhsDiskVersion,
 		ChainID:          store.chainID,
 		GenesisHash:      store.genesisHash,
 		State:            hotstuff.CloneFHSSafetyState(state),
 		HighestBlockHash: highest,
+		PendingBroadcast: hotstuff.CloneSignedState(pending),
 	})
 }
 
@@ -146,6 +237,79 @@ func persistedVotesEqual(a, b *hotstuff.PersistedVote) bool {
 	return a.ViewNumber == b.ViewNumber && a.ViewID == b.ViewID && a.LeaderID == b.LeaderID &&
 		a.KStateHash == b.KStateHash && a.TStateHash == b.TStateHash &&
 		bytes.Equal(a.KState, b.KState) && bytes.Equal(a.TState, b.TState) && bytes.Equal(a.Extra, b.Extra)
+}
+
+// clearSupersededFHSTimeouts removes timeout evidence that is no longer the
+// pacemaker's high proof. A QC for the same or a later view dominates the TC;
+// keeping that TC active across an epoch transition would make recovery try to
+// validate it against the newly active committee.
+func clearSupersededFHSTimeouts(state *hotstuff.FHSSafetyState) (bool, error) {
+	if state == nil || state.HighestQC == nil {
+		return false, nil
+	}
+	changed := false
+	if state.LastTimeoutVote != nil && state.LastTimeoutVote.TimedOutView <= state.HighestQC.Number {
+		state.LastTimeoutVote = nil
+		changed = true
+	}
+	if state.HighestTC != nil && state.HighestTC.Statement.TimedOutView <= state.HighestQC.Number {
+		if state.LastTimeoutView != state.HighestTC.Statement.TimedOutView {
+			return false, fmt.Errorf("persisted FHS timeout certificate metadata mismatch")
+		}
+		state.HighestTC = nil
+		state.LastTimeoutView = 0
+		changed = true
+	}
+	return changed, nil
+}
+
+// validateCanonicalFHSQCAdvance decides whether a verified canonical QC may
+// replace the durable watermark. Numeric view growth alone is insufficient:
+// after a sync gap, the previous pointer must still identify an exact
+// canonical ancestor of the target.
+func validateCanonicalFHSQCAdvance(
+	currentQC *hotstuff.SignedState,
+	currentHash common.Hash,
+	targetRef *types.HotstuffProposalRef,
+	targetQC *hotstuff.SignedState,
+	targetHash common.Hash,
+	verifyCurrent func(*hotstuff.SignedState) (*types.HotstuffProposalRef, error),
+	isCanonical func(uint64, common.Hash) bool,
+) (bool, error) {
+	if targetRef == nil || targetQC == nil || targetHash == (common.Hash{}) || verifyCurrent == nil || isCanonical == nil {
+		return false, fmt.Errorf("incomplete canonical FHS QC advance input")
+	}
+	if currentQC == nil {
+		if currentHash != (common.Hash{}) {
+			return false, fmt.Errorf("incomplete highest FHS WAL pointer")
+		}
+		return true, nil
+	}
+	if currentHash == (common.Hash{}) {
+		return false, fmt.Errorf("incomplete highest FHS WAL pointer")
+	}
+	currentRef, err := verifyCurrent(currentQC)
+	if err != nil {
+		return false, fmt.Errorf("verify prior highest FHS WAL certificate: %w", err)
+	}
+	if currentRef == nil || currentRef.BlockHash != currentHash {
+		return false, fmt.Errorf("prior highest FHS WAL certificate/hash mismatch")
+	}
+	switch {
+	case currentQC.Number > targetQC.Number:
+		// A valid higher uncommitted QC may be ahead of the canonical head.
+		return false, nil
+	case currentQC.Number == targetQC.Number:
+		if currentHash != targetHash || !hotstuff.SignedStateSemanticEqual(currentQC, targetQC) {
+			return false, fmt.Errorf("conflicting canonical FHS QC watermark at view %d", targetQC.Number)
+		}
+		return false, nil
+	default:
+		if currentRef.Number >= targetRef.Number || !isCanonical(currentRef.Number, currentHash) {
+			return false, fmt.Errorf("prior highest FHS QC is not an exact canonical ancestor of %d/%s", targetRef.Number, targetRef.BlockHash)
+		}
+		return true, nil
+	}
 }
 
 func validatePersistedVote(vote *hotstuff.PersistedVote) error {
@@ -200,40 +364,94 @@ func validateFHSProposalCommitments(ref *types.HotstuffProposalRef, encodedBlock
 // validateRestoredFHSVote fails closed if the last durable vote points at a
 // missing or altered proposal record. Fair HotStuff certifies transaction proposal
 // references only, so a KState-only WAL entry is corrupt and must fail closed.
-func (s *Service) validateRestoredFHSVote(vote *hotstuff.PersistedVote) error {
-	if vote == nil {
-		return nil
-	}
-	if err := validatePersistedVote(vote); err != nil {
-		return err
-	}
-	if len(vote.TState) == 0 {
-		return fmt.Errorf("Fair HotStuff persisted vote has no transaction proposal reference")
-	}
-	if s.fhsStore == nil || s.fhsStore.db == nil {
-		return fmt.Errorf("FHS safety store not initialized")
-	}
-	ref, err := types.DecodeHotstuffProposalRef(vote.TState)
-	if err != nil {
-		return fmt.Errorf("decode persisted FHS vote proposal: %w", err)
-	}
-	if ref.ChainID != s.ChainID() || ref.ViewNumber != vote.ViewNumber || ref.ViewID != vote.ViewID || ref.LeaderID != vote.LeaderID {
-		return fmt.Errorf("persisted FHS vote proposal context mismatch")
+func (s *Service) readFHSProposalBody(ref *types.HotstuffProposalRef) (*proposalBodyMsg, bool, error) {
+	if ref == nil || s.fhsStore == nil || s.fhsStore.db == nil {
+		return nil, false, fmt.Errorf("FHS safety store not initialized")
 	}
 	encoded, err := rawdb.ReadFHSProposal(s.fhsStore.db, ref.ProposalID())
-	if err != nil || len(encoded) == 0 {
-		return fmt.Errorf("missing persisted FHS vote proposal %s", ref.ProposalID())
+	if err != nil {
+		return nil, false, err
+	}
+	if len(encoded) == 0 {
+		return nil, false, nil
 	}
 	var proposal fhsDiskProposal
 	if err := rlp.DecodeBytes(encoded, &proposal); err != nil {
-		return fmt.Errorf("decode persisted FHS vote proposal %s: %w", ref.ProposalID(), err)
+		return nil, true, fmt.Errorf("decode persisted FHS proposal %s: %w", ref.ProposalID(), err)
 	}
 	if proposal.Version != fhsDiskVersion || proposal.ProposalID != ref.ProposalID() ||
-		!bytes.Equal(proposal.ProposalRef, vote.TState) || !bytes.Equal(proposal.Extra, vote.Extra) {
-		return fmt.Errorf("persisted FHS vote proposal record mismatch")
+		!bytes.Equal(proposal.ProposalRef, ref.EncodeToBytes()) {
+		return nil, true, fmt.Errorf("persisted FHS proposal record mismatch")
 	}
 	if _, err := validateFHSProposalCommitments(ref, proposal.EncodedBlock, proposal.Extra, proposal.ParentQC); err != nil {
-		return fmt.Errorf("invalid persisted FHS vote proposal: %w", err)
+		return nil, true, fmt.Errorf("invalid persisted FHS proposal: %w", err)
+	}
+	return &proposalBodyMsg{
+		Type:              proposalBodyMsgData,
+		ProposalID:        proposal.ProposalID,
+		BodyHash:          ref.BodyHash,
+		Number:            ref.Number,
+		ViewNumber:        ref.ViewNumber,
+		ViewID:            ref.ViewID,
+		LeaderID:          ref.LeaderID,
+		From:              ref.LeaderID,
+		EncodedBlock:      append([]byte(nil), proposal.EncodedBlock...),
+		Extra:             append([]byte(nil), proposal.Extra...),
+		ParentQC:          append([]byte(nil), proposal.ParentQC...),
+		CreatedAtUnixNano: 1,
+	}, true, nil
+}
+
+func (s *Service) restoredFHSVoteProposal(vote *hotstuff.PersistedVote) (*proposalBodyMsg, error) {
+	if vote == nil {
+		return nil, nil
+	}
+	if err := validatePersistedVote(vote); err != nil {
+		return nil, err
+	}
+	if len(vote.TState) == 0 {
+		return nil, fmt.Errorf("Fair HotStuff persisted vote has no transaction proposal reference")
+	}
+	if s.fhsStore == nil || s.fhsStore.db == nil {
+		return nil, fmt.Errorf("FHS safety store not initialized")
+	}
+	ref, err := types.DecodeHotstuffProposalRef(vote.TState)
+	if err != nil {
+		return nil, fmt.Errorf("decode persisted FHS vote proposal: %w", err)
+	}
+	if ref.ChainID != s.ChainID() || ref.ViewNumber != vote.ViewNumber || ref.ViewID != vote.ViewID || ref.LeaderID != vote.LeaderID {
+		return nil, fmt.Errorf("persisted FHS vote proposal context mismatch")
+	}
+	body, found, err := s.readFHSProposalBody(ref)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, fmt.Errorf("missing persisted FHS vote proposal %s", ref.ProposalID())
+	}
+	if !bytes.Equal(body.Extra, vote.Extra) {
+		return nil, fmt.Errorf("persisted FHS vote proposal record mismatch")
+	}
+	return body, nil
+}
+
+func (s *Service) validateRestoredFHSVote(vote *hotstuff.PersistedVote) error {
+	_, err := s.restoredFHSVoteProposal(vote)
+	return err
+}
+
+func (s *Service) installRestoredFHSVoteProposal(body *proposalBodyMsg) error {
+	if body == nil {
+		return nil
+	}
+	restored := cloneProposalBodyMsg(body)
+	restored.Type = proposalBodyMsgData
+	if restored.From == "" {
+		restored.From = restored.LeaderID
+	}
+	restored.CreatedAtUnixNano = time.Now().UnixNano()
+	if err := s.storeProposalBody(restored); err != nil {
+		return fmt.Errorf("install persisted FHS vote proposal: %w", err)
 	}
 	return nil
 }
@@ -298,6 +516,9 @@ func (s *Service) PersistFHSVote(vote *hotstuff.PersistedVote) error {
 			}
 			return nil
 		}
+	}
+	if highest := store.state.HighestQC; highest != nil && vote.ViewNumber <= highest.Number {
+		return fmt.Errorf("refusing vote at or below certified QC view %d", highest.Number)
 	}
 
 	next := hotstuff.CloneFHSSafetyState(store.state)
@@ -382,7 +603,169 @@ func (s *Service) PersistFHSTimeoutVote(statement *hotstuff.TimeoutStatement) er
 	return nil
 }
 
+// rotateFHSEpochSafety removes committee-specific timeout messages before a
+// certified key-block transition becomes canonical. LastVote is deliberately
+// retained: it is the global no-double-vote watermark, so the replica must not
+// sign a different proposal in the same numeric view under the new epoch. The
+// new committee can still form a timeout certificate for that view and move
+// every replica forward together.
+func (s *Service) rotateFHSEpochSafety(nextKeyHash common.Hash) error {
+	if nextKeyHash == (common.Hash{}) {
+		return fmt.Errorf("empty Fair HotStuff epoch key hash")
+	}
+	store := s.fhsStore
+	if store == nil {
+		return fmt.Errorf("FHS safety store not initialized")
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.loadLocked(); err != nil {
+		return err
+	}
+	next := hotstuff.CloneFHSSafetyState(store.state)
+	changed := false
+	if next.LastTimeoutVote != nil && next.LastTimeoutVote.KeyHash != nextKeyHash {
+		next.LastTimeoutVote = nil
+		changed = true
+	}
+	if next.HighestTC != nil && next.HighestTC.Statement.KeyHash != nextKeyHash {
+		if next.LastTimeoutView != next.HighestTC.Statement.TimedOutView {
+			return fmt.Errorf("persisted FHS timeout certificate metadata mismatch")
+		}
+		next.HighestTC = nil
+		next.LastTimeoutView = 0
+		changed = true
+	} else if next.HighestTC == nil && next.LastTimeoutView != 0 {
+		return fmt.Errorf("persisted FHS timeout view has no certificate")
+	}
+	if !changed {
+		return nil
+	}
+	encoded, err := store.encodeSafety(next, store.highestBlockHash)
+	if err != nil {
+		return err
+	}
+	batch := store.db.NewBatch()
+	if err := rawdb.WriteFHSSafetyState(batch, encoded); err != nil {
+		return err
+	}
+	if err := writeFHSBatchSync(batch); err != nil {
+		store.lastPersistenceErr = err
+		return err
+	}
+	store.state = next
+	return nil
+}
+
+// reconcileFHSCanonicalQCWatermark advances the durable high-QC pointer to a
+// block which the proof-aware full-sync importer has already made canonical.
+// The block's own QC is only a safety watermark here; its verified child QC is
+// what authorized the canonical commit. Gaps are safe only when the previous
+// durable QC names an exact ancestor on the current canonical chain.
+func (s *Service) reconcileFHSCanonicalQCWatermark(block *types.Block, ownQC *hotstuff.SignedState) error {
+	if s == nil || s.bc == nil || s.fhsStore == nil || block == nil || ownQC == nil {
+		return fmt.Errorf("incomplete canonical FHS QC reconciliation input")
+	}
+	canonical := s.bc.GetBlockByNumber(block.NumberU64())
+	if canonical == nil || canonical.Hash() != block.Hash() || s.bc.GetCanonicalHash(block.NumberU64()) != block.Hash() {
+		return fmt.Errorf("FHS QC watermark target is not exact canonical block %d/%s", block.NumberU64(), block.Hash())
+	}
+	targetRef, targetQC, err := s.bc.ReconstructFHSQC(canonical)
+	if err != nil {
+		return fmt.Errorf("reconstruct canonical FHS QC watermark: %w", err)
+	}
+	if !hotstuff.SignedStateSemanticEqual(targetQC, ownQC) {
+		return fmt.Errorf("canonical FHS QC watermark differs from verified sync target")
+	}
+	verifiedRef, err := s.verifyFHSQCCryptographic(targetQC)
+	if err != nil {
+		return fmt.Errorf("verify canonical FHS QC watermark: %w", err)
+	}
+	if verifiedRef.BlockHash != canonical.Hash() || verifiedRef.Number != canonical.NumberU64() ||
+		targetRef.BlockHash != verifiedRef.BlockHash || targetRef.Number != verifiedRef.Number {
+		return fmt.Errorf("canonical FHS QC watermark proposal does not identify its exact block")
+	}
+
+	store := s.fhsStore
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if err := store.loadLocked(); err != nil {
+		return err
+	}
+	if store.state == nil {
+		return fmt.Errorf("missing durable FHS safety state")
+	}
+	currentQC := store.state.HighestQC
+	currentHash := store.highestBlockHash
+	if store.pendingBroadcast != nil && (currentQC == nil || !hotstuff.SignedStateSemanticEqual(store.pendingBroadcast, currentQC)) {
+		return fmt.Errorf("pending FHS QC broadcast does not match the highest certificate")
+	}
+	advance, err := validateCanonicalFHSQCAdvance(
+		currentQC,
+		currentHash,
+		targetRef,
+		targetQC,
+		canonical.Hash(),
+		s.verifyFHSQCCryptographic,
+		func(number uint64, hash common.Hash) bool { return s.bc.GetCanonicalHash(number) == hash },
+	)
+	if err != nil {
+		return err
+	}
+	if currentQC != nil && currentQC.Number > targetQC.Number {
+		// Never lower a valid uncommitted high QC during canonical repair.
+		return nil
+	}
+
+	next := hotstuff.CloneFHSSafetyState(store.state)
+	if advance {
+		next.HighestQC = hotstuff.CloneSignedState(targetQC)
+	}
+	changedTimeout, err := clearSupersededFHSTimeouts(next)
+	if err != nil {
+		return err
+	}
+	nextPending := hotstuff.CloneSignedState(store.pendingBroadcast)
+	pendingChanged := false
+	if nextPending != nil {
+		switch {
+		case nextPending.Number < targetQC.Number:
+			nextPending = nil
+			pendingChanged = true
+		case nextPending.Number == targetQC.Number:
+			if !hotstuff.SignedStateSemanticEqual(nextPending, targetQC) {
+				return fmt.Errorf("conflicting pending FHS QC broadcast at canonical view %d", targetQC.Number)
+			}
+			nextPending = nil
+			pendingChanged = true
+		}
+	}
+	if !advance && !changedTimeout && !pendingChanged {
+		return nil
+	}
+	encoded, err := store.encodeSafetyWithPending(next, canonical.Hash(), nextPending)
+	if err != nil {
+		return err
+	}
+	batch := store.db.NewBatch()
+	if err := rawdb.WriteFHSSafetyState(batch, encoded); err != nil {
+		return err
+	}
+	if err := writeFHSBatchSync(batch); err != nil {
+		store.lastPersistenceErr = err
+		return err
+	}
+	store.state = next
+	store.highestBlockHash = canonical.Hash()
+	store.pendingBroadcast = nextPending
+	return nil
+}
+
 func (s *Service) persistFHSCertificate(ref *types.HotstuffProposalRef, qc *hotstuff.SignedState, body *proposalBodyMsg, extra []byte) error {
+	return s.persistFHSCertificateWithBroadcast(ref, qc, body, extra, false)
+}
+
+func (s *Service) persistFHSCertificateWithBroadcast(ref *types.HotstuffProposalRef, qc *hotstuff.SignedState, body *proposalBodyMsg, extra []byte, pendingBroadcast bool) error {
 	if s.fhsStore == nil || ref == nil || qc == nil || body == nil {
 		return fmt.Errorf("incomplete FHS certificate persistence input")
 	}
@@ -443,13 +826,20 @@ func (s *Service) persistFHSCertificate(ref *types.HotstuffProposalRef, qc *hots
 	}
 	next := hotstuff.CloneFHSSafetyState(store.state)
 	next.HighestQC = hotstuff.CloneSignedState(qc)
-	// A certificate at (or above) the pending timeout view supersedes that
-	// timeout vote. Persist the cleanup in the same synchronous batch as the
-	// QC so a crash cannot leave an otherwise valid WAL that recovery rejects.
-	if next.LastTimeoutVote != nil && next.LastTimeoutVote.TimedOutView <= qc.Number {
-		next.LastTimeoutVote = nil
+	// Persist timeout cleanup in the same synchronous batch as the QC so a
+	// crash cannot leave an obsolete TC tied to an inactive committee.
+	if _, err := clearSupersededFHSTimeouts(next); err != nil {
+		return err
 	}
-	encodedSafety, err := store.encodeSafety(next, ref.BlockHash)
+	nextPending := hotstuff.CloneSignedState(store.pendingBroadcast)
+	if pendingBroadcast {
+		nextPending = hotstuff.CloneSignedState(qc)
+	} else if nextPending != nil && qc.Number > nextPending.Number {
+		// A higher QC proves that a quorum validated a proposal extending the
+		// prior QC, so the older leader outbox no longer needs restart replay.
+		nextPending = nil
+	}
+	encodedSafety, err := store.encodeSafetyWithPending(next, ref.BlockHash, nextPending)
 	if err != nil {
 		return err
 	}
@@ -469,6 +859,7 @@ func (s *Service) persistFHSCertificate(ref *types.HotstuffProposalRef, qc *hots
 	}
 	store.state = next
 	store.highestBlockHash = ref.BlockHash
+	store.pendingBroadcast = nextPending
 	return nil
 }
 
@@ -481,6 +872,47 @@ func (s *Service) HighestFHSTimeoutCertificate() *hotstuff.TimeoutCertificate {
 		return nil
 	}
 	return hotstuff.CloneTimeoutCertificate(state.HighestTC)
+}
+
+func (s *Service) pendingFHSQCBroadcast() (*hotstuff.SignedState, error) {
+	if s.fhsStore == nil {
+		return nil, nil
+	}
+	pending, err := s.fhsStore.pendingBroadcastSnapshot()
+	if err != nil || pending == nil {
+		return pending, err
+	}
+	if _, err := s.verifyFHSQCCryptographic(pending); err != nil {
+		return nil, fmt.Errorf("invalid pending FHS QC broadcast: %w", err)
+	}
+	if pending.LeaderID != s.Self() {
+		return nil, fmt.Errorf("pending FHS QC broadcast belongs to another leader")
+	}
+	return pending, nil
+}
+
+func (s *Service) replayPendingFHSQCBroadcast() {
+	if !s.fairHotstuffEnabled() || !s.isRunning() {
+		return
+	}
+	pending, err := s.pendingFHSQCBroadcast()
+	if err != nil {
+		log.Error("cannot replay durable FHS QC broadcast", "err", err)
+		return
+	}
+	if pending == nil {
+		return
+	}
+	msg, err := s.protocolMng.RebuildFHSQCBroadcast(pending)
+	if err != nil {
+		log.Error("cannot rebuild durable FHS QC broadcast", "number", pending.Number, "err", err)
+		return
+	}
+	if errs := s.broadcastHotstuffToCommittee(msg); len(errs) > 0 {
+		log.Warn("durable FHS QC broadcast queued with delivery errors", "number", pending.Number, "errors", len(errs))
+	} else {
+		log.Info("replayed durable FHS QC broadcast", "number", pending.Number, "viewID", pending.ViewID)
+	}
 }
 
 func (s *Service) hasPendingFHSTimeoutVote() bool {
@@ -553,6 +985,9 @@ func (s *Service) validateFHSTimeoutState(state *hotstuff.FHSSafetyState) (uint6
 	if err != nil {
 		return 0, err
 	}
+	if err := hotstuff.ValidateBFTCommitteeSize(len(keys)); err != nil {
+		return 0, err
+	}
 	if err := hotstuff.VerifyTimeoutCertificate(state.HighestTC, keys, hotstuff.CalcThreshold(len(keys))); err != nil {
 		return 0, fmt.Errorf("invalid persisted FHS timeout certificate: %w", err)
 	}
@@ -560,6 +995,100 @@ func (s *Service) validateFHSTimeoutState(state *hotstuff.FHSSafetyState) (uint6
 		return 0, fmt.Errorf("persisted FHS timeout certificate has inactive committee")
 	}
 	return targetView, nil
+}
+
+// reconcileFHSTimeoutEpoch removes timeout-only WAL records that belong to a
+// canonical historical key epoch after passive full sync has advanced the key
+// chain. A timeout statement is committee-specific, unlike LastVote and
+// HighestQC, so carrying it into the new epoch makes an otherwise valid restart
+// fail with an inactive-committee error. We only rotate records whose exact key
+// block is still in canonical history; same-height siblings, future epochs and
+// malformed certificates remain fail-closed.
+func (s *Service) reconcileFHSTimeoutEpoch(state *hotstuff.FHSSafetyState, highestHash common.Hash) (*hotstuff.FHSSafetyState, error) {
+	if state == nil {
+		return nil, nil
+	}
+	current := s.GetCurrentView()
+	if current == nil || current.KeyHash == (common.Hash{}) {
+		return nil, fmt.Errorf("cannot reconcile FHS timeout WAL without an active key epoch")
+	}
+
+	validateEpoch := func(statement *hotstuff.TimeoutStatement) (bool, error) {
+		if statement == nil {
+			return false, nil
+		}
+		if statement.ChainID != s.ChainID() {
+			return false, fmt.Errorf("persisted FHS timeout statement belongs to another chain")
+		}
+		if _, err := hotstuff.TimeoutStatementDigest(statement); err != nil {
+			return false, fmt.Errorf("invalid persisted FHS timeout statement: %w", err)
+		}
+		if statement.KeyNumber == current.KeyNumber && statement.KeyHash == current.KeyHash && statement.CommitteeHash == current.CommitteeHash {
+			return false, nil
+		}
+		if statement.KeyNumber >= current.KeyNumber {
+			return false, fmt.Errorf("persisted FHS timeout statement has a non-historical inactive committee")
+		}
+		keyBlock := s.kbc.GetBlockByNumber(statement.KeyNumber)
+		if keyBlock == nil || keyBlock.Hash() != statement.KeyHash || keyBlock.CommitteeHash() != statement.CommitteeHash {
+			return false, fmt.Errorf("persisted FHS timeout statement does not match canonical key history")
+		}
+		keys, err := s.GetPublicKey(statement.KeyHash)
+		if err != nil {
+			return false, err
+		}
+		if err := hotstuff.ValidateBFTCommitteeSize(len(keys)); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
+	staleVote, err := validateEpoch(state.LastTimeoutVote)
+	if err != nil {
+		return nil, err
+	}
+	if state.HighestTC == nil {
+		if state.LastTimeoutView != 0 {
+			return nil, fmt.Errorf("persisted FHS timeout view has no certificate")
+		}
+	} else {
+		statement := &state.HighestTC.Statement
+		if state.LastTimeoutView != statement.TimedOutView {
+			return nil, fmt.Errorf("persisted FHS timeout certificate metadata mismatch")
+		}
+		keys, err := s.GetPublicKey(statement.KeyHash)
+		if err != nil {
+			return nil, err
+		}
+		if err := hotstuff.ValidateBFTCommitteeSize(len(keys)); err != nil {
+			return nil, err
+		}
+		if err := hotstuff.VerifyTimeoutCertificate(state.HighestTC, keys, hotstuff.CalcThreshold(len(keys))); err != nil {
+			return nil, fmt.Errorf("invalid persisted FHS timeout certificate: %w", err)
+		}
+	}
+	var timeoutCertificateStatement *hotstuff.TimeoutStatement
+	if state.HighestTC != nil {
+		timeoutCertificateStatement = &state.HighestTC.Statement
+	}
+	staleTC, err := validateEpoch(timeoutCertificateStatement)
+	if err != nil {
+		return nil, err
+	}
+	if !staleVote && !staleTC {
+		return state, nil
+	}
+	if err := s.rotateFHSEpochSafety(current.KeyHash); err != nil {
+		return nil, fmt.Errorf("rotate historical FHS timeout WAL: %w", err)
+	}
+	refreshed, refreshedHighest, err := s.fhsStore.recoverySnapshot()
+	if err != nil {
+		return nil, err
+	}
+	if refreshedHighest != highestHash {
+		return nil, fmt.Errorf("FHS timeout epoch rotation altered the highest certificate pointer")
+	}
+	return refreshed, nil
 }
 
 func (s *Service) applyFHSRecoveredView(targetView uint64) {
@@ -603,10 +1132,13 @@ func (s *Service) verifyFHSQCCryptographic(qc *hotstuff.SignedState) (*types.Hot
 // AdoptFHSHighQC lets a lagging replica install the highest valid certificate
 // carried by an n-f NewView proof before it evaluates the child proposal.
 func (s *Service) AdoptFHSHighQC(qc *hotstuff.SignedState) error {
-	return s.adoptFHSHighQC(qc, false)
+	if err := s.adoptFHSHighQC(qc, false, false); err != nil {
+		return err
+	}
+	return s.commitFHS2ChainForCertified(qc)
 }
 
-func (s *Service) adoptFHSHighQC(qc *hotstuff.SignedState, notify bool) error {
+func (s *Service) adoptFHSHighQC(qc *hotstuff.SignedState, notify, pendingBroadcast bool) error {
 	if !s.fairHotstuffEnabled() {
 		return nil
 	}
@@ -644,9 +1176,20 @@ func (s *Service) adoptFHSHighQC(qc *hotstuff.SignedState, notify bool) error {
 	verified := s.getVerifiedProposal(proposalID)
 	body := s.getProposalBody(proposalID)
 	if body == nil {
-		body, err = s.waitProposalBody(ref)
-		if err != nil {
-			return fmt.Errorf("retrieve certified FHS proposal body: %w", err)
+		diskBody, found, diskErr := s.readFHSProposalBody(ref)
+		if diskErr != nil {
+			return fmt.Errorf("read durable certified FHS proposal body: %w", diskErr)
+		}
+		if found {
+			if err := s.installRestoredFHSVoteProposal(diskBody); err != nil {
+				return err
+			}
+			body = diskBody
+		} else {
+			body, err = s.waitProposalBody(ref)
+			if err != nil {
+				return fmt.Errorf("retrieve certified FHS proposal body: %w", err)
+			}
 		}
 	}
 	if ref.ParentHash != s.bc.CurrentBlock().Hash() && s.getFHSCertifiedVerified(ref.ParentHash) == nil {
@@ -658,7 +1201,7 @@ func (s *Service) adoptFHSHighQC(qc *hotstuff.SignedState, notify bool) error {
 		if err != nil || parentRef.BlockHash != ref.ParentHash {
 			return fmt.Errorf("certified FHS proposal parent proof mismatch")
 		}
-		if err := s.adoptFHSHighQC(parentQC, false); err != nil {
+		if err := s.adoptFHSHighQC(parentQC, false, false); err != nil {
 			return err
 		}
 	}
@@ -679,7 +1222,10 @@ func (s *Service) adoptFHSHighQC(qc *hotstuff.SignedState, notify bool) error {
 			if keyblock == nil {
 				return fmt.Errorf("invalid certified FHS keyblock")
 			}
-			if err := s.keyService.verifyKeyBlock(keyblock, types.DecodeToCandidate(body.Extra)); err != nil {
+			if block.NumberU64() == 0 {
+				return fmt.Errorf("certified FHS keyblock cannot be transaction genesis")
+			}
+			if err := s.keyService.verifyKeyBlock(keyblock, types.DecodeToCandidate(body.Extra), block.NumberU64()-1); err != nil {
 				return err
 			}
 		}
@@ -695,7 +1241,7 @@ func (s *Service) adoptFHSHighQC(qc *hotstuff.SignedState, notify bool) error {
 	} else if ref.ParentHash != s.bc.CurrentBlock().Hash() {
 		return fmt.Errorf("first FHS certified block does not extend canonical head")
 	}
-	if err := s.persistFHSCertificate(ref, qc, body, body.Extra); err != nil {
+	if err := s.persistFHSCertificateWithBroadcast(ref, qc, body, body.Extra, pendingBroadcast); err != nil {
 		return fmt.Errorf("persist FHS certificate before adoption: %w", err)
 	}
 
@@ -744,14 +1290,37 @@ func (s *Service) loadFHSWAL() error {
 	if s.fhsStore == nil {
 		return fmt.Errorf("FHS safety store not initialized")
 	}
-	state, highestHash, err := s.fhsStore.snapshot()
+	state, highestHash, err := s.fhsStore.recoverySnapshot()
 	if err != nil {
 		return err
 	}
 	if state == nil {
 		return nil
 	}
-	if err := s.validateRestoredFHSVote(state.LastVote); err != nil {
+	// The canonical block and its QC are committed atomically, but the
+	// validator-local safety WAL lives in a separate database batch. Repair the
+	// crash window before applying the usual WAL recovery rules. This is also
+	// what lets a passively synced validator restart at its actual canonical QC
+	// instead of rejecting the next contiguous NewView certificate as a gap.
+	canonicalHead := s.bc.CurrentBlock()
+	if canonicalHead == nil {
+		return fmt.Errorf("cannot restore FHS state without canonical head")
+	}
+	if canonicalHead.NumberU64() > 0 {
+		_, canonicalQC, err := s.bc.ReconstructFHSQC(canonicalHead)
+		if err != nil {
+			return fmt.Errorf("reconstruct canonical FHS head QC: %w", err)
+		}
+		if err := s.reconcileFHSCanonicalQCWatermark(canonicalHead, canonicalQC); err != nil {
+			return fmt.Errorf("reconcile canonical FHS head QC: %w", err)
+		}
+		state, highestHash, err = s.fhsStore.recoverySnapshot()
+		if err != nil {
+			return err
+		}
+	}
+	lastVoteBody, err := s.restoredFHSVoteProposal(state.LastVote)
+	if err != nil {
 		return fmt.Errorf("invalid last FHS WAL vote: %w", err)
 	}
 	qcMissing := state.HighestQC == nil
@@ -769,6 +1338,22 @@ func (s *Service) loadFHSWAL() error {
 			return fmt.Errorf("highest FHS WAL certificate/hash mismatch")
 		}
 	}
+	pendingBroadcast, err := s.fhsStore.pendingBroadcastSnapshot()
+	if err != nil {
+		return err
+	}
+	if pendingBroadcast != nil {
+		if qcMissing || !hotstuff.SignedStateSemanticEqual(pendingBroadcast, state.HighestQC) {
+			return fmt.Errorf("pending FHS QC broadcast does not match the highest certificate")
+		}
+		if pendingBroadcast.LeaderID != s.Self() {
+			return fmt.Errorf("pending FHS QC broadcast belongs to another leader")
+		}
+	}
+	state, err = s.reconcileFHSTimeoutEpoch(state, highestHash)
+	if err != nil {
+		return fmt.Errorf("reconcile FHS timeout epoch: %w", err)
+	}
 	// Validate timeout recovery now, but publish its view only after every WAL
 	// certificate and proposal sidecar has also passed validation.
 	recoveredView, err := s.validateFHSTimeoutState(state)
@@ -776,6 +1361,9 @@ func (s *Service) loadFHSWAL() error {
 		return err
 	}
 	if qcMissing {
+		if err := s.installRestoredFHSVoteProposal(lastVoteBody); err != nil {
+			return err
+		}
 		s.applyFHSRecoveredView(recoveredView)
 		return nil
 	}
@@ -785,9 +1373,18 @@ func (s *Service) loadFHSWAL() error {
 		return fmt.Errorf("cannot restore FHS state without canonical head")
 	}
 	if highestHash == current.Hash() || s.bc.GetCanonicalHash(highestRef.Number) == highestHash {
+		if err := s.installRestoredFHSVoteProposal(lastVoteBody); err != nil {
+			return err
+		}
+		if pendingBroadcast != nil {
+			if err := s.fhsStore.clearPendingBroadcast(pendingBroadcast); err != nil {
+				return fmt.Errorf("complete canonical FHS QC outbox: %w", err)
+			}
+		}
 		s.applyFHSRecoveredView(recoveredView)
 		return nil
 	}
+	recoveryKeyHash := s.GetCurrentView().KeyHash
 
 	type restoreRecord struct {
 		ref   *types.HotstuffProposalRef
@@ -885,7 +1482,10 @@ func (s *Service) loadFHSWAL() error {
 			if keyblock == nil {
 				return fmt.Errorf("invalid restored FHS keyblock %s", record.ref.BlockHash)
 			}
-			if err := s.keyService.verifyKeyBlock(keyblock, types.DecodeToCandidate(record.extra)); err != nil {
+			if block.NumberU64() == 0 {
+				return fmt.Errorf("restored FHS keyblock %s cannot be transaction genesis", record.ref.BlockHash)
+			}
+			if err := s.keyService.verifyKeyBlock(keyblock, types.DecodeToCandidate(record.extra), block.NumberU64()-1); err != nil {
 				return fmt.Errorf("verify restored FHS keyblock %s: %w", record.ref.BlockHash, err)
 			}
 		}
@@ -897,6 +1497,7 @@ func (s *Service) loadFHSWAL() error {
 	s.muProposalBody.Lock()
 	entries, bytesUsed := s.proposalBodyCacheUsageLocked()
 	additionalEntries, additionalBytes := 0, 0
+	lastVoteStaged := false
 	for _, item := range staged {
 		record := item.record
 		proposalID := record.ref.ProposalID()
@@ -913,6 +1514,27 @@ func (s *Service) loadFHSWAL() error {
 		if existing := s.fhsCertifiedByHash[record.ref.BlockHash]; existing != nil && !hotstuff.SignedStateSemanticEqual(existing.qc, record.qc) {
 			s.muProposalBody.Unlock()
 			return fmt.Errorf("conflicting restored FHS certificate %s", record.ref.BlockHash)
+		}
+		if lastVoteBody != nil && proposalID == lastVoteBody.ProposalID {
+			lastVoteStaged = true
+			if body := record.body; body.BodyHash != lastVoteBody.BodyHash ||
+				!bytes.Equal(body.EncodedBlock, lastVoteBody.EncodedBlock) ||
+				!bytes.Equal(body.Extra, lastVoteBody.Extra) || !bytes.Equal(body.ParentQC, lastVoteBody.ParentQC) {
+				s.muProposalBody.Unlock()
+				return fmt.Errorf("last FHS vote conflicts with restored certified proposal %s", proposalID)
+			}
+		}
+	}
+	if lastVoteBody != nil && !lastVoteStaged {
+		if existing := s.proposalBodies[lastVoteBody.ProposalID]; existing != nil {
+			if existing.BodyHash != lastVoteBody.BodyHash || !bytes.Equal(existing.EncodedBlock, lastVoteBody.EncodedBlock) ||
+				!bytes.Equal(existing.Extra, lastVoteBody.Extra) || !bytes.Equal(existing.ParentQC, lastVoteBody.ParentQC) {
+				s.muProposalBody.Unlock()
+				return fmt.Errorf("conflicting restored last-vote proposal %s", lastVoteBody.ProposalID)
+			}
+		} else {
+			additionalEntries++
+			additionalBytes += len(lastVoteBody.EncodedBlock) + len(lastVoteBody.Extra) + len(lastVoteBody.ParentQC) + len(lastVoteBody.AuthSig)
 		}
 	}
 	if entries+additionalEntries > proposalBodyCacheMaxEntries || bytesUsed+additionalBytes > proposalBodyCacheMaxBytes {
@@ -934,6 +1556,13 @@ func (s *Service) loadFHSWAL() error {
 		s.fhsCertifiedByID[proposalID] = recordValue
 		s.fhsHighest = recordValue
 	}
+	if lastVoteBody != nil && !lastVoteStaged && s.proposalBodies[lastVoteBody.ProposalID] == nil {
+		body := cloneProposalBodyMsg(lastVoteBody)
+		body.Type = proposalBodyMsgData
+		body.From = body.LeaderID
+		body.CreatedAtUnixNano = time.Now().UnixNano()
+		s.proposalBodies[body.ProposalID] = body
+	}
 	s.muProposalBody.Unlock()
 
 	// adoptCertified cannot fail. Keeping it after the error-free cache install
@@ -943,16 +1572,48 @@ func (s *Service) loadFHSWAL() error {
 		s.txService.proposedChain.adoptCertified(item.block)
 	}
 	s.txService.mu.Unlock()
-	if s.fhsHighest != nil {
-		s.muCurrentView.Lock()
-		s.currentView.TxNumber = s.fhsHighest.ref.Number
-		s.currentView.TxHash = s.fhsHighest.ref.BlockHash
-		s.currentView.ViewNumber = recoveredView
-		s.currentView.LeaderIndex = s.fairHotstuffLeaderIndexForCurrentLocked()
-		s.currentView.NoDone = true
-		s.waittingView.TxNumber = s.currentView.TxNumber
-		s.waittingView.KeyNumber = s.currentView.KeyNumber
-		s.muCurrentView.Unlock()
+
+	// If the WAL contains a certified child, its parent was already decided by
+	// the 2-chain rule even if the process crashed just before the canonical
+	// write. Complete that decision before the network or pacemaker starts so
+	// every restarting replica enters the same committee epoch.
+	if err := s.commitFHS2ChainForCertified(state.HighestQC); err != nil {
+		return fmt.Errorf("complete restored FHS 2-chain commit: %w", err)
 	}
+
+	s.muProposalBody.RLock()
+	highest := s.fhsHighest
+	s.muProposalBody.RUnlock()
+	if highest == nil || highest.ref == nil || highest.qc == nil {
+		return fmt.Errorf("restored FHS highest certificate is unavailable")
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return fmt.Errorf("restored FHS key head is unavailable")
+	}
+	s.muCurrentView.Lock()
+	s.currentView.TxNumber = highest.ref.Number
+	s.currentView.TxHash = highest.ref.BlockHash
+	if curKeyBlock.Hash() != recoveryKeyHash {
+		// commitFHS2ChainForCertified crossed an epoch while replaying WAL.
+		// Old-epoch timeout maxima are not a common new-epoch starting point.
+		s.currentView.ViewNumber = highest.qc.Number
+	} else {
+		if recoveredView > s.currentView.ViewNumber {
+			s.currentView.ViewNumber = recoveredView
+		}
+		if highest.qc.Number > s.currentView.ViewNumber {
+			s.currentView.ViewNumber = highest.qc.Number
+		}
+	}
+	s.currentView.KeyNumber = curKeyBlock.NumberU64()
+	s.currentView.KeyHash = curKeyBlock.Hash()
+	s.currentView.CommitteeHash = curKeyBlock.CommitteeHash()
+	s.currentView.Round = 0
+	s.currentView.LeaderIndex = s.fairHotstuffLeaderIndexForCurrentLocked()
+	s.currentView.NoDone = true
+	s.waittingView.TxNumber = s.currentView.TxNumber
+	s.waittingView.KeyNumber = s.currentView.KeyNumber
+	s.muCurrentView.Unlock()
 	return nil
 }

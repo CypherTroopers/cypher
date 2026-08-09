@@ -327,7 +327,17 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction,
 			return err
 		}
 
-		if err := b.eth.txQUICIngress.EnqueueLocalTxsWithAdmissions(
+		if sync {
+			if err := b.eth.txQUICIngress.SendLocalTxsWithAdmissionsSync(
+				ctx,
+				[]*types.Transaction{signedTx},
+				[]*types.CommonTxAdmission{admission},
+				b.eth.accountManager,
+			); err != nil {
+				log.Error("Failed to submit common RPC tx via TxQUIC", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
+				return err
+			}
+		} else if err := b.eth.txQUICIngress.EnqueueLocalTxsWithAdmissions(
 			ctx,
 			[]*types.Transaction{signedTx},
 			[]*types.CommonTxAdmission{admission},

@@ -34,6 +34,7 @@ import (
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
+	"github.com/cypherium/cypher/reconfig/hotstuff"
 	"github.com/cypherium/cypher/trie"
 )
 
@@ -69,6 +70,15 @@ func newTxService(s serviceI, backend *ReconfigBackend, config *params.ChainConf
 	txS.proposedChain.clear(txS.bc.CurrentBlock())
 
 	txS.bc.ProcInsertDone = txS.procBlockDone
+	if lifecycle, ok := s.(interface {
+		beforeFHSFinalizedSyncKeyCommit(*types.Block, *hotstuff.SignedState) error
+		afterFHSFinalizedSyncCommit(*types.Block, *hotstuff.SignedState, *hotstuff.SignedState) error
+	}); ok {
+		txS.bc.SetFHSFinalizedSyncLifecycle(
+			lifecycle.beforeFHSFinalizedSyncKeyCommit,
+			lifecycle.afterFHSFinalizedSyncCommit,
+		)
+	}
 
 	//go txS.eventLoop()
 
@@ -80,6 +90,12 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	defer txS.mu.Unlock()
 
 	work := txS.createWork(types.Key_Block)
+	if work == nil || work.header == nil || work.header.Number == nil || work.header.Number.Sign() <= 0 {
+		return nil, fmt.Errorf("cannot determine key block carrier parent")
+	}
+	if err := verifyKeyBlockCarrierParent(keyblock, work.header.Number.Uint64()-1); err != nil {
+		return nil, err
+	}
 
 	header := work.header
 	// commit state root after all state transitions.
@@ -96,7 +112,7 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 	block := types.NewBlock(header, nil, nil, nil, new(trie.Trie))
 	block.SetKeyblock(keyblock)
 
-	log.Info("Generated next keyblock", "block num", block.Number())
+	log.Info("Generated next keyblock", "block num", block.Number(), "key T_number", keyblock.T_Number())
 
 	return block.EncodeToBytes(), nil
 }
@@ -444,6 +460,17 @@ func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte
 // VotePrepare validation. It is used by legacy Decide and by delayed FHS
 // 2-chain commit, and deliberately avoids a second StateProcessor execution.
 func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, sig []byte, mask []byte, viewNumber uint64, viewID common.Hash, leaderID string) error {
+	return txS.decideVerifiedProposalWithChild(ref, verified, sig, mask, viewNumber, viewID, leaderID, nil)
+}
+
+func (txS *txService) decideFHSVerifiedProposal(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, targetQC, childQC *hotstuff.SignedState) error {
+	if targetQC == nil || childQC == nil {
+		return fmt.Errorf("incomplete FHS 2-chain commit proof")
+	}
+	return txS.decideVerifiedProposalWithChild(ref, verified, targetQC.Sign, targetQC.Mask, targetQC.Number, targetQC.ViewID, targetQC.LeaderID, childQC)
+}
+
+func (txS *txService) decideVerifiedProposalWithChild(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, sig []byte, mask []byte, viewNumber uint64, viewID common.Hash, leaderID string, childQC *hotstuff.SignedState) error {
 	if ref == nil {
 		return fmt.Errorf("nil hotstuff proposal ref")
 	}
@@ -478,7 +505,7 @@ func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, ver
 		"txs", len(block.Transactions()))
 
 	bc := txS.bc
-	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) && (txS.config == nil || !txS.config.FairHotstuff) {
 		log.Info("decideVerifiedProposal already known", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
 		return nil
 	}
@@ -487,12 +514,26 @@ func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, ver
 	} else {
 		block.SetSignature(sig, mask, viewID, leaderID, viewNumber)
 	}
-	if _, err := bc.CommitVerifiedProposal(verified, false); err != nil {
+	var err error
+	if txS.config != nil && txS.config.FairHotstuff {
+		_, err = bc.CommitFHSVerifiedProposal(verified, childQC, false)
+	} else {
+		_, err = bc.CommitVerifiedProposal(verified, false)
+	}
+	if err != nil {
 		log.Error("decideVerifiedProposal.CommitVerifiedProposal", "number", block.NumberU64(), "proposalID", proposalID, "error", err)
 		return err
 	}
-	txS.mux.Post(core.NewMinedBlockEvent{Block: block})
-	log.Info("decideVerifiedProposal commit ok", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
+	// CommitFHSVerifiedProposal may replace verified.Block with a private,
+	// proof-bearing representation while backfilling an already-canonical head.
+	// Broadcast that committed representation, not the proofless pointer captured
+	// before the commit.
+	committedBlock := verified.Block
+	if committedBlock == nil {
+		return fmt.Errorf("committed verified proposal lost its block")
+	}
+	txS.mux.Post(core.NewMinedBlockEvent{Block: committedBlock})
+	log.Info("decideVerifiedProposal commit ok", "number", committedBlock.NumberU64(), "hash", committedBlock.Hash(), "proposalID", proposalID)
 	return nil
 }
 
