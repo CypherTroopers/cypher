@@ -71,6 +71,17 @@ func (v *BlockValidator) ValidateBodyForHotstuffSync(block *types.Block, hotstuf
 }
 
 func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailable, revalidateKnown bool) error {
+	// Finality metadata is attached only after a direct-child QC has been
+	// verified. A live proposal carrying arbitrary bytes here could consume a
+	// tiny placeholder during voting and later exceed EIP-7934 when the real
+	// bounded proof replaces it. Proof-bearing blocks are accepted exclusively
+	// by the passive, proof-aware sync path below.
+	if v.config != nil && v.config.FairHotstuff && !revalidateKnown && len(block.FHSFinalityProof()) != 0 {
+		return fmt.Errorf("live Fair HotStuff proposal contains premature finality proof metadata")
+	}
+	if err := validateOsakaBlockSize(v.config, block); err != nil {
+		return err
+	}
 	// Check whether the block's known, and if not, that it's linkable
 	if !revalidateKnown && v.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
 		return ErrKnownBlock
@@ -119,6 +130,37 @@ func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailabl
 		return consensus.ErrPrunedAncestor
 	}
 
+	return nil
+}
+
+// validateOsakaBlockSize enforces EIP-7934 before any known-block shortcut.
+// This placement matters in Cypherium because consensus metadata is excluded
+// from the block hash: an oversized alternate representation of a known hash
+// must not bypass the Osaka payload limit.
+func validateOsakaBlockSize(config *params.ChainConfig, block *types.Block) error {
+	if config == nil || block == nil || block.Header() == nil || block.Number() == nil {
+		return nil
+	}
+	header := block.Header()
+	if !config.IsOsaka(header.Number, header.Time) {
+		return nil
+	}
+	limit := uint64(params.MaxBlockSize)
+	// Fair HotStuff proposals do not carry their direct-child finality proof
+	// until after they have received a QC. Reserve the complete bounded proof
+	// envelope before voting, otherwise an almost-full proposal can become an
+	// invalid oversized block exactly when the proof is attached at commit.
+	if config.FairHotstuff && len(block.FHSFinalityProof()) == 0 {
+		const rlpProofOverhead = uint64(16)
+		reserve := uint64(types.MaxFHSFinalityProofSize) + rlpProofOverhead
+		if reserve >= limit {
+			return fmt.Errorf("Fair HotStuff finality-proof reserve %d exceeds Osaka maximum %d", reserve, limit)
+		}
+		limit -= reserve
+	}
+	if size := uint64(block.Size()); size > limit {
+		return fmt.Errorf("block RLP size %d exceeds Osaka maximum %d", size, limit)
+	}
 	return nil
 }
 

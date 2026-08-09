@@ -48,6 +48,9 @@ const (
 
 // Receipt represents the results of a transaction.
 type Receipt struct {
+	// Type is the EIP-2718 transaction type. Legacy receipts use zero.
+	Type uint8 `json:"type,omitempty"`
+
 	// Consensus fields: These fields are defined by the Yellow Paper
 	PostState         []byte `json:"root"`
 	Status            uint64 `json:"status"`
@@ -69,6 +72,7 @@ type Receipt struct {
 }
 
 type receiptMarshaling struct {
+	Type              hexutil.Uint64
 	PostState         hexutil.Bytes
 	Status            hexutil.Uint64
 	CumulativeGasUsed hexutil.Uint64
@@ -127,16 +131,100 @@ func NewReceipt(root []byte, failed bool, cumulativeGasUsed uint64) *Receipt {
 // EncodeRLP implements rlp.Encoder, and flattens the consensus fields of a receipt
 // into an RLP stream. If no post state is present, byzantium fork is assumed.
 func (r *Receipt) EncodeRLP(w io.Writer) error {
-	return rlp.Encode(w, &receiptRLP{r.statusEncoding(), r.CumulativeGasUsed, r.Bloom, r.Logs})
+	enc := r.consensusEncoding()
+	if r.Type == LegacyTxType {
+		return rlp.Encode(w, enc)
+	}
+	payload, err := r.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	// In block/receipt-list RLP, an EIP-2718 receipt is an RLP string whose
+	// contents are the raw type || receipt-payload envelope.
+	return rlp.Encode(w, payload)
 }
 
 // DecodeRLP implements rlp.Decoder, and loads the consensus fields of a receipt
 // from an RLP stream.
 func (r *Receipt) DecodeRLP(s *rlp.Stream) error {
-	var dec receiptRLP
-	if err := s.Decode(&dec); err != nil {
+	kind, _, err := s.Kind()
+	if err != nil {
 		return err
 	}
+	if kind == rlp.List {
+		var dec receiptRLP
+		if err := s.Decode(&dec); err != nil {
+			return err
+		}
+		r.Type = LegacyTxType
+		return r.setFromConsensusEncoding(&dec)
+	}
+	if kind != rlp.String {
+		return fmt.Errorf("invalid receipt RLP kind %v", kind)
+	}
+	payload, err := s.Bytes()
+	if err != nil {
+		return err
+	}
+	return r.UnmarshalBinary(payload)
+}
+
+func (r *Receipt) consensusEncoding() *receiptRLP {
+	return &receiptRLP{r.statusEncoding(), r.CumulativeGasUsed, r.Bloom, r.Logs}
+}
+
+func validTypedReceiptType(typ uint8) bool {
+	switch typ {
+	case AccessListTxType, DynamicFeeTxType, BlobTxType, SetCodeTxType:
+		return true
+	default:
+		return false
+	}
+}
+
+// MarshalBinary returns the consensus trie value. Typed receipts use the raw
+// type || RLP(payload) envelope required by EIP-2718.
+func (r *Receipt) MarshalBinary() ([]byte, error) {
+	payload, err := rlp.EncodeToBytes(r.consensusEncoding())
+	if err != nil {
+		return nil, err
+	}
+	if r.Type == LegacyTxType {
+		return payload, nil
+	}
+	if !validTypedReceiptType(r.Type) {
+		return nil, fmt.Errorf("unsupported receipt type %d", r.Type)
+	}
+	return append([]byte{r.Type}, payload...), nil
+}
+
+// UnmarshalBinary decodes either a legacy receipt list or an EIP-2718 typed
+// receipt envelope and rejects unknown transaction types and trailing RLP.
+func (r *Receipt) UnmarshalBinary(input []byte) error {
+	if len(input) == 0 {
+		return errors.New("empty receipt encoding")
+	}
+	typ, payload := uint8(LegacyTxType), input
+	if input[0] < 0x80 {
+		typ, payload = input[0], input[1:]
+		if !validTypedReceiptType(typ) {
+			return fmt.Errorf("unsupported receipt type %d", typ)
+		}
+		if len(payload) == 0 {
+			return fmt.Errorf("missing typed receipt payload for type %d", typ)
+		}
+	}
+	var dec receiptRLP
+	if err := rlp.DecodeBytes(payload, &dec); err != nil {
+		return err
+	}
+	r.Type = typ
+	return r.setFromConsensusEncoding(&dec)
+}
+
+func (r *Receipt) setFromConsensusEncoding(dec *receiptRLP) error {
+	r.PostState = nil
+	r.Status = 0
 	if err := r.setStatus(dec.PostStateOrStatus); err != nil {
 		return err
 	}
@@ -285,7 +373,7 @@ func (r Receipts) Len() int { return len(r) }
 
 // GetRlp returns the RLP encoding of one receipt from the list.
 func (r Receipts) GetRlp(i int) []byte {
-	bytes, err := rlp.EncodeToBytes(r[i])
+	bytes, err := r[i].MarshalBinary()
 	if err != nil {
 		panic(err)
 	}
@@ -302,6 +390,7 @@ func (r Receipts) DeriveFields(config *params.ChainConfig, hash common.Hash, num
 		return errors.New("transaction and receipt count mismatch")
 	}
 	for i := 0; i < len(r); i++ {
+		r[i].Type = txs[i].Type()
 		// The transaction hash can be retrieved from the transaction itself
 		r[i].TxHash = txs[i].Hash()
 

@@ -32,6 +32,11 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		MixDigest             common.Hash    `json:"mixHash"`
 		Nonce                 BlockNonce     `json:"nonce"`
 		BaseFee               *hexutil.Big   `json:"baseFeePerGas,omitempty"`
+		WithdrawalsHash       common.Hash    `json:"withdrawalsRoot"`
+		BlobGasUsed           hexutil.Uint64 `json:"blobGasUsed"`
+		ExcessBlobGas         hexutil.Uint64 `json:"excessBlobGas"`
+		ParentBeaconRoot      common.Hash    `json:"parentBeaconBlockRoot"`
+		RequestsHash          common.Hash    `json:"requestsHash"`
 		CommonTxAdmissionRoot common.Hash    `json:"commonTxAdmissionRoot"`
 		CommonTxRewardRoot    common.Hash    `json:"commonTxRewardRoot"`
 		BlockType             uint8          `json:"blockType"      gencodec:"required"`
@@ -55,6 +60,11 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.MixDigest = h.MixDigest
 	enc.Nonce = h.Nonce
 	enc.BaseFee = (*hexutil.Big)(h.BaseFee)
+	enc.WithdrawalsHash = h.WithdrawalsHash
+	enc.BlobGasUsed = hexutil.Uint64(h.BlobGasUsed)
+	enc.ExcessBlobGas = hexutil.Uint64(h.ExcessBlobGas)
+	enc.ParentBeaconRoot = h.ParentBeaconRoot
+	enc.RequestsHash = h.RequestsHash
 	enc.CommonTxAdmissionRoot = h.CommonTxAdmissionRoot
 	enc.CommonTxRewardRoot = h.CommonTxRewardRoot
 	enc.BlockType = h.BlockType
@@ -82,6 +92,11 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		MixDigest             *common.Hash    `json:"mixHash"`
 		Nonce                 *BlockNonce     `json:"nonce"`
 		BaseFee               *hexutil.Big    `json:"baseFeePerGas,omitempty"`
+		WithdrawalsHash       *common.Hash    `json:"withdrawalsRoot"`
+		BlobGasUsed           *hexutil.Uint64 `json:"blobGasUsed"`
+		ExcessBlobGas         *hexutil.Uint64 `json:"excessBlobGas"`
+		ParentBeaconRoot      *common.Hash    `json:"parentBeaconBlockRoot"`
+		RequestsHash          *common.Hash    `json:"requestsHash"`
 		CommonTxAdmissionRoot *common.Hash    `json:"commonTxAdmissionRoot"`
 		CommonTxRewardRoot    *common.Hash    `json:"commonTxRewardRoot"`
 		BlockType             uint8           `json:"blockType"      gencodec:"required"`
@@ -151,6 +166,21 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 	}
 	if dec.BaseFee != nil {
 		h.BaseFee = (*big.Int)(dec.BaseFee)
+	}
+	if dec.WithdrawalsHash != nil {
+		h.WithdrawalsHash = *dec.WithdrawalsHash
+	}
+	if dec.BlobGasUsed != nil {
+		h.BlobGasUsed = uint64(*dec.BlobGasUsed)
+	}
+	if dec.ExcessBlobGas != nil {
+		h.ExcessBlobGas = uint64(*dec.ExcessBlobGas)
+	}
+	if dec.ParentBeaconRoot != nil {
+		h.ParentBeaconRoot = *dec.ParentBeaconRoot
+	}
+	if dec.RequestsHash != nil {
+		h.RequestsHash = *dec.RequestsHash
 	}
 	if dec.CommonTxAdmissionRoot != nil {
 		h.CommonTxAdmissionRoot = *dec.CommonTxAdmissionRoot

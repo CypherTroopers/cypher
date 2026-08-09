@@ -157,4 +157,37 @@ func TestFairHotstuffGenesisCommitmentBindsConsensusConfiguration(t *testing.T) 
 			t.Fatalf("mutation %d did not change the genesis config commitment", index)
 		}
 	}
+
+	zero := uint64(0)
+	modernBase := testFairHotstuffConfig()
+	modernBase.SetModernForkConfig(&ModernForkConfig{
+		BerlinBlock: big.NewInt(0), LondonBlock: big.NewInt(0),
+		ShanghaiTime: &zero, CancunTime: &zero, PragueTime: &zero, OsakaTime: &zero,
+		BlobSchedule: &BlobScheduleConfig{
+			Cancun: &BlobConfig{Target: 3, Max: 6, BaseFeeUpdateFraction: 3338477},
+			Prague: &BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+			Osaka:  &BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+		},
+	})
+	defer modernBase.SetModernForkConfig(nil)
+	modernCommitment, err := FairHotstuffGenesisCommitment(modernBase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modernMutation := *modernBase
+	modernMutation.SetModernForkConfig(&ModernForkConfig{
+		BerlinBlock: big.NewInt(0), LondonBlock: big.NewInt(0),
+		ShanghaiTime: &zero, CancunTime: &zero, PragueTime: &zero, OsakaTime: &zero,
+		BlobSchedule: &BlobScheduleConfig{
+			Cancun: &BlobConfig{Target: 3, Max: 6, BaseFeeUpdateFraction: 3338477},
+			Prague: &BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+			Osaka:  &BlobConfig{Target: 6, Max: 12, BaseFeeUpdateFraction: 5007716},
+		},
+	})
+	defer modernMutation.SetModernForkConfig(nil)
+	if got, err := FairHotstuffGenesisCommitment(&modernMutation); err != nil {
+		t.Fatal(err)
+	} else if got == modernCommitment {
+		t.Fatal("Osaka blob schedule did not change the genesis config commitment")
+	}
 }

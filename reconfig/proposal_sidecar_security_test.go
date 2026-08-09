@@ -66,6 +66,19 @@ func TestProposalSidecarStoreBindsProofAndUsesLocalReceiveTime(t *testing.T) {
 	}
 }
 
+func TestProposalSidecarWireRejectsAboveOsakaBlockLimit(t *testing.T) {
+	body := &proposalBodyMsg{
+		Type:         proposalBodyMsgData,
+		ProposalID:   common.HexToHash("0x01"),
+		From:         "member-0",
+		AuthSig:      []byte{1},
+		EncodedBlock: make([]byte, params.MaxBlockSize+1),
+	}
+	if err := validateProposalBodyWireShape(body); err == nil {
+		t.Fatal("proposal sidecar above the Osaka block limit was accepted")
+	}
+}
+
 func TestProposalSidecarSignatureCoversAllProofFields(t *testing.T) {
 	service, body := testProposalSidecar(t)
 	var secret bls.SecretKey

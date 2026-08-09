@@ -138,6 +138,13 @@ type (
 	touchChange struct {
 		account *common.Address
 	}
+	accessListAddAccountChange struct {
+		address common.Address
+	}
+	accessListAddSlotChange struct {
+		address common.Address
+		slot    common.Hash
+	}
 )
 
 func (ch createObjectChange) revert(s *StateDB) {
@@ -191,6 +198,25 @@ func (ch touchChange) revert(s *StateDB) {
 
 func (ch touchChange) dirtied() *common.Address {
 	return ch.account
+}
+
+func (ch accessListAddAccountChange) revert(s *StateDB) {
+	delete(s.accessList.addresses, ch.address)
+}
+
+func (ch accessListAddAccountChange) dirtied() *common.Address {
+	return nil
+}
+
+func (ch accessListAddSlotChange) revert(s *StateDB) {
+	delete(s.accessList.slots[ch.address], ch.slot)
+	if len(s.accessList.slots[ch.address]) == 0 {
+		delete(s.accessList.slots, ch.address)
+	}
+}
+
+func (ch accessListAddSlotChange) dirtied() *common.Address {
+	return nil
 }
 
 func (ch balanceChange) revert(s *StateDB) {

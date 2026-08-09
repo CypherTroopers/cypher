@@ -20,6 +20,7 @@ package reconfig
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 	"time"
@@ -227,6 +228,10 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 		header := work.header
 		header.KeyHash = txS.kbc.CurrentBlock().Hash()
 		header.BlockType = blockType
+		// Blob gas is a block-body commitment. Derive it from the exact set of
+		// transactions that survived proposal execution instead of leaving the
+		// Cancun header at its zero default.
+		header.BlobGasUsed = core.CalcBlobGasUsed(committedTxes)
 
 		keyBlockNumber := uint64(0)
 		if currentKey := txS.kbc.CurrentBlock(); currentKey != nil {
@@ -245,6 +250,16 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 		encodedBlock := block.EncodeToBytes()
 		if len(encodedBlock) == 0 {
 			return nil, fmt.Errorf("failed to encode tx block proposal")
+		}
+		if txS.config != nil && txS.config.IsOsaka(header.Number, header.Time) {
+			// The FHS direct-child proof is attached only when this proposal is
+			// finalized. Reserve its maximum encoded size now so a locally valid
+			// proposal cannot become an over-8MiB canonical block later.
+			const rlpProofOverhead = 16
+			maxProposalSize := params.MaxBlockSize - types.MaxFHSFinalityProofSize - rlpProofOverhead
+			if len(encodedBlock) > maxProposalSize {
+				return nil, fmt.Errorf("Osaka tx block proposal too large after finality-proof reserve: bytes=%d limit=%d", len(encodedBlock), maxProposalSize)
+			}
 		}
 		if limit := proposalByteLimit(blockType); limit > 0 && len(encodedBlock) > limit {
 			return nil, fmt.Errorf("tx block proposal too large: blockType=%s txs=%d bytes=%d limit=%d", readableTxBlockType(blockType), txCount, len(encodedBlock), limit)
@@ -837,8 +852,17 @@ func (txS *txService) createWork(blockType uint8) *work {
 		GasUsed:    0,
 		Coinbase:   bftview.GetServerCoinBase(),
 		Time:       uint64(tstamp),
-		BaseFee:    big.NewInt(params.FixedBaseFeePerGas),
 	}
+	if txS.config != nil && txS.config.IsLondon(header.Number) {
+		header.BaseFee = big.NewInt(params.FixedBaseFeePerGas)
+	}
+	if txS.config != nil && txS.config.IsShanghai(header.Number, header.Time) {
+		header.WithdrawalsHash = types.EmptyWithdrawalsHash
+	}
+	if txS.config != nil && txS.config.IsPrague(header.Number, header.Time) {
+		header.RequestsHash = types.EmptyRequestsHash
+	}
+	deriveCancunHeaderFields(txS.config, parent.Header(), header)
 	log.Info("createWork", "GasLimit", header.GasLimit)
 	if publicState == nil {
 		var err error
@@ -846,6 +870,12 @@ func (txS *txService) createWork(blockType uint8) *work {
 		if err != nil {
 			panic(fmt.Sprint("failed to get parent state: ", err))
 		}
+	}
+	if err := core.ProcessParentBlockHash(txS.config, header, publicState); err != nil {
+		// The EIP-2935 call is deterministic system work. Continuing with a
+		// partially updated state would create a proposal validators cannot
+		// reproduce, so proposal construction must fail closed.
+		panic(fmt.Sprint("failed to store Prague parent block hash: ", err))
 	}
 
 	gasTarget := blockGasTarget(blockType, header.GasLimit)
@@ -860,7 +890,40 @@ func (txS *txService) createWork(blockType uint8) *work {
 		gasTarget:      gasTarget,
 		resourceBudget: newTxResourceBudget(blockType, gasTarget, pendingTotal),
 		blockType:      blockType,
+		size:           header.Size(),
 	}
+}
+
+// deriveCancunHeaderFields initializes the fields whose values are known before
+// transaction selection. BlobGasUsed is filled from the committed body once
+// proposal execution completes.
+func deriveCancunHeaderFields(config *params.ChainConfig, parent, header *types.Header) {
+	if config == nil || header == nil || header.Number == nil || !config.IsCancun(header.Number, header.Time) {
+		return
+	}
+	header.BlobGasUsed = 0
+	if parent == nil {
+		header.ExcessBlobGas = 0
+		return
+	}
+	header.ExcessBlobGas = params.CalcExcessBlobGasForFork(
+		config.IsOsaka(header.Number, header.Time),
+		parent.ExcessBlobGas,
+		parent.BlobGasUsed,
+		parent.BaseFee,
+		config.ActiveBlobConfig(header.Time),
+	)
+}
+
+func canIncludeBlobGas(config *params.ChainConfig, header *types.Header, tx *types.Transaction) bool {
+	if tx == nil || tx.BlobGas() == 0 {
+		return true
+	}
+	if config == nil || header == nil || header.Number == nil || !config.IsCancun(header.Number, header.Time) {
+		return false
+	}
+	maxBlobGas := params.MaxBlobGasPerBlock(config.ActiveBlobConfig(header.Time))
+	return header.BlobGasUsed <= maxBlobGas && tx.BlobGas() <= maxBlobGas-header.BlobGasUsed
 }
 
 func blockMaxTxCount(blockType uint8) uint64 {
@@ -959,7 +1022,10 @@ func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) 
 
 // Sends-off events asynchronously.
 
-func precheckTxForProposal(st *state.StateDB, header *types.Header, tx *types.Transaction, from common.Address) error {
+func precheckTxForProposal(config *params.ChainConfig, st *state.StateDB, header *types.Header, tx *types.Transaction, from common.Address) error {
+	if st.GetNonce(from) == math.MaxUint64 {
+		return core.ErrNonceMax
+	}
 	if st.GetNonce(from) > tx.Nonce() {
 		return core.ErrNonceTooLow
 	}
@@ -972,12 +1038,52 @@ func precheckTxForProposal(st *state.StateDB, header *types.Header, tx *types.Tr
 	if st.GetBalance(from).Cmp(tx.Cost()) < 0 {
 		return core.ErrInsufficientFunds
 	}
-	intrGas, err := core.IntrinsicGas(tx.Data(), tx.To() == nil)
+	rules := params.Rules{}
+	if config != nil {
+		rules = config.CypheriumRules(header.Number, header.Time)
+	}
+	if err := core.ValidateTxTypeForRules(tx.Type(), rules); err != nil {
+		return err
+	}
+	if tx.Type() == types.BlobTxType {
+		return core.ErrBlobDAUnavailable
+	}
+	if rules.IsLondon {
+		code := st.GetCode(from)
+		_, delegated := types.ParseDelegation(code)
+		if len(code) != 0 && !(rules.IsPrague && delegated) {
+			return core.ErrSenderNoEOA
+		}
+	}
+	if rules.IsOsaka && tx.Gas() > params.MaxTxGas {
+		return core.ErrTxGasLimitExceeded
+	}
+	if rules.IsOsaka && len(tx.BlobHashes()) > params.BlobTxMaxBlobs {
+		return types.ErrBlobTxTooManyBlobs
+	}
+	if tx.Type() == types.SetCodeTxType {
+		if tx.To() == nil {
+			return core.ErrSetCodeTxCreate
+		}
+		if len(tx.SetCodeAuthorizations()) == 0 {
+			return core.ErrEmptyAuthList
+		}
+	}
+	intrGas, err := core.IntrinsicGasWithRulesAndAuthorizations(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, rules)
 	if err != nil {
 		return err
 	}
 	if tx.Gas() < intrGas {
 		return core.ErrIntrinsicGas
+	}
+	if rules.IsPrague {
+		floorDataGas, err := core.FloorDataGas(tx.Data())
+		if err != nil {
+			return err
+		}
+		if tx.Gas() < floorDataGas {
+			return core.ErrFloorDataGas
+		}
 	}
 	return nil
 }
@@ -1127,6 +1233,22 @@ type work struct {
 	gasTarget      uint64
 	resourceBudget *txResourceBudget
 	blockType      uint8
+	size           common.StorageSize
+}
+
+const (
+	osakaBlockSizeBuffer     = common.StorageSize(1_000_000)
+	osakaPerTxBodySizeBuffer = common.StorageSize(512)
+)
+
+func (env *work) txFitsBlockSize(tx *types.Transaction) bool {
+	if env == nil || tx == nil || env.config == nil || env.header == nil || env.header.Number == nil || !env.config.IsOsaka(env.header.Number, env.header.Time) {
+		return true
+	}
+	if params.MaxBlockSize <= uint64(osakaBlockSizeBuffer) {
+		return false
+	}
+	return uint64(env.size+tx.Size()+osakaPerTxBodySizeBuffer) < params.MaxBlockSize-uint64(osakaBlockSizeBuffer)
 }
 
 func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc *core.BlockChain) (types.Transactions, types.Receipts, []*types.Log, types.Transactions) {
@@ -1149,6 +1271,19 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		tx := txes.Peek()
 		if tx == nil {
 			break
+		}
+		if !env.txFitsBlockSize(tx) {
+			log.Debug("Skipping tx above Osaka block size budget", "hash", tx.Hash(), "size", tx.Size(), "selectedSize", env.size, "blockType", env.blockType)
+			txes.Pop()
+			continue
+		}
+		if !canIncludeBlobGas(env.config, env.header, tx) {
+			// Keep the transaction in the pool for a later block, but remove this
+			// account head from the local proposal view so the current proposal
+			// cannot exceed Cancun's block blob-gas limit.
+			log.Debug("Skipping tx above block blob gas limit", "hash", tx.Hash(), "blobGasUsed", env.header.BlobGasUsed, "txBlobGas", tx.BlobGas(), "blockType", env.blockType)
+			txes.Pop()
+			continue
 		}
 		if env.gasTarget > 0 {
 			remainingGas := env.gasTarget - env.header.GasUsed
@@ -1175,7 +1310,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 			applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
 			continue
 		}
-		if err := precheckTxForProposal(env.publicState, env.header, tx, from); err != nil {
+		if err := precheckTxForProposal(env.config, env.publicState, env.header, tx, from); err != nil {
 			action := classifyCommitTxError(err)
 			logFailedTxAction(tx, err, action)
 			applyFailedTxAction(txes, &failedTxes, tx, action)
@@ -1192,6 +1327,10 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		default:
 			txCount++
 			committedTxes = append(committedTxes, tx)
+			// Reserve conservative room for the per-transaction CommonTxAdmission
+			// and CommonTxReward RLP objects attached after execution.
+			env.size += tx.Size() + osakaPerTxBodySizeBuffer
+			env.header.BlobGasUsed += tx.BlobGas()
 			if env.resourceBudget != nil {
 				env.resourceBudget.Record(resourceClass, publicReceipt.GasUsed)
 			}

@@ -487,6 +487,13 @@ func FairHotstuffGenesisCommitment(c *ChainConfig) (common.Hash, error) {
 	normalized := *c
 	normalized.RnetTransport = c.EffectiveRnetTransport()
 	normalized.RnetFallbackTransport = c.EffectiveRnetFallbackTransport()
+	// Modern fork fields live in a pointer-keyed side table so that the legacy
+	// ChainConfig struct remains wire compatible. A value copy therefore loses
+	// them unless the cloned pointer is explicitly registered. Omitting this
+	// step would let two Fair HotStuff nodes retain the same genesis mixHash
+	// while running different Shanghai/Cancun/Prague/Osaka rules.
+	normalized.SetModernForkConfig(c.ModernForkConfig())
+	defer normalized.SetModernForkConfig(nil)
 	encoded, err := json.Marshal(&normalized)
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("encode fairHotstuff genesis config: %w", err)
@@ -901,6 +908,9 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		if !cur.optional || cur.block != nil {
 			lastFork = cur
 		}
+	}
+	if err := c.checkModernForkOrder(); err != nil {
+		return err
 	}
 	return nil
 }

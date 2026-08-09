@@ -95,6 +95,7 @@ type StateDB struct {
 
 	transientStorage transientStorage
 	createdContracts map[common.Address]struct{}
+	accessList       *accessListState
 
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
@@ -133,6 +134,7 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		preimages:           make(map[common.Hash][]byte),
 		transientStorage:    newTransientStorage(),
 		createdContracts:    make(map[common.Address]struct{}),
+		accessList:          newAccessListState(),
 		journal:             newJournal(),
 	}
 	if sdb.snaps != nil {
@@ -175,6 +177,7 @@ func (s *StateDB) Reset(root common.Hash) error {
 	s.preimages = make(map[common.Hash][]byte)
 	s.transientStorage = newTransientStorage()
 	s.createdContracts = make(map[common.Address]struct{})
+	s.accessList = newAccessListState()
 	s.clearJournalAndRefund()
 
 	if s.snaps != nil {
@@ -305,6 +308,18 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 		return common.Hash{}
 	}
 	return common.BytesToHash(stateObject.CodeHash())
+}
+
+// GetStorageRoot retrieves an account's storage root. A missing account has no
+// root; an existing account with empty storage has the canonical empty trie
+// root. CREATE collision checks need to distinguish both from non-empty
+// storage (EIP-7610).
+func (s *StateDB) GetStorageRoot(addr common.Address) common.Hash {
+	stateObject := s.getStateObject(addr)
+	if stateObject == nil {
+		return common.Hash{}
+	}
+	return stateObject.data.Root
 }
 
 // GetState retrieves a value from the given account's storage trie.
@@ -673,6 +688,7 @@ func (s *StateDB) Copy() *StateDB {
 		preimages:           make(map[common.Hash][]byte, len(s.preimages)),
 		transientStorage:    newTransientStorage(),
 		createdContracts:    make(map[common.Address]struct{}, len(s.createdContracts)),
+		accessList:          s.accessList.copy(),
 		journal:             newJournal(),
 	}
 	// Copy the dirty states, logs, and preimages

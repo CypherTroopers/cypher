@@ -37,11 +37,11 @@ import (
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/internal/ethapi"
 	"github.com/cypherium/cypher/log"
+	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
 	"github.com/cypherium/cypher/trie"
-	//"github.com/cypherium/cypher/params"
-	"github.com/cypherium/cypher/reconfig/bftview"
 	"golang.org/x/crypto/ed25519"
 )
 
@@ -49,6 +49,21 @@ import (
 // information.
 type PublicEthereumAPI struct {
 	e *Ethereum
+}
+
+func receiptEffectiveGasPrice(tx *types.Transaction, header *types.Header) *big.Int {
+	price := new(big.Int).Set(tx.GasPrice())
+	switch tx.Type() {
+	case types.DynamicFeeTxType, types.BlobTxType, types.SetCodeTxType:
+		baseFee := big.NewInt(params.FixedBaseFeePerGas)
+		if header != nil && header.BaseFee != nil {
+			baseFee = new(big.Int).Set(header.BaseFee)
+		}
+		if tip, err := tx.EffectiveGasTip(baseFee); err == nil {
+			return new(big.Int).Add(baseFee, tip)
+		}
+	}
+	return price
 }
 
 // NewPublicEthereumAPI creates a new Ethereum protocol API for full nodes.
@@ -179,12 +194,19 @@ func (api *PublicEthereumAPI) rpcTransactionFields(tx *types.Transaction, block 
 		fields["maxPriorityFeePerGas"] = (*hexutil.Big)(tx.GasTipCap())
 		fields["maxFeePerBlobGas"] = (*hexutil.Big)(tx.BlobGasFeeCap())
 		fields["blobVersionedHashes"] = tx.BlobHashes()
+
+	case types.SetCodeTxType:
+		fields["accessList"] = tx.AccessList()
+		fields["maxFeePerGas"] = (*hexutil.Big)(tx.GasFeeCap())
+		fields["maxPriorityFeePerGas"] = (*hexutil.Big)(tx.GasTipCap())
+		fields["authorizationList"] = tx.SetCodeAuthorizations()
 	}
 
 	if block != nil && blockHash != (common.Hash{}) {
 		fields["blockHash"] = blockHash
 		fields["blockNumber"] = (*hexutil.Big)(new(big.Int).SetUint64(blockNumber))
 		fields["transactionIndex"] = hexutil.Uint64(index)
+		fields["gasPrice"] = (*hexutil.Big)(receiptEffectiveGasPrice(tx, header))
 
 		addCommonRPCFields(fields, block, tx.Hash())
 	}
@@ -241,16 +263,7 @@ func (api *PublicEthereumAPI) GetTransactionReceipt(ctx context.Context, hash co
 	signer := types.MakeSignerAutoJudgement(api.e.blockchain.Config(), block.Header().Number, tx.V())
 	from, _ := types.Sender(signer, tx)
 
-	effectiveGasPrice := new(big.Int).Set(tx.GasPrice())
-	if tx.Type() == types.DynamicFeeTxType {
-		baseFee := big.NewInt(1000000000)
-		if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil && headerBaseFee.Sign() > 0 {
-			baseFee = new(big.Int).Set(headerBaseFee)
-		}
-		if tip, tipErr := tx.EffectiveGasTip(baseFee); tipErr == nil {
-			effectiveGasPrice = new(big.Int).Add(new(big.Int).Set(baseFee), tip)
-		}
-	}
+	effectiveGasPrice := receiptEffectiveGasPrice(tx, block.Header())
 
 	fields := map[string]interface{}{
 		"transactionHash": hash,
@@ -280,6 +293,10 @@ func (api *PublicEthereumAPI) GetTransactionReceipt(ctx context.Context, hash co
 
 	if receipt.ContractAddress != (common.Address{}) {
 		fields["contractAddress"] = receipt.ContractAddress
+	}
+	if tx.Type() == types.BlobTxType {
+		fields["blobGasUsed"] = hexutil.Uint64(tx.BlobGas())
+		fields["blobGasPrice"] = (*hexutil.Big)(params.CalcBlobBaseFeeAtTime(api.e.blockchain.Config(), block.Time(), block.Header().ExcessBlobGas))
 	}
 
 	addCommonRPCFields(fields, block, hash)

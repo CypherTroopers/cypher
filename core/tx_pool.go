@@ -554,7 +554,7 @@ func (pool *TxPool) SetGasPrice(price *big.Int) {
 func (pool *TxPool) currentBaseFee() *big.Int {
 	block := pool.chain.CurrentBlock()
 	if block == nil || block.Header() == nil || block.Header().BaseFee == nil || block.Header().BaseFee.Sign() == 0 {
-		return big.NewInt(params.GWei)
+		return big.NewInt(params.FixedBaseFeePerGas)
 	}
 	return new(big.Int).Set(block.Header().BaseFee)
 }
@@ -1044,12 +1044,42 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	if tx.Value().Sign() < 0 {
 		return ErrNegativeValue
 	}
+	rules := params.Rules{}
+	if head := pool.chain.CurrentBlock(); head != nil {
+		header := head.Header()
+		nextNumber := new(big.Int).Add(header.Number, big.NewInt(1))
+		rules = pool.chainconfig.CypheriumRules(nextNumber, header.Time)
+	}
+	if rules.IsOsaka && tx.Gas() > params.MaxTxGas {
+		return ErrTxGasLimitExceeded
+	}
+	if err := ValidateTxTypeForRules(tx.Type(), rules); err != nil {
+		return err
+	}
+	if tx.Type() == types.BlobTxType {
+		return ErrBlobDAUnavailable
+	}
+	if tx.Type() == types.SetCodeTxType {
+		if tx.To() == nil {
+			return ErrSetCodeTxCreate
+		}
+		if len(tx.SetCodeAuthorizations()) == 0 {
+			return ErrEmptyAuthList
+		}
+	}
 	if pool.currentMaxGas < tx.Gas() {
 		return ErrGasLimit
 	}
 	from, err := types.Sender(pool.signer, tx)
 	if err != nil {
 		return ErrInvalidSender
+	}
+	if rules.IsLondon {
+		code := pool.currentState.GetCode(from)
+		_, delegated := types.ParseDelegation(code)
+		if len(code) != 0 && !(rules.IsPrague && delegated) {
+			return ErrSenderNoEOA
+		}
 	}
 	if err := validate1559FeeCaps(tx, pool.currentBaseFee()); err != nil {
 		return err
@@ -1059,6 +1089,9 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	}
 	if pool.currentState.GetNonce(from) > tx.Nonce() {
 		return ErrNonceTooLow
+	}
+	if pool.currentState.GetNonce(from) == math.MaxUint64 {
+		return ErrNonceMax
 	}
 	baseNonce := pool.currentState.GetNonce(from)
 	if pendingNonce := pool.pendingNonces.get(from); pendingNonce > baseNonce {
@@ -1074,12 +1107,21 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	if err := pool.validateBlobTx(tx); err != nil {
 		return err
 	}
-	intrGas, err := IntrinsicGas(tx.Data(), tx.AccessList(), tx.To() == nil)
+	intrGas, err := IntrinsicGasWithRulesAndAuthorizations(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, rules)
 	if err != nil {
 		return err
 	}
 	if tx.Gas() < intrGas {
 		return ErrIntrinsicGas
+	}
+	if rules.IsPrague {
+		floorDataGas, err := FloorDataGas(tx.Data())
+		if err != nil {
+			return err
+		}
+		if tx.Gas() < floorDataGas {
+			return ErrFloorDataGas
+		}
 	}
 	return nil
 }

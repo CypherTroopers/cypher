@@ -22,13 +22,13 @@ func (pool *TxPool) validateBlobTx(tx *types.Transaction) error {
 		if head := pool.chain.CurrentBlock(); head != nil && head.Header() != nil {
 			header := head.Header()
 			if pool.chainconfig != nil {
-				maxBlobs = pool.chainconfig.ActiveBlobConfig(header.Time).Max
+				maxBlobs = params.MaxBlobsPerTransaction(pool.chainconfig, header.Time)
 			}
 			blobBaseFee = params.CalcBlobBaseFeeAtTime(pool.chainconfig, header.Time, header.ExcessBlobGas)
 		}
 	}
 	if maxBlobs == 0 && pool.chainconfig != nil {
-		maxBlobs = pool.chainconfig.ActiveBlobConfig(0).Max
+		maxBlobs = params.MaxBlobsPerTransaction(pool.chainconfig, 0)
 	}
 	return tx.ValidateBlobTx(maxBlobs, blobBaseFee)
 }

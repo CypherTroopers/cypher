@@ -60,13 +60,19 @@ func NewEVMContextWithConfig(config *params.ChainConfig, msg Message, header *ty
 		baseFee = new(big.Int).Set(header.BaseFee)
 	}
 	if (baseFee == nil || baseFee.Sign() == 0) && config != nil && config.IsLondon(header.Number) {
-		baseFee = big.NewInt(params.GWei)
+		baseFee = big.NewInt(params.FixedBaseFeePerGas)
 	}
 	var blobHashes []common.Hash
 	if blobMsg, ok := msg.(blobHashesMessage); ok {
 		blobHashes = blobMsg.BlobHashes()
 	}
 	blobBaseFee := params.CalcBlobBaseFeeAtTime(config, header.Time, header.ExcessBlobGas)
+	gasPrice := new(big.Int).Set(msg.GasPrice())
+	if baseFee != nil {
+		if tip, err := calcEffectiveGasTip(messageGasFeeCap(msg), messageGasTipCap(msg), baseFee); err == nil {
+			gasPrice = calcEffectiveGasPrice(tip, baseFee)
+		}
+	}
 	return vm.Context{
 		CanTransfer: CanTransfer,
 		Transfer:    Transfer,
@@ -80,7 +86,7 @@ func NewEVMContextWithConfig(config *params.ChainConfig, msg Message, header *ty
 		BlobBaseFee: blobBaseFee,
 		BlobHashes:  blobHashes,
 		GasLimit:    header.GasLimit,
-		GasPrice:    new(big.Int).Set(msg.GasPrice()),
+		GasPrice:    gasPrice,
 	}
 }
 

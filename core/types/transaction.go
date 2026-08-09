@@ -335,6 +335,9 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 		default:
 			return errors.New("unsupported transaction type in JSON")
 		}
+		if err := validateTypedIntegerBounds(tx.data); err != nil {
+			return err
+		}
 	}
 	if dec.RouteHint != nil {
 		tx.routeHint = *dec.RouteHint
@@ -393,7 +396,7 @@ func (tx *Transaction) Size() common.StorageSize {
 }
 
 func (tx *Transaction) AsMessage(s Signer) (Message, error) {
-	msg := Message{nonce: tx.Nonce(), gasLimit: tx.Gas(), gasPrice: tx.GasPrice(), gasFeeCap: tx.GasFeeCap(), gasTipCap: tx.GasTipCap(), blobGasFeeCap: tx.BlobGasFeeCap(), blobGas: tx.BlobGas(), to: tx.To(), amount: tx.Value(), data: tx.Data(), accessList: tx.AccessList(), blobHashes: tx.BlobHashes(), checkNonce: true}
+	msg := Message{txType: tx.Type(), nonce: tx.Nonce(), gasLimit: tx.Gas(), gasPrice: tx.GasPrice(), gasFeeCap: tx.GasFeeCap(), gasTipCap: tx.GasTipCap(), blobGasFeeCap: tx.BlobGasFeeCap(), blobGas: tx.BlobGas(), to: tx.To(), amount: tx.Value(), data: tx.Data(), accessList: tx.AccessList(), blobHashes: tx.BlobHashes(), authList: tx.SetCodeAuthorizations(), checkNonce: true}
 	var err error
 	msg.from, err = Sender(s, tx)
 	return msg, err
@@ -420,9 +423,20 @@ func (tx *Transaction) RawSignatureValues() (v, r, s *big.Int) { return tx.data.
 
 type Transactions []*Transaction
 
-func (s Transactions) Len() int            { return len(s) }
-func (s Transactions) Swap(i, j int)       { s[i], s[j] = s[j], s[i] }
-func (s Transactions) GetRlp(i int) []byte { enc, _ := rlp.EncodeToBytes(s[i]); return enc }
+func (s Transactions) Len() int      { return len(s) }
+func (s Transactions) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+
+// GetRlp returns the exact trie-leaf value defined by EIP-2718. Legacy
+// transactions remain an RLP list, while typed transactions must be the raw
+// type || payload envelope and must not receive the extra RLP string wrapper
+// used when they are embedded in a block body.
+func (s Transactions) GetRlp(i int) []byte {
+	enc, err := s[i].MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	return enc
+}
 
 func TxDifference(a, b Transactions) Transactions {
 	keep := make(Transactions, 0, len(a))
@@ -508,6 +522,7 @@ func (t *TransactionsByPriceAndNonce) Shift() {
 func (t *TransactionsByPriceAndNonce) Pop() { heap.Pop(&t.heads) }
 
 type Message struct {
+	txType        uint8
 	to            *common.Address
 	from          common.Address
 	nonce         uint64
@@ -521,6 +536,7 @@ type Message struct {
 	data          []byte
 	accessList    AccessList
 	blobHashes    []common.Hash
+	authList      []SetCodeAuthorization
 	checkNonce    bool
 }
 
@@ -561,6 +577,25 @@ func NewMessageWithFeeFields(from common.Address, to *common.Address, nonce uint
 	return msg
 }
 
+// NewMessageWithModernFields constructs a call message with the additional
+// EIP-4844 and EIP-7702 fields used by eth_call and estimateGas. Transaction
+// execution obtains the same fields through Transaction.AsMessage.
+func NewMessageWithModernFields(txType uint8, from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice, gasFeeCap, gasTipCap, blobGasFeeCap *big.Int, data []byte, accessList AccessList, blobHashes []common.Hash, authList []SetCodeAuthorization, checkNonce bool) Message {
+	msg := NewMessageWithFeeFields(from, to, nonce, amount, gasLimit, gasPrice, gasFeeCap, gasTipCap, data, accessList, checkNonce)
+	msg.txType = txType
+	if txType == SetCodeTxType {
+		msg.authList = copyAuthorizationList(authList)
+	}
+	if txType == BlobTxType {
+		if blobGasFeeCap != nil {
+			msg.blobGasFeeCap = new(big.Int).Set(blobGasFeeCap)
+		}
+		msg.blobHashes = copyHashList(blobHashes)
+		msg.blobGas = uint64(len(blobHashes)) * params.BlobTxBlobGasPerBlob
+	}
+	return msg
+}
+
 func (m Message) From() common.Address { return m.from }
 func (m Message) To() *common.Address  { return m.to }
 func (m Message) GasPrice() *big.Int   { return m.gasPrice }
@@ -585,8 +620,12 @@ func (m Message) BlobGasFeeCap() *big.Int {
 func (m Message) BlobGas() uint64           { return m.blobGas }
 func (m Message) AccessList() AccessList    { return copyAccessList(m.accessList) }
 func (m Message) BlobHashes() []common.Hash { return copyHashList(m.blobHashes) }
-func (m Message) Value() *big.Int           { return m.amount }
-func (m Message) Gas() uint64               { return m.gasLimit }
-func (m Message) Nonce() uint64             { return m.nonce }
-func (m Message) Data() []byte              { return m.data }
-func (m Message) CheckNonce() bool          { return m.checkNonce }
+func (m Message) Type() uint8               { return m.txType }
+func (m Message) SetCodeAuthorizations() []SetCodeAuthorization {
+	return copyAuthorizationList(m.authList)
+}
+func (m Message) Value() *big.Int  { return m.amount }
+func (m Message) Gas() uint64      { return m.gasLimit }
+func (m Message) Nonce() uint64    { return m.nonce }
+func (m Message) Data() []byte     { return m.data }
+func (m Message) CheckNonce() bool { return m.checkNonce }

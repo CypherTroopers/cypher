@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/params"
 )
 
@@ -79,14 +80,21 @@ func TestCypheriumModernForkConfigDecoding(t *testing.T) {
 	if !cfg.IsCancun(big.NewInt(0), 0) {
 		t.Fatal("Cancun must be active at genesis timestamp for genesis.json")
 	}
-	if cfg.IsPrague(big.NewInt(0), 0) {
-		t.Fatal("Prague must remain disabled for genesis.json")
+	if !cfg.IsPrague(big.NewInt(0), 0) {
+		t.Fatal("Prague must be active at genesis timestamp for genesis.json")
 	}
-	if cfg.IsOsaka(big.NewInt(0), 0) {
-		t.Fatal("Osaka must remain disabled for genesis.json")
+	if !cfg.IsOsaka(big.NewInt(0), 0) {
+		t.Fatal("Osaka must be active at genesis timestamp for genesis.json")
 	}
 	modern := cfg.ModernForkConfig()
-	if modern == nil || modern.BlobSchedule == nil || modern.BlobSchedule.Cancun == nil {
-		t.Fatal("blobSchedule.cancun must be decoded and preserved")
+	if modern == nil || modern.BlobSchedule == nil || modern.BlobSchedule.Cancun == nil || modern.BlobSchedule.Prague == nil || modern.BlobSchedule.Osaka == nil {
+		t.Fatal("Cancun, Prague and Osaka blob schedules must be decoded and preserved")
+	}
+	block := genesis.ToBlock(nil)
+	if block.Header().WithdrawalsHash != types.EmptyWithdrawalsHash {
+		t.Fatalf("genesis withdrawals root = %s, want %s", block.Header().WithdrawalsHash, types.EmptyWithdrawalsHash)
+	}
+	if block.Header().RequestsHash != types.EmptyRequestsHash {
+		t.Fatalf("genesis requests hash = %s, want %s", block.Header().RequestsHash, types.EmptyRequestsHash)
 	}
 }

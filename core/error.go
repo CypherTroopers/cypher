@@ -45,6 +45,14 @@ var (
 	// next one expected based on the local chain.
 	ErrNonceTooHigh = errors.New("nonce too high")
 
+	// ErrNonceMax is returned when executing a transaction would wrap the
+	// sender's uint64 account nonce.
+	ErrNonceMax = errors.New("nonce has max value")
+
+	// ErrSenderNoEOA implements EIP-3607. Prague delegation designators are the
+	// only executable code permitted on a transaction sender account.
+	ErrSenderNoEOA = errors.New("sender not an eoa")
+
 	// ErrGasLimitReached is returned by the gas pool if the amount of gas required
 	// by a transaction is higher than what's left in the block.
 	ErrGasLimitReached = errors.New("gas limit reached")
@@ -64,6 +72,18 @@ var (
 	// than required to start the invocation.
 	ErrIntrinsicGas = errors.New("intrinsic gas too low")
 
+	// ErrFloorDataGas is returned when a Prague transaction's gas limit cannot
+	// cover the EIP-7623 calldata floor.
+	ErrFloorDataGas = errors.New("gas limit below calldata floor")
+
+	// ErrTxGasLimitExceeded is returned when an Osaka transaction exceeds the
+	// protocol-wide per-transaction gas cap.
+	ErrTxGasLimitExceeded = errors.New("transaction gas limit exceeds protocol maximum")
+
+	// ErrMaxInitCodeSizeExceeded is returned when Shanghai initcode exceeds
+	// the EIP-3860 limit.
+	ErrMaxInitCodeSizeExceeded = errors.New("max initcode size exceeded")
+
 	// ErrGasFeeCapTooLow is returned if maxFeePerGas is lower than block baseFee.
 	ErrGasFeeCapTooLow = errors.New("max fee per gas less than block base fee")
 
@@ -73,6 +93,23 @@ var (
 	// ErrBlobFeeCapTooLow is returned if maxFeePerBlobGas is lower than blob base fee.
 	ErrBlobFeeCapTooLow = errors.New("max fee per blob gas less than blob base fee")
 
+	// ErrBlobDAUnavailable rejects BlobTxs until ColossusX has an authenticated
+	// blob-sidecar propagation and persistence path. Accepting only the versioned
+	// hashes would let a block become canonical without its data being available.
+	ErrBlobDAUnavailable = errors.New("blob transaction data availability is unavailable in ColossusX")
+
+	// ErrTxTypeNotSupported is returned when a typed transaction is used before
+	// the fork which introduces it.
+	ErrTxTypeNotSupported = errors.New("transaction type not supported at this fork")
+
+	// ErrSetCodeTxCreate is returned when an EIP-7702 transaction attempts
+	// contract creation instead of calling an existing address.
+	ErrSetCodeTxCreate = errors.New("set code transaction cannot create a contract")
+
+	// ErrEmptyAuthList is returned when an EIP-7702 transaction has no
+	// authorization tuples.
+	ErrEmptyAuthList = errors.New("set code transaction authorization list is empty")
+
 	// ErrTipVeryHigh is returned if maxPriorityFeePerGas exceeds 2^256-1.
 	ErrTipVeryHigh = errors.New("max priority fee per gas higher than 2^256-1")
 
@@ -81,4 +118,15 @@ var (
 
 	// ErrAbortBlocksProcessing is returned if bc.insertChain is interrupted under raft mode
 	ErrAbortBlocksProcessing = errors.New("abort during blocks processing")
+)
+
+// EIP-7702 authorization errors are informational while processing an
+// authorization list. Invalid tuples are skipped without aborting the
+// enclosing transaction.
+var (
+	ErrAuthorizationWrongChainID       = errors.New("EIP-7702 authorization chain ID mismatch")
+	ErrAuthorizationNonceOverflow      = errors.New("EIP-7702 authorization nonce > 64 bit")
+	ErrAuthorizationInvalidSignature   = errors.New("EIP-7702 authorization has invalid signature")
+	ErrAuthorizationDestinationHasCode = errors.New("EIP-7702 authorization destination is a contract")
+	ErrAuthorizationNonceMismatch      = errors.New("EIP-7702 authorization nonce does not match current account nonce")
 )

@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
@@ -80,5 +81,45 @@ func TestTxPoolValidateBlobTxHelper(t *testing.T) {
 	missingFeeCap := newTxpoolBlobTx(t, []common.Hash{txpoolBlobTestHash(1)}, nil)
 	if err := pool.validateBlobTx(missingFeeCap); err != types.ErrBlobTxInvalidFeeCap {
 		t.Fatalf("expected invalid blob fee cap, got %v", err)
+	}
+}
+
+func TestTxPoolRejectsBlobTxWithoutDA(t *testing.T) {
+	cfg := blobGasTestConfig(0)
+	pool := &TxPool{
+		chainconfig: cfg,
+		chain: txPoolPriceTestChain{block: types.NewBlockWithHeader(&types.Header{
+			Number: big.NewInt(0),
+			Time:   0,
+		})},
+	}
+	tx := newTxpoolBlobTx(t, []common.Hash{txpoolBlobTestHash(1)}, big.NewInt(2))
+	if err := pool.validateTx(tx, true); !errors.Is(err, ErrBlobDAUnavailable) {
+		t.Fatalf("error = %v, want %v", err, ErrBlobDAUnavailable)
+	}
+}
+
+func TestTxPoolRejectsMoreThanSixBlobsAtOsaka(t *testing.T) {
+	zero := uint64(0)
+	cfg := &params.ChainConfig{}
+	cfg.SetModernForkConfig(&params.ModernForkConfig{
+		BerlinBlock: big.NewInt(0),
+		LondonBlock: big.NewInt(0),
+		CancunTime:  &zero,
+		PragueTime:  &zero,
+		OsakaTime:   &zero,
+		BlobSchedule: &params.BlobScheduleConfig{
+			Cancun: &params.BlobConfig{Target: 3, Max: 6, BaseFeeUpdateFraction: 3338477},
+			Prague: &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+			Osaka:  &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+		},
+	})
+	pool := &TxPool{chainconfig: cfg}
+	hashes := make([]common.Hash, params.BlobTxMaxBlobs+1)
+	for i := range hashes {
+		hashes[i] = txpoolBlobTestHash(byte(i + 1))
+	}
+	if err := pool.validateBlobTx(newTxpoolBlobTx(t, hashes, big.NewInt(1))); err != types.ErrBlobTxTooManyBlobs {
+		t.Fatalf("error = %v, want %v", err, types.ErrBlobTxTooManyBlobs)
 	}
 }
