@@ -442,6 +442,27 @@ func (s *Service) GetPublicKey(keyHash common.Hash) ([]*bls.PublicKey, error) {
 	return append([]*bls.PublicKey(nil), publicKeys...), nil
 }
 
+// FHSLeaderPublicKey resolves the exact historical address-to-BLS-key binding
+// used to authenticate a self-contained QC broadcast after volatile views have
+// been lost. Looking up by key hash prevents a later committee from
+// reinterpreting an older certificate.
+func (s *Service) FHSLeaderPublicKey(keyHash common.Hash, leaderID string) (*bls.PublicKey, error) {
+	committee := s.kbc.GetCommitteeByHash(keyHash)
+	if len(committee) == 0 {
+		return nil, fmt.Errorf("missing historical committee for key hash %s", keyHash)
+	}
+	for _, node := range committee {
+		if node != nil && node.Address == leaderID {
+			public := bftview.StrToBlsPubKey(node.Public)
+			if public == nil {
+				return nil, fmt.Errorf("invalid BLS key for historical leader %s", leaderID)
+			}
+			return public, nil
+		}
+	}
+	return nil, fmt.Errorf("leader %s is not in historical committee %s", leaderID, keyHash)
+}
+
 // Self call by hotstuff
 func (s *Service) Self() string {
 	return s.netService.serverID
@@ -835,6 +856,13 @@ func (s *Service) highestFHSCertifiedProposal() *core.VerifiedProposal {
 	return s.fhsHighest.verified
 }
 
+func fhsProposalParentNumber(canonical uint64, highest *core.VerifiedProposal) uint64 {
+	if highest != nil && highest.Block != nil && highest.Block.NumberU64() > canonical {
+		return highest.Block.NumberU64()
+	}
+	return canonical
+}
+
 func (s *Service) getFHSCertifiedVerified(hash common.Hash) *core.VerifiedProposal {
 	s.muProposalBody.RLock()
 	defer s.muProposalBody.RUnlock()
@@ -888,63 +916,196 @@ func (s *Service) validateFHSProposalParent(ref *types.HotstuffProposalRef, pare
 }
 
 func (s *Service) OnCertified(cert *hotstuff.SignedState) error {
-	return s.adoptFHSHighQC(cert, true)
+	// Replica path: the originating leader owns the durable dissemination
+	// outbox. A receiver persists/adopts the QC, but must not claim it as a
+	// locally replayable leader broadcast.
+	if err := s.adoptFHSHighQC(cert, false, false); err != nil {
+		return err
+	}
+	return s.finishFHSCertification(cert)
+}
+
+func (s *Service) OnFHSLeaderCertifiedBeforeBroadcast(cert *hotstuff.SignedState) error {
+	return s.adoptFHSHighQC(cert, false, true)
+}
+
+func (s *Service) OnFHSLeaderCertifiedAfterBroadcast(cert *hotstuff.SignedState) error {
+	return s.finishFHSCertification(cert)
+}
+
+func (s *Service) finishFHSCertification(cert *hotstuff.SignedState) error {
+	if err := s.commitFHS2ChainForCertified(cert); err != nil {
+		return err
+	}
+	s.pacetMakerTimer.start()
+	s.sendNewViewMsg(cert.Number)
+	return nil
 }
 
 func (s *Service) needsFHSFinalityBlock() bool {
 	if !s.fairHotstuffEnabled() {
 		return false
 	}
+	currentKeyHash := common.Hash{}
+	if currentKey := s.kbc.CurrentBlock(); currentKey != nil {
+		currentKeyHash = currentKey.Hash()
+	}
 	s.muProposalBody.RLock()
 	defer s.muProposalBody.RUnlock()
-	for _, certified := range s.fhsCertifiedByHash {
+	return fhsNeedsFinalityBlock(s.fhsCertifiedByHash, currentKeyHash, s.isCanonicalFHSBlock)
+}
+
+// fhsNeedsFinalityBlock reports whether the certified frontier still needs a
+// child proposal before it can reach 2-chain finality. An empty transaction
+// block normally does not justify producing another empty block. The exception
+// is an empty block certified under the previous key epoch: after its parent
+// key block commits, one child under the new key is required to finish the
+// handoff. Once that child is certified, its KeyHash matches currentKeyHash and
+// the empty chain stops growing.
+func fhsNeedsFinalityBlock(certifiedByHash map[common.Hash]*fhsCertifiedProposal, currentKeyHash common.Hash, isCommitted func(*types.Block) bool) bool {
+	for _, certified := range certifiedByHash {
 		if certified == nil || certified.verified == nil || certified.verified.Block == nil {
 			continue
 		}
 		block := certified.verified.Block
-		if s.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+		if isCommitted != nil && isCommitted(block) {
 			continue
 		}
-		if block.BlockType() == types.Key_Block || len(block.Transactions()) > 0 {
+		if block.BlockType() == types.Key_Block || len(block.Transactions()) > 0 || block.KeyHash() != currentKeyHash {
 			return true
 		}
 	}
 	return false
 }
 
-func fhs2ChainCommitTarget(certifiedByHash map[common.Hash]*fhsCertifiedProposal, proposal *types.HotstuffProposalRef) *fhsCertifiedProposal {
-	if proposal == nil {
-		return nil
+func (s *Service) isCanonicalFHSBlock(block *types.Block) bool {
+	if block == nil {
+		return false
 	}
-	parent := certifiedByHash[proposal.ParentHash]
-	if parent == nil || parent.ref == nil || parent.qc == nil {
-		return nil
-	}
-	first := certifiedByHash[parent.ref.ParentHash]
-	if first == nil || first.ref == nil || first.qc == nil {
-		return nil
-	}
-	if first.ref.BlockHash != parent.ref.ParentHash || first.qc.Number+1 != parent.qc.Number {
-		return nil
-	}
-	return first
+	hash := block.Hash()
+	number := block.NumberU64()
+	return s.bc.GetCanonicalHash(number) == hash && s.bc.HasBlockAndState(hash, number)
 }
 
-func (s *Service) commitFHS2ChainForProposal(ref *types.HotstuffProposalRef) error {
-	if ref == nil {
-		return fmt.Errorf("nil FHS proposal ref")
+func fhsHasUncommittedKeyBlock(certifiedByHash map[common.Hash]*fhsCertifiedProposal, isCommitted func(*types.Block) bool) bool {
+	return fhsHasConflictingUncommittedKeyBlock(certifiedByHash, nil, isCommitted)
+}
+
+func fhsHasConflictingUncommittedKeyBlock(certifiedByHash map[common.Hash]*fhsCertifiedProposal, candidate *types.Block, isCommitted func(*types.Block) bool) bool {
+	for _, certified := range certifiedByHash {
+		if certified == nil || certified.verified == nil || certified.verified.Block == nil {
+			continue
+		}
+		block := certified.verified.Block
+		if block.BlockType() == types.Key_Block && !isCommitted(block) && (candidate == nil || candidate.Hash() != block.Hash()) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) hasConflictingUncommittedFHSKeyBlock(candidate *types.Block) bool {
+	if !s.fairHotstuffEnabled() || candidate == nil || candidate.BlockType() != types.Key_Block {
+		return false
 	}
 	s.muProposalBody.RLock()
-	target := fhs2ChainCommitTarget(s.fhsCertifiedByHash, ref)
+	defer s.muProposalBody.RUnlock()
+	return fhsHasConflictingUncommittedKeyBlock(s.fhsCertifiedByHash, candidate, s.isCanonicalFHSBlock)
+}
+
+// hasUncommittedFHSKeyBlock reports whether the certified pipeline already
+// contains a key-block transition which has not reached 2-chain finality yet.
+// Building another key block on the still-canonical key head would create a
+// competing key block at the same height and make historical QC verification
+// depend on which sibling happened to be installed last.
+func (s *Service) hasUncommittedFHSKeyBlock() bool {
+	if !s.fairHotstuffEnabled() {
+		return false
+	}
+	s.muProposalBody.RLock()
+	defer s.muProposalBody.RUnlock()
+	return fhsHasUncommittedKeyBlock(s.fhsCertifiedByHash, s.isCanonicalFHSBlock)
+}
+
+func fhs2ChainCommitTarget(certifiedByHash map[common.Hash]*fhsCertifiedProposal, tip *fhsCertifiedProposal) *fhsCertifiedProposal {
+	if tip == nil || tip.ref == nil || tip.qc == nil {
+		return nil
+	}
+	parent := certifiedByHash[tip.ref.ParentHash]
+	if parent == nil || parent.ref == nil || parent.qc == nil || parent.ref.BlockHash != tip.ref.ParentHash {
+		return nil
+	}
+	if tip.ref.Number != parent.ref.Number+1 || tip.qc.Number <= parent.qc.Number {
+		return nil
+	}
+	return parent
+}
+
+// preflightFHSCommitStep validates one independently finalizable parent/child
+// pair before any epoch-local WAL or pacemaker state is changed. Callers run it
+// immediately before each sequential commit so a preceding key carrier can
+// advance the effective key head for the next step in a recovered prefix.
+func (s *Service) preflightFHSCommitStep(target, child *fhsCertifiedProposal) (*types.KeyBlock, error) {
+	if target == nil || target.ref == nil || target.verified == nil || target.verified.Block == nil || child == nil || child.qc == nil {
+		return nil, fmt.Errorf("incomplete FHS 2-chain commit proof")
+	}
+	block := target.verified.Block
+	if err := s.bc.VerifyFHS2ChainCommitProof(block, child.qc); err != nil {
+		return nil, fmt.Errorf("invalid Fair HotStuff 2-chain commit proof: %w", err)
+	}
+	if block.BlockType() != types.Key_Block {
+		return nil, nil
+	}
+	keyBlock := types.DecodeToKeyBlock(block.KeyInfo())
+	if keyBlock == nil || block.NumberU64() == 0 {
+		return nil, fmt.Errorf("invalid FHS key-block transition %s", target.ref.BlockHash)
+	}
+	if block.KeyHash() != keyBlock.ParentHash() {
+		return nil, fmt.Errorf("FHS key-block carrier key hash mismatch: block=%s keyHash=%s keyParent=%s", block.Hash(), block.KeyHash(), keyBlock.ParentHash())
+	}
+	if err := verifyKeyBlockCarrierParent(keyBlock, block.NumberU64()-1); err != nil {
+		return nil, fmt.Errorf("invalid FHS key-block carrier: %w", err)
+	}
+	currentKey := s.kbc.CurrentBlock()
+	if currentKey != nil && currentKey.Hash() == keyBlock.Hash() {
+		// A proof-aware sync/import may have atomically committed this exact
+		// carrier after the service built its certified-prefix snapshot. Treat
+		// the transition as idempotent only when the transaction target is also
+		// the exact canonical block; a key-only match is not sufficient.
+		if s.bc.GetCanonicalHash(block.NumberU64()) != block.Hash() || !s.bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+			return nil, fmt.Errorf("FHS key transition is current without its canonical carrier: key=%s carrier=%s", keyBlock.Hash(), block.Hash())
+		}
+	} else if err := s.kbc.ValidateKeyBlockForCanonicalInsert(keyBlock); err != nil {
+		return nil, fmt.Errorf("invalid FHS canonical key transition: %w", err)
+	}
+	return keyBlock, nil
+}
+
+func (s *Service) commitFHS2ChainForCertified(qc *hotstuff.SignedState) error {
+	if qc == nil {
+		return fmt.Errorf("nil certified FHS state")
+	}
+	ref, err := types.DecodeHotstuffProposalRef(qc.State)
+	if err != nil {
+		return err
+	}
+	s.muProposalBody.RLock()
+	tip := s.fhsCertifiedByHash[ref.BlockHash]
+	target := fhs2ChainCommitTarget(s.fhsCertifiedByHash, tip)
 	if target == nil {
 		s.muProposalBody.RUnlock()
 		return nil
 	}
 
+	type commitStep struct {
+		target *fhsCertifiedProposal
+		child  *fhsCertifiedProposal
+	}
 	currentHash := s.bc.CurrentBlock().Hash()
-	chain := make([]*fhsCertifiedProposal, 0, 2)
+	chain := make([]commitStep, 0, 2)
+	child := tip
 	for cursor := target; cursor != nil && cursor.ref.BlockHash != currentHash; cursor = s.fhsCertifiedByHash[cursor.ref.ParentHash] {
-		chain = append(chain, cursor)
+		chain = append(chain, commitStep{target: cursor, child: child})
 		if cursor.ref.ParentHash == currentHash {
 			break
 		}
@@ -952,15 +1113,40 @@ func (s *Service) commitFHS2ChainForProposal(ref *types.HotstuffProposalRef) err
 			s.muProposalBody.RUnlock()
 			return fmt.Errorf("FHS commit prefix missing certified ancestor %s", cursor.ref.ParentHash)
 		}
+		child = cursor
 	}
 	s.muProposalBody.RUnlock()
 
 	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
 		chain[i], chain[j] = chain[j], chain[i]
 	}
-	for _, certified := range chain {
-		if err := s.txService.decideVerifiedProposal(certified.ref, certified.verified, certified.qc.Sign, certified.qc.Mask, certified.qc.Number, certified.qc.ViewID, certified.qc.LeaderID); err != nil {
+	for _, step := range chain {
+		certified := step.target
+		keyBlock, err := s.preflightFHSCommitStep(certified, step.child)
+		if err != nil {
 			return err
+		}
+		if keyBlock != nil {
+			if err := s.rotateFHSEpochSafety(keyBlock.Hash()); err != nil {
+				return fmt.Errorf("rotate FHS epoch safety before key-block commit: %w", err)
+			}
+			// The timeout proof was committee-specific and has just been rotated
+			// out of WAL. Normalize immediately, even if the canonical DB write
+			// below transiently fails, so replicas do not retain different local
+			// old-epoch TC heights while retrying the same common proof.
+			if err := s.normalizeFHSEpochView(qc, s.kbc.CurrentBlock()); err != nil {
+				return fmt.Errorf("prepare FHS epoch view normalization: %w", err)
+			}
+		}
+		if err := s.txService.decideFHSVerifiedProposal(certified.ref, certified.verified, certified.qc, step.child.qc); err != nil {
+			return err
+		}
+		if keyBlock != nil {
+			// The key head and committee are now canonical. Apply the same QC base
+			// to that exact new key context before any later commit step can fail.
+			if err := s.normalizeFHSEpochView(qc, s.kbc.CurrentBlock()); err != nil {
+				return fmt.Errorf("complete FHS epoch view normalization: %w", err)
+			}
 		}
 		proposalID := certified.ref.ProposalID()
 		s.muProposalBody.Lock()
@@ -973,9 +1159,94 @@ func (s *Service) commitFHS2ChainForProposal(ref *types.HotstuffProposalRef) err
 			"number", certified.ref.Number,
 			"view", certified.qc.Number,
 			"hash", certified.ref.BlockHash,
-			"trigger", ref.BlockHash)
+			"trigger", tip.ref.BlockHash,
+			"triggerView", tip.qc.Number)
 	}
 	return nil
+}
+
+// normalizeFHSEpochView gives every replica the same numeric pacemaker base
+// after a key epoch transition. A replica may have observed a valid higher TC
+// from the old epoch while another replica missed it; retaining those local
+// maxima would split their NewView target numbers. The child QC that finalized
+// the transition is common proof, so its view is the deterministic new base.
+// LastVote remains durable and still rejects a conflicting same-view proposal;
+// replicas with a higher old-epoch vote advance together through new-epoch TCs.
+func (s *Service) normalizeFHSEpochView(qc *hotstuff.SignedState, keyBlock *types.KeyBlock) error {
+	if qc == nil || keyBlock == nil {
+		return fmt.Errorf("missing FHS epoch normalization proof")
+	}
+	ref, err := types.DecodeHotstuffProposalRef(qc.State)
+	if err != nil {
+		return err
+	}
+	if ref.ChainID != s.ChainID() || ref.ViewNumber != qc.Number || ref.ViewID != qc.ViewID || ref.LeaderID != qc.LeaderID {
+		return fmt.Errorf("FHS epoch normalization QC context mismatch")
+	}
+	s.muCurrentView.Lock()
+	s.currentView.TxNumber = ref.Number
+	s.currentView.TxHash = ref.BlockHash
+	s.currentView.KeyNumber = keyBlock.NumberU64()
+	s.currentView.KeyHash = keyBlock.Hash()
+	s.currentView.CommitteeHash = keyBlock.CommitteeHash()
+	s.currentView.ViewNumber = qc.Number
+	s.currentView.Round = 0
+	s.currentView.NoDone = true
+	s.currentView.LeaderIndex = s.fairHotstuffLeaderIndexForCurrentLocked()
+	s.waittingView.TxNumber = ref.Number
+	s.waittingView.KeyNumber = keyBlock.NumberU64()
+	s.muCurrentView.Unlock()
+	if s.protocolMng != nil {
+		s.protocolMng.ScheduleFHSEpochReset()
+	}
+	return nil
+}
+
+// beforeFHSFinalizedSyncKeyCommit rotates only committee-scoped timeout data
+// after core has verified the complete direct-child finality proof, but before
+// the synced key carrier becomes canonical. LastVote and HighestQC remain as
+// global safety watermarks.
+func (s *Service) beforeFHSFinalizedSyncKeyCommit(block *types.Block, childQC *hotstuff.SignedState) error {
+	if block == nil || block.BlockType() != types.Key_Block || childQC == nil {
+		return fmt.Errorf("incomplete Fair HotStuff synced key transition")
+	}
+	keyBlock := types.DecodeToKeyBlock(block.KeyInfo())
+	if keyBlock == nil {
+		return fmt.Errorf("invalid Fair HotStuff synced key carrier")
+	}
+	current := s.kbc.CurrentBlock()
+	if current == nil {
+		return fmt.Errorf("missing canonical key head before Fair HotStuff sync transition")
+	}
+	if current.Hash() != keyBlock.Hash() || current.NumberU64() != keyBlock.NumberU64() {
+		if keyBlock.NumberU64() != current.NumberU64()+1 || keyBlock.ParentHash() != current.Hash() {
+			return fmt.Errorf("non-contiguous Fair HotStuff synced key transition: current=%d/%s next=%d/%s parent=%s",
+				current.NumberU64(), current.Hash(), keyBlock.NumberU64(), keyBlock.Hash(), keyBlock.ParentHash())
+		}
+	}
+	return s.rotateFHSEpochSafety(keyBlock.Hash())
+}
+
+// afterFHSFinalizedSyncCommit runs after every proof-aware full-sync commit.
+// First it advances the durable watermark to the exact canonical block's own
+// QC. A key carrier additionally installs the common child-QC pacemaker base
+// for the newly active epoch.
+func (s *Service) afterFHSFinalizedSyncCommit(block *types.Block, ownQC, childQC *hotstuff.SignedState) error {
+	if block == nil || ownQC == nil || childQC == nil {
+		return fmt.Errorf("incomplete committed Fair HotStuff sync transition")
+	}
+	if err := s.reconcileFHSCanonicalQCWatermark(block, ownQC); err != nil {
+		return fmt.Errorf("reconcile canonical Fair HotStuff QC watermark: %w", err)
+	}
+	if block.BlockType() != types.Key_Block {
+		return nil
+	}
+	expected := types.DecodeToKeyBlock(block.KeyInfo())
+	current := s.kbc.CurrentBlock()
+	if expected == nil || current == nil || current.NumberU64() != expected.NumberU64() || current.Hash() != expected.Hash() {
+		return fmt.Errorf("Fair HotStuff synced key head was not installed exactly")
+	}
+	return s.normalizeFHSEpochView(childQC, current)
 }
 
 func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash, leaderID string, encodedBlock, extra []byte) ([]byte, error) {
@@ -1310,17 +1581,18 @@ func (s *Service) OnPropose(state []byte, extra []byte, viewNumber uint64, paren
 		if kblock == nil {
 			return fmt.Errorf("Block's extra (keyblock) is error format!")
 		}
-		if err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(extra)); err != nil {
+		if s.hasConflictingUncommittedFHSKeyBlock(block) {
+			return fmt.Errorf("reject competing key block while a certified key transition is uncommitted: proposal=%s", block.Hash())
+		}
+		if block.NumberU64() == 0 {
+			return fmt.Errorf("key block carrier cannot be transaction genesis")
+		}
+		if err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(extra), block.NumberU64()-1); err != nil {
 			log.Error("verify keyblock", "number", kblock.NumberU64(), "proposalID", proposalID, "err", err)
 			return err
 		}
 	}
 	s.storeVerifiedProposal(proposalID, verified)
-	if s.fairHotstuffEnabled() {
-		if err := s.commitFHS2ChainForProposal(ref); err != nil {
-			return err
-		}
-	}
 	s.pacetMakerTimer.start()
 	return nil
 }
@@ -1397,9 +1669,16 @@ func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string
 			"currentTx", s.bc.CurrentBlockN(),
 			"currentKey", s.kbc.CurrentBlockN())
 	}
+	if keyProposal && s.hasUncommittedFHSKeyBlock() {
+		keyProposal = false
+		log.Info("FHS keyblock proposal suppressed until certified keyblock finalizes",
+			"currentTx", s.bc.CurrentBlockN(),
+			"currentKey", s.kbc.CurrentBlockN())
+	}
 
 	if keyProposal && keyBlockIntervalElapsed {
-		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone)
+		txParentNumber := fhsProposalParentNumber(s.bc.CurrentBlockN(), s.highestFHSCertifiedProposal())
+		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone, txParentNumber)
 		if err == nil && keyblock != nil && mb != nil {
 			if bestCandi != nil {
 				extra = bestCandi.EncodeToBytes()
@@ -2646,6 +2925,10 @@ func (s *Service) sendNewViewMsg(curN uint64) {
 	curView := s.GetCurrentView()
 	if s.fairHotstuffEnabled() {
 		curN = curView.ViewNumber
+		// A leader-created QC remains in a durable outbox until a higher QC
+		// proves quorum dissemination. Replay it before every new-view attempt;
+		// outbound coalescing prevents duplicate queue growth.
+		s.replayPendingFHSQCBroadcast()
 	}
 	viewHash := curView.ConsensusHash()
 
@@ -2882,22 +3165,25 @@ func (s *Service) start(config *common.NodeConfig) error {
 		if config.Coinbase != "" {
 			bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
 		}
-		isCommitteeMember := bftview.IamMember() >= 0
-		if isCommitteeMember {
+		if bftview.IamMember() >= 0 {
 			s.updateCommittee(nil)
 		}
-		// Common PoW miners are deliberately outside the BFT committee. They
-		// still call miner.start, but must not start a validator transport or
-		// participate in HotStuff. Treat that role as a successful no-op so
-		// the caller can start PoW mining without hiding genuine start errors.
-		if s.fairHotstuffEnabled() && !isCommitteeMember {
-			s.updateCurrentView(nil, nil, false)
-			log.Info("Fair HotStuff service remains stopped for non-committee miner",
-				"address", s.netService.serverAddress,
-				"coinbase", config.Coinbase)
-			return nil
+		s.updateCurrentView(nil, nil, false)
+		if err := s.loadFHSWAL(); err != nil {
+			return fmt.Errorf("restore Fair HotStuff safety state: %w", err)
 		}
 		if s.fairHotstuffEnabled() {
+			// WAL replay can complete a certified key-block parent and therefore
+			// change the active committee. Determine the local role and configure
+			// peer authentication only after that recovery is complete.
+			isCommitteeMember := bftview.IamMember() >= 0
+			if !isCommitteeMember {
+				log.Info("Fair HotStuff service remains stopped for non-committee miner",
+					"address", s.netService.serverAddress,
+					"coinbase", config.Coinbase)
+				return nil
+			}
+			s.updateCommittee(nil)
 			peers, err := activeFHSAuthorizedPeers(bftview.GetCurrentMember())
 			if err != nil {
 				return err
@@ -2907,12 +3193,9 @@ func (s *Service) start(config *common.NodeConfig) error {
 			}
 			s.netService.setAuthenticatedPeerKeys(peers)
 		}
-		s.updateCurrentView(nil, nil, false)
-		if err := s.loadFHSWAL(); err != nil {
-			return fmt.Errorf("restore Fair HotStuff safety state: %w", err)
-		}
 		s.setRunState(1)
 		s.netService.StartStop(true)
+		s.replayPendingFHSQCBroadcast()
 		if bftview.IamMember() >= 0 {
 			s.pacetMakerTimer.start()
 			if s.fairHotstuffEnabled() && s.hasPendingFHSTimeoutVote() {

@@ -60,7 +60,27 @@ func (pm *ProtocolManager) syncTransactions(p *peer) {
 	if len(txs) == 0 {
 		return
 	}
-	// Out of luck, peer is running legacy protocols, drop the txs over
+	pm.scheduleInitialTransactionSync(p, txs)
+}
+
+// scheduleInitialTransactionSync selects the initial transaction exchange
+// mechanism negotiated with a peer. Modern peers receive hash announcements;
+// only legacy eth/64 peers may enter txsyncLoop64.
+func (pm *ProtocolManager) scheduleInitialTransactionSync(p *peer, txs types.Transactions) {
+	// eth/65 and newer exchange pooled transaction hashes and let the receiver
+	// request the transactions it is missing. Feeding such a peer into the
+	// legacy txsyncLoop64 is a programming error and deliberately panics in that
+	// loop, so route modern peers to the announcement queue here.
+	if p.version >= eth65 {
+		hashes := make([]common.Hash, len(txs))
+		for i, tx := range txs {
+			hashes[i] = tx.Hash()
+		}
+		p.AsyncSendPooledTransactionHashes(hashes)
+		return
+	}
+	// Legacy eth/64 peers receive full transactions through the serialized
+	// initial-sync loop.
 	select {
 	case pm.txsyncCh <- &txsync{p: p, txs: txs}:
 	case <-pm.quitSync:

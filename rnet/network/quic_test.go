@@ -21,17 +21,23 @@ type authenticatedQUICStub struct {
 	peerAddress string
 	peerKey     []byte
 	closed      bool
+	sendErr     error
+	sendBytes   uint64
+	sendCount   int
 }
 
-func (stub *authenticatedQUICStub) Send(Message) (uint64, error) { return 0, errors.New("unused") }
-func (stub *authenticatedQUICStub) Receive() (*Envelope, error)  { return nil, errors.New("unused") }
-func (stub *authenticatedQUICStub) Close() error                 { stub.closed = true; return nil }
-func (stub *authenticatedQUICStub) IsClosed() bool               { return stub.closed }
-func (stub *authenticatedQUICStub) Type() ConnType               { return PlainQUIC }
-func (stub *authenticatedQUICStub) Remote() Address              { return NewQUICAddress(stub.peerAddress) }
-func (stub *authenticatedQUICStub) Local() Address               { return NewQUICAddress("127.0.0.1:7101") }
-func (stub *authenticatedQUICStub) Tx() uint64                   { return 0 }
-func (stub *authenticatedQUICStub) Rx() uint64                   { return 0 }
+func (stub *authenticatedQUICStub) Send(Message) (uint64, error) {
+	stub.sendCount++
+	return stub.sendBytes, stub.sendErr
+}
+func (stub *authenticatedQUICStub) Receive() (*Envelope, error) { return nil, errors.New("unused") }
+func (stub *authenticatedQUICStub) Close() error                { stub.closed = true; return nil }
+func (stub *authenticatedQUICStub) IsClosed() bool              { return stub.closed }
+func (stub *authenticatedQUICStub) Type() ConnType              { return PlainQUIC }
+func (stub *authenticatedQUICStub) Remote() Address             { return NewQUICAddress(stub.peerAddress) }
+func (stub *authenticatedQUICStub) Local() Address              { return NewQUICAddress("127.0.0.1:7101") }
+func (stub *authenticatedQUICStub) Tx() uint64                  { return 0 }
+func (stub *authenticatedQUICStub) Rx() uint64                  { return 0 }
 func (stub *authenticatedQUICStub) AuthenticatedPeer() (string, []byte, bool) {
 	return stub.peerAddress, append([]byte(nil), stub.peerKey...), true
 }
@@ -600,21 +606,73 @@ func TestRouterRegistrationRechecksAuthorizationAndCapsPeerConnections(t *testin
 	if err := router.registerConnection(remote, attacker); err == nil {
 		t.Fatal("connection authenticated with a non-authorized BLS key was registered")
 	}
+	registered := make([]*authenticatedQUICStub, 0, maxAuthenticatedConnectionsPerPeer)
 	for index := 0; index < maxAuthenticatedConnectionsPerPeer; index++ {
 		conn := &authenticatedQUICStub{peerAddress: peerAddress, peerKey: peerPublic.Serialize()}
 		if err := router.registerConnection(remote, conn); err != nil {
 			t.Fatalf("authorized connection %d rejected: %v", index, err)
 		}
+		registered = append(registered, conn)
 	}
 	extra := &authenticatedQUICStub{peerAddress: peerAddress, peerKey: peerPublic.Serialize()}
 	if err := router.registerConnection(remote, extra); err == nil {
 		t.Fatal("per-peer authenticated connection cap was not enforced")
 	}
+	if err := registered[0].Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := router.registerConnection(remote, extra); err != nil {
+		t.Fatalf("closed connection awaiting handler cleanup consumed peer cap: %v", err)
+	}
+	overflow := &authenticatedQUICStub{peerAddress: peerAddress, peerKey: peerPublic.Serialize()}
+	if err := router.registerConnection(remote, overflow); err == nil {
+		t.Fatal("replacement allowed more than the live per-peer connection cap")
+	}
 
 	spoofed := *remote
 	spoofed.ID = NewServerIdentityWithTransport("127.0.0.1:7999", PlainQUIC).ID
-	if err := router.registerConnection(&spoofed, extra); err == nil {
+	if err := router.registerConnection(&spoofed, overflow); err == nil {
 		t.Fatal("ServerIdentity ID/address mismatch was registered")
+	}
+}
+
+func TestRouterSendRetriesExistingConnectionBeforeDial(t *testing.T) {
+	_, peerPublic := newQUICAuthTestKey(t)
+	const peerAddress = "127.0.0.1:7102"
+	remote := NewServerIdentityWithTransport(peerAddress, PlainQUIC)
+	remote.PublicKey = peerPublic.Serialize()
+	failed := &authenticatedQUICStub{
+		peerAddress: peerAddress,
+		peerKey:     peerPublic.Serialize(),
+		sendErr:     ErrUnknown,
+	}
+	alternate := &authenticatedQUICStub{
+		peerAddress: peerAddress,
+		peerKey:     peerPublic.Serialize(),
+		sendBytes:   17,
+	}
+	router := &Router{
+		ServerIdentity: NewServerIdentityWithTransport("127.0.0.1:7101", PlainQUIC),
+		connections: map[ServerIdentityID][]Conn{
+			remote.ID: {failed, alternate},
+		},
+		sendsMap:           make(map[ServerIdentityID]int),
+		peerAuthConfigured: true,
+		authorizedPeers:    map[string][]byte{peerAddress: peerPublic.Serialize()},
+	}
+
+	sent, err := router.Send(remote, &quicClassifiedTestMessage{Class: uint32(NetClassHotstuffControl)}, false)
+	if err != nil {
+		t.Fatalf("send did not recover through the second registered connection: %v", err)
+	}
+	if sent != alternate.sendBytes {
+		t.Fatalf("sent bytes = %d, want %d", sent, alternate.sendBytes)
+	}
+	if !failed.closed || failed.sendCount != 1 {
+		t.Fatalf("failed connection was not retired exactly once: closed=%v sends=%d", failed.closed, failed.sendCount)
+	}
+	if alternate.sendCount != 1 || alternate.closed {
+		t.Fatalf("alternate connection was not used exactly once: closed=%v sends=%d", alternate.closed, alternate.sendCount)
 	}
 }
 

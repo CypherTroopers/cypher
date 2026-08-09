@@ -327,14 +327,24 @@ func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64
 	totSentLen += sentLen
 	if err != nil {
 		log.Warn("Send msg try again", "address", r.address, "Couldn't send to", e, "error", err)
-		c, sentLen, err := r.connect(e)
-		totSentLen += sentLen
-		if err != nil {
-			return totSentLen, err
+		// Retire the failed connection before choosing a retry path. A peer can
+		// legitimately have both an inbound and an outbound authenticated
+		// connection. Try the other already-authenticated connection first; dialing
+		// immediately here used to hit the per-peer cap while the failed connection
+		// was still awaiting handleConn cleanup, causing an endless reconnect loop.
+		_ = c.Close()
+		c = r.connectionExcept(e, c)
+		if c == nil {
+			c, sentLen, err = r.connect(e)
+			totSentLen += sentLen
+			if err != nil {
+				return totSentLen, err
+			}
 		}
 		sentLen, err = c.Send(msg)
 		totSentLen += sentLen
 		if err != nil {
+			_ = c.Close()
 			return totSentLen, err
 		}
 	}
@@ -478,6 +488,14 @@ func (r *Router) handleConn(remote *ServerIdentity, c Conn) {
 // connection returns the first connection associated with this ServerIdentity.
 // If no connection is found, it returns nil.
 func (r *Router) connection(expected *ServerIdentity) Conn {
+	return r.connectionExcept(expected, nil)
+}
+
+// connectionExcept returns a live connection matching expected, excluding a
+// connection which has just failed a send. Connection removal is owned by the
+// corresponding handleConn goroutine, so closed entries can briefly remain in
+// the router map and must be skipped here.
+func (r *Router) connectionExcept(expected *ServerIdentity, excluded Conn) Conn {
 	if expected == nil {
 		return nil
 	}
@@ -493,6 +511,9 @@ func (r *Router) connection(expected *ServerIdentity) Conn {
 		return nil
 	}
 	for _, conn := range arr {
+		if conn == nil || conn == excluded || conn.IsClosed() {
+			continue
+		}
 		if authenticated, ok := conn.(AuthenticatedConn); ok {
 			address, publicKey, available := authenticated.AuthenticatedPeer()
 			if !available || address != expected.Address.String() || !bytes.Equal(publicKey, expected.PublicKey) {
@@ -536,7 +557,13 @@ func (r *Router) registerConnection(remote *ServerIdentity, c Conn) error {
 			!bytes.Equal(publicKey, expectedKey) || !bytes.Equal(remote.PublicKey, expectedKey) {
 			return fmt.Errorf("connection peer is not in the current authorization set")
 		}
-		if len(r.connections[remote.ID]) >= maxAuthenticatedConnectionsPerPeer {
+		activeConnections := 0
+		for _, existing := range r.connections[remote.ID] {
+			if existing != nil && !existing.IsClosed() {
+				activeConnections++
+			}
+		}
+		if activeConnections >= maxAuthenticatedConnectionsPerPeer {
 			return fmt.Errorf("too many authenticated connections for peer %s", remote.Address)
 		}
 	}

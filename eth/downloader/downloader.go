@@ -851,7 +851,11 @@ func (d *Downloader) findAncestor(p *peerConnection, remoteHeader *types.Header)
 				var known bool
 				switch mode {
 				case FullSync:
-					known = d.blockchain.HasBlock(h, n)
+					// Raw FHS blocks can exist without a direct-child finality proof
+					// (including after a crash between data and head writes). A common
+					// ancestor must be canonical, not merely present in the database.
+					canonical := d.blockchain.GetBlockByNumber(n)
+					known = canonical != nil && canonical.Hash() == h
 				case FastSync:
 					known = d.blockchain.HasFastBlock(h, n)
 				default:
@@ -943,7 +947,8 @@ func (d *Downloader) findAncestor(p *peerConnection, remoteHeader *types.Header)
 				var known bool
 				switch mode {
 				case FullSync:
-					known = d.blockchain.HasBlock(h, n)
+					canonical := d.blockchain.GetBlockByNumber(n)
+					known = canonical != nil && canonical.Hash() == h
 				case FastSync:
 					known = d.blockchain.HasFastBlock(h, n)
 				default:

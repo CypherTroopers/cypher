@@ -201,6 +201,48 @@ func TestFHSPrepareUsesHistoricalCommitteeForParentQC(t *testing.T) {
 	}
 }
 
+func TestStandaloneFHSQCBroadcastSurvivesLostView(t *testing.T) {
+	fixture := newFHSParentQCFixture(t, true)
+	certified := 0
+	fixture.app.onCertified = func(got *SignedState) error {
+		certified++
+		if !SignedStateSemanticEqual(got, fixture.parentQC) {
+			t.Fatalf("standalone QC = %#v, want parent QC", got)
+		}
+		return nil
+	}
+	// Deliberately leave manager.views empty to model a full process restart.
+	msg := &HotstuffMessage{
+		Code:   MsgQCBroadcast,
+		Number: fixture.parentQC.Number,
+		ViewId: fixture.parentQC.ViewID,
+		Id:     fixture.parentQC.LeaderID,
+		// The original view may also have proposed a key state. Its aggregate
+		// signature is unrelated to the self-contained transaction QC below,
+		// but remains part of the authenticated QCBroadcast envelope.
+		DataA: []byte("optional-key-state-aggregate-signature"),
+		DataB: append([]byte(nil), fixture.parentQC.Sign...),
+		DataC: append([]byte(nil), fixture.parentQC.Mask...),
+		DataD: append([]byte(nil), fixture.parentQC.State...),
+	}
+	if err := fixture.manager.handleQCBroadcastMsg(msg); err != nil {
+		t.Fatal(err)
+	}
+	if certified != 1 {
+		t.Fatalf("OnCertified calls = %d, want 1", certified)
+	}
+
+	tampered := *msg
+	tampered.DataD = append([]byte(nil), msg.DataD...)
+	tampered.DataD[len(tampered.DataD)-1] ^= 1
+	if err := fixture.manager.handleQCBroadcastMsg(&tampered); err == nil {
+		t.Fatal("tampered standalone QC state was accepted")
+	}
+	if certified != 1 {
+		t.Fatalf("tampered QC changed certification count to %d", certified)
+	}
+}
+
 func TestFHSParentQCMissingHistoricalCommitteeFailsClosed(t *testing.T) {
 	fixture := newFHSParentQCFixture(t, false)
 

@@ -10,20 +10,21 @@ import (
 )
 
 type recoveryTestApp struct {
-	self             string
-	writes           []*HotstuffMessage
-	broadcasts       []*HotstuffMessage
-	viewDone         func(*SignedState) error
-	onCertified      func(*SignedState) error
-	onNewView        func([]byte, [][]byte) error
-	highest          *SignedState
-	fhs              bool
-	publicKeys       []*bls.PublicKey
-	publicKeysByHash map[common.Hash][]*bls.PublicKey
-	keyLookups       []common.Hash
-	validateState    []byte
-	validateLeader   string
-	validateNumber   uint64
+	self                string
+	writes              []*HotstuffMessage
+	broadcasts          []*HotstuffMessage
+	viewDone            func(*SignedState) error
+	onCertified         func(*SignedState) error
+	onNewView           func([]byte, [][]byte) error
+	highest             *SignedState
+	fhs                 bool
+	publicKeys          []*bls.PublicKey
+	publicKeysByHash    map[common.Hash][]*bls.PublicKey
+	keyLookups          []common.Hash
+	validateState       []byte
+	validateLeader      string
+	validateNumber      uint64
+	certificationEvents []string
 }
 
 func (a *recoveryTestApp) Self() string { return a.self }
@@ -32,6 +33,7 @@ func (a *recoveryTestApp) Write(_ string, msg *HotstuffMessage) error {
 	return nil
 }
 func (a *recoveryTestApp) Broadcast(msg *HotstuffMessage) []error {
+	a.certificationEvents = append(a.certificationEvents, "broadcast")
 	a.broadcasts = append(a.broadcasts, msg)
 	return nil
 }
@@ -60,6 +62,14 @@ func (a *recoveryTestApp) OnCertified(state *SignedState) error {
 	if a.onCertified != nil {
 		return a.onCertified(state)
 	}
+	return nil
+}
+func (a *recoveryTestApp) OnFHSLeaderCertifiedBeforeBroadcast(state *SignedState) error {
+	a.certificationEvents = append(a.certificationEvents, "before")
+	return a.OnCertified(state)
+}
+func (a *recoveryTestApp) OnFHSLeaderCertifiedAfterBroadcast(*SignedState) error {
+	a.certificationEvents = append(a.certificationEvents, "after")
 	return nil
 }
 func (a *recoveryTestApp) OnViewDone(state *SignedState) error {
@@ -195,6 +205,39 @@ func TestRecoveryRebroadcastsFinalizedMessages(t *testing.T) {
 	}
 	if len(app.broadcasts) != 3 || app.broadcasts[0] != prepare || app.broadcasts[1] != qcBroadcast || app.broadcasts[2] != decide {
 		t.Fatalf("final recovery broadcasts = %v, want Prepare then QCBroadcast then Decide", app.broadcasts)
+	}
+}
+
+func TestFHSFinalizedRecoveryRetainsOnlySelfContainedQC(t *testing.T) {
+	app := &recoveryTestApp{self: "leader", fhs: true}
+	manager := NewHotstuffProtocolManager(app, nil, nil)
+	viewID := common.HexToHash("0xf102")
+	prepare := &HotstuffMessage{Code: MsgPrepare, Number: 2, ViewId: viewID}
+	qcBroadcast := &HotstuffMessage{Code: MsgQCBroadcast, Number: 2, ViewId: viewID}
+	view := &View{
+		hash:      viewID,
+		number:    2,
+		leaderMsg: map[uint64]*HotstuffMessage{MsgPrepare: prepare, MsgQCBroadcast: qcBroadcast},
+	}
+
+	manager.cacheFinalizedRecovery(view, nil)
+	entry := manager.finalized[viewID]
+	if entry == nil {
+		t.Fatal("FHS finalized recovery entry was not cached")
+	}
+	if entry.prepare != nil {
+		t.Fatal("FHS finalized recovery retained stale Prepare")
+	}
+	if entry.qcBroadcast != qcBroadcast {
+		t.Fatal("FHS finalized recovery did not retain self-contained QCBroadcast")
+	}
+
+	entry.lastSentAt = time.Now().Add(-hotstuffRecoveryInterval)
+	if err := manager.handleTimerMsg(1); err != nil {
+		t.Fatal(err)
+	}
+	if len(app.broadcasts) != 1 || app.broadcasts[0] != qcBroadcast {
+		t.Fatalf("FHS finalized recovery broadcasts = %v, want only QCBroadcast", app.broadcasts)
 	}
 }
 
@@ -484,9 +527,46 @@ func TestFHSLeaderBroadcastsPrepareQCWithoutDecide(t *testing.T) {
 	if _, ok := view.leaderMsg[MsgDecide]; ok {
 		t.Fatal("leader generated same-view MsgDecide in FHS mode")
 	}
+	if got := app.certificationEvents; len(got) < 3 || got[len(got)-3] != "before" || got[len(got)-2] != "broadcast" || got[len(got)-1] != "after" {
+		t.Fatalf("leader QC lifecycle order = %v, want before/broadcast/after", got)
+	}
 	for _, msg := range app.broadcasts {
 		if msg.Code == MsgDecide {
 			t.Fatal("leader broadcast same-view MsgDecide in FHS mode")
 		}
+	}
+}
+
+func TestFHSEpochResetClearsOnlyVolatileProtocolState(t *testing.T) {
+	app := &recoveryTestApp{}
+	manager := NewHotstuffProtocolManager(app, nil, nil)
+	viewID := common.HexToHash("0xe001")
+	view := &View{hash: viewID, number: 29}
+	manager.views[viewID] = view
+	manager.leaderView = view
+	msgID := common.HexToHash("0xe002")
+	manager.unhandledMsg[msgID] = &HotstuffMessage{Code: MsgQCBroadcast, Number: 29}
+	manager.unhandledSize[msgID] = 128
+	manager.unhandledBytes = 128
+	manager.pendingNewView[viewID] = map[string]*HotstuffMessage{"member": {Code: MsgNewView}}
+	manager.finalized[viewID] = &finalizedRecovery{number: 29}
+	manager.timeoutVotes[viewID] = map[int]*bls.Sign{0: {}}
+	manager.timeoutEchoed[viewID] = true
+	manager.timeoutQC[viewID] = &TimeoutCertificate{}
+	manager.timeoutSeen[viewID] = time.Now()
+	manager.timeoutView[viewID] = 29
+
+	manager.ScheduleFHSEpochReset()
+	if !manager.applyScheduledFHSEpochReset() {
+		t.Fatal("scheduled epoch reset was not applied")
+	}
+	if len(manager.views) != 0 || manager.leaderView != nil || len(manager.unhandledMsg) != 0 ||
+		len(manager.unhandledSize) != 0 || manager.unhandledBytes != 0 || len(manager.pendingNewView) != 0 ||
+		len(manager.finalized) != 0 || len(manager.timeoutVotes) != 0 || len(manager.timeoutEchoed) != 0 ||
+		len(manager.timeoutQC) != 0 || len(manager.timeoutSeen) != 0 || len(manager.timeoutView) != 0 {
+		t.Fatal("epoch reset retained old volatile protocol state")
+	}
+	if manager.applyScheduledFHSEpochReset() {
+		t.Fatal("epoch reset applied twice")
 	}
 }

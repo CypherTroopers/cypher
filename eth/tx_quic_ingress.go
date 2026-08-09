@@ -38,8 +38,8 @@ import (
 )
 
 const (
-	txQUICProtocolName = "cypher-tx-quic/1"
-	txQUICPacketV1     = uint(1)
+	txQUICProtocolName = "cypher-tx-quic/2"
+	txQUICPacketV2     = uint(2)
 
 	txQUICForwardIdleTimeout     = 60 * time.Second
 	txQUICForwardKeepAlivePeriod = 10 * time.Second
@@ -88,12 +88,105 @@ type txQUICSigningData struct {
 }
 
 type txQUICAck struct {
-	Version   uint
-	Accepted  uint64
-	Rejected  uint64
-	Forwarded uint64
-	Errors    []string
-	Hashes    []common.Hash
+	Version            uint
+	Accepted           uint64
+	Rejected           uint64
+	Forwarded          uint64
+	Errors             []string
+	Hashes             []common.Hash
+	AcceptedTx         uint64
+	RejectedTx         uint64
+	AcceptedAdmission  uint64
+	RejectedAdmission  uint64
+	TransactionRejects []txQUICTransactionReject
+}
+
+const (
+	txQUICRejectPermanent uint = 1
+	txQUICRejectRetryable uint = 2
+)
+
+// txQUICTransactionReject is a machine-readable transaction-pool result. The
+// sender uses Class to distinguish an invalid transaction from a temporary
+// node-local condition that may succeed at another committee endpoint.
+type txQUICTransactionReject struct {
+	Hash   common.Hash
+	Reason string
+	Class  uint
+}
+
+type txQUICAckExpectation struct {
+	txHashes   []common.Hash
+	admissions uint64
+}
+
+func newTxQUICAckExpectation(txs []*types.Transaction, admissions []*types.CommonTxAdmission) txQUICAckExpectation {
+	expectation := txQUICAckExpectation{txHashes: make([]common.Hash, 0, len(txs))}
+	for _, tx := range txs {
+		if tx != nil {
+			expectation.txHashes = append(expectation.txHashes, tx.Hash())
+		}
+	}
+	for _, admission := range admissions {
+		if admission != nil {
+			expectation.admissions++
+		}
+	}
+	return expectation
+}
+
+func txQUICAckExpectationFromPayload(payload []byte) (txQUICAckExpectation, error) {
+	var packet txQUICPacket
+	if err := rlp.DecodeBytes(payload, &packet); err == nil && len(packet.Items) > 0 {
+		if packet.Version != txQUICPacketV2 {
+			return txQUICAckExpectation{}, fmt.Errorf("unsupported txquic packet version %d", packet.Version)
+		}
+		txs, admissions, err := packetItemsToTxsAndAdmissions(&packet)
+		if err != nil {
+			return txQUICAckExpectation{}, err
+		}
+		return newTxQUICAckExpectation(txs, admissions), nil
+	}
+	var batch []*types.Transaction
+	if err := rlp.DecodeBytes(payload, &batch); err == nil && len(batch) > 0 {
+		return newTxQUICAckExpectation(batch, nil), nil
+	}
+	var single types.Transaction
+	if err := rlp.DecodeBytes(payload, &single); err != nil {
+		return txQUICAckExpectation{}, fmt.Errorf("decode outbound txquic expectation: %w", err)
+	}
+	return newTxQUICAckExpectation([]*types.Transaction{&single}, nil), nil
+}
+
+type txQUICRemoteRejectError struct {
+	endpoint string
+	rejects  []txQUICTransactionReject
+}
+
+func (e *txQUICRemoteRejectError) Error() string {
+	if e == nil {
+		return "txquic remote transaction rejected"
+	}
+	reasons := make([]string, 0, len(e.rejects))
+	for _, reject := range e.rejects {
+		reasons = append(reasons, fmt.Sprintf("%s: %s", reject.Hash, reject.Reason))
+	}
+	return fmt.Sprintf("txquic remote transaction rejected by %s: %s", e.endpoint, strings.Join(reasons, "; "))
+}
+
+// Retryable reports whether every rejected transaction failed for a temporary
+// reason. A mixed batch is deliberately not retried forever because at least
+// one transaction can never make the exact-batch acknowledgement succeed.
+func (e *txQUICRemoteRejectError) Retryable() bool {
+	if e == nil || len(e.rejects) == 0 {
+		return false
+	}
+	for _, reject := range e.rejects {
+		if reject.Class != txQUICRejectRetryable {
+			return false
+		}
+	}
+	return true
 }
 
 type txQUICBridgeItem struct {
@@ -408,12 +501,15 @@ func (q *TxQUICIngress) EnqueueLocalTxsWithAdmissions(ctx context.Context, txs [
 	return nil
 }
 
-func (q *TxQUICIngress) SendLocalTxsWithAdmissionsSync(txs []*types.Transaction, admissions []*types.CommonTxAdmission, am *accounts.Manager) error {
+func (q *TxQUICIngress) SendLocalTxsWithAdmissionsSync(ctx context.Context, txs []*types.Transaction, admissions []*types.CommonTxAdmission, am *accounts.Manager) error {
 	if q == nil {
 		return fmt.Errorf("txquic ingress is nil")
 	}
 	if !q.config.BridgeEnabled {
 		return fmt.Errorf("txquic bridge is not enabled")
+	}
+	if !q.config.Ack {
+		return fmt.Errorf("txquic synchronous forwarding requires acknowledgements")
 	}
 	if len(txs) == 0 {
 		return fmt.Errorf("no txs to forward")
@@ -424,7 +520,7 @@ func (q *TxQUICIngress) SendLocalTxsWithAdmissionsSync(txs []*types.Transaction,
 		return err
 	}
 
-	endpoint, err := q.forwardPayloadSync(payload)
+	endpoint, err := q.forwardPayloadSync(ctx, payload)
 	if err != nil {
 		return fmt.Errorf("txquic sync forward failed: txs=%d admissions=%d err=%w", len(txs), len(admissions), err)
 	}
@@ -434,7 +530,7 @@ func (q *TxQUICIngress) SendLocalTxsWithAdmissionsSync(txs []*types.Transaction,
 	return nil
 }
 
-func (q *TxQUICIngress) forwardPayloadSync(payload []byte) (string, error) {
+func (q *TxQUICIngress) forwardPayloadSync(ctx context.Context, payload []byte) (string, error) {
 	mode := strings.ToLower(q.config.RoutingMode)
 	if mode == "local" || mode == "" {
 		return "", fmt.Errorf("txquic sync forward has no remote endpoints in routing mode %q", q.config.RoutingMode)
@@ -454,7 +550,16 @@ func (q *TxQUICIngress) forwardPayloadSync(payload []byte) (string, error) {
 		if endpoint == "" {
 			continue
 		}
-		if err := q.forwardPayload(endpoint, payload); err != nil {
+		if err := q.forwardPayloadContext(ctx, endpoint, payload); err != nil {
+			var rejected *txQUICRemoteRejectError
+			if errors.As(err, &rejected) {
+				if !rejected.Retryable() {
+					return "", rejected
+				}
+				errs = append(errs, fmt.Sprintf("%s: %v", endpoint, rejected))
+				log.Debug("TxQUIC sync endpoint temporarily rejected transaction", "endpoint", endpoint, "err", rejected)
+				continue
+			}
 			errs = append(errs, fmt.Sprintf("%s: %v", endpoint, err))
 			log.Debug("TxQUIC sync forward failed", "endpoint", endpoint, "err", err)
 			continue
@@ -584,7 +689,13 @@ func (q *TxQUICIngress) forwardBridgeBatchUntilDelivered(txs []*types.Transactio
 		return
 	}
 	for {
-		if forwarded, requiredDelivered := q.routeBridgePayload(payload); requiredDelivered {
+		forwarded, requiredDelivered, rejectErr := q.routeBridgePayload(payload)
+		if rejectErr != nil {
+			log.Error("TxQUIC bridge batch rejected permanently", "txs", len(txs), "admissions", len(admissions), "err", rejectErr)
+			txQUICIngressRejectedMeter.Mark(int64(len(txs)))
+			return
+		}
+		if requiredDelivered {
 			txQUICIngressForwardMeter.Mark(int64(forwarded))
 			log.Debug("TxQUIC bridge forwarded tx batch", "txs", len(txs), "admissions", len(admissions), "forwarded", forwarded)
 			return
@@ -609,7 +720,12 @@ func (q *TxQUICIngress) forwardAdmissionBatch(admissions []*types.CommonTxAdmiss
 	}
 	backoff := 50 * time.Millisecond
 	for {
-		if forwarded, requiredDelivered := q.routeBridgePayload(payload); requiredDelivered {
+		forwarded, requiredDelivered, rejectErr := q.routeBridgePayload(payload)
+		if rejectErr != nil {
+			log.Error("TxQUIC admission batch rejected permanently", "admissions", len(admissions), "err", rejectErr)
+			return
+		}
+		if requiredDelivered {
 			txQUICIngressForwardMeter.Mark(int64(forwarded))
 			log.Debug("TxQUIC bridge forwarded admission batch", "admissions", len(admissions), "forwarded", forwarded)
 			return
@@ -707,7 +823,7 @@ func (q *TxQUICIngress) encodeTxPayloadWithAdmissionValidation(txs []*types.Tran
 	}
 
 	pkt := &txQUICPacket{
-		Version:   txQUICPacketV1,
+		Version:   txQUICPacketV2,
 		Sender:    sender,
 		Nonce:     atomic.AddUint64(&q.outboundNonce, 1),
 		Timestamp: uint64(time.Now().Unix()),
@@ -754,7 +870,7 @@ func (q *TxQUICIngress) encodeAdmissionPayload(admissions []*types.CommonTxAdmis
 		return nil, fmt.Errorf("no valid admissions to forward")
 	}
 	pkt := &txQUICPacket{
-		Version:   txQUICPacketV1,
+		Version:   txQUICPacketV2,
 		Nonce:     atomic.AddUint64(&q.outboundNonce, 1),
 		Timestamp: uint64(time.Now().Unix()),
 		Items:     items,
@@ -841,7 +957,7 @@ func (q *TxQUICIngress) handleConn(conn *quic.Conn) {
 func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 	defer q.wg.Done()
 	defer stream.Close()
-	ack := txQUICAck{Version: txQUICPacketV1}
+	ack := txQUICAck{Version: txQUICPacketV2}
 	_ = stream.SetReadDeadline(time.Now().Add(q.config.ReadTimeout))
 	payload, err := io.ReadAll(io.LimitReader(stream, q.config.MaxPayload+1))
 	if err != nil {
@@ -884,11 +1000,16 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 	}
 	forwarded := q.routePayload(payload)
 	acceptedAdmission, rejectedAdmission := q.insertAdmissions(admissions)
-	acceptedTx, rejectedTx, hashes := q.insertLocal(txs)
+	acceptedTx, rejectedTx, hashes, txRejects := q.insertLocal(txs)
 	ack.Forwarded = uint64(forwarded)
 	ack.Accepted = uint64(acceptedTx + acceptedAdmission)
 	ack.Rejected = uint64(rejectedTx + rejectedAdmission)
 	ack.Hashes = hashes
+	ack.AcceptedTx = uint64(acceptedTx)
+	ack.RejectedTx = uint64(rejectedTx)
+	ack.AcceptedAdmission = uint64(acceptedAdmission)
+	ack.RejectedAdmission = uint64(rejectedAdmission)
+	ack.TransactionRejects = txRejects
 	if ack.Accepted > 0 {
 		txQUICIngressAcceptedMeter.Mark(int64(ack.Accepted))
 	}
@@ -898,7 +1019,7 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 	if ack.Forwarded > 0 {
 		txQUICIngressForwardMeter.Mark(int64(ack.Forwarded))
 	}
-	log.Debug("QUIC ingress processed", "remote", remote, "signed", signed, "signer", signer, "txs", len(txs), "admissions", len(admissions), "accepted", ack.Accepted, "rejected", ack.Rejected, "forwarded", ack.Forwarded)
+	log.Debug("QUIC ingress processed", "remote", remote, "signed", signed, "signer", signer, "txs", len(txs), "admissions", len(admissions), "acceptedTx", ack.AcceptedTx, "rejectedTx", ack.RejectedTx, "acceptedAdmissions", ack.AcceptedAdmission, "rejectedAdmissions", ack.RejectedAdmission, "forwarded", ack.Forwarded, "txRejects", ack.TransactionRejects)
 	q.writeAck(stream, ack)
 }
 
@@ -909,37 +1030,107 @@ func txQUICRateUnits(txs, admissions int) int {
 	return admissions
 }
 
-func (q *TxQUICIngress) insertLocal(txs []*types.Transaction) (int, int, []common.Hash) {
+func (q *TxQUICIngress) insertLocal(txs []*types.Transaction) (int, int, []common.Hash, []txQUICTransactionReject) {
 	if len(txs) == 0 {
-		return 0, 0, nil
+		return 0, 0, nil, nil
 	}
 	mode := strings.ToLower(q.config.RoutingMode)
 	if mode == "leader-only" && len(q.config.LeaderEndpoints) > 0 {
-		return 0, 0, nil
+		return 0, 0, nil, nil
 	}
-	errs := q.txpool.AddRemotes(txs)
+	return summarizeTxQUICInsert(txs, q.txpool.AddRemotes(txs))
+}
+
+func summarizeTxQUICInsert(txs []*types.Transaction, insertErrors []error) (int, int, []common.Hash, []txQUICTransactionReject) {
 	accepted, rejected := 0, 0
 	hashes := make([]common.Hash, 0, len(txs))
-	for i, err := range errs {
-		if err == nil {
+	rejects := make([]txQUICTransactionReject, 0)
+	for i, tx := range txs {
+		if tx == nil {
+			rejected++
+			rejects = append(rejects, txQUICTransactionReject{Reason: fmt.Sprintf("transaction[%d]: nil transaction", i), Class: txQUICRejectPermanent})
+			continue
+		}
+		var err error
+		if i < len(insertErrors) {
+			err = insertErrors[i]
+		} else {
+			err = fmt.Errorf("transaction pool returned no result")
+		}
+		if err == nil || errors.Is(err, core.ErrAlreadyKnown) {
 			accepted++
-			hashes = append(hashes, txs[i].Hash())
+			hashes = append(hashes, tx.Hash())
 		} else {
 			rejected++
+			rejects = append(rejects, txQUICTransactionReject{Hash: tx.Hash(), Reason: err.Error(), Class: classifyTxQUICInsertError(err)})
+			log.Info("TxQUIC transaction rejected", "tx", tx.Hash(), "err", err)
 		}
 	}
-	return accepted, rejected, hashes
+	return accepted, rejected, hashes, rejects
+}
+
+func classifyTxQUICInsertError(err error) uint {
+	if err == nil || errors.Is(err, core.ErrAlreadyKnown) {
+		return 0
+	}
+	// These depend on pool capacity, local pricing, account state, or the
+	// current block and may succeed at another committee node or after retry.
+	for _, retryable := range []error{
+		core.ErrTxPoolOverflow,
+		core.ErrUnderpriced,
+		core.ErrReplaceUnderpriced,
+		core.ErrNonceTooFarInFuture,
+		core.ErrNonceTooHigh,
+		core.ErrInsufficientFunds,
+		core.ErrInsufficientFundsForTransfer,
+		core.ErrGasFeeCapTooLow,
+		core.ErrBlobFeeCapTooLow,
+		core.ErrGasLimitReached,
+	} {
+		if errors.Is(err, retryable) {
+			return txQUICRejectRetryable
+		}
+	}
+	// These are transaction-intrinsic (or already irreversibly stale).
+	for _, permanent := range []error{
+		core.ErrNonceTooLow,
+		core.ErrInvalidSender,
+		core.ErrGasLimit,
+		core.ErrNegativeValue,
+		core.ErrOversizedData,
+		core.ErrInvalidGasPrice,
+		core.ErrEtherValueUnsupported,
+		core.ErrIntrinsicGas,
+		core.ErrGasTipAboveFeeCap,
+		core.ErrTipVeryHigh,
+		core.ErrFeeCapVeryHigh,
+		core.ErrGasUintOverflow,
+	} {
+		if errors.Is(err, permanent) {
+			return txQUICRejectPermanent
+		}
+	}
+	// Unknown/internal pool failures are safer to retry than to discard.
+	return txQUICRejectRetryable
 }
 
 func (q *TxQUICIngress) insertAdmissions(admissions []*types.CommonTxAdmission) (int, int) {
 	accepted, rejected := 0, 0
 	for _, admission := range admissions {
 		if admission == nil {
+			rejected++
 			continue
 		}
-		if core.StoreCommonRPCAdmission(admission) {
-			accepted++
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+			rejected++
+			log.Info("TxQUIC admission rejected", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
+			continue
 		}
+		// StoreCommonRPCAdmission returns false for an exact duplicate or a
+		// deterministically worse-but-valid sidecar. Delivery is nevertheless
+		// idempotently complete, so a lost ACK must not cause infinite retries.
+		core.StoreCommonRPCAdmission(admission)
+		accepted++
 	}
 	return accepted, rejected
 }
@@ -964,22 +1155,38 @@ func (q *TxQUICIngress) routePayload(payload []byte) int {
 	return forwarded
 }
 
-func (q *TxQUICIngress) routeBridgePayload(payload []byte) (forwarded int, requiredDelivered bool) {
+func (q *TxQUICIngress) routeBridgePayload(payload []byte) (forwarded int, requiredDelivered bool, rejectErr error) {
 	mode := strings.ToLower(q.config.RoutingMode)
 	if mode == "local" || mode == "" {
-		return 0, false
+		return 0, false, nil
 	}
 	for _, endpoint := range q.config.LeaderEndpoints {
 		if err := q.forwardPayload(endpoint, payload); err != nil {
+			var rejected *txQUICRemoteRejectError
+			if errors.As(err, &rejected) {
+				if !rejected.Retryable() {
+					return 0, false, rejected
+				}
+				log.Debug("TxQUIC leader temporarily rejected transaction", "endpoint", endpoint, "err", rejected)
+				continue
+			}
 			log.Debug("TxQUIC leader forward failed", "endpoint", endpoint, "err", err)
 			continue
 		}
 		// The fixed leader is the required destination. Return immediately so a
 		// slow backup cannot stall common RPC admission after leader delivery.
-		return 1, true
+		return 1, true, nil
 	}
 	for _, endpoint := range q.config.BackupEndpoints {
 		if err := q.forwardPayload(endpoint, payload); err != nil {
+			var rejected *txQUICRemoteRejectError
+			if errors.As(err, &rejected) {
+				if !rejected.Retryable() {
+					return forwarded, false, rejected
+				}
+				log.Debug("TxQUIC backup temporarily rejected transaction", "endpoint", endpoint, "err", rejected)
+				continue
+			}
 			log.Debug("TxQUIC backup forward failed", "endpoint", endpoint, "err", err)
 			continue
 		}
@@ -988,10 +1195,14 @@ func (q *TxQUICIngress) routeBridgePayload(payload []byte) (forwarded int, requi
 			requiredDelivered = true
 		}
 	}
-	return forwarded, requiredDelivered
+	return forwarded, requiredDelivered, nil
 }
 
 func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
+	return q.forwardPayloadContext(q.ctx, endpoint, payload)
+}
+
+func (q *TxQUICIngress) forwardPayloadContext(ctx context.Context, endpoint string, payload []byte) error {
 	if q == nil {
 		return fmt.Errorf("nil txquic ingress")
 	}
@@ -1002,13 +1213,17 @@ func (q *TxQUICIngress) forwardPayload(endpoint string, payload []byte) error {
 	if len(payload) == 0 {
 		return fmt.Errorf("empty txquic payload")
 	}
+	expectation, err := txQUICAckExpectationFromPayload(payload)
+	if err != nil {
+		return err
+	}
 
 	value, _ := q.forwardClients.LoadOrStore(endpoint, &txQUICForwardClient{endpoint: endpoint})
 	client, ok := value.(*txQUICForwardClient)
 	if !ok || client == nil {
 		return fmt.Errorf("invalid txquic forward client for %s", endpoint)
 	}
-	return client.send(q, payload)
+	return client.send(ctx, q, payload, expectation)
 }
 
 func (c *txQUICForwardClient) getConn(q *TxQUICIngress, ctx context.Context) (*quic.Conn, error) {
@@ -1042,10 +1257,17 @@ func (c *txQUICForwardClient) getConn(q *TxQUICIngress, ctx context.Context) (*q
 	return conn, nil
 }
 
-func (c *txQUICForwardClient) send(q *TxQUICIngress, payload []byte) error {
+func (c *txQUICForwardClient) send(parent context.Context, q *TxQUICIngress, payload []byte, expectation txQUICAckExpectation) error {
 	timeout := endpointForwardTimeout(q.config.ForwardTimeout, q.config.ReadTimeout, q.config.WriteTimeout)
-	ctx, cancel := context.WithTimeout(q.ctx, timeout)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
+	if q.ctx != nil {
+		stopNodeCancel := context.AfterFunc(q.ctx, cancel)
+		defer stopNodeCancel()
+	}
 
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
@@ -1060,9 +1282,14 @@ func (c *txQUICForwardClient) send(q *TxQUICIngress, payload []byte) error {
 			lastErr = err
 			continue
 		}
+		stopStream := context.AfterFunc(ctx, func() {
+			stream.CancelRead(0)
+			stream.CancelWrite(0)
+		})
 
 		_ = stream.SetWriteDeadline(time.Now().Add(q.config.WriteTimeout))
 		if err := writeFullTxQUIC(stream, payload); err != nil {
+			stopStream()
 			_ = stream.Close()
 			c.reset(conn)
 			lastErr = err
@@ -1070,33 +1297,94 @@ func (c *txQUICForwardClient) send(q *TxQUICIngress, payload []byte) error {
 		}
 
 		if err := stream.Close(); err != nil {
+			stopStream()
 			c.reset(conn)
 			lastErr = err
 			continue
 		}
 
 		if !q.config.Ack {
+			stopStream()
 			return nil
 		}
 
 		_ = stream.SetReadDeadline(time.Now().Add(q.config.ReadTimeout))
 		var ack txQUICAck
 		if err := rlp.Decode(stream, &ack); err != nil {
+			stopStream()
 			c.reset(conn)
 			lastErr = fmt.Errorf("txquic ack read failed from %s: %w", c.endpoint, err)
 			continue
 		}
 
-		if len(ack.Errors) > 0 {
-			return fmt.Errorf("txquic ack errors from %s: %v", c.endpoint, ack.Errors)
+		if err := validateTxQUICAck(c.endpoint, &ack, expectation); err != nil {
+			stopStream()
+			return err
 		}
-		if ack.Accepted == 0 && ack.Forwarded == 0 {
-			return fmt.Errorf("txquic ack no accepted/forwarded from %s: accepted=%d rejected=%d forwarded=%d", c.endpoint, ack.Accepted, ack.Rejected, ack.Forwarded)
-		}
+		stopStream()
 		return nil
 	}
 
 	return lastErr
+}
+
+func validateTxQUICAck(endpoint string, ack *txQUICAck, expectation txQUICAckExpectation) error {
+	if ack == nil {
+		return fmt.Errorf("nil txquic ack from %s", endpoint)
+	}
+	if ack.Version != txQUICPacketV2 {
+		return fmt.Errorf("unsupported txquic ack version %d from %s", ack.Version, endpoint)
+	}
+	if ack.Accepted != ack.AcceptedTx+ack.AcceptedAdmission || ack.Rejected != ack.RejectedTx+ack.RejectedAdmission {
+		return fmt.Errorf("inconsistent txquic ack counters from %s", endpoint)
+	}
+	if len(ack.Errors) > 0 {
+		return fmt.Errorf("txquic ack errors from %s: %v", endpoint, ack.Errors)
+	}
+	if uint64(len(ack.Hashes)) != ack.AcceptedTx || uint64(len(ack.TransactionRejects)) != ack.RejectedTx {
+		return fmt.Errorf("inconsistent txquic transaction result lengths from %s", endpoint)
+	}
+	if ack.AcceptedTx+ack.RejectedTx != uint64(len(expectation.txHashes)) {
+		return fmt.Errorf("txquic ack did not process every expected transaction from %s: expected=%d accepted=%d rejected=%d forwarded=%d", endpoint, len(expectation.txHashes), ack.AcceptedTx, ack.RejectedTx, ack.Forwarded)
+	}
+	if ack.AcceptedAdmission+ack.RejectedAdmission != expectation.admissions {
+		return fmt.Errorf("txquic ack did not process every expected admission from %s: expected=%d accepted=%d rejected=%d forwarded=%d", endpoint, expectation.admissions, ack.AcceptedAdmission, ack.RejectedAdmission, ack.Forwarded)
+	}
+
+	want := make(map[common.Hash]int, len(expectation.txHashes))
+	for _, hash := range expectation.txHashes {
+		want[hash]++
+	}
+	for _, hash := range ack.Hashes {
+		if want[hash] == 0 {
+			return fmt.Errorf("txquic ack contained unexpected transaction hash %s from %s", hash, endpoint)
+		}
+		want[hash]--
+	}
+	for _, reject := range ack.TransactionRejects {
+		if want[reject.Hash] == 0 {
+			return fmt.Errorf("txquic ack rejected unexpected transaction hash %s from %s", reject.Hash, endpoint)
+		}
+		if reject.Class != txQUICRejectPermanent && reject.Class != txQUICRejectRetryable {
+			return fmt.Errorf("txquic ack used invalid rejection class %d for %s from %s", reject.Class, reject.Hash, endpoint)
+		}
+		if strings.TrimSpace(reject.Reason) == "" {
+			return fmt.Errorf("txquic ack omitted rejection reason for %s from %s", reject.Hash, endpoint)
+		}
+		want[reject.Hash]--
+	}
+	for hash, count := range want {
+		if count != 0 {
+			return fmt.Errorf("txquic ack omitted expected transaction hash %s from %s", hash, endpoint)
+		}
+	}
+	if ack.RejectedTx > 0 {
+		return &txQUICRemoteRejectError{endpoint: endpoint, rejects: append([]txQUICTransactionReject(nil), ack.TransactionRejects...)}
+	}
+	if ack.RejectedAdmission > 0 {
+		return fmt.Errorf("txquic remote admission rejected by %s: %d admission(s)", endpoint, ack.RejectedAdmission)
+	}
+	return nil
 }
 
 func writeFullTxQUIC(w io.Writer, payload []byte) error {
@@ -1149,7 +1437,10 @@ func endpointForwardTimeout(forwardTimeout time.Duration, readTimeout time.Durat
 
 func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transaction, []*types.CommonTxAdmission, bool, common.Address, error) {
 	var pkt txQUICPacket
-	if err := rlp.DecodeBytes(payload, &pkt); err == nil && pkt.Version == txQUICPacketV1 && len(pkt.Items) > 0 {
+	if err := rlp.DecodeBytes(payload, &pkt); err == nil && len(pkt.Items) > 0 {
+		if pkt.Version != txQUICPacketV2 {
+			return nil, nil, false, common.Address{}, fmt.Errorf("unsupported txquic packet version %d", pkt.Version)
+		}
 		if isAdmissionOnlyPacket(&pkt) && len(pkt.Signature) == 0 {
 			signer, err := verifyAdmissionOnlyPacket(&pkt)
 			if err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/cypherium/cypher/common"
@@ -257,6 +258,23 @@ type HotStuffApplication interface {
 	UseFHS2Chain() bool
 }
 
+// FHSLeaderCertificationApplication lets a production application durably
+// adopt a leader-created QC before dissemination, while deferring any committee
+// transition and two-chain commit until the QC has been sent to the committee
+// that certified it.
+type FHSLeaderCertificationApplication interface {
+	OnFHSLeaderCertifiedBeforeBroadcast(*SignedState) error
+	OnFHSLeaderCertifiedAfterBroadcast(*SignedState) error
+}
+
+// FHSLeaderKeyApplication resolves the BLS key bound to a historical
+// committee member address. It is used when a durable QC broadcast arrives
+// after restart and the receiver no longer has the corresponding volatile
+// View object.
+type FHSLeaderKeyApplication interface {
+	FHSLeaderPublicKey(keyHash common.Hash, leaderID string) (*bls.PublicKey, error)
+}
+
 type VoteInfo struct {
 	Index      int // index in the group public keys
 	PubKey     *bls.PublicKey
@@ -367,6 +385,7 @@ type HotstuffProtocolManager struct {
 	timeoutQC      map[common.Hash]*TimeoutCertificate
 	timeoutSeen    map[common.Hash]time.Time
 	timeoutView    map[common.Hash]uint64
+	epochReset     uint32
 }
 
 type finalizedRecovery struct {
@@ -411,6 +430,37 @@ func ValidateBFTCommitteeSize(size int) error {
 func (hsm *HotstuffProtocolManager) UpdateKeyPair(sec *bls.SecretKey) {
 	hsm.secretKey = sec
 	hsm.publicKey = sec.GetPublicKey()
+}
+
+// ScheduleFHSEpochReset requests a volatile protocol reset at a top-level
+// HandleMessage boundary. Application callbacks run inside view processing, so
+// clearing hsm.views synchronously from the callback would invalidate the View
+// currently on the stack. The durable QC/WAL outbox is intentionally retained.
+func (hsm *HotstuffProtocolManager) ScheduleFHSEpochReset() {
+	if hsm == nil {
+		return
+	}
+	atomic.StoreUint32(&hsm.epochReset, 1)
+}
+
+func (hsm *HotstuffProtocolManager) applyScheduledFHSEpochReset() bool {
+	if hsm == nil || !atomic.CompareAndSwapUint32(&hsm.epochReset, 1, 0) {
+		return false
+	}
+	hsm.views = make(map[common.Hash]*View)
+	hsm.leaderView = nil
+	hsm.unhandledMsg = make(map[common.Hash]*HotstuffMessage)
+	hsm.unhandledSize = make(map[common.Hash]int)
+	hsm.unhandledBytes = 0
+	hsm.pendingNewView = make(map[common.Hash]map[string]*HotstuffMessage)
+	hsm.finalized = make(map[common.Hash]*finalizedRecovery)
+	hsm.timeoutVotes = make(map[common.Hash]map[int]*bls.Sign)
+	hsm.timeoutEchoed = make(map[common.Hash]bool)
+	hsm.timeoutQC = make(map[common.Hash]*TimeoutCertificate)
+	hsm.timeoutSeen = make(map[common.Hash]time.Time)
+	hsm.timeoutView = make(map[common.Hash]uint64)
+	log.Info("reset Fair HotStuff volatile state for new key epoch")
+	return true
 }
 
 func (v *View) lookupReplica(pubKey *bls.PublicKey) int {
@@ -876,7 +926,14 @@ func (hsm *HotstuffProtocolManager) cacheFinalizedRecovery(v *View, decide *Hots
 		finalizedAt: time.Now(),
 		lastSentAt:  time.Now(),
 	}
-	entry.prepare = v.leaderMsg[MsgPrepare]
+	// Before certification, resending Prepare is required to collect missing
+	// votes. Once an FHS view has a QC, however, the self-contained QCBroadcast
+	// is the recovery object. Retaining the older Prepare makes every receiver
+	// with that QC reject its stale parent HighQC on each recovery tick, wasting
+	// the bounded control queue and potentially starving current-view traffic.
+	if !hsm.app.UseFHS2Chain() {
+		entry.prepare = v.leaderMsg[MsgPrepare]
+	}
 	entry.qcBroadcast = v.leaderMsg[MsgQCBroadcast]
 	if entry.qcBroadcast == nil && decide == nil {
 		return
@@ -1557,6 +1614,12 @@ func (hsm *HotstuffProtocolManager) createSignatureMsg(v *View, code uint32, pha
 
 	// DataA: kSign, DataB: tSign, DataC: mask
 	msg := hsm.newMsg(code, v.number, v.hash, bKSign, bTSign, v.qc[phase].mask)
+	if code == MsgQCBroadcast && hsm.app.UseFHS2Chain() {
+		// A receiver may have lost its volatile View during restart. Carry the
+		// exact proposal reference certified by DataB/DataC so it can verify and
+		// adopt the QC without trusting local cache state.
+		msg.DataD = append([]byte(nil), v.proposedTState...)
+	}
 	if err := hsm.sealMessage(msg); err != nil {
 		log.Error("failed to authenticate hotstuff QC message", "code", code, "err", err)
 		return nil
@@ -1564,21 +1627,63 @@ func (hsm *HotstuffProtocolManager) createSignatureMsg(v *View, code uint32, pha
 	return msg
 }
 
+// RebuildFHSQCBroadcast recreates the authenticated wire envelope for a
+// leader QC kept in the durable restart outbox. The aggregate QC bytes and its
+// semantic identity are unchanged; only the leader envelope signature is
+// freshly sealed with the same configured consensus key.
+func (hsm *HotstuffProtocolManager) RebuildFHSQCBroadcast(qc *SignedState) (*HotstuffMessage, error) {
+	if qc == nil || !hsm.app.UseFHS2Chain() || qc.LeaderID != hsm.app.Self() {
+		return nil, ErrInvalidPrepareQC
+	}
+	msg := hsm.newMsg(MsgQCBroadcast, qc.Number, qc.ViewID, nil, qc.Sign, qc.Mask)
+	msg.DataD = append([]byte(nil), qc.State...)
+	if err := hsm.sealMessage(msg); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
 func (hsm *HotstuffProtocolManager) broadcastPrepareQC(v *View) (*HotstuffMessage, error) {
 	if v == nil || v.qc["prepare"] == nil {
 		return nil, ErrMissingView
 	}
+	markRetryable := func() {
+		v.waitingMoreVoteInfo = true
+		v.waitingMoreVoteInfoAt = time.Now()
+	}
 	msg := hsm.createSignatureMsg(v, MsgQCBroadcast, "prepare")
 	if msg == nil {
+		markRetryable()
 		return nil, fmt.Errorf("failed to authenticate prepare QC")
 	}
 	v.leaderMsg[MsgQCBroadcast] = msg
+	var (
+		certified *SignedState
+		lifecycle FHSLeaderCertificationApplication
+	)
 	if hsm.app.UseFHS2Chain() {
 		// The leader must durably adopt its own QC before any peer can observe
 		// it. Otherwise a crash between broadcast and local self-delivery loses
 		// the highest certificate and can violate restart safety.
-		if err := hsm.certifyView(v, msg); err != nil {
+		if hooks, ok := hsm.app.(FHSLeaderCertificationApplication); ok {
+			lifecycle = hooks
+			certified = hsm.certifiedState(v, msg)
+			if certified == nil {
+				delete(v.leaderMsg, MsgQCBroadcast)
+				markRetryable()
+				return nil, ErrInvalidProposal
+			}
+			if !v.certified {
+				if err := lifecycle.OnFHSLeaderCertifiedBeforeBroadcast(certified); err != nil {
+					delete(v.leaderMsg, MsgQCBroadcast)
+					markRetryable()
+					return nil, err
+				}
+				v.certified = true
+			}
+		} else if err := hsm.certifyView(v, msg); err != nil {
 			delete(v.leaderMsg, MsgQCBroadcast)
+			markRetryable()
 			return nil, err
 		}
 	}
@@ -1589,6 +1694,12 @@ func (hsm *HotstuffProtocolManager) broadcastPrepareQC(v *View) (*HotstuffMessag
 		"votes", len(v.prepareVoteInfo),
 		"threshold", v.threshold)
 	hsm.app.Broadcast(msg)
+	if lifecycle != nil {
+		if err := lifecycle.OnFHSLeaderCertifiedAfterBroadcast(certified); err != nil {
+			markRetryable()
+			return msg, err
+		}
+	}
 	return msg, nil
 }
 
@@ -1618,7 +1729,22 @@ func (hsm *HotstuffProtocolManager) certifyView(v *View, m *HotstuffMessage) err
 	if !v.hasTState() {
 		return ErrInvalidProposal
 	}
-	certified := &SignedState{
+	certified := hsm.certifiedState(v, m)
+	if certified == nil {
+		return ErrInvalidProposal
+	}
+	if err := hsm.app.OnCertified(certified); err != nil {
+		return err
+	}
+	v.certified = true
+	return nil
+}
+
+func (hsm *HotstuffProtocolManager) certifiedState(v *View, m *HotstuffMessage) *SignedState {
+	if v == nil || m == nil || !v.hasTState() {
+		return nil
+	}
+	return &SignedState{
 		State:    append([]byte(nil), v.proposedTState...),
 		Sign:     append([]byte(nil), m.DataB...),
 		Mask:     append([]byte(nil), m.DataC...),
@@ -1626,11 +1752,6 @@ func (hsm *HotstuffProtocolManager) certifyView(v *View, m *HotstuffMessage) err
 		LeaderID: v.leaderId,
 		Number:   v.number,
 	}
-	if err := hsm.app.OnCertified(certified); err != nil {
-		return err
-	}
-	v.certified = true
-	return nil
 }
 
 // for leader
@@ -1777,7 +1898,10 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) error {
 	v, exist := hsm.views[m.ViewId]
 	if !exist {
-		return ErrUnhandledMsg
+		if !hsm.app.UseFHS2Chain() {
+			return ErrUnhandledMsg
+		}
+		return hsm.handleStandaloneFHSQCBroadcast(m)
 	}
 	if m.Number != v.number {
 		return ErrViewIdNotMatch
@@ -1791,6 +1915,9 @@ func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) err
 			return err
 		}
 	}
+	if hsm.app.UseFHS2Chain() && !bytes.Equal(m.DataD, v.proposedTState) {
+		return ErrInvalidPrepareQC
+	}
 	if err := hsm.verifyPrepareQCMessage(v, m); err != nil {
 		return err
 	}
@@ -1803,6 +1930,68 @@ func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) err
 		v.phaseAsReplica = PhaseFinal
 	}
 	log.Info("HOTSTUFF PREPARE QC VERIFIED",
+		"number", m.Number,
+		"viewID", m.ViewId,
+		"from", m.Id,
+		"maskBytes", len(m.DataC))
+	return nil
+}
+
+// handleStandaloneFHSQCBroadcast verifies a self-contained QC after the
+// receiver has lost the corresponding volatile View (for example, all nodes
+// restarted after the leader fsynced the QC but before dissemination). No
+// state is published until the historical committee, canonical signer mask,
+// aggregate vote signature and authenticated leader envelope all verify.
+func (hsm *HotstuffProtocolManager) handleStandaloneFHSQCBroadcast(m *HotstuffMessage) error {
+	if m == nil || len(m.DataB) == 0 || len(m.DataC) == 0 || len(m.DataD) == 0 {
+		return fmt.Errorf("%w: incomplete standalone FHS QC", ErrInvalidPrepareQC)
+	}
+	// DataA may contain the aggregate key-state vote when the original view
+	// proposed a key block and a transaction block together. The independently
+	// certified transaction proposal is carried by DataB/DataC/DataD, and the
+	// authenticated envelope binds the optional DataA bytes as well. A replica
+	// that lost the volatile View must therefore not reject an otherwise valid
+	// transaction QC merely because the original leader retained the key vote.
+	qc := &SignedState{
+		State:    append([]byte(nil), m.DataD...),
+		Sign:     append([]byte(nil), m.DataB...),
+		Mask:     append([]byte(nil), m.DataC...),
+		ViewID:   m.ViewId,
+		LeaderID: m.Id,
+		Number:   m.Number,
+	}
+	ref, err := types.DecodeHotstuffProposalRef(qc.State)
+	if err != nil || ref.ChainID != hsm.app.ChainID() || ref.ViewNumber != qc.Number || ref.ViewID != qc.ViewID || ref.LeaderID != qc.LeaderID {
+		return fmt.Errorf("%w: standalone proposal/QC context mismatch", ErrInvalidPrepareQC)
+	}
+	keys, err := hsm.app.GetPublicKey(ref.KeyHash)
+	if err != nil {
+		return err
+	}
+	threshold := CalcThreshold(len(keys))
+	if err := ValidateCanonicalSignerMask(qc.Mask, len(keys), threshold); err != nil {
+		return err
+	}
+	if !VerifyFHSSignatureWithContext(qc.Sign, qc.Mask, qc.State, keys, threshold, hsm.app.ChainID(), MsgVotePrepare, qc.ViewID, qc.LeaderID) {
+		return fmt.Errorf("%w: standalone aggregate vote signature invalid", ErrInvalidPrepareQC)
+	}
+	if hsm.requiresMessageAuth() {
+		resolver, ok := hsm.app.(FHSLeaderKeyApplication)
+		if !ok {
+			return ErrInvalidReplica
+		}
+		leaderKey, err := resolver.FHSLeaderPublicKey(ref.KeyHash, ref.LeaderID)
+		if err != nil {
+			return err
+		}
+		if err := hsm.verifyMessageAuth(m, ref.LeaderID, leaderKey); err != nil {
+			return err
+		}
+	}
+	if err := hsm.app.OnCertified(qc); err != nil {
+		return err
+	}
+	log.Info("HOTSTUFF STANDALONE PREPARE QC VERIFIED",
 		"number", m.Number,
 		"viewID", m.ViewId,
 		"from", m.Id,
@@ -2029,6 +2218,9 @@ func (hsm *HotstuffProtocolManager) HandleMessage(msg *HotstuffMessage) error {
 	if msg == nil {
 		return fmt.Errorf("nil hotstuff message")
 	}
+	// A reset scheduled outside the event loop (for example WAL recovery or
+	// proof-aware full sync) must take effect before this message is evaluated.
+	hsm.applyScheduledFHSEpochReset()
 	if IsHotstuffWireCode(msg.Code) {
 		if err := ValidateHotstuffWireMessage(msg); err != nil {
 			return err
@@ -2038,6 +2230,12 @@ func (hsm *HotstuffProtocolManager) HandleMessage(msg *HotstuffMessage) error {
 		log.Debug("HandleMessage", "Number", msg.Number, "viewId", msg.ViewId, "code", ReadableMsgType(msg.Code), "from", msg.Id)
 	}
 	err := hsm.handleMessage(msg)
+	// An application callback may have committed a key epoch while handling the
+	// message. Finish that stack frame, then discard every old-epoch recovery
+	// object before replaying unhandled messages.
+	if hsm.applyScheduledFHSEpochReset() {
+		return err
+	}
 	if err == ErrUnhandledMsg {
 		log.Debug("Add unhandled hotstuff message", "viewId", msg.ViewId, "code", msg.Code, "from", msg.Id)
 		//fmt.Println("Add unhandled hotstuff message", "viewId", msg.ViewId, "code", msg.Code, "from", msg.Id)

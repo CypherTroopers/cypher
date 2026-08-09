@@ -203,8 +203,21 @@ func verifyKeyBlockMinInterval(keyblock, curKeyblock *types.KeyBlock) error {
 }
 
 // Verify keyblock
-func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *types.Candidate) error { //
+func verifyKeyBlockCarrierParent(keyblock *types.KeyBlock, txParentNumber uint64) error {
+	if keyblock == nil {
+		return fmt.Errorf("nil key block")
+	}
+	if keyblock.T_Number() != txParentNumber {
+		return fmt.Errorf("key block transaction parent mismatch: keyTNumber=%d proposalParent=%d", keyblock.T_Number(), txParentNumber)
+	}
+	return nil
+}
+
+func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *types.Candidate, txParentNumber uint64) error { //
 	log.Info("@verifyKeyBlock", "number", keyblock.NumberU64())
+	if err := verifyKeyBlockCarrierParent(keyblock, txParentNumber); err != nil {
+		return fmt.Errorf("verifyKeyBlock: %w", err)
+	}
 	kbc := keyS.kbc
 	if keyblock.LeaderPubKey() == bftview.GetServerInfo(bftview.PublicKey) {
 		curKeyblock := kbc.CurrentBlock()
@@ -235,8 +248,11 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		mb := bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true)
 		if mb == nil {
 			mb, _ = bftview.GetCommittee(newNode, keyblock, true)
-			if mb != nil {
-				mb.Store(keyblock)
+			if mb == nil {
+				return fmt.Errorf("keyblock verify failed, can't recover committee for known key block %d/%s", keyblock.NumberU64(), keyblock.Hash())
+			}
+			if !mb.Store(keyblock) {
+				return fmt.Errorf("keyblock verify failed, can't persist committee for known key block %d/%s", keyblock.NumberU64(), keyblock.Hash())
 			}
 		}
 
@@ -256,9 +272,6 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	}
 	if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
 		return err
-	}
-	if keyblock.T_Number() != keyS.bc.CurrentBlockN() {
-		return fmt.Errorf("verifyKeyBlock, T_Number is not current, cur tx number:%d, k_t_number:%d", keyS.bc.CurrentBlockN(), keyblock.T_Number())
 	}
 	viewleaderIndex := keyS.s.GetCurrentView().LeaderIndex
 	index := bftview.GetMemberIndex(keyblock.LeaderPubKey())
@@ -365,7 +378,9 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 			"number", keyblock.NumberU64())
 	}
 	if bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true) == nil {
-		mb.Store(keyblock)
+		if !mb.Store(keyblock) {
+			return fmt.Errorf("keyblock verify failed, can't persist committee for key block %d/%s", keyblock.NumberU64(), keyblock.Hash())
+		}
 	}
 	keyS.s.syncCommittee(mb, keyblock)
 
@@ -373,8 +388,8 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 }
 
 // Try to change committee and proposal a new keyblock
-func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool) (*types.KeyBlock, *bftview.Committee, *types.Candidate, error) {
-	log.Info("tryProposalChangeCommittee", "tx number", keyS.bc.CurrentBlockN(), "isDone", isDone, "leaderIndex", leaderIndex)
+func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool, txParentNumber uint64) (*types.KeyBlock, *bftview.Committee, *types.Candidate, error) {
+	log.Info("tryProposalChangeCommittee", "canonical tx number", keyS.bc.CurrentBlockN(), "proposal parent", txParentNumber, "isDone", isDone, "leaderIndex", leaderIndex)
 	curKeyBlock := keyS.kbc.CurrentBlock()
 	curKNumber := curKeyBlock.Number()
 	curKHash := curKeyBlock.Hash()
@@ -447,7 +462,10 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	}
 
 	header.CommitteeHash = mb.RlpHash()
-	header.T_Number = keyS.bc.CurrentBlockN()
+	// T_Number identifies the transaction block immediately preceding the
+	// carrier block. In two-chain HotStuff that parent may be certified but not
+	// canonical yet, so the canonical head is not a valid source here.
+	header.T_Number = txParentNumber
 	log.Info("fixed-mode pow submitter status",
 		"fixedMode", keyS.fixedModeEnabled(),
 		"hasPowSubmitter", powSubmitter != nil,
@@ -456,7 +474,9 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
-	mb.Store(keyblock)
+	if !mb.Store(keyblock) {
+		return nil, nil, nil, fmt.Errorf("failed to persist proposed committee for key block %d/%s", keyblock.NumberU64(), keyblock.Hash())
+	}
 	if keyS.fixedModeEnabled() {
 		return keyblock, mb, powSubmitter, nil
 	}
