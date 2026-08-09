@@ -19,14 +19,14 @@ func blobBlockValidationHeader(txs types.Transactions, excessBlobGas uint64) *ty
 	}
 }
 
-func TestValidateBlockBlobBodyAcceptsCancunBlobTx(t *testing.T) {
+func TestValidateBlockBlobBodyRejectsBlobTxWithoutDA(t *testing.T) {
 	cfg := blobGasTestConfig(0)
 	tx := newTxpoolBlobTx(t, []common.Hash{txpoolBlobTestHash(1)}, big.NewInt(2))
 	txs := types.Transactions{tx}
 	header := blobBlockValidationHeader(txs, 0)
 
-	if err := ValidateBlockBlobBody(cfg, header, txs); err != nil {
-		t.Fatalf("expected valid Cancun blob block body, got %v", err)
+	if err := ValidateBlockBlobBody(cfg, header, txs); !errors.Is(err, ErrBlobDAUnavailable) {
+		t.Fatalf("error = %v, want %v", err, ErrBlobDAUnavailable)
 	}
 }
 
@@ -71,5 +71,27 @@ func TestValidateBlockBlobBodyRejectsBlobFeeCapBelowBlobBaseFee(t *testing.T) {
 
 	if err := ValidateBlockBlobBody(cfg, header, txs); !errors.Is(err, types.ErrBlobTxInvalidFeeCap) {
 		t.Fatalf("expected invalid blob fee cap, got %v", err)
+	}
+}
+
+func TestValidateBlockBlobBodyRejectsOsakaPerTransactionBlobLimit(t *testing.T) {
+	zero := uint64(0)
+	cfg := &params.ChainConfig{}
+	cfg.SetModernForkConfig(&params.ModernForkConfig{
+		BerlinBlock: big.NewInt(0),
+		LondonBlock: big.NewInt(0),
+		CancunTime:  &zero,
+		PragueTime:  &zero,
+		OsakaTime:   &zero,
+		BlobSchedule: &params.BlobScheduleConfig{
+			Cancun: &params.BlobConfig{Target: 3, Max: 6, BaseFeeUpdateFraction: 3338477},
+			Prague: &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+			Osaka:  &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+		},
+	})
+	tx := blobGasTestTx(t, params.BlobTxMaxBlobs+1)
+	header := blobBlockValidationHeader(types.Transactions{tx}, 0)
+	if err := ValidateBlockBlobBody(cfg, header, types.Transactions{tx}); !errors.Is(err, types.ErrBlobTxTooManyBlobs) {
+		t.Fatalf("error = %v, want %v", err, types.ErrBlobTxTooManyBlobs)
 	}
 }

@@ -2,6 +2,7 @@ package params
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"sync"
 
@@ -80,34 +81,90 @@ func (c *ChainConfig) IsLondon(num *big.Int) bool {
 
 func (c *ChainConfig) IsShanghai(num *big.Int, timestamp uint64) bool {
 	if cfg := c.ModernForkConfig(); cfg != nil {
-		return isTimestampForked(cfg.ShanghaiTime, timestamp)
+		return c.IsLondon(num) && isTimestampForked(cfg.ShanghaiTime, timestamp)
 	}
 	return false
 }
 
 func (c *ChainConfig) IsCancun(num *big.Int, timestamp uint64) bool {
 	if cfg := c.ModernForkConfig(); cfg != nil {
-		return isTimestampForked(cfg.CancunTime, timestamp)
+		return c.IsLondon(num) && isTimestampForked(cfg.CancunTime, timestamp)
 	}
 	return false
 }
 
 func (c *ChainConfig) IsPrague(num *big.Int, timestamp uint64) bool {
 	if cfg := c.ModernForkConfig(); cfg != nil {
-		return isTimestampForked(cfg.PragueTime, timestamp)
+		return c.IsLondon(num) && isTimestampForked(cfg.PragueTime, timestamp)
 	}
 	return false
 }
 
 func (c *ChainConfig) IsOsaka(num *big.Int, timestamp uint64) bool {
 	if cfg := c.ModernForkConfig(); cfg != nil {
-		return isTimestampForked(cfg.OsakaTime, timestamp)
+		return c.IsLondon(num) && isTimestampForked(cfg.OsakaTime, timestamp)
 	}
 	return false
 }
 
 func isTimestampForked(s *uint64, timestamp uint64) bool {
 	return s != nil && timestamp >= *s
+}
+
+func (c *ChainConfig) checkModernForkOrder() error {
+	modern := c.ModernForkConfig()
+	if modern == nil {
+		return nil
+	}
+	if modern.BerlinBlock == nil && modern.LondonBlock != nil {
+		return fmt.Errorf("unsupported fork ordering: berlinBlock not enabled, but londonBlock enabled at %v", modern.LondonBlock)
+	}
+	if modern.BerlinBlock != nil && modern.LondonBlock != nil && modern.BerlinBlock.Cmp(modern.LondonBlock) > 0 {
+		return fmt.Errorf("unsupported fork ordering: berlinBlock enabled at %v, but londonBlock enabled at %v", modern.BerlinBlock, modern.LondonBlock)
+	}
+	if modern.ShanghaiTime != nil && modern.LondonBlock == nil {
+		return fmt.Errorf("unsupported fork ordering: londonBlock not enabled, but shanghaiTime enabled at %d", *modern.ShanghaiTime)
+	}
+	timestamps := []struct {
+		name string
+		at   *uint64
+	}{
+		{name: "shanghaiTime", at: modern.ShanghaiTime},
+		{name: "cancunTime", at: modern.CancunTime},
+		{name: "pragueTime", at: modern.PragueTime},
+		{name: "osakaTime", at: modern.OsakaTime},
+	}
+	for i := 1; i < len(timestamps); i++ {
+		previous, current := timestamps[i-1], timestamps[i]
+		if previous.at == nil && current.at != nil {
+			return fmt.Errorf("unsupported fork ordering: %s not enabled, but %s enabled at %d", previous.name, current.name, *current.at)
+		}
+		if previous.at != nil && current.at != nil && *previous.at > *current.at {
+			return fmt.Errorf("unsupported fork ordering: %s enabled at %d, but %s enabled at %d", previous.name, *previous.at, current.name, *current.at)
+		}
+	}
+	if modern.CancunTime != nil {
+		if modern.BlobSchedule == nil {
+			return fmt.Errorf("Cancun requires blobSchedule")
+		}
+		for _, fork := range []struct {
+			name   string
+			active bool
+			config *BlobConfig
+		}{
+			{name: "cancun", active: modern.CancunTime != nil, config: modern.BlobSchedule.Cancun},
+			{name: "prague", active: modern.PragueTime != nil, config: modern.BlobSchedule.Prague},
+			{name: "osaka", active: modern.OsakaTime != nil, config: modern.BlobSchedule.Osaka},
+		} {
+			if !fork.active {
+				continue
+			}
+			if fork.config == nil || fork.config.Target <= 0 || fork.config.Max < fork.config.Target || fork.config.BaseFeeUpdateFraction <= 0 {
+				return fmt.Errorf("invalid %s blob schedule", fork.name)
+			}
+		}
+	}
+	return nil
 }
 
 // CypheriumModernForks returns the modern EVM fork activation flags for

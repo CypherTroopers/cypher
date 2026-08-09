@@ -13,6 +13,7 @@ import (
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/bloombits"
+	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
@@ -29,6 +30,43 @@ type londonAPITestBackend struct {
 	config  *params.ChainConfig
 	price   *big.Int
 	tip     *big.Int
+}
+
+type feePolicyTestBackend struct {
+	*londonAPITestBackend
+	state *state.StateDB
+}
+
+func newFeePolicyTestBackend(t *testing.T) *feePolicyTestBackend {
+	t.Helper()
+	st, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &feePolicyTestBackend{londonAPITestBackend: newLondonAPITestBackend(), state: st}
+}
+
+func (b *feePolicyTestBackend) StateAndHeaderByNumberOrHash(context.Context, rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error) {
+	return b.state.Copy(), b.latestHeader(), nil
+}
+
+func (b *feePolicyTestBackend) BlockByNumberOrHash(context.Context, rpc.BlockNumberOrHash) (*types.Block, error) {
+	return types.NewBlockWithHeader(b.latestHeader()), nil
+}
+
+func (b *feePolicyTestBackend) GetEVM(_ context.Context, msg core.Message, st *state.StateDB, header *types.Header) (*vm.EVM, func() error, error) {
+	ctx := vm.Context{
+		CanTransfer: core.CanTransfer,
+		Transfer:    core.Transfer,
+		Origin:      msg.From(),
+		GasPrice:    new(big.Int).Set(msg.GasPrice()),
+		BlockNumber: new(big.Int).Set(header.Number),
+		Time:        new(big.Int).SetUint64(header.Time),
+		GasLimit:    header.GasLimit,
+		BaseFee:     new(big.Int).Set(header.BaseFee),
+		BlobBaseFee: new(big.Int),
+	}
+	return vm.NewEVM(ctx, st, b.config, vm.Config{}), func() error { return st.Error() }, nil
 }
 
 func newLondonAPITestBackend() *londonAPITestBackend {
@@ -190,6 +228,31 @@ func TestMaxPriorityFeePerGasReturnsNonZero(t *testing.T) {
 	}
 }
 
+func TestRPCMarshalHeaderModernFields(t *testing.T) {
+	header := &types.Header{
+		Number:           big.NewInt(1),
+		Difficulty:       big.NewInt(1),
+		WithdrawalsHash:  common.HexToHash("0x01"),
+		BlobGasUsed:      2,
+		ExcessBlobGas:    3,
+		ParentBeaconRoot: common.HexToHash("0x04"),
+		RequestsHash:     common.HexToHash("0x05"),
+	}
+	fields := RPCMarshalHeader(header)
+	checks := map[string]interface{}{
+		"withdrawalsRoot":       header.WithdrawalsHash,
+		"blobGasUsed":           hexutil.Uint64(2),
+		"excessBlobGas":         hexutil.Uint64(3),
+		"parentBeaconBlockRoot": header.ParentBeaconRoot,
+		"requestsHash":          header.RequestsHash,
+	}
+	for name, want := range checks {
+		if got := fields[name]; got != want {
+			t.Fatalf("%s = %#v, want %#v", name, got, want)
+		}
+	}
+}
+
 func TestFeeHistoryShape(t *testing.T) {
 	api := NewPublicEthereumAPI(newLondonAPITestBackend())
 	history, err := api.FeeHistory(context.Background(), hexutil.Uint64(2), rpc.LatestBlockNumber, []float64{10, 90})
@@ -272,6 +335,33 @@ func TestRPCTransactionModernFields(t *testing.T) {
 	if len(blobRPC.BlobVersionedHashes) != 1 || blobRPC.BlobVersionedHashes[0] != blobHash {
 		t.Fatalf("blob hashes missing: %#v", blobRPC.BlobVersionedHashes)
 	}
+
+	auth := types.SetCodeAuthorization{
+		ChainID: big.NewInt(1337), Address: to, Nonce: 3,
+		V: big.NewInt(1), R: big.NewInt(2), S: big.NewInt(3),
+	}
+	setCode := types.NewTx(&types.SetCodeTx{
+		ChainID: big.NewInt(1337), Nonce: 3, GasTipCap: big.NewInt(4), GasFeeCap: big.NewInt(40),
+		Gas: 40000, To: to, Value: new(big.Int), AccessList: accessList,
+		AuthList: []types.SetCodeAuthorization{auth}, V: big.NewInt(0), R: big.NewInt(1), S: big.NewInt(1),
+	})
+	setCodeRPC := newRPCTransaction(setCode, common.Hash{}, 0, 0)
+	if setCodeRPC.Type != hexutil.Uint64(types.SetCodeTxType) || len(setCodeRPC.AuthorizationList) != 1 {
+		t.Fatalf("set-code RPC fields missing: %#v", setCodeRPC)
+	}
+	setCodeRPC.AuthorizationList[0].Nonce = 99
+	if setCode.SetCodeAuthorizations()[0].Nonce != 3 {
+		t.Fatal("RPC authorizationList aliases transaction data")
+	}
+
+	for name, tx := range map[string]*types.Transaction{"dynamic": dynamic, "blob": blob, "set-code": setCode} {
+		rpcTx := newRPCTransaction(tx, common.Hash{}, 0, 0)
+		setRPCTransactionEffectiveGasPrice(rpcTx, tx, big.NewInt(10))
+		want := new(big.Int).Add(big.NewInt(10), tx.GasTipCap())
+		if rpcTx.GasPrice.ToInt().Cmp(want) != 0 {
+			t.Fatalf("%s mined gasPrice = %v, want %v", name, rpcTx.GasPrice, want)
+		}
+	}
 }
 
 func TestSendTxArgsModernDefaultsAndToTransaction(t *testing.T) {
@@ -317,5 +407,153 @@ func TestSendTxArgsModernDefaultsAndToTransaction(t *testing.T) {
 	legacyTx := legacy.toTransaction(backend.config.ChainID)
 	if legacyTx.Type() != types.LegacyTxType {
 		t.Fatalf("expected legacy tx, got type %d", legacyTx.Type())
+	}
+
+	modernAccessList := types.AccessList{{Address: to}}
+	blobType := hexutil.Uint64(types.BlobTxType)
+	blobFeeCap := (*hexutil.Big)(big.NewInt(7))
+	var blobHash common.Hash
+	blobHash[0] = types.BlobCommitmentVersionKZG
+	blob := SendTxArgs{
+		From: to, To: &to, Gas: &gas, Nonce: &nonce, Type: &blobType,
+		MaxFeePerGas: feeCap, MaxPriorityFeePerGas: tipCap, AccessList: &modernAccessList,
+		MaxFeePerBlobGas: blobFeeCap, BlobVersionedHashes: []common.Hash{blobHash},
+	}
+	if err := blob.setDefaults(ctx, backend); err != nil {
+		t.Fatalf("blob defaults failed: %v", err)
+	}
+	blobTx := blob.toTransaction(backend.config.ChainID)
+	if blobTx.Type() != types.BlobTxType || blobTx.BlobGasFeeCap().Cmp(big.NewInt(7)) != 0 || len(blobTx.BlobHashes()) != 1 {
+		t.Fatalf("blob transaction fields missing: %#v", blobTx)
+	}
+
+	setCodeType := hexutil.Uint64(types.SetCodeTxType)
+	auth := types.SetCodeAuthorization{
+		ChainID: big.NewInt(1337), Address: to, Nonce: 0,
+		V: big.NewInt(0), R: big.NewInt(1), S: big.NewInt(1),
+	}
+	setCode := SendTxArgs{
+		From: to, To: &to, Gas: &gas, Nonce: &nonce, Type: &setCodeType,
+		MaxFeePerGas: feeCap, MaxPriorityFeePerGas: tipCap, AccessList: &modernAccessList,
+		AuthorizationList: []types.SetCodeAuthorization{auth},
+	}
+	if err := setCode.setDefaults(ctx, backend); err != nil {
+		t.Fatalf("set-code defaults failed: %v", err)
+	}
+	setCodeTx := setCode.toTransaction(backend.config.ChainID)
+	if setCodeTx.Type() != types.SetCodeTxType || len(setCodeTx.SetCodeAuthorizations()) != 1 {
+		t.Fatalf("set-code transaction fields missing: %#v", setCodeTx)
+	}
+}
+
+func TestNativeTransferDefaultFeeAndExecutionClassification(t *testing.T) {
+	backend := newFeePolicyTestBackend(t)
+	ctx := context.Background()
+	from := common.HexToAddress("0x1000000000000000000000000000000000000001")
+	to := common.HexToAddress("0x2000000000000000000000000000000000000002")
+
+	args := SendTxArgs{From: from, To: &to}
+	if err := args.setDefaults(ctx, backend); err != nil {
+		t.Fatalf("plain transfer defaults failed: %v", err)
+	}
+	if args.Gas == nil || uint64(*args.Gas) != params.TxGas {
+		t.Fatalf("plain transfer gas = %v, want %d", args.Gas, params.TxGas)
+	}
+	if args.GasPrice == nil || args.GasPrice.ToInt().Cmp(big.NewInt(params.FixedTransferGasPricePerGas)) != 0 {
+		t.Fatalf("plain transfer gasPrice = %v, want %v", args.GasPrice, params.FixedTransferGasPricePerGas)
+	}
+	if tx := args.toTransaction(backend.config.ChainID); tx.Type() != types.LegacyTxType {
+		t.Fatalf("plain transfer type = %d, want legacy", tx.Type())
+	}
+	wantFee := new(big.Int).Mul(new(big.Int).SetUint64(params.TxGas), big.NewInt(params.FixedTransferGasPricePerGas))
+	gotFee := new(big.Int).Mul(new(big.Int).SetUint64(uint64(*args.Gas)), args.GasPrice.ToInt())
+	if gotFee.Cmp(wantFee) != 0 || gotFee.Cmp(big.NewInt(21_000_000_000_000)) != 0 {
+		t.Fatalf("plain transfer fee = %v, want 0.000021 native coin", gotFee)
+	}
+
+	blockRef := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
+	contract := common.HexToAddress("0x3000000000000000000000000000000000000003")
+	backend.state.SetCode(contract, []byte{byte(vm.STOP)})
+	for name, call := range map[string]CallArgs{
+		"contract":   {To: &contract},
+		"precompile": {To: func() *common.Address { a := common.BytesToAddress([]byte{1}); return &a }()},
+		"set-code":   {To: &to, AuthorizationList: []types.SetCodeAuthorization{{ChainID: big.NewInt(1337), Address: to}}},
+		"blob":       {To: &to, BlobVersionedHashes: []common.Hash{{types.BlobCommitmentVersionKZG}}},
+	} {
+		plain, err := isPlainValueTransferCall(ctx, backend, call, blockRef)
+		if err != nil {
+			t.Fatalf("%s classification failed: %v", name, err)
+		}
+		if plain {
+			t.Fatalf("%s execution was incorrectly fixed to 21,000 gas", name)
+		}
+	}
+}
+
+func TestDynamicContractEstimateCapsGasByFeeCapAndBalance(t *testing.T) {
+	backend := newFeePolicyTestBackend(t)
+	header := backend.latestHeader()
+	header.GasLimit = 1_000_000
+	header.BaseFee = big.NewInt(10)
+	from := common.HexToAddress("0x4000000000000000000000000000000000000004")
+	contract := common.HexToAddress("0x5000000000000000000000000000000000000005")
+	backend.state.CreateAccount(from)
+	backend.state.AddBalance(from, big.NewInt(3_000_000)) // Funds at most 30,000 gas at feeCap=100.
+	backend.state.SetCode(contract, []byte{byte(vm.STOP)})
+	feeCap := (*hexutil.Big)(big.NewInt(100))
+	tipCap := (*hexutil.Big)(big.NewInt(1))
+	args := SendTxArgs{
+		From: from, To: &contract,
+		MaxFeePerGas: feeCap, MaxPriorityFeePerGas: tipCap,
+	}
+	if err := args.setDefaults(context.Background(), backend); err != nil {
+		t.Fatalf("dynamic contract estimation failed: %v", err)
+	}
+	if args.Gas == nil || uint64(*args.Gas) < params.TxGas || uint64(*args.Gas) > 30_000 {
+		t.Fatalf("estimated gas = %v, want fundable range [%d,30000]", args.Gas, params.TxGas)
+	}
+}
+
+func TestCallArgsModernMessageFields(t *testing.T) {
+	to := common.HexToAddress("0x3333333333333333333333333333333333333333")
+	blobFeeCap := (*hexutil.Big)(big.NewInt(9))
+	var blobHash common.Hash
+	blobHash[0] = types.BlobCommitmentVersionKZG
+	blobMsg := (&CallArgs{To: &to, MaxFeePerBlobGas: blobFeeCap, BlobVersionedHashes: []common.Hash{blobHash}}).ToMessage(100000)
+	if blobMsg.Type() != types.BlobTxType || blobMsg.BlobGasFeeCap().Cmp(big.NewInt(9)) != 0 || len(blobMsg.BlobHashes()) != 1 {
+		t.Fatalf("blob call message fields missing: type=%d fee=%v hashes=%v", blobMsg.Type(), blobMsg.BlobGasFeeCap(), blobMsg.BlobHashes())
+	}
+	auth := types.SetCodeAuthorization{ChainID: big.NewInt(1), Address: to, V: new(big.Int), R: big.NewInt(1), S: big.NewInt(1)}
+	setCodeMsg := (&CallArgs{To: &to, AuthorizationList: []types.SetCodeAuthorization{auth}}).ToMessage(100000)
+	if setCodeMsg.Type() != types.SetCodeTxType || len(setCodeMsg.SetCodeAuthorizations()) != 1 {
+		t.Fatalf("set-code call message fields missing: type=%d auth=%v", setCodeMsg.Type(), setCodeMsg.SetCodeAuthorizations())
+	}
+}
+
+func TestBlobRPCReceiptFields(t *testing.T) {
+	to := common.Address{1}
+	var blobHash common.Hash
+	blobHash[0] = types.BlobCommitmentVersionKZG
+	tx := types.NewTx(&types.BlobTx{ChainID: big.NewInt(1), To: to, GasTipCap: new(big.Int), GasFeeCap: big.NewInt(1), Value: new(big.Int), BlobFeeCap: big.NewInt(1), BlobHashes: []common.Hash{blobHash}})
+	header := &types.Header{Number: big.NewInt(1), Time: 0, ExcessBlobGas: 123}
+	fields := make(map[string]interface{})
+	addBlobRPCReceiptFields(fields, newLondonAPITestBackend().config, types.NewBlockWithHeader(header), tx)
+	if got := fields["blobGasUsed"]; got != hexutil.Uint64(params.BlobTxBlobGasPerBlob) {
+		t.Fatalf("blobGasUsed = %#v", got)
+	}
+	if price, ok := fields["blobGasPrice"].(*hexutil.Big); !ok || price.ToInt().Sign() <= 0 {
+		t.Fatalf("blobGasPrice = %#v", fields["blobGasPrice"])
+	}
+}
+
+func TestUnpricedCallMessageUsesZeroFee(t *testing.T) {
+	msg := (&CallArgs{}).ToMessage(100_000)
+	if msg.GasPrice().Sign() != 0 || msg.GasFeeCap().Sign() != 0 || msg.GasTipCap().Sign() != 0 {
+		t.Fatalf("unpriced call has non-zero fees: price=%v cap=%v tip=%v", msg.GasPrice(), msg.GasFeeCap(), msg.GasTipCap())
+	}
+	evm := &vm.EVM{Context: vm.Context{BaseFee: big.NewInt(7), BlobBaseFee: big.NewInt(11)}}
+	lowerUnpricedCallFees(evm, msg)
+	if evm.Context.BaseFee.Sign() != 0 || evm.Context.BlobBaseFee.Sign() != 0 {
+		t.Fatalf("unpriced call fees were not lowered: base=%v blob=%v", evm.Context.BaseFee, evm.Context.BlobBaseFee)
 	}
 }

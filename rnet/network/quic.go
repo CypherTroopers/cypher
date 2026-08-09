@@ -30,11 +30,15 @@ const (
 	quicHandshakeMaxPacketSize = 64 * 1024
 	quicControlMaxPacketSize   = 512 * 1024
 	quicMetadataMaxPacketSize  = 4 * 1024 * 1024
-	quicControlReceiveBudget   = 64 * 1024 * 1024
-	quicControlPeerBudget      = 1 * 1024 * 1024
-	quicMetadataReceiveBudget  = 32 * 1024 * 1024
-	quicMetadataPeerBudget     = 4 * 1024 * 1024
-	quicLargeDataReceiveBudget = uint64(def_MaxPacketSize)
+	// An Osaka block is capped at 8 MiB. Proposal sidecars add bounded proof,
+	// identity and RLP framing fields, so 9 MiB leaves deterministic envelope
+	// headroom without allocating the generic 257 MiB bulk-gossip ceiling.
+	quicProposalBodyMaxPacketSize = 9 * 1024 * 1024
+	quicControlReceiveBudget      = 64 * 1024 * 1024
+	quicControlPeerBudget         = 1 * 1024 * 1024
+	quicMetadataReceiveBudget     = 32 * 1024 * 1024
+	quicMetadataPeerBudget        = 4 * 1024 * 1024
+	quicLargeDataReceiveBudget    = uint64(def_MaxPacketSize)
 )
 
 type quicReceiveLimiter struct {
@@ -260,7 +264,9 @@ func quicClassPacketLimit(class uint8) (uint32, bool) {
 		return quicControlMaxPacketSize, true
 	case NetClassProposalBodyControl, NetClassCommitteeControl, NetClassCandidateMiner, NetClassHeartbeat:
 		return quicMetadataMaxPacketSize, true
-	case NetClassProposalBodyBulk, NetClassBulkGossip:
+	case NetClassProposalBodyBulk:
+		return quicProposalBodyMaxPacketSize, true
+	case NetClassBulkGossip:
 		return def_MaxPacketSize, true
 	default:
 		return 0, false

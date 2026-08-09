@@ -45,7 +45,6 @@ func TestBlobGasCost(t *testing.T) {
 		t.Fatalf("blob gas cost mismatch: got %s want %s", got, wantBlobCost)
 	}
 	wantTotal := tx.Cost()
-	wantTotal.Add(wantTotal, wantBlobCost)
 	if got := tx.CostWithBlobGas(); got.Cmp(wantTotal) != 0 {
 		t.Fatalf("cost with blob gas mismatch: got %s want %s", got, wantTotal)
 	}

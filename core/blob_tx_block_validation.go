@@ -13,11 +13,7 @@ func ValidateBlockBlobTransactions(config *params.ChainConfig, header *types.Hea
 		return nil
 	}
 	modern := config.CypheriumModernForks(header.Number, header.Time)
-	blobCfg := config.ActiveBlobConfig(header.Time)
-	maxBlobs := 0
-	if blobCfg != nil {
-		maxBlobs = blobCfg.Max
-	}
+	maxBlobs := params.MaxBlobsPerTransaction(config, header.Time)
 	blobBaseFee := params.CalcBlobBaseFeeAtTime(config, header.Time, header.ExcessBlobGas)
 	for _, tx := range txs {
 		if tx == nil || tx.Type() != types.BlobTxType {
@@ -29,6 +25,11 @@ func ValidateBlockBlobTransactions(config *params.ChainConfig, header *types.Hea
 		if err := tx.ValidateBlobTx(maxBlobs, blobBaseFee); err != nil {
 			return err
 		}
+		// ColossusX currently carries only the execution transaction in its block
+		// and proposal wire formats. Until an authenticated sidecar path is wired
+		// into proposal validation and full sync, fail closed instead of finalizing
+		// a commitment whose blob bytes are unavailable to validators.
+		return ErrBlobDAUnavailable
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
+	"github.com/cypherium/cypher/params"
 	"github.com/holiman/uint256"
 )
 
@@ -63,6 +64,76 @@ func TestCancunOpcodeStringOverrides(t *testing.T) {
 	}
 	if opCodeToString[MCOPY] != "MCOPY" {
 		t.Fatalf("expected MCOPY string, got %q", opCodeToString[MCOPY])
+	}
+}
+
+func TestMemoryMcopyExpandsForBothRanges(t *testing.T) {
+	tests := []struct {
+		name        string
+		dst, src    uint64
+		length      uint64
+		wantMemSize uint64
+	}{
+		{name: "destination farther", dst: 96, src: 0, length: 32, wantMemSize: 128},
+		{name: "source farther", dst: 0, src: 96, length: 32, wantMemSize: 128},
+		{name: "zero length ignores offsets", dst: ^uint64(0), src: ^uint64(0), length: 0, wantMemSize: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stack := newstack()
+			defer returnStack(stack)
+			stack.push(uint256.NewInt(tt.length))
+			stack.push(uint256.NewInt(tt.src))
+			stack.push(uint256.NewInt(tt.dst))
+			got, overflow := memoryMcopy(stack)
+			if overflow {
+				t.Fatal("unexpected memory size overflow")
+			}
+			if got != tt.wantMemSize {
+				t.Fatalf("memoryMcopy() = %d, want %d", got, tt.wantMemSize)
+			}
+		})
+	}
+}
+
+func TestMemoryMcopyRejectsWideSourceOffset(t *testing.T) {
+	stack := newstack()
+	defer returnStack(stack)
+	wideSource := new(uint256.Int)
+	wideSource.SetBytes(common.FromHex("0x10000000000000000"))
+	stack.push(uint256.NewInt(1))
+	stack.push(wideSource)
+	stack.push(uint256.NewInt(0))
+	if _, overflow := memoryMcopy(stack); !overflow {
+		t.Fatal("expected overflow for source offset wider than uint64")
+	}
+}
+
+func TestMcopyExecutionExpandsPartiallyOverlappingSource(t *testing.T) {
+	// Copy [0x10, 0x30) into [0, 0x20). Expanding only the destination
+	// would leave the source partially outside memory and used to panic in
+	// Memory.GetCopy. EIP-5656 requires expansion through source+length.
+	code := []byte{
+		byte(PUSH1), 0x20,
+		byte(PUSH1), 0x10,
+		byte(PUSH1), 0x00,
+		byte(MCOPY),
+		byte(PUSH1), 0x20,
+		byte(PUSH1), 0x00,
+		byte(RETURN),
+	}
+	evm := &EVM{chainRules: params.Rules{IsCancun: true}}
+	interpreter := NewEVMInterpreter(evm, Config{})
+	addr := common.HexToAddress("0x1")
+	contract := NewContract(AccountRef(addr), AccountRef(addr), new(big.Int), 100_000)
+	contract.SetCallCode(&addr, common.Hash{}, code)
+
+	output, err := interpreter.Run(contract, nil, false)
+	if err != nil {
+		t.Fatalf("MCOPY execution failed: %v", err)
+	}
+	if len(output) != 32 || !allZero(output) {
+		t.Fatalf("MCOPY output = %x, want 32 zero bytes", output)
 	}
 }
 
@@ -132,6 +203,7 @@ func (*transientStateDB) GetCommittedState(common.Address, common.Hash) common.H
 	return common.Hash{}
 }
 func (*transientStateDB) GetState(common.Address, common.Hash) common.Hash  { return common.Hash{} }
+func (*transientStateDB) GetStorageRoot(common.Address) common.Hash         { return common.Hash{} }
 func (*transientStateDB) SetState(common.Address, common.Hash, common.Hash) {}
 func (*transientStateDB) Suicide(common.Address) bool                       { return false }
 func (*transientStateDB) HasSuicided(common.Address) bool                   { return false }

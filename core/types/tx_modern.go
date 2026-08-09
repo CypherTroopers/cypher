@@ -66,7 +66,9 @@ type SetCodeAuthorization struct {
 	ChainID *big.Int       `json:"chainId"`
 	Address common.Address `json:"address"`
 	Nonce   uint64         `json:"nonce"`
-	V, R, S *big.Int       `json:"-"`
+	V       *big.Int       `json:"yParity"`
+	R       *big.Int       `json:"r"`
+	S       *big.Int       `json:"s"`
 }
 
 type SetCodeTx struct {

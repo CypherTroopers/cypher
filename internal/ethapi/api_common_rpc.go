@@ -51,10 +51,10 @@ func (s *PublicTransactionReceiptAPI) GetTransactionReceipt(ctx context.Context,
 	if loadedBlock, blockErr := s.b.BlockByHash(ctx, blockHash); blockErr == nil && loadedBlock != nil {
 		block = loadedBlock
 	}
-	if tx.Type() == types.DynamicFeeTxType {
+	if isEIP1559Transaction(tx) {
 		baseFee := fixedBaseFeePerGas()
 		if block != nil {
-			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil && headerBaseFee.Sign() > 0 {
+			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil {
 				baseFee = new(big.Int).Set(headerBaseFee)
 			}
 		}
@@ -80,6 +80,7 @@ func (s *PublicTransactionReceiptAPI) GetTransactionReceipt(ctx context.Context,
 	}
 
 	fields["status"] = hexutil.Uint(receipt.Status)
+	addBlobRPCReceiptFields(fields, s.b.ChainConfig(), block, tx)
 
 	if reward := commonTxRewardForHash(block, hash); reward != nil {
 		fields["commonTxApprover"] = reward.Approver

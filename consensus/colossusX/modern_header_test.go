@@ -80,13 +80,15 @@ func TestVerifyModernHeaderFieldsRejectsCancunBlobGasBeforeFork(t *testing.T) {
 	requireHeaderErrContains(t, verifyModernHeaderFields(cfg, header), "unexpected blobGasUsed before Cancun")
 }
 
-func TestVerifyModernHeaderFieldsRejectsBlobGasAboveGasUsed(t *testing.T) {
+func TestVerifyModernHeaderFieldsTreatsBlobGasAsIndependentFromExecutionGas(t *testing.T) {
 	cfg := modernHeaderTestConfig()
 	header := validModernHeader(1, 10)
 	header.GasUsed = 1
 	header.BlobGasUsed = params.BlobTxBlobGasPerBlob
 
-	requireHeaderErrContains(t, verifyModernHeaderFields(cfg, header), "invalid blobGasUsed")
+	if err := verifyModernHeaderFields(cfg, header); err != nil {
+		t.Fatalf("blob gas must not be compared with execution gas: %v", err)
+	}
 }
 
 func TestVerifyModernHeaderFieldsRejectsBlobGasMisalignment(t *testing.T) {
@@ -103,4 +105,32 @@ func TestVerifyModernHeaderFieldsRejectsRequestsHashBeforePrague(t *testing.T) {
 	header.RequestsHash = common.HexToHash("0x01")
 
 	requireHeaderErrContains(t, verifyModernHeaderFields(cfg, header), "unexpected requestsHash before Prague")
+}
+
+func TestVerifyModernHeaderFieldsRequiresExecutionOnlyShanghaiPragueRoots(t *testing.T) {
+	zero := uint64(0)
+	cfg := modernHeaderTestConfig()
+	modern := cfg.ModernForkConfig()
+	modern.ShanghaiTime = &zero
+	modern.PragueTime = &zero
+	cfg.SetModernForkConfig(modern)
+
+	header := validModernHeader(1, 10)
+	header.WithdrawalsHash = types.EmptyWithdrawalsHash
+	header.RequestsHash = types.EmptyRequestsHash
+	if err := verifyModernHeaderFields(cfg, header); err != nil {
+		t.Fatalf("valid execution-only modern roots rejected: %v", err)
+	}
+	header.WithdrawalsHash = common.Hash{}
+	requireHeaderErrContains(t, verifyModernHeaderFields(cfg, header), "withdrawalsRoot")
+	header.WithdrawalsHash = types.EmptyWithdrawalsHash
+	header.RequestsHash = common.Hash{}
+	requireHeaderErrContains(t, verifyModernHeaderFields(cfg, header), "requestsHash")
+}
+
+func TestVerifyModernHeaderFieldsRejectsUnauthenticatedBeaconRoot(t *testing.T) {
+	cfg := modernHeaderTestConfig()
+	header := validModernHeader(1, 10)
+	header.ParentBeaconRoot = common.HexToHash("0x01")
+	requireHeaderErrContains(t, verifyModernHeaderFields(cfg, header), "unsupported by ColossusX")
 }

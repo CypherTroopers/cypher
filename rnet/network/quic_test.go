@@ -576,7 +576,7 @@ func TestQUICClassPacketLimits(t *testing.T) {
 		{NetClassHandshake, quicHandshakeMaxPacketSize},
 		{NetClassHotstuffControl, quicControlMaxPacketSize},
 		{NetClassProposalBodyControl, quicMetadataMaxPacketSize},
-		{NetClassProposalBodyBulk, def_MaxPacketSize},
+		{NetClassProposalBodyBulk, quicProposalBodyMaxPacketSize},
 		{NetClassBulkGossip, def_MaxPacketSize},
 	}
 	for _, test := range tests {

@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"strings"
 
 	"github.com/cypherium/cypher/common"
@@ -170,6 +171,16 @@ func validateFairHotstuffConfigTransition(header *types.Header, stored, next *pa
 	return nil
 }
 
+func validateModernForkConfigTransition(stored, next *params.ChainConfig, head uint64) error {
+	if head == 0 || stored == nil || next == nil {
+		return nil
+	}
+	if !reflect.DeepEqual(stored.ModernForkConfig(), next.ModernForkConfig()) {
+		return fmt.Errorf("cannot change modern fork schedule after chain advanced to block %d", head)
+	}
+	return nil
+}
+
 func (e *GenesisMismatchError) Error() string {
 	return fmt.Sprintf("database contains incompatible genesis (have %x, new %x)", e.Stored, e.New)
 }
@@ -272,6 +283,9 @@ func SetupGenesisBlock(db ethdb.Database, genesis *Genesis) (*params.ChainConfig
 	if err := validateFairHotstuffConfigTransition(header, storedcfg, newcfg); err != nil {
 		return newcfg, stored, err
 	}
+	if err := validateModernForkConfigTransition(storedcfg, newcfg, *height); err != nil {
+		return newcfg, stored, err
+	}
 	rawdb.WriteChainConfig(db, stored, newcfg)
 
 	return newcfg, stored, nil
@@ -311,6 +325,21 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 			statedb.SetState(addr, key, value)
 		}
 	}
+	// Prague is active from genesis on the Cypherium network. Install the
+	// canonical EIP-2935 contract before deriving the genesis state root so all
+	// nodes commit to exactly the same system-code account.
+	if g.Config != nil && g.Config.IsPrague(new(big.Int).SetUint64(g.Number), g.Timestamp) {
+		statedb.SetNonce(params.HistoryStorageAddress, 1)
+		statedb.SetCode(params.HistoryStorageAddress, params.HistoryStorageCode)
+		for _, addr := range []common.Address{params.WithdrawalRequestAddress, params.ConsolidationRequestAddress} {
+			statedb.SetNonce(addr, 1)
+			statedb.SetCode(addr, params.UnsupportedCLSystemCode)
+		}
+	}
+	if g.Config != nil && g.Config.IsCancun(new(big.Int).SetUint64(g.Number), g.Timestamp) {
+		statedb.SetNonce(params.BeaconRootsAddress, 1)
+		statedb.SetCode(params.BeaconRootsAddress, params.UnsupportedCLSystemCode)
+	}
 	root := statedb.IntermediateRoot(false)
 	head := &types.Header{
 		Number:     new(big.Int).SetUint64(g.Number),
@@ -334,6 +363,12 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 	}
 	if head.BaseFee == nil && g.Config != nil && g.Config.IsLondon(head.Number) {
 		head.BaseFee = big.NewInt(params.FixedBaseFeePerGas)
+	}
+	if g.Config != nil && g.Config.IsShanghai(head.Number, head.Time) {
+		head.WithdrawalsHash = types.EmptyWithdrawalsHash
+	}
+	if g.Config != nil && g.Config.IsPrague(head.Number, head.Time) {
+		head.RequestsHash = types.EmptyRequestsHash
 	}
 	statedb.Commit(false)
 	statedb.Database().TrieDB().Commit(root, true, nil)

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/params"
 	"github.com/holiman/uint256"
@@ -20,19 +21,37 @@ type (
 	GetHashFunc     func(uint64) common.Hash
 )
 
-func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
-	var precompiles map[common.Address]PrecompiledContract
+func activePrecompiledContracts(rules params.Rules) map[common.Address]PrecompiledContract {
 	switch {
-	case evm.chainRules.IsYoloV1:
-		precompiles = PrecompiledContractsYoloV1
-	case evm.chainRules.IsIstanbul:
-		precompiles = PrecompiledContractsIstanbul
-	case evm.chainRules.IsByzantium:
-		precompiles = PrecompiledContractsByzantium
+	case rules.IsOsaka:
+		return PrecompiledContractsOsaka
+	case rules.IsPrague:
+		return PrecompiledContractsPrague
+	case rules.IsCancun:
+		return PrecompiledContractsCancun
+	case rules.IsYoloV1:
+		return PrecompiledContractsYoloV1
+	case rules.IsBerlin:
+		return PrecompiledContractsBerlin
+	case rules.IsIstanbul:
+		return PrecompiledContractsIstanbul
+	case rules.IsByzantium:
+		return PrecompiledContractsByzantium
 	default:
-		precompiles = PrecompiledContractsHomestead
+		return PrecompiledContractsHomestead
 	}
-	p, ok := precompiles[addr]
+}
+
+// IsPrecompiledContract reports whether addr is an active precompile under rules.
+// RPC gas estimation uses the same selector as EVM execution so a precompile is
+// never mistaken for a plain 21,000-gas EOA transfer merely because it has no code.
+func IsPrecompiledContract(addr common.Address, rules params.Rules) bool {
+	_, ok := activePrecompiledContracts(rules)[addr]
+	return ok
+}
+
+func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
+	p, ok := activePrecompiledContracts(evm.chainRules)[addr]
 	return p, ok
 }
 
@@ -138,10 +157,10 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	}
 	if isPrecompile {
 		ret, gas, err = RunPrecompiledContract(p, input, gas)
-	} else if code := evm.StateDB.GetCode(addr); len(code) > 0 {
+	} else if code := evm.resolveCode(addr); len(code) > 0 {
 		addrCopy := addr
 		contract := NewContract(caller, AccountRef(addrCopy), value, gas)
-		contract.SetCallCode(&addrCopy, evm.StateDB.GetCodeHash(addrCopy), code)
+		contract.SetCallCode(&addrCopy, evm.resolveCodeHash(addrCopy), code)
 		ret, err = run(evm, contract, input, false)
 		gas = contract.Gas
 	}
@@ -172,7 +191,7 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 	} else {
 		addrCopy := addr
 		contract := NewContract(caller, AccountRef(caller.Address()), value, gas)
-		contract.SetCallCode(&addrCopy, evm.StateDB.GetCodeHash(addrCopy), evm.StateDB.GetCode(addrCopy))
+		contract.SetCallCode(&addrCopy, evm.resolveCodeHash(addrCopy), evm.resolveCode(addrCopy))
 		ret, err = run(evm, contract, input, false)
 		gas = contract.Gas
 	}
@@ -200,7 +219,7 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 	} else {
 		addrCopy := addr
 		contract := NewContract(caller, AccountRef(caller.Address()), nil, gas).AsDelegate()
-		contract.SetCallCode(&addrCopy, evm.StateDB.GetCodeHash(addrCopy), evm.StateDB.GetCode(addrCopy))
+		contract.SetCallCode(&addrCopy, evm.resolveCodeHash(addrCopy), evm.resolveCode(addrCopy))
 		ret, err = run(evm, contract, input, false)
 		gas = contract.Gas
 	}
@@ -229,7 +248,7 @@ func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte
 	} else {
 		addrCopy := addr
 		contract := NewContract(caller, AccountRef(addrCopy), new(big.Int), gas)
-		contract.SetCallCode(&addrCopy, evm.StateDB.GetCodeHash(addrCopy), evm.StateDB.GetCode(addrCopy))
+		contract.SetCallCode(&addrCopy, evm.resolveCodeHash(addrCopy), evm.resolveCode(addrCopy))
 		ret, err = run(evm, contract, input, true)
 		gas = contract.Gas
 	}
@@ -240,6 +259,30 @@ func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte
 		}
 	}
 	return ret, gas, err
+}
+
+// resolveCode returns account code and, from Prague onward, follows one
+// EIP-7702 delegation designator. Delegation chains are deliberately not
+// followed recursively.
+func (evm *EVM) resolveCode(addr common.Address) []byte {
+	code := evm.StateDB.GetCode(addr)
+	if !evm.chainRules.IsPrague {
+		return code
+	}
+	if target, ok := types.ParseDelegation(code); ok {
+		return evm.StateDB.GetCode(target)
+	}
+	return code
+}
+
+// resolveCodeHash mirrors resolveCode for jump-destination analysis caching.
+func (evm *EVM) resolveCodeHash(addr common.Address) common.Hash {
+	if evm.chainRules.IsPrague {
+		if target, ok := types.ParseDelegation(evm.StateDB.GetCode(addr)); ok {
+			return evm.StateDB.GetCodeHash(target)
+		}
+	}
+	return evm.StateDB.GetCodeHash(addr)
 }
 
 type codeAndHash struct {
@@ -255,6 +298,9 @@ func (c *codeAndHash) Hash() common.Hash {
 }
 
 func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64, value *big.Int, address common.Address) ([]byte, common.Address, uint64, error) {
+	if evm.chainRules.IsShanghai && len(codeAndHash.code) > params.MaxInitCodeSize {
+		return nil, address, 0, ErrMaxInitCodeSizeExceeded
+	}
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, common.Address{}, gas, ErrDepth
 	}
@@ -262,9 +308,20 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		return nil, common.Address{}, gas, ErrInsufficientBalance
 	}
 	nonce := evm.StateDB.GetNonce(caller.Address())
+	if nonce+1 < nonce {
+		return nil, common.Address{}, gas, ErrNonceUintOverflow
+	}
 	evm.StateDB.SetNonce(caller.Address(), nonce+1)
+	// EIP-2929 warms a CREATE/CREATE2 target before collision checks and before
+	// the execution snapshot, so a failed creation leaves the address warm.
+	if evm.chainRules.IsBerlin {
+		evm.StateDB.AddAddressToAccessList(address)
+	}
 	contractHash := evm.StateDB.GetCodeHash(address)
-	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != emptyCodeHash) {
+	storageRoot := evm.StateDB.GetStorageRoot(address)
+	if evm.StateDB.GetNonce(address) != 0 ||
+		(contractHash != (common.Hash{}) && contractHash != emptyCodeHash) ||
+		(storageRoot != (common.Hash{}) && storageRoot != types.EmptyRootHash) {
 		return nil, common.Address{}, 0, ErrContractAddressCollision
 	}
 	snapshot := evm.StateDB.Snapshot()
@@ -290,13 +347,17 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		maxCodeSize = evm.chainConfig.GetMaxCodeSize(evm.Context.BlockNumber)
 	}
 	maxCodeSizeExceeded := evm.chainRules.IsEIP158 && len(ret) > maxCodeSize
-	if err == nil && !maxCodeSizeExceeded {
+	invalidCode := evm.chainRules.IsLondon && len(ret) > 0 && ret[0] == 0xef
+	if err == nil && !maxCodeSizeExceeded && !invalidCode {
 		createDataGas := uint64(len(ret)) * params.CreateDataGas
 		if contract.UseGas(createDataGas) {
 			evm.StateDB.SetCode(address, ret)
 		} else {
 			err = ErrCodeStoreOutOfGas
 		}
+	}
+	if invalidCode && err == nil {
+		err = ErrInvalidCode
 	}
 	if maxCodeSizeExceeded || (err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas)) {
 		evm.StateDB.RevertToSnapshot(snapshot)

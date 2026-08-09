@@ -13,6 +13,8 @@
     "londonBlock": 0,
     "shanghaiTime": 0,
     "cancunTime": 0,
+    "pragueTime": 0,
+    "osakaTime": 0,
 
     "blobSchedule": {
       "cancun": {
@@ -151,7 +153,7 @@
 
   "nonce": "0x0",
 
-  "mixHash": "0x20cb28ea65294d4d20465d4b736b1c1c938a78e3dd3805d47b0b4050571fc3e1",
+  "mixHash": "0x998bdc7bdb712a076b112129c2101b75b04687ea851aa24b74068a231a9c8d3f",
 
   "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 

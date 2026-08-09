@@ -180,7 +180,7 @@ const (
 	// - Version 9
 	//  The following incompatible database changes were added:
 	//    * FHS headers carry a self-contained direct-child finality proof
-	BlockChainVersion uint64 = 9
+	BlockChainVersion uint64 = 10
 )
 
 // CacheConfig contains the configuration values for the trie caching/pruning
@@ -2128,6 +2128,9 @@ func (bc *BlockChain) commitVerifiedProposalLocked(vp *VerifiedProposal, childQC
 				if err := block.SetFHSFinalityProof(encodedFinalityProof); err != nil {
 					return NonStatTy, err
 				}
+				if err := validateOsakaBlockSize(bc.chainConfig, block); err != nil {
+					return NonStatTy, fmt.Errorf("Fair HotStuff finality proof exceeds the Osaka block-size limit: %w", err)
+				}
 				vp.Block = block
 				stored := rawdb.ReadBlock(bc.db, block.Hash(), block.NumberU64())
 				if stored == nil || !bytes.Equal(stored.CopyOrg().EncodeToBytes(), block.CopyOrg().EncodeToBytes()) {
@@ -2168,6 +2171,9 @@ func (bc *BlockChain) commitVerifiedProposalLocked(vp *VerifiedProposal, childQC
 			if err := block.SetFHSFinalityProof(encodedFinalityProof); err != nil {
 				return NonStatTy, err
 			}
+			if err := validateOsakaBlockSize(bc.chainConfig, block); err != nil {
+				return NonStatTy, fmt.Errorf("Fair HotStuff finality proof exceeds the Osaka block-size limit: %w", err)
+			}
 			if err := bc.validateFHSCanonicalExtension(block); err != nil {
 				return NonStatTy, err
 			}
@@ -2201,6 +2207,9 @@ func (bc *BlockChain) commitVerifiedProposalLocked(vp *VerifiedProposal, childQC
 	if bc.chainConfig != nil && bc.chainConfig.FairHotstuff {
 		if err := block.SetFHSFinalityProof(encodedFinalityProof); err != nil {
 			return NonStatTy, err
+		}
+		if err := validateOsakaBlockSize(bc.chainConfig, block); err != nil {
+			return NonStatTy, fmt.Errorf("Fair HotStuff finality proof exceeds the Osaka block-size limit: %w", err)
 		}
 	}
 	if BadHashes[block.Hash()] {

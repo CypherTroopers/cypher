@@ -7,12 +7,61 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/rlp"
 )
 
 func testAddress(n byte) common.Address {
 	var addr common.Address
 	addr[19] = n
 	return addr
+}
+
+func TestTypedTransactionRejectsOversizedIntegerFields(t *testing.T) {
+	overflow := new(big.Int).Lsh(big.NewInt(1), 256)
+	to := testAddress(1)
+	inner := &SetCodeTx{
+		ChainID:   big.NewInt(1),
+		GasTipCap: big.NewInt(1),
+		GasFeeCap: big.NewInt(1),
+		To:        to,
+		Value:     big.NewInt(0),
+		AuthList: []SetCodeAuthorization{{
+			ChainID: overflow,
+			Address: to,
+			V:       big.NewInt(0),
+			R:       big.NewInt(1),
+			S:       big.NewInt(1),
+		}},
+		V: big.NewInt(0), R: big.NewInt(1), S: big.NewInt(1),
+	}
+	if _, err := NewTx(inner).MarshalBinary(); err == nil {
+		t.Fatal("expected oversized authorization chainId to be rejected on encode")
+	}
+	payload, err := rlp.EncodeToBytes(inner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Transaction
+	if err := decoded.UnmarshalBinary(append([]byte{SetCodeTxType}, payload...)); err == nil {
+		t.Fatal("expected oversized authorization chainId to be rejected on decode")
+	}
+}
+
+func TestTypedTransactionRejectsTrailingPayload(t *testing.T) {
+	to := testAddress(1)
+	tx := NewTx(&DynamicFeeTx{
+		ChainID: big.NewInt(1), GasTipCap: big.NewInt(1), GasFeeCap: big.NewInt(1),
+		Gas: 21_000, To: &to, Value: big.NewInt(0), V: big.NewInt(0), R: big.NewInt(1), S: big.NewInt(1),
+	})
+	encoded, err := tx.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded = append(encoded, 0x80) // A second, ignored RLP value.
+	var decoded Transaction
+	if err := decoded.UnmarshalBinary(encoded); err == nil {
+		t.Fatal("typed transaction with trailing RLP was accepted")
+	}
 }
 
 func testHash(n byte) common.Hash {

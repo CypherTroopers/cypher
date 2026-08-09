@@ -138,7 +138,7 @@ func buildCommonRewardIndex(rewards []*types.CommonTxReward) (map[common.Hash]*t
 	return indexed, nil
 }
 
-func settleCommonRPCReward(statedb *state.StateDB, reward *types.CommonTxReward, expectedApprover common.Address, tx *types.Transaction, gasUsed uint64, baseFee *big.Int) error {
+func validateCommonRPCReward(reward *types.CommonTxReward, expectedApprover common.Address, tx *types.Transaction, gasUsed uint64, baseFee *big.Int) error {
 	if reward == nil {
 		return fmt.Errorf("missing common tx reward for admitted tx %s", tx.Hash())
 	}
@@ -160,11 +160,17 @@ func settleCommonRPCReward(statedb *state.StateDB, reward *types.CommonTxReward,
 	if reward.Burn.Cmp(expectedBurn) != 0 {
 		return fmt.Errorf("invalid common tx burn for %s: have %s want %s", tx.Hash(), reward.Burn, expectedBurn)
 	}
-	if expectedReward.Sign() > 0 {
-		statedb.AddBalance(expectedApprover, expectedReward)
+	return nil
+}
+
+func applyCommonRPCRewards(statedb *state.StateDB, rewards []*types.CommonTxReward) {
+	for _, reward := range rewards {
+		if reward == nil || reward.Approver == (common.Address{}) || reward.ApproverReward == nil || reward.ApproverReward.Sign() <= 0 {
+			continue
+		}
+		statedb.AddBalance(reward.Approver, reward.ApproverReward)
 	}
 	// Burn is represented by intentionally not crediting the remaining fee to any account.
-	return nil
 }
 
 // Process processes the state changes according to the Ethereum rules by running
@@ -215,6 +221,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
 	}
+	if err := ProcessParentBlockHash(p.config, header, statedb); err != nil {
+		return nil, nil, 0, err
+	}
 	var totalGas uint64
 
 	// Iterate over and process the individual transactions
@@ -236,7 +245,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			if !hasReward {
 				return nil, nil, 0, fmt.Errorf("common tx admission without reward for included tx: %s", txHash)
 			}
-			if err := settleCommonRPCReward(statedb, reward, admissionMiner, tx, receipt.GasUsed, header.BaseFee); err != nil {
+			if err := validateCommonRPCReward(reward, admissionMiner, tx, receipt.GasUsed, header.BaseFee); err != nil {
 				return nil, nil, 0, err
 			}
 			delete(admissionByTx, txHash)
@@ -255,6 +264,11 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			return nil, nil, 0, fmt.Errorf("common tx reward references tx not included in block: %s", hash)
 		}
 	}
+	// The proposer derives and applies Common RPC rewards only after executing
+	// every transaction. Apply them at the same boundary during import so a
+	// later transaction cannot observe rewards from an earlier transaction and
+	// produce a different state root.
+	applyCommonRPCRewards(statedb, block.CommonTxRewards())
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), totalGas)
 
@@ -293,6 +307,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	// Create a new receipt for the transaction, storing the intermediate root and gas used by the tx
 	// based on the eip phase, we're passing whether the root touch-delete accounts.
 	receipt := types.NewReceipt(root, result.Failed(), *usedGas)
+	receipt.Type = tx.Type()
 	receipt.TxHash = tx.Hash()
 	receipt.GasUsed = result.UsedGas
 	// if the transaction created a contract, store the creation address in the receipt.

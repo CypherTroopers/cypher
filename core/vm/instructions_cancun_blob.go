@@ -3,10 +3,17 @@ package vm
 import "github.com/holiman/uint256"
 
 func opBlobHash(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
-	idx := callContext.stack.peek().Uint64()
-	callContext.stack.peek().Clear()
-	if idx < uint64(len(interpreter.evm.BlobHashes)) {
-		callContext.stack.peek().SetBytes(interpreter.evm.BlobHashes[idx].Bytes())
+	index := callContext.stack.peek()
+	// EIP-4844 takes a uint256 index. Values wider than uint64 are necessarily
+	// out of range and must not alias a low index through truncation.
+	if index.IsUint64() {
+		idx := index.Uint64()
+		index.Clear()
+		if idx < uint64(len(interpreter.evm.BlobHashes)) {
+			index.SetBytes(interpreter.evm.BlobHashes[idx].Bytes())
+		}
+	} else {
+		index.Clear()
 	}
 	return nil, nil
 }

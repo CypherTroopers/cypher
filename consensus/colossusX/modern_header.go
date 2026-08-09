@@ -17,6 +17,13 @@ func verifyModernHeaderFields(config *params.ChainConfig, header *types.Header, 
 		parent = parents[0]
 	}
 	modern := config.CypheriumModernForks(header.Number, header.Time)
+	if modern.IsShanghai {
+		if header.WithdrawalsHash != types.EmptyWithdrawalsHash {
+			return fmt.Errorf("invalid withdrawalsRoot for execution-only Shanghai block: have %s want %s", header.WithdrawalsHash, types.EmptyWithdrawalsHash)
+		}
+	} else if header.WithdrawalsHash != (common.Hash{}) {
+		return fmt.Errorf("unexpected withdrawalsRoot before Shanghai fork")
+	}
 
 	if modern.IsLondon {
 		if header.BaseFee == nil {
@@ -33,6 +40,12 @@ func verifyModernHeaderFields(config *params.ChainConfig, header *types.Header, 
 		if err := verifyCancunBlobHeaderFields(config, header, parent); err != nil {
 			return err
 		}
+		// ColossusX has no Beacon consensus root source. Accepting an arbitrary
+		// non-zero value would let a proposer mutate the EIP-4788 system state
+		// without an authenticated consensus-layer commitment.
+		if header.ParentBeaconRoot != (common.Hash{}) {
+			return fmt.Errorf("non-zero parentBeaconBlockRoot is unsupported by ColossusX")
+		}
 	} else {
 		if header.BlobGasUsed != 0 {
 			return fmt.Errorf("unexpected blobGasUsed before Cancun fork")
@@ -45,16 +58,17 @@ func verifyModernHeaderFields(config *params.ChainConfig, header *types.Header, 
 		}
 	}
 
-	if !modern.IsPrague && header.RequestsHash != (common.Hash{}) {
+	if modern.IsPrague {
+		if header.RequestsHash != types.EmptyRequestsHash {
+			return fmt.Errorf("invalid requestsHash for ColossusX Prague block: have %s want %s", header.RequestsHash, types.EmptyRequestsHash)
+		}
+	} else if header.RequestsHash != (common.Hash{}) {
 		return fmt.Errorf("unexpected requestsHash before Prague fork")
 	}
 	return nil
 }
 
 func verifyCancunBlobHeaderFields(config *params.ChainConfig, header, parent *types.Header) error {
-	if header.BlobGasUsed > header.GasUsed {
-		return fmt.Errorf("invalid blobGasUsed: have %d, gasUsed %d", header.BlobGasUsed, header.GasUsed)
-	}
 	blobCfg := config.ActiveBlobConfig(header.Time)
 	maxBlobGas := params.MaxBlobGasPerBlock(blobCfg)
 	if header.BlobGasUsed > maxBlobGas {
@@ -64,7 +78,13 @@ func verifyCancunBlobHeaderFields(config *params.ChainConfig, header, parent *ty
 		return fmt.Errorf("invalid blobGasUsed alignment: have %d, blobGasPerBlob %d", header.BlobGasUsed, params.BlobTxBlobGasPerBlob)
 	}
 	if parent != nil {
-		expected := params.CalcExcessBlobGas(parent.ExcessBlobGas, parent.BlobGasUsed, blobCfg)
+		expected := params.CalcExcessBlobGasForFork(
+			config.IsOsaka(header.Number, header.Time),
+			parent.ExcessBlobGas,
+			parent.BlobGasUsed,
+			parent.BaseFee,
+			blobCfg,
+		)
 		if header.ExcessBlobGas != expected {
 			return fmt.Errorf("invalid excessBlobGas: have %d, want %d", header.ExcessBlobGas, expected)
 		}

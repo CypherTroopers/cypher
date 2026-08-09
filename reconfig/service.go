@@ -78,9 +78,9 @@ const proposalBodyRequestAfter = 250 * time.Millisecond
 const proposalBodyRequestInterval = 250 * time.Millisecond
 const proposalBodyPollInterval = 5 * time.Millisecond
 const proposalBodyControlMaxBytes = 512 * 1024
-const proposalBodySidecarMaxBytes = 256 * 1024 * 1024
+const proposalBodySidecarMaxBytes = int(params.MaxBlockSize)
 const proposalBodyCacheMaxEntries = 64
-const proposalBodyCacheMaxBytes = 512 * 1024 * 1024
+const proposalBodyCacheMaxBytes = 8 * proposalBodySidecarMaxBytes
 const proposalBodyAuthDomain = "cypher-fhs-proposal-sidecar-v1"
 const proposalBodyKeyblockLivenessTimeout = time.Second
 

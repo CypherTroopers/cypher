@@ -11,7 +11,7 @@ import (
 func TestValidateExcessBlobGas(t *testing.T) {
 	cancunTime := uint64(0)
 	cfg := &params.ChainConfig{}
-	cfg.SetModernForkConfig(&params.ModernForkConfig{CancunTime: &cancunTime})
+	cfg.SetModernForkConfig(&params.ModernForkConfig{BerlinBlock: big.NewInt(0), LondonBlock: big.NewInt(0), CancunTime: &cancunTime})
 	blobCfg := cfg.ActiveBlobConfig(0)
 	parent := &types.Header{
 		Number:      big.NewInt(1),

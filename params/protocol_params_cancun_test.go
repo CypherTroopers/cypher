@@ -1,6 +1,9 @@
 package params
 
-import "testing"
+import (
+	"math/big"
+	"testing"
+)
 
 func TestCalcExcessBlobGas(t *testing.T) {
 	cfg := DefaultCancunBlobConfig()
@@ -25,6 +28,26 @@ func TestCalcExcessBlobGas(t *testing.T) {
 				t.Fatalf("CalcExcessBlobGas() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCalcExcessBlobGasForForkEIP7918(t *testing.T) {
+	cfg := DefaultCancunBlobConfig()
+	used := TargetBlobGasPerBlock(cfg)
+	baseFee := big.NewInt(1_000_000_000)
+
+	if got := CalcExcessBlobGasForFork(false, 0, used, baseFee, cfg); got != 0 {
+		t.Fatalf("pre-Osaka excess = %d, want 0", got)
+	}
+	want := used * uint64(cfg.Max-cfg.Target) / uint64(cfg.Max)
+	if got := CalcExcessBlobGasForFork(true, 0, used, baseFee, cfg); got != want {
+		t.Fatalf("Osaka reserve-price excess = %d, want %d", got, want)
+	}
+	if got := CalcExcessBlobGasForFork(true, 0, BlobTxBlobGasPerBlob, baseFee, cfg); got != 0 {
+		t.Fatalf("Osaka below-target excess = %d, want 0", got)
+	}
+	if got := CalcExcessBlobGasForFork(true, 0, used, nil, cfg); got != 0 {
+		t.Fatalf("nil parent base fee fallback = %d, want 0", got)
 	}
 }
 

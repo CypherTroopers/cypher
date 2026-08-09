@@ -1024,15 +1024,18 @@ func (s *PublicBlockChainAPI) GetStorageAt(ctx context.Context, address common.A
 
 // CallArgs represents the arguments for a call.
 type CallArgs struct {
-	From                 *common.Address   `json:"from"`
-	To                   *common.Address   `json:"to"`
-	Gas                  *hexutil.Uint64   `json:"gas"`
-	GasPrice             *hexutil.Big      `json:"gasPrice"`
-	MaxFeePerGas         *hexutil.Big      `json:"maxFeePerGas"`
-	MaxPriorityFeePerGas *hexutil.Big      `json:"maxPriorityFeePerGas"`
-	Value                *hexutil.Big      `json:"value"`
-	Data                 *hexutil.Bytes    `json:"data"`
-	AccessList           *types.AccessList `json:"accessList"`
+	From                 *common.Address              `json:"from"`
+	To                   *common.Address              `json:"to"`
+	Gas                  *hexutil.Uint64              `json:"gas"`
+	GasPrice             *hexutil.Big                 `json:"gasPrice"`
+	MaxFeePerGas         *hexutil.Big                 `json:"maxFeePerGas"`
+	MaxPriorityFeePerGas *hexutil.Big                 `json:"maxPriorityFeePerGas"`
+	Value                *hexutil.Big                 `json:"value"`
+	Data                 *hexutil.Bytes               `json:"data"`
+	AccessList           *types.AccessList            `json:"accessList"`
+	MaxFeePerBlobGas     *hexutil.Big                 `json:"maxFeePerBlobGas"`
+	BlobVersionedHashes  []common.Hash                `json:"blobVersionedHashes"`
+	AuthorizationList    []types.SetCodeAuthorization `json:"authorizationList"`
 }
 
 // ToMessage converts CallArgs to the Message type used by the core evm
@@ -1087,7 +1090,22 @@ func (args *CallArgs) ToMessage(globalGasCap uint64) types.Message {
 	if args.AccessList != nil {
 		accessList = *args.AccessList
 	}
-	msg := types.NewMessageWithFeeFields(addr, args.To, 0, value, gas, gasPrice, gasFeeCap, gasTipCap, data, accessList, false)
+	var blobFeeCap *big.Int
+	if args.MaxFeePerBlobGas != nil {
+		blobFeeCap = args.MaxFeePerBlobGas.ToInt()
+	}
+	txType := uint8(types.LegacyTxType)
+	switch {
+	case len(args.AuthorizationList) > 0:
+		txType = types.SetCodeTxType
+	case args.MaxFeePerBlobGas != nil || len(args.BlobVersionedHashes) > 0:
+		txType = types.BlobTxType
+	case args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil:
+		txType = types.DynamicFeeTxType
+	case args.AccessList != nil:
+		txType = types.AccessListTxType
+	}
+	msg := types.NewMessageWithModernFields(txType, addr, args.To, 0, value, gas, gasPrice, gasFeeCap, gasTipCap, blobFeeCap, data, accessList, args.BlobVersionedHashes, args.AuthorizationList, false)
 	return msg
 }
 
@@ -1158,6 +1176,12 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 	if err != nil {
 		return nil, err
 	}
+	// eth_call/estimateGas messages default to a zero gas price. Lower the
+	// execution base fees as well, otherwise the London fee-cap invariant
+	// (feeCap >= baseFee) rejects an otherwise valid simulation before the EVM
+	// runs. This mirrors geth's NoBaseFee call semantics and also makes BASEFEE
+	// and BLOBBASEFEE return zero for an unpriced simulation.
+	lowerUnpricedCallFees(evm, msg)
 	// Wait for the context to be done and cancel the evm. Even if the
 	// EVM has finished, cancelling may be done (repeatedly)
 	go func() {
@@ -1180,6 +1204,13 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 		return result, fmt.Errorf("err: %w (supplied gas %d)", err, msg.Gas())
 	}
 	return result, nil
+}
+
+func lowerUnpricedCallFees(evm *vm.EVM, msg core.Message) {
+	if evm != nil && msg != nil && msg.GasPrice().Sign() == 0 {
+		evm.Context.BaseFee = new(big.Int)
+		evm.Context.BlobBaseFee = new(big.Int)
+	}
 }
 
 func newRevertError(result *core.ExecutionResult) *revertError {
@@ -1245,18 +1276,34 @@ func hasAccessList(accessList *types.AccessList) bool {
 	return accessList != nil && len(*accessList) > 0
 }
 
+func hasModernExecutionFields(blobFeeCap *hexutil.Big, blobHashes []common.Hash, authList []types.SetCodeAuthorization) bool {
+	return blobFeeCap != nil || len(blobHashes) > 0 || len(authList) > 0
+}
+
+func isActivePrecompile(b Backend, header *types.Header, address common.Address) bool {
+	if header == nil {
+		header = b.CurrentHeader()
+	}
+	config := b.ChainConfig()
+	if config == nil || header == nil || header.Number == nil {
+		return false
+	}
+	return vm.IsPrecompiledContract(address, config.CypheriumRules(header.Number, header.Time))
+}
+
 func isPlainValueTransferCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
 	if args.To == nil {
 		return false, nil
 	}
-	if hasCallData(args.Data) || hasAccessList(args.AccessList) {
+	if hasCallData(args.Data) || hasAccessList(args.AccessList) ||
+		hasModernExecutionFields(args.MaxFeePerBlobGas, args.BlobVersionedHashes, args.AuthorizationList) {
 		return false, nil
 	}
-	state, _, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	if state == nil || err != nil {
 		return false, err
 	}
-	if len(state.GetCode(*args.To)) > 0 {
+	if isActivePrecompile(b, header, *args.To) || len(state.GetCode(*args.To)) > 0 {
 		return false, nil
 	}
 	return true, nil
@@ -1269,14 +1316,15 @@ func isPlainValueTransferSendTx(ctx context.Context, b Backend, args *SendTxArgs
 	if args.To == nil {
 		return false, nil
 	}
-	if hasCallData(args.Data) || hasCallData(args.Input) || hasAccessList(args.AccessList) {
+	if hasCallData(args.Data) || hasCallData(args.Input) || hasAccessList(args.AccessList) ||
+		hasModernExecutionFields(args.MaxFeePerBlobGas, args.BlobVersionedHashes, args.AuthorizationList) {
 		return false, nil
 	}
-	state, _, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	if state == nil || err != nil {
 		return false, err
 	}
-	if len(state.GetCode(*args.To)) > 0 {
+	if isActivePrecompile(b, header, *args.To) || len(state.GetCode(*args.To)) > 0 {
 		return false, nil
 	}
 	return true, nil
@@ -1316,8 +1364,14 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 		}
 		hi = block.GasLimit()
 	}
-	// Recap the highest gas allowance with account's available balance.
-	if args.GasPrice != nil && args.GasPrice.ToInt().BitLen() != 0 {
+	// Recap the highest gas allowance with the account's available balance.
+	// Dynamic-fee transactions reserve the fee cap during pre-check, so use the
+	// same cap here instead of treating a nil legacy gasPrice as unlimited.
+	feeCap := args.GasPrice
+	if args.MaxFeePerGas != nil {
+		feeCap = args.MaxFeePerGas
+	}
+	if feeCap != nil && feeCap.ToInt().BitLen() != 0 {
 		state, _, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 		if err != nil {
 			return 0, err
@@ -1330,7 +1384,18 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 			}
 			available.Sub(available, args.Value.ToInt())
 		}
-		allowance := new(big.Int).Div(available, args.GasPrice.ToInt())
+		if args.MaxFeePerBlobGas != nil && len(args.BlobVersionedHashes) > 0 {
+			blobGas := new(big.Int).Mul(
+				new(big.Int).SetUint64(params.BlobTxBlobGasPerBlob),
+				new(big.Int).SetUint64(uint64(len(args.BlobVersionedHashes))),
+			)
+			blobCost := blobGas.Mul(blobGas, args.MaxFeePerBlobGas.ToInt())
+			if blobCost.Cmp(available) >= 0 {
+				return 0, errors.New("insufficient funds for blob fee")
+			}
+			available.Sub(available, blobCost)
+		}
+		allowance := new(big.Int).Div(available, feeCap.ToInt())
 
 		// If the allowance is larger than maximum uint64, skip checking
 		if allowance.IsUint64() && hi > allowance.Uint64() {
@@ -1339,7 +1404,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 				transfer = new(hexutil.Big)
 			}
 			log.Warn("Gas estimation capped by limited funds", "original", hi, "balance", balance,
-				"sent", transfer.ToInt(), "gasprice", args.GasPrice.ToInt(), "fundable", allowance)
+				"sent", transfer.ToInt(), "gasprice", feeCap.ToInt(), "fundable", allowance)
 			hi = allowance.Uint64()
 		}
 	}
@@ -1474,7 +1539,7 @@ func RPCMarshalHeader(head *types.Header) map[string]interface{} {
 	if baseFee == nil || baseFee.Sign() == 0 {
 		baseFee = fixedBaseFeePerGas()
 	}
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"number":           (*hexutil.Big)(head.Number),
 		"hash":             head.Hash(),
 		"parentHash":       head.ParentHash,
@@ -1496,6 +1561,12 @@ func RPCMarshalHeader(head *types.Header) map[string]interface{} {
 		"transactionsRoot": head.TxHash,
 		"receiptsRoot":     head.ReceiptHash,
 	}
+	result["withdrawalsRoot"] = head.WithdrawalsHash
+	result["blobGasUsed"] = hexutil.Uint64(head.BlobGasUsed)
+	result["excessBlobGas"] = hexutil.Uint64(head.ExcessBlobGas)
+	result["parentBeaconBlockRoot"] = head.ParentBeaconRoot
+	result["requestsHash"] = head.RequestsHash
+	return result
 }
 
 // RPCMarshalBlock converts the given block to the RPC output which depends on fullTx. If inclTx is true transactions are
@@ -1596,28 +1667,29 @@ func (s *PublicBlockChainAPI) rpcOutputKeyBlock(b *types.KeyBlock) (map[string]i
 
 // RPCTransaction represents a transaction that will serialize to the RPC representation of a transaction
 type RPCTransaction struct {
-	BlockHash           *common.Hash      `json:"blockHash"`
-	BlockNumber         *hexutil.Big      `json:"blockNumber"`
-	From                common.Address    `json:"from"`
-	Gas                 hexutil.Uint64    `json:"gas"`
-	GasPrice            *hexutil.Big      `json:"gasPrice"`
-	Hash                common.Hash       `json:"hash"`
-	TransactionHash     common.Hash       `json:"transactionHash"`
-	Input               hexutil.Bytes     `json:"input"`
-	Nonce               hexutil.Uint64    `json:"nonce"`
-	To                  *common.Address   `json:"to"`
-	TransactionIndex    *hexutil.Uint64   `json:"transactionIndex"`
-	Value               *hexutil.Big      `json:"value"`
-	Type                hexutil.Uint64    `json:"type"`
-	ChainID             *hexutil.Big      `json:"chainId,omitempty"`
-	GasFeeCap           *hexutil.Big      `json:"maxFeePerGas,omitempty"`
-	GasTipCap           *hexutil.Big      `json:"maxPriorityFeePerGas,omitempty"`
-	Accesses            *types.AccessList `json:"accessList,omitempty"`
-	BlobGasFeeCap       *hexutil.Big      `json:"maxFeePerBlobGas,omitempty"`
-	BlobVersionedHashes []common.Hash     `json:"blobVersionedHashes,omitempty"`
-	V                   *hexutil.Big      `json:"v"`
-	R                   *hexutil.Big      `json:"r"`
-	S                   *hexutil.Big      `json:"s"`
+	BlockHash           *common.Hash                 `json:"blockHash"`
+	BlockNumber         *hexutil.Big                 `json:"blockNumber"`
+	From                common.Address               `json:"from"`
+	Gas                 hexutil.Uint64               `json:"gas"`
+	GasPrice            *hexutil.Big                 `json:"gasPrice"`
+	Hash                common.Hash                  `json:"hash"`
+	TransactionHash     common.Hash                  `json:"transactionHash"`
+	Input               hexutil.Bytes                `json:"input"`
+	Nonce               hexutil.Uint64               `json:"nonce"`
+	To                  *common.Address              `json:"to"`
+	TransactionIndex    *hexutil.Uint64              `json:"transactionIndex"`
+	Value               *hexutil.Big                 `json:"value"`
+	Type                hexutil.Uint64               `json:"type"`
+	ChainID             *hexutil.Big                 `json:"chainId,omitempty"`
+	GasFeeCap           *hexutil.Big                 `json:"maxFeePerGas,omitempty"`
+	GasTipCap           *hexutil.Big                 `json:"maxPriorityFeePerGas,omitempty"`
+	Accesses            *types.AccessList            `json:"accessList,omitempty"`
+	BlobGasFeeCap       *hexutil.Big                 `json:"maxFeePerBlobGas,omitempty"`
+	BlobVersionedHashes []common.Hash                `json:"blobVersionedHashes,omitempty"`
+	AuthorizationList   []types.SetCodeAuthorization `json:"authorizationList,omitempty"`
+	V                   *hexutil.Big                 `json:"v"`
+	R                   *hexutil.Big                 `json:"r"`
+	S                   *hexutil.Big                 `json:"s"`
 
 	CommonTxAdmissionRoot           *common.Hash    `json:"commonTxAdmissionRoot,omitempty"`
 	CommonTxRewardRoot              *common.Hash    `json:"commonTxRewardRoot,omitempty"`
@@ -1639,6 +1711,49 @@ func rpcTransactionSigner(tx *types.Transaction) types.Signer {
 		return types.NewEIP155Signer(tx.ChainId())
 	}
 	return types.HomesteadSigner{}
+}
+
+func isEIP1559Transaction(tx *types.Transaction) bool {
+	if tx == nil {
+		return false
+	}
+	switch tx.Type() {
+	case types.DynamicFeeTxType, types.BlobTxType, types.SetCodeTxType:
+		return true
+	default:
+		return false
+	}
+}
+
+func effectiveTransactionGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
+	if tx == nil {
+		return new(big.Int)
+	}
+	price := new(big.Int).Set(tx.GasPrice())
+	if !isEIP1559Transaction(tx) || baseFee == nil {
+		return price
+	}
+	if tip, err := tx.EffectiveGasTip(baseFee); err == nil {
+		return new(big.Int).Add(new(big.Int).Set(baseFee), tip)
+	}
+	return price
+}
+
+func setRPCTransactionEffectiveGasPrice(result *RPCTransaction, tx *types.Transaction, baseFee *big.Int) {
+	if result != nil && isEIP1559Transaction(tx) && baseFee != nil {
+		result.GasPrice = (*hexutil.Big)(effectiveTransactionGasPrice(tx, baseFee))
+	}
+}
+
+func addBlobRPCReceiptFields(fields map[string]interface{}, config *params.ChainConfig, block *types.Block, tx *types.Transaction) {
+	if fields == nil || tx == nil || tx.Type() != types.BlobTxType {
+		return
+	}
+	fields["blobGasUsed"] = hexutil.Uint64(tx.BlobGas())
+	if block != nil {
+		header := block.Header()
+		fields["blobGasPrice"] = (*hexutil.Big)(params.CalcBlobBaseFeeAtTime(config, header.Time, header.ExcessBlobGas))
+	}
 }
 
 func fillCommonRPCTransactionFields(result *RPCTransaction, block *types.Block, txHash common.Hash) {
@@ -1782,6 +1897,12 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 		result.BlobVersionedHashes = tx.BlobHashes()
 		accessList := tx.AccessList()
 		result.Accesses = &accessList
+	case types.SetCodeTxType:
+		result.GasFeeCap = (*hexutil.Big)(tx.GasFeeCap())
+		result.GasTipCap = (*hexutil.Big)(tx.GasTipCap())
+		accessList := tx.AccessList()
+		result.Accesses = &accessList
+		result.AuthorizationList = tx.SetCodeAuthorizations()
 	}
 	if blockHash != (common.Hash{}) {
 		result.BlockHash = &blockHash
@@ -1804,6 +1925,7 @@ func newRPCTransactionFromBlockIndex(b *types.Block, index uint64) *RPCTransacti
 	}
 	tx := txs[index]
 	result := newRPCTransaction(tx, b.Hash(), b.NumberU64(), index)
+	setRPCTransactionEffectiveGasPrice(result, tx, b.Header().BaseFee)
 	fillCommonRPCTransactionFields(result, b, tx.Hash())
 	return result
 }
@@ -1923,6 +2045,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionByHash(ctx context.Context, has
 	if tx != nil {
 		result := newRPCTransaction(tx, blockHash, blockNumber, index)
 		if block, blockErr := s.b.BlockByHash(ctx, blockHash); blockErr == nil && block != nil {
+			setRPCTransactionEffectiveGasPrice(result, tx, block.Header().BaseFee)
 			fillCommonRPCTransactionFields(result, block, hash)
 		}
 		return result, nil
@@ -1977,10 +2100,10 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	from, _ := types.Sender(signer, tx)
 
 	effectiveGasPrice := new(big.Int).Set(tx.GasPrice())
-	if tx.Type() == types.DynamicFeeTxType {
+	if isEIP1559Transaction(tx) {
 		baseFee := fixedBaseFeePerGas()
 		if block != nil {
-			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil && headerBaseFee.Sign() > 0 {
+			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil {
 				baseFee = new(big.Int).Set(headerBaseFee)
 			}
 		}
@@ -2006,6 +2129,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	}
 
 	fields["status"] = hexutil.Uint(receipt.Status)
+	addBlobRPCReceiptFields(fields, s.b.ChainConfig(), block, tx)
 
 	if receipt.Logs == nil {
 		fields["logs"] = [][]*types.Log{}
@@ -2033,16 +2157,19 @@ func (s *PublicTransactionPoolAPI) sign(addr common.Address, tx *types.Transacti
 
 // SendTxArgs represents the arguments to sumbit a new transaction into the transaction pool.
 type SendTxArgs struct {
-	From                 common.Address    `json:"from"`
-	To                   *common.Address   `json:"to"`
-	Gas                  *hexutil.Uint64   `json:"gas"`
-	GasPrice             *hexutil.Big      `json:"gasPrice"`
-	MaxFeePerGas         *hexutil.Big      `json:"maxFeePerGas"`
-	MaxPriorityFeePerGas *hexutil.Big      `json:"maxPriorityFeePerGas"`
-	AccessList           *types.AccessList `json:"accessList"`
-	Type                 *hexutil.Uint64   `json:"type"`
-	Value                *hexutil.Big      `json:"value"`
-	Nonce                *hexutil.Uint64   `json:"nonce"`
+	From                 common.Address               `json:"from"`
+	To                   *common.Address              `json:"to"`
+	Gas                  *hexutil.Uint64              `json:"gas"`
+	GasPrice             *hexutil.Big                 `json:"gasPrice"`
+	MaxFeePerGas         *hexutil.Big                 `json:"maxFeePerGas"`
+	MaxPriorityFeePerGas *hexutil.Big                 `json:"maxPriorityFeePerGas"`
+	AccessList           *types.AccessList            `json:"accessList"`
+	MaxFeePerBlobGas     *hexutil.Big                 `json:"maxFeePerBlobGas"`
+	BlobVersionedHashes  []common.Hash                `json:"blobVersionedHashes"`
+	AuthorizationList    []types.SetCodeAuthorization `json:"authorizationList"`
+	Type                 *hexutil.Uint64              `json:"type"`
+	Value                *hexutil.Big                 `json:"value"`
+	Nonce                *hexutil.Uint64              `json:"nonce"`
 	// We accept "data" and "input" for backwards-compatibility reasons. "input" is the
 	// newer name and should be preferred by clients.
 	Data  *hexutil.Bytes `json:"data"`
@@ -2072,7 +2199,7 @@ func (args *SendTxArgs) transactionChainID(b Backend) *big.Int {
 	if args.Type != nil {
 		txType = uint64(*args.Type)
 	}
-	if args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.AccessList != nil || txType != types.LegacyTxType {
+	if args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.AccessList != nil || args.MaxFeePerBlobGas != nil || len(args.BlobVersionedHashes) > 0 || len(args.AuthorizationList) > 0 || txType != types.LegacyTxType {
 		return config.ChainID
 	}
 	if block := b.CurrentBlock(); block != nil && config.IsEIP155(block.Number()) {
@@ -2111,7 +2238,7 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 	if args.Type != nil {
 		txType = uint64(*args.Type)
 		switch txType {
-		case types.LegacyTxType, types.AccessListTxType, types.DynamicFeeTxType:
+		case types.LegacyTxType, types.AccessListTxType, types.DynamicFeeTxType, types.BlobTxType, types.SetCodeTxType:
 		default:
 			return fmt.Errorf("unsupported transaction type %d", txType)
 		}
@@ -2119,24 +2246,58 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 	forceLegacy := args.Type != nil && txType == types.LegacyTxType
 	forceAccessList := args.Type != nil && txType == types.AccessListTxType
 	forceDynamic := args.Type != nil && txType == types.DynamicFeeTxType
-	if plainValueTransfer && args.GasPrice == nil && args.MaxFeePerGas == nil && args.MaxPriorityFeePerGas == nil && args.Type == nil {
+	forceBlob := args.Type != nil && txType == types.BlobTxType
+	forceSetCode := args.Type != nil && txType == types.SetCodeTxType
+	blobRequested := forceBlob || args.MaxFeePerBlobGas != nil || len(args.BlobVersionedHashes) > 0
+	setCodeRequested := forceSetCode || len(args.AuthorizationList) > 0
+	if blobRequested && setCodeRequested {
+		return errors.New("blob and set-code transaction fields cannot be combined")
+	}
+	if plainValueTransfer && args.GasPrice == nil && args.MaxFeePerGas == nil && args.MaxPriorityFeePerGas == nil && args.Type == nil && !blobRequested && !setCodeRequested {
 		args.GasPrice = (*hexutil.Big)(fixedGasPricePerGas())
 	}
-	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
+	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || blobRequested || setCodeRequested) {
 		return errors.New(`both "gasPrice" and EIP-1559 fee fields are set`)
 	}
-	if forceLegacy && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.AccessList != nil) {
-		return errors.New(`legacy transaction type does not support EIP-1559 fee fields or accessList`)
+	if forceLegacy && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.AccessList != nil || blobRequested || setCodeRequested) {
+		return errors.New(`legacy transaction type does not support typed transaction fields`)
 	}
-	if forceAccessList && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
-		return errors.New(`access list transaction type does not support EIP-1559 fee fields`)
+	if forceAccessList && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || blobRequested || setCodeRequested) {
+		return errors.New(`access list transaction type does not support dynamic fee fields`)
+	}
+	if forceDynamic && (blobRequested || setCodeRequested) {
+		return errors.New(`dynamic fee transaction type does not support blob or authorization fields`)
+	}
+	if blobRequested {
+		if args.To == nil {
+			return errors.New("blob transaction requires a recipient")
+		}
+		if args.MaxFeePerBlobGas == nil || args.MaxFeePerBlobGas.ToInt().Sign() <= 0 {
+			return errors.New("blob transaction requires a positive maxFeePerBlobGas")
+		}
+		if len(args.BlobVersionedHashes) == 0 {
+			return errors.New("blob transaction requires blobVersionedHashes")
+		}
+		for _, hash := range args.BlobVersionedHashes {
+			if hash[0] != types.BlobCommitmentVersionKZG {
+				return errors.New("blobVersionedHashes contains an unsupported version")
+			}
+		}
+	}
+	if setCodeRequested {
+		if args.To == nil {
+			return errors.New("set-code transaction requires a recipient")
+		}
+		if len(args.AuthorizationList) == 0 {
+			return errors.New("set-code transaction requires authorizationList")
+		}
 	}
 	head, _ := b.HeaderByNumber(ctx, rpc.PendingBlockNumber)
 	if head == nil {
 		head = b.CurrentHeader()
 	}
 	londonActive := head != nil && b.ChainConfig().IsLondon(head.Number)
-	dynamicRequested := args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || forceDynamic
+	dynamicRequested := args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || forceDynamic || blobRequested || setCodeRequested
 	autoDynamic := londonActive && args.GasPrice == nil && !forceLegacy && !forceAccessList && !dynamicRequested
 	if dynamicRequested || autoDynamic {
 		tip, _ := suggestGasTipCap(ctx, b)
@@ -2202,6 +2363,9 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 			Value:                args.Value,
 			Data:                 input,
 			AccessList:           args.AccessList,
+			MaxFeePerBlobGas:     args.MaxFeePerBlobGas,
+			BlobVersionedHashes:  args.BlobVersionedHashes,
+			AuthorizationList:    args.AuthorizationList,
 		}
 		pendingBlockNr := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
 		estimated, err := DoEstimateGas(ctx, b, callArgs, pendingBlockNr, b.RPCGasCap())
@@ -2228,6 +2392,43 @@ func (args *SendTxArgs) toTransaction(chainID *big.Int) *types.Transaction {
 	txType := uint64(types.LegacyTxType)
 	if args.Type != nil {
 		txType = uint64(*args.Type)
+	}
+	setCodeRequested := txType == types.SetCodeTxType || len(args.AuthorizationList) > 0
+	if setCodeRequested {
+		inner := &types.SetCodeTx{
+			ChainID:   chainIDCopy,
+			Nonce:     uint64(*args.Nonce),
+			GasTipCap: (*big.Int)(args.MaxPriorityFeePerGas),
+			GasFeeCap: (*big.Int)(args.MaxFeePerGas),
+			Gas:       uint64(*args.Gas),
+			To:        *args.To,
+			Value:     (*big.Int)(args.Value),
+			Data:      input,
+			AuthList:  args.AuthorizationList,
+		}
+		if args.AccessList != nil {
+			inner.AccessList = *args.AccessList
+		}
+		return types.NewTx(inner)
+	}
+	blobRequested := txType == types.BlobTxType || args.MaxFeePerBlobGas != nil || len(args.BlobVersionedHashes) > 0
+	if blobRequested {
+		inner := &types.BlobTx{
+			ChainID:    chainIDCopy,
+			Nonce:      uint64(*args.Nonce),
+			GasTipCap:  (*big.Int)(args.MaxPriorityFeePerGas),
+			GasFeeCap:  (*big.Int)(args.MaxFeePerGas),
+			Gas:        uint64(*args.Gas),
+			To:         *args.To,
+			Value:      (*big.Int)(args.Value),
+			Data:       input,
+			BlobFeeCap: (*big.Int)(args.MaxFeePerBlobGas),
+			BlobHashes: args.BlobVersionedHashes,
+		}
+		if args.AccessList != nil {
+			inner.AccessList = *args.AccessList
+		}
+		return types.NewTx(inner)
 	}
 	dynamicRequested := args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || txType == types.DynamicFeeTxType
 	if dynamicRequested {

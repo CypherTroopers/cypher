@@ -46,5 +46,18 @@ func gasMcopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySiz
 }
 
 func memoryMcopy(stack *Stack) (uint64, bool) {
-	return calcMemSize64(stack.Back(0), stack.Back(2))
+	// MCOPY reads and writes memory. Both ranges participate in memory
+	// expansion, even when the source lies beyond the destination range.
+	dstEnd, overflow := calcMemSize64(stack.Back(0), stack.Back(2))
+	if overflow {
+		return 0, true
+	}
+	srcEnd, overflow := calcMemSize64(stack.Back(1), stack.Back(2))
+	if overflow {
+		return 0, true
+	}
+	if srcEnd > dstEnd {
+		return srcEnd, false
+	}
+	return dstEnd, false
 }

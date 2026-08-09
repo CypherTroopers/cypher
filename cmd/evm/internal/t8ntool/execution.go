@@ -172,6 +172,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 			}
 
 			receipt := types.NewReceipt(root, msgResult.Failed(), gasUsed)
+			receipt.Type = tx.Type()
 			receipt.TxHash = tx.Hash()
 			receipt.GasUsed = msgResult.UsedGas
 			// if the transaction created a contract, store the creation address in the receipt.
