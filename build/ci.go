@@ -1,7 +1,5 @@
 //go:build ignore
-//go:build none
 // +build ignore
-// +build none
 
 // Copyright 2016 The go-ethereum Authors
 // This file is part of the go-ethereum library.

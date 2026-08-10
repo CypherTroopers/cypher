@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math/big"
 	"net"
 	"strconv"
 	"strings"
@@ -13,12 +14,15 @@ import (
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
-	"github.com/cypherium/cypher/reconfig/bftview"
+	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
 	kcp "github.com/xtaci/kcp-go"
 )
 
-const powResultUDPMaxPacketSize = 64 * 1024
+const (
+	powResultUDPMaxPacketSize = 64 * 1024
+	legacyPoWResultMaxAge     = 2 * time.Hour
+)
 
 var powResultKCPMagic = [4]byte{'C', 'P', 'W', 'R'}
 
@@ -259,30 +263,27 @@ func (cp *CandidatePool) handlePoWResultKCPSession(session *kcp.UDPSession) {
 // AddRemotePoWResult reconstructs and verifies a PoW result without asking
 // the miner to participate in CandidatePool or block/keyblock validation.
 func (cp *CandidatePool) AddRemotePoWResult(result *types.PoWResult) error {
+	if err := validatePoWResultWire(result); err != nil {
+		return err
+	}
 	candidate := result.ToCandidate()
 	if candidate == nil || candidate.KeyCandidate == nil {
 		return errors.New("nil pow result candidate")
 	}
-	if bftview.GetMemberIndex(candidate.PubKey) >= 0 {
-		return ErrCandidateIsMember
+	if _, err := validateLegacyCandidate(candidate, false); err != nil {
+		return err
 	}
-
-	keyBlock := cp.backend.KeyBlockChain().CurrentBlock()
+	keyChain := cp.backend.KeyBlockChain()
+	keyBlock := keyChain.CurrentBlock()
 	if keyBlock == nil {
 		return types.ErrUnknownAncestor
 	}
-	if candidate.KeyCandidate.ParentHash != keyBlock.Hash() || candidate.KeyCandidate.Number.Uint64() != keyBlock.NumberU64()+1 {
-		return ErrCandidateNumberLow
-	}
-	if candidate.KeyCandidate.T_Number < keyBlock.T_Number() || candidate.KeyCandidate.T_Number > cp.backend.BlockChain().CurrentBlockN() {
-		return errors.New("pow result tx block number is outside the local work range")
-	}
-	if time.Since(time.Unix(int64(candidate.KeyCandidate.Time), 0)) > 2*time.Hour {
-		return errors.New("pow result is stale")
+	committee := keyChain.GetCommitteeByHash(keyBlock.Hash())
+	if _, err := validateRemotePoWResultCandidate(candidate, keyBlock, cp.backend.BlockChain().CurrentBlockN(), committee, time.Now()); err != nil {
+		return err
 	}
 
-	committeeSize := len(cp.backend.KeyBlockChain().CurrentCommittee())
-	if err := cp.backend.Engine().PrepareCandidate(cp.backend.KeyBlockChain(), candidate, committeeSize); err != nil {
+	if err := cp.backend.Engine().PrepareCandidate(keyChain, candidate, len(committee)); err != nil {
 		return err
 	}
 	if err := cp.verify(candidate); err != nil {
@@ -291,10 +292,70 @@ func (cp *CandidatePool) AddRemotePoWResult(result *types.PoWResult) error {
 
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
+	// PoW verification may take long enough for the canonical key head to
+	// change. Re-check against the current head while serializing the pool add;
+	// Flatten also filters by parent so a subsequent same-height reorg cannot
+	// make a stale candidate proposal-eligible.
+	currentKeyBlock := keyChain.CurrentBlock()
+	if currentKeyBlock == nil {
+		return types.ErrUnknownAncestor
+	}
+	currentCommittee := keyChain.GetCommitteeByHash(currentKeyBlock.Hash())
+	if _, err := validateRemotePoWResultCandidate(candidate, currentKeyBlock, cp.backend.BlockChain().CurrentBlockN(), currentCommittee, time.Now()); err != nil {
+		return err
+	}
 	if exists := cp.candidates.Add(candidate); exists {
 		return ErrCandidateExisted
 	}
 	log.Info("Accepted fixed-mode KCP PoW result", "candidate.number", candidate.KeyCandidate.Number.Uint64(), "pubkey", candidate.PubKey, "hash", candidate.Hash())
 	go cp.feed.Send(candidate)
 	return nil
+}
+
+func validatePoWResultWire(result *types.PoWResult) error {
+	if result == nil {
+		return ErrCandidateMalformed
+	}
+	// Validate before uint64-to-int conversion in ToCandidate so oversized
+	// ports cannot wrap into the valid range on narrower architectures.
+	if result.Port < 1 || result.Port > 65535 {
+		return ErrCandidateEndpointInvalid
+	}
+	return nil
+}
+
+// validateRemotePoWResultCandidate is the cheap, deterministic fixed-mode KCP
+// admission boundary. Difficulty is zero here by wire design and is populated
+// locally only after every other field has passed validation.
+func validateRemotePoWResultCandidate(candidate *types.Candidate, keyBlock *types.KeyBlock, txHead uint64, committee []*common.Cnode, now time.Time) ([]byte, error) {
+	publicKey, err := validateLegacyCandidate(candidate, false)
+	if err != nil {
+		return nil, err
+	}
+	if LegacyCandidatePublicKeyInCommittee(publicKey, committee) {
+		return nil, ErrCandidateIsMember
+	}
+	if keyBlock == nil {
+		return nil, types.ErrUnknownAncestor
+	}
+	header := candidate.KeyCandidate
+	expectedNumber := new(big.Int).Add(keyBlock.Number(), big.NewInt(1))
+	if header.Number.Cmp(expectedNumber) != 0 {
+		return nil, ErrCandidateNumberLow
+	}
+	if header.ParentHash != keyBlock.Hash() {
+		return nil, ErrCandidateParentMismatch
+	}
+	if header.T_Number < keyBlock.T_Number() || header.T_Number > txHead {
+		// This range check is the complete legacy guarantee. Exact T_Number work
+		// assignment binding remains blocked on the versioned WorkTemplate.
+		return nil, ErrCandidateTxNumberInvalid
+	}
+	if !params.LegacyCandidateTimestampAllowed(keyBlock.Time(), header.Time, now) {
+		return nil, ErrCandidateTimeInvalid
+	}
+	if header.Time > uint64(^uint64(0)>>1) || now.Sub(time.Unix(int64(header.Time), 0)) > legacyPoWResultMaxAge {
+		return nil, errors.New("pow result is stale")
+	}
+	return publicKey, nil
 }

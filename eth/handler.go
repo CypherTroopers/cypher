@@ -49,6 +49,10 @@ const (
 	// txChanSize is the size of channel listening to NewTxsEvent.
 	// The number is referenced from the size of the tx pool.
 	txChanSize = 4096
+
+	// Candidate envelopes contain one compact key header plus endpoint and
+	// identity strings. Bound them well below the general protocol frame limit.
+	candidateMsgMaxSize = 64 * 1024
 )
 
 var (
@@ -830,13 +834,28 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		pm.txFetcher.Enqueue(p.id, txs, msg.Code == PooledTransactionsMsg)
 
 	case msg.Code == CandidateMsg:
+		if msg.Size > candidateMsgMaxSize {
+			return errResp(ErrMsgTooLarge, "candidate message %v > %v", msg.Size, candidateMsgMaxSize)
+		}
 		var candidate types.Candidate
 		if err := msg.Decode(&candidate); err != nil {
 			log.Trace("fail to decode candidate message")
 			return errResp(ErrDecode, "msg %v: %v", msg, err)
 		}
+		if err := validateCandidateMessage(&candidate); err != nil {
+			return errResp(ErrDecode, "msg %v: invalid candidate: %v", msg, err)
+		}
+		if err := pm.candidatePool.ValidateRemoteCandidatePreflight(&candidate, time.Now()); err != nil {
+			// Parent/height/T-number/time/member checks depend on the receiver's
+			// current chain view. An honest peer may transiently disagree while
+			// syncing or across a same-height reorg, so drop this candidate without
+			// tearing down the ETH session. Malformed/canonical-wire failures above
+			// remain protocol errors and do disconnect.
+			log.Debug("Dropped context-invalid candidate without disconnecting peer", "peer", p.id, "err", err)
+			break
+		}
 		log.Trace("CandidateMsg", "number", candidate.KeyCandidate.Number, "PubKey", candidate.PubKey)
-		if !pm.candidatePool.FoundCandidate(candidate.KeyCandidate.Number, candidate.PubKey) {
+		if !pm.candidatePool.FoundCandidate(candidate.KeyCandidate.Number, candidate.KeyCandidate.ParentHash, candidate.PubKey) {
 			log.Trace("CandidateMsg", "new candidate coinbase", candidate.Coinbase)
 			p.MarkCandidate(candidate.Hash())
 			pm.eventMux.Post(core.RemoteCandidateEvent{Candidate: &candidate})
@@ -849,6 +868,14 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		return errResp(ErrInvalidMsgCode, "%v", msg.Code)
 	}
 	return nil
+}
+
+// validateCandidateMessage rejects malformed legacy candidate envelopes before
+// any hash, pool lookup, or consensus operation can dereference attacker-owned
+// fields. Consensus and chain-relative checks remain the pool's responsibility.
+func validateCandidateMessage(candidate *types.Candidate) error {
+	_, err := core.ValidateLegacyCandidate(candidate)
+	return err
 }
 
 // BroadcastBlock will either propagate a block to a subset of its peers, or

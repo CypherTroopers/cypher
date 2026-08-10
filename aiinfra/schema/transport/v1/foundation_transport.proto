@@ -1,0 +1,42 @@
+// Copyright 2026 The Cypherium Authors
+// This file is part of the Cypherium library.
+
+syntax = "proto3";
+
+package cph.aiinfra.transport.v1;
+
+import "common/v1/common.proto";
+import "foundation/v1/foundation.proto";
+
+option go_package = "github.com/cypherium/cypher/aiinfra/schema/transport/v1;transportv1";
+
+// SignedFoundationRecord is the transport wrapper for the thirteen foundation
+// authorization payloads. The selected oneof arm is the sole source of the
+// message type identifier; the wire format deliberately carries no second,
+// caller-controlled numeric type ID.
+//
+// Protobuf bytes are never signed. Receivers strictly scan this wrapper,
+// translate the selected payload to its CCSE-v1 projection, and verify the
+// signature over the independently reconstructed CCSE record.
+message SignedFoundationRecord {
+  cph.aiinfra.common.v1.TransportSigningDomain signing_domain = 1;
+  cph.aiinfra.common.v1.TransportEnvelope envelope = 2;
+
+  reserved 3 to 15;
+
+  oneof payload {
+    cph.aiinfra.foundation.v1.ProviderIdentity provider_identity = 16;
+    cph.aiinfra.foundation.v1.AgentIdentity agent_identity = 17;
+    cph.aiinfra.foundation.v1.HostIdentity host_identity = 18;
+    cph.aiinfra.foundation.v1.DeviceIdentity device_identity = 19;
+    cph.aiinfra.foundation.v1.MinerIdentity miner_identity = 20;
+    cph.aiinfra.foundation.v1.RunnerIdentity runner_identity = 21;
+    cph.aiinfra.foundation.v1.BuyerIdentity buyer_identity = 22;
+    cph.aiinfra.foundation.v1.ServiceIdentity service_identity = 23;
+    cph.aiinfra.foundation.v1.KeyLifecycle key_lifecycle = 24;
+    cph.aiinfra.foundation.v1.PolicyBundle policy_bundle = 25;
+    cph.aiinfra.foundation.v1.AuditEvent audit_event = 26;
+    cph.aiinfra.foundation.v1.EvidenceRecord evidence_record = 27;
+    cph.aiinfra.foundation.v1.ExperimentPlan experiment_plan = 28;
+  }
+}

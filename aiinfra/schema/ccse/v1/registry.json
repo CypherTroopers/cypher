@@ -1,0 +1,383 @@
+{
+  "format": "cph.aiinfra.ccse.registry",
+  "registry_version": {"major": 1, "minor": 0},
+  "ccse_version": "CCSE-v1",
+  "production_message_type_id_floor": 65537,
+  "reserved_message_type_ranges": [
+    {"first": 1, "last": 65535, "purpose": "conformance and test-only identifiers; never valid for production records"}
+  ],
+  "structures": [
+    {
+      "name": "cph.aiinfra.common.v1.SchemaVersion",
+      "limits": {"max_payload_bytes": 8, "max_fields": 2, "max_collection_items": 1, "max_nesting_depth": 1},
+      "fields": [
+        {"order": 1, "name": "major", "type": "uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 2, "name": "minor", "type": "uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "name": "cph.aiinfra.common.v1.RecordMetadata",
+      "limits": {"max_payload_bytes": 8192, "max_fields": 9, "max_collection_items": 64, "max_nesting_depth": 2},
+      "fields": [
+        {"order": 1, "name": "schema_version", "type": "message", "message_type": "cph.aiinfra.common.v1.SchemaVersion", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 2, "name": "record_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "created_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 4, "name": "integrity_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1},
+        {"order": 5, "name": "home_region", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 6, "name": "writer_epoch", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 7, "name": "state_version", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 8, "name": "idempotency_key", "type": "fixed_bytes_16", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 20, "max_items": 1},
+        {"order": 9, "name": "policy_digests_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 2564, "max_items": 64}
+      ]
+    },
+    {
+      "name": "cph.aiinfra.foundation.v1.MetricCriterion",
+      "limits": {"max_payload_bytes": 1024, "max_fields": 9, "max_collection_items": 1, "max_nesting_depth": 1},
+      "fields": [
+        {"order": 1, "name": "metric_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 2, "name": "comparison", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 3, "name": "threshold_numerator", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 4, "name": "threshold_denominator", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 5, "name": "upper_threshold_numerator", "type": "int64", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 9, "max_items": 1},
+        {"order": 6, "name": "upper_threshold_denominator", "type": "uint64", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 9, "max_items": 1},
+        {"order": 7, "name": "unit", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 64, "max_items": 1},
+        {"order": 8, "name": "percentile_basis_points", "type": "uint32", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 5, "max_items": 1},
+        {"order": 9, "name": "minimum_metric_sample_size", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1}
+      ]
+    },
+    {
+      "name": "cph.aiinfra.foundation.v1.MetricObservation",
+      "limits": {"max_payload_bytes": 1024, "max_fields": 9, "max_collection_items": 1, "max_nesting_depth": 1},
+      "fields": [
+        {"order": 1, "name": "metric_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 2, "name": "observed_numerator", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 3, "name": "observed_denominator", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 4, "name": "sample_size", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 5, "name": "confidence_lower_numerator", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 6, "name": "confidence_lower_denominator", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 7, "name": "confidence_upper_numerator", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 8, "name": "confidence_upper_denominator", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "criterion_passed", "type": "bool", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1, "max_items": 1}
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "message_type_id": 65537,
+      "id_symbol": "FOUNDATION_PROVIDER_IDENTITY_V1",
+      "name": "cph.aiinfra.foundation.v1.ProviderIdentity",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.provider.bind",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 32768, "max_fields": 11, "max_collection_items": 64, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "provider_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "organization_identity_uri", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 4, "name": "payout_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "jurisdictions", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 4096, "max_items": 32},
+        {"order": 6, "name": "policy_digests_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 2564, "max_items": 64},
+        {"order": 7, "name": "stake_reference", "type": "string", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 513, "max_items": 1},
+        {"order": 8, "name": "ownership_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "valid_from_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 10, "name": "valid_until_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 11, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65538,
+      "id_symbol": "FOUNDATION_AGENT_IDENTITY_V1",
+      "name": "cph.aiinfra.foundation.v1.AgentIdentity",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.agent.bind",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 24576, "max_fields": 10, "max_collection_items": 64, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "agent_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "provider_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 4, "name": "host_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "spiffe_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 6, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 7, "name": "ownership_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 8, "name": "valid_from_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "valid_until_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 10, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65539,
+      "id_symbol": "FOUNDATION_HOST_IDENTITY_V1",
+      "name": "cph.aiinfra.foundation.v1.HostIdentity",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.host.bind",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 24576, "max_fields": 10, "max_collection_items": 64, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "host_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "provider_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 4, "name": "provider_site_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "attestation_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 6, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 7, "name": "ownership_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 8, "name": "valid_from_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "valid_until_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 10, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65540,
+      "id_symbol": "FOUNDATION_DEVICE_IDENTITY_V1",
+      "name": "cph.aiinfra.foundation.v1.DeviceIdentity",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.device.bind",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 24576, "max_fields": 11, "max_collection_items": 64, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "device_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "provider_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 4, "name": "host_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "vendor_serial_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1},
+        {"order": 6, "name": "attestation_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 7, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 8, "name": "ownership_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "valid_from_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 10, "name": "valid_until_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 11, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65541,
+      "id_symbol": "FOUNDATION_MINER_IDENTITY_V1",
+      "name": "cph.aiinfra.foundation.v1.MinerIdentity",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.miner.bind",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 32768, "max_fields": 11, "max_collection_items": 128, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "miner_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "provider_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 4, "name": "agent_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "device_ids", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 17408, "max_items": 64},
+        {"order": 6, "name": "payout_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 7, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 8, "name": "binding_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "valid_from_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 10, "name": "valid_until_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 11, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65542,
+      "id_symbol": "FOUNDATION_RUNNER_IDENTITY_V1",
+      "name": "cph.aiinfra.foundation.v1.RunnerIdentity",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.runner.bind",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 28672, "max_fields": 12, "max_collection_items": 64, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "runner_attempt_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "provider_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 4, "name": "agent_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "lease_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 6, "name": "job_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 7, "name": "attempt_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 8, "name": "workload_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 9, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 10, "name": "valid_from_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 11, "name": "valid_until_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 12, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65543,
+      "id_symbol": "FOUNDATION_BUYER_IDENTITY_V1",
+      "name": "cph.aiinfra.foundation.v1.BuyerIdentity",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.buyer.bind",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 24576, "max_fields": 9, "max_collection_items": 64, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "buyer_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "organization_identity_uri", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 4, "name": "billing_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 6, "name": "authorization_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 7, "name": "valid_from_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 8, "name": "valid_until_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65544,
+      "id_symbol": "FOUNDATION_SERVICE_IDENTITY_V1",
+      "name": "cph.aiinfra.foundation.v1.ServiceIdentity",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.service.bind",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 24576, "max_fields": 10, "max_collection_items": 64, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "service_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "service_name", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 4, "name": "spiffe_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 5, "name": "deployment_environment", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 6, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 7, "name": "credential_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 8, "name": "valid_from_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "valid_until_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 10, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65545,
+      "id_symbol": "FOUNDATION_KEY_LIFECYCLE_V1",
+      "name": "cph.aiinfra.foundation.v1.KeyLifecycle",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.key.lifecycle",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 32768, "max_fields": 13, "max_collection_items": 256, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "subject_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 4, "name": "subject_kind", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 5, "name": "algorithm", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 6, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 7, "name": "not_before_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 8, "name": "not_after_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "revoked_at_unix_nano", "type": "int64", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 9, "max_items": 1},
+        {"order": 10, "name": "rotation_predecessor_key_id", "type": "string", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 257, "max_items": 1},
+        {"order": 11, "name": "allowed_message_type_ids", "type": "uint32", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 2052, "max_items": 256},
+        {"order": 12, "name": "authorization_policy_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1},
+        {"order": 13, "name": "transition_reason_code", "type": "string", "presence": "optional", "collection": "scalar", "critical": false, "max_encoded_bytes": 257, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65546,
+      "id_symbol": "FOUNDATION_POLICY_BUNDLE_V1",
+      "name": "cph.aiinfra.foundation.v1.PolicyBundle",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "governance.policy.bundle",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 49152, "max_fields": 18, "max_collection_items": 128, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "policy_bundle_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "policy_kind", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 4, "name": "policy_version", "type": "message", "message_type": "cph.aiinfra.common.v1.SchemaVersion", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 5, "name": "sequence", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 6, "name": "predecessor_digest_sha256", "type": "fixed_bytes_32", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 37, "max_items": 1},
+        {"order": 7, "name": "approved_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 8, "name": "effective_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 9, "name": "expires_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 10, "name": "policy_document_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1},
+        {"order": 11, "name": "policy_document_media_type", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 12, "name": "approver_identities", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 17408, "max_items": 64},
+        {"order": 13, "name": "approver_key_ids", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 17408, "max_items": 64},
+        {"order": 14, "name": "minimum_approvals", "type": "uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 15, "name": "emergency", "type": "bool", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1, "max_items": 1},
+        {"order": 16, "name": "rollback_target_digest_sha256", "type": "fixed_bytes_32", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 37, "max_items": 1},
+        {"order": 17, "name": "break_glass_expires_at_unix_nano", "type": "int64", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 9, "max_items": 1},
+        {"order": 18, "name": "state", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65547,
+      "id_symbol": "FOUNDATION_AUDIT_EVENT_V1",
+      "name": "cph.aiinfra.foundation.v1.AuditEvent",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "audit.event.append",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 65536, "max_fields": 16, "max_collection_items": 256, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "audit_event_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "event_type", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 4, "name": "actor_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 5, "name": "actor_key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 6, "name": "subject_ids", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 33792, "max_items": 128},
+        {"order": 7, "name": "cause_code", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 8, "name": "correlation_id", "type": "fixed_bytes_16", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 20, "max_items": 1},
+        {"order": 9, "name": "causation_id", "type": "fixed_bytes_16", "presence": "optional", "collection": "scalar", "critical": true, "max_encoded_bytes": 21, "max_items": 1},
+        {"order": 10, "name": "occurred_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 11, "name": "outcome", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 12, "name": "applied_policy_digests_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 2564, "max_items": 64},
+        {"order": 13, "name": "evidence_digests_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 5124, "max_items": 128},
+        {"order": 14, "name": "redacted_details_digest_sha256", "type": "fixed_bytes_32", "presence": "optional", "collection": "scalar", "critical": false, "max_encoded_bytes": 37, "max_items": 1},
+        {"order": 15, "name": "previous_event_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1},
+        {"order": 16, "name": "audit_sequence", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65548,
+      "id_symbol": "FOUNDATION_EVIDENCE_RECORD_V1",
+      "name": "cph.aiinfra.foundation.v1.EvidenceRecord",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "evidence.record.release",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 262144, "max_fields": 22, "max_collection_items": 1024, "max_nesting_depth": 6},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "evidence_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "experiment_plan_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 4, "name": "capability_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "component", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 6, "name": "owner_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 7, "name": "software_version", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 8, "name": "hardware_scope", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 33792, "max_items": 128},
+        {"order": 9, "name": "workload_scope", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 33792, "max_items": 128},
+        {"order": 10, "name": "region_scope", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 8448, "max_items": 64},
+        {"order": 11, "name": "test_started_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 12, "name": "test_ended_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 13, "name": "sample_size", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 14, "name": "evidence_artifact_digests_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 10244, "max_items": 256},
+        {"order": 15, "name": "observations", "type": "message", "message_type": "cph.aiinfra.foundation.v1.MetricObservation", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 67584, "max_items": 64},
+        {"order": 16, "name": "approving_role", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 128, "max_items": 1},
+        {"order": 17, "name": "approving_identities", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 17408, "max_items": 64},
+        {"order": 18, "name": "approved_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 19, "name": "expires_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 20, "name": "revalidation_triggers", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 33792, "max_items": 128},
+        {"order": 21, "name": "achieved_level", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 22, "name": "status", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1}
+      ]
+    },
+    {
+      "message_type_id": 65549,
+      "id_symbol": "FOUNDATION_EXPERIMENT_PLAN_V1",
+      "name": "cph.aiinfra.foundation.v1.ExperimentPlan",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "evidence.experiment.plan.freeze",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 262144, "max_fields": 21, "max_collection_items": 1024, "max_nesting_depth": 6},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "experiment_plan_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "capability_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 4, "name": "component", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "owner_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 6, "name": "software_version", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 7, "name": "hardware_scope", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 33792, "max_items": 128},
+        {"order": 8, "name": "workload_scope", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 33792, "max_items": 128},
+        {"order": 9, "name": "region_scope", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 8448, "max_items": 64},
+        {"order": 10, "name": "collection_not_before_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 11, "name": "observation_window_nanos", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 12, "name": "minimum_sample_size", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 13, "name": "confidence_level_basis_points", "type": "uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 14, "name": "confidence_method", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 15, "name": "criteria", "type": "message", "message_type": "cph.aiinfra.foundation.v1.MetricCriterion", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 67584, "max_items": 64},
+        {"order": 16, "name": "revalidation_triggers", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 33792, "max_items": 128},
+        {"order": 17, "name": "expires_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 18, "name": "experiment_policy_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1},
+        {"order": 19, "name": "target_level", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 20, "name": "frozen_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 21, "name": "approving_identities", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 17408, "max_items": 64}
+      ]
+    }
+  ]
+}

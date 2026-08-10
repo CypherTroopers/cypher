@@ -1,0 +1,9 @@
+# Copyright 2026 The Cypherium Authors
+# This file is part of the Cypherium library.
+
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: .
+    opt:
+      - paths=source_relative

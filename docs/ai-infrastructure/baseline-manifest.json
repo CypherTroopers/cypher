@@ -1,0 +1,112 @@
+{
+  "schema_version": "1.0",
+  "baseline_id": "CPH-AIIE-0.2",
+  "status": "approved-architecture-baseline",
+  "baseline_date": "2026-08-10",
+  "generated_at_utc": "2026-08-09T22:56:40Z",
+  "hash_algorithm": "sha256",
+  "hash_input": "raw file bytes",
+  "path_base": "repository root",
+  "repository_root_at_generation": "/root/cypher",
+  "manifest_self_included": false,
+  "manifest_self_exclusion_reason": "A file cannot contain its own stable hash. Anchor this manifest by Git object ID or a detached organizational signature before runtime promotion.",
+  "detached_signature_status": "not-signed; human organizational approval is required before runtime promotion",
+  "strategy_source": {
+    "path": "reference/1-1071437753-CPH-AI-Infrastructure-Value-Recovery-Report.txt",
+    "sha256": "91bf6a6c9e1246f8a9a4dd06c7baf0555019cf976894e6f1fdd6816ec1abe120",
+    "line_count": 474,
+    "latest_attachment_byte_identical": true
+  },
+  "reviewed_code": {
+    "commit": "7ae80156b23b20f804557eedc921bf431dc3a536",
+    "tracked_worktree_dirty": false,
+    "non_runtime_untracked_scopes_at_review": [
+      "docs/ai-infrastructure/",
+      "reference/"
+    ]
+  },
+  "review": {
+    "independent_evidence_tracks": 3,
+    "remaining_architecture_design_blockers": 0,
+    "remaining_architecture_design_high_findings": 0,
+    "runtime_implementation_approved": false,
+    "record": "docs/ai-infrastructure/review-record.md"
+  },
+  "normative_documents": [
+    {
+      "path": "docs/ai-infrastructure/README.md",
+      "sha256": "3c9ce7a0f7fba5829203cb453191f8f24a8f3d85c998ffd64ddd6d46dc8e4693"
+    },
+    {
+      "path": "docs/ai-infrastructure/master-architecture.md",
+      "sha256": "4bb3389164c985def28867d7544e45b266073620b240bf657972c41aa7b1bf51"
+    },
+    {
+      "path": "docs/ai-infrastructure/requirements-traceability.md",
+      "sha256": "46fa771b213879550b8770ccb9d14d166274bacb190b47677b5afbbfcd134b5f"
+    },
+    {
+      "path": "docs/ai-infrastructure/implementation-roadmap.md",
+      "sha256": "88f2be30f05c8fcbda2a2fd4a896b38662096a300a57870a3eff6b20c3b56b11"
+    },
+    {
+      "path": "docs/ai-infrastructure/review-record.md",
+      "sha256": "bb02edf3459639dc66ba267db6fa8c065afe6e3de8b96bbc8b49c20da4fd73f3"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/README.md",
+      "sha256": "a6f691ee6539f70ff600b53f90c625134512822c07a16306d82bf9c68f8f5cac"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0001-system-boundary.md",
+      "sha256": "1fb52b08d4f7884a66cf3bb23cab203b878d2029c1f48b4ae4522a1c90eb3b32"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0002-mining-and-validation.md",
+      "sha256": "1545edc791ef63a20fb63d86356c7252a7f174ebc6792f1eca9fce73af21ac99"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0003-resource-priority-and-control.md",
+      "sha256": "daecdc1fea20aca595606b6fcd4890fb507558921c50b369da7aa32d1ed005b4"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0004-market-and-settlement.md",
+      "sha256": "9a8f271f041266c76c42e342a1c14fd225efad6331ecf2956cda518eaffe104a"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0005-compute-measurement.md",
+      "sha256": "c31250d4f3506e17455aa1106e2c2ab83b0ccd8a8dcb0ff8ade7352a1603fa29"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0006-transport-evolution.md",
+      "sha256": "7b14026695efaad620bf2eb926c2db781459a98ab6a83f2b01a70a901e365ac6"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0007-upgrade-manifest.md",
+      "sha256": "e68b981edee8af3538bd3fd9cb1897f659fde0244641d18ffbbfc82703c533bd"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0008-reference-technology-profile.md",
+      "sha256": "b46948c20557bb904b67120b95ebfc517512647d71010447ca3e159d384e9565"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0009-asset-economics.md",
+      "sha256": "cf1ddb62bbae671d349a57a60801d57ad01f834f6e7016e79883f0396f093272"
+    },
+    {
+      "path": "docs/ai-infrastructure/adr/0010-canonical-state-and-signing.md",
+      "sha256": "a93f2580e0f65988a67864179b73ab00be9f956e3728beab53cbc916ee20d9b8"
+    }
+  ],
+  "change_control": {
+    "document_order": "lexical path order is not semantically significant",
+    "hash_mismatch_invalidates_baseline": true,
+    "material_change_requires": [
+      "new or superseding ADR",
+      "compatibility and security review",
+      "updated traceability and review record",
+      "baseline version increment",
+      "regenerated manifest"
+    ]
+  }
+}

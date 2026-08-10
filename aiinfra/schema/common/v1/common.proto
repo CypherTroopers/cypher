@@ -1,0 +1,115 @@
+// Copyright 2026 The Cypherium Authors
+// This file is part of the Cypherium library.
+
+syntax = "proto3";
+
+package cph.aiinfra.common.v1;
+
+option go_package = "github.com/cypherium/cypher/aiinfra/schema/common/v1;commonv1";
+
+// IMPORTANT: Protobuf is the transport representation only. Protobuf wire
+// bytes, deterministic protobuf output, JSON field order, and unknown protobuf
+// fields MUST NOT be signed directly. State-changing messages are authorized
+// with the independent CCSE-v1 projection in
+// aiinfra/schema/ccse/v1/registry.json.
+
+message SchemaVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+enum SignatureAlgorithm {
+  SIGNATURE_ALGORITHM_UNSPECIFIED = 0;
+  SIGNATURE_ALGORITHM_ED25519 = 1;
+  SIGNATURE_ALGORITHM_P256_SHA256 = 2;
+  SIGNATURE_ALGORITHM_EIP712 = 3;
+}
+
+enum PrincipalKind {
+  PRINCIPAL_KIND_UNSPECIFIED = 0;
+  PRINCIPAL_KIND_PROVIDER = 1;
+  PRINCIPAL_KIND_AGENT = 2;
+  PRINCIPAL_KIND_HOST = 3;
+  PRINCIPAL_KIND_DEVICE = 4;
+  PRINCIPAL_KIND_MINER = 5;
+  PRINCIPAL_KIND_RUNNER = 6;
+  PRINCIPAL_KIND_BUYER = 7;
+  PRINCIPAL_KIND_SERVICE = 8;
+  PRINCIPAL_KIND_HUMAN_USER = 9;
+}
+
+// RecordMetadata is embedded by immutable foundation records. All time values
+// are signed UTC Unix nanoseconds. policy_digests_sha256 is a mathematical set
+// in the CCSE registry even though Protobuf transports it as repeated bytes.
+message RecordMetadata {
+  SchemaVersion schema_version = 1;
+  string record_id = 2;
+  int64 created_at_unix_nano = 3;
+  bytes integrity_digest_sha256 = 4;
+  string home_region = 5;
+  uint64 writer_epoch = 6;
+  uint64 state_version = 7;
+  bytes idempotency_key = 8;
+  repeated bytes policy_digests_sha256 = 9;
+}
+
+// TransportSigningDomain carries the inputs from which the separate CCSE
+// Domain projection is constructed. audience is a set. Optional scalar
+// presence is significant and is preserved with proto3 optional fields.
+message TransportSigningDomain {
+  string purpose = 1;
+  string sender_identity = 2;
+  repeated string audience = 3;
+  optional string tenant_organization = 4;
+  optional string provider_organization = 5;
+  bytes chain_id_uint256_be = 6;
+  bytes genesis_hash_sha256 = 7;
+  string environment = 8;
+  ProtocolVersion protocol_version = 9;
+  SchemaVersion schema_version = 10;
+  SignatureAlgorithm signature_algorithm = 11;
+  string signature_key_id = 12;
+  int64 issued_at_unix_nano = 13;
+  int64 expires_at_unix_nano = 14;
+  oneof replay_guard {
+    uint64 sequence = 15;
+    uint64 expected_generation = 16;
+  }
+  string replay_domain_id = 17;
+}
+
+message TransportExtension {
+  uint32 extension_id = 1;
+  bool critical = 2;
+  bytes value = 3;
+}
+
+// TransportEnvelope is not itself a signing serialization. Receivers rebuild
+// and validate the CCSE envelope, domain, and payload projections and then
+// verify signature over SHA-256(CCSE preimage).
+message TransportEnvelope {
+  ProtocolVersion protocol_version = 1;
+  SchemaVersion schema_version = 2;
+  bytes message_id = 3;
+  bytes correlation_id = 4;
+  optional bytes causation_id = 5;
+  string sender_identity = 6;
+  bytes chain_id_uint256_be = 7;
+  string environment = 8;
+  int64 issued_at_unix_nano = 9;
+  int64 expires_at_unix_nano = 10;
+  oneof replay_guard {
+    uint64 sequence = 11;
+    uint64 expected_generation = 12;
+  }
+  bytes payload_digest_sha256 = 13;
+  SignatureAlgorithm signature_algorithm = 14;
+  string signature_key_id = 15;
+  repeated TransportExtension extensions = 16;
+  bytes signature = 17;
+}

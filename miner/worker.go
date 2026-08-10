@@ -291,7 +291,8 @@ func (self *worker) commitNewWork() {
 		return
 	}
 	if colossusX.Mode(self.engine.PowMode()) != colossusX.ModeLocalMock {
-		if self.candidatePool.FoundCandidate(keyBlock.Number(), string(self.pubKey)) {
+		nextKeyNumber := new(big.Int).Add(keyBlock.Number(), common.Big1)
+		if self.candidatePool.FoundCandidate(nextKeyNumber, keyBlock.Hash(), common.HexString(self.pubKey)) {
 			log.Trace("Found existing candidate of head key block")
 			return
 		}

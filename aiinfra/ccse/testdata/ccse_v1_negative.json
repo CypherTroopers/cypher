@@ -1,0 +1,25 @@
+{
+  "vector_set_id": "ccse-v1-negative-conformance-0001",
+  "base_vector_id": "ccse-v1-ed25519-conformance-0001",
+  "status": "candidate",
+  "cases": [
+    { "id": "present-empty-is-not-absent", "operation": "compare_digest", "path": "domain.tenant_organization.present", "value": true, "expected_result": "DIFFERENT_DIGEST" },
+    { "id": "non-nfc-string", "operation": "encode", "path": "payload_projection.display_name", "value": "é", "expected_error": "NON_NFC_STRING" },
+    { "id": "set-permutation", "operation": "encode_equivalent", "path": "payload_projection.tags_set_unsorted", "value": ["amd", "gpu", "verified"], "expected_result": "SAME_CANONICAL_BYTES" },
+    { "id": "set-duplicate", "operation": "encode", "path": "payload_projection.tags_set_unsorted", "value": ["amd", "amd"], "expected_error": "DUPLICATE_SET_VALUE" },
+    { "id": "wrong-audience", "operation": "verify_with", "path": "expectations.audience", "value": ["spiffe://cph/service/other"], "expected_error": "WRONG_AUDIENCE" },
+    { "id": "wrong-environment", "operation": "verify_with", "path": "expectations.environment", "value": "production", "expected_error": "WRONG_ENVIRONMENT" },
+    { "id": "wrong-chain", "operation": "verify_with", "path": "expectations.chain_id", "value_hex": "0000000000000000000000000000000000000000000000000000000000003f23", "expected_error": "WRONG_CHAIN" },
+    { "id": "wrong-genesis", "operation": "verify_with", "path": "expectations.genesis_hash", "value_hex": "adbc1a99890e386c79f7e9608161330b7420254a2870cc6d29f3ee932767e632", "expected_error": "WRONG_GENESIS" },
+    { "id": "expired", "operation": "verify_at", "unix_nano": 1700000301123456789, "expected_error": "EXPIRED" },
+    { "id": "unknown-critical-extension", "operation": "resign_with_extension", "extension_id": 77, "critical": true, "expected_error": "UNKNOWN_CRITICAL_EXTENSION" },
+    { "id": "unknown-noncritical-extension", "operation": "resign_with_extension", "extension_id": 78, "critical": false, "expected_error": "UNKNOWN_EXTENSION" },
+    { "id": "revoked-key", "operation": "revoke_then_verify", "revoked_at_unix_nano": 1700000060123456789, "expected_error": "KEY_REVOKED" },
+    { "id": "exact-message-duplicate", "operation": "verify_complete_then_verify_again", "expected_error": "DUPLICATE_MESSAGE_USE_IDEMPOTENT_RESULT" },
+    { "id": "handler-rollback-safe-retry", "operation": "handler_error_then_retry", "expected_result": "RETRY_APPLIED_AFTER_ROLLBACK" },
+    { "id": "sequence-replay", "operation": "new_message_same_sequence", "expected_error": "REPLAY_SEQUENCE" },
+    { "id": "key-rotation-does-not-reset-replay", "operation": "rotate_key_new_message_same_sequence", "new_key_id": "agent-key-0002", "new_private_key_seed_hex": "5e085044b5d52c690e0e2bac3615ef797b00dce04926c1d2d60c6b4702c3ba6c", "expected_error": "REPLAY_SEQUENCE" },
+    { "id": "message-id-conflict", "operation": "same_message_id_different_payload", "expected_error": "MESSAGE_ID_CONFLICT" },
+    { "id": "algorithm-downgrade", "operation": "mutate_domain_and_envelope", "path": "signature_algorithm_id", "value": 0, "expected_error": "INVALID_RECORD_UNSPECIFIED_ALGORITHM" }
+  ]
+}

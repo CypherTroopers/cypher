@@ -125,11 +125,7 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, _, genesisErr := core.SetupGenesisKeyBlock(chainDb, config.GenesisKey)
-	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
-		return nil, genesisErr
-	}
-	chainConfig, genesisHash, _ := core.SetupGenesisBlock(chainDb, config.Genesis)
+	chainConfig, genesisHash, genesisErr := setupGenesisBlocks(chainDb, config.GenesisKey, config.Genesis)
 	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
 		return nil, genesisErr
 	}
@@ -266,6 +262,33 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		}
 	}
 	return eth, nil
+}
+
+type setupGenesisKeyBlockFunc func(ethdb.Database, *core.GenesisKey) (*params.ChainConfig, common.Hash, error)
+type setupGenesisBlockFunc func(ethdb.Database, *core.Genesis) (*params.ChainConfig, common.Hash, error)
+
+// setupGenesisBlocks initializes both chains while keeping transaction-chain
+// compatibility errors available to New for the established rewind flow. Key
+// chain setup errors are fatal because there is no corresponding safe rewind
+// operation for them here.
+func setupGenesisBlocks(db ethdb.Database, keyGenesis *core.GenesisKey, genesis *core.Genesis) (*params.ChainConfig, common.Hash, error) {
+	return setupGenesisBlocksWith(db, keyGenesis, genesis, core.SetupGenesisKeyBlock, core.SetupGenesisBlock)
+}
+
+func setupGenesisBlocksWith(db ethdb.Database, keyGenesis *core.GenesisKey, genesis *core.Genesis, setupKey setupGenesisKeyBlockFunc, setupTx setupGenesisBlockFunc) (*params.ChainConfig, common.Hash, error) {
+	if _, _, err := setupKey(db, keyGenesis); err != nil {
+		// A key-chain compatibility error cannot use the transaction-chain
+		// SetHead recovery below. Wrap it so New treats it as fatal while
+		// preserving errors.Is/errors.As for diagnostics.
+		return nil, common.Hash{}, fmt.Errorf("key genesis setup failed: %w", err)
+	}
+	chainConfig, genesisHash, err := setupTx(db, genesis)
+	if err != nil {
+		if _, ok := err.(*params.ConfigCompatError); !ok {
+			return nil, common.Hash{}, err
+		}
+	}
+	return chainConfig, genesisHash, err
 }
 
 func makeExtraData(extra []byte, hasPrivate bool) []byte {

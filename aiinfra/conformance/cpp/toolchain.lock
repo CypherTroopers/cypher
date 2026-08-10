@@ -1,0 +1,14 @@
+lock_format=1
+target_os=linux
+target_arch=x86_64
+cc_command=gcc
+cc_version=15.2.0
+cxx_command=g++
+cxx_version=15.2.0
+openssl_version=3.5.5
+icu_version=72.1
+icu_abi=72
+unicode_version=15.0.0
+icu_source_url=https://github.com/unicode-org/icu/releases/download/release-72-1/icu4c-72_1-src.tgz
+icu_source_sha256=a2d2d38217092a7ed56635e34467f92f976b370e20182ad325edea6681a71d68
+icu_source_archive=icu4c-72_1-src.tgz

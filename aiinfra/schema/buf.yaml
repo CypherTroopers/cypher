@@ -1,0 +1,17 @@
+# Copyright 2026 The Cypherium Authors
+# This file is part of the Cypherium library.
+
+version: v2
+modules:
+  - path: .
+lint:
+  use:
+    - STANDARD
+  except:
+    # The stable packages include the organization prefix cph.aiinfra, while
+    # this module deliberately starts at aiinfra/schema.
+    - PACKAGE_DIRECTORY_MATCH
+  disallow_comment_ignores: true
+breaking:
+  use:
+    - FILE

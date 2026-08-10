@@ -3,6 +3,7 @@ package types
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math/big"
 	"sync/atomic"
@@ -64,6 +65,29 @@ func (h *KeyBlockHeader) Size() common.StorageSize {
 }
 func (h *KeyBlockHeader) HasNewNode() bool {
 	return h.BlockType == PowReconfig || h.BlockType == PacePowReconfig
+}
+
+// ValidateBasic rejects malformed key-block headers before callers use the
+// pointer and integer fields assumed by the legacy accessors. It deliberately
+// contains only context-free structural bounds; timestamp, block-type and
+// consensus-difficulty rules belong to the versioned verifier.
+func (h *KeyBlockHeader) ValidateBasic() error {
+	if h == nil {
+		return fmt.Errorf("nil key block header")
+	}
+	if h.Number == nil {
+		return fmt.Errorf("nil key block number")
+	}
+	if !h.Number.IsUint64() {
+		return fmt.Errorf("invalid key block number: bitlen %d", h.Number.BitLen())
+	}
+	if h.Difficulty == nil {
+		return fmt.Errorf("nil key block difficulty")
+	}
+	if h.Difficulty.Sign() < 0 || h.Difficulty.BitLen() > 256 {
+		return fmt.Errorf("invalid key block difficulty: sign %d bitlen %d", h.Difficulty.Sign(), h.Difficulty.BitLen())
+	}
+	return nil
 }
 
 //go:generate gencodec -type KeyBlockBody -field-override keyBlockBodyMarshaling -out gen_key_body_json.go
@@ -164,6 +188,9 @@ func (b *KeyBlock) DecodeRLP(s *rlp.Stream) error {
 	b.header = eb.Header
 	b.leaderPubKey, b.leaderAddress = eb.LeaderPubKey, eb.LeaderAddress
 	b.inPubKey, b.inAddress, b.outPubKey, b.outAddress = eb.InPubKey, eb.InAddress, eb.OutPubKey, eb.OutAddress
+	if err := b.ValidateBasic(); err != nil {
+		return err
+	}
 	b.size.Store(common.StorageSize(rlp.ListSize(size)))
 	return nil
 }
@@ -198,10 +225,7 @@ func DecodeToKeyBlock(data []byte) *KeyBlock {
 		return nil
 	}
 	block := &KeyBlock{}
-	buff := bytes.NewBuffer(data)
-	c := rlp.NewStream(buff, 0)
-	err := block.DecodeRLP(c)
-	if err != nil {
+	if err := rlp.DecodeBytes(data, block); err != nil {
 		log.Error("KeyBlock.DecodeToBlock", "error", err)
 		return nil
 	}
@@ -228,6 +252,15 @@ func GetCommitteeHash(x interface{}) common.Hash      { return rlpHash(x) }
 func (b *KeyBlock) T_Number() uint64                  { return b.header.T_Number }
 
 func (b *KeyBlock) Header() *KeyBlockHeader { return CopyKeyBlockHeader(b.header) }
+
+// ValidateBasic performs the context-free structural checks required before
+// any of KeyBlock's legacy accessors can be called safely.
+func (b *KeyBlock) ValidateBasic() error {
+	if b == nil {
+		return fmt.Errorf("nil key block")
+	}
+	return b.header.ValidateBasic()
+}
 
 func (b *KeyBlock) LeaderPubKey() string  { return b.leaderPubKey }
 func (b *KeyBlock) LeaderAddress() string { return b.leaderAddress }

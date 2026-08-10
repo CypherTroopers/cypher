@@ -5,7 +5,7 @@ on:
 
   push:
     branches:
-      - 'Fair-HotStuff-FHS-D'
+      - 'GPU'
     paths-ignore:
       - 'build/bin/cypher'
       - 'build/bin/cypher-linux-*'
@@ -144,7 +144,7 @@ jobs:
     name: Commit binaries
     if: >-
       github.ref_type == 'branch' &&
-      github.ref_name == 'Fair-HotStuff-FHS-D'
+      github.ref_name == 'GPU'
     needs: build-native
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -169,6 +169,6 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ github.sha }}
-          TARGET_BRANCH: Fair-HotStuff-FHS-D
+          TARGET_BRANCH: GPU
           GO_VERSION: ${{ env.GO_VERSION }}
         run: ./build/publish-binaries.sh

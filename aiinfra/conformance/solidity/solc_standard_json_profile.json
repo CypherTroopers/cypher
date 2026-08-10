@@ -1,0 +1,33 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "CCSEEIP712Bridge.sol": {
+      "urls": ["CCSEEIP712Bridge.sol"]
+    },
+    "CCSEEIP712BridgeHarness.sol": {
+      "urls": ["CCSEEIP712BridgeHarness.sol"]
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": true,
+      "runs": 200
+    },
+    "evmVersion": "paris",
+    "viaIR": false,
+    "metadata": {
+      "appendCBOR": false,
+      "bytecodeHash": "none",
+      "useLiteralContent": true
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode.object",
+          "evm.deployedBytecode.object"
+        ]
+      }
+    }
+  }
+}

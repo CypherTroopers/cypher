@@ -22,13 +22,25 @@ import (
 )
 
 const (
-	DisableGAS             = false
-	MaxTxCountPerBlock     = 1024
-	AckTimeout             = 20 * time.Second
-	HeatBeatTimeout        = 10 * time.Second
-	PaceMakerTimeout       = 30 * time.Second
-	KeyBlockTimeout        = 20 * time.Minute
-	KeyBlockMinInterval    = 10 * time.Minute
+	DisableGAS          = false
+	MaxTxCountPerBlock  = 1024
+	AckTimeout          = 20 * time.Second
+	HeatBeatTimeout     = 10 * time.Second
+	PaceMakerTimeout    = 30 * time.Second
+	KeyBlockTimeout     = 20 * time.Minute
+	KeyBlockMinInterval = 10 * time.Minute
+
+	// LegacyKeyTimePolicyVersion identifies the temporary pre-WorkTemplate
+	// timestamp policy used by legacy Candidate, compact PoWResult, and KeyBlock
+	// ingress. The current worker deliberately stamps new work at
+	// parent.Time+KeyBlockMinInterval, which can be ten minutes ahead of wall
+	// clock immediately after a key block. One historical five-minute clock-skew
+	// allowance is therefore added to that interval. A versioned WorkTemplate
+	// must replace this wall-clock policy and bind T_Number and expiry directly.
+	LegacyKeyTimePolicyVersion uint32 = 1
+	LegacyKeyTimeClockSkew            = 5 * time.Minute
+	LegacyKeyTimeMaxFuture            = KeyBlockMinInterval + LegacyKeyTimeClockSkew
+
 	KeyBlock_Reward        = 1e+18 // Block reward in wei for successfully mining a block
 	CheckBackNumber        = 10
 	CollectVoteInfoTimeout = 5 * time.Second
@@ -184,6 +196,34 @@ const (
 	// payload for a transaction, the size of the buffer to 128kb to match the maximum allowed in chain config
 	CypherMaxPayloadBufferSize uint64 = 128
 )
+
+// LegacyKeyTimestampWithinFutureLimit reports whether timestamp is within the
+// explicit version-1 wall-clock upper bound. Supplying now keeps every ingress
+// boundary deterministic and independently testable.
+func LegacyKeyTimestampWithinFutureLimit(timestamp uint64, now time.Time) bool {
+	unix := now.Unix()
+	if unix < 0 {
+		return false
+	}
+	maxFuture := uint64(LegacyKeyTimeMaxFuture / time.Second)
+	current := uint64(unix)
+	if current > ^uint64(0)-maxFuture {
+		return true
+	}
+	return timestamp <= current+maxFuture
+}
+
+// LegacyCandidateTimestampAllowed applies both the current worker's minimum
+// key interval and the version-1 wall-clock upper bound. This is not a work
+// assignment or expiry proof; authenticated WorkTemplate binding remains a
+// Gateway/WorkTemplate blocker for the next protocol version.
+func LegacyCandidateTimestampAllowed(parentTimestamp, candidateTimestamp uint64, now time.Time) bool {
+	interval := uint64(KeyBlockMinInterval / time.Second)
+	if parentTimestamp > ^uint64(0)-interval {
+		return false
+	}
+	return candidateTimestamp >= parentTimestamp+interval && LegacyKeyTimestampWithinFutureLimit(candidateTimestamp, now)
+}
 
 // Gas discount tables for the final EIP-2537 multi-exponentiation precompiles.
 var Bls12381G1MultiExpDiscountTable = [128]uint64{1000, 949, 848, 797, 764, 750, 738, 728, 719, 712, 705, 698, 692, 687, 682, 677, 673, 669, 665, 661, 658, 654, 651, 648, 645, 642, 640, 637, 635, 632, 630, 627, 625, 623, 621, 619, 617, 615, 613, 611, 609, 608, 606, 604, 603, 601, 599, 598, 596, 595, 593, 592, 591, 589, 588, 586, 585, 584, 582, 581, 580, 579, 577, 576, 575, 574, 573, 572, 570, 569, 568, 567, 566, 565, 564, 563, 562, 561, 560, 559, 558, 557, 556, 555, 554, 553, 552, 551, 550, 549, 548, 547, 547, 546, 545, 544, 543, 542, 541, 540, 540, 539, 538, 537, 536, 536, 535, 534, 533, 532, 532, 531, 530, 529, 528, 528, 527, 526, 525, 525, 524, 523, 522, 522, 521, 520, 520, 519}

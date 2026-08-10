@@ -1,0 +1,44 @@
+{
+  "vector_id": "ccse-v1-eip712-bridge-conformance-0001",
+  "status": "candidate",
+  "profile": "CPH AI Infrastructure Extension Solidity-facing EIP-712 bridge v1",
+  "ccse_source": {
+    "vector_id": "ccse-v1-ed25519-conformance-0001",
+    "sha256_record_digest_hex": "fd9c6d202ef110e19faca9c5a4a0d4c26bca4c6b6cb210e9b14fca1c5f5b9161"
+  },
+  "domain": {
+    "type_string": "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)",
+    "name": "CPH AI Infrastructure Extension",
+    "version": "1",
+    "chain_id_decimal": "16162",
+    "verifying_contract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC",
+    "genesis_hash_hex": "bdbc1a99890e386c79f7e9608161330b7420254a2870cc6d29f3ee932767e632"
+  },
+  "authorization": {
+    "type_string": "CPHFinancialAuthorizationV1(bytes32 ccseRecordDigest,bytes32 financialOperationId,bytes32 leaseId,bytes32 receiptId,bytes32 settlementId,bytes32 assetId,address payer,address payee,uint256 amountSmallestUnit,uint64 expectedGeneration,uint64 validAfterUnix,uint64 validBeforeUnix)",
+    "ccse_record_digest_hex": "fd9c6d202ef110e19faca9c5a4a0d4c26bca4c6b6cb210e9b14fca1c5f5b9161",
+    "financial_operation_id_hex": "bb6903b1a0651b4293aa1176d92692343245de77c45af499d4bc654cde6ea7f6",
+    "lease_id_hex": "cf3bb4f75aa5c88a8074b45ebda3da906349233a24b768b4f5322eeecbe021af",
+    "receipt_id_hex": "504eebcde577cf2d3f70dee0c7f98add13e7f496b3e954da633eeabbb42ae591",
+    "settlement_id_hex": "e1b34055f897550e37b21f76b713b66d3d6975b5859cef7fcc0f11cae6ee60ee",
+    "asset_id_hex": "d8a48e6cd9614684b9a60887748afc8d33e91e8abcb70f5049aa133fdc3200d5",
+    "payer": "0x1111111111111111111111111111111111111111",
+    "payee": "0x2222222222222222222222222222222222222222",
+    "amount_smallest_unit_decimal": "2500000000000000000",
+    "expected_generation_decimal": "3",
+    "valid_after_unix_decimal": "1700000000",
+    "valid_before_unix_decimal": "1700000300"
+  },
+  "conformance_key": {
+    "private_key_hex": "4c0883a69102937d6231471b5dbb6204fe5129617082792f9bfe223d39e3a7ed",
+    "expected_signer": "0xc8c9b6ddC97B057f70600447bCF7ffed0bcaa8f9"
+  },
+  "expected": {
+    "domain_type_hash_hex": "d87cd6ef79d4e2b95e15ce8abf732db51ec771f1ca2edccf22a46c729ac56472",
+    "authorization_type_hash_hex": "97dfd84cdf9cecb731d393fcec4521c8760ad6a7c7f81fda0f68a118fc9c6d0e",
+    "domain_separator_hex": "5a32be2fb69b11e5ea08f31d5f1346469aa11b8397bb64c422561d17565ad37c",
+    "authorization_struct_hash_hex": "1869d3fce8f4fd928ce6e0a8375c97faf6f8cfa43cfbead242946ae696d692a3",
+    "eip712_signing_digest_hex": "ee67db965bb585f3eb939a644f208caae17b665c70e235bd50db03bc6f7b7ca4",
+    "signature_rsv_27_hex": "b298fb51401e050f9d2b6a1cc76b9a227f57f3e76cfb31b83340945e184c363c0cc5afae159b1761e56d3bda6bfaa680f2df6636f6249eccc346da68d4ea489a1c"
+  }
+}

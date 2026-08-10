@@ -118,10 +118,7 @@ func DecodeToCandidate(data []byte) *Candidate {
 		return nil
 	}
 	candi := &Candidate{}
-	buff := bytes.NewBuffer(data)
-	c := rlp.NewStream(buff, 0)
-	err := candi.DecodeRLP(c)
-	if err != nil {
+	if err := rlp.DecodeBytes(data, candi); err != nil {
 		log.Error("Candidate.DecodeToCandidate", "error", err)
 		return nil
 	}

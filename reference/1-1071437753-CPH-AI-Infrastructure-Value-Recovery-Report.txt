@@ -1,0 +1,475 @@
+                      STRATEGIC ANALYSIS | 2026
+
+
+
+
+ How CPH Can Become the Value
+Recovery Layer for AI Infrastructure
+A Business Analysis of GPU Economic Depreciation, Idle Compute
+         Monetization, and Global Compute Settlement
+
+                AI Infrastructure Value Recovery Layer
+
+
+
+
+                             August 6, 2026
+                      Cypherium / CPH Strategy Report
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+
+Executive Summary
+Today’s AI competition is rapidly evolving into a capital-intensive infrastructure race. Models, data, and
+algorithms remain essential, yet the bulk of the cost comes from chips, power, networks, and data
+centers. Meta, for example, narrowed its full-year 2026 capital expenditure guidance to $130 billion-
+$145 billion in the second quarter. Alphabet recorded $44.9 billion of capital expenditures in the second
+quarter of 2026 alone, with the vast majority directed toward technical infrastructure supporting AI
+investment. AI is moving from a traditional software business toward a capital-intensive infrastructure
+business.
+
+We particularly focus on two curves moving in opposite directions across the AI industry. As U.S.-China
+AI competition continues to intensify, leading AI companies and cloud providers must keep securing
+next-generation GPUs, accelerators, and data-center capacity to preserve advantages in model
+performance and compute. Capital expenditure and depreciation pressure keep rising. At the same
+time, supply models represented by Chinese open-weight models such as Qwen and low-cost APIs such
+as DeepSeek are setting up new performance-to-price benchmarks and compressing the pricing room
+for model-service tokens globally.
+
+  The GPU arms race drives costs higher, while the token price war pushes unit revenue lower.
+  CapEx ↑ + Token Price ↓ puts AI infrastructure returns under pressure from both sides.
+
+Under this pressure, a second revenue curve is evolving from a useful way to improve utilization into a
+practical requirement for AI companies seeking to repair asset returns. Beyond model APIs,
+subscriptions, and token revenue, AI companies urgently need additional monetization channels so the
+same GPUs purchased with substantial capital can continue generating cash flow when idle,
+underutilized, or retired from frontier clusters.
+
+AI chips also present a distinctive contradiction: their physical life is long, while their period of
+economic leadership is short. Meta even extended the estimated useful life of certain servers and
+network equipment to 5.5 years beginning in 2025. Yet in NVIDIA's published MLPerf Inference v5.0
+results, an 8-GPU B200 system delivered roughly 3.1 times the throughput of an 8-GPU H200 system on
+Llama 2 70B Interactive. Older GPUs have not stopped working; they may simply cease to be the best
+assets for the most expensive, frontier AI workloads.
+
+We call the resulting problem the economic depreciation gap: large volumes of chips remain fully
+capable of computation, yet new generations of AI hardware cause them to be downgraded, left idle, or
+removed from core clusters earlier than their physical life would imply.
+
+For us, the strategic value of CPH is to create a second revenue curve for this compute capacity.
+
+
+
+
+                                                                                                    Page 2
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+In our model, when a GPU has high-value AI work, it serves training and inference. When AI orders are
+insufficient, workloads fluctuate, or the device has exited a frontier AI cluster, it can shift to our GPU
+PoW network and earn CPH. As we continue advancing the AI compute marketplace and Proof-of-
+Useful-Work roadmap, GPUs can also take on external AI jobs, with settlement conducted in CPH.
+
+Based on this logic, our core positioning for CPH is:
+
+  AI Infrastructure Value Recovery Layer.
+
+We cannot make AI capital expenditure disappear. We can, however, remonetize idle time and retired
+compute that would otherwise be totally wasted, increasing lifetime GPU revenue, reducing effective
+holding cost, and shortening the payback period for AI infrastructure investment.
+
+
+1. The Core Problem in AI Infrastructure: Chips Become Economically
+Obsolete Too Quickly
+For traditional industrial equipment, physical life and economic life are usually relatively close. AI chips
+behave differently.
+
+NVIDIA's official benchmarks show that Blackwell already delivers several-fold gains in per-GPU
+performance over Hopper in certain LLM inference scenarios. In MLPerf Inference v5.0, for example,
+B200 delivered about 3.1 times the H200 throughput on Llama 2 70B Interactive, while GB200 NVL72
+delivered up to roughly 3.4 times the per-GPU performance of H200 on Llama 3.1 405B. At the same
+time, NVIDIA explicitly noted that Hopper, three years after launch, could still run the latest workloads
+and continue improving through software optimization.
+
+Together, these two sets of data reveal the AI infrastructure financial problem that matters most to us:
+
+Older chips still have compute capacity; compared to newer chips, however, the AI revenue they can
+generate per watt, per dollar, and per rack declines.
+
+AI companies therefore face a growing pool of GPUs moving from primary production assets into
+secondary production assets. They can still compute, but without new uses, they are limited to
+discounted rentals, resale, idling, or depreciation charges.
+
+CPH creates a new option: keep those GPUs producing revenue through digital assets and compute
+services.
+
+The Dual Squeeze Under U.S.-China AI Competition: CapEx Up, Token Prices Down
+U.S.-China AI competition is reshaping both the cost side and the revenue side. On the cost side, we see
+an ongoing compute arms race. To preserve model-training performance, inference efficiency, and
+
+
+                                                                                                      Page 3
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+product responsiveness, leading AI companies must continuously expand server, data-center, and
+networking capacity while planning ahead for the next generation of accelerators. Meta's full-year
+capital expenditure guidance issued in July 2026 reached $130 billion-$145 billion. Alphabet's capital
+expenditures reached $44.9 billion in the second quarter of 2026, with about 60% of technical
+infrastructure investment going to servers. Even when existing chips remain usable, the performance
+advantage of new hardware pushes frontier AI companies to keep upgrading.
+
+The revenue side is moving in the opposite direction. Chinese AI companies are lowering the cost of
+access to model capability through open weights + low-cost APIs + rapid iteration. Multiple Qwen3
+models release weights under the Apache 2.0 license. DeepSeek's current official API pricing lists V4-Pro
+at $0.435 per 1 million cache-miss input tokens and $0.87 per 1 million output tokens. The capabilities,
+context windows, and service levels of different models are not perfectly comparable. Even so, this
+supply model creates a low-cost alternative and continues to compress the room for closed models to
+earn excess returns through high token prices.
+
+When we refer to "falling token prices," we mean the broader direction of market pricing; we do not
+assume that every model from every company will mechanically cut prices in every period. As model
+capability improves and open-source alternatives multiply, the pricing power that can be sustained
+per unit of model capability is coming under pressure. For AI companies, the economic implication is
+straightforward: recovering GPU investment by raising token prices alone is becoming increasingly
+difficult.
+
+In our infrastructure recovery model, we can simplify the relationship as follows:
+
+   Cash flow available to recover infrastructure investment = Token Volume Q × Token Price P +
+   Second Monetization Revenue R₂ − GPU / Data-Center Cost C
+
+If cost C rises while token price P falls, token volume Q must grow faster to recover the same
+infrastructure investment. Put simply, the GPU arms race raises costs while the token price war lowers
+unit revenue. If volume growth fails to keep pace with these two forces, AI companies face longer asset
+payback periods, greater depreciation pressure, and tighter free cash flow.
+
+CPH can directly address this gap by adding a monetization channel whose economics do not move in
+perfect sync with model token pricing. When a GPU has no high-value AI workload, it can continue
+generating value through CPH PoW or, in the future, through our compute marketplace. The additional
+revenue R₂ can therefore reduce the share of the investment burden carried by the token business.
+
+
+
+
+                                                                                                    Page 4
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+
+2. Our Core Business Logic: Give Every GPU Two Revenue Curves
+The capital cost of an AI GPU is incurred when it is purchased. Once the purchase is complete, the
+question that matters most to us is:
+
+  How much total cash flow can this GPU generate before it becomes economically obsolete?
+
+A traditional AI data center has one primary revenue curve: training and inference. With no customer
+workload, GPU revenue approaches zero. When a device is no longer well suited to the most advanced
+models, its economic value can fall rapidly.
+
+With CPH, we want to add a backup revenue curve that does not depend on AI customers placing orders
+in real time.
+
+    GPU State             Traditional Model                CPH Model               Implication for Capital Recovery
+
+                                                   Prioritize training /
+    High AI load      Training / inference                                      Preserve high-value AI revenue
+                                                   inference
+
+                                                   Automatically switch to
+ Low AI load / idle   GPU waits for work                                        Convert idle time into marginal revenue
+                                                   CPH mining
+
+   Exits frontier     Discounted rental, resale,   CPH mining + secondary AI
+                                                                                Extend economic life
+      cluster         or idle                      jobs
+
+    Large-scale                                    Join a distributed compute   Recover residual value and expand
+                      Asset impairment
+    retirement                                     pool                         global compute supply
+
+
+
+
+We view this model as analogous to peak-load management in the energy industry: AI is the high-value
+primary load, while CPH is a flexible backup load that can be started or stopped as needed. The GPU
+continues to serve AI first and keeps creating value when AI does not need it, without requiring
+additional hardware purchases solely for mining.
+
+For that reason, we care more about whether CPH can turn a GPU utilization problem into a yield
+problem than about maximizing mining profit at any single point in time.
+
+
+3. Why CPH Is Well Suited to the Second Revenue Curve
+To make this logic work, we must establish a direct link between CPH and AI hardware and computing
+resource demand. The traditional model—where “any computing power can be used for mining”—is far
+from sufficient.
+
+CPH uses the proprietary Colossus-X mining algorithm, which is specifically designed for GPU hardware.
+Its mining process primarily utilizes GPU memory (VRAM) rather than relying on specialized ASIC mining
+
+
+                                                                                                                    Page 5
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+machines. As a result, the same GPUs that AI companies use for training and inference can participate in
+the CPH network during idle periods without requiring any hardware modifications, allowing them to
+generate additional revenue.
+
+In our published white-paper, Cypherium: Road to AGI, we go further and propose using this GPU
+network for AI training and inference. Nodes earn CPH by contributing compute; external enterprises
+and users can eventually pay CPH to rent AI compute, while the marketplace matches demand with idle
+computing resources around the world.
+
+Under this design, CPH can perform three functions at the same time:
+
+   1. Network security incentive: GPUs participate in PoW and earn CPH;
+   2. Idle compute monetization: AI companies move unused GPUs into the network during low-load
+      periods;
+   3. AI compute settlement: Users who need training, inference, or other computing services buy and
+      pay CPH, and compute providers receive CPH.
+For us, the third layer is especially important.
+
+If CPH revenue comes only from block rewards, the revenue stream depends primarily on token
+issuance incentives and does not yet demonstrate new external cash flow across the system. When
+external AI users buy and spend CPH to obtain real compute, the network gains genuine productive
+demand.
+
+Our goal is to create the following value loop:
+
+AI companies contribute idle GPUs → earn CPH → our GPU network expands → external users pay
+CPH for compute → CPH gains real utility demand → compute providers earn ongoing revenue → AI
+companies reduce the net cost of infrastructure.
+
+This is the most important strategic distinction between CPH and a simple mining coin.
+
+
+4. How CPH Can Shorten the Payback Period for AI Infrastructure
+We can express the lifetime revenue of a GPU as:
+
+Total GPU Revenue = AI Revenue + Idle-Period CPH Mining Revenue + CPH Compute-Market Revenue
++ Final Residual Value.
+
+The incremental net revenue contributed by CPH can be approximated as:
+
+Incremental CPH Net Revenue = Idle GPU Hours × max(CPH Revenue per Hour − Power − Cooling −
+Operations − Incremental Wear, 0) + Net Revenue from External AI Compute Jobs.
+
+
+                                                                                                  Page 6
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+For us, the decision to activate mining depends on real-time scheduling and marginal economics:
+
+   4. When an AI workload offers the highest marginal profit, the GPU runs AI;
+   5. When the AI queue is empty and CPH revenue exceeds marginal power and operating costs, the
+      GPU automatically mines CPH;
+   6. When CPH mining also falls below marginal cost, the GPU powers down;
+   7. When the GPU is no longer suitable as primary AI compute, it can move on a longer-term basis to
+      CPH or a low-priority distributed AI compute market.
+We think of this mechanism as a Compute Revenue Optimizer for every GPU.
+
+CPH fills the gaps in the AI revenue curve. As long as the incremental revenue is positive, the same AI
+CapEx produces more cumulative cash flow, naturally shortening the investment payback period.
+
+
+5. From AI Tokens to a Compute Settlement Layer: The Higher-Level
+Role of CPH
+"AI is, in essence, mining" is a powerful analogy because both AI and PoW convert chips, electricity, and
+time into digital output. When speaking to professional investors or technical partners, we make the
+idea more precise.
+
+In large language models, a token is a unit of text processing and billing; it is not a uniform unit of
+physical compute. The compute consumption and cost of the same 1 million tokens can vary
+substantially across models, context lengths, reasoning modes, precisions, and GPUs. Token prices from
+OpenAI, Anthropic, Google, xAI, or DeepSeek therefore cannot be converted directly on a simple one-to-
+one basis. While the concept of exporting LLM tokens as a new form of “digital commodity” is highly
+compelling, turning this vision into a scalable commercial reality still presents significant challenges.
+
+AI tokens are consumable by nature—once used, they are gone. That leads us to a more precise
+positioning for CPH:
+
+A common settlement asset for heterogeneous AI compute transactions.
+
+As a next step, we can establish a standardized Compute Unit that normalizes compute based on GPU
+type, effective compute time, VRAM, memory bandwidth, workload type, latency, SLA, and other
+relevant factors. The market can then quote a price in "CPH per Compute Unit."
+
+This design allows the underlying hardware to use NVIDIA, AMD, Apple Silicon, or other AI chips and the
+application layer to run entirely different models, while CPH provides a common mechanism for quoting,
+payment, and incentives.
+
+
+
+
+                                                                                                        Page 7
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+Gold historically served as a common medium of value across different goods. By the same logic, our
+goal is for CPH to become a shared value-settlement layer across different forms of compute.
+
+
+6. Four Direct Financial Benefits CPH Can Bring to AI Companies
+1. Improve Lifetime GPU Utilization
+We can turn idle hours that previously generated no revenue into hours that may generate revenue. For
+CapEx that has already been committed, any period in which marginal revenue exceeds marginal cost
+contributes additional capital recovery.
+
+2. Extend the Economic Life of GPUs
+Frontier AI competition may require rapid upgrades, while PoW and certain lower-priority compute
+tasks do not require every generation of GPU to remain state of the art. Older GPUs can move from
+"primary AI assets" to "secondary compute assets" and continue generating revenue instead of
+immediately becoming sunk costs.
+
+3. Establish a Potential Yield Floor for Hardware
+If a specific GPU model can consistently generate positive marginal returns on the CPH network, its
+value becomes less dependent on AI cloud rental rates alone. In theory, the present value of net mining
+income can provide one reference point for hardware residual value, reducing uncertainty around
+economic depreciation.
+
+4. Turn AI Infrastructure into a Dual-Use Asset
+We want the same GPU fleet to serve both AI and a decentralized network. As the CPH compute
+marketplace comes online, the fleet can potentially earn both blockchain-security revenue and revenue
+from real AI compute, making each GPU more like a "digital production machine" that can automatically
+seek the highest-return opportunity across different markets.
+
+
+7. What Future Awaits Us?
+For us, this is the critical piece that will determine whether CPH can move beyond a grand vision and
+become a genuine infrastructure solution that AI companies can incorporate into their balance sheets.
+
+First, our go-to-market strategy begins with edge computing, validating CPH mining on devices such as
+the AMD Max 395 to prove product compatibility, unit economics, and the operating model through
+lower-cost, faster deployment cycles. Once validated, we will expand into high-performance enterprise
+GPUs such as the H200 and B300, delivering greater compute density and economic efficiency for B2B
+
+
+
+                                                                                                  Page 8
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+customers. This phased approach will enable CPH to scale from edge devices to data-center
+infrastructure and establish a comprehensive, commercially scalable compute ecosystem.
+
+Second, we need automatic scheduling. CPH workloads must remain low priority and preemptible.
+When an AI job arrives, mining should exit quickly enough to preserve high-margin AI SLAs.
+
+Third, we need to evolve the "mining market" into a "compute market." Block rewards can bootstrap
+the network, but long-term value increasingly needs to come from real users purchasing training,
+inference, and data-processing services. Buyer demand for CPH should be able to offset at least part of
+the sell pressure created when compute providers receive tokens.
+
+Fourth, we need a standardized Compute Unit and a transparent pricing system. Users can understand
+prices in dollars, stablecoins, or fiat, while underlying settlement and node incentives use CPH. This
+structure can align enterprise procurement practices with genuine CPH demand.
+
+Fifth, we need to confront power constraints directly. If a data center is already power-constrained,
+continuous mining could raise peak electricity costs or even displace higher-value AI workloads. Our
+principle is clear: mine on the right equipment, at the right time, and at the right power price.
+
+
+Conclusion: AI Creates the Highest Value; CPH Recovers the
+Remaining Value
+One of the defining contradictions of the AI infrastructure era is that humanity is buying chips at
+unprecedented speed while making the previous generation lose its position of economic leadership at
+an equally unprecedented pace.
+
+That contradiction now carries a second layer of pressure: capital investment in upstream GPUs and
+data centers continues to expand, while downstream per-token pricing power is continuously
+pressured by open-source models and low-cost APIs. When the cost curve moves up and the unit-
+revenue curve moves down, recovering GPU investment through model usage revenue alone becomes
+increasingly difficult. AI companies therefore need a second and third infrastructure monetization
+channel beyond token pricing.
+
+Our goal is clear: even after a chip exits the most advanced AI workloads, we want it to retain a second
+life that can continue generating revenue.
+
+This is the position we want CPH to occupy.
+
+AI creates the highest value from compute; CPH recovers the remaining value of compute.
+
+
+
+
+                                                                                                    Page 9
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+AI creates demand, and CPH absorbs surplus compute; AI consumes capital, and CPH recovers residual
+asset value.
+
+If we can fully connect GPU PoW, preemptible idle-compute scheduling, a real AI workload marketplace,
+and CPH settlement, CPH can evolve from a crypto asset produced by compute into infrastructure that
+helps AI companies manage the full-lifecycle economics of their GPU fleets.
+
+Ultimately, we condense the most important CPH value proposition into one sentence:
+
+  CPH turns stranded compute into productive capital.
+
+
+Key Sources
+   8. Meta, Second Quarter 2026 Results: In July 2026, Meta narrowed its full-year capital expenditure
+      guidance to $130 billion-$145 billion.
+      https://investor.atmeta.com/investor-news/press-release-details/2026/Meta-Reports-Second-Quarter-2026-
+      Results/default.aspx
+
+   9. Meta, Fourth Quarter and Full Year 2024 Results: Beginning in 2025, Meta increased the estimated
+      useful life of certain servers and network assets to 5.5 years.
+      https://investor.atmeta.com/investor-news/press-release-details/2025/Meta-Reports-Fourth-Quarter-and-Full-Year-
+      2024-Results/
+
+   10.NVIDIA, Blackwell Delivers Massive Performance Leaps in MLPerf Inference v5.0: Provides
+      generational B200/H200 and GB200/H200 performance data and notes that Hopper, three years
+      after launch, can continue serving new AI workloads with software optimization.
+      https://developer.nvidia.com/blog/nvidia-blackwell-delivers-massive-performance-leaps-in-mlperf-inference-v5-0/
+
+   11.Cypherium official website: Describes Cypherium as a GPU-exclusive PoW network and proposes
+      using its GPU infrastructure for AI training and inference.
+      https://www.cypherium.io/
+
+   12.Cypherium, Cypherium: Road to AGI: Describes Proof-of-Useful-Work, distributed GPU compute,
+      CPH compute incentives, and a roadmap for a future marketplace in which CPH is used to pay for
+      AI compute. This is Cypherium's own technical and strategic material; future capabilities described
+      in it should be treated as project design and roadmap rather than independently validated
+      commercial scale.
+      https://www.cypherium.io/_files/ugd/187561_500760ac3b994433a48cf0f3565f4d78.pdf
+
+   13.Alphabet, Q2 2026 Earnings Call: Alphabet reported $44.9 billion of capital expenditures in the
+      second quarter of 2026, with the vast majority supporting technical infrastructure for AI
+      investment and roughly 60% of technical infrastructure investment allocated to servers.
+      https://abc.xyz/investor/events/event-details/2026/2026-Q2-Earnings-Call-2026-GgTAq7Is0z/default.aspx
+
+
+
+                                                                                                                  Page 10
+CPH × AI INFRASTRUCTURE | STRATEGIC ANALYSIS
+
+
+
+   14.Qwen Team, Qwen3: Think Deeper, Act Faster: Multiple Qwen3 MoE and dense models are
+      released with open weights, with multiple models licensed under Apache 2.0.
+      https://qwenlm.github.io/blog/qwen3/
+
+   15.DeepSeek, Models & Pricing: DeepSeek's official page for current API models and token pricing.
+      Prices may be changed by DeepSeek, so this report treats them as a market-price snapshot as of
+      August 2026 rather than a permanent pricing assumption.
+      https://api-docs.deepseek.com/quick_start/pricing
+
+
+
+
+                                                                                                Page 11
+

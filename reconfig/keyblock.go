@@ -194,8 +194,35 @@ func (keyS *keyService) syncPrimaryLeaderLocked(mb *bftview.Committee) {
 	}
 }
 
+func verifyKeyBlockLegacyFutureAt(keyblock *types.KeyBlock, now time.Time) error {
+	if keyblock == nil {
+		return fmt.Errorf("verifyKeyBlock,nil key block in future timestamp validation")
+	}
+	if !params.LegacyKeyTimestampWithinFutureLimit(keyblock.Time(), now) {
+		return fmt.Errorf("verifyKeyBlock,timestamp too far in future, got:%d", keyblock.Time())
+	}
+	return nil
+}
+
+func verifyCandidateLegacyFutureAt(candidate *types.Candidate, now time.Time) error {
+	if candidate == nil || candidate.KeyCandidate == nil {
+		return fmt.Errorf("verifyKeyBlock,nil candidate in future timestamp validation")
+	}
+	if !params.LegacyKeyTimestampWithinFutureLimit(candidate.KeyCandidate.Time, now) {
+		return fmt.Errorf("verifyKeyBlock,candidate timestamp too far in future, got:%d", candidate.KeyCandidate.Time)
+	}
+	return nil
+}
+
 func verifyKeyBlockMinInterval(keyblock, curKeyblock *types.KeyBlock) error {
-	minNextKeyTime := curKeyblock.Time() + uint64(params.KeyBlockMinInterval/time.Second)
+	if keyblock == nil || curKeyblock == nil {
+		return fmt.Errorf("verifyKeyBlock,nil key block in minimum-interval validation")
+	}
+	interval := uint64(params.KeyBlockMinInterval / time.Second)
+	if curKeyblock.Time() > ^uint64(0)-interval {
+		return fmt.Errorf("verifyKeyBlock,parent timestamp overflows minimum interval")
+	}
+	minNextKeyTime := curKeyblock.Time() + interval
 	if keyblock.Time() < minNextKeyTime {
 		return fmt.Errorf("verifyKeyBlock,timestamp too early, min:%d, got:%d", minNextKeyTime, keyblock.Time())
 	}
@@ -213,41 +240,149 @@ func verifyKeyBlockCarrierParent(keyblock *types.KeyBlock, txParentNumber uint64
 	return nil
 }
 
-func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *types.Candidate, txParentNumber uint64) error { //
-	log.Info("@verifyKeyBlock", "number", keyblock.NumberU64())
-	if err := verifyKeyBlockCarrierParent(keyblock, txParentNumber); err != nil {
-		return fmt.Errorf("verifyKeyBlock: %w", err)
+// verifyKeyBlockCandidateBinding defines the legacy relationship between the
+// key-block body, its difficulty and the optional PoW candidate. In fixed mode
+// Time/Pace blocks may carry a candidate solely to reward its submitter; in
+// dynamic mode a candidate necessarily implies a Pow/PacePow reconfiguration.
+// Keeping this shape exact prevents an unproven OutAddress from minting the
+// common-miner reward and prevents no-candidate blocks from rewriting work.
+func verifyKeyBlockCandidateBinding(keyblock, parent *types.KeyBlock, candidate *types.Candidate, fixedMode bool) error {
+	if err := keyblock.ValidateBasic(); err != nil {
+		return err
 	}
-	kbc := keyS.kbc
-	if keyblock.LeaderPubKey() == bftview.GetServerInfo(bftview.PublicKey) {
-		curKeyblock := kbc.CurrentBlock()
-		if keyblock.NumberU64() != curKeyblock.NumberU64()+1 {
-			return fmt.Errorf("verifyKeyBlock,number is not %d", curKeyblock.NumberU64()+1)
+	if err := parent.ValidateBasic(); err != nil {
+		return fmt.Errorf("invalid parent key block: %w", err)
+	}
+	hasOutPublic := keyblock.OutPubKey() != ""
+	hasOutAddress := keyblock.OutAddress(0) != ""
+	if hasOutPublic != hasOutAddress {
+		return fmt.Errorf("keyblock reward identity is incomplete")
+	}
+
+	bindCandidate := func(useRewardIdentity bool) error {
+		if candidate == nil || candidate.KeyCandidate == nil {
+			return fmt.Errorf("keyblock candidate is missing")
 		}
-		if keyblock.ParentHash() != curKeyblock.Hash() {
-			//log.Error("verifyKeyBlock", "Non contiguous consensus prevhash", keyblock.ParentHash(), "currenthash", curKeyblock.Hash())
-			return fmt.Errorf("verifyKeyBlock,Non contiguous key block's hash")
+		candidateHeader := types.CopyKeyBlockHeader(candidate.KeyCandidate)
+		candidateHeader.BlockType = keyblock.BlockType()
+		if keyblock.Header().HashWithCandi() != candidateHeader.HashWithCandi() {
+			return fmt.Errorf("keyblock candidate header mismatch")
 		}
-		if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
-			return err
+		if useRewardIdentity {
+			if keyblock.OutPubKey() != candidate.PubKey || keyblock.OutAddress(0) != candidate.Coinbase {
+				return fmt.Errorf("keyblock reward submitter mismatch")
+			}
+		} else if keyblock.InPubKey() != candidate.PubKey || keyblock.InAddress() != candidate.Coinbase {
+			return fmt.Errorf("keyblock admitted candidate mismatch")
 		}
 		return nil
 	}
 
-	var newNode *common.Cnode
-	if keyblock.HasNewNode() {
-		newNode = &common.Cnode{
-			Address:  net.JoinHostPort(net.IP(bestCandi.IP).String(), strconv.Itoa(bestCandi.Port)),
-			CoinBase: keyblock.InAddress(),
-			Public:   keyblock.InPubKey(),
+	switch keyblock.BlockType() {
+	case types.PowReconfig, types.PacePowReconfig:
+		if fixedMode {
+			return fmt.Errorf("pow reconfiguration is disabled in fixed mode")
 		}
+		if !hasOutPublic {
+			return fmt.Errorf("pow reconfiguration outer identity is missing")
+		}
+		return bindCandidate(false)
+	case types.TimeReconfig, types.PaceReconfig:
+		if fixedMode && hasOutPublic {
+			return bindCandidate(true)
+		}
+		if candidate != nil {
+			return fmt.Errorf("unexpected candidate on non-reward key block")
+		}
+		if hasOutPublic {
+			return fmt.Errorf("unproven reward identity on key block")
+		}
+		if keyblock.Difficulty().Cmp(parent.Difficulty()) != 0 {
+			return fmt.Errorf("no-candidate key block changed parent difficulty")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported key block type %d", keyblock.BlockType())
+	}
+}
+
+func keyBlockBodiesEqual(left, right *types.KeyBlock) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	leftBody, rightBody := left.Body(), right.Body()
+	return leftBody != nil && rightBody != nil && *leftBody == *rightBody
+}
+
+func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *types.Candidate, txParentNumber uint64) error { //
+	if err := keyblock.ValidateBasic(); err != nil {
+		return fmt.Errorf("verifyKeyBlock: malformed key block: %w", err)
+	}
+	log.Info("@verifyKeyBlock", "number", keyblock.NumberU64())
+	kbc := keyS.kbc
+	if kbc == nil {
+		return fmt.Errorf("verifyKeyBlock:nil key block chain")
+	}
+	curKeyblock := kbc.CurrentBlock()
+	if curKeyblock == nil {
+		return types.ErrUnknownAncestor
+	}
+	now := time.Now()
+	// This check deliberately precedes both the self-leader and known-block
+	// shortcuts. Neither local authorship nor prior storage may bypass the
+	// versioned legacy wall-clock policy.
+	if err := verifyKeyBlockLegacyFutureAt(keyblock, now); err != nil {
+		return err
+	}
+	var candidatePublicKey []byte
+	if bestCandi != nil {
+		publicKey, err := core.ValidateLegacyCandidate(bestCandi)
+		if err != nil {
+			return fmt.Errorf("verifyKeyBlock: invalid candidate: %w", err)
+		}
+		if err := verifyCandidateLegacyFutureAt(bestCandi, now); err != nil {
+			return err
+		}
+		candidatePublicKey = publicKey
+	}
+	knownBlock := kbc.HasBlock(keyblock.Hash(), keyblock.NumberU64())
+	// A candidate accepted into this known key block can already be present in
+	// the current committee. Apply the decoded-byte duplication rule only while
+	// admitting a new block, never while recovering an already stored block.
+	if len(candidatePublicKey) > 0 && !knownBlock && core.LegacyCandidatePublicKeyInCommittee(candidatePublicKey, kbc.GetCommitteeByHash(curKeyblock.Hash())) {
+		return fmt.Errorf("verifyKeyBlock: %w", core.ErrCandidateIsMember)
+	}
+	if keyblock.HasNewNode() && bestCandi == nil {
+		return fmt.Errorf("keyblock verify failed, pow reconfig need the best candidate")
+	}
+	if err := verifyKeyBlockCarrierParent(keyblock, txParentNumber); err != nil {
+		return fmt.Errorf("verifyKeyBlock: %w", err)
 	}
 
-	if kbc.HasBlock(keyblock.Hash(), keyblock.NumberU64()) { //First come from p2p
+	if knownBlock { //First come from p2p
 		log.Info("verifyKeyBlock exist!", "number", keyblock.NumberU64())
+		stored := kbc.GetBlock(keyblock.Hash(), keyblock.NumberU64())
+		if stored == nil {
+			return fmt.Errorf("keyblock verify failed, known key block body is unavailable")
+		}
+		// KeyBlock.Hash commits only the header. A different body under the same
+		// header hash must never be used to reconstruct or synchronize committee
+		// state.
+		if !keyBlockBodiesEqual(stored, keyblock) {
+			return fmt.Errorf("keyblock verify failed, known key block body mismatch")
+		}
+		keyblock = stored
 		mb := bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true)
 		if mb == nil {
-			mb, _ = bftview.GetCommittee(newNode, keyblock, true)
+			// Dynamic admission includes the miner endpoint only in Candidate Extra;
+			// neither the key-block hash nor committee hash commits IP/port. Once the
+			// original committee record is missing, an untrusted replay cannot safely
+			// reconstruct that endpoint. Require restore/resync from an authoritative
+			// snapshot instead of persisting attacker-selected network identity.
+			if keyblock.HasNewNode() {
+				return fmt.Errorf("keyblock verify failed, cannot reconstruct known dynamic committee without committed endpoint evidence")
+			}
+			mb, _ = bftview.GetCommittee(nil, keyblock, true)
 			if mb == nil {
 				return fmt.Errorf("keyblock verify failed, can't recover committee for known key block %d/%s", keyblock.NumberU64(), keyblock.Hash())
 			}
@@ -262,7 +397,14 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 
 		return nil
 	}
-	curKeyblock := keyS.kbc.CurrentBlock()
+	var newNode *common.Cnode
+	if keyblock.HasNewNode() {
+		newNode = &common.Cnode{
+			Address:  net.JoinHostPort(net.IP(bestCandi.IP).String(), strconv.Itoa(bestCandi.Port)),
+			CoinBase: keyblock.InAddress(),
+			Public:   keyblock.InPubKey(),
+		}
+	}
 	if keyblock.NumberU64() != curKeyblock.NumberU64()+1 {
 		return fmt.Errorf("verifyKeyBlock,number is not %d", curKeyblock.NumberU64()+1)
 	}
@@ -287,54 +429,15 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	}
 
 	keyType := keyblock.BlockType()
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) &&
-		(keyType == types.PowReconfig || keyType == types.PacePowReconfig) {
-		return fmt.Errorf("keyblock verify failed, pow reconfig is disabled when fixedLeader/fixedCommittee is enabled")
+	if err := verifyKeyBlockCandidateBinding(keyblock, curKeyblock, bestCandi, keyS.fixedModeEnabled()); err != nil {
+		return fmt.Errorf("keyblock verify failed, candidate binding: %w", err)
 	}
 
 	if keyType == types.PowReconfig || keyType == types.PacePowReconfig {
-		if bestCandi == nil {
-			return fmt.Errorf("keyblock verify failed, pow reconfig need the best candidate")
-		}
-		bestCandi.KeyCandidate.BlockType = keyType
-		//log.Info("keyblock verify", "keyblock.Header", keyblock.Header(), "bestCandi.Header", bestCandi.KeyCandidate)
-		if keyblock.Header().HashWithCandi() != bestCandi.KeyCandidate.HashWithCandi() {
-			return fmt.Errorf("keyblock verify failed,best candidate's hash is not equal me")
-		}
-		if keyblock.InPubKey() != bestCandi.PubKey || keyblock.InAddress() != bestCandi.Coinbase {
-			return fmt.Errorf("keyblock verify failed, best candidate in info is not correct")
-		}
-
 		best := keyS.getBestCandidate(false)
 		if best != nil && best.KeyCandidate.Nonce.Uint64() < bestCandi.KeyCandidate.Nonce.Uint64() { //compare best with local
 			return fmt.Errorf("keyblock verify failed, not the best, my nonce is less than leader")
 		}
-		//verify bestCandi's MixDigest,Nonce with ip
-		err := keyS.engine.VerifyCandidate(keyS.kbc, bestCandi)
-		if err != nil {
-			return err //fmt.Errorf("keyblock verify failed,candidate pow verification failed!")
-		}
-	} else if keyS.fixedModeEnabled() && (keyType == types.TimeReconfig || keyType == types.PaceReconfig) &&
-		keyblock.OutPubKey() != "" && keyblock.OutAddress(0) != "" {
-		if bestCandi == nil {
-			return fmt.Errorf("keyblock verify failed, fixed mode pow reward requires candidate")
-		}
-		bestCandi.KeyCandidate.BlockType = keyType
-		if keyblock.Header().HashWithCandi() != bestCandi.KeyCandidate.HashWithCandi() {
-			return fmt.Errorf("keyblock verify failed, fixed mode candidate hash mismatch")
-		}
-		if keyblock.OutPubKey() != bestCandi.PubKey || keyblock.OutAddress(0) != bestCandi.Coinbase {
-			return fmt.Errorf("keyblock verify failed, fixed mode candidate submitter mismatch")
-		}
-		if err := keyS.engine.VerifyCandidate(keyS.kbc, bestCandi); err != nil {
-			return err
-		}
-	} else if keyType == types.TimeReconfig {
-		//
-	} else if keyType == types.PaceReconfig {
-		//
-	} else {
-		return fmt.Errorf("verifyKeyBlock,error BlockType:%d", keyblock.BlockType())
 	}
 
 	mb, outer := bftview.GetCommittee(newNode, keyblock, true)
@@ -350,10 +453,16 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 			return fmt.Errorf("keyblock verify failed, PowReconfig or PacePowReconfig should has outer")
 		}
 		outAddress := keyblock.OutAddress(0)
+		if outAddress == "" || keyblock.OutPubKey() == "" {
+			return fmt.Errorf("keyblock verify failed, pow reconfig outer identity is empty")
+		}
 		isBadAddress := false
 		if outAddress[0] == '*' {
 			outAddress = outAddress[1:]
 			isBadAddress = true
+		}
+		if outAddress == "" {
+			return fmt.Errorf("keyblock verify failed, pow reconfig outer address is empty")
 		}
 		if outer.CoinBase != outAddress || outer.Public != keyblock.OutPubKey() {
 			return fmt.Errorf("keyblock verify failed, outer is not correct,outer=%s,my outer=%s", outAddress, outer.CoinBase)
@@ -371,6 +480,23 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	}
 	if mb.In().CoinBase != keyblock.InAddress() || mb.In().Public != keyblock.InPubKey() {
 		return fmt.Errorf("keyblock verify failed, in is not correct")
+	}
+	if bestCandi != nil {
+		if keyS.candidatepool == nil {
+			return fmt.Errorf("verifyKeyBlock: candidate pool unavailable for final candidate validation")
+		}
+		// Proposal Extra is supplied directly by the leader and can bypass every
+		// CandidateMsg/KCP/NewView admission path. All cheap keyblock, binding and
+		// committee checks above run first; now recompute canonical difficulty on
+		// a detached header and perform the one expensive PoW verification before
+		// any persistent committee or rescue-mode side effect.
+		if err := keyS.candidatepool.ValidateCandidate(bestCandi); err != nil {
+			return fmt.Errorf("verifyKeyBlock: invalid final candidate: %w", err)
+		}
+	}
+	latestKeyblock := kbc.CurrentBlock()
+	if latestKeyblock == nil || latestKeyblock.NumberU64() != curKeyblock.NumberU64() || latestKeyblock.Hash() != curKeyblock.Hash() {
+		return fmt.Errorf("verifyKeyBlock: canonical key head changed during validation")
 	}
 	if bftview.InRescueMode(keyblock.NumberU64(), keyblock.Hash()) {
 		bftview.ClearRescueMode()
@@ -616,12 +742,29 @@ func (keyS *keyService) clearCandidate(keyblock *types.KeyBlock) {
 func (keyS *keyService) getBestCandidate(refresh bool) *types.Candidate {
 	keyS.muBestCandidate.Lock()
 	defer keyS.muBestCandidate.Unlock()
-
-	if refresh {
-		kNumber := keyS.kbc.CurrentBlockN() + 1
-		if keyS.bestCandidate != nil && keyS.bestCandidate.KeyCandidate.Number.Uint64() != kNumber {
+	if keyS.kbc == nil || keyS.candidatepool == nil {
+		keyS.bestCandidate = nil
+		return nil
+	}
+	currentKeyBlock := keyS.kbc.CurrentBlock()
+	if currentKeyBlock == nil {
+		keyS.bestCandidate = nil
+		return nil
+	}
+	expectedNumber := currentKeyBlock.NumberU64() + 1
+	if keyS.bestCandidate != nil {
+		if err := keyS.candidatepool.ValidateRemoteCandidatePreflight(keyS.bestCandidate, time.Now()); err != nil {
+			log.Debug("Cleared context-invalid cached best candidate", "err", err)
 			keyS.bestCandidate = nil
 		}
+	}
+
+	if refresh {
+		// Preserve a still-valid winner learned through NewView even when this node
+		// never received it through CandidateMsg/KCP. The preflight above has
+		// already cleared any winner invalidated by a tx rewind or key-head change;
+		// filtered pool candidates can now compete against the surviving cache.
+		kNumber := expectedNumber
 		contents := keyS.candidatepool.Content()
 		if len(contents) > 0 {
 			found := false
@@ -659,7 +802,9 @@ func (keyS *keyService) getBestCandidate(refresh bool) *types.Candidate {
 		}
 	} //end if refresh
 	if keyS.bestCandidate != nil {
-		if bftview.GetMemberIndex(keyS.bestCandidate.PubKey) >= 0 {
+		if err := keyS.candidatepool.ValidateRemoteCandidatePreflight(keyS.bestCandidate, time.Now()); err != nil {
+			log.Debug("Discarded best candidate invalidated during selection", "err", err)
+			keyS.bestCandidate = nil
 			return nil
 		}
 	}
@@ -675,6 +820,16 @@ func (keyS *keyService) setBestCandidate(bestCandidates []*types.Candidate) {
 	}
 	keyNumber := keyS.kbc.CurrentBlockN() + 1
 	for _, cand := range bestCandidates {
+		if cand == nil || keyS.candidatepool == nil {
+			continue
+		}
+		// NewView extra is authenticated as committee transport data, but a
+		// Byzantine member can still supply malformed or invalid PoW. Validate
+		// the complete candidate before any dereference or winner-cache write.
+		if err := keyS.candidatepool.ValidateCandidate(cand); err != nil {
+			log.Warn("setBestCandidate rejected NewView candidate", "err", err)
+			continue
+		}
 		ck := cand.KeyCandidate
 		if ck.Number.Uint64() == keyNumber && ck.Nonce.Uint64() < bestNonce && bftview.GetMemberIndex(cand.PubKey) < 0 {
 			bestNonce = ck.Nonce.Uint64()

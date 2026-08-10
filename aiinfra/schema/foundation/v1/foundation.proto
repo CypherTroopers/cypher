@@ -1,0 +1,330 @@
+// Copyright 2026 The Cypherium Authors
+// This file is part of the Cypherium library.
+
+syntax = "proto3";
+
+package cph.aiinfra.foundation.v1;
+
+import "common/v1/common.proto";
+
+option go_package = "github.com/cypherium/cypher/aiinfra/schema/foundation/v1;foundationv1";
+
+// IMPORTANT: These messages are transport/data-model representations. Their
+// protobuf encodings are never authorization bytes. Every signed top-level
+// message below has a fixed message_type_id and ordered CCSE-v1 signing
+// projection in aiinfra/schema/ccse/v1/registry.json.
+
+enum IdentityState {
+  IDENTITY_STATE_UNSPECIFIED = 0;
+  IDENTITY_STATE_PENDING = 1;
+  IDENTITY_STATE_ACTIVE = 2;
+  IDENTITY_STATE_SUSPENDED = 3;
+  IDENTITY_STATE_REVOKED = 4;
+  IDENTITY_STATE_TRANSFERRED = 5;
+  IDENTITY_STATE_EXPIRED = 6;
+}
+
+enum KeyLifecycleState {
+  KEY_LIFECYCLE_STATE_UNSPECIFIED = 0;
+  KEY_LIFECYCLE_STATE_PREACTIVE = 1;
+  KEY_LIFECYCLE_STATE_ACTIVE = 2;
+  KEY_LIFECYCLE_STATE_RETIRING = 3;
+  KEY_LIFECYCLE_STATE_REVOKED = 4;
+  KEY_LIFECYCLE_STATE_EXPIRED = 5;
+}
+
+enum PolicyBundleState {
+  POLICY_BUNDLE_STATE_UNSPECIFIED = 0;
+  POLICY_BUNDLE_STATE_DRAFT = 1;
+  POLICY_BUNDLE_STATE_APPROVED_DELAYED = 2;
+  POLICY_BUNDLE_STATE_ACTIVE = 3;
+  POLICY_BUNDLE_STATE_ROLLED_BACK = 4;
+  POLICY_BUNDLE_STATE_REVOKED = 5;
+  POLICY_BUNDLE_STATE_EXPIRED = 6;
+}
+
+enum AuditOutcome {
+  AUDIT_OUTCOME_UNSPECIFIED = 0;
+  AUDIT_OUTCOME_SUCCEEDED = 1;
+  AUDIT_OUTCOME_REJECTED = 2;
+  AUDIT_OUTCOME_FAILED = 3;
+  AUDIT_OUTCOME_TIMED_OUT = 4;
+}
+
+enum EvidenceLevel {
+  EVIDENCE_LEVEL_UNSPECIFIED = 0;
+  EVIDENCE_LEVEL_CONCEPT = 1;
+  EVIDENCE_LEVEL_DESIGNED = 2;
+  EVIDENCE_LEVEL_IMPLEMENTED = 3;
+  EVIDENCE_LEVEL_LAB_VALIDATED = 4;
+  EVIDENCE_LEVEL_PILOT_VALIDATED = 5;
+  EVIDENCE_LEVEL_PRODUCTION_READY = 6;
+  EVIDENCE_LEVEL_COMMERCIAL_SCALE_VALIDATED = 7;
+}
+
+enum EvidenceStatus {
+  EVIDENCE_STATUS_UNSPECIFIED = 0;
+  EVIDENCE_STATUS_PENDING = 1;
+  EVIDENCE_STATUS_PASSED = 2;
+  EVIDENCE_STATUS_FAILED = 3;
+  EVIDENCE_STATUS_EXPIRED = 4;
+  EVIDENCE_STATUS_INVALIDATED = 5;
+}
+
+enum ComparisonOperator {
+  COMPARISON_OPERATOR_UNSPECIFIED = 0;
+  COMPARISON_OPERATOR_LESS_THAN = 1;
+  COMPARISON_OPERATOR_LESS_THAN_OR_EQUAL = 2;
+  COMPARISON_OPERATOR_EQUAL = 3;
+  COMPARISON_OPERATOR_GREATER_THAN_OR_EQUAL = 4;
+  COMPARISON_OPERATOR_GREATER_THAN = 5;
+  COMPARISON_OPERATOR_WITHIN_INCLUSIVE_RANGE = 6;
+}
+
+enum ConfidenceMethod {
+  CONFIDENCE_METHOD_UNSPECIFIED = 0;
+  CONFIDENCE_METHOD_EXACT = 1;
+  CONFIDENCE_METHOD_BOOTSTRAP = 2;
+  CONFIDENCE_METHOD_BINOMIAL = 3;
+  CONFIDENCE_METHOD_STUDENT_T = 4;
+  CONFIDENCE_METHOD_NONPARAMETRIC = 5;
+}
+
+message ProviderIdentity {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string provider_id = 2;
+  string organization_identity_uri = 3;
+  string payout_identity = 4;
+  repeated string jurisdictions = 5;
+  repeated bytes policy_digests_sha256 = 6;
+  optional string stake_reference = 7;
+  uint64 ownership_generation = 8;
+  int64 valid_from_unix_nano = 9;
+  int64 valid_until_unix_nano = 10;
+  IdentityState state = 11;
+}
+
+message AgentIdentity {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string agent_id = 2;
+  string provider_id = 3;
+  string host_id = 4;
+  string spiffe_id = 5;
+  string key_id = 6;
+  uint64 ownership_generation = 7;
+  int64 valid_from_unix_nano = 8;
+  int64 valid_until_unix_nano = 9;
+  IdentityState state = 10;
+}
+
+message HostIdentity {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string host_id = 2;
+  string provider_id = 3;
+  string provider_site_id = 4;
+  string attestation_identity = 5;
+  string key_id = 6;
+  uint64 ownership_generation = 7;
+  int64 valid_from_unix_nano = 8;
+  int64 valid_until_unix_nano = 9;
+  IdentityState state = 10;
+}
+
+message DeviceIdentity {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string device_id = 2;
+  string provider_id = 3;
+  string host_id = 4;
+  bytes vendor_serial_digest_sha256 = 5;
+  string attestation_identity = 6;
+  string key_id = 7;
+  uint64 ownership_generation = 8;
+  int64 valid_from_unix_nano = 9;
+  int64 valid_until_unix_nano = 10;
+  IdentityState state = 11;
+}
+
+message MinerIdentity {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string miner_id = 2;
+  string provider_id = 3;
+  string agent_id = 4;
+  repeated string device_ids = 5;
+  string payout_identity = 6;
+  string key_id = 7;
+  uint64 binding_generation = 8;
+  int64 valid_from_unix_nano = 9;
+  int64 valid_until_unix_nano = 10;
+  IdentityState state = 11;
+}
+
+message RunnerIdentity {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string runner_attempt_id = 2;
+  string provider_id = 3;
+  string agent_id = 4;
+  string lease_id = 5;
+  string job_id = 6;
+  string attempt_id = 7;
+  string workload_identity = 8;
+  string key_id = 9;
+  int64 valid_from_unix_nano = 10;
+  int64 valid_until_unix_nano = 11;
+  IdentityState state = 12;
+}
+
+message BuyerIdentity {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string buyer_id = 2;
+  string organization_identity_uri = 3;
+  string billing_identity = 4;
+  string key_id = 5;
+  uint64 authorization_generation = 6;
+  int64 valid_from_unix_nano = 7;
+  int64 valid_until_unix_nano = 8;
+  IdentityState state = 9;
+}
+
+message ServiceIdentity {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string service_id = 2;
+  string service_name = 3;
+  string spiffe_id = 4;
+  string deployment_environment = 5;
+  string key_id = 6;
+  uint64 credential_generation = 7;
+  int64 valid_from_unix_nano = 8;
+  int64 valid_until_unix_nano = 9;
+  IdentityState state = 10;
+}
+
+message KeyLifecycle {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string key_id = 2;
+  string subject_identity = 3;
+  cph.aiinfra.common.v1.PrincipalKind subject_kind = 4;
+  cph.aiinfra.common.v1.SignatureAlgorithm algorithm = 5;
+  KeyLifecycleState state = 6;
+  int64 not_before_unix_nano = 7;
+  int64 not_after_unix_nano = 8;
+  optional int64 revoked_at_unix_nano = 9;
+  optional string rotation_predecessor_key_id = 10;
+  repeated uint32 allowed_message_type_ids = 11;
+  bytes authorization_policy_digest_sha256 = 12;
+  optional string transition_reason_code = 13;
+}
+
+message PolicyBundle {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string policy_bundle_id = 2;
+  string policy_kind = 3;
+  cph.aiinfra.common.v1.SchemaVersion policy_version = 4;
+  uint64 sequence = 5;
+  optional bytes predecessor_digest_sha256 = 6;
+  int64 approved_at_unix_nano = 7;
+  int64 effective_at_unix_nano = 8;
+  int64 expires_at_unix_nano = 9;
+  bytes policy_document_digest_sha256 = 10;
+  string policy_document_media_type = 11;
+  repeated string approver_identities = 12;
+  repeated string approver_key_ids = 13;
+  uint32 minimum_approvals = 14;
+  bool emergency = 15;
+  optional bytes rollback_target_digest_sha256 = 16;
+  optional int64 break_glass_expires_at_unix_nano = 17;
+  PolicyBundleState state = 18;
+}
+
+message AuditEvent {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string audit_event_id = 2;
+  string event_type = 3;
+  string actor_identity = 4;
+  string actor_key_id = 5;
+  repeated string subject_ids = 6;
+  string cause_code = 7;
+  bytes correlation_id = 8;
+  optional bytes causation_id = 9;
+  int64 occurred_at_unix_nano = 10;
+  AuditOutcome outcome = 11;
+  repeated bytes applied_policy_digests_sha256 = 12;
+  repeated bytes evidence_digests_sha256 = 13;
+  optional bytes redacted_details_digest_sha256 = 14;
+  bytes previous_event_digest_sha256 = 15;
+  uint64 audit_sequence = 16;
+}
+
+// Thresholds and observations are exact rationals. denominator MUST be
+// positive. Confidence and percentile values use integer basis points.
+message MetricCriterion {
+  string metric_id = 1;
+  ComparisonOperator comparison = 2;
+  int64 threshold_numerator = 3;
+  uint64 threshold_denominator = 4;
+  optional int64 upper_threshold_numerator = 5;
+  optional uint64 upper_threshold_denominator = 6;
+  string unit = 7;
+  optional uint32 percentile_basis_points = 8;
+  uint64 minimum_metric_sample_size = 9;
+}
+
+message MetricObservation {
+  string metric_id = 1;
+  int64 observed_numerator = 2;
+  uint64 observed_denominator = 3;
+  uint64 sample_size = 4;
+  int64 confidence_lower_numerator = 5;
+  uint64 confidence_lower_denominator = 6;
+  int64 confidence_upper_numerator = 7;
+  uint64 confidence_upper_denominator = 8;
+  bool criterion_passed = 9;
+}
+
+message EvidenceRecord {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string evidence_id = 2;
+  string experiment_plan_id = 3;
+  string capability_id = 4;
+  string component = 5;
+  string owner_identity = 6;
+  string software_version = 7;
+  repeated string hardware_scope = 8;
+  repeated string workload_scope = 9;
+  repeated string region_scope = 10;
+  int64 test_started_at_unix_nano = 11;
+  int64 test_ended_at_unix_nano = 12;
+  uint64 sample_size = 13;
+  repeated bytes evidence_artifact_digests_sha256 = 14;
+  repeated MetricObservation observations = 15;
+  string approving_role = 16;
+  repeated string approving_identities = 17;
+  int64 approved_at_unix_nano = 18;
+  int64 expires_at_unix_nano = 19;
+  repeated string revalidation_triggers = 20;
+  EvidenceLevel achieved_level = 21;
+  EvidenceStatus status = 22;
+}
+
+message ExperimentPlan {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string experiment_plan_id = 2;
+  string capability_id = 3;
+  string component = 4;
+  string owner_identity = 5;
+  string software_version = 6;
+  repeated string hardware_scope = 7;
+  repeated string workload_scope = 8;
+  repeated string region_scope = 9;
+  int64 collection_not_before_unix_nano = 10;
+  uint64 observation_window_nanos = 11;
+  uint64 minimum_sample_size = 12;
+  uint32 confidence_level_basis_points = 13;
+  ConfidenceMethod confidence_method = 14;
+  repeated MetricCriterion criteria = 15;
+  repeated string revalidation_triggers = 16;
+  int64 expires_at_unix_nano = 17;
+  bytes experiment_policy_digest_sha256 = 18;
+  EvidenceLevel target_level = 19;
+  int64 frozen_at_unix_nano = 20;
+  repeated string approving_identities = 21;
+}
