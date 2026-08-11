@@ -1,6 +1,6 @@
 {
   "format": "cph.aiinfra.ccse.registry",
-  "registry_version": {"major": 1, "minor": 0},
+  "registry_version": {"major": 1, "minor": 1},
   "ccse_version": "CCSE-v1",
   "production_message_type_id_floor": 65537,
   "reserved_message_type_ranges": [
@@ -58,6 +58,30 @@
         {"order": 7, "name": "confidence_upper_numerator", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
         {"order": 8, "name": "confidence_upper_denominator", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
         {"order": 9, "name": "criterion_passed", "type": "bool", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1, "max_items": 1}
+      ]
+    },
+    {
+      "name": "cph.aiinfra.foundation.v1.KeyClosure",
+      "limits": {"max_payload_bytes": 512, "max_fields": 2, "max_collection_items": 1, "max_nesting_depth": 1},
+      "fields": [
+        {"order": 1, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 2, "name": "terminal_key_lifecycle_payload_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1}
+      ]
+    },
+    {
+      "name": "cph.aiinfra.foundation.v1.TransferEvidenceCommitment",
+      "limits": {"max_payload_bytes": 64, "max_fields": 2, "max_collection_items": 1, "max_nesting_depth": 1},
+      "fields": [
+        {"order": 1, "name": "evidence_kind", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 2, "name": "ccse_record_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1}
+      ]
+    },
+    {
+      "name": "cph.aiinfra.foundation.v1.TransferAuthority",
+      "limits": {"max_payload_bytes": 1536, "max_fields": 2, "max_collection_items": 1, "max_nesting_depth": 1},
+      "fields": [
+        {"order": 1, "name": "identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 2, "name": "key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1}
       ]
     }
   ],
@@ -377,6 +401,37 @@
         {"order": 19, "name": "target_level", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
         {"order": 20, "name": "frozen_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
         {"order": 21, "name": "approving_identities", "type": "string", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 17408, "max_items": 64}
+      ]
+    },
+    {
+      "message_type_id": 65550,
+      "id_symbol": "FOUNDATION_OWNERSHIP_TRANSFER_AUTHORIZATION_V1",
+      "name": "cph.aiinfra.foundation.v1.OwnershipTransferAuthorization",
+      "schema_version": {"major": 1, "minor": 0},
+      "purpose": "identity.ownership.transfer.authorize",
+      "unknown_field_policy": "reject",
+      "limits": {"max_payload_bytes": 196608, "max_fields": 20, "max_collection_items": 256, "max_nesting_depth": 4},
+      "fields": [
+        {"order": 1, "name": "metadata", "type": "message", "message_type": "cph.aiinfra.common.v1.RecordMetadata", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8192, "max_items": 1},
+        {"order": 2, "name": "transfer_authorization_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 3, "name": "subject_kind", "type": "enum_uint32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 4, "max_items": 1},
+        {"order": 4, "name": "previous_entity_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 5, "name": "next_entity_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 6, "name": "previous_principal_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 7, "name": "next_principal_identity", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 1024, "max_items": 1},
+        {"order": 8, "name": "previous_provider_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 9, "name": "next_provider_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 10, "name": "expected_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 11, "name": "next_generation", "type": "uint64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 12, "name": "previous_terminal_identity_payload_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1},
+        {"order": 13, "name": "next_pending_identity_payload_digest_sha256", "type": "fixed_bytes_32", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 36, "max_items": 1},
+        {"order": 14, "name": "old_key_closures", "type": "message", "message_type": "cph.aiinfra.foundation.v1.KeyClosure", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 77824, "max_items": 256},
+        {"order": 15, "name": "new_key_id", "type": "string", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 256, "max_items": 1},
+        {"order": 16, "name": "evidence_commitments", "type": "message", "message_type": "cph.aiinfra.foundation.v1.TransferEvidenceCommitment", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 4608, "max_items": 64},
+        {"order": 17, "name": "effective_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 18, "name": "expires_at_unix_nano", "type": "int64", "presence": "required", "collection": "scalar", "critical": true, "max_encoded_bytes": 8, "max_items": 1},
+        {"order": 19, "name": "old_authorities", "type": "message", "message_type": "cph.aiinfra.foundation.v1.TransferAuthority", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 50176, "max_items": 32},
+        {"order": 20, "name": "new_authorities", "type": "message", "message_type": "cph.aiinfra.foundation.v1.TransferAuthority", "presence": "required", "collection": "set", "critical": true, "max_encoded_bytes": 50176, "max_items": 32}
       ]
     }
   ]

@@ -10,7 +10,7 @@ import "foundation/v1/foundation.proto";
 
 option go_package = "github.com/cypherium/cypher/aiinfra/schema/transport/v1;transportv1";
 
-// SignedFoundationRecord is the transport wrapper for the thirteen foundation
+// SignedFoundationRecord is the transport wrapper for the fourteen foundation
 // authorization payloads. The selected oneof arm is the sole source of the
 // message type identifier; the wire format deliberately carries no second,
 // caller-controlled numeric type ID.
@@ -38,5 +38,6 @@ message SignedFoundationRecord {
     cph.aiinfra.foundation.v1.AuditEvent audit_event = 26;
     cph.aiinfra.foundation.v1.EvidenceRecord evidence_record = 27;
     cph.aiinfra.foundation.v1.ExperimentPlan experiment_plan = 28;
+    cph.aiinfra.foundation.v1.OwnershipTransferAuthorization ownership_transfer_authorization = 29;
   }
 }

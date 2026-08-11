@@ -87,6 +87,28 @@ func validPayloads() []Payload {
 		},
 		validEvidenceRecord(metadata),
 		validExperimentPlan(metadata),
+		validOwnershipTransfer(metadata),
+	}
+}
+
+func validOwnershipTransfer(metadata foundationv1.RecordMetadataSigningProjection) foundationv1.OwnershipTransferAuthorizationSigningProjection {
+	return foundationv1.OwnershipTransferAuthorizationSigningProjection{
+		Metadata: metadata, TransferAuthorizationID: "transfer-01", SubjectKind: 2,
+		PreviousEntityID: "agent-old", NextEntityID: "agent-new",
+		PreviousPrincipalIdentity: "spiffe://cph.example/principal/old", NextPrincipalIdentity: "spiffe://cph.example/principal/new",
+		PreviousProviderID: "provider-old", NextProviderID: "provider-new", ExpectedGeneration: 7, NextGeneration: 8,
+		PreviousTerminalIdentityPayloadDigestSHA256: digest32(0x71), NextPendingIdentityPayloadDigestSHA256: digest32(0x72),
+		OldKeyClosures: []foundationv1.KeyClosureSigningProjection{{KeyID: "key-old", TerminalKeyLifecyclePayloadDigestSHA256: digest32(0x73)}},
+		NewKeyID:       "key-new",
+		EvidenceCommitments: []foundationv1.TransferEvidenceCommitmentSigningProjection{
+			{EvidenceKind: foundationv1.TransferEvidenceOldProviderAuthority, CCSERecordDigestSHA256: digest32(0x74)},
+			{EvidenceKind: foundationv1.TransferEvidenceNewProviderAuthority, CCSERecordDigestSHA256: digest32(0x75)},
+			{EvidenceKind: foundationv1.TransferEvidenceDescendantIdentityClosure, CCSERecordDigestSHA256: digest32(0x76)},
+			{EvidenceKind: foundationv1.TransferEvidenceLeaseOfferWorkloadClosure, CCSERecordDigestSHA256: digest32(0x77)},
+		},
+		EffectiveAtUnixNano: 1_800_000_000_000_000_000, ExpiresAtUnixNano: 1_800_003_600_000_000_000,
+		OldAuthorities: []foundationv1.TransferAuthoritySigningProjection{{Identity: "spiffe://cph.example/authority/old", KeyID: "authority-key-old"}},
+		NewAuthorities: []foundationv1.TransferAuthoritySigningProjection{{Identity: "spiffe://cph.example/authority/new", KeyID: "authority-key-new"}},
 	}
 }
 

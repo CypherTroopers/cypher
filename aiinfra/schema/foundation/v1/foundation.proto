@@ -90,6 +90,20 @@ enum ConfidenceMethod {
   CONFIDENCE_METHOD_NONPARAMETRIC = 5;
 }
 
+// TransferEvidenceKind is a closed classification of the evidence committed
+// by an ownership-transfer authorization. The complete signed evidence is
+// retained and reverified by the IAM receiver; this payload binds its digest.
+enum TransferEvidenceKind {
+  TRANSFER_EVIDENCE_KIND_UNSPECIFIED = 0;
+  TRANSFER_EVIDENCE_KIND_OLD_PROVIDER_AUTHORITY = 1;
+  TRANSFER_EVIDENCE_KIND_NEW_PROVIDER_AUTHORITY = 2;
+  TRANSFER_EVIDENCE_KIND_HOST_SANITATION_ATTESTATION = 3;
+  TRANSFER_EVIDENCE_KIND_DEVICE_SANITATION_ATTESTATION = 4;
+  TRANSFER_EVIDENCE_KIND_DESCENDANT_IDENTITY_CLOSURE = 5;
+  TRANSFER_EVIDENCE_KIND_LEASE_OFFER_WORKLOAD_CLOSURE = 6;
+  TRANSFER_EVIDENCE_KIND_NEW_ATTESTATION_READINESS = 7;
+}
+
 message ProviderIdentity {
   cph.aiinfra.common.v1.RecordMetadata metadata = 1;
   string provider_id = 2;
@@ -327,4 +341,45 @@ message ExperimentPlan {
   EvidenceLevel target_level = 19;
   int64 frozen_at_unix_nano = 20;
   repeated string approving_identities = 21;
+}
+
+message KeyClosure {
+  string key_id = 1;
+  bytes terminal_key_lifecycle_payload_digest_sha256 = 2;
+}
+
+message TransferEvidenceCommitment {
+  TransferEvidenceKind evidence_kind = 1;
+  bytes ccse_record_digest_sha256 = 2;
+}
+
+message TransferAuthority {
+  string identity = 1;
+  string key_id = 2;
+}
+
+// OwnershipTransferAuthorization binds the complete old and new ownership
+// boundary without embedding signer-specific CCSE records or cyclic proof-of-
+// possession material. Receiver policy supplies the frozen signer profile.
+message OwnershipTransferAuthorization {
+  cph.aiinfra.common.v1.RecordMetadata metadata = 1;
+  string transfer_authorization_id = 2;
+  cph.aiinfra.common.v1.PrincipalKind subject_kind = 3;
+  string previous_entity_id = 4;
+  string next_entity_id = 5;
+  string previous_principal_identity = 6;
+  string next_principal_identity = 7;
+  string previous_provider_id = 8;
+  string next_provider_id = 9;
+  uint64 expected_generation = 10;
+  uint64 next_generation = 11;
+  bytes previous_terminal_identity_payload_digest_sha256 = 12;
+  bytes next_pending_identity_payload_digest_sha256 = 13;
+  repeated KeyClosure old_key_closures = 14;
+  string new_key_id = 15;
+  repeated TransferEvidenceCommitment evidence_commitments = 16;
+  int64 effective_at_unix_nano = 17;
+  int64 expires_at_unix_nano = 18;
+  repeated TransferAuthority old_authorities = 19;
+  repeated TransferAuthority new_authorities = 20;
 }

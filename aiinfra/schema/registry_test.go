@@ -5,7 +5,9 @@ package schema
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -35,9 +37,13 @@ func TestDefaultRegistryAndFixedProductionIDs(t *testing.T) {
 		{MessageTypeAuditEvent, "FOUNDATION_AUDIT_EVENT_V1", "cph.aiinfra.foundation.v1.AuditEvent"},
 		{MessageTypeEvidenceRecord, "FOUNDATION_EVIDENCE_RECORD_V1", "cph.aiinfra.foundation.v1.EvidenceRecord"},
 		{MessageTypeExperimentPlan, "FOUNDATION_EXPERIMENT_PLAN_V1", "cph.aiinfra.foundation.v1.ExperimentPlan"},
+		{MessageTypeOwnershipTransferAuthorization, "FOUNDATION_OWNERSHIP_TRANSFER_AUTHORIZATION_V1", "cph.aiinfra.foundation.v1.OwnershipTransferAuthorization"},
 	}
 	if len(registry.Messages) != len(want) {
 		t.Fatalf("message count %d, want %d", len(registry.Messages), len(want))
+	}
+	if registry.RegistryVersion != (Version{Major: 1, Minor: 1}) {
+		t.Fatalf("registry version = %#v, want 1.1", registry.RegistryVersion)
 	}
 	for i, expected := range want {
 		message := registry.Messages[i]
@@ -54,6 +60,63 @@ func TestDefaultRegistryAndFixedProductionIDs(t *testing.T) {
 	}
 	if len(registry.ReservedMessageTypeRanges) != 1 || registry.ReservedMessageTypeRanges[0].First != 1 || registry.ReservedMessageTypeRanges[0].Last != 65535 {
 		t.Fatalf("unexpected test-only reservation: %#v", registry.ReservedMessageTypeRanges)
+	}
+}
+
+func TestOwnershipTransferRegistryContract(t *testing.T) {
+	if MessageTypeOwnershipTransferAuthorization != 0x0001000e {
+		t.Fatalf("ownership transfer message type = %#x", MessageTypeOwnershipTransferAuthorization)
+	}
+	registry, err := LoadDefault()
+	if err != nil {
+		t.Fatal(err)
+	}
+	message, ok := registry.LookupMessage(MessageTypeOwnershipTransferAuthorization)
+	if !ok {
+		t.Fatal("ownership transfer authorization is not registered")
+	}
+	if message.IDSymbol != "FOUNDATION_OWNERSHIP_TRANSFER_AUTHORIZATION_V1" ||
+		message.Name != "cph.aiinfra.foundation.v1.OwnershipTransferAuthorization" ||
+		message.Purpose != "identity.ownership.transfer.authorize" ||
+		message.SchemaVersion != (Version{Major: 1, Minor: 0}) || message.UnknownFieldPolicy != "reject" {
+		t.Fatalf("unexpected ownership transfer registry identity: %#v", message)
+	}
+	wantFields := []string{
+		"metadata", "transfer_authorization_id", "subject_kind", "previous_entity_id", "next_entity_id",
+		"previous_principal_identity", "next_principal_identity", "previous_provider_id", "next_provider_id",
+		"expected_generation", "next_generation", "previous_terminal_identity_payload_digest_sha256",
+		"next_pending_identity_payload_digest_sha256", "old_key_closures", "new_key_id", "evidence_commitments",
+		"effective_at_unix_nano", "expires_at_unix_nano", "old_authorities", "new_authorities",
+	}
+	if len(message.Fields) != len(wantFields) || message.Limits.MaxFields != len(wantFields) {
+		t.Fatalf("ownership transfer field count=%d max_fields=%d", len(message.Fields), message.Limits.MaxFields)
+	}
+	if message.Limits.MaxCollectionItems != 256 {
+		t.Fatalf("ownership transfer max_collection_items=%d, want 256", message.Limits.MaxCollectionItems)
+	}
+	for index, want := range wantFields {
+		if field := message.Fields[index]; field.Order != index+1 || field.Name != want || field.Critical == nil || !*field.Critical {
+			t.Fatalf("ownership transfer field[%d]=%#v, want critical %s", index, field, want)
+		}
+	}
+	if field := message.Fields[15]; field.Collection != "set" || field.MaxItems != 64 || field.MessageType != "cph.aiinfra.foundation.v1.TransferEvidenceCommitment" {
+		t.Fatalf("evidence commitment field contract = %#v", field)
+	}
+	if field := message.Fields[13]; field.Collection != "set" || field.MaxItems != 256 || field.MaxEncodedBytes != 77824 || field.MessageType != "cph.aiinfra.foundation.v1.KeyClosure" {
+		t.Fatalf("old key closure field contract = %#v", field)
+	}
+	for _, name := range []string{
+		"cph.aiinfra.foundation.v1.KeyClosure",
+		"cph.aiinfra.foundation.v1.TransferEvidenceCommitment",
+		"cph.aiinfra.foundation.v1.TransferAuthority",
+	} {
+		found := false
+		for _, structure := range registry.Structures {
+			found = found || structure.Name == name
+		}
+		if !found {
+			t.Fatalf("nested projection %s is absent", name)
+		}
 	}
 }
 
@@ -300,9 +363,20 @@ func TestRegistryCanonicalSHA256(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = "d432c225de9f5747feaad2fd7971834d3a389f7e37e155a0761685e61acb779e"
+	const want = "5a4faaee3e51629aed73edbb17047a865b223add9aece7dbe90f27fbfd4a30eb"
 	if got != want {
 		t.Fatalf("registry SHA-256 = %s, want %s", got, want)
+	}
+}
+
+func TestRegistrySourceSHA256(t *testing.T) {
+	source, err := EmbeddedRegistryJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = "899ada6d2ba3753d61d137c05b1294fd8b39c02b26ffc8a960831b7cf9ef7890"
+	if got := fmt.Sprintf("%x", sha256.Sum256(source)); got != want {
+		t.Fatalf("registry source SHA-256 = %s, want %s", got, want)
 	}
 }
 

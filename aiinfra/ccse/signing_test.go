@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"slices"
@@ -404,7 +405,14 @@ func TestVerifiedRecordIsDetachedFromInboundMutation(t *testing.T) {
 	}
 	wantPayload := result.Verified.Payload()
 	wantDomain := result.Verified.Domain()
+	wantSignature := result.Verified.Signature()
+	wantRecord := result.Verified.Record()
+	wantReplay, replayErr := result.Verified.ReplayEntry()
+	if replayErr != nil {
+		t.Fatal(replayErr)
+	}
 	record.Payload[0] ^= 1
+	record.Signature[0] ^= 1
 	record.Domain.Audience[0] = "spiffe://attacker.invalid"
 	record.Envelope.Extensions = append(record.Envelope.Extensions, Extension{ID: 999, Value: []byte("mutated")})
 	if !bytes.Equal(result.Verified.Payload(), wantPayload) {
@@ -412,6 +420,92 @@ func TestVerifiedRecordIsDetachedFromInboundMutation(t *testing.T) {
 	}
 	if got := result.Verified.Domain(); got.Audience[0] != wantDomain.Audience[0] {
 		t.Fatal("verified domain changed after inbound mutation")
+	}
+	if !bytes.Equal(result.Verified.Signature(), wantSignature) {
+		t.Fatal("verified signature changed after inbound mutation")
+	}
+	detached := result.Verified.Record()
+	detachedDigest, digestErr := detached.Digest(DefaultLimits())
+	if detached.MessageTypeID != wantRecord.MessageTypeID || detached.SchemaVersion != wantRecord.SchemaVersion ||
+		digestErr != nil || detachedDigest != result.Verified.Digest() {
+		t.Fatal("reconstructed signed record differs from verified authorization")
+	}
+	detached.Payload[0] ^= 1
+	detached.Signature[0] ^= 1
+	if bytes.Equal(detached.Payload, result.Verified.Payload()) || bytes.Equal(detached.Signature, result.Verified.Signature()) {
+		t.Fatal("reconstructed record aliases verified snapshot")
+	}
+	gotReplay, replayErr := result.Verified.ReplayEntry()
+	if replayErr != nil || gotReplay != wantReplay || gotReplay.MessageTypeID != wantRecord.MessageTypeID ||
+		gotReplay.SchemaVersion != wantRecord.SchemaVersion || gotReplay.MessageID != wantRecord.Envelope.MessageID ||
+		gotReplay.Digest != result.Verified.Digest() {
+		t.Fatalf("replay entry changed after inbound mutation: got=%+v want=%+v err=%v", gotReplay, wantReplay, replayErr)
+	}
+}
+
+func TestZeroVerifiedRecordCannotProduceReplayEntry(t *testing.T) {
+	if _, err := (VerifiedRecord{}).ReplayEntry(); err == nil {
+		t.Fatal("zero verified record produced a replay entry")
+	}
+}
+
+func TestVerifiedRecordValidateLimitsDoesNotInheritProducerBounds(t *testing.T) {
+	record, _, _ := signedTestRecord(t, nil)
+	wide := DefaultLimits()
+	wide.MaxPayloadBytes = 2 << 20
+	record.Payload = make([]byte, DefaultLimits().MaxPayloadBytes+1)
+	record.Envelope.PayloadDigest = sha256.Sum256(record.Payload)
+	digest, err := record.Digest(wide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified := newVerifiedRecordOwned(record, digest)
+	if err := verified.ValidateLimits(DefaultLimits()); !errors.Is(err, ErrProjectionTooLarge) {
+		t.Fatalf("narrow receiver limits error = %v, want %v", err, ErrProjectionTooLarge)
+	}
+	if err := verified.ValidateLimits(wide); err != nil {
+		t.Fatalf("producer-compatible limits rejected: %v", err)
+	}
+	if _, err := verified.PreflightSize(DefaultLimits()); !errors.Is(err, ErrProjectionTooLarge) {
+		t.Fatalf("narrow receiver size error = %v, want %v", err, ErrProjectionTooLarge)
+	}
+}
+
+func TestVerifiedRecordPreflightSizeIsExactAndAllocationFree(t *testing.T) {
+	record, publicKey, _ := signedTestRecord(t, func(record *Record) {
+		record.Envelope.Extensions = []Extension{{ID: 7, Critical: true, Value: []byte("evidence")}}
+	})
+	verifier, _, _ := testVerifier(t, record, publicKey)
+	verifier.Schema = testSchemaValidator(map[uint32]bool{7: true}, nil)
+	result, err := verifier.Verify(context.Background(), record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	domain, err := record.Domain.canonicalBytes(DefaultLimits().MaxDomainBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := record.Envelope.canonicalBytes(DefaultLimits().MaxEnvelopeBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := uint64(len(domain) + len(envelope) + len(record.Payload) + len(record.Signature))
+	got, err := result.Verified.PreflightSize(DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("preflight size = %d, want %d", got, want)
+	}
+	if recordSize, recordErr := record.PreflightSize(DefaultLimits()); recordErr != nil || recordSize != want {
+		t.Fatalf("record preflight size = %d, error = %v, want %d", recordSize, recordErr, want)
+	}
+	if allocations := testing.AllocsPerRun(100, func() {
+		if size, sizeErr := result.Verified.PreflightSize(DefaultLimits()); sizeErr != nil || size != want {
+			panic("preflight size changed")
+		}
+	}); allocations != 0 {
+		t.Fatalf("PreflightSize allocations = %v, want 0", allocations)
 	}
 }
 
@@ -737,6 +831,53 @@ func TestMemoryKeyRegistryRotation(t *testing.T) {
 	}
 	if _, err := verifier.Verify(context.Background(), second); err != nil {
 		t.Fatalf("rotated key rejected: %v", err)
+	}
+}
+
+func TestMemoryKeyRegistryAllowsPreactiveRevocation(t *testing.T) {
+	_, publicKey, _ := signedTestRecord(t, nil)
+	registry := NewMemoryKeyRegistry()
+	notBefore := testIssuedAt.Add(time.Hour).UnixNano()
+	notAfter := testIssuedAt.Add(2 * time.Hour).UnixNano()
+	key := KeyRecord{
+		KeyID:               "preactive-key",
+		SubjectIdentity:     "spiffe://cph.test/agent/preactive",
+		Algorithm:           SignatureAlgorithmEd25519,
+		PublicKey:           publicKey,
+		NotBeforeUnixNano:   notBefore,
+		NotAfterUnixNano:    notAfter,
+		AllowedMessageTypes: []uint32{testMessageTypeID},
+	}
+	if err := registry.Add(key); err != nil {
+		t.Fatal(err)
+	}
+	revokedAt := testIssuedAt.UnixNano()
+	if err := registry.Revoke(key.KeyID, revokedAt); err != nil {
+		t.Fatalf("preactive revocation: %v", err)
+	}
+	resolved, err := registry.ResolveKey(context.Background(), key.KeyID)
+	if err != nil || resolved.RevokedAtUnixNano != revokedAt {
+		t.Fatalf("resolved revocation=%d error=%v", resolved.RevokedAtUnixNano, err)
+	}
+
+	late := key
+	late.KeyID = "late-revocation-key"
+	if err := registry.Add(late); err != nil {
+		t.Fatal(err)
+	}
+	if err := registry.Revoke(late.KeyID, notAfter+1); err == nil {
+		t.Fatal("revocation after immutable key lifetime was accepted")
+	}
+
+	for _, invalid := range []int64{0, -1} {
+		candidate := key
+		candidate.KeyID = fmt.Sprintf("invalid-revocation-%d", invalid)
+		if err := registry.Add(candidate); err != nil {
+			t.Fatal(err)
+		}
+		if err := registry.Revoke(candidate.KeyID, invalid); err == nil {
+			t.Fatalf("revocation timestamp %d was accepted", invalid)
+		}
 	}
 }
 

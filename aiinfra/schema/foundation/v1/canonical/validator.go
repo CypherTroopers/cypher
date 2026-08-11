@@ -16,7 +16,7 @@ import (
 	"github.com/cypherium/cypher/aiinfra/schema"
 )
 
-const expectedRegistrySHA256 = "d432c225de9f5747feaad2fd7971834d3a389f7e37e155a0761685e61acb779e"
+const expectedRegistrySHA256 = "5a4faaee3e51629aed73edbb17047a865b223add9aece7dbe90f27fbfd4a30eb"
 
 var (
 	ErrValidatorNotInitialized    = errors.New("aiinfra foundation canonical: validator is not initialized")
@@ -26,7 +26,7 @@ var (
 	ErrDecodedMessageTypeMismatch = errors.New("aiinfra foundation canonical: decoded message type mismatch")
 )
 
-// Payload is one of the thirteen registered foundation signing projections.
+// Payload is one of the fourteen registered foundation signing projections.
 // Implementations are values decoded from CCSE bytes, never Protobuf messages.
 type Payload interface {
 	MessageTypeID() uint32
@@ -47,11 +47,14 @@ type nestedCatalog struct {
 	recordMetadata    projectionRules
 	metricCriterion   projectionRules
 	metricObservation projectionRules
+	keyClosure        projectionRules
+	transferEvidence  projectionRules
+	transferAuthority projectionRules
 }
 
 // Validator is immutable after construction and safe for concurrent use.
 // Its catalog is accepted only when the embedded registry has the reviewed
-// SHA-256 and the exact thirteen message identities fixed below.
+// SHA-256 and the exact fourteen message identities fixed below.
 type Validator struct {
 	entries map[uint32]catalogEntry
 	nested  nestedCatalog
@@ -81,6 +84,7 @@ var expectedMessages = [...]expectedMessage{
 	{schema.MessageTypeAuditEvent, "cph.aiinfra.foundation.v1.AuditEvent", "audit.event.append", 65536, decodeAuditEvent},
 	{schema.MessageTypeEvidenceRecord, "cph.aiinfra.foundation.v1.EvidenceRecord", "evidence.record.release", 262144, decodeEvidenceRecord},
 	{schema.MessageTypeExperimentPlan, "cph.aiinfra.foundation.v1.ExperimentPlan", "evidence.experiment.plan.freeze", 262144, decodeExperimentPlan},
+	{schema.MessageTypeOwnershipTransferAuthorization, "cph.aiinfra.foundation.v1.OwnershipTransferAuthorization", "identity.ownership.transfer.authorize", 196608, decodeOwnershipTransferAuthorization},
 }
 
 // NewValidator loads and freezes the embedded production registry. It fails
@@ -131,6 +135,9 @@ func NewValidator() (*Validator, error) {
 		{"cph.aiinfra.common.v1.RecordMetadata", 8192, &validator.nested.recordMetadata},
 		{"cph.aiinfra.foundation.v1.MetricCriterion", 1024, &validator.nested.metricCriterion},
 		{"cph.aiinfra.foundation.v1.MetricObservation", 1024, &validator.nested.metricObservation},
+		{"cph.aiinfra.foundation.v1.KeyClosure", 512, &validator.nested.keyClosure},
+		{"cph.aiinfra.foundation.v1.TransferEvidenceCommitment", 64, &validator.nested.transferEvidence},
+		{"cph.aiinfra.foundation.v1.TransferAuthority", 1536, &validator.nested.transferAuthority},
 	}
 	if len(registry.Structures) != len(nestedExpected) {
 		return nil, fmt.Errorf("%w: nested projection count %d", ErrCatalogMismatch, len(registry.Structures))
@@ -189,7 +196,7 @@ func (v *Validator) ValidateCanonicalPayload(_ context.Context, messageTypeID ui
 	return err
 }
 
-// ValidateExtensions rejects every signed extension for the exact thirteen
+// ValidateExtensions rejects every signed extension for the exact fourteen
 // v1.0 types. The current registry defines no signed extension, so a sender's
 // critical=false flag cannot make an extension acceptable.
 func (v *Validator) ValidateExtensions(_ context.Context, messageTypeID uint32, version ccse.Version, extensions []ccse.Extension) error {

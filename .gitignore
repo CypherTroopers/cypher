@@ -10,3 +10,13 @@ chaindb*/
 
 # Local start scripts
 start-cypher*.sh
+
+# Ephemeral local verification outputs
+.codex-tmp/
+build/stage/
+
+# Local node operation scripts
+reset-chain.sh
+start-mining.sh
+status.sh
+unlock.sh

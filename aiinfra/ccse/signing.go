@@ -48,6 +48,14 @@ type Record struct {
 	Signature     []byte
 }
 
+// PreflightSize bounds a signed record without cloning, sorting, hashing, or
+// canonical projection allocation and returns its exact retained size. The
+// size is canonical domain bytes + canonical envelope bytes + payload bytes +
+// signature bytes; static outer preimage framing is excluded.
+func (r *Record) PreflightSize(limits Limits) (uint64, error) {
+	return preflightUntrustedRecordSize(r, limits)
+}
+
 // NewRecord constructs an unsigned record and binds the payload digest into the
 // envelope. Payload is copied so subsequent caller mutation cannot change the
 // authorization bytes.
@@ -201,19 +209,29 @@ func validateSignatureSize(record *Record, limits Limits) error {
 // preflightUntrustedRecord bounds every variable-size field before Verify
 // clones, sorts, normalizes or hashes attacker-controlled input.
 func preflightUntrustedRecord(record *Record, limits Limits) error {
+	_, err := preflightUntrustedRecordSize(record, limits)
+	return err
+}
+
+// preflightUntrustedRecordSize performs the same allocation-free bounds check
+// and returns the exact retained signed-record size: canonical domain bytes,
+// canonical envelope bytes, payload bytes, and signature bytes. Static outer
+// preimage framing is intentionally excluded so callers can sum evidence
+// storage without double-counting a representation-specific envelope.
+func preflightUntrustedRecordSize(record *Record, limits Limits) (uint64, error) {
 	if record == nil {
-		return ErrInvalidRecord
+		return 0, ErrInvalidRecord
 	}
 	var err error
 	limits, err = normalizeLimits(limits)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if err := validateSignatureSize(record, limits); err != nil {
-		return err
+		return 0, err
 	}
 	if len(record.Payload) > limits.MaxPayloadBytes || len(record.Domain.Audience) > maxAudience || len(record.Envelope.Extensions) > maxExtensions {
-		return ErrProjectionTooLarge
+		return 0, ErrProjectionTooLarge
 	}
 	domainSize := uint64(0)
 	add := func(size uint64) bool {
@@ -225,18 +243,18 @@ func preflightUntrustedRecord(record *Record, limits Limits) error {
 	}
 	addString := func(value string) bool { return add(4 + uint64(len(value))) }
 	if !addString(record.Domain.Purpose) || !addString(record.Domain.SenderIdentity) || !add(4) {
-		return ErrProjectionTooLarge
+		return 0, ErrProjectionTooLarge
 	}
 	for _, audience := range record.Domain.Audience {
 		if !add(4) || !addString(audience) {
-			return ErrProjectionTooLarge
+			return 0, ErrProjectionTooLarge
 		}
 	}
 	if !add(1) || !addStringIfPresent(record.Domain.TenantOrganization.Present, record.Domain.TenantOrganization.Value, addString) ||
 		!add(1) || !addStringIfPresent(record.Domain.ProviderOrganization.Present, record.Domain.ProviderOrganization.Value, addString) ||
 		!add(36+36) || !addString(record.Domain.Environment) || !add(8+8+4) || !addString(record.Domain.SignatureKeyID) ||
 		!add(8+8+4+8) || !addString(record.Domain.ReplayDomainID) {
-		return ErrProjectionTooLarge
+		return 0, ErrProjectionTooLarge
 	}
 
 	envelopeSize := uint64(16 + 20 + 20 + 1 + 36 + 16 + 4 + 8 + 36 + 4 + 4)
@@ -253,15 +271,22 @@ func preflightUntrustedRecord(record *Record, limits Limits) error {
 	if !addEnvelope(4+uint64(len(record.Envelope.SenderIdentity))) ||
 		!addEnvelope(4+uint64(len(record.Envelope.Environment))) ||
 		!addEnvelope(4+uint64(len(record.Envelope.SignatureKeyID))) {
-		return ErrProjectionTooLarge
+		return 0, ErrProjectionTooLarge
 	}
 	for _, extension := range record.Envelope.Extensions {
 		// outer len32 + id + critical + value len32 + value
 		if !addEnvelope(4 + 4 + 1 + 4 + uint64(len(extension.Value))) {
-			return ErrProjectionTooLarge
+			return 0, ErrProjectionTooLarge
 		}
 	}
-	return nil
+	total := domainSize
+	for _, size := range []uint64{envelopeSize, uint64(len(record.Payload)), uint64(len(record.Signature))} {
+		if total > ^uint64(0)-size {
+			return 0, ErrProjectionTooLarge
+		}
+		total += size
+	}
+	return total, nil
 }
 
 func addStringIfPresent(present bool, value string, add func(string) bool) bool {

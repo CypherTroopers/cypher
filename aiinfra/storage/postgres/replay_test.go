@@ -7,9 +7,11 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
+	"github.com/cypherium/cypher/aiinfra/replayresult"
 )
 
 func TestReplayMigrationDigestIsPinned(t *testing.T) {
@@ -95,6 +97,9 @@ func TestReplayStoreRejectsMissingDatabase(t *testing.T) {
 
 func TestDurableResultDigestIsDomainSeparatedAndFrozen(t *testing.T) {
 	digest := DurableResultDigest("application/cph.test+json", []byte(`{"ok":true}`))
+	if digest != replayresult.Digest("application/cph.test+json", []byte(`{"ok":true}`)) {
+		t.Fatal("PostgreSQL compatibility wrapper differs from the shared replay-result digest")
+	}
 	const expected = "c6f284d4953f954a4bed4cb15f8d618accad6bff4a0758dd37bd1f6c835d1071"
 	if got := hex.EncodeToString(digest[:]); got != expected {
 		t.Fatalf("durable-result digest changed: got %s want %s", got, expected)
@@ -104,6 +109,27 @@ func TestDurableResultDigestIsDomainSeparatedAndFrozen(t *testing.T) {
 	}
 	if digest == DurableResultDigest("application/octet-stream", []byte(`{"ok":true}`)) {
 		t.Fatal("content-type mutation did not change durable-result digest")
+	}
+}
+
+func TestDurableCompletionUsesSharedReplayResultBoundary(t *testing.T) {
+	if maxContentTypeBytes != replayresult.MaxContentTypeBytes ||
+		maxDurablePayloadBytes != replayresult.MaxPayloadBytes {
+		t.Fatal("PostgreSQL durable-result bounds drifted from replayresult")
+	}
+	for _, completion := range []DurableCompletion{
+		{ExternalEffects: NoExternalEffects},
+		{ContentType: " application/cph.test", ExternalEffects: NoExternalEffects},
+		{ContentType: "application/cph.\u2603", ExternalEffects: NoExternalEffects},
+		{ContentType: strings.Repeat("a", replayresult.MaxContentTypeBytes+1), ExternalEffects: NoExternalEffects},
+		{ContentType: "application/octet-stream", Payload: make([]byte, replayresult.MaxPayloadBytes+1), ExternalEffects: NoExternalEffects},
+	} {
+		if err := replayresult.Validate(completion.ContentType, completion.Payload); !errors.Is(err, replayresult.ErrInvalidResult) {
+			t.Fatalf("shared boundary unexpectedly accepted %#v: %v", completion, err)
+		}
+		if err := validateCompletion(completion); !errors.Is(err, ErrInvalidCompletion) {
+			t.Fatalf("PostgreSQL boundary error = %v, want %v", err, ErrInvalidCompletion)
+		}
 	}
 }
 

@@ -13,6 +13,9 @@ const (
 	recordMetadataType    = "cph.aiinfra.common.v1.RecordMetadata"
 	metricCriterionType   = "cph.aiinfra.foundation.v1.MetricCriterion"
 	metricObservationType = "cph.aiinfra.foundation.v1.MetricObservation"
+	keyClosureType        = "cph.aiinfra.foundation.v1.KeyClosure"
+	transferEvidenceType  = "cph.aiinfra.foundation.v1.TransferEvidenceCommitment"
+	transferAuthorityType = "cph.aiinfra.foundation.v1.TransferAuthority"
 )
 
 func decodeSchemaVersion(in *ccse.Decoder, rules projectionRules) (foundationv1.SchemaVersionSigningProjection, error) {

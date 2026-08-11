@@ -28,6 +28,7 @@ var currentDescriptorImage []byte
 var compatibilityBaseline []byte
 
 const compatibilityBaselineSHA256 = "6aff2b5c3321eefc7439fab7e65a6ace41f943cbddf6a1de85dd5a296fb7d3a2"
+const currentDescriptorSHA256 = "bf90801eec8ad89ad865f671f9e4b7d736560a9f4eb01189b48b87a804c1151a"
 
 var transportOnlyMessages = map[protoreflect.FullName]protoreflect.FullName{
 	"cph.aiinfra.common.v1.ProtocolVersion":           "cph.aiinfra.common.v1",
@@ -83,9 +84,17 @@ var enumContracts = map[protoreflect.FullName]enumContract{
 		zeroName: "CONFIDENCE_METHOD_UNSPECIFIED",
 		maximum:  5,
 	},
+	"cph.aiinfra.foundation.v1.TransferEvidenceKind": {
+		zeroName: "TRANSFER_EVIDENCE_KIND_UNSPECIFIED",
+		maximum:  7,
+	},
 }
 
 func TestDescriptorImageMatchesGeneratedSources(t *testing.T) {
+	sum := sha256.Sum256(currentDescriptorImage)
+	if got := fmt.Sprintf("%x", sum); got != currentDescriptorSHA256 {
+		t.Fatalf("current descriptor SHA-256=%s, want %s", got, currentDescriptorSHA256)
+	}
 	image := decodeDescriptorSet(t, "current descriptor", currentDescriptorImage)
 	byName := make(map[string]*descriptorpb.FileDescriptorProto, len(image.File))
 	for _, file := range image.File {
@@ -122,8 +131,8 @@ func TestFoundationTransportWrapperContract(t *testing.T) {
 	if message == nil {
 		t.Fatal("generated descriptor is missing SignedFoundationRecord")
 	}
-	if got := message.Fields().Len(); got != 15 {
-		t.Fatalf("SignedFoundationRecord fields=%d, want 15", got)
+	if got := message.Fields().Len(); got != 16 {
+		t.Fatalf("SignedFoundationRecord fields=%d, want 16", got)
 	}
 	for _, contract := range []struct {
 		number protoreflect.FieldNumber
@@ -147,8 +156,8 @@ func TestFoundationTransportWrapperContract(t *testing.T) {
 		t.Fatalf("SignedFoundationRecord reserved range=%v, want [3,16)", reserved)
 	}
 	payload := message.Oneofs().ByName("payload")
-	if payload == nil || payload.IsSynthetic() || payload.Fields().Len() != 13 {
-		t.Fatalf("SignedFoundationRecord payload oneof is missing, synthetic, or not 13-way")
+	if payload == nil || payload.IsSynthetic() || payload.Fields().Len() != 14 {
+		t.Fatalf("SignedFoundationRecord payload oneof is missing, synthetic, or not 14-way")
 	}
 	payloads := []struct {
 		number protoreflect.FieldNumber
@@ -168,6 +177,7 @@ func TestFoundationTransportWrapperContract(t *testing.T) {
 		{26, "audit_event", "cph.aiinfra.foundation.v1.AuditEvent"},
 		{27, "evidence_record", "cph.aiinfra.foundation.v1.EvidenceRecord"},
 		{28, "experiment_plan", "cph.aiinfra.foundation.v1.ExperimentPlan"},
+		{29, "ownership_transfer_authorization", "cph.aiinfra.foundation.v1.OwnershipTransferAuthorization"},
 	}
 	for _, contract := range payloads {
 		field := message.Fields().ByNumber(contract.number)

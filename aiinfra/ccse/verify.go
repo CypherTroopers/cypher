@@ -206,6 +206,26 @@ type Verifier struct {
 	Handle       ReplayHandler
 }
 
+// EvidenceAuthenticator verifies a signed record for use only as nested,
+// non-dispatchable evidence. It deliberately has neither a ReplayStore nor a
+// ReplayHandler: successful authentication does not reserve a replay identity,
+// apply a state transition, or produce a VerifiedRecord.
+//
+// State-changing entry points must continue to use Verifier. A semantic
+// compound operation may accept AuthenticatedEvidenceRecord only when an
+// independently replay-bounded outer authorization and business-idempotency
+// transaction commits the complete operation atomically. The authenticator is
+// caller-configurable, so the returned type proves no service-specific trust
+// provenance by itself: the consuming kernel must rebind the detached record
+// to its own frozen receiver policy and authoritative key/history snapshots.
+type EvidenceAuthenticator struct {
+	Expectations Expectations
+	Limits       Limits
+	Clock        Clock
+	Keys         KeyResolver
+	Schema       SchemaValidator
+}
+
 // VerificationResult identifies the exact signed authorization. Duplicate is
 // true only when Verify also returns ErrDuplicateMessage.
 type VerificationResult struct {
@@ -227,15 +247,116 @@ type VerifiedRecord struct {
 	domain        Domain
 	envelope      Envelope
 	payload       []byte
+	signature     []byte
 	digest        [DigestSize]byte
 }
+
+// AuthenticatedEvidenceRecord is an immutable-by-API snapshot that passed the
+// same bounded context, current-time key, signature, extension, and canonical
+// payload checks as VerifiedRecord, but no replay admission. The type exposes
+// no ReplayEntry and cannot be converted to VerifiedRecord. It is therefore a
+// bounded evidence carrier, never authority to dispatch the signed record as
+// an independent mutation. A consumer must independently revalidate its own
+// receiver-policy and key-history provenance before treating it as evidence.
+type AuthenticatedEvidenceRecord struct {
+	record VerifiedRecord
+}
+
+func (r AuthenticatedEvidenceRecord) MessageTypeID() uint32  { return r.record.messageTypeID }
+func (r AuthenticatedEvidenceRecord) SchemaVersion() Version { return r.record.schemaVersion }
+func (r AuthenticatedEvidenceRecord) Digest() [DigestSize]byte {
+	return r.record.digest
+}
+
+// ValidateLimits applies a downstream receiver's narrower allocation limits
+// without cloning a variable-size field.
+func (r AuthenticatedEvidenceRecord) ValidateLimits(limits Limits) error {
+	return r.record.ValidateLimits(limits)
+}
+
+// PreflightSize returns the exact retained signed-record size without cloning.
+func (r AuthenticatedEvidenceRecord) PreflightSize(limits Limits) (uint64, error) {
+	return r.record.PreflightSize(limits)
+}
+
+// Record returns a detached complete signed record. Callers must successfully
+// call ValidateLimits or PreflightSize with their local bounds first.
+func (r AuthenticatedEvidenceRecord) Record() Record { return r.record.Record() }
 
 func (r VerifiedRecord) MessageTypeID() uint32    { return r.messageTypeID }
 func (r VerifiedRecord) SchemaVersion() Version   { return r.schemaVersion }
 func (r VerifiedRecord) Domain() Domain           { return cloneDomain(r.domain) }
 func (r VerifiedRecord) Envelope() Envelope       { return cloneEnvelope(r.envelope) }
 func (r VerifiedRecord) Payload() []byte          { return append([]byte(nil), r.payload...) }
+func (r VerifiedRecord) Signature() []byte        { return append([]byte(nil), r.signature...) }
 func (r VerifiedRecord) Digest() [DigestSize]byte { return r.digest }
+
+// ReplayEntry returns the exact immutable replay identity authenticated by
+// this record. Replay handlers use this method when constructing a typed
+// durable result; they must not reconstruct the entry from detached Domain and
+// Envelope getters. A zero or otherwise forged VerifiedRecord fails closed.
+func (r VerifiedRecord) ReplayEntry() (ReplayEntry, error) {
+	entry := ReplayEntry{
+		MessageTypeID:  r.messageTypeID,
+		SchemaVersion:  r.schemaVersion,
+		CounterKind:    r.domain.CounterKind,
+		ReplayDomainID: r.domain.ReplayDomainID,
+		SenderIdentity: r.domain.SenderIdentity,
+		Environment:    r.domain.Environment,
+		ChainID:        r.domain.ChainID,
+		GenesisHash:    r.domain.GenesisHash,
+		MessageID:      r.envelope.MessageID,
+		Sequence:       r.envelope.Counter,
+		Digest:         r.digest,
+		ExpiresAt:      r.envelope.ExpiresAtUnixNano,
+	}
+	if err := entry.Validate(); err != nil {
+		return ReplayEntry{}, err
+	}
+	return entry, nil
+}
+
+// ValidateLimits checks the immutable verified snapshot against a receiver's
+// local allocation limits without first cloning any variable-size field. A
+// VerifiedRecord may have been produced by another component whose Verifier
+// intentionally used wider limits; every downstream trust boundary must be
+// able to reduce those limits before calling Domain, Envelope, Payload,
+// Signature, or Record.
+func (r VerifiedRecord) ValidateLimits(limits Limits) error {
+	_, err := r.PreflightSize(limits)
+	return err
+}
+
+// PreflightSize applies receiver-local limits without cloning and returns the
+// exact retained signed-record size: canonical domain bytes, canonical
+// envelope bytes, payload bytes, and signature bytes. It lets compound
+// consumers enforce an aggregate byte budget before calling any allocating
+// getter. Static CCSE preimage framing is not included.
+func (r VerifiedRecord) PreflightSize(limits Limits) (uint64, error) {
+	record := Record{
+		MessageTypeID: r.messageTypeID,
+		SchemaVersion: r.schemaVersion,
+		Domain:        r.domain,
+		Envelope:      r.envelope,
+		Payload:       r.payload,
+		Signature:     r.signature,
+	}
+	return record.PreflightSize(limits)
+}
+
+// Record reconstructs a detached, complete signed record suitable for durable
+// evidence retention and independent re-verification. The returned slices do
+// not alias the immutable verified snapshot.
+func (r VerifiedRecord) Record() Record {
+	return Record{
+		MessageTypeID: r.messageTypeID,
+		SchemaVersion: r.schemaVersion,
+		Domain:        cloneDomain(r.domain),
+		Envelope:      cloneEnvelope(r.envelope),
+		Payload:       append([]byte(nil), r.payload...),
+		Signature:     append([]byte(nil), r.signature...),
+	}
+}
 
 // Verify performs bounded canonical reconstruction, exact context checks, key
 // authorization, signature verification, and atomic replay admission.
@@ -259,78 +380,20 @@ func (v *Verifier) Verify(ctx context.Context, record *Record) (VerificationResu
 	if v.Schema == nil {
 		return result, ErrSchemaValidatorRequired
 	}
-	limits, err := normalizeLimits(v.Limits)
+	verified, keyID, err := authenticateSignedRecord(ctx, record, v.Expectations, v.Limits, v.Clock, v.Keys, v.Schema)
 	if err != nil {
-		return result, err
-	}
-	if err := preflightUntrustedRecord(record, limits); err != nil {
-		return result, err
-	}
-	// Take the detached authorization snapshot before canonical reconstruction.
-	// Callers transfer read ownership for the duration of this call; subsequent
-	// caller mutation cannot alter either validation or handler inputs.
-	record = cloneRecord(record)
-	canonicalizeRecordSets(record)
-	digest, err := record.Digest(limits)
-	if err != nil {
-		return result, err
-	}
-	if err := v.validateExpectations(record); err != nil {
-		return result, err
-	}
-	now := v.Clock.Now().UnixNano()
-	if err := validateTimes(record.Domain, now, v.Expectations.MaxClockSkew, v.Expectations.MaxValidityWindow); err != nil {
-		return result, err
-	}
-	key, err := v.Keys.ResolveKey(ctx, record.Envelope.SignatureKeyID)
-	if err != nil {
-		if errors.Is(err, ErrUnknownKey) {
-			return result, err
-		}
-		return result, fmt.Errorf("ccse: resolve signature key: %w", err)
-	}
-	if err := validateKey(key, record, now); err != nil {
 		return result, err
 	}
 	result = VerificationResult{
-		Digest:    digest,
-		KeyID:     key.KeyID,
-		MessageID: record.Envelope.MessageID,
-		Sequence:  record.Envelope.Counter,
+		Digest:    verified.digest,
+		KeyID:     keyID,
+		MessageID: verified.envelope.MessageID,
+		Sequence:  verified.envelope.Counter,
+		Verified:  verified,
 	}
-	switch key.Algorithm {
-	case SignatureAlgorithmEd25519:
-		if len(key.PublicKey) != ed25519.PublicKeySize || len(record.Signature) != ed25519.SignatureSize || !ed25519.Verify(ed25519.PublicKey(key.PublicKey), digest[:], record.Signature) {
-			return result, ErrInvalidSignature
-		}
-	default:
-		return result, ErrUnsupportedAlgorithm
-	}
-	// Schema callbacks may parse extension values, so no callback runs until the
-	// sender signature has authenticated the bounded canonical envelope.
-	if err := v.Schema.ValidateExtensions(ctx, record.MessageTypeID, record.SchemaVersion, cloneExtensions(record.Envelope.Extensions)); err != nil {
-		return result, err
-	}
-	if err := v.Schema.ValidateCanonicalPayload(ctx, record.MessageTypeID, record.SchemaVersion, append([]byte(nil), record.Payload...)); err != nil {
-		if errors.Is(err, ErrNonCanonicalPayload) {
-			return result, err
-		}
-		return result, fmt.Errorf("%w: %v", ErrNonCanonicalPayload, err)
-	}
-	result.Verified = newVerifiedRecord(record, digest)
-	replayEntry := ReplayEntry{
-		MessageTypeID:  record.MessageTypeID,
-		SchemaVersion:  record.SchemaVersion,
-		CounterKind:    record.Domain.CounterKind,
-		ReplayDomainID: record.Domain.ReplayDomainID,
-		SenderIdentity: record.Domain.SenderIdentity,
-		Environment:    record.Domain.Environment,
-		ChainID:        record.Domain.ChainID,
-		GenesisHash:    record.Domain.GenesisHash,
-		MessageID:      record.Envelope.MessageID,
-		Sequence:       record.Envelope.Counter,
-		Digest:         digest,
-		ExpiresAt:      record.Envelope.ExpiresAtUnixNano,
+	replayEntry, err := result.Verified.ReplayEntry()
+	if err != nil {
+		return result, fmt.Errorf("%w: derive replay entry: %v", ErrInvalidRecord, err)
 	}
 	decision, err := v.Replay.Execute(ctx, replayEntry, result.Verified, v.Handle)
 	if err != nil {
@@ -347,8 +410,109 @@ func (v *Verifier) Verify(ctx context.Context, record *Record) (VerificationResu
 		return result, fmt.Errorf("%w: invalid replay-store status %d", ErrInvalidRecord, decision.Status)
 	}
 }
+
+// Authenticate verifies a bounded signed record as nested evidence without
+// consulting or mutating a ReplayStore. The returned capability is intentionally
+// not a VerifiedRecord and cannot be supplied to ReplayStore.Execute.
+func (a *EvidenceAuthenticator) Authenticate(ctx context.Context, record *Record) (AuthenticatedEvidenceRecord, error) {
+	if record == nil {
+		return AuthenticatedEvidenceRecord{}, ErrInvalidRecord
+	}
+	if a == nil || a.Clock == nil {
+		return AuthenticatedEvidenceRecord{}, ErrClockRequired
+	}
+	if a.Keys == nil {
+		return AuthenticatedEvidenceRecord{}, ErrKeyResolverRequired
+	}
+	if a.Schema == nil {
+		return AuthenticatedEvidenceRecord{}, ErrSchemaValidatorRequired
+	}
+	verified, _, err := authenticateSignedRecord(ctx, record, a.Expectations, a.Limits, a.Clock, a.Keys, a.Schema)
+	if err != nil {
+		return AuthenticatedEvidenceRecord{}, err
+	}
+	return AuthenticatedEvidenceRecord{record: verified}, nil
+}
+
+// authenticateSignedRecord is the single bounded authentication path shared by
+// dispatchable verification and non-dispatchable evidence authentication. It
+// deliberately performs no replay operation.
+func authenticateSignedRecord(ctx context.Context, untrusted *Record, expectations Expectations, configuredLimits Limits, clock Clock, keys KeyResolver, schema SchemaValidator) (VerifiedRecord, string, error) {
+	if untrusted == nil {
+		return VerifiedRecord{}, "", ErrInvalidRecord
+	}
+	if clock == nil {
+		return VerifiedRecord{}, "", ErrClockRequired
+	}
+	if keys == nil {
+		return VerifiedRecord{}, "", ErrKeyResolverRequired
+	}
+	if schema == nil {
+		return VerifiedRecord{}, "", ErrSchemaValidatorRequired
+	}
+	limits, err := normalizeLimits(configuredLimits)
+	if err != nil {
+		return VerifiedRecord{}, "", err
+	}
+	if err := preflightUntrustedRecord(untrusted, limits); err != nil {
+		return VerifiedRecord{}, "", err
+	}
+	// Take the detached authorization snapshot before canonical reconstruction.
+	// Callers transfer read ownership for the duration of this call; subsequent
+	// caller mutation cannot alter either validation or returned evidence.
+	record := cloneRecord(untrusted)
+	canonicalizeRecordSets(record)
+	digest, err := record.Digest(limits)
+	if err != nil {
+		return VerifiedRecord{}, "", err
+	}
+	if err := validateExpectations(expectations, record); err != nil {
+		return VerifiedRecord{}, "", err
+	}
+	now := clock.Now().UnixNano()
+	if err := validateTimes(record.Domain, now, expectations.MaxClockSkew, expectations.MaxValidityWindow); err != nil {
+		return VerifiedRecord{}, "", err
+	}
+	key, err := keys.ResolveKey(ctx, record.Envelope.SignatureKeyID)
+	if err != nil {
+		if errors.Is(err, ErrUnknownKey) {
+			return VerifiedRecord{}, "", err
+		}
+		return VerifiedRecord{}, "", fmt.Errorf("ccse: resolve signature key: %w", err)
+	}
+	if err := validateKey(key, record, now); err != nil {
+		return VerifiedRecord{}, "", err
+	}
+	switch key.Algorithm {
+	case SignatureAlgorithmEd25519:
+		if len(key.PublicKey) != ed25519.PublicKeySize || len(record.Signature) != ed25519.SignatureSize || !ed25519.Verify(ed25519.PublicKey(key.PublicKey), digest[:], record.Signature) {
+			return VerifiedRecord{}, "", ErrInvalidSignature
+		}
+	default:
+		return VerifiedRecord{}, "", ErrUnsupportedAlgorithm
+	}
+	// Schema callbacks may parse extension values, so no callback runs until the
+	// sender signature has authenticated the bounded canonical envelope.
+	if err := schema.ValidateExtensions(ctx, record.MessageTypeID, record.SchemaVersion, cloneExtensions(record.Envelope.Extensions)); err != nil {
+		return VerifiedRecord{}, "", err
+	}
+	if err := schema.ValidateCanonicalPayload(ctx, record.MessageTypeID, record.SchemaVersion, append([]byte(nil), record.Payload...)); err != nil {
+		if errors.Is(err, ErrNonCanonicalPayload) {
+			return VerifiedRecord{}, "", err
+		}
+		return VerifiedRecord{}, "", fmt.Errorf("%w: %v", ErrNonCanonicalPayload, err)
+	}
+	return newVerifiedRecordOwned(record, digest), key.KeyID, nil
+}
+
 func (v *Verifier) validateExpectations(record *Record) error {
-	e := v.Expectations
+	if v == nil {
+		return ErrInvalidRecord
+	}
+	return validateExpectations(v.Expectations, record)
+}
+
+func validateExpectations(e Expectations, record *Record) error {
 	if record == nil {
 		return ErrInvalidRecord
 	}
@@ -507,8 +671,10 @@ func (r *MemoryKeyRegistry) Revoke(keyID string, revokedAt int64) error {
 	if !exists {
 		return ErrUnknownKey
 	}
-	if revokedAt < key.NotBeforeUnixNano {
-		return fmt.Errorf("ccse: revocation predates key validity")
+	// A staged PREACTIVE key must be cancellable before its not-before time.
+	// Revocation is an administrative terminal event, not authorized key use.
+	if revokedAt <= 0 || revokedAt > key.NotAfterUnixNano {
+		return fmt.Errorf("ccse: invalid key revocation time")
 	}
 	if key.RevokedAtUnixNano != 0 {
 		return ErrKeyRevoked
@@ -535,7 +701,7 @@ func validateKeyRecord(key KeyRecord) error {
 	if key.KeyID == "" || key.SubjectIdentity == "" || key.NotBeforeUnixNano < 0 || key.NotAfterUnixNano <= key.NotBeforeUnixNano || len(key.AllowedMessageTypes) == 0 {
 		return fmt.Errorf("ccse: invalid key record")
 	}
-	if key.RevokedAtUnixNano < 0 || (key.RevokedAtUnixNano > 0 && key.RevokedAtUnixNano < key.NotBeforeUnixNano) {
+	if key.RevokedAtUnixNano < 0 || key.RevokedAtUnixNano > key.NotAfterUnixNano {
 		return fmt.Errorf("ccse: invalid key revocation time")
 	}
 	switch key.Algorithm {
@@ -607,13 +773,17 @@ func canonicalizeRecordSets(record *Record) {
 	})
 }
 
-func newVerifiedRecord(record *Record, digest [DigestSize]byte) VerifiedRecord {
+// newVerifiedRecordOwned transfers the already-detached record into the
+// immutable snapshot without a second retained copy. The caller must never
+// retain or mutate record after this call.
+func newVerifiedRecordOwned(record *Record, digest [DigestSize]byte) VerifiedRecord {
 	return VerifiedRecord{
 		messageTypeID: record.MessageTypeID,
 		schemaVersion: record.SchemaVersion,
-		domain:        cloneDomain(record.Domain),
-		envelope:      cloneEnvelope(record.Envelope),
-		payload:       append([]byte(nil), record.Payload...),
+		domain:        record.Domain,
+		envelope:      record.Envelope,
+		payload:       record.Payload,
+		signature:     record.Signature,
 		digest:        digest,
 	}
 }

@@ -65,7 +65,7 @@ not update the compatibility baseline.
 The immutable v1 compatibility baseline has SHA-256
 `6aff2b5c3321eefc7439fab7e65a6ace41f943cbddf6a1de85dd5a296fb7d3a2`.
 The additive transport-wrapper descriptor image has SHA-256
-`dd55192a2780dc3329c909bdf98c04a09f0b2101dca64c0e3a0c8b26cc752a94`.
+`bf90801eec8ad89ad865f671f9e4b7d736560a9f4eb01189b48b87a804c1151a`.
 The baseline must only change after an explicit compatibility/version review;
 adding the wrapper updated only `current.binpb`.
 Normal `go test` uses checked-in bindings and descriptor images and therefore
@@ -103,14 +103,17 @@ the production registry.
 | `0x0001000b` | 65547 | `AuditEvent` |
 | `0x0001000c` | 65548 | `EvidenceRecord` |
 | `0x0001000d` | 65549 | `ExperimentPlan` |
+| `0x0001000e` | 65550 | `OwnershipTransferAuthorization` |
 
 The compact canonical registry SHA-256 is
-`d432c225de9f5747feaad2fd7971834d3a389f7e37e155a0761685e61acb779e`.
+`5a4faaee3e51629aed73edbb17047a865b223add9aece7dbe90f27fbfd4a30eb`.
+The reviewed, human-readable `registry.json` file SHA-256 is
+`899ada6d2ba3753d61d137c05b1294fd8b39c02b26ffc8a960831b7cf9ef7890`.
 The Go test intentionally pins this digest. Any registry change therefore
 requires an explicit version/compatibility review and a reviewed digest update.
 
-`foundation/v1` contains explicit Go signing projections for all thirteen
-registered top-level payloads and all four registered nested structures. These
+`foundation/v1` contains explicit Go signing projections for all fourteen
+registered top-level payloads and all seven registered nested structures. These
 are not generated Protobuf types. Offline tests compare the checked descriptor
 against `registry.json` for package/message identity, field order and number,
 name, scalar/message kind and target, repeated set/list shape, proto3 optional
@@ -123,13 +126,45 @@ explicitly allowlisted as transport-only rather than silently treated as
 signing projections.
 
 `SignedFoundationRecord` carries the signing domain, envelope, and exactly one
-of the thirteen foundation payloads. The selected oneof arm determines the
+of the fourteen foundation payloads. The selected oneof arm determines the
 production message type ID; no caller-controlled duplicate numeric ID is
 present on the wire. The wrapper itself is never a signing projection.
 
-The production translator must recursively reject unknown Protobuf fields at
-every message depth, reject unknown enum values, validate all required fields,
-and preserve proto3 optional/oneof presence before calling `CanonicalBytes`.
+Registry compatibility version 1.1 adds
+`OwnershipTransferAuthorization` without changing the schema version, field
+order, message type ID, or canonical bytes of any 1.0 payload. Its nested
+`KeyClosure`, `TransferEvidenceCommitment`, and `TransferAuthority` projections
+commit terminal key state, typed evidence records, and identity/key authority
+pairs. The transfer payload deliberately contains neither a signer-record
+digest in each authority pair nor a key-enrollment/proof-of-possession digest;
+those would duplicate retained CCSE evidence or introduce digest cycles. It
+also contains no caller-selected quorum or separation rule. The IAM receiver's
+frozen profile determines the exact signer sets.
+
+Transfer evidence is a closed seven-kind enum with a rejected zero
+`UNSPECIFIED` sentinel. Old-provider and new-provider
+authority evidence are always required. Agent transfers additionally require
+descendant-identity and lease/offer/workload closure evidence; Host and Device
+transfers require their matching sanitation attestation and new-attestation
+readiness evidence. Multiple distinct records of the same applicable kind are
+allowed, while an identical `(kind, CCSE-record-digest)` pair is rejected by
+canonical set encoding. Evidence, key-closure, and authority collections are
+bounded at 64, 256, and 32 entries per authority side respectively. The
+key-closure limit supports the full 256-key IAM subject-key lifecycle contract;
+both boundaries reject a 257th key.
+Their 4,608-, 77,824-, and 50,176-byte field bounds include CCSE count and
+element frames; the sum of every declared field maximum is 194,668 bytes and
+therefore fits the 192 KiB top-level bound. The 1,536-byte authority body bound
+accommodates the 1,024-byte identity and 256-byte key fields with their
+canonical frames. These limits permit threshold evidence without making
+transport preflight unbounded.
+`ccse_record_digest_sha256` is `ccse.Record.Digest`, the SHA-256 of the exact
+canonical signature preimage; the complete record, including its signature,
+must still be stored because the digest is a commitment, not evidence storage.
+
+The production translator recursively rejects unknown Protobuf fields at every
+message depth, rejects unknown enum values, validates all required fields, and
+preserves proto3 optional/oneof presence before calling `CanonicalBytes`.
 Generated unmarshalling alone is not authorization validation and is not a
 substitute for that fail-closed translator.
 
@@ -141,7 +176,9 @@ and resolve audit sequence history. In v1, policy approver identities and key
 IDs are independent sets rather than signed identity/key pairs; ownership must
 therefore be checked externally. The first AuditEvent previous-digest anchor is
 also a deployment policy input and must be fixed before an audit store ships.
-This slice does not satisfy Gate 0. The production transport-to-signing
-translator and runtime `SchemaValidator` are intentionally deferred to the
-next Workstream 0.1b slice, and the remaining Gate 0 receiver-policy and
-cross-component evidence must still pass independently.
+For ownership transfers, the schema boundary is only the signed commitment.
+IAM must retain and independently reverify every complete transfer
+authorization and every typed evidence CCSE record, then validate the exact
+old/new authority sets against its frozen profile before mutation. The
+remaining Gate 0 receiver-policy and cross-component evidence must still pass
+independently.

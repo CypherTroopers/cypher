@@ -199,6 +199,19 @@ func TestPresentOptionalTimeMustBeWithinKeyLifetime(t *testing.T) {
 	}
 }
 
+func TestPreactiveFutureKeyMayBeRevokedBeforeNotBefore(t *testing.T) {
+	key := validKeyLifecycleProjection()
+	key.State = 4
+	key.RevokedAtUnixNano = OptionalInt64{Present: true, Value: key.NotBeforeUnixNano - 1}
+	if _, err := key.CanonicalBytes(); err != nil {
+		t.Fatalf("preactive cancellation before not_before = %v", err)
+	}
+	key.RevokedAtUnixNano.Value = -1
+	if _, err := key.CanonicalBytes(); !errors.Is(err, ErrInvalidTimeRange) {
+		t.Fatalf("negative revocation error = %v", err)
+	}
+}
+
 func TestPresentZeroRationalNumeratorIsDistinct(t *testing.T) {
 	present := criterion("temperature.range", 0)
 	present.Comparison = 6

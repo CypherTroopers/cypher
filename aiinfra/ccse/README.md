@@ -110,6 +110,33 @@ then checks validity time and key lifecycle, verifies the signature, validates
 the exact registered extension set and typed payload canonicality, and finally
 performs an atomic replay admission.
 
+`VerifiedRecord` is detached from its producer, but a downstream component may
+apply a narrower local profile. It must call `ValidateLimits` before any getter
+that clones variable-size fields; successful verification under a wider
+upstream limit is not permission to allocate those bytes at a stricter
+semantic boundary. Compound consumers use `PreflightSize` to apply the same
+no-copy check and sum the exact canonical domain + envelope + payload +
+signature bytes before retaining a bounded evidence set.
+
+`EvidenceAuthenticator` shares the bounded context, current-time key,
+signature, extension, and canonical-payload checks, but intentionally has no
+replay store or handler. It returns only an opaque
+`AuthenticatedEvidenceRecord`, which has no replay identity and cannot be
+converted to `VerifiedRecord`. This boundary is reserved for signed records
+that are nested evidence inside a separately replay-bounded compound operation;
+it is never a shortcut for dispatching a state-changing message. Because any
+caller can configure an `EvidenceAuthenticator` with its own resolver, schema,
+clock, and expectations, the opaque result is only a bounded carrier—not proof
+of service-specific trust provenance. The consuming kernel must rebind the
+detached record to its frozen receiver policy and authoritative key/history
+snapshots. The compound coordinator must retain the full signed record, bind
+its digest into the parent plan, and atomically commit the outer replay
+admission, business idempotency, all state writes, and mandatory audit event.
+
+Both authentication paths preflight the caller-owned record, make one bounded
+detached copy, validate that same copy, and transfer its ownership into the
+immutable result. They do not retain a second clone of the signed fields.
+
 CCSE-v1 NFC validation is pinned to Unicode 15.0.0, implemented here by
 `golang.org/x/text/unicode/norm` v0.38.0. Other language implementations must
 use Unicode 15.0.0 normalization data and pass the same conformance vectors.

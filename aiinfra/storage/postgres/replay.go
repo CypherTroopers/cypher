@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
+	"github.com/cypherium/cypher/aiinfra/replayresult"
 )
 
 var (
@@ -35,7 +36,7 @@ var (
 	ErrRowsStillOpen        = errors.New("aiinfra postgres: query rows must be consumed or closed before completion")
 	ErrDurableResultMissing = errors.New("aiinfra postgres: durable result is missing")
 	ErrDurableResultCorrupt = errors.New("aiinfra postgres: durable result does not match its committed digest")
-	ErrUnitOfWorkActive     = errors.New("aiinfra postgres: another unit of work is active on this store")
+	ErrUnitOfWorkActive     = errors.New("aiinfra postgres: another authoritative unit of work is active")
 	ErrUnsafeSessionRole    = errors.New("aiinfra postgres: session_replication_role is not origin")
 	ErrNoRowsUnacknowledged = errors.New("aiinfra postgres: sql.ErrNoRows must be acknowledged explicitly")
 	ErrRowAlreadyConsumed   = errors.New("aiinfra postgres: query row was already consumed")
@@ -43,9 +44,8 @@ var (
 
 const (
 	replayScopeMagic         = "CPH-AIIE-CCSE-REPLAY-SCOPE-V1\x00"
-	durableResultMagic       = "CPH-AIIE-DURABLE-RESULT-V1\x00"
-	maxDurablePayloadBytes   = 1 << 20
-	maxContentTypeBytes      = 255
+	maxDurablePayloadBytes   = replayresult.MaxPayloadBytes
+	maxContentTypeBytes      = replayresult.MaxContentTypeBytes
 	maxDestinationBytes      = 255
 	maxDeduplicationKeyBytes = 1024
 	maxOutboxIntents         = 256
@@ -104,10 +104,17 @@ func WithAllowedStatements(statements ...AllowedStatement) StoreOption {
 // transaction. The handler obtains that transaction through Transaction and
 // must write its business state, durable result, and outbox before returning.
 type ReplayStore struct {
-	db            BeginTxer
-	statements    map[string]StatementAccess
-	executeActive atomic.Bool
+	db         BeginTxer
+	statements map[string]StatementAccess
 }
+
+// processExecuteActive is intentionally process-wide rather than store-local.
+// A handler can discard the supplied context and construct or retain a second
+// ReplayStore; a per-instance guard would then allow the inner transaction to
+// commit independently before the outer transaction rolls back. Until a
+// database-backed, fenced unit-of-work token supports safe composition, one
+// process admits exactly one authoritative Execute at a time.
+var processExecuteActive atomic.Bool
 
 // NewReplayStore verifies the exact schema and least-privilege runtime role,
 // then creates a durable replay adapter with a closed-by-default SQL capability
@@ -125,10 +132,13 @@ func NewReplayStore(ctx context.Context, db BeginTxer, options ...StoreOption) (
 			return nil, err
 		}
 	}
+	// Freeze the capability set immediately after option evaluation. In
+	// particular, do not leave a retained option/config map aliased during the
+	// potentially slow live schema verification below.
+	statements := cloneStatementPolicy(config.statements)
 	if err := VerifyReplayStore(ctx, db); err != nil {
 		return nil, err
 	}
-	statements := cloneStatementPolicy(config.statements)
 	return &ReplayStore{db: db, statements: statements}, nil
 }
 
@@ -233,6 +243,7 @@ type transactionState struct {
 	outcome   [sha256.Size]byte
 	openRows  uint64
 	noRows    uint64
+	canonical *canonicalTransactionState
 }
 
 type atomicTxView struct {
@@ -526,6 +537,10 @@ func (view atomicTxView) Complete(ctx context.Context, completion DurableComplet
 		}
 		return [sha256.Size]byte{}, state.poisoned
 	}
+	if err := validateCanonicalCompletionLocked(state, completion); err != nil {
+		state.poisoned = err
+		return [sha256.Size]byte{}, err
+	}
 	if err := assertSessionReplicationOrigin(ctx, state.tx); err != nil {
 		state.poisoned = err
 		return [sha256.Size]byte{}, err
@@ -587,10 +602,10 @@ func (s *ReplayStore) Execute(ctx context.Context, entry ccse.ReplayEntry, verif
 	if s == nil || s.db == nil {
 		return ccse.ReplayDecision{}, ErrDatabaseRequired
 	}
-	if !s.executeActive.CompareAndSwap(false, true) {
+	if !processExecuteActive.CompareAndSwap(false, true) {
 		return ccse.ReplayDecision{}, fmt.Errorf("%w: %w", ccse.ErrReplayReentrant, ErrUnitOfWorkActive)
 	}
-	defer s.executeActive.Store(false)
+	defer processExecuteActive.Store(false)
 	if apply == nil {
 		return ccse.ReplayDecision{}, ccse.ErrReplayHandlerRequired
 	}
@@ -619,6 +634,9 @@ func (s *ReplayStore) Execute(ctx context.Context, entry ccse.ReplayEntry, verif
 		return ccse.ReplayDecision{}, fmt.Errorf("aiinfra postgres: constrain replay search path: %w", err)
 	}
 	if err := assertSessionReplicationOrigin(ctx, tx); err != nil {
+		return ccse.ReplayDecision{}, err
+	}
+	if err := acquireReplayExecutionFence(ctx, tx); err != nil {
 		return ccse.ReplayDecision{}, err
 	}
 
@@ -674,6 +692,26 @@ func (s *ReplayStore) Execute(ctx context.Context, entry ccse.ReplayEntry, verif
 	return ccse.ReplayDecision{Status: ccse.ReplayApplied, OutcomeDigest: outcomeDigest}, nil
 }
 
+func acquireReplayExecutionFence(ctx context.Context, tx *sql.Tx) error {
+	var version int64
+	err := tx.QueryRowContext(ctx, `
+		SELECT version
+		FROM cph_aiinfra.schema_migration
+		WHERE version = $1
+		FOR UPDATE SKIP LOCKED`, executionFenceVersion,
+	).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: database-wide replay execution fence is held or missing", ErrUnitOfWorkActive)
+	}
+	if err != nil {
+		return fmt.Errorf("aiinfra postgres: acquire replay execution fence: %w", err)
+	}
+	if version != executionFenceVersion {
+		return fmt.Errorf("%w: replay execution fence version is %d", ErrSchemaShapeMismatch, version)
+	}
+	return nil
+}
+
 // LoadDurableResult retrieves and rehashes the exact result bound to a replay
 // decision. It never returns a payload on a missing inbox join, digest mismatch,
 // oversized row or malformed content type.
@@ -724,8 +762,7 @@ func (s *ReplayStore) LoadDurableResult(ctx context.Context, entry ccse.ReplayEn
 	if err != nil {
 		return DurableResult{}, fmt.Errorf("aiinfra postgres: read durable result: %w", err)
 	}
-	if len(storedDigest) != sha256.Size || len(result.Payload) > maxDurablePayloadBytes ||
-		validateStableText("result content type", result.ContentType, maxContentTypeBytes) != nil ||
+	if len(storedDigest) != sha256.Size || replayresult.Validate(result.ContentType, result.Payload) != nil ||
 		!bytes.Equal(storedDigest, expected[:]) || DurableResultDigest(result.ContentType, result.Payload) != expected {
 		return DurableResult{}, ErrDurableResultCorrupt
 	}
@@ -779,26 +816,12 @@ func (state *transactionState) finish(returned [sha256.Size]byte) error {
 // DurableResultDigest is the digest returned by Complete and persisted in the
 // replay inbox. It binds the media type and exact payload bytes.
 func DurableResultDigest(contentType string, payload []byte) [sha256.Size]byte {
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(durableResultMagic))
-	var length [4]byte
-	binary.BigEndian.PutUint32(length[:], uint32(len(contentType)))
-	_, _ = hash.Write(length[:])
-	_, _ = hash.Write([]byte(contentType))
-	binary.BigEndian.PutUint32(length[:], uint32(len(payload)))
-	_, _ = hash.Write(length[:])
-	_, _ = hash.Write(payload)
-	var result [sha256.Size]byte
-	copy(result[:], hash.Sum(nil))
-	return result
+	return replayresult.Digest(contentType, payload)
 }
 
 func validateCompletion(completion DurableCompletion) error {
-	if err := validateStableText("result content type", completion.ContentType, maxContentTypeBytes); err != nil {
-		return err
-	}
-	if len(completion.Payload) > maxDurablePayloadBytes {
-		return fmt.Errorf("%w: result payload exceeds %d bytes", ErrInvalidCompletion, maxDurablePayloadBytes)
+	if err := replayresult.Validate(completion.ContentType, completion.Payload); err != nil {
+		return fmt.Errorf("%w: result boundary: %v", ErrInvalidCompletion, err)
 	}
 	switch completion.ExternalEffects {
 	case NoExternalEffects:

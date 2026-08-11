@@ -501,6 +501,73 @@ func (ConfidenceMethod) EnumDescriptor() ([]byte, []int) {
 	return file_foundation_v1_foundation_proto_rawDescGZIP(), []int{7}
 }
 
+// TransferEvidenceKind is a closed classification of the evidence committed
+// by an ownership-transfer authorization. The complete signed evidence is
+// retained and reverified by the IAM receiver; this payload binds its digest.
+type TransferEvidenceKind int32
+
+const (
+	TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_UNSPECIFIED                   TransferEvidenceKind = 0
+	TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_OLD_PROVIDER_AUTHORITY        TransferEvidenceKind = 1
+	TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_NEW_PROVIDER_AUTHORITY        TransferEvidenceKind = 2
+	TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_HOST_SANITATION_ATTESTATION   TransferEvidenceKind = 3
+	TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_DEVICE_SANITATION_ATTESTATION TransferEvidenceKind = 4
+	TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_DESCENDANT_IDENTITY_CLOSURE   TransferEvidenceKind = 5
+	TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_LEASE_OFFER_WORKLOAD_CLOSURE  TransferEvidenceKind = 6
+	TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_NEW_ATTESTATION_READINESS     TransferEvidenceKind = 7
+)
+
+// Enum value maps for TransferEvidenceKind.
+var (
+	TransferEvidenceKind_name = map[int32]string{
+		0: "TRANSFER_EVIDENCE_KIND_UNSPECIFIED",
+		1: "TRANSFER_EVIDENCE_KIND_OLD_PROVIDER_AUTHORITY",
+		2: "TRANSFER_EVIDENCE_KIND_NEW_PROVIDER_AUTHORITY",
+		3: "TRANSFER_EVIDENCE_KIND_HOST_SANITATION_ATTESTATION",
+		4: "TRANSFER_EVIDENCE_KIND_DEVICE_SANITATION_ATTESTATION",
+		5: "TRANSFER_EVIDENCE_KIND_DESCENDANT_IDENTITY_CLOSURE",
+		6: "TRANSFER_EVIDENCE_KIND_LEASE_OFFER_WORKLOAD_CLOSURE",
+		7: "TRANSFER_EVIDENCE_KIND_NEW_ATTESTATION_READINESS",
+	}
+	TransferEvidenceKind_value = map[string]int32{
+		"TRANSFER_EVIDENCE_KIND_UNSPECIFIED":                   0,
+		"TRANSFER_EVIDENCE_KIND_OLD_PROVIDER_AUTHORITY":        1,
+		"TRANSFER_EVIDENCE_KIND_NEW_PROVIDER_AUTHORITY":        2,
+		"TRANSFER_EVIDENCE_KIND_HOST_SANITATION_ATTESTATION":   3,
+		"TRANSFER_EVIDENCE_KIND_DEVICE_SANITATION_ATTESTATION": 4,
+		"TRANSFER_EVIDENCE_KIND_DESCENDANT_IDENTITY_CLOSURE":   5,
+		"TRANSFER_EVIDENCE_KIND_LEASE_OFFER_WORKLOAD_CLOSURE":  6,
+		"TRANSFER_EVIDENCE_KIND_NEW_ATTESTATION_READINESS":     7,
+	}
+)
+
+func (x TransferEvidenceKind) Enum() *TransferEvidenceKind {
+	p := new(TransferEvidenceKind)
+	*p = x
+	return p
+}
+
+func (x TransferEvidenceKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TransferEvidenceKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_foundation_v1_foundation_proto_enumTypes[8].Descriptor()
+}
+
+func (TransferEvidenceKind) Type() protoreflect.EnumType {
+	return &file_foundation_v1_foundation_proto_enumTypes[8]
+}
+
+func (x TransferEvidenceKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TransferEvidenceKind.Descriptor instead.
+func (TransferEvidenceKind) EnumDescriptor() ([]byte, []int) {
+	return file_foundation_v1_foundation_proto_rawDescGZIP(), []int{8}
+}
+
 type ProviderIdentity struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
 	Metadata                *v1.RecordMetadata     `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
@@ -2579,6 +2646,361 @@ func (x *ExperimentPlan) GetApprovingIdentities() []string {
 	return nil
 }
 
+type KeyClosure struct {
+	state                                   protoimpl.MessageState `protogen:"open.v1"`
+	KeyId                                   string                 `protobuf:"bytes,1,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	TerminalKeyLifecyclePayloadDigestSha256 []byte                 `protobuf:"bytes,2,opt,name=terminal_key_lifecycle_payload_digest_sha256,json=terminalKeyLifecyclePayloadDigestSha256,proto3" json:"terminal_key_lifecycle_payload_digest_sha256,omitempty"`
+	unknownFields                           protoimpl.UnknownFields
+	sizeCache                               protoimpl.SizeCache
+}
+
+func (x *KeyClosure) Reset() {
+	*x = KeyClosure{}
+	mi := &file_foundation_v1_foundation_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *KeyClosure) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*KeyClosure) ProtoMessage() {}
+
+func (x *KeyClosure) ProtoReflect() protoreflect.Message {
+	mi := &file_foundation_v1_foundation_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use KeyClosure.ProtoReflect.Descriptor instead.
+func (*KeyClosure) Descriptor() ([]byte, []int) {
+	return file_foundation_v1_foundation_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *KeyClosure) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+func (x *KeyClosure) GetTerminalKeyLifecyclePayloadDigestSha256() []byte {
+	if x != nil {
+		return x.TerminalKeyLifecyclePayloadDigestSha256
+	}
+	return nil
+}
+
+type TransferEvidenceCommitment struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	EvidenceKind           TransferEvidenceKind   `protobuf:"varint,1,opt,name=evidence_kind,json=evidenceKind,proto3,enum=cph.aiinfra.foundation.v1.TransferEvidenceKind" json:"evidence_kind,omitempty"`
+	CcseRecordDigestSha256 []byte                 `protobuf:"bytes,2,opt,name=ccse_record_digest_sha256,json=ccseRecordDigestSha256,proto3" json:"ccse_record_digest_sha256,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *TransferEvidenceCommitment) Reset() {
+	*x = TransferEvidenceCommitment{}
+	mi := &file_foundation_v1_foundation_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransferEvidenceCommitment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransferEvidenceCommitment) ProtoMessage() {}
+
+func (x *TransferEvidenceCommitment) ProtoReflect() protoreflect.Message {
+	mi := &file_foundation_v1_foundation_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransferEvidenceCommitment.ProtoReflect.Descriptor instead.
+func (*TransferEvidenceCommitment) Descriptor() ([]byte, []int) {
+	return file_foundation_v1_foundation_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TransferEvidenceCommitment) GetEvidenceKind() TransferEvidenceKind {
+	if x != nil {
+		return x.EvidenceKind
+	}
+	return TransferEvidenceKind_TRANSFER_EVIDENCE_KIND_UNSPECIFIED
+}
+
+func (x *TransferEvidenceCommitment) GetCcseRecordDigestSha256() []byte {
+	if x != nil {
+		return x.CcseRecordDigestSha256
+	}
+	return nil
+}
+
+type TransferAuthority struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Identity      string                 `protobuf:"bytes,1,opt,name=identity,proto3" json:"identity,omitempty"`
+	KeyId         string                 `protobuf:"bytes,2,opt,name=key_id,json=keyId,proto3" json:"key_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TransferAuthority) Reset() {
+	*x = TransferAuthority{}
+	mi := &file_foundation_v1_foundation_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TransferAuthority) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TransferAuthority) ProtoMessage() {}
+
+func (x *TransferAuthority) ProtoReflect() protoreflect.Message {
+	mi := &file_foundation_v1_foundation_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TransferAuthority.ProtoReflect.Descriptor instead.
+func (*TransferAuthority) Descriptor() ([]byte, []int) {
+	return file_foundation_v1_foundation_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *TransferAuthority) GetIdentity() string {
+	if x != nil {
+		return x.Identity
+	}
+	return ""
+}
+
+func (x *TransferAuthority) GetKeyId() string {
+	if x != nil {
+		return x.KeyId
+	}
+	return ""
+}
+
+// OwnershipTransferAuthorization binds the complete old and new ownership
+// boundary without embedding signer-specific CCSE records or cyclic proof-of-
+// possession material. Receiver policy supplies the frozen signer profile.
+type OwnershipTransferAuthorization struct {
+	state                                       protoimpl.MessageState        `protogen:"open.v1"`
+	Metadata                                    *v1.RecordMetadata            `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	TransferAuthorizationId                     string                        `protobuf:"bytes,2,opt,name=transfer_authorization_id,json=transferAuthorizationId,proto3" json:"transfer_authorization_id,omitempty"`
+	SubjectKind                                 v1.PrincipalKind              `protobuf:"varint,3,opt,name=subject_kind,json=subjectKind,proto3,enum=cph.aiinfra.common.v1.PrincipalKind" json:"subject_kind,omitempty"`
+	PreviousEntityId                            string                        `protobuf:"bytes,4,opt,name=previous_entity_id,json=previousEntityId,proto3" json:"previous_entity_id,omitempty"`
+	NextEntityId                                string                        `protobuf:"bytes,5,opt,name=next_entity_id,json=nextEntityId,proto3" json:"next_entity_id,omitempty"`
+	PreviousPrincipalIdentity                   string                        `protobuf:"bytes,6,opt,name=previous_principal_identity,json=previousPrincipalIdentity,proto3" json:"previous_principal_identity,omitempty"`
+	NextPrincipalIdentity                       string                        `protobuf:"bytes,7,opt,name=next_principal_identity,json=nextPrincipalIdentity,proto3" json:"next_principal_identity,omitempty"`
+	PreviousProviderId                          string                        `protobuf:"bytes,8,opt,name=previous_provider_id,json=previousProviderId,proto3" json:"previous_provider_id,omitempty"`
+	NextProviderId                              string                        `protobuf:"bytes,9,opt,name=next_provider_id,json=nextProviderId,proto3" json:"next_provider_id,omitempty"`
+	ExpectedGeneration                          uint64                        `protobuf:"varint,10,opt,name=expected_generation,json=expectedGeneration,proto3" json:"expected_generation,omitempty"`
+	NextGeneration                              uint64                        `protobuf:"varint,11,opt,name=next_generation,json=nextGeneration,proto3" json:"next_generation,omitempty"`
+	PreviousTerminalIdentityPayloadDigestSha256 []byte                        `protobuf:"bytes,12,opt,name=previous_terminal_identity_payload_digest_sha256,json=previousTerminalIdentityPayloadDigestSha256,proto3" json:"previous_terminal_identity_payload_digest_sha256,omitempty"`
+	NextPendingIdentityPayloadDigestSha256      []byte                        `protobuf:"bytes,13,opt,name=next_pending_identity_payload_digest_sha256,json=nextPendingIdentityPayloadDigestSha256,proto3" json:"next_pending_identity_payload_digest_sha256,omitempty"`
+	OldKeyClosures                              []*KeyClosure                 `protobuf:"bytes,14,rep,name=old_key_closures,json=oldKeyClosures,proto3" json:"old_key_closures,omitempty"`
+	NewKeyId                                    string                        `protobuf:"bytes,15,opt,name=new_key_id,json=newKeyId,proto3" json:"new_key_id,omitempty"`
+	EvidenceCommitments                         []*TransferEvidenceCommitment `protobuf:"bytes,16,rep,name=evidence_commitments,json=evidenceCommitments,proto3" json:"evidence_commitments,omitempty"`
+	EffectiveAtUnixNano                         int64                         `protobuf:"varint,17,opt,name=effective_at_unix_nano,json=effectiveAtUnixNano,proto3" json:"effective_at_unix_nano,omitempty"`
+	ExpiresAtUnixNano                           int64                         `protobuf:"varint,18,opt,name=expires_at_unix_nano,json=expiresAtUnixNano,proto3" json:"expires_at_unix_nano,omitempty"`
+	OldAuthorities                              []*TransferAuthority          `protobuf:"bytes,19,rep,name=old_authorities,json=oldAuthorities,proto3" json:"old_authorities,omitempty"`
+	NewAuthorities                              []*TransferAuthority          `protobuf:"bytes,20,rep,name=new_authorities,json=newAuthorities,proto3" json:"new_authorities,omitempty"`
+	unknownFields                               protoimpl.UnknownFields
+	sizeCache                                   protoimpl.SizeCache
+}
+
+func (x *OwnershipTransferAuthorization) Reset() {
+	*x = OwnershipTransferAuthorization{}
+	mi := &file_foundation_v1_foundation_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OwnershipTransferAuthorization) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OwnershipTransferAuthorization) ProtoMessage() {}
+
+func (x *OwnershipTransferAuthorization) ProtoReflect() protoreflect.Message {
+	mi := &file_foundation_v1_foundation_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OwnershipTransferAuthorization.ProtoReflect.Descriptor instead.
+func (*OwnershipTransferAuthorization) Descriptor() ([]byte, []int) {
+	return file_foundation_v1_foundation_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *OwnershipTransferAuthorization) GetMetadata() *v1.RecordMetadata {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *OwnershipTransferAuthorization) GetTransferAuthorizationId() string {
+	if x != nil {
+		return x.TransferAuthorizationId
+	}
+	return ""
+}
+
+func (x *OwnershipTransferAuthorization) GetSubjectKind() v1.PrincipalKind {
+	if x != nil {
+		return x.SubjectKind
+	}
+	return v1.PrincipalKind(0)
+}
+
+func (x *OwnershipTransferAuthorization) GetPreviousEntityId() string {
+	if x != nil {
+		return x.PreviousEntityId
+	}
+	return ""
+}
+
+func (x *OwnershipTransferAuthorization) GetNextEntityId() string {
+	if x != nil {
+		return x.NextEntityId
+	}
+	return ""
+}
+
+func (x *OwnershipTransferAuthorization) GetPreviousPrincipalIdentity() string {
+	if x != nil {
+		return x.PreviousPrincipalIdentity
+	}
+	return ""
+}
+
+func (x *OwnershipTransferAuthorization) GetNextPrincipalIdentity() string {
+	if x != nil {
+		return x.NextPrincipalIdentity
+	}
+	return ""
+}
+
+func (x *OwnershipTransferAuthorization) GetPreviousProviderId() string {
+	if x != nil {
+		return x.PreviousProviderId
+	}
+	return ""
+}
+
+func (x *OwnershipTransferAuthorization) GetNextProviderId() string {
+	if x != nil {
+		return x.NextProviderId
+	}
+	return ""
+}
+
+func (x *OwnershipTransferAuthorization) GetExpectedGeneration() uint64 {
+	if x != nil {
+		return x.ExpectedGeneration
+	}
+	return 0
+}
+
+func (x *OwnershipTransferAuthorization) GetNextGeneration() uint64 {
+	if x != nil {
+		return x.NextGeneration
+	}
+	return 0
+}
+
+func (x *OwnershipTransferAuthorization) GetPreviousTerminalIdentityPayloadDigestSha256() []byte {
+	if x != nil {
+		return x.PreviousTerminalIdentityPayloadDigestSha256
+	}
+	return nil
+}
+
+func (x *OwnershipTransferAuthorization) GetNextPendingIdentityPayloadDigestSha256() []byte {
+	if x != nil {
+		return x.NextPendingIdentityPayloadDigestSha256
+	}
+	return nil
+}
+
+func (x *OwnershipTransferAuthorization) GetOldKeyClosures() []*KeyClosure {
+	if x != nil {
+		return x.OldKeyClosures
+	}
+	return nil
+}
+
+func (x *OwnershipTransferAuthorization) GetNewKeyId() string {
+	if x != nil {
+		return x.NewKeyId
+	}
+	return ""
+}
+
+func (x *OwnershipTransferAuthorization) GetEvidenceCommitments() []*TransferEvidenceCommitment {
+	if x != nil {
+		return x.EvidenceCommitments
+	}
+	return nil
+}
+
+func (x *OwnershipTransferAuthorization) GetEffectiveAtUnixNano() int64 {
+	if x != nil {
+		return x.EffectiveAtUnixNano
+	}
+	return 0
+}
+
+func (x *OwnershipTransferAuthorization) GetExpiresAtUnixNano() int64 {
+	if x != nil {
+		return x.ExpiresAtUnixNano
+	}
+	return 0
+}
+
+func (x *OwnershipTransferAuthorization) GetOldAuthorities() []*TransferAuthority {
+	if x != nil {
+		return x.OldAuthorities
+	}
+	return nil
+}
+
+func (x *OwnershipTransferAuthorization) GetNewAuthorities() []*TransferAuthority {
+	if x != nil {
+		return x.NewAuthorities
+	}
+	return nil
+}
+
 var File_foundation_v1_foundation_proto protoreflect.FileDescriptor
 
 const file_foundation_v1_foundation_proto_rawDesc = "" +
@@ -2834,7 +3256,41 @@ const file_foundation_v1_foundation_proto_rawDesc = "" +
 	"\x1fexperiment_policy_digest_sha256\x18\x12 \x01(\fR\x1cexperimentPolicyDigestSha256\x12K\n" +
 	"\ftarget_level\x18\x13 \x01(\x0e2(.cph.aiinfra.foundation.v1.EvidenceLevelR\vtargetLevel\x12-\n" +
 	"\x13frozen_at_unix_nano\x18\x14 \x01(\x03R\x10frozenAtUnixNano\x121\n" +
-	"\x14approving_identities\x18\x15 \x03(\tR\x13approvingIdentities*\xdc\x01\n" +
+	"\x14approving_identities\x18\x15 \x03(\tR\x13approvingIdentities\"\x82\x01\n" +
+	"\n" +
+	"KeyClosure\x12\x15\n" +
+	"\x06key_id\x18\x01 \x01(\tR\x05keyId\x12]\n" +
+	",terminal_key_lifecycle_payload_digest_sha256\x18\x02 \x01(\fR'terminalKeyLifecyclePayloadDigestSha256\"\xad\x01\n" +
+	"\x1aTransferEvidenceCommitment\x12T\n" +
+	"\revidence_kind\x18\x01 \x01(\x0e2/.cph.aiinfra.foundation.v1.TransferEvidenceKindR\fevidenceKind\x129\n" +
+	"\x19ccse_record_digest_sha256\x18\x02 \x01(\fR\x16ccseRecordDigestSha256\"F\n" +
+	"\x11TransferAuthority\x12\x1a\n" +
+	"\bidentity\x18\x01 \x01(\tR\bidentity\x12\x15\n" +
+	"\x06key_id\x18\x02 \x01(\tR\x05keyId\"\x9b\n" +
+	"\n" +
+	"\x1eOwnershipTransferAuthorization\x12A\n" +
+	"\bmetadata\x18\x01 \x01(\v2%.cph.aiinfra.common.v1.RecordMetadataR\bmetadata\x12:\n" +
+	"\x19transfer_authorization_id\x18\x02 \x01(\tR\x17transferAuthorizationId\x12G\n" +
+	"\fsubject_kind\x18\x03 \x01(\x0e2$.cph.aiinfra.common.v1.PrincipalKindR\vsubjectKind\x12,\n" +
+	"\x12previous_entity_id\x18\x04 \x01(\tR\x10previousEntityId\x12$\n" +
+	"\x0enext_entity_id\x18\x05 \x01(\tR\fnextEntityId\x12>\n" +
+	"\x1bprevious_principal_identity\x18\x06 \x01(\tR\x19previousPrincipalIdentity\x126\n" +
+	"\x17next_principal_identity\x18\a \x01(\tR\x15nextPrincipalIdentity\x120\n" +
+	"\x14previous_provider_id\x18\b \x01(\tR\x12previousProviderId\x12(\n" +
+	"\x10next_provider_id\x18\t \x01(\tR\x0enextProviderId\x12/\n" +
+	"\x13expected_generation\x18\n" +
+	" \x01(\x04R\x12expectedGeneration\x12'\n" +
+	"\x0fnext_generation\x18\v \x01(\x04R\x0enextGeneration\x12e\n" +
+	"0previous_terminal_identity_payload_digest_sha256\x18\f \x01(\fR+previousTerminalIdentityPayloadDigestSha256\x12[\n" +
+	"+next_pending_identity_payload_digest_sha256\x18\r \x01(\fR&nextPendingIdentityPayloadDigestSha256\x12O\n" +
+	"\x10old_key_closures\x18\x0e \x03(\v2%.cph.aiinfra.foundation.v1.KeyClosureR\x0eoldKeyClosures\x12\x1c\n" +
+	"\n" +
+	"new_key_id\x18\x0f \x01(\tR\bnewKeyId\x12h\n" +
+	"\x14evidence_commitments\x18\x10 \x03(\v25.cph.aiinfra.foundation.v1.TransferEvidenceCommitmentR\x13evidenceCommitments\x123\n" +
+	"\x16effective_at_unix_nano\x18\x11 \x01(\x03R\x13effectiveAtUnixNano\x12/\n" +
+	"\x14expires_at_unix_nano\x18\x12 \x01(\x03R\x11expiresAtUnixNano\x12U\n" +
+	"\x0fold_authorities\x18\x13 \x03(\v2,.cph.aiinfra.foundation.v1.TransferAuthorityR\x0eoldAuthorities\x12U\n" +
+	"\x0fnew_authorities\x18\x14 \x03(\v2,.cph.aiinfra.foundation.v1.TransferAuthorityR\x0enewAuthorities*\xdc\x01\n" +
 	"\rIdentityState\x12\x1e\n" +
 	"\x1aIDENTITY_STATE_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16IDENTITY_STATE_PENDING\x10\x01\x12\x19\n" +
@@ -2894,7 +3350,16 @@ const file_foundation_v1_foundation_proto_rawDesc = "" +
 	"\x1bCONFIDENCE_METHOD_BOOTSTRAP\x10\x02\x12\x1e\n" +
 	"\x1aCONFIDENCE_METHOD_BINOMIAL\x10\x03\x12\x1f\n" +
 	"\x1bCONFIDENCE_METHOD_STUDENT_T\x10\x04\x12#\n" +
-	"\x1fCONFIDENCE_METHOD_NONPARAMETRIC\x10\x05BGZEgithub.com/cypherium/cypher/aiinfra/schema/foundation/v1;foundationv1b\x06proto3"
+	"\x1fCONFIDENCE_METHOD_NONPARAMETRIC\x10\x05*\xbd\x03\n" +
+	"\x14TransferEvidenceKind\x12&\n" +
+	"\"TRANSFER_EVIDENCE_KIND_UNSPECIFIED\x10\x00\x121\n" +
+	"-TRANSFER_EVIDENCE_KIND_OLD_PROVIDER_AUTHORITY\x10\x01\x121\n" +
+	"-TRANSFER_EVIDENCE_KIND_NEW_PROVIDER_AUTHORITY\x10\x02\x126\n" +
+	"2TRANSFER_EVIDENCE_KIND_HOST_SANITATION_ATTESTATION\x10\x03\x128\n" +
+	"4TRANSFER_EVIDENCE_KIND_DEVICE_SANITATION_ATTESTATION\x10\x04\x126\n" +
+	"2TRANSFER_EVIDENCE_KIND_DESCENDANT_IDENTITY_CLOSURE\x10\x05\x127\n" +
+	"3TRANSFER_EVIDENCE_KIND_LEASE_OFFER_WORKLOAD_CLOSURE\x10\x06\x124\n" +
+	"0TRANSFER_EVIDENCE_KIND_NEW_ATTESTATION_READINESS\x10\aBGZEgithub.com/cypherium/cypher/aiinfra/schema/foundation/v1;foundationv1b\x06proto3"
 
 var (
 	file_foundation_v1_foundation_proto_rawDescOnce sync.Once
@@ -2908,77 +3373,89 @@ func file_foundation_v1_foundation_proto_rawDescGZIP() []byte {
 	return file_foundation_v1_foundation_proto_rawDescData
 }
 
-var file_foundation_v1_foundation_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
-var file_foundation_v1_foundation_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_foundation_v1_foundation_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
+var file_foundation_v1_foundation_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_foundation_v1_foundation_proto_goTypes = []any{
-	(IdentityState)(0),         // 0: cph.aiinfra.foundation.v1.IdentityState
-	(KeyLifecycleState)(0),     // 1: cph.aiinfra.foundation.v1.KeyLifecycleState
-	(PolicyBundleState)(0),     // 2: cph.aiinfra.foundation.v1.PolicyBundleState
-	(AuditOutcome)(0),          // 3: cph.aiinfra.foundation.v1.AuditOutcome
-	(EvidenceLevel)(0),         // 4: cph.aiinfra.foundation.v1.EvidenceLevel
-	(EvidenceStatus)(0),        // 5: cph.aiinfra.foundation.v1.EvidenceStatus
-	(ComparisonOperator)(0),    // 6: cph.aiinfra.foundation.v1.ComparisonOperator
-	(ConfidenceMethod)(0),      // 7: cph.aiinfra.foundation.v1.ConfidenceMethod
-	(*ProviderIdentity)(nil),   // 8: cph.aiinfra.foundation.v1.ProviderIdentity
-	(*AgentIdentity)(nil),      // 9: cph.aiinfra.foundation.v1.AgentIdentity
-	(*HostIdentity)(nil),       // 10: cph.aiinfra.foundation.v1.HostIdentity
-	(*DeviceIdentity)(nil),     // 11: cph.aiinfra.foundation.v1.DeviceIdentity
-	(*MinerIdentity)(nil),      // 12: cph.aiinfra.foundation.v1.MinerIdentity
-	(*RunnerIdentity)(nil),     // 13: cph.aiinfra.foundation.v1.RunnerIdentity
-	(*BuyerIdentity)(nil),      // 14: cph.aiinfra.foundation.v1.BuyerIdentity
-	(*ServiceIdentity)(nil),    // 15: cph.aiinfra.foundation.v1.ServiceIdentity
-	(*KeyLifecycle)(nil),       // 16: cph.aiinfra.foundation.v1.KeyLifecycle
-	(*PolicyBundle)(nil),       // 17: cph.aiinfra.foundation.v1.PolicyBundle
-	(*AuditEvent)(nil),         // 18: cph.aiinfra.foundation.v1.AuditEvent
-	(*MetricCriterion)(nil),    // 19: cph.aiinfra.foundation.v1.MetricCriterion
-	(*MetricObservation)(nil),  // 20: cph.aiinfra.foundation.v1.MetricObservation
-	(*EvidenceRecord)(nil),     // 21: cph.aiinfra.foundation.v1.EvidenceRecord
-	(*ExperimentPlan)(nil),     // 22: cph.aiinfra.foundation.v1.ExperimentPlan
-	(*v1.RecordMetadata)(nil),  // 23: cph.aiinfra.common.v1.RecordMetadata
-	(v1.PrincipalKind)(0),      // 24: cph.aiinfra.common.v1.PrincipalKind
-	(v1.SignatureAlgorithm)(0), // 25: cph.aiinfra.common.v1.SignatureAlgorithm
-	(*v1.SchemaVersion)(nil),   // 26: cph.aiinfra.common.v1.SchemaVersion
+	(IdentityState)(0),                     // 0: cph.aiinfra.foundation.v1.IdentityState
+	(KeyLifecycleState)(0),                 // 1: cph.aiinfra.foundation.v1.KeyLifecycleState
+	(PolicyBundleState)(0),                 // 2: cph.aiinfra.foundation.v1.PolicyBundleState
+	(AuditOutcome)(0),                      // 3: cph.aiinfra.foundation.v1.AuditOutcome
+	(EvidenceLevel)(0),                     // 4: cph.aiinfra.foundation.v1.EvidenceLevel
+	(EvidenceStatus)(0),                    // 5: cph.aiinfra.foundation.v1.EvidenceStatus
+	(ComparisonOperator)(0),                // 6: cph.aiinfra.foundation.v1.ComparisonOperator
+	(ConfidenceMethod)(0),                  // 7: cph.aiinfra.foundation.v1.ConfidenceMethod
+	(TransferEvidenceKind)(0),              // 8: cph.aiinfra.foundation.v1.TransferEvidenceKind
+	(*ProviderIdentity)(nil),               // 9: cph.aiinfra.foundation.v1.ProviderIdentity
+	(*AgentIdentity)(nil),                  // 10: cph.aiinfra.foundation.v1.AgentIdentity
+	(*HostIdentity)(nil),                   // 11: cph.aiinfra.foundation.v1.HostIdentity
+	(*DeviceIdentity)(nil),                 // 12: cph.aiinfra.foundation.v1.DeviceIdentity
+	(*MinerIdentity)(nil),                  // 13: cph.aiinfra.foundation.v1.MinerIdentity
+	(*RunnerIdentity)(nil),                 // 14: cph.aiinfra.foundation.v1.RunnerIdentity
+	(*BuyerIdentity)(nil),                  // 15: cph.aiinfra.foundation.v1.BuyerIdentity
+	(*ServiceIdentity)(nil),                // 16: cph.aiinfra.foundation.v1.ServiceIdentity
+	(*KeyLifecycle)(nil),                   // 17: cph.aiinfra.foundation.v1.KeyLifecycle
+	(*PolicyBundle)(nil),                   // 18: cph.aiinfra.foundation.v1.PolicyBundle
+	(*AuditEvent)(nil),                     // 19: cph.aiinfra.foundation.v1.AuditEvent
+	(*MetricCriterion)(nil),                // 20: cph.aiinfra.foundation.v1.MetricCriterion
+	(*MetricObservation)(nil),              // 21: cph.aiinfra.foundation.v1.MetricObservation
+	(*EvidenceRecord)(nil),                 // 22: cph.aiinfra.foundation.v1.EvidenceRecord
+	(*ExperimentPlan)(nil),                 // 23: cph.aiinfra.foundation.v1.ExperimentPlan
+	(*KeyClosure)(nil),                     // 24: cph.aiinfra.foundation.v1.KeyClosure
+	(*TransferEvidenceCommitment)(nil),     // 25: cph.aiinfra.foundation.v1.TransferEvidenceCommitment
+	(*TransferAuthority)(nil),              // 26: cph.aiinfra.foundation.v1.TransferAuthority
+	(*OwnershipTransferAuthorization)(nil), // 27: cph.aiinfra.foundation.v1.OwnershipTransferAuthorization
+	(*v1.RecordMetadata)(nil),              // 28: cph.aiinfra.common.v1.RecordMetadata
+	(v1.PrincipalKind)(0),                  // 29: cph.aiinfra.common.v1.PrincipalKind
+	(v1.SignatureAlgorithm)(0),             // 30: cph.aiinfra.common.v1.SignatureAlgorithm
+	(*v1.SchemaVersion)(nil),               // 31: cph.aiinfra.common.v1.SchemaVersion
 }
 var file_foundation_v1_foundation_proto_depIdxs = []int32{
-	23, // 0: cph.aiinfra.foundation.v1.ProviderIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 0: cph.aiinfra.foundation.v1.ProviderIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	0,  // 1: cph.aiinfra.foundation.v1.ProviderIdentity.state:type_name -> cph.aiinfra.foundation.v1.IdentityState
-	23, // 2: cph.aiinfra.foundation.v1.AgentIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 2: cph.aiinfra.foundation.v1.AgentIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	0,  // 3: cph.aiinfra.foundation.v1.AgentIdentity.state:type_name -> cph.aiinfra.foundation.v1.IdentityState
-	23, // 4: cph.aiinfra.foundation.v1.HostIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 4: cph.aiinfra.foundation.v1.HostIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	0,  // 5: cph.aiinfra.foundation.v1.HostIdentity.state:type_name -> cph.aiinfra.foundation.v1.IdentityState
-	23, // 6: cph.aiinfra.foundation.v1.DeviceIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 6: cph.aiinfra.foundation.v1.DeviceIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	0,  // 7: cph.aiinfra.foundation.v1.DeviceIdentity.state:type_name -> cph.aiinfra.foundation.v1.IdentityState
-	23, // 8: cph.aiinfra.foundation.v1.MinerIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 8: cph.aiinfra.foundation.v1.MinerIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	0,  // 9: cph.aiinfra.foundation.v1.MinerIdentity.state:type_name -> cph.aiinfra.foundation.v1.IdentityState
-	23, // 10: cph.aiinfra.foundation.v1.RunnerIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 10: cph.aiinfra.foundation.v1.RunnerIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	0,  // 11: cph.aiinfra.foundation.v1.RunnerIdentity.state:type_name -> cph.aiinfra.foundation.v1.IdentityState
-	23, // 12: cph.aiinfra.foundation.v1.BuyerIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 12: cph.aiinfra.foundation.v1.BuyerIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	0,  // 13: cph.aiinfra.foundation.v1.BuyerIdentity.state:type_name -> cph.aiinfra.foundation.v1.IdentityState
-	23, // 14: cph.aiinfra.foundation.v1.ServiceIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 14: cph.aiinfra.foundation.v1.ServiceIdentity.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	0,  // 15: cph.aiinfra.foundation.v1.ServiceIdentity.state:type_name -> cph.aiinfra.foundation.v1.IdentityState
-	23, // 16: cph.aiinfra.foundation.v1.KeyLifecycle.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
-	24, // 17: cph.aiinfra.foundation.v1.KeyLifecycle.subject_kind:type_name -> cph.aiinfra.common.v1.PrincipalKind
-	25, // 18: cph.aiinfra.foundation.v1.KeyLifecycle.algorithm:type_name -> cph.aiinfra.common.v1.SignatureAlgorithm
+	28, // 16: cph.aiinfra.foundation.v1.KeyLifecycle.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	29, // 17: cph.aiinfra.foundation.v1.KeyLifecycle.subject_kind:type_name -> cph.aiinfra.common.v1.PrincipalKind
+	30, // 18: cph.aiinfra.foundation.v1.KeyLifecycle.algorithm:type_name -> cph.aiinfra.common.v1.SignatureAlgorithm
 	1,  // 19: cph.aiinfra.foundation.v1.KeyLifecycle.state:type_name -> cph.aiinfra.foundation.v1.KeyLifecycleState
-	23, // 20: cph.aiinfra.foundation.v1.PolicyBundle.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
-	26, // 21: cph.aiinfra.foundation.v1.PolicyBundle.policy_version:type_name -> cph.aiinfra.common.v1.SchemaVersion
+	28, // 20: cph.aiinfra.foundation.v1.PolicyBundle.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	31, // 21: cph.aiinfra.foundation.v1.PolicyBundle.policy_version:type_name -> cph.aiinfra.common.v1.SchemaVersion
 	2,  // 22: cph.aiinfra.foundation.v1.PolicyBundle.state:type_name -> cph.aiinfra.foundation.v1.PolicyBundleState
-	23, // 23: cph.aiinfra.foundation.v1.AuditEvent.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 23: cph.aiinfra.foundation.v1.AuditEvent.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	3,  // 24: cph.aiinfra.foundation.v1.AuditEvent.outcome:type_name -> cph.aiinfra.foundation.v1.AuditOutcome
 	6,  // 25: cph.aiinfra.foundation.v1.MetricCriterion.comparison:type_name -> cph.aiinfra.foundation.v1.ComparisonOperator
-	23, // 26: cph.aiinfra.foundation.v1.EvidenceRecord.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
-	20, // 27: cph.aiinfra.foundation.v1.EvidenceRecord.observations:type_name -> cph.aiinfra.foundation.v1.MetricObservation
+	28, // 26: cph.aiinfra.foundation.v1.EvidenceRecord.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	21, // 27: cph.aiinfra.foundation.v1.EvidenceRecord.observations:type_name -> cph.aiinfra.foundation.v1.MetricObservation
 	4,  // 28: cph.aiinfra.foundation.v1.EvidenceRecord.achieved_level:type_name -> cph.aiinfra.foundation.v1.EvidenceLevel
 	5,  // 29: cph.aiinfra.foundation.v1.EvidenceRecord.status:type_name -> cph.aiinfra.foundation.v1.EvidenceStatus
-	23, // 30: cph.aiinfra.foundation.v1.ExperimentPlan.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	28, // 30: cph.aiinfra.foundation.v1.ExperimentPlan.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
 	7,  // 31: cph.aiinfra.foundation.v1.ExperimentPlan.confidence_method:type_name -> cph.aiinfra.foundation.v1.ConfidenceMethod
-	19, // 32: cph.aiinfra.foundation.v1.ExperimentPlan.criteria:type_name -> cph.aiinfra.foundation.v1.MetricCriterion
+	20, // 32: cph.aiinfra.foundation.v1.ExperimentPlan.criteria:type_name -> cph.aiinfra.foundation.v1.MetricCriterion
 	4,  // 33: cph.aiinfra.foundation.v1.ExperimentPlan.target_level:type_name -> cph.aiinfra.foundation.v1.EvidenceLevel
-	34, // [34:34] is the sub-list for method output_type
-	34, // [34:34] is the sub-list for method input_type
-	34, // [34:34] is the sub-list for extension type_name
-	34, // [34:34] is the sub-list for extension extendee
-	0,  // [0:34] is the sub-list for field type_name
+	8,  // 34: cph.aiinfra.foundation.v1.TransferEvidenceCommitment.evidence_kind:type_name -> cph.aiinfra.foundation.v1.TransferEvidenceKind
+	28, // 35: cph.aiinfra.foundation.v1.OwnershipTransferAuthorization.metadata:type_name -> cph.aiinfra.common.v1.RecordMetadata
+	29, // 36: cph.aiinfra.foundation.v1.OwnershipTransferAuthorization.subject_kind:type_name -> cph.aiinfra.common.v1.PrincipalKind
+	24, // 37: cph.aiinfra.foundation.v1.OwnershipTransferAuthorization.old_key_closures:type_name -> cph.aiinfra.foundation.v1.KeyClosure
+	25, // 38: cph.aiinfra.foundation.v1.OwnershipTransferAuthorization.evidence_commitments:type_name -> cph.aiinfra.foundation.v1.TransferEvidenceCommitment
+	26, // 39: cph.aiinfra.foundation.v1.OwnershipTransferAuthorization.old_authorities:type_name -> cph.aiinfra.foundation.v1.TransferAuthority
+	26, // 40: cph.aiinfra.foundation.v1.OwnershipTransferAuthorization.new_authorities:type_name -> cph.aiinfra.foundation.v1.TransferAuthority
+	41, // [41:41] is the sub-list for method output_type
+	41, // [41:41] is the sub-list for method input_type
+	41, // [41:41] is the sub-list for extension type_name
+	41, // [41:41] is the sub-list for extension extendee
+	0,  // [0:41] is the sub-list for field type_name
 }
 
 func init() { file_foundation_v1_foundation_proto_init() }
@@ -2996,8 +3473,8 @@ func file_foundation_v1_foundation_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_foundation_v1_foundation_proto_rawDesc), len(file_foundation_v1_foundation_proto_rawDesc)),
-			NumEnums:      8,
-			NumMessages:   15,
+			NumEnums:      9,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

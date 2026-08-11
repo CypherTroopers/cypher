@@ -275,8 +275,12 @@ func (p KeyLifecycleSigningProjection) CanonicalBytes() ([]byte, error) {
 	if err := validateOptionalInt64("revoked_at_unix_nano", p.RevokedAtUnixNano); err != nil {
 		return nil, err
 	}
-	if p.RevokedAtUnixNano.Present && (p.RevokedAtUnixNano.Value < p.NotBeforeUnixNano || p.RevokedAtUnixNano.Value > p.NotAfterUnixNano) {
-		return nil, fmt.Errorf("%w: revoked_at_unix_nano outside key lifetime", ErrInvalidTimeRange)
+	// A PREACTIVE key must remain immediately cancellable even when its
+	// not_before is in the future. Revocation is an administrative terminal
+	// event, not key use, so its lower bound is Unix epoch rather than
+	// not_before; the upper bound remains the immutable key lifetime.
+	if p.RevokedAtUnixNano.Present && (p.RevokedAtUnixNano.Value < 0 || p.RevokedAtUnixNano.Value > p.NotAfterUnixNano) {
+		return nil, fmt.Errorf("%w: revoked_at_unix_nano outside revocation window", ErrInvalidTimeRange)
 	}
 	if (p.State == 4) != p.RevokedAtUnixNano.Present {
 		return nil, fmt.Errorf("%w: revoked state/timestamp mismatch", ErrInvalidProjectionValue)

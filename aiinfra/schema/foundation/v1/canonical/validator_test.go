@@ -6,6 +6,7 @@ package canonical
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -18,10 +19,38 @@ import (
 
 var versionOne = ccse.Version{Major: 1, Minor: 0}
 
+func TestLegacyCanonicalFixtureDigestsRemainPinned(t *testing.T) {
+	want := [...]string{
+		"a9569e35a3e6dd79a5dcdb646b07a35620ce0690c36f37ce155e85331172fe00",
+		"919746797cfe3f4ed4554ccfc77db7f573f1579c9da46d20912e327d3cc7a89e",
+		"6a9f3328e1abd32511ca310ae95cb65fcb6c236d749bb9d4a522b86fa04fea14",
+		"da25e5404073f2c953fcdf99cb913b965049ac649012ee3df9b652dbdbbc2c2f",
+		"f2e9cf077eb77b6d2cba4fdf71c3d43f8a16b625cfcfe647fa541807c7b22117",
+		"8a0ff7319afc722c669e0d79d683531aa66e06461aa5eb0a820aecd6f5d33178",
+		"25e6ba8c445308ef398b8f69e3f9fb2166b8a85b906d7915a369e344510c9efb",
+		"ad64e9a4725302ddeae2fe0493e92741cc25b815d8f0bdc1d8d70265d7580c20",
+		"3db28eb8e27b476c59aecafb9f013c39e34316729952d62ef49fcbf70a8efe65",
+		"389037341ed3343981787b40d12d6d817c33f481f815b184aba4ccba0f2a6aaf",
+		"05e742c67861a65c11c8ebac14ebbb543d16178c898153702ba0981499490f8c",
+		"3c5311f0218cbc2116df4174f59d49c9865c2ca78dfa8be8f7401dceaeab8252",
+		"1f9817622777013f5a3bddbf4610ef7276c196cbda06593e129f7ef920854f04",
+	}
+	for index, fixture := range validPayloads()[:len(want)] {
+		payload, err := fixture.CanonicalBytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := fmt.Sprintf("%x", sha256.Sum256(payload))
+		if got != want[index] {
+			t.Fatalf("legacy message %d canonical SHA-256=%s, want %s", fixture.MessageTypeID(), got, want[index])
+		}
+	}
+}
+
 func TestValidatorDecodesAndReencodesAllFoundationMessages(t *testing.T) {
 	validator := newTestValidator(t)
 	payloads := validPayloads()
-	if len(payloads) != 13 {
+	if len(payloads) != 14 {
 		t.Fatalf("fixture count = %d", len(payloads))
 	}
 	seen := make(map[uint32]struct{}, len(payloads))
@@ -198,6 +227,28 @@ func TestValidatorRejectsMalformedAndNonCanonicalPayloads(t *testing.T) {
 	}
 }
 
+func TestOwnershipTransferCanonicalDecoderRejectsMissingRequiredEvidence(t *testing.T) {
+	validator := newTestValidator(t)
+	payload, err := validPayloads()[13].CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The last Agent evidence element is kind 6 with a 0x77-filled digest.
+	// Reclassifying it as a second, distinct kind-5 record preserves strict set
+	// ordering and encoding, so rejection must come from the required-category
+	// semantic check rather than malformed bytes.
+	needle := append([]byte{0, 0, 0, 6, 0, 0, 0, 32}, bytes.Repeat([]byte{0x77}, 32)...)
+	offset := bytes.Index(payload, needle)
+	if offset < 0 {
+		t.Fatal("transfer evidence fixture pattern is absent")
+	}
+	mutated := append([]byte(nil), payload...)
+	binary.BigEndian.PutUint32(mutated[offset:offset+4], foundationv1.TransferEvidenceDescendantIdentityClosure)
+	if _, err := validator.Decode(schema.MessageTypeOwnershipTransferAuthorization, versionOne, mutated); !errors.Is(err, ccse.ErrNonCanonicalPayload) || !errors.Is(err, foundationv1.ErrInvalidProjectionValue) {
+		t.Fatalf("missing required transfer evidence error = %v", err)
+	}
+}
+
 func TestMetadataSchemaVersionUsesRegistryProjectionSemantics(t *testing.T) {
 	validator := newTestValidator(t)
 	provider, ok := validPayloads()[0].(foundationv1.ProviderIdentitySigningProjection)
@@ -280,6 +331,49 @@ func TestAllNestedProjectionDecoders(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("observation: %v", err)
 	}
+
+	transfer := validOwnershipTransfer(validMetadata())
+	closureBytes, err := transfer.OldKeyClosures[0].CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ccse.Unmarshal(closureBytes, 512, func(in *ccse.Decoder) error {
+		decoded, decodeErr := decodeKeyClosure(in, validator.nested.keyClosure)
+		if decodeErr == nil && decoded.KeyID != transfer.OldKeyClosures[0].KeyID {
+			return errors.New("key closure value mismatch")
+		}
+		return decodeErr
+	}); err != nil {
+		t.Fatalf("key closure: %v", err)
+	}
+
+	evidenceCommitmentBytes, err := transfer.EvidenceCommitments[0].CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ccse.Unmarshal(evidenceCommitmentBytes, 64, func(in *ccse.Decoder) error {
+		decoded, decodeErr := decodeTransferEvidence(in, validator.nested.transferEvidence)
+		if decodeErr == nil && decoded.EvidenceKind != transfer.EvidenceCommitments[0].EvidenceKind {
+			return errors.New("transfer evidence value mismatch")
+		}
+		return decodeErr
+	}); err != nil {
+		t.Fatalf("transfer evidence: %v", err)
+	}
+
+	authorityBytes, err := transfer.OldAuthorities[0].CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ccse.Unmarshal(authorityBytes, 1536, func(in *ccse.Decoder) error {
+		decoded, decodeErr := decodeTransferAuthority(in, validator.nested.transferAuthority)
+		if decodeErr == nil && decoded.Identity != transfer.OldAuthorities[0].Identity {
+			return errors.New("transfer authority value mismatch")
+		}
+		return decodeErr
+	}); err != nil {
+		t.Fatalf("transfer authority: %v", err)
+	}
 }
 
 func TestValidatorRejectsInvalidBooleanAndNestedSemanticViolation(t *testing.T) {
@@ -358,6 +452,16 @@ func FuzzValidatorDecode(f *testing.F) {
 		}
 		f.Add(fixture.MessageTypeID(), payload)
 	}
+	transfer := validOwnershipTransfer(validMetadata())
+	transfer.EvidenceCommitments = append(transfer.EvidenceCommitments,
+		foundationv1.TransferEvidenceCommitmentSigningProjection{
+			EvidenceKind: foundationv1.TransferEvidenceOldProviderAuthority, CCSERecordDigestSHA256: digest32(0x7f),
+		})
+	transferBytes, err := transfer.CanonicalBytes()
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(transfer.MessageTypeID(), transferBytes)
 	f.Fuzz(func(t *testing.T, messageTypeID uint32, input []byte) {
 		if len(input) > 300000 {
 			t.Skip()

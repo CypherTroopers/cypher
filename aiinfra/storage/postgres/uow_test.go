@@ -4,6 +4,7 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"database/sql"
@@ -18,20 +19,34 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
+	"github.com/cypherium/cypher/aiinfra/schema"
 )
 
 var testDriverSequence atomic.Uint64
 
 type unitDriver struct {
-	mu          sync.Mutex
-	executions  []string
-	replayEntry *ccse.ReplayEntry
-	durable     *DurableResult
-	durableHash [32]byte
-	commits     int
-	rollbacks   int
-	sessionRole string
-	resultError error
+	mu                   sync.Mutex
+	executions           []string
+	executionArgs        [][]driver.NamedValue
+	rowsAffected         map[string]int64
+	queryResponses       map[string]unitQueryResponse
+	directExecErrorQuery string
+	directExecError      error
+	replayEntry          *ccse.ReplayEntry
+	durable              *DurableResult
+	durableHash          [32]byte
+	commits              int
+	rollbacks            int
+	sessionRole          string
+	resultError          error
+	fenceDenied          bool
+	migrationRows        [][]driver.Value
+}
+
+type unitQueryResponse struct {
+	columns []string
+	values  [][]driver.Value
+	err     error
 }
 
 func (driverInstance *unitDriver) Open(string) (driver.Conn, error) {
@@ -50,15 +65,36 @@ func (connection *unitConn) Begin() (driver.Tx, error) {
 func (connection *unitConn) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
 	return &unitTx{driver: connection.driver}, nil
 }
-func (connection *unitConn) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+func (connection *unitConn) ExecContext(_ context.Context, query string, arguments []driver.NamedValue) (driver.Result, error) {
+	query = strings.TrimSpace(query)
 	connection.driver.mu.Lock()
-	connection.driver.executions = append(connection.driver.executions, strings.TrimSpace(query))
+	connection.driver.executions = append(connection.driver.executions, query)
+	connection.driver.executionArgs = append(connection.driver.executionArgs, cloneNamedValues(arguments))
+	directErrorQuery := connection.driver.directExecErrorQuery
+	directError := connection.driver.directExecError
 	resultError := connection.driver.resultError
+	rowCount, overridden := connection.driver.rowsAffected[query]
 	connection.driver.mu.Unlock()
+	if query == directErrorQuery && directError != nil {
+		return nil, directError
+	}
 	if strings.Contains(query, "business.") && resultError != nil {
 		return unitResult{err: resultError}, nil
 	}
+	if overridden {
+		return driver.RowsAffected(rowCount), nil
+	}
 	return driver.RowsAffected(1), nil
+}
+
+func cloneNamedValues(values []driver.NamedValue) []driver.NamedValue {
+	cloned := append([]driver.NamedValue(nil), values...)
+	for index := range cloned {
+		if value, ok := cloned[index].Value.([]byte); ok {
+			cloned[index].Value = bytes.Clone(value)
+		}
+	}
+	return cloned
 }
 
 type unitResult struct{ err error }
@@ -66,17 +102,37 @@ type unitResult struct{ err error }
 func (result unitResult) LastInsertId() (int64, error) { return 0, result.err }
 func (result unitResult) RowsAffected() (int64, error) { return 0, result.err }
 func (connection *unitConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	query = strings.TrimSpace(query)
 	connection.driver.mu.Lock()
 	replayEntry := connection.driver.replayEntry
 	durable := connection.driver.durable
 	durableHash := connection.driver.durableHash
 	sessionRole := connection.driver.sessionRole
+	migrationRows := connection.driver.migrationRows
+	response, hasResponse := connection.driver.queryResponses[query]
 	connection.driver.mu.Unlock()
+	if hasResponse {
+		if response.err != nil {
+			return nil, response.err
+		}
+		return &unitRows{columns: append([]string(nil), response.columns...),
+			values: cloneDriverRows(response.values)}, nil
+	}
 	if strings.Contains(query, "current_setting('session_replication_role')") {
 		if sessionRole == "" {
 			sessionRole = "origin"
 		}
 		return &unitRows{columns: []string{"current_setting"}, values: [][]driver.Value{{sessionRole}}}, nil
+	}
+	if strings.Contains(query, "FROM cph_aiinfra.schema_migration") && strings.Contains(query, "FOR UPDATE SKIP LOCKED") {
+		rows := &unitRows{columns: []string{"version"}}
+		if !connection.driver.fenceDenied {
+			rows.values = [][]driver.Value{{executionFenceVersion}}
+		}
+		return rows, nil
+	}
+	if strings.Contains(query, "FROM cph_aiinfra.schema_migration") && strings.Contains(query, "ORDER BY version") {
+		return &unitRows{columns: []string{"version", "migration_sha256"}, values: migrationRows}, nil
 	}
 	if replayEntry != nil {
 		switch {
@@ -106,6 +162,19 @@ func (connection *unitConn) QueryContext(_ context.Context, query string, _ []dr
 		return &unitRows{columns: []string{"value"}}, nil
 	}
 	return &unitRows{columns: []string{"value"}, values: [][]driver.Value{{int64(1)}}}, nil
+}
+
+func cloneDriverRows(values [][]driver.Value) [][]driver.Value {
+	result := make([][]driver.Value, len(values))
+	for row := range values {
+		result[row] = append([]driver.Value(nil), values[row]...)
+		for column := range result[row] {
+			if value, ok := result[row][column].([]byte); ok {
+				result[row][column] = bytes.Clone(value)
+			}
+		}
+	}
+	return result
 }
 
 type unitTx struct{ driver *unitDriver }
@@ -141,6 +210,11 @@ func (rows *unitRows) Next(destination []driver.Value) error {
 }
 
 func newUnitTransaction(t *testing.T, statements map[string]StatementAccess) (context.Context, atomicTxView, *transactionState, *unitDriver) {
+	return newUnitTransactionForEntry(t, statements, testReplayEntry())
+}
+
+func newUnitTransactionForEntry(t *testing.T, statements map[string]StatementAccess,
+	entry ccse.ReplayEntry) (context.Context, atomicTxView, *transactionState, *unitDriver) {
 	t.Helper()
 	database, driverInstance := newUnitDatabase(t)
 	tx, err := database.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelSerializable})
@@ -149,7 +223,11 @@ func newUnitTransaction(t *testing.T, statements map[string]StatementAccess) (co
 	}
 	t.Cleanup(func() { _ = tx.Rollback() })
 	store := &ReplayStore{db: database, statements: statements}
-	state := &transactionState{store: store, tx: tx, entry: testReplayEntry()}
+	state := &transactionState{store: store, tx: tx, entry: entry}
+	state.scope, err = replayScopeDigest(state.entry)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx := context.WithValue(context.Background(), replayTransactionContextKey{}, replayTransactionContext{store: store, state: state})
 	transaction, ok := Transaction(ctx)
 	if !ok {
@@ -387,7 +465,7 @@ func (store *captureReplayStore) Execute(_ context.Context, entry ccse.ReplayEnt
 
 func verifiedReplayInput(t *testing.T) (ccse.ReplayEntry, ccse.VerifiedRecord) {
 	t.Helper()
-	const messageTypeID uint32 = 65537
+	const messageTypeID uint32 = schema.MessageTypeAuditEvent
 	protocolVersion := ccse.Version{Major: 1}
 	schemaVersion := ccse.Version{Major: 1}
 	issuedAt := time.Unix(1_800_000_000, 0).UTC()
@@ -572,6 +650,44 @@ func TestReplayStoreRejectsBackgroundNestedExecute(t *testing.T) {
 	}
 }
 
+func TestReplayStoreRejectsBackgroundNestedExecuteThroughSecondStore(t *testing.T) {
+	entry, verified := verifiedReplayInput(t)
+	outerDatabase, outerDriver := newUnitDatabase(t)
+	outerDriver.replayEntry = &entry
+	innerDatabase, innerDriver := newUnitDatabase(t)
+	innerDriver.replayEntry = &entry
+	outerStore := &ReplayStore{db: outerDatabase, statements: make(map[string]StatementAccess)}
+	innerStore := &ReplayStore{db: innerDatabase, statements: make(map[string]StatementAccess)}
+
+	outerFailure := errors.New("outer handler failed")
+	decision, err := outerStore.Execute(context.Background(), entry, verified, func(context.Context, ccse.VerifiedRecord) ([32]byte, error) {
+		_, nestedErr := innerStore.Execute(context.Background(), entry, verified, func(context.Context, ccse.VerifiedRecord) ([32]byte, error) {
+			t.Fatal("second store reached nested handler")
+			return [32]byte{}, nil
+		})
+		if !errors.Is(nestedErr, ccse.ErrReplayReentrant) || !errors.Is(nestedErr, ErrUnitOfWorkActive) {
+			t.Fatalf("nested second-store Execute error = %v", nestedErr)
+		}
+		return [32]byte{}, outerFailure
+	})
+	if !errors.Is(err, outerFailure) {
+		t.Fatalf("outer Execute error = %v", err)
+	}
+	if decision != (ccse.ReplayDecision{}) {
+		t.Fatalf("decision = %+v", decision)
+	}
+	outerDriver.mu.Lock()
+	if outerDriver.commits != 0 || outerDriver.rollbacks != 1 {
+		t.Fatalf("outer commits=%d rollbacks=%d", outerDriver.commits, outerDriver.rollbacks)
+	}
+	outerDriver.mu.Unlock()
+	innerDriver.mu.Lock()
+	defer innerDriver.mu.Unlock()
+	if innerDriver.commits != 0 || innerDriver.rollbacks != 0 || len(innerDriver.executions) != 0 {
+		t.Fatalf("nested store touched database: commits=%d rollbacks=%d executions=%d", innerDriver.commits, innerDriver.rollbacks, len(innerDriver.executions))
+	}
+}
+
 func TestReplayStoreSingleFlightGuardIsGoroutineSafe(t *testing.T) {
 	entry, verified := verifiedReplayInput(t)
 	database, driverInstance := newUnitDatabase(t)
@@ -605,6 +721,26 @@ func TestReplayStoreSingleFlightGuardIsGoroutineSafe(t *testing.T) {
 	close(release)
 	if err := <-finished; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReplayStoreRejectsHeldDatabaseExecutionFence(t *testing.T) {
+	entry, verified := verifiedReplayInput(t)
+	database, driverInstance := newUnitDatabase(t)
+	driverInstance.replayEntry = &entry
+	driverInstance.fenceDenied = true
+	store := &ReplayStore{db: database, statements: make(map[string]StatementAccess)}
+	_, err := store.Execute(context.Background(), entry, verified, func(context.Context, ccse.VerifiedRecord) ([32]byte, error) {
+		t.Fatal("held database fence reached handler")
+		return [32]byte{}, nil
+	})
+	if !errors.Is(err, ErrUnitOfWorkActive) {
+		t.Fatalf("Execute error = %v, want %v", err, ErrUnitOfWorkActive)
+	}
+	driverInstance.mu.Lock()
+	defer driverInstance.mu.Unlock()
+	if driverInstance.commits != 0 || driverInstance.rollbacks != 1 {
+		t.Fatalf("commits=%d rollbacks=%d", driverInstance.commits, driverInstance.rollbacks)
 	}
 }
 

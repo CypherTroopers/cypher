@@ -34,6 +34,7 @@ func TestImplementedProjectionFieldCountAndOrderMatchRegistry(t *testing.T) {
 		AuditEventSigningProjection{},
 		EvidenceRecordSigningProjection{},
 		ExperimentPlanSigningProjection{},
+		OwnershipTransferAuthorizationSigningProjection{},
 	}
 	for _, projection := range projections {
 		message, ok := registry.LookupMessage(projection.MessageTypeID())
@@ -69,10 +70,13 @@ func TestNestedProjectionFieldCountAndOrderMatchRegistry(t *testing.T) {
 		t.Fatal(err)
 	}
 	projections := map[string]interface{ SigningFieldNames() []string }{
-		"cph.aiinfra.common.v1.SchemaVersion":         SchemaVersionSigningProjection{},
-		"cph.aiinfra.common.v1.RecordMetadata":        RecordMetadataSigningProjection{},
-		"cph.aiinfra.foundation.v1.MetricCriterion":   MetricCriterionSigningProjection{},
-		"cph.aiinfra.foundation.v1.MetricObservation": MetricObservationSigningProjection{},
+		"cph.aiinfra.common.v1.SchemaVersion":                  SchemaVersionSigningProjection{},
+		"cph.aiinfra.common.v1.RecordMetadata":                 RecordMetadataSigningProjection{},
+		"cph.aiinfra.foundation.v1.MetricCriterion":            MetricCriterionSigningProjection{},
+		"cph.aiinfra.foundation.v1.MetricObservation":          MetricObservationSigningProjection{},
+		"cph.aiinfra.foundation.v1.KeyClosure":                 KeyClosureSigningProjection{},
+		"cph.aiinfra.foundation.v1.TransferEvidenceCommitment": TransferEvidenceCommitmentSigningProjection{},
+		"cph.aiinfra.foundation.v1.TransferAuthority":          TransferAuthoritySigningProjection{},
 	}
 	if len(projections) != len(registry.Structures) {
 		t.Fatalf("implemented structures=%d registry structures=%d", len(projections), len(registry.Structures))

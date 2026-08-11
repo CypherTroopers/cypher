@@ -26,7 +26,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// SignedFoundationRecord is the transport wrapper for the thirteen foundation
+// SignedFoundationRecord is the transport wrapper for the fourteen foundation
 // authorization payloads. The selected oneof arm is the sole source of the
 // message type identifier; the wire format deliberately carries no second,
 // caller-controlled numeric type ID.
@@ -53,6 +53,7 @@ type SignedFoundationRecord struct {
 	//	*SignedFoundationRecord_AuditEvent
 	//	*SignedFoundationRecord_EvidenceRecord
 	//	*SignedFoundationRecord_ExperimentPlan
+	//	*SignedFoundationRecord_OwnershipTransferAuthorization
 	Payload       isSignedFoundationRecord_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -226,6 +227,15 @@ func (x *SignedFoundationRecord) GetExperimentPlan() *v11.ExperimentPlan {
 	return nil
 }
 
+func (x *SignedFoundationRecord) GetOwnershipTransferAuthorization() *v11.OwnershipTransferAuthorization {
+	if x != nil {
+		if x, ok := x.Payload.(*SignedFoundationRecord_OwnershipTransferAuthorization); ok {
+			return x.OwnershipTransferAuthorization
+		}
+	}
+	return nil
+}
+
 type isSignedFoundationRecord_Payload interface {
 	isSignedFoundationRecord_Payload()
 }
@@ -282,6 +292,10 @@ type SignedFoundationRecord_ExperimentPlan struct {
 	ExperimentPlan *v11.ExperimentPlan `protobuf:"bytes,28,opt,name=experiment_plan,json=experimentPlan,proto3,oneof"`
 }
 
+type SignedFoundationRecord_OwnershipTransferAuthorization struct {
+	OwnershipTransferAuthorization *v11.OwnershipTransferAuthorization `protobuf:"bytes,29,opt,name=ownership_transfer_authorization,json=ownershipTransferAuthorization,proto3,oneof"`
+}
+
 func (*SignedFoundationRecord_ProviderIdentity) isSignedFoundationRecord_Payload() {}
 
 func (*SignedFoundationRecord_AgentIdentity) isSignedFoundationRecord_Payload() {}
@@ -308,12 +322,13 @@ func (*SignedFoundationRecord_EvidenceRecord) isSignedFoundationRecord_Payload()
 
 func (*SignedFoundationRecord_ExperimentPlan) isSignedFoundationRecord_Payload() {}
 
+func (*SignedFoundationRecord_OwnershipTransferAuthorization) isSignedFoundationRecord_Payload() {}
+
 var File_transport_v1_foundation_transport_proto protoreflect.FileDescriptor
 
 const file_transport_v1_foundation_transport_proto_rawDesc = "" +
 	"\n" +
-	"'transport/v1/foundation_transport.proto\x12\x18cph.aiinfra.transport.v1\x1a\x16common/v1/common.proto\x1a\x1efoundation/v1/foundation.proto\"\x85\n" +
-	"\n" +
+	"'transport/v1/foundation_transport.proto\x12\x18cph.aiinfra.transport.v1\x1a\x16common/v1/common.proto\x1a\x1efoundation/v1/foundation.proto\"\x8d\v\n" +
 	"\x16SignedFoundationRecord\x12T\n" +
 	"\x0esigning_domain\x18\x01 \x01(\v2-.cph.aiinfra.common.v1.TransportSigningDomainR\rsigningDomain\x12D\n" +
 	"\benvelope\x18\x02 \x01(\v2(.cph.aiinfra.common.v1.TransportEnvelopeR\benvelope\x12Z\n" +
@@ -330,7 +345,8 @@ const file_transport_v1_foundation_transport_proto_rawDesc = "" +
 	"\vaudit_event\x18\x1a \x01(\v2%.cph.aiinfra.foundation.v1.AuditEventH\x00R\n" +
 	"auditEvent\x12T\n" +
 	"\x0fevidence_record\x18\x1b \x01(\v2).cph.aiinfra.foundation.v1.EvidenceRecordH\x00R\x0eevidenceRecord\x12T\n" +
-	"\x0fexperiment_plan\x18\x1c \x01(\v2).cph.aiinfra.foundation.v1.ExperimentPlanH\x00R\x0eexperimentPlanB\t\n" +
+	"\x0fexperiment_plan\x18\x1c \x01(\v2).cph.aiinfra.foundation.v1.ExperimentPlanH\x00R\x0eexperimentPlan\x12\x85\x01\n" +
+	" ownership_transfer_authorization\x18\x1d \x01(\v29.cph.aiinfra.foundation.v1.OwnershipTransferAuthorizationH\x00R\x1eownershipTransferAuthorizationB\t\n" +
 	"\apayloadJ\x04\b\x03\x10\x10BEZCgithub.com/cypherium/cypher/aiinfra/schema/transport/v1;transportv1b\x06proto3"
 
 var (
@@ -347,22 +363,23 @@ func file_transport_v1_foundation_transport_proto_rawDescGZIP() []byte {
 
 var file_transport_v1_foundation_transport_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_transport_v1_foundation_transport_proto_goTypes = []any{
-	(*SignedFoundationRecord)(nil),    // 0: cph.aiinfra.transport.v1.SignedFoundationRecord
-	(*v1.TransportSigningDomain)(nil), // 1: cph.aiinfra.common.v1.TransportSigningDomain
-	(*v1.TransportEnvelope)(nil),      // 2: cph.aiinfra.common.v1.TransportEnvelope
-	(*v11.ProviderIdentity)(nil),      // 3: cph.aiinfra.foundation.v1.ProviderIdentity
-	(*v11.AgentIdentity)(nil),         // 4: cph.aiinfra.foundation.v1.AgentIdentity
-	(*v11.HostIdentity)(nil),          // 5: cph.aiinfra.foundation.v1.HostIdentity
-	(*v11.DeviceIdentity)(nil),        // 6: cph.aiinfra.foundation.v1.DeviceIdentity
-	(*v11.MinerIdentity)(nil),         // 7: cph.aiinfra.foundation.v1.MinerIdentity
-	(*v11.RunnerIdentity)(nil),        // 8: cph.aiinfra.foundation.v1.RunnerIdentity
-	(*v11.BuyerIdentity)(nil),         // 9: cph.aiinfra.foundation.v1.BuyerIdentity
-	(*v11.ServiceIdentity)(nil),       // 10: cph.aiinfra.foundation.v1.ServiceIdentity
-	(*v11.KeyLifecycle)(nil),          // 11: cph.aiinfra.foundation.v1.KeyLifecycle
-	(*v11.PolicyBundle)(nil),          // 12: cph.aiinfra.foundation.v1.PolicyBundle
-	(*v11.AuditEvent)(nil),            // 13: cph.aiinfra.foundation.v1.AuditEvent
-	(*v11.EvidenceRecord)(nil),        // 14: cph.aiinfra.foundation.v1.EvidenceRecord
-	(*v11.ExperimentPlan)(nil),        // 15: cph.aiinfra.foundation.v1.ExperimentPlan
+	(*SignedFoundationRecord)(nil),             // 0: cph.aiinfra.transport.v1.SignedFoundationRecord
+	(*v1.TransportSigningDomain)(nil),          // 1: cph.aiinfra.common.v1.TransportSigningDomain
+	(*v1.TransportEnvelope)(nil),               // 2: cph.aiinfra.common.v1.TransportEnvelope
+	(*v11.ProviderIdentity)(nil),               // 3: cph.aiinfra.foundation.v1.ProviderIdentity
+	(*v11.AgentIdentity)(nil),                  // 4: cph.aiinfra.foundation.v1.AgentIdentity
+	(*v11.HostIdentity)(nil),                   // 5: cph.aiinfra.foundation.v1.HostIdentity
+	(*v11.DeviceIdentity)(nil),                 // 6: cph.aiinfra.foundation.v1.DeviceIdentity
+	(*v11.MinerIdentity)(nil),                  // 7: cph.aiinfra.foundation.v1.MinerIdentity
+	(*v11.RunnerIdentity)(nil),                 // 8: cph.aiinfra.foundation.v1.RunnerIdentity
+	(*v11.BuyerIdentity)(nil),                  // 9: cph.aiinfra.foundation.v1.BuyerIdentity
+	(*v11.ServiceIdentity)(nil),                // 10: cph.aiinfra.foundation.v1.ServiceIdentity
+	(*v11.KeyLifecycle)(nil),                   // 11: cph.aiinfra.foundation.v1.KeyLifecycle
+	(*v11.PolicyBundle)(nil),                   // 12: cph.aiinfra.foundation.v1.PolicyBundle
+	(*v11.AuditEvent)(nil),                     // 13: cph.aiinfra.foundation.v1.AuditEvent
+	(*v11.EvidenceRecord)(nil),                 // 14: cph.aiinfra.foundation.v1.EvidenceRecord
+	(*v11.ExperimentPlan)(nil),                 // 15: cph.aiinfra.foundation.v1.ExperimentPlan
+	(*v11.OwnershipTransferAuthorization)(nil), // 16: cph.aiinfra.foundation.v1.OwnershipTransferAuthorization
 }
 var file_transport_v1_foundation_transport_proto_depIdxs = []int32{
 	1,  // 0: cph.aiinfra.transport.v1.SignedFoundationRecord.signing_domain:type_name -> cph.aiinfra.common.v1.TransportSigningDomain
@@ -380,11 +397,12 @@ var file_transport_v1_foundation_transport_proto_depIdxs = []int32{
 	13, // 12: cph.aiinfra.transport.v1.SignedFoundationRecord.audit_event:type_name -> cph.aiinfra.foundation.v1.AuditEvent
 	14, // 13: cph.aiinfra.transport.v1.SignedFoundationRecord.evidence_record:type_name -> cph.aiinfra.foundation.v1.EvidenceRecord
 	15, // 14: cph.aiinfra.transport.v1.SignedFoundationRecord.experiment_plan:type_name -> cph.aiinfra.foundation.v1.ExperimentPlan
-	15, // [15:15] is the sub-list for method output_type
-	15, // [15:15] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	16, // 15: cph.aiinfra.transport.v1.SignedFoundationRecord.ownership_transfer_authorization:type_name -> cph.aiinfra.foundation.v1.OwnershipTransferAuthorization
+	16, // [16:16] is the sub-list for method output_type
+	16, // [16:16] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_transport_v1_foundation_transport_proto_init() }
@@ -406,6 +424,7 @@ func file_transport_v1_foundation_transport_proto_init() {
 		(*SignedFoundationRecord_AuditEvent)(nil),
 		(*SignedFoundationRecord_EvidenceRecord)(nil),
 		(*SignedFoundationRecord_ExperimentPlan)(nil),
+		(*SignedFoundationRecord_OwnershipTransferAuthorization)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

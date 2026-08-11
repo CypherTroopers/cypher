@@ -112,7 +112,22 @@ func TestMigrationFunctionBodiesAreDerivedFromSealedSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
+		"assert_audit_event_uow",
+		"assert_audit_head_event",
+		"assert_audit_uow_member",
+		"assert_authoritative_uow",
+		"assert_business_idempotency_consistency",
+		"assert_canonical_state_consistency",
 		"assert_completion_coupling",
+		"assert_durable_evidence_assertion",
+		"assert_durable_pending_consistency",
+		"assert_durable_pending_evidence_consistency",
+		"assert_global_identifier_consistency",
+		"enforce_audit_head_change",
+		"enforce_business_idempotency_head_change",
+		"enforce_canonical_state_head_change",
+		"enforce_durable_pending_head_change",
+		"enforce_global_identifier_head_change",
 		"enforce_replay_head_monotonic",
 		"reject_immutable_change",
 		"stamp_unit_of_work_transaction",
