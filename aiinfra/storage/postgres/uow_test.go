@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
 	"errors"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/schema"
+	foundationv1 "github.com/cypherium/cypher/aiinfra/schema/foundation/v1"
 )
 
 var testDriverSequence atomic.Uint64
@@ -27,6 +29,7 @@ var testDriverSequence atomic.Uint64
 type unitDriver struct {
 	mu                   sync.Mutex
 	executions           []string
+	queries              []string
 	executionArgs        [][]driver.NamedValue
 	rowsAffected         map[string]int64
 	queryResponses       map[string]unitQueryResponse
@@ -36,11 +39,14 @@ type unitDriver struct {
 	durable              *DurableResult
 	durableHash          [32]byte
 	commits              int
+	commitAttempts       int
+	commitErrors         []error
 	rollbacks            int
 	sessionRole          string
 	resultError          error
 	fenceDenied          bool
 	migrationRows        [][]driver.Value
+	outboxClaimRows      [][]driver.Value
 }
 
 type unitQueryResponse struct {
@@ -104,11 +110,13 @@ func (result unitResult) RowsAffected() (int64, error) { return 0, result.err }
 func (connection *unitConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	query = strings.TrimSpace(query)
 	connection.driver.mu.Lock()
+	connection.driver.queries = append(connection.driver.queries, query)
 	replayEntry := connection.driver.replayEntry
 	durable := connection.driver.durable
 	durableHash := connection.driver.durableHash
 	sessionRole := connection.driver.sessionRole
 	migrationRows := connection.driver.migrationRows
+	outboxClaimRows := cloneDriverRows(connection.driver.outboxClaimRows)
 	response, hasResponse := connection.driver.queryResponses[query]
 	connection.driver.mu.Unlock()
 	if hasResponse {
@@ -133,6 +141,12 @@ func (connection *unitConn) QueryContext(_ context.Context, query string, _ []dr
 	}
 	if strings.Contains(query, "FROM cph_aiinfra.schema_migration") && strings.Contains(query, "ORDER BY version") {
 		return &unitRows{columns: []string{"version", "migration_sha256"}, values: migrationRows}, nil
+	}
+	if strings.Contains(query, "FROM cph_aiinfra.claim_outbox_delivery($1, $2, $3, $4)") {
+		return &unitRows{columns: []string{
+			"event_id", "destination", "deduplication_key", "content_type",
+			"payload", "payload_digest", "attempt_count",
+		}, values: outboxClaimRows}, nil
 	}
 	if replayEntry != nil {
 		switch {
@@ -181,6 +195,13 @@ type unitTx struct{ driver *unitDriver }
 
 func (transaction *unitTx) Commit() error {
 	transaction.driver.mu.Lock()
+	transaction.driver.commitAttempts++
+	if len(transaction.driver.commitErrors) != 0 {
+		err := transaction.driver.commitErrors[0]
+		transaction.driver.commitErrors = transaction.driver.commitErrors[1:]
+		transaction.driver.mu.Unlock()
+		return err
+	}
 	transaction.driver.commits++
 	transaction.driver.mu.Unlock()
 	return nil
@@ -298,6 +319,175 @@ func TestUnitOfWorkPersistsEveryOutboxIntentBeforeSealing(t *testing.T) {
 	defer driverInstance.mu.Unlock()
 	if len(driverInstance.executions) != 3 {
 		t.Fatalf("execution count = %d, want durable result + 2 outbox rows", len(driverInstance.executions))
+	}
+}
+
+func TestOutboxDispatcherPublishesOnlyAfterClaimCommitAndAcknowledges(t *testing.T) {
+	database, driverInstance := newUnitDatabase(t)
+	payload := []byte("outbox-event")
+	digest := sha256.Sum256(payload)
+	eventID := [ccse.MessageIDSize]byte{1, 2, 3}
+	driverInstance.outboxClaimRows = [][]driver.Value{{
+		eventID[:], "cph.test.destination", "logical-effect-1",
+		"application/cph.event", payload, digest[:], int64(0),
+	}}
+	published := 0
+	dispatcher := &OutboxDispatcher{
+		db: database, workerDigest: outboxWorkerDigest("worker-1"),
+		publisher: OutboxPublishFunc(func(_ context.Context, publication OutboxPublication) error {
+			driverInstance.mu.Lock()
+			commitsBeforePublish := driverInstance.commits
+			driverInstance.mu.Unlock()
+			if commitsBeforePublish != 1 {
+				t.Fatalf("claim commits before publish=%d, want 1", commitsBeforePublish)
+			}
+			published++
+			if publication.EventID != eventID || publication.Attempt != 1 ||
+				publication.Destination != "cph.test.destination" ||
+				publication.DeduplicationKey != "logical-effect-1" ||
+				!bytes.Equal(publication.Payload, payload) {
+				t.Fatalf("publication=%+v", publication)
+			}
+			publication.Payload[0] ^= 1
+			return nil
+		}),
+		config: outboxDispatcherConfig{
+			batchSize: 1, lease: time.Second,
+			retryBackoff: time.Millisecond, retryMax: time.Second,
+		},
+	}
+	report, err := dispatcher.DispatchBatch(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report != (OutboxDispatchReport{Claimed: 1, Delivered: 1}) || published != 1 {
+		t.Fatalf("report=%+v published=%d", report, published)
+	}
+	if string(payload) != "outbox-event" {
+		t.Fatal("publisher mutated driver-owned payload")
+	}
+	driverInstance.mu.Lock()
+	defer driverInstance.mu.Unlock()
+	if driverInstance.commits != 2 {
+		t.Fatalf("commits=%d, want claim + acknowledgement", driverInstance.commits)
+	}
+	executions := strings.Join(append(append([]string(nil), driverInstance.executions...), driverInstance.queries...), "\n")
+	if !strings.Contains(executions, "acknowledge_outbox_delivery") {
+		t.Fatalf("outbox executions=%s", executions)
+	}
+}
+
+func TestOutboxDispatcherSchedulesFailedPublicationForRedelivery(t *testing.T) {
+	database, driverInstance := newUnitDatabase(t)
+	payload := []byte("retry-event")
+	digest := sha256.Sum256(payload)
+	driverInstance.outboxClaimRows = [][]driver.Value{{
+		[]byte{9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+		"cph.test.destination", "logical-effect-retry", "application/cph.event",
+		payload, digest[:], int64(2),
+	}}
+	publishErr := errors.New("remote temporarily unavailable")
+	dispatcher := &OutboxDispatcher{
+		db: database, workerDigest: outboxWorkerDigest("worker-retry"),
+		publisher: OutboxPublishFunc(func(context.Context, OutboxPublication) error {
+			return publishErr
+		}),
+		config: outboxDispatcherConfig{
+			batchSize: 1, lease: time.Second,
+			retryBackoff: 10 * time.Millisecond, retryMax: time.Second,
+		},
+	}
+	report, err := dispatcher.DispatchBatch(context.Background())
+	if !errors.Is(err, publishErr) {
+		t.Fatalf("DispatchBatch error=%v", err)
+	}
+	if report != (OutboxDispatchReport{Claimed: 1, Failed: 1}) {
+		t.Fatalf("report=%+v", report)
+	}
+	driverInstance.mu.Lock()
+	defer driverInstance.mu.Unlock()
+	executions := strings.Join(append(append([]string(nil), driverInstance.executions...), driverInstance.queries...), "\n")
+	if !strings.Contains(executions, "reject_outbox_delivery") {
+		t.Fatalf("failed delivery was not durably rescheduled: %s", executions)
+	}
+}
+
+func TestOutboxDispatcherMapsDatabaseLeaseFenceFailure(t *testing.T) {
+	database, driverInstance := newUnitDatabase(t)
+	payload := []byte("lease-fence-event")
+	digest := sha256.Sum256(payload)
+	driverInstance.outboxClaimRows = [][]driver.Value{{
+		[]byte{8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+		"cph.test.destination", "logical-effect-fence", "application/cph.event",
+		payload, digest[:], int64(0),
+	}}
+	acknowledgeSQL := strings.TrimSpace(`
+			SELECT cph_aiinfra.acknowledge_outbox_delivery($1, $2, $3)`)
+	driverInstance.queryResponses = map[string]unitQueryResponse{
+		acknowledgeSQL: {err: unitSQLStateError{code: "55000"}},
+	}
+	dispatcher := &OutboxDispatcher{
+		db: database, workerDigest: outboxWorkerDigest("worker-fenced"),
+		publisher: OutboxPublishFunc(func(context.Context, OutboxPublication) error { return nil }),
+		config: outboxDispatcherConfig{
+			batchSize: 1, lease: time.Second,
+			retryBackoff: time.Millisecond, retryMax: time.Second,
+		},
+	}
+	report, err := dispatcher.DispatchBatch(context.Background())
+	if !errors.Is(err, ErrOutboxLeaseLost) ||
+		report != (OutboxDispatchReport{Claimed: 1}) {
+		t.Fatalf("report=%+v error=%v, want lost lease", report, err)
+	}
+}
+
+func TestOutboxRetryDelayIsBounded(t *testing.T) {
+	for _, test := range []struct {
+		attempt uint64
+		want    time.Duration
+	}{
+		{1, time.Second}, {2, 2 * time.Second}, {5, 16 * time.Second},
+		{63, time.Minute}, {^uint64(0), time.Minute},
+	} {
+		if got := outboxRetryDelay(test.attempt, time.Second, time.Minute); got != test.want {
+			t.Fatalf("attempt=%d delay=%s, want %s", test.attempt, got, test.want)
+		}
+	}
+}
+
+func TestValidateOutboxClaimAcceptsExactAggregatePayloadLimit(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		size    int
+		wantErr bool
+	}{
+		{"exact maximum", maxDurablePayloadBytes, false},
+		{"one byte over", maxDurablePayloadBytes + 1, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload := make([]byte, test.size)
+			digest := sha256.Sum256(payload)
+			claim := outboxClaim{
+				destination: "cph.test", deduplicationKey: "payload-boundary",
+				contentType: "application/cph.event", payload: payload,
+			}
+			err := validateOutboxClaim(make([]byte, ccse.MessageIDSize), digest[:], 0, &claim)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateOutboxClaim error=%v want_error=%t", err, test.wantErr)
+			}
+		})
+	}
+}
+
+type largeOutboxPublishError struct{ size int }
+
+func (err largeOutboxPublishError) Error() string { return strings.Repeat("x", err.size) }
+
+func TestOutboxPublishErrorDigestIsBounded(t *testing.T) {
+	exact := outboxPublishErrorDigest(largeOutboxPublishError{size: maxOutboxPublishErrorBytes})
+	over := outboxPublishErrorDigest(largeOutboxPublishError{size: maxOutboxPublishErrorBytes + (4 << 20)})
+	if exact != over {
+		t.Fatal("error digest did not cap publisher-controlled text")
 	}
 }
 
@@ -465,7 +655,42 @@ func (store *captureReplayStore) Execute(_ context.Context, entry ccse.ReplayEnt
 
 func verifiedReplayInput(t *testing.T) (ccse.ReplayEntry, ccse.VerifiedRecord) {
 	t.Helper()
-	const messageTypeID uint32 = schema.MessageTypeAuditEvent
+	return verifiedReplayInputWithPayload(t, schema.MessageTypeEvidenceRecord, []byte{0, 0, 0, 1})
+}
+
+func verifiedAuditReplayInput(t *testing.T, eventID string) (ccse.ReplayEntry, ccse.VerifiedRecord) {
+	return verifiedAuditReplayInputWithCause(t, eventID, "test")
+}
+
+func verifiedAuditReplayInputWithCause(t *testing.T, eventID,
+	cause string) (ccse.ReplayEntry, ccse.VerifiedRecord) {
+	t.Helper()
+	issuedAt := time.Unix(1_800_000_000, 0).UTC().UnixNano()
+	policy := [sha256.Size]byte{1}
+	projection := foundationv1.AuditEventSigningProjection{
+		Metadata: foundationv1.RecordMetadataSigningProjection{
+			SchemaVersion: foundationv1.SchemaVersionSigningProjection{Major: 1},
+			RecordID:      eventID, CreatedAtUnixNano: issuedAt, IntegrityDigest: [sha256.Size]byte{2},
+			HomeRegion: "test-region", WriterEpoch: 1, StateVersion: 1,
+			IdempotencyKey: [ccse.MessageIDSize]byte{3}, PolicyDigestsSHA256: [][sha256.Size]byte{policy},
+		},
+		AuditEventID: eventID, EventType: "CanonicalStorageTest", ActorIdentity: "test-actor",
+		ActorKeyID: "test-actor-key", SubjectIDs: []string{"test-subject"}, CauseCode: cause,
+		CorrelationID: [ccse.MessageIDSize]byte{2}, OccurredAtUnixNano: issuedAt, Outcome: 1,
+		AppliedPolicyDigestsSHA256: [][sha256.Size]byte{policy},
+		EvidenceDigestsSHA256:      [][sha256.Size]byte{{4}},
+		PreviousEventDigestSHA256:  [sha256.Size]byte{1}, AuditSequence: 1,
+	}
+	payload, err := projection.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return verifiedReplayInputWithPayload(t, schema.MessageTypeAuditEvent, payload)
+}
+
+func verifiedReplayInputWithPayload(t *testing.T, messageTypeID uint32,
+	payload []byte) (ccse.ReplayEntry, ccse.VerifiedRecord) {
+	t.Helper()
 	protocolVersion := ccse.Version{Major: 1}
 	schemaVersion := ccse.Version{Major: 1}
 	issuedAt := time.Unix(1_800_000_000, 0).UTC()
@@ -507,7 +732,7 @@ func verifiedReplayInput(t *testing.T) (ccse.ReplayEntry, ccse.VerifiedRecord) {
 		SignatureAlgorithm: domain.SignatureAlgorithm,
 		SignatureKeyID:     domain.SignatureKeyID,
 	}
-	record, err := ccse.NewRecord(messageTypeID, schemaVersion, domain, envelope, []byte{0, 0, 0, 1})
+	record, err := ccse.NewRecord(messageTypeID, schemaVersion, domain, envelope, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,12 +816,83 @@ func TestReplayStoreExecuteCommitsOnlyACompletedUnitOfWork(t *testing.T) {
 		"ccse_durable_result",
 		"ccse_replay_inbox",
 		"highest_sequence",
+		"SET CONSTRAINTS ALL IMMEDIATE",
 	}
 	joined := strings.Join(driverInstance.executions, "\n")
 	for _, fragment := range wantFragments {
 		if !strings.Contains(joined, fragment) {
 			t.Fatalf("execution log lacks %q: %s", fragment, joined)
 		}
+	}
+}
+
+type unitSQLStateError struct {
+	code string
+}
+
+func (err unitSQLStateError) Error() string    { return "test SQLSTATE " + err.code }
+func (err unitSQLStateError) SQLState() string { return err.code }
+
+func TestReplayStoreRetriesOnlySerializationFailure(t *testing.T) {
+	entry, verified := verifiedReplayInput(t)
+	database, driverInstance := newUnitDatabase(t)
+	driverInstance.replayEntry = &entry
+	driverInstance.commitErrors = []error{unitSQLStateError{code: "40001"}}
+	store := &ReplayStore{
+		db: database, statements: make(map[string]StatementAccess),
+		serializationAttempts: 3, serializationBackoff: time.Nanosecond,
+		serializationMaxDelay: time.Nanosecond,
+	}
+	handlerCalls := 0
+	decision, err := store.Execute(context.Background(), entry, verified,
+		func(ctx context.Context, _ ccse.VerifiedRecord) ([32]byte, error) {
+			handlerCalls++
+			transaction, ok := Transaction(ctx)
+			if !ok {
+				return [32]byte{}, ErrTransactionRequired
+			}
+			return transaction.Complete(ctx, DurableCompletion{
+				ContentType: "application/cph.test", Payload: []byte("retry-result"),
+				ExternalEffects: NoExternalEffects,
+			})
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Status != ccse.ReplayApplied || handlerCalls != 2 {
+		t.Fatalf("decision=%+v handler_calls=%d", decision, handlerCalls)
+	}
+	driverInstance.mu.Lock()
+	defer driverInstance.mu.Unlock()
+	if driverInstance.commitAttempts != 2 || driverInstance.commits != 1 {
+		t.Fatalf("commit_attempts=%d commits=%d", driverInstance.commitAttempts, driverInstance.commits)
+	}
+}
+
+func TestReplayStoreDoesNotRetryNonSerializationFailure(t *testing.T) {
+	entry, verified := verifiedReplayInput(t)
+	database, driverInstance := newUnitDatabase(t)
+	driverInstance.replayEntry = &entry
+	driverInstance.commitErrors = []error{unitSQLStateError{code: "23505"}}
+	store := &ReplayStore{
+		db: database, statements: make(map[string]StatementAccess),
+		serializationAttempts: 3, serializationBackoff: time.Nanosecond,
+		serializationMaxDelay: time.Nanosecond,
+	}
+	handlerCalls := 0
+	_, err := store.Execute(context.Background(), entry, verified,
+		func(ctx context.Context, _ ccse.VerifiedRecord) ([32]byte, error) {
+			handlerCalls++
+			transaction, ok := Transaction(ctx)
+			if !ok {
+				return [32]byte{}, ErrTransactionRequired
+			}
+			return transaction.Complete(ctx, DurableCompletion{
+				ContentType: "application/cph.test", ExternalEffects: NoExternalEffects,
+			})
+		})
+	if err == nil || handlerCalls != 1 {
+		t.Fatalf("error=%v handler_calls=%d", err, handlerCalls)
 	}
 }
 

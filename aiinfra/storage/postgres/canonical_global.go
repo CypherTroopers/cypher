@@ -62,7 +62,7 @@ const selectGlobalHeadForUpdateSQL = `
 // use a one-row insert/CAS plus immutable history; assertions lock and compare
 // the exact authoritative row without manufacturing an update.
 func (uow *CanonicalUOW) ApplyGlobalClaims(ctx context.Context, mutation GlobalClaimMutation) error {
-	state, err := uow.lock(ctx)
+	state, err := uow.lockForWrite(ctx)
 	if err != nil {
 		return err
 	}

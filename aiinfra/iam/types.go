@@ -226,6 +226,12 @@ type ResolvedKeySnapshot struct {
 	RevokedAtUnixNano               int64
 	AllowedMessageTypeIDs           []uint32
 	AuthorizationPolicyDigestSHA256 [32]byte
+	// MaterialStateVersion and MaterialSnapshotDigest bind the immutable key
+	// material row used by the composed authorization snapshot. Governance and
+	// storage adapters must assert this third row together with lifecycle and
+	// identity; they must not infer the digest from public-key bytes.
+	MaterialStateVersion   uint64
+	MaterialSnapshotDigest [32]byte
 	// SnapshotDigest is a domain-separated digest of the normalized v1
 	// KeyLifecycle canonical payload. Consumers bind it with StateVersion and
 	// WriterEpoch in their commit-time snapshot precondition.
@@ -495,28 +501,35 @@ func (authorization VerifiedAuthorization) SourceRecord() (ccse.Record, bool) {
 // valid only when these comparisons and the mutation occur atomically with the
 // replay result and audit append.
 type CASIntent struct {
-	Entity                    EntityRef
-	ExpectedAbsent            bool
-	ExpectedStateVersion      uint64
-	ExpectedEntityWriterEpoch uint64
-	AuthorizedWriterEpoch     uint64
-	ConsumeChallenge          bool
-	Challenge                 [32]byte
-	ChallengeEvidenceDigest   [32]byte
-	WriterEvidenceDigest      [32]byte
-	Dependencies              []SnapshotPrecondition
-	PredecessorIndexMode      PredecessorIndexMode
-	RotationPredecessorKeyID  string
-	TransferEvidenceDigest    [32]byte
-	EnrollmentEvidenceDigest  [32]byte
-	AuthorizationDigest       [32]byte
-	PrincipalIndex            PrincipalIndexIntent
-	IdentifierClaims          []globalid.Claim
-	ExpectedSubjectAbsent     bool
-	SubjectKind               uint32
-	SubjectIdentity           string
-	SubjectKeySetDigest       [32]byte
-	IdempotencyClaims         []idempotency.Claim
+	Entity                     EntityRef
+	ExpectedAbsent             bool
+	ExpectedStateVersion       uint64
+	ExpectedEntityWriterEpoch  uint64
+	AuthorizedWriterEpoch      uint64
+	AuthorizedWriterIdentity   string
+	AuthorizedWriterHomeRegion string
+	ConsumeChallenge           bool
+	Challenge                  [32]byte
+	ChallengeEvidenceDigest    [32]byte
+	WriterEvidenceDigest       [32]byte
+	Dependencies               []SnapshotPrecondition
+	PredecessorIndexMode       PredecessorIndexMode
+	RotationPredecessorKeyID   string
+	TransferEvidenceDigest     [32]byte
+	EnrollmentEvidenceDigest   [32]byte
+	AuthorizationDigest        [32]byte
+	PrincipalIndex             PrincipalIndexIntent
+	IdentifierClaims           []globalid.Claim
+	ExpectedSubjectAbsent      bool
+	SubjectKind                uint32
+	SubjectIdentity            string
+	SubjectKeySetDigest        [32]byte
+	// SubjectKeySetMembers is the exact canonical preimage of
+	// SubjectKeySetDigest.  v1 subject-key-set rows retain only the digest, so
+	// omitting this set would make a restart-safe lookup and a final UoW
+	// assertion impossible.
+	SubjectKeySetMembers []SnapshotPrecondition
+	IdempotencyClaims    []idempotency.Claim
 }
 
 type PredecessorIndexMode uint8
@@ -569,6 +582,7 @@ func (p MutationPlan) Kind() MutationKind { return p.kind }
 func (p MutationPlan) CAS() CASIntent {
 	result := p.cas
 	result.Dependencies = append([]SnapshotPrecondition(nil), p.cas.Dependencies...)
+	result.SubjectKeySetMembers = append([]SnapshotPrecondition(nil), p.cas.SubjectKeySetMembers...)
 	result.IdentifierClaims = append([]globalid.Claim(nil), p.cas.IdentifierClaims...)
 	result.IdempotencyClaims = append([]idempotency.Claim(nil), p.cas.IdempotencyClaims...)
 	return result

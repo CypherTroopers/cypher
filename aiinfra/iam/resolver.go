@@ -146,6 +146,8 @@ func resolveKeySnapshot(ctx context.Context, view View, registry schema.Registry
 		NotAfterUnixNano: lifecycle.NotAfterUnixNano, RevokedAtUnixNano: lifecycle.RevokedAtUnixNano,
 		AllowedMessageTypeIDs:           allowed,
 		AuthorizationPolicyDigestSHA256: lifecycle.AuthorizationPolicyDigestSHA256,
+		MaterialStateVersion:            material.StateVersion,
+		MaterialSnapshotDigest:          material.EnrollmentBindingDigest,
 		IdentityStateVersion:            identity.StateVersion, IdentityWriterEpoch: identity.WriterEpoch,
 		IdentitySnapshotDigest:     identityDigest,
 		IdentityValidFromUnixNano:  identity.ValidFromUnixNano,

@@ -20,12 +20,12 @@ import (
 )
 
 const (
-	// MaxClaims covers the largest v1 ownership-transfer admission: 256 future
-	// terminal key records, 64 retained evidence-record assertions and the
-	// transfer, identity, two principals, record and joined-audit identifiers.
-	// The limit is deliberately fixed above that 330-claim shape, not
-	// unbounded.
-	MaxClaims          = 384
+	// MaxClaims covers both admission and finalization of the largest v1
+	// ownership-transfer cutover. Finalization asserts both the key identifier
+	// and the terminal record identifier for each of 256 old keys, then adds
+	// identity, principal, new-key and joined-audit claims. The bound remains
+	// deliberately closed rather than scaling with untrusted input.
+	MaxClaims          = 768
 	MaxIdentifierBytes = 1024
 	MaxOwnerIDBytes    = 1024
 	MaxCanonicalBytes  = 4 << 20

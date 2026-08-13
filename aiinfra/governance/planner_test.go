@@ -4,6 +4,7 @@
 package governance
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -28,6 +29,7 @@ func TestPolicyApprovalPendingAndAtomicFinalize(t *testing.T) {
 		t.Fatalf("pending digest: %v", err)
 	}
 	policy := pending.PolicySnapshot()
+	intent := pending.AuditIntent().Snapshot()
 	if policy.CommitReady || policy.Kind != MutationPolicyPublish || policy.PolicyBundleID != "policy-bundle-1" ||
 		policy.PolicyRecordID != "policy-record-1" || len(policy.ApprovalEvidence) != 2 ||
 		len(policy.ApprovalAdmissionEvidence) != 2 || len(policy.IdentifierClaims) != 3 {
@@ -36,7 +38,47 @@ func TestPolicyApprovalPendingAndAtomicFinalize(t *testing.T) {
 	if policy.CommitNotBeforeUnixNano >= policy.CommitNotAfterUnixNano {
 		t.Fatalf("invalid commit window")
 	}
-	intent := pending.AuditIntent().Snapshot()
+	template := policy.DurablePolicyApprovalTerminalTemplate
+	if template.VerifyDigest() != nil || template.PendingKey() != policy.PolicyIdempotencySnapshot.Binding.Key ||
+		template.Revision() != policy.PolicyIdempotencySnapshot.Version+1 ||
+		template.ExpectedAuditEventID() != intent.AuditEventID || isZeroDigest(template.BaseDigest()) {
+		t.Fatalf("terminal template = %#v", template)
+	}
+	resultDigest := testDigest(0x73)
+	terminal, finalizeErr := template.Finalize(resultDigest)
+	if finalizeErr != nil || terminal.VerifyDigest() != nil || terminal.Status() != DurablePendingTerminal ||
+		terminal.Revision() != template.Revision() {
+		t.Fatalf("terminal capability = %#v / %v", terminal, finalizeErr)
+	}
+	if outcome, present := terminal.TerminalOutcomeDigest(); !present || outcome != resultDigest {
+		t.Fatalf("terminal outcome = %x/%t", outcome, present)
+	}
+	if base, present := terminal.TerminalTemplateBaseDigest(); !present || base != template.BaseDigest() {
+		t.Fatalf("terminal base = %x/%t", base, present)
+	}
+	detachedEnvelope := terminal.CanonicalEnvelope()
+	detachedEnvelope[0] ^= 1
+	if bytes.Equal(detachedEnvelope, terminal.CanonicalEnvelope()) {
+		t.Fatal("terminal capability canonical envelope getter aliases retained bytes")
+	}
+	tamperedTemplate := template
+	tamperedTemplate.base.canonicalEnvelope[0] ^= 1
+	if tamperedTemplate.VerifyDigest() == nil {
+		t.Fatal("terminal template accepted mutated retained envelope")
+	}
+	tamperedTerminal := terminal
+	tamperedTerminal.terminalOutcomeDigest[0] ^= 1
+	if tamperedTerminal.VerifyDigest() == nil {
+		t.Fatal("terminal capability accepted substituted replay result digest")
+	}
+	tamperedPendingPolicy := policy
+	tamperedPendingPolicy.DurablePolicyApprovalTerminalTemplate.base.expectedAuditEventID += "-other"
+	if (MutationPlan{value: tamperedPendingPolicy, digest: pending.policy.Digest()}).VerifyDigest() == nil {
+		t.Fatal("pending policy plan accepted a substituted terminal template")
+	}
+	if _, err := template.Finalize([ccse.DigestSize]byte{}); err == nil {
+		t.Fatal("terminal template accepted zero replay result digest")
+	}
 	if !intent.Required || intent.Outcome != 1 || intent.OccurredAtUnixNano != command.AtUnixNano ||
 		!containsString(intent.SubjectIDs, policy.PolicyBundleID) || !containsString(intent.SubjectIDs, policy.PolicyRecordID) {
 		t.Fatalf("unexpected audit intent: %+v", intent)
@@ -72,6 +114,23 @@ func TestPolicyApprovalPendingAndAtomicFinalize(t *testing.T) {
 	}
 	if finalSnapshot.CommitNotBeforeUnixNano >= finalSnapshot.CommitNotAfterUnixNano {
 		t.Fatal("compound commit window is empty")
+	}
+	if finalSnapshot.DurablePolicyApprovalTerminalTemplate.VerifyDigest() != nil ||
+		finalSnapshot.DurablePolicyApprovalTerminalTemplate.BaseDigest() != template.BaseDigest() {
+		t.Fatal("final plan changed the bound kind-7 terminal template")
+	}
+	for _, capability := range finalSnapshot.AuditSourceStorageCapabilities {
+		isApproval := containsDigest(finalSnapshot.ApprovalRecordDigestsSHA256, capability.EvidenceDigest())
+		key, revision, linked := capability.PendingLink()
+		if isApproval {
+			if capability.Disposition() != DurableEvidenceStorageAssertExisting || !linked ||
+				key != finalSnapshot.PolicyIdempotencySnapshot.Binding.Key ||
+				revision != finalSnapshot.PolicyIdempotencySnapshot.Version {
+				t.Fatalf("approval persistence closure = %#v", capability)
+			}
+		} else if capability.Disposition() != DurableEvidenceStorageReserveNew || linked {
+			t.Fatalf("fresh policy evidence persistence closure = %#v", capability)
+		}
 	}
 }
 

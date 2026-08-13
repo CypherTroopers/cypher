@@ -189,8 +189,10 @@ func (p *Planner) planKeyMaterial(ctx context.Context, command KeyMaterialComman
 		return MutationPlan{}, AuditIntent{}, err
 	}
 	cas := CASIntent{Entity: entity, ExpectedAbsent: true, ExpectedEntityWriterEpoch: 0,
-		AuthorizedWriterEpoch: command.Fence.WriterEpoch,
-		ConsumeChallenge:      true, Challenge: challenge, ChallengeEvidenceDigest: challengeState.EvidenceDigest,
+		AuthorizedWriterEpoch:      command.Fence.WriterEpoch,
+		AuthorizedWriterIdentity:   command.Fence.WriterIdentity,
+		AuthorizedWriterHomeRegion: command.Fence.HomeRegion,
+		ConsumeChallenge:           true, Challenge: challenge, ChallengeEvidenceDigest: challengeState.EvidenceDigest,
 		WriterEvidenceDigest: command.Fence.EvidenceDigest, IdentifierClaims: identifierClaims,
 		TransferEvidenceDigest: command.TransferEvidenceDigest}
 	if transferDependency.Entity.Kind != 0 {
@@ -368,10 +370,13 @@ func (p *Planner) planIdentity(ctx context.Context, command IdentityCommand,
 	}
 	cas := CASIntent{Entity: next.Ref, ExpectedAbsent: previous == nil,
 		ExpectedStateVersion: expectedVersion, AuthorizedWriterEpoch: command.Fence.WriterEpoch,
-		WriterEvidenceDigest: command.Fence.EvidenceDigest, Dependencies: dependencies,
+		AuthorizedWriterIdentity:   command.Fence.WriterIdentity,
+		AuthorizedWriterHomeRegion: command.Fence.HomeRegion,
+		WriterEvidenceDigest:       command.Fence.EvidenceDigest, Dependencies: dependencies,
 		TransferEvidenceDigest: command.TransferEvidenceDigest, AuthorizationDigest: command.Authorization.recordDigest,
-		PrincipalIndex:      principalIndex,
-		SubjectKeySetDigest: subjectKeySetDigest}
+		PrincipalIndex: principalIndex, SubjectKind: next.Ref.PrincipalKind,
+		SubjectIdentity: next.PrincipalIdentity, SubjectKeySetDigest: subjectKeySetDigest,
+		SubjectKeySetMembers: append([]SnapshotPrecondition(nil), terminalDependencies...)}
 	if previous != nil {
 		cas.ExpectedEntityWriterEpoch = previous.WriterEpoch
 	}
@@ -609,7 +614,9 @@ func (p *Planner) planKeyLifecycle(ctx context.Context, command KeyLifecycleComm
 	}
 	cas := CASIntent{Entity: entity, ExpectedAbsent: !exists,
 		ExpectedStateVersion: expectedVersion, AuthorizedWriterEpoch: command.Fence.WriterEpoch,
-		WriterEvidenceDigest: command.Fence.EvidenceDigest, Dependencies: dependencies,
+		AuthorizedWriterIdentity:   command.Fence.WriterIdentity,
+		AuthorizedWriterHomeRegion: command.Fence.HomeRegion,
+		WriterEvidenceDigest:       command.Fence.EvidenceDigest, Dependencies: dependencies,
 		RotationPredecessorKeyID: next.RotationPredecessorKeyID,
 		AuthorizationDigest:      command.Authorization.recordDigest, ExpectedSubjectAbsent: subjectAbsent,
 		SubjectKind: next.SubjectKind, SubjectIdentity: next.SubjectIdentity,
@@ -926,6 +933,16 @@ func planDigest(kind MutationKind, cas CASIntent, window planWindow, body func(*
 			return zero, fmt.Errorf("%w: idempotency claims: %v", ErrPendingPlanInvalid, err)
 		}
 	}
+	if cas.SubjectKeySetDigest != ([sha256.Size]byte{}) {
+		members, digest, memberErr := canonicalSubjectKeySetMembersV2(cas.SubjectKind,
+			cas.SubjectIdentity, cas.SubjectKeySetMembers)
+		if memberErr != nil || digest != cas.SubjectKeySetDigest ||
+			!sameSnapshotPreconditions(members, cas.SubjectKeySetMembers) {
+			return zero, ErrPendingPlanInvalid
+		}
+	} else if len(cas.SubjectKeySetMembers) != 0 {
+		return zero, ErrPendingPlanInvalid
+	}
 	dependencyElements := make([][]byte, len(dependencies))
 	for index, dependency := range dependencies {
 		dependencyElements[index], err = ccse.Marshal(2048, func(out *ccse.Encoder) {
@@ -949,6 +966,8 @@ func planDigest(kind MutationKind, cas CASIntent, window planWindow, body func(*
 		out.Uint64(cas.ExpectedStateVersion)
 		out.Uint64(cas.ExpectedEntityWriterEpoch)
 		out.Uint64(cas.AuthorizedWriterEpoch)
+		out.String(cas.AuthorizedWriterIdentity)
+		out.String(cas.AuthorizedWriterHomeRegion)
 		out.FixedBytes(cas.WriterEvidenceDigest[:], 32)
 		out.EncodedList(dependencyElements)
 		out.Bool(cas.ConsumeChallenge)
@@ -981,6 +1000,10 @@ func planDigest(kind MutationKind, cas CASIntent, window planWindow, body func(*
 			out.String(cas.SubjectIdentity)
 		}
 		out.FixedBytes(cas.SubjectKeySetDigest[:], 32)
+		// The exact member tuples are already committed by Dependencies above;
+		// the subject-set digest commits their canonical subset.  Encoding the
+		// same 256 tuples a second time makes the admitted maximum closure exceed
+		// the bounded joined projection without adding an independent fence.
 		out.Bytes(idempotencyClaims)
 		body(out)
 	})
@@ -1000,6 +1023,13 @@ func newAuditIntent(auditEventID, eventType, actor string, subjects []string, ca
 	policies, err = canonicalDigests(policies)
 	if err != nil {
 		return AuditIntent{}, err
+	}
+	// Foundation AuditEvent v1 admits at most 64 policy digests. Governance
+	// deterministically adds the current Audit Writer authorization policy and
+	// active governance-profile digest, so IAM reserves those two slots before
+	// any X/Y/global pending admission can be produced.
+	if len(policies) > 62 || len(subjects) > 128 {
+		return AuditIntent{}, ErrPendingPlanInvalid
 	}
 	evidence, err = canonicalDigests(evidence)
 	if err != nil {

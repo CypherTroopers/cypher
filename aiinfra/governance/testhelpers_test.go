@@ -15,6 +15,7 @@ import (
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/globalid"
+	"github.com/cypherium/cypher/aiinfra/iam"
 	"github.com/cypherium/cypher/aiinfra/idempotency"
 	"github.com/cypherium/cypher/aiinfra/schema"
 	foundationv1 "github.com/cypherium/cypher/aiinfra/schema/foundation/v1"
@@ -49,10 +50,82 @@ func (v *testIAMView) ResolveGovernanceKeyAt(_ context.Context, keyID string, _ 
 	return cloneKeySnapshot(key), true, nil
 }
 
+func (v *testIAMView) CanonicalGovernanceKeyState(_ context.Context,
+	precondition KeyStatePrecondition) (CanonicalGovernanceKeyStateProjection, bool, error) {
+	var key GovernanceKeySnapshot
+	found := false
+	for _, source := range []map[string]GovernanceKeySnapshot{v.keys, v.historical} {
+		candidate, ok := source[precondition.KeyID]
+		if ok && keyPrecondition(candidate) == precondition {
+			key, found = cloneKeySnapshot(candidate), true
+			break
+		}
+	}
+	if !found {
+		return CanonicalGovernanceKeyStateProjection{}, false, nil
+	}
+	materialContent := append([]byte("test-iam-key-material-v1\x00"), precondition.KeyMaterialStateDigestSHA256[:]...)
+	lifecycleContent := append([]byte("test-iam-key-lifecycle-v1\x00"), precondition.SnapshotDigestSHA256[:]...)
+	identityContent := append([]byte("test-iam-identity-v1\x00"), precondition.IdentitySnapshotDigestSHA256[:]...)
+	return CanonicalGovernanceKeyStateProjection{
+		KeyMaterial: CanonicalStateRecord{
+			Namespace: CanonicalStateNamespaceIAM, Kind: CanonicalStateKindIAMKeyMaterial,
+			ObjectID: precondition.KeyID, Version: precondition.KeyMaterialStateVersion,
+			StateDigestSHA256: precondition.KeyMaterialStateDigestSHA256,
+			ContentType:       CanonicalStateContentTypeIAMKeyMaterial,
+			CanonicalState:    materialContent, Terminal: true, AuditEventID: "test-key-material:" + precondition.KeyID,
+		},
+		Lifecycle: CanonicalStateRecord{
+			Namespace: CanonicalStateNamespaceIAM, Kind: CanonicalStateKindIAMKeyLifecycle,
+			ObjectID: precondition.KeyID, Version: precondition.StateVersion,
+			StateDigestSHA256: precondition.SnapshotDigestSHA256,
+			ContentType:       CanonicalStateContentTypeIAMKeyLifecycle,
+			CanonicalState:    lifecycleContent, AuditEventID: "test-key-lifecycle:" + precondition.KeyID,
+		},
+		Identity: CanonicalStateRecord{
+			Namespace: CanonicalStateNamespaceIAM, Kind: CanonicalStateKindIAMIdentity,
+			ObjectID: precondition.IdentityObjectID, Version: precondition.IdentityStateVersion,
+			StateDigestSHA256: precondition.IdentitySnapshotDigestSHA256,
+			ContentType:       CanonicalStateContentTypeIAMIdentity,
+			CanonicalState:    identityContent, AuditEventID: "test-identity:" + key.TargetIdentityID,
+		},
+	}, true, nil
+}
+
 type testPolicyView struct{ snapshot PolicyRegistrySnapshot }
 
 func (v *testPolicyView) SnapshotPolicy(_ context.Context, _ string) (PolicyRegistrySnapshot, error) {
 	return v.snapshot, nil
+}
+
+func (v *testPolicyView) CanonicalGovernancePolicyRegistryTransition(_ context.Context,
+	request CanonicalPolicyRegistryTransition) (CanonicalStateRecord, bool, CanonicalStateRecord, error) {
+	if request.PolicyKind == "" || request.PolicySequence == 0 || request.AuditEventID == "" ||
+		len(request.CanonicalPolicyBundle) == 0 || sha256.Sum256(request.CanonicalPolicyBundle) != request.PolicyBundleDigestSHA256 ||
+		request.ExpectedHeadPresent != v.snapshot.HeadPresent ||
+		request.ExpectedHeadSequence != v.snapshot.Head.Sequence ||
+		request.ExpectedHeadBundleDigestSHA256 != v.snapshot.Head.BundleDigestSHA256 {
+		return CanonicalStateRecord{}, false, CanonicalStateRecord{}, fmt.Errorf("invalid canonical policy transition")
+	}
+	var expected CanonicalStateRecord
+	if v.snapshot.HeadPresent {
+		expected = CanonicalStateRecord{
+			Namespace: CanonicalStateNamespaceGovernance, Kind: CanonicalStateKindGovernancePolicyRegistry,
+			ObjectID: request.PolicyKind, Version: v.snapshot.Head.Sequence,
+			StateDigestSHA256: v.snapshot.Head.BundleDigestSHA256,
+			ContentType:       CanonicalStateContentTypeGovernancePolicyRegistry,
+			CanonicalState:    append([]byte(nil), v.snapshot.Head.CanonicalPayload...),
+			AuditEventID:      "test-policy-head-audit:" + v.snapshot.Head.RecordID,
+		}
+	}
+	next := CanonicalStateRecord{
+		Namespace: CanonicalStateNamespaceGovernance, Kind: CanonicalStateKindGovernancePolicyRegistry,
+		ObjectID: request.PolicyKind, Version: request.PolicySequence,
+		StateDigestSHA256: request.PolicyBundleDigestSHA256,
+		ContentType:       CanonicalStateContentTypeGovernancePolicyRegistry,
+		CanonicalState:    append([]byte(nil), request.CanonicalPolicyBundle...), AuditEventID: request.AuditEventID,
+	}
+	return expected, v.snapshot.HeadPresent, next, nil
 }
 
 type testProfileCatalog struct {
@@ -85,8 +158,29 @@ func (v *testProfileCatalog) ActiveGovernanceProfile(_ context.Context, at int64
 	}, true, nil
 }
 
+func (v *testProfileCatalog) CanonicalGovernanceProfileActivation(_ context.Context,
+	activation GovernanceProfileActivationSnapshot) (CanonicalStateRecord, bool, error) {
+	if !validGovernanceProfileActivation(activation, activation.ValidFromUnixNano) {
+		return CanonicalStateRecord{}, false, nil
+	}
+	canonical, digest, objectID, err := canonicalProfileActivationState(activation)
+	if err != nil {
+		return CanonicalStateRecord{}, false, err
+	}
+	return CanonicalStateRecord{
+		Namespace: CanonicalStateNamespaceGovernance, Kind: CanonicalStateKindGovernanceProfileActivation,
+		ObjectID:          objectID,
+		Version:           activation.Version,
+		StateDigestSHA256: digest,
+		ContentType:       CanonicalStateContentTypeGovernanceProfileActivation, CanonicalState: canonical,
+		AuditEventID: "test-governance-profile-activation", HasValidityWindow: true,
+		ValidFromUnixNano: activation.ValidFromUnixNano, ValidUntilUnixNano: activation.ValidUntilUnixNano,
+	}, true, nil
+}
+
 type testApprovalCollectionView struct {
 	collections map[[ccse.MessageIDSize]byte][]PolicyApprovalCollectionEntry
+	persistence map[[ccse.MessageIDSize]byte]PolicyApprovalCollectionPersistenceSnapshot
 }
 
 func (v *testApprovalCollectionView) SnapshotPolicyApprovalCollection(_ context.Context, key [ccse.MessageIDSize]byte) ([]PolicyApprovalCollectionEntry, error) {
@@ -99,6 +193,12 @@ func (v *testApprovalCollectionView) SnapshotPolicyApprovalCollection(_ context.
 		result = append(result, entry)
 	}
 	return result, nil
+}
+
+func (v *testApprovalCollectionView) SnapshotPolicyApprovalCollectionPersistence(_ context.Context,
+	key [ccse.MessageIDSize]byte) (PolicyApprovalCollectionPersistenceSnapshot, bool, error) {
+	value, ok := v.persistence[key]
+	return clonePolicyApprovalCollectionPersistenceSnapshot(value), ok, nil
 }
 
 type testIdempotencyView struct {
@@ -156,6 +256,39 @@ func (v *testAuditView) SnapshotAuditHead(_ context.Context, _ string) (AuditHea
 func (v *testAuditView) LookupAuditEvent(_ context.Context, eventID string) (AuditEventSnapshot, bool, error) {
 	event, ok := v.events[eventID]
 	return event, ok, nil
+}
+
+func (v *testAuditView) CanonicalAuditWriterLease(_ context.Context,
+	requirement CanonicalAuditWriterLeaseRequirement) (CanonicalStateRecord, bool, error) {
+	key := GovernanceKeySnapshot{TargetIdentityKind: requirement.WriterLeaseEntityKind,
+		TargetPrincipalKind: requirement.WriterLeaseEntityPrincipalKind,
+		TargetIdentityID:    requirement.WriterLeaseEntityID}
+	if requirement != auditWriterLeaseRequirement(v.head, key) {
+		return CanonicalStateRecord{}, false, nil
+	}
+	iamRequirement, err := iam.NewCanonicalWriterLeaseRequirement(iam.WriterLeaseSnapshot{
+		Entity: iam.EntityRef{Kind: iam.EntityKind(requirement.WriterLeaseEntityKind),
+			PrincipalKind: requirement.WriterLeaseEntityPrincipalKind, ID: requirement.WriterLeaseEntityID},
+		WriterIdentity: requirement.AuthorizedWriterIdentity, HomeRegion: requirement.AuthorizedHomeRegion,
+		WriterEpoch:        requirement.AuthorizedWriterEpoch,
+		ValidFromUnixNano:  requirement.WriterLeaseNotBeforeUnixNano,
+		ValidUntilUnixNano: requirement.WriterLeaseNotAfterUnixNano,
+		EvidenceDigest:     requirement.WriterLeaseEvidenceDigestSHA256,
+	}, "test-audit-writer-lease:"+requirement.StreamID)
+	if err != nil {
+		return CanonicalStateRecord{}, false, err
+	}
+	record, err := iamRequirement.ExpectedRecord()
+	if err != nil {
+		return CanonicalStateRecord{}, false, err
+	}
+	return CanonicalStateRecord{
+		Namespace: record.Namespace, Kind: record.Kind, ObjectID: record.ObjectID, Version: record.Version,
+		StateDigestSHA256: record.StateDigestSHA256, ContentType: record.ContentType,
+		CanonicalState: append([]byte(nil), record.CanonicalState...), Terminal: record.Terminal,
+		AuditEventID: record.AuditEventID, HasValidityWindow: record.HasValidityWindow,
+		ValidFromUnixNano: record.ValidFromUnixNano, ValidUntilUnixNano: record.ValidUntilUnixNano,
+	}, true, nil
 }
 
 type governanceFixture struct {
@@ -243,7 +376,10 @@ func newGovernanceFixture(t testing.TB) *governanceFixture {
 		profiles: &testProfileCatalog{
 			profiles: map[[ccse.DigestSize]byte]Profile{profileDigest: cloneProfile(profile)}, activeDigest: profileDigest,
 		},
-		collections: &testApprovalCollectionView{collections: map[[ccse.MessageIDSize]byte][]PolicyApprovalCollectionEntry{}},
+		collections: &testApprovalCollectionView{
+			collections: map[[ccse.MessageIDSize]byte][]PolicyApprovalCollectionEntry{},
+			persistence: map[[ccse.MessageIDSize]byte]PolicyApprovalCollectionPersistenceSnapshot{},
+		},
 		idempotency: &testIdempotencyView{snapshots: map[[ccse.MessageIDSize]byte]idempotency.Snapshot{}},
 		documents:   &testDocumentView{documents: map[[ccse.DigestSize]byte]PolicyDocumentSnapshot{}},
 		evidence:    &testEvidenceView{evidence: map[[ccse.DigestSize]byte]EvidenceSnapshot{}},
@@ -285,8 +421,10 @@ func newTestKey(id, subject, organization string, seedByte byte, roles []string,
 			NotBeforeUnixNano: testBaseTime - int64(24*time.Hour), NotAfterUnixNano: testBaseTime + int64(30*24*time.Hour),
 			AllowedMessageTypeIDs: append([]uint32(nil), allowed...), Roles: append([]string(nil), roles...),
 			AuthorizationPolicyDigestSHA256: policy, StateVersion: 1, WriterEpoch: 1,
-			SnapshotDigestSHA256: testDigest(seedByte + 1),
-			IdentityStateVersion: 1, IdentityWriterEpoch: 1, IdentitySnapshotDigestSHA256: testDigest(seedByte + 2),
+			KeyMaterialStateVersion:      1,
+			KeyMaterialStateDigestSHA256: testDigest(seedByte + 3),
+			SnapshotDigestSHA256:         testDigest(seedByte + 1),
+			IdentityStateVersion:         1, IdentityWriterEpoch: 1, IdentitySnapshotDigestSHA256: testDigest(seedByte + 2),
 			EnrollmentDomainID: "cph-test-enrollment", EnrollmentEnvironment: "test", EnrollmentGenesisHash: testDigest(0x42),
 		},
 	}
@@ -384,6 +522,35 @@ func (f *governanceFixture) seedPolicyApprovalCollection(t testing.TB, policy fo
 	f.idempotency.snapshots[binding.Key] = idempotency.Snapshot{
 		Binding: binding, State: idempotency.StateCollecting, Version: uint64(len(stored)), ProgressDigest: progress,
 	}
+	eventID, eventErr := idempotency.JoinedAuditEventID(binding)
+	if eventErr != nil {
+		t.Fatal(eventErr)
+	}
+	encoded, encodeErr := EncodePolicyApprovalCollection(binding, uint64(len(stored)), progress, stored)
+	if encodeErr != nil {
+		t.Fatal(encodeErr)
+	}
+	var previousEnvelopeDigest [ccse.DigestSize]byte
+	if len(stored) > 1 {
+		previousProgress, progressErr := approvalCollectionDigest(binding, approvals[:len(approvals)-1])
+		if progressErr != nil {
+			t.Fatal(progressErr)
+		}
+		previous, previousErr := EncodePolicyApprovalCollection(binding, uint64(len(stored)-1),
+			previousProgress, stored[:len(stored)-1])
+		if previousErr != nil {
+			t.Fatal(previousErr)
+		}
+		previousEnvelopeDigest = previous.Digest()
+	}
+	f.collections.persistence[binding.Key] = PolicyApprovalCollectionPersistenceSnapshot{
+		PendingKey: binding.Key, Kind: DurablePendingGovernancePolicyApprovalCollection,
+		Codec: DurablePolicyApprovalCollectionCodec, CodecVersion: DurablePolicyApprovalCollectionCodecVersion,
+		Revision: uint64(len(stored)), PreviousEnvelopeDigestSHA256: previousEnvelopeDigest,
+		EnvelopeDigestSHA256: encoded.Digest(), CanonicalEnvelope: encoded.Bytes(),
+		EvidenceDigestsSHA256: encoded.EvidenceDigests(), Status: DurablePendingOpen,
+		CommitNotBeforeUnixNano: 1, CommitNotAfterUnixNano: math.MaxInt64, ExpectedAuditEventID: eventID,
+	}
 	joined, err := idempotency.JoinedAuditBinding(binding)
 	if err != nil {
 		t.Fatal(err)
@@ -402,7 +569,7 @@ func (f *governanceFixture) seedPolicyApprovalCollection(t testing.TB, policy fo
 		Owner:      globalid.Owner{Domain: globalid.OwnerCanonicalRecord, ID: hex.EncodeToString(binding.RequestDigest[:])},
 		Version:    1,
 	}
-	eventID, err := idempotency.JoinedAuditEventID(binding)
+	eventID, err = idempotency.JoinedAuditEventID(binding)
 	if err != nil {
 		t.Fatal(err)
 	}

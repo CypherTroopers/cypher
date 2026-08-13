@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
@@ -43,13 +44,17 @@ var (
 )
 
 const (
-	replayScopeMagic         = "CPH-AIIE-CCSE-REPLAY-SCOPE-V1\x00"
-	maxDurablePayloadBytes   = replayresult.MaxPayloadBytes
-	maxContentTypeBytes      = replayresult.MaxContentTypeBytes
-	maxDestinationBytes      = 255
-	maxDeduplicationKeyBytes = 1024
-	maxOutboxIntents         = 256
-	maxOutboxPayloadBytes    = 4 << 20
+	replayScopeMagic               = "CPH-AIIE-CCSE-REPLAY-SCOPE-V1\x00"
+	maxDurablePayloadBytes         = replayresult.MaxPayloadBytes
+	maxContentTypeBytes            = replayresult.MaxContentTypeBytes
+	maxDestinationBytes            = 255
+	maxDeduplicationKeyBytes       = 1024
+	maxOutboxIntents               = 256
+	maxOutboxPayloadBytes          = 4 << 20
+	defaultSerializationAttempts   = 3
+	defaultSerializationBackoff    = 5 * time.Millisecond
+	defaultSerializationBackoffMax = 100 * time.Millisecond
+	maxSerializationAttempts       = 8
 )
 
 // StatementAccess fixes how an allowlisted statement may be used. The SQL text
@@ -74,7 +79,28 @@ type AllowedStatement struct {
 type StoreOption func(*storeConfig) error
 
 type storeConfig struct {
-	statements map[string]StatementAccess
+	statements            map[string]StatementAccess
+	serializationAttempts int
+	serializationBackoff  time.Duration
+	serializationMaxDelay time.Duration
+}
+
+// WithSerializationRetryPolicy configures bounded retries for genuine
+// PostgreSQL serialization failures (SQLSTATE 40001). maxAttempts includes
+// the first attempt. Every handler invocation must keep external effects in
+// DurableCompletion.Outbox: a failed serializable transaction may invoke the
+// handler again after PostgreSQL has rolled all database writes back.
+func WithSerializationRetryPolicy(maxAttempts int, initialBackoff, maxBackoff time.Duration) StoreOption {
+	return func(config *storeConfig) error {
+		if maxAttempts < 1 || maxAttempts > maxSerializationAttempts ||
+			initialBackoff <= 0 || maxBackoff < initialBackoff || maxBackoff > time.Second {
+			return fmt.Errorf("%w: invalid serialization retry policy", ErrInvalidCompletion)
+		}
+		config.serializationAttempts = maxAttempts
+		config.serializationBackoff = initialBackoff
+		config.serializationMaxDelay = maxBackoff
+		return nil
+	}
 }
 
 // WithAllowedStatements adds exact business-state SQL to the transaction
@@ -104,8 +130,11 @@ func WithAllowedStatements(statements ...AllowedStatement) StoreOption {
 // transaction. The handler obtains that transaction through Transaction and
 // must write its business state, durable result, and outbox before returning.
 type ReplayStore struct {
-	db         BeginTxer
-	statements map[string]StatementAccess
+	db                    BeginTxer
+	statements            map[string]StatementAccess
+	serializationAttempts int
+	serializationBackoff  time.Duration
+	serializationMaxDelay time.Duration
 }
 
 // processExecuteActive is intentionally process-wide rather than store-local.
@@ -123,7 +152,12 @@ func NewReplayStore(ctx context.Context, db BeginTxer, options ...StoreOption) (
 	if db == nil {
 		return nil, ErrDatabaseRequired
 	}
-	config := storeConfig{statements: make(map[string]StatementAccess)}
+	config := storeConfig{
+		statements:            make(map[string]StatementAccess),
+		serializationAttempts: defaultSerializationAttempts,
+		serializationBackoff:  defaultSerializationBackoff,
+		serializationMaxDelay: defaultSerializationBackoffMax,
+	}
 	for _, option := range options {
 		if option == nil {
 			return nil, fmt.Errorf("%w: nil store option", ErrStatementNotAllowed)
@@ -139,7 +173,12 @@ func NewReplayStore(ctx context.Context, db BeginTxer, options ...StoreOption) (
 	if err := VerifyReplayStore(ctx, db); err != nil {
 		return nil, err
 	}
-	return &ReplayStore{db: db, statements: statements}, nil
+	return &ReplayStore{
+		db: db, statements: statements,
+		serializationAttempts: config.serializationAttempts,
+		serializationBackoff:  config.serializationBackoff,
+		serializationMaxDelay: config.serializationMaxDelay,
+	}, nil
 }
 
 func cloneStatementPolicy(source map[string]StatementAccess) map[string]StatementAccess {
@@ -595,9 +634,10 @@ func Transaction(ctx context.Context) (AtomicTx, bool) {
 	return atomicTxView{state: active.state}, true
 }
 
-// Execute implements ccse.ReplayStore. It never retries a transaction
-// internally: a serialization failure aborts every effect and the caller may
-// safely redeliver the same signed message.
+// Execute implements ccse.ReplayStore. Genuine PostgreSQL serialization
+// failures are retried with a bounded context-aware backoff. Consequently the
+// handler may run more than once; its only external effects must be represented
+// by the outbox committed with DurableCompletion.
 func (s *ReplayStore) Execute(ctx context.Context, entry ccse.ReplayEntry, verified ccse.VerifiedRecord, apply ccse.ReplayHandler) (ccse.ReplayDecision, error) {
 	if s == nil || s.db == nil {
 		return ccse.ReplayDecision{}, ErrDatabaseRequired
@@ -624,6 +664,38 @@ func (s *ReplayStore) Execute(ctx context.Context, entry ccse.ReplayEntry, verif
 	if err != nil {
 		return ccse.ReplayDecision{}, err
 	}
+	attempts := s.serializationAttempts
+	if attempts == 0 { // Preserve safe construction for package-local test stores.
+		attempts = defaultSerializationAttempts
+	}
+	backoff := s.serializationBackoff
+	if backoff <= 0 {
+		backoff = defaultSerializationBackoff
+	}
+	maxBackoff := s.serializationMaxDelay
+	if maxBackoff < backoff {
+		maxBackoff = defaultSerializationBackoffMax
+	}
+	for attempt := 1; ; attempt++ {
+		decision, executeErr := s.executeOnce(ctx, entry, verified, apply, scopeDigest)
+		if executeErr == nil || !isSerializationFailure(executeErr) || attempt >= attempts {
+			return decision, executeErr
+		}
+		if err := waitSerializationRetry(ctx, backoff); err != nil {
+			return ccse.ReplayDecision{}, err
+		}
+		if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+	}
+}
+
+func (s *ReplayStore) executeOnce(ctx context.Context, entry ccse.ReplayEntry,
+	verified ccse.VerifiedRecord, apply ccse.ReplayHandler,
+	scopeDigest [sha256.Size]byte) (ccse.ReplayDecision, error) {
 
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
@@ -686,10 +758,39 @@ func (s *ReplayStore) Execute(ctx context.Context, entry ccse.ReplayEntry, verif
 	if err := assertSessionReplicationOrigin(ctx, tx); err != nil {
 		return ccse.ReplayDecision{}, err
 	}
+	// Drain every deferred v2 invariant before taking the authoritative final
+	// clock observation. state.finish has sealed the handler, so no semantic or
+	// replay write can be introduced after this point.
+	if _, err := tx.ExecContext(ctx, "SET CONSTRAINTS ALL IMMEDIATE"); err != nil {
+		return ccse.ReplayDecision{}, fmt.Errorf("aiinfra postgres: validate replay constraints: %w", err)
+	}
+	if err := assertCanonicalCommitDeadlineBeforeCommit(ctx, state); err != nil {
+		return ccse.ReplayDecision{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return ccse.ReplayDecision{}, fmt.Errorf("aiinfra postgres: commit replay transaction: %w", err)
 	}
 	return ccse.ReplayDecision{Status: ccse.ReplayApplied, OutcomeDigest: outcomeDigest}, nil
+}
+
+type sqlStateError interface {
+	SQLState() string
+}
+
+func isSerializationFailure(err error) bool {
+	var state sqlStateError
+	return errors.As(err, &state) && state.SQLState() == "40001"
+}
+
+func waitSerializationRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func acquireReplayExecutionFence(ctx context.Context, tx *sql.Tx) error {

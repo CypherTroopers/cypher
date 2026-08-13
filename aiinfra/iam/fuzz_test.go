@@ -8,7 +8,40 @@ import (
 	"testing"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
+	"github.com/cypherium/cypher/aiinfra/replayresult"
 )
+
+func FuzzDecodePendingReconciliationResult(f *testing.F) {
+	pendingDigest := digest(0x71)
+	evidence, err := newPendingReconciliationEvidence(
+		pendingReconciliationExpiredClockEvidence, PendingDispositionExpired,
+		pendingDigest, testNow-10, testNow, ccse.Record{})
+	if err != nil {
+		f.Fatal(err)
+	}
+	valid, err := newPendingReconciliationResult(pendingDigest, evidence)
+	if err != nil {
+		f.Fatal(err)
+	}
+	f.Add(valid.ContentType(), valid.Payload())
+	f.Add("application/octet-stream", valid.Payload())
+	f.Add(PendingReconciliationResultContentType, []byte{})
+	f.Fuzz(func(t *testing.T, contentType string, payload []byte) {
+		result, err := replayresult.New(contentType, payload)
+		if err != nil {
+			return
+		}
+		snapshot, err := DecodePendingReconciliationResult(result)
+		if err != nil {
+			return
+		}
+		if snapshot.Verify() != nil || contentType != PendingReconciliationResultContentType ||
+			snapshot.Digest() != result.Digest() || snapshot.PendingDigest() == ([32]byte{}) ||
+			snapshot.EvidenceDigest() == ([32]byte{}) {
+			t.Fatal("strict reconciliation result decoder returned an invalid snapshot")
+		}
+	})
+}
 
 func FuzzKeyIDFailClosedAndContentAddressed(f *testing.F) {
 	valid, _ := testKey(0x21)

@@ -17,11 +17,13 @@ import (
 )
 
 const (
-	mutationPlanDigestDomain           = "CPH-AIIE-GOVERNANCE-MUTATION-PLAN-V1\x00"
+	mutationPlanDigestDomain           = "CPH-AIIE-GOVERNANCE-MUTATION-PLAN-V8\x00"
 	auditIntentDigestDomain            = "CPH-AIIE-GOVERNANCE-AUDIT-INTENT-V1\x00"
 	pendingPlanDigestDomain            = "CPH-AIIE-GOVERNANCE-PENDING-POLICY-PLAN-V1\x00"
-	approvalCollectionPlanDigestDomain = "CPH-AIIE-GOVERNANCE-APPROVAL-COLLECTION-PLAN-V1\x00"
+	approvalCollectionPlanDigestDomain = "CPH-AIIE-GOVERNANCE-APPROVAL-COLLECTION-PLAN-V3\x00"
 	authorizationSnapshotDigestDomain  = "CPH-AIIE-GOVERNANCE-AUTHORIZATION-SNAPSHOT-V1\x00"
+	iamAuditEvidenceReceiptDomain      = "iam.audit-evidence-bundle.v1"
+	iamAuditEvidenceBundleDigestDomain = "CPH-AIIE-IAM-AUDIT-EVIDENCE-BUNDLE-V1\x00"
 )
 
 func digestGovernanceAuthorizationSnapshot(snapshot GovernanceKeySnapshot) [ccse.DigestSize]byte {
@@ -48,6 +50,8 @@ func digestGovernanceAuthorizationSnapshot(snapshot GovernanceKeySnapshot) [ccse
 	}
 	w.strings(roles)
 	w.digest(snapshot.AuthorizationPolicyDigestSHA256)
+	w.uint64(snapshot.KeyMaterialStateVersion)
+	w.digest(snapshot.KeyMaterialStateDigestSHA256)
 	w.uint64(snapshot.StateVersion)
 	w.uint64(snapshot.WriterEpoch)
 	w.digest(snapshot.SnapshotDigestSHA256)
@@ -59,6 +63,14 @@ func digestGovernanceAuthorizationSnapshot(snapshot GovernanceKeySnapshot) [ccse
 	w.digest(snapshot.EnrollmentGenesisHash)
 	result, _ := w.sum()
 	return result
+}
+
+// GovernanceAuthorizationSnapshotDigest exposes the closed authorization
+// commitment for production adapters. It prevents an injected role/org
+// catalog from substituting assignments after the canonical IAM rows were
+// read.
+func GovernanceAuthorizationSnapshotDigest(snapshot GovernanceKeySnapshot) [ccse.DigestSize]byte {
+	return digestGovernanceAuthorizationSnapshot(cloneKeySnapshot(snapshot))
 }
 
 type digestWriter struct {
@@ -149,6 +161,7 @@ func (w *digestWriter) durableEvidence(evidence DurableEvidence) {
 	switch evidence.kind {
 	case EvidenceContentSHA256:
 		if len(evidence.content) == 0 || sha256.Sum256(evidence.content) != evidence.digest || evidence.signed.record.MessageTypeID != 0 ||
+			evidence.semanticDomain != "" ||
 			len(evidence.authorizationPolicyDigests) != 0 || evidence.keyPreconditionPresent ||
 			evidence.keyPrecondition != (KeyStatePrecondition{}) || evidence.authorizationNotAfter != 0 {
 			w.err = ErrAuditEvidence
@@ -156,7 +169,7 @@ func (w *digestWriter) durableEvidence(evidence DurableEvidence) {
 		}
 		w.bytes(evidence.content)
 	case EvidenceSignedCCSERecord:
-		if len(evidence.content) != 0 || evidence.signed.recordDigest != evidence.digest ||
+		if len(evidence.content) != 0 || evidence.semanticDomain != "" || evidence.signed.recordDigest != evidence.digest ||
 			len(evidence.authorizationPolicyDigests) == 0 || hasDuplicateDigests(evidence.authorizationPolicyDigests) {
 			w.err = ErrAuditEvidence
 			return
@@ -184,6 +197,18 @@ func (w *digestWriter) durableEvidence(evidence DurableEvidence) {
 			w.err = ErrAuditEvidence
 			return
 		}
+	case EvidenceSemanticReceipt:
+		if len(evidence.content) == 0 || len(evidence.content) > 64<<20 ||
+			evidence.semanticDomain != iamAuditEvidenceReceiptDomain ||
+			domainSeparatedContentDigest(iamAuditEvidenceBundleDigestDomain, evidence.content) != evidence.digest ||
+			evidence.signed.record.MessageTypeID != 0 || len(evidence.authorizationPolicyDigests) != 0 ||
+			evidence.keyPreconditionPresent || evidence.keyPrecondition != (KeyStatePrecondition{}) ||
+			evidence.authorizationNotAfter != 0 {
+			w.err = ErrAuditEvidence
+			return
+		}
+		w.string(evidence.semanticDomain)
+		w.bytes(evidence.content)
 	default:
 		w.err = ErrAuditEvidence
 	}
@@ -194,10 +219,15 @@ func (w *digestWriter) keyPrecondition(value KeyStatePrecondition) {
 	w.uint64(value.StateVersion)
 	w.uint64(value.WriterEpoch)
 	w.digest(value.SnapshotDigestSHA256)
+	w.uint64(uint64(value.IdentityKind))
+	w.uint64(uint64(value.IdentityPrincipalKind))
+	w.string(value.IdentityObjectID)
 	w.uint64(value.IdentityStateVersion)
 	w.uint64(value.IdentityWriterEpoch)
 	w.digest(value.IdentitySnapshotDigestSHA256)
 	w.digest(value.AuthorizationSnapshotDigestSHA256)
+	w.uint64(value.KeyMaterialStateVersion)
+	w.digest(value.KeyMaterialStateDigestSHA256)
 }
 
 func (w *digestWriter) idempotencyBinding(value idempotency.Binding) {
@@ -254,6 +284,24 @@ func digestMutationPlan(value MutationPlanSnapshot) ([ccse.DigestSize]byte, erro
 		value.CommitNotAfterUnixNano <= value.EvaluatedAtUnixNano {
 		return [ccse.DigestSize]byte{}, ErrInvalidCommand
 	}
+	if err := validateCanonicalStateCapabilities(value); err != nil {
+		return [ccse.DigestSize]byte{}, err
+	}
+	if err := validateCanonicalKeyStateAssertions(value); err != nil {
+		return [ccse.DigestSize]byte{}, err
+	}
+	if err := validateCanonicalAuditWriterLeaseAssertion(value); err != nil {
+		return [ccse.DigestSize]byte{}, err
+	}
+	if err := validateAuditSourceStorageCapabilities(value); err != nil {
+		return [ccse.DigestSize]byte{}, err
+	}
+	if err := validateCanonicalAuditAppend(value); err != nil {
+		return [ccse.DigestSize]byte{}, err
+	}
+	if err := validateDurablePolicyApprovalTerminalTemplate(value); err != nil {
+		return [ccse.DigestSize]byte{}, err
+	}
 	w := newDigestWriter(mutationPlanDigestDomain)
 	w.bool(value.CommitReady)
 	w.int64(value.EvaluatedAtUnixNano)
@@ -261,6 +309,33 @@ func digestMutationPlan(value MutationPlanSnapshot) ([ccse.DigestSize]byte, erro
 	w.int64(value.CommitNotAfterUnixNano)
 	w.digest(value.GovernanceProfileDigestSHA256)
 	w.profileActivation(value.GovernanceProfileActivation)
+	w.uint64(uint64(len(value.CanonicalStateAssertions)))
+	for _, assertion := range value.CanonicalStateAssertions {
+		if assertion.VerifyDigest() != nil {
+			return [ccse.DigestSize]byte{}, ErrSnapshotInconsistent
+		}
+		w.digest(assertion.digest)
+	}
+	w.uint64(uint64(len(value.CanonicalKeyStateAssertions)))
+	for _, assertion := range value.CanonicalKeyStateAssertions {
+		if assertion.VerifyDigest() != nil {
+			return [ccse.DigestSize]byte{}, ErrSnapshotInconsistent
+		}
+		w.digest(assertion.digest)
+	}
+	w.digest(value.CanonicalAuditWriterLeaseAssertion.digest)
+	w.uint64(uint64(len(value.CanonicalStateMutations)))
+	for _, mutation := range value.CanonicalStateMutations {
+		if mutation.VerifyDigest() != nil {
+			return [ccse.DigestSize]byte{}, ErrSnapshotInconsistent
+		}
+		w.digest(mutation.digest)
+	}
+	pendingTemplatePresent := !zeroDurablePendingTerminalTemplate(value.DurablePolicyApprovalTerminalTemplate)
+	w.bool(pendingTemplatePresent)
+	if pendingTemplatePresent {
+		w.digest(value.DurablePolicyApprovalTerminalTemplate.baseDigest)
+	}
 	w.uint8(uint8(value.Kind))
 	w.string(value.PolicyBundleID)
 	w.string(value.PolicyRecordID)
@@ -295,6 +370,11 @@ func digestMutationPlan(value MutationPlanSnapshot) ([ccse.DigestSize]byte, erro
 	for _, evidence := range value.AuditSourceEvidence {
 		w.durableEvidence(evidence)
 	}
+	w.uint64(uint64(len(value.AuditSourceStorageCapabilities)))
+	for _, capability := range value.AuditSourceStorageCapabilities {
+		w.digest(capability.digest)
+	}
+	w.digest(value.CanonicalAuditAppend.digest)
 	w.uint64(uint64(len(value.AuditSourceKeyPreconditions)))
 	for _, key := range value.AuditSourceKeyPreconditions {
 		w.keyPrecondition(key)
@@ -400,6 +480,118 @@ func digestMutationPlan(value MutationPlanSnapshot) ([ccse.DigestSize]byte, erro
 	return w.sum()
 }
 
+func validateCanonicalStateCapabilities(value MutationPlanSnapshot) error {
+	if !value.CommitReady {
+		if len(value.CanonicalStateAssertions) != 0 || len(value.CanonicalStateMutations) != 0 {
+			return ErrSnapshotInconsistent
+		}
+		return nil
+	}
+	if len(value.CanonicalStateAssertions) != 1 || len(value.CanonicalStateMutations) > 1 {
+		return ErrSnapshotInconsistent
+	}
+	assertion := value.CanonicalStateAssertions[0]
+	if assertion.VerifyDigest() != nil || assertion.record.Kind != CanonicalStateKindGovernanceProfileActivation ||
+		assertion.record.Version != value.GovernanceProfileActivation.Version ||
+		assertion.record.ValidFromUnixNano != value.GovernanceProfileActivation.ValidFromUnixNano ||
+		assertion.record.ValidUntilUnixNano != value.GovernanceProfileActivation.ValidUntilUnixNano {
+		return ErrSnapshotInconsistent
+	}
+	policyMutationRequired := value.Kind >= MutationPolicyPublish && value.Kind <= MutationPolicyExpire
+	if policyMutationRequired != (len(value.CanonicalStateMutations) == 1) {
+		return ErrSnapshotInconsistent
+	}
+	if !policyMutationRequired {
+		return nil
+	}
+	mutation := value.CanonicalStateMutations[0]
+	if mutation.VerifyDigest() != nil || mutation.next.Kind != CanonicalStateKindGovernancePolicyRegistry ||
+		mutation.next.ObjectID != value.PolicyKind || mutation.next.Version != value.PolicySequence ||
+		mutation.next.AuditEventID != value.AuditEventID ||
+		(mutation.expected != nil) != value.ExpectedPolicyHeadPresent {
+		return ErrSnapshotInconsistent
+	}
+	if mutation.expected != nil && (mutation.expected.Version != value.ExpectedPolicyHeadSequence ||
+		mutation.expected.ObjectID != value.PolicyKind || mutation.expected.Kind != CanonicalStateKindGovernancePolicyRegistry) {
+		return ErrSnapshotInconsistent
+	}
+	return nil
+}
+
+func validateAuditSourceStorageCapabilities(value MutationPlanSnapshot) error {
+	if !value.CommitReady {
+		if len(value.AuditSourceEvidence) != 0 || len(value.AuditSourceStorageCapabilities) != 0 {
+			return ErrAuditEvidence
+		}
+		return nil
+	}
+	if len(value.AuditSourceDigestsSHA256) != len(value.AuditSourceEvidence) ||
+		len(value.AuditSourceEvidence) != len(value.AuditSourceStorageCapabilities) {
+		return ErrAuditEvidence
+	}
+	if len(value.AuditSourceEvidence) == 0 {
+		return ErrAuditEvidence
+	}
+	if value.AuditEventID == "" || len(value.AuditSourceEvidence) > 128 {
+		return ErrAuditEvidence
+	}
+	for index := range value.AuditSourceEvidence {
+		evidence := value.AuditSourceEvidence[index]
+		capability := value.AuditSourceStorageCapabilities[index]
+		if evidence.digest != value.AuditSourceDigestsSHA256[index] || capability.evidenceDigest != evidence.digest ||
+			capability.auditAssertionEventID != value.AuditEventID || capability.VerifyDigest() != nil {
+			return ErrAuditEvidence
+		}
+		var (
+			expected DurableEvidenceStorageCapability
+			err      error
+		)
+		if capability.iamExistingProof != nil {
+			expected, err = newIAMExistingEvidenceStorageCapability(evidence, value.AuditEventID,
+				durableEvidencePendingLink{pendingKey: capability.pendingKey,
+					pendingRevision: capability.pendingRevision, iamExisting: capability.iamExistingProof})
+		} else {
+			expected, err = newDurableEvidenceStorageCapabilityWithPersistence(evidence, value.AuditEventID,
+				capability.disposition, capability.pendingKey, capability.pendingRevision, capability.hasPendingLink)
+		}
+		if err != nil || !equalDurableEvidenceStorageCapabilities(expected, capability) {
+			return ErrAuditEvidence
+		}
+	}
+	return nil
+}
+
+func validateDurablePolicyApprovalTerminalTemplate(value MutationPlanSnapshot) error {
+	present := !zeroDurablePendingTerminalTemplate(value.DurablePolicyApprovalTerminalTemplate)
+	policyKind := value.Kind >= MutationPolicyPublish && value.Kind <= MutationPolicyAbort
+	if !policyKind {
+		if present {
+			return ErrApprovalCollection
+		}
+		return nil
+	}
+	// V1 legacy approval history has no kind-7 canonical envelope. It may only
+	// be terminally reconciled, never converted into a V2 persistence
+	// capability by inference.
+	if !present {
+		return ErrApprovalCollection
+	}
+	template := value.DurablePolicyApprovalTerminalTemplate
+	if template.VerifyDigest() != nil || value.PolicyIdempotencySnapshot.Validate() != nil ||
+		value.PolicyIdempotencySnapshot.State != idempotency.StateCollecting ||
+		template.base.pendingKey != value.PolicyIdempotencySnapshot.Binding.Key ||
+		template.base.revision != value.PolicyIdempotencySnapshot.Version+1 ||
+		!equalDigestSets(template.base.evidenceDigests, value.ApprovalRecordDigestsSHA256) {
+		return ErrApprovalCollection
+	}
+	eventID, err := idempotency.JoinedAuditEventID(value.PolicyIdempotencySnapshot.Binding)
+	if err != nil || template.base.expectedAuditEventID != eventID ||
+		(value.CommitReady && value.AuditEventID != eventID) {
+		return ErrApprovalCollection
+	}
+	return nil
+}
+
 func digestApprovalCollectionPlan(value ApprovalCollectionPlanSnapshot) ([ccse.DigestSize]byte, error) {
 	if !value.CommitReady || value.Binding.Validate() != nil ||
 		value.GovernanceProfileDigestSHA256 == ([ccse.DigestSize]byte{}) ||
@@ -414,6 +606,9 @@ func digestApprovalCollectionPlan(value ApprovalCollectionPlanSnapshot) ([ccse.D
 		len(value.NextCollectionRecordDigestsSHA256) == 0 ||
 		hasDuplicateDigests(value.ExpectedCollectionRecordDigestsSHA256) || hasDuplicateDigests(value.NextCollectionRecordDigestsSHA256) {
 		return [ccse.DigestSize]byte{}, ErrInvalidCommand
+	}
+	if err := validateApprovalAdmissionCanonicalReadSet(value); err != nil {
+		return [ccse.DigestSize]byte{}, err
 	}
 	claims, err := idempotency.NormalizeClaims(value.Claims)
 	if err != nil || len(claims) != len(value.Claims) {
@@ -453,6 +648,26 @@ func digestApprovalCollectionPlan(value ApprovalCollectionPlanSnapshot) ([ccse.D
 	if value.NextEvidence.record.MessageTypeID == 0 || !containsDigest(value.NextCollectionRecordDigestsSHA256, value.NextEvidence.recordDigest) {
 		return [ccse.DigestSize]byte{}, ErrInvalidCommand
 	}
+	if value.DurablePendingRevision.VerifyDigest() != nil ||
+		value.DurablePendingRevision.pendingKey != value.Binding.Key ||
+		value.DurablePendingRevision.kind != DurablePendingGovernancePolicyApprovalCollection ||
+		value.DurablePendingRevision.status != DurablePendingOpen ||
+		value.DurablePendingRevision.revision != collectionClaim.NextVersion ||
+		value.DurablePendingRevision.envelopeDigest == ([ccse.DigestSize]byte{}) ||
+		!equalDigestSets(value.DurablePendingRevision.evidenceDigests, value.NextCollectionRecordDigestsSHA256) ||
+		value.DurablePendingRevision.commitNotBeforeUnixNano != value.CommitNotBeforeUnixNano ||
+		value.DurablePendingRevision.commitNotAfterUnixNano != value.CommitNotAfterUnixNano ||
+		value.DurablePendingRevision.expectedAuditEventID != value.JoinedAuditEventID {
+		return [ccse.DigestSize]byte{}, ErrApprovalCollection
+	}
+	if value.NextEvidenceStorageCapability.VerifyDigest() != nil ||
+		value.NextEvidenceStorageCapability.evidenceDigest != value.NextEvidence.recordDigest ||
+		value.NextEvidenceStorageCapability.kind != DurableEvidenceStorageSignedCCSE ||
+		value.NextEvidenceStorageCapability.disposition != DurableEvidenceStorageReserveNew ||
+		value.NextEvidenceStorageCapability.hasPendingLink ||
+		value.NextEvidenceStorageCapability.expectedAuditEventID != value.JoinedAuditEventID {
+		return [ccse.DigestSize]byte{}, ErrApprovalCollection
+	}
 	admission := policyApproval{
 		record:                 signedRecordSnapshot{record: cloneCCSERecord(&value.NextEvidence.record), digest: value.NextEvidence.recordDigest},
 		admissionKey:           cloneKeySnapshot(value.NextAdmissionKey),
@@ -467,6 +682,13 @@ func digestApprovalCollectionPlan(value ApprovalCollectionPlanSnapshot) ([ccse.D
 		value.NextAdmissionProfileActivation != value.GovernanceProfileActivation ||
 		value.NextKeyPrecondition != keyPrecondition(value.NextAdmissionKey) {
 		return [ccse.DigestSize]byte{}, ErrInvalidCommand
+	}
+	expectedStorage, err := newDurableEvidenceStorageCapabilityWithPersistence(
+		newSignedDurableEvidence(admission.record, value.NextAdmissionKey.AuthorizationPolicyDigestSHA256,
+			value.NextAdmissionProfileDigestSHA256), value.JoinedAuditEventID,
+		DurableEvidenceStorageReserveNew, [ccse.MessageIDSize]byte{}, 0, false)
+	if err != nil || !equalDurableEvidenceStorageCapabilities(expectedStorage, value.NextEvidenceStorageCapability) {
+		return [ccse.DigestSize]byte{}, ErrApprovalCollection
 	}
 	switch value.Disposition {
 	case ApprovalCollectionAppend:
@@ -498,6 +720,14 @@ func digestApprovalCollectionPlan(value ApprovalCollectionPlanSnapshot) ([ccse.D
 	w.int64(value.CommitNotAfterUnixNano)
 	w.digest(value.GovernanceProfileDigestSHA256)
 	w.profileActivation(value.GovernanceProfileActivation)
+	w.uint64(uint64(len(value.CanonicalStateAssertions)))
+	for _, assertion := range value.CanonicalStateAssertions {
+		w.digest(assertion.digest)
+	}
+	w.uint64(uint64(len(value.CanonicalKeyStateAssertions)))
+	for _, assertion := range value.CanonicalKeyStateAssertions {
+		w.digest(assertion.digest)
+	}
 	w.uint8(uint8(value.Disposition))
 	w.idempotencyBinding(value.Binding)
 	w.idempotencySnapshot(value.JoinedAuditIdempotencySnapshot)
@@ -515,6 +745,8 @@ func digestApprovalCollectionPlan(value ApprovalCollectionPlanSnapshot) ([ccse.D
 	w.int64(value.NextAdmissionValidatedAtUnixNano)
 	w.digest(value.NextAdmissionFingerprintSHA256)
 	w.string(value.JoinedAuditEventID)
+	w.digest(value.DurablePendingRevision.digest)
+	w.digest(value.NextEvidenceStorageCapability.digest)
 	w.bytes(identifierBytes)
 	return w.sum()
 }
@@ -578,6 +810,15 @@ func newContentEvidence(digest [ccse.DigestSize]byte, content []byte) DurableEvi
 	return DurableEvidence{kind: EvidenceContentSHA256, digest: digest, content: append([]byte(nil), content...)}
 }
 
+func newIAMSemanticReceiptEvidence(domain string, content []byte, digest [ccse.DigestSize]byte) (DurableEvidence, error) {
+	if domain != iamAuditEvidenceReceiptDomain || len(content) == 0 || len(content) > 64<<20 ||
+		isZeroDigest(digest) || domainSeparatedContentDigest(iamAuditEvidenceBundleDigestDomain, content) != digest {
+		return DurableEvidence{}, ErrAuditEvidence
+	}
+	return DurableEvidence{kind: EvidenceSemanticReceipt, digest: digest,
+		content: append([]byte(nil), content...), semanticDomain: domain}, nil
+}
+
 func newSignedDurableEvidence(snapshot signedRecordSnapshot, authorizationPolicyDigests ...[ccse.DigestSize]byte) DurableEvidence {
 	return DurableEvidence{
 		kind: EvidenceSignedCCSERecord, digest: snapshot.digest, signed: newSignedEvidence(snapshot),
@@ -604,6 +845,7 @@ func cloneSignedEvidence(evidence SignedEvidence) SignedEvidence {
 func cloneDurableEvidence(evidence DurableEvidence) DurableEvidence {
 	return DurableEvidence{
 		kind: evidence.kind, digest: evidence.digest, content: append([]byte(nil), evidence.content...),
+		semanticDomain:             evidence.semanticDomain,
 		signed:                     cloneSignedEvidence(evidence.signed),
 		authorizationPolicyDigests: append([][ccse.DigestSize]byte(nil), evidence.authorizationPolicyDigests...),
 		keyPreconditionPresent:     evidence.keyPreconditionPresent, keyPrecondition: evidence.keyPrecondition,
@@ -611,15 +853,31 @@ func cloneDurableEvidence(evidence DurableEvidence) DurableEvidence {
 	}
 }
 
+func domainSeparatedContentDigest(domain string, content []byte) [ccse.DigestSize]byte {
+	h := sha256.New()
+	_, _ = h.Write([]byte(domain))
+	_, _ = h.Write(content)
+	var result [ccse.DigestSize]byte
+	copy(result[:], h.Sum(nil))
+	return result
+}
+
 func cloneMutationPlanSnapshot(value MutationPlanSnapshot) MutationPlanSnapshot {
 	value.PolicyDocumentEvidence = append([]byte(nil), value.PolicyDocumentEvidence...)
 	value.BreakGlassScopes = append([]string(nil), value.BreakGlassScopes...)
+	value.CanonicalStateAssertions = cloneCanonicalStateAssertions(value.CanonicalStateAssertions)
+	value.CanonicalKeyStateAssertions = cloneCanonicalKeyStateAssertions(value.CanonicalKeyStateAssertions)
+	value.CanonicalAuditWriterLeaseAssertion = cloneCanonicalAuditWriterLeaseAssertion(value.CanonicalAuditWriterLeaseAssertion)
+	value.CanonicalStateMutations = cloneCanonicalStateMutations(value.CanonicalStateMutations)
+	value.DurablePolicyApprovalTerminalTemplate = cloneDurablePendingTerminalTemplate(value.DurablePolicyApprovalTerminalTemplate)
 	value.ApprovalRecordDigestsSHA256 = append([][ccse.DigestSize]byte(nil), value.ApprovalRecordDigestsSHA256...)
 	value.AuditSourceDigestsSHA256 = append([][ccse.DigestSize]byte(nil), value.AuditSourceDigestsSHA256...)
 	value.AuditSourceEvidence = append([]DurableEvidence(nil), value.AuditSourceEvidence...)
 	for index := range value.AuditSourceEvidence {
 		value.AuditSourceEvidence[index] = cloneDurableEvidence(value.AuditSourceEvidence[index])
 	}
+	value.AuditSourceStorageCapabilities = cloneDurableEvidenceStorageCapabilities(value.AuditSourceStorageCapabilities)
+	value.CanonicalAuditAppend = cloneCanonicalAuditAppendCapability(value.CanonicalAuditAppend)
 	value.AuditSourceKeyPreconditions = append([]KeyStatePrecondition(nil), value.AuditSourceKeyPreconditions...)
 	value.ApprovalEvidence = append([]SignedEvidence(nil), value.ApprovalEvidence...)
 	for index := range value.ApprovalEvidence {

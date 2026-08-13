@@ -4,13 +4,16 @@
 package governance
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/globalid"
+	"github.com/cypherium/cypher/aiinfra/schema"
 	foundationv1 "github.com/cypherium/cypher/aiinfra/schema/foundation/v1"
 )
 
@@ -40,6 +43,71 @@ func TestAuditAppendAnchorsCompleteCCSERecordAndGlobalID(t *testing.T) {
 		snapshot.IdentifierClaims[0].Owner.Domain != globalid.OwnerGovernanceAuditEvent {
 		t.Fatalf("unexpected global ID claim: %+v", snapshot.IdentifierClaims)
 	}
+	appendCapability := snapshot.CanonicalAuditAppend
+	previous, hasPrevious := appendCapability.PreviousEventDigest()
+	if appendCapability.VerifyDigest() != nil || appendCapability.EventID() != snapshot.AuditEventID ||
+		appendCapability.StreamID() != snapshot.AuditStreamID || appendCapability.Sequence() != snapshot.NextAuditSequence ||
+		hasPrevious || previous != ([ccse.DigestSize]byte{}) ||
+		appendCapability.EventDigest() != command.Event.Record.Envelope.PayloadDigest ||
+		appendCapability.RecordDigest() != snapshot.NextAuditRecordDigestSHA256 ||
+		!bytes.Equal(appendCapability.CanonicalEvent(), command.Event.Record.Payload) ||
+		appendCapability.DeploymentAnchorDigest() != snapshot.DeploymentAnchorSHA256 ||
+		appendCapability.AuthorizedWriterIdentity() != snapshot.AuthorizedAuditWriterIdentity ||
+		appendCapability.AuthorizedHomeRegion() != snapshot.AuthorizedAuditHomeRegion ||
+		appendCapability.AuthorizedWriterEpoch() != snapshot.AuthorizedAuditWriterEpoch ||
+		appendCapability.AuthorizedGovernanceProfileDigest() != snapshot.AuthorizedAuditGovernanceProfileDigestSHA256 ||
+		appendCapability.WriterLeaseEvidenceDigest() != snapshot.ExpectedAuditWriterLeaseEvidenceDigestSHA256 {
+		t.Fatalf("canonical audit append capability = %#v", appendCapability)
+	}
+	detachedEvent := appendCapability.CanonicalEvent()
+	detachedEvent[0] ^= 1
+	if bytes.Equal(detachedEvent, appendCapability.CanonicalEvent()) {
+		t.Fatal("canonical audit append getter aliases retained payload")
+	}
+	tamperedAppend := plan.Snapshot()
+	tamperedAppend.CanonicalAuditAppend.authorizedWriterEpoch++
+	if (MutationPlan{value: tamperedAppend, digest: plan.Digest()}).VerifyDigest() == nil {
+		t.Fatal("tampered canonical audit append retained the plan")
+	}
+	if len(snapshot.AuditSourceStorageCapabilities) != 1 {
+		t.Fatalf("storage capabilities = %#v", snapshot.AuditSourceStorageCapabilities)
+	}
+	storage := snapshot.AuditSourceStorageCapabilities[0]
+	if storage.VerifyDigest() != nil || storage.EvidenceDigest() != source ||
+		storage.Kind() != DurableEvidenceStorageContentSHA256 ||
+		storage.ContentType() != DurableEvidenceContentSHA256ContentType ||
+		storage.ExpectedAuditEventID() != snapshot.AuditEventID ||
+		!bytes.Equal(storage.CanonicalContent(), []byte("durable-source-record")) {
+		t.Fatalf("content storage capability = %#v", storage)
+	}
+	if storage.Disposition() != DurableEvidenceStorageReserveNew {
+		t.Fatalf("standalone evidence disposition = %d", storage.Disposition())
+	}
+	if key, revision, present := storage.PendingLink(); present || key != ([ccse.MessageIDSize]byte{}) || revision != 0 {
+		t.Fatalf("standalone evidence pending link = %x/%d/%t", key, revision, present)
+	}
+	detachedContent := storage.CanonicalContent()
+	detachedContent[0] ^= 1
+	if bytes.Equal(detachedContent, storage.CanonicalContent()) {
+		t.Fatal("storage capability content getter aliases retained bytes")
+	}
+	tamperedStorage := plan.Snapshot()
+	tamperedStorage.AuditSourceStorageCapabilities[0].canonicalContent[0] ^= 1
+	if (MutationPlan{value: tamperedStorage, digest: plan.Digest()}).VerifyDigest() == nil {
+		t.Fatal("tampered storage capability retained the mutation plan")
+	}
+	tamperedDisposition := plan.Snapshot()
+	tamperedDisposition.AuditSourceStorageCapabilities[0].disposition = DurableEvidenceStorageAssertExisting
+	if (MutationPlan{value: tamperedDisposition, digest: plan.Digest()}).VerifyDigest() == nil {
+		t.Fatal("tampered storage disposition retained the mutation plan")
+	}
+	tamperedLink := plan.Snapshot()
+	tamperedLink.AuditSourceStorageCapabilities[0].pendingKey = testID(0x82)
+	tamperedLink.AuditSourceStorageCapabilities[0].pendingRevision = 1
+	tamperedLink.AuditSourceStorageCapabilities[0].hasPendingLink = true
+	if (MutationPlan{value: tamperedLink, digest: plan.Digest()}).VerifyDigest() == nil {
+		t.Fatal("tampered evidence pending link retained the mutation plan")
+	}
 
 	before := plan.Digest()
 	command.Event.Record.Payload[0] ^= 0xff
@@ -49,6 +117,36 @@ func TestAuditAppendAnchorsCompleteCCSERecordAndGlobalID(t *testing.T) {
 	copy.AuditEventEvidence.Record().Signature[0] ^= 0xff
 	if plan.Digest() != before || plan.VerifyDigest() != nil || plan.Snapshot().AuditSourceDigestsSHA256[0] != source {
 		t.Fatal("audit plan aliases caller-owned data")
+	}
+}
+
+func TestCanonicalAuditAppendBindsExistingHeadCAS(t *testing.T) {
+	fixture := newGovernanceFixture(t)
+	fixture.audit.head = AuditHeadSnapshot{
+		StreamID: fixture.profile.AuditReplayDomainID, DeploymentAnchorSHA256: fixture.profile.AuditDeploymentAnchorSHA256,
+		Sequence: 6, LastRecordDigestSHA256: testDigest(0x91),
+		HeadWriterIdentity: fixture.profile.AuditWriterIdentity, AuthorizedWriterIdentity: fixture.profile.AuditWriterIdentity,
+		HomeRegion: fixture.profile.AuditHomeRegion, AuthorizedHomeRegion: fixture.profile.AuditHomeRegion,
+		WriterEpoch: 7, AuthorizedWriterEpoch: 7,
+		HeadGovernanceProfileDigestSHA256:       fixture.profileDigest,
+		AuthorizedGovernanceProfileDigestSHA256: fixture.profileDigest,
+		WriterLeaseEvidenceDigestSHA256:         testDigest(0x92), WriterLeaseNotBeforeUnixNano: 0,
+		WriterLeaseNotAfterUnixNano: testBaseTime + int64(24*time.Hour),
+	}
+	source := fixture.addDurableEvidence([]byte("existing-head-source"))
+	command := fixture.auditCommand(t, 7, fixture.audit.head.LastRecordDigestSHA256, [][ccse.DigestSize]byte{source})
+	plan, _, err := fixture.planner.PlanAuditAppend(context.Background(), command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capability := plan.Snapshot().CanonicalAuditAppend
+	previous, present := capability.PreviousEventDigest()
+	if capability.VerifyDigest() != nil || !present || previous != fixture.audit.head.LastRecordDigestSHA256 ||
+		capability.ExpectedHeadWriterIdentity() != fixture.audit.head.HeadWriterIdentity ||
+		capability.ExpectedHeadHomeRegion() != fixture.audit.head.HomeRegion ||
+		capability.ExpectedHeadWriterEpoch() != fixture.audit.head.WriterEpoch ||
+		capability.ExpectedHeadGovernanceProfileDigest() != fixture.audit.head.HeadGovernanceProfileDigestSHA256 {
+		t.Fatalf("existing-head append capability = %#v", capability)
 	}
 }
 
@@ -100,6 +198,46 @@ func TestAuditSourceSetIsExactDurableAndOrderIndependent(t *testing.T) {
 	}
 }
 
+func TestAuditAuthorizationPolicySetExact64Boundary(t *testing.T) {
+	fixture := newGovernanceFixture(t)
+	approval := fixture.policyCommand(t, fixture.normalPolicy()).Approvals[0]
+	signed, err := bindVerifiedSignedRecord(approval, maxPayloadBytesFor(schema.MessageTypePolicyBundle))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := fixture.keys["key-a"].snapshot
+	sourcePolicies := make([][ccse.DigestSize]byte, 0, 62)
+	sourcePolicies = append(sourcePolicies, fixture.authA)
+	for index := byte(1); len(sourcePolicies) < 62; index++ {
+		digest := sha256.Sum256([]byte{0x7f, index})
+		if digest != fixture.profileDigest && digest != fixture.authAudit && !containsDigest(sourcePolicies, digest) {
+			sourcePolicies = append(sourcePolicies, digest)
+		}
+	}
+	required := uniqueSortedDigests(append(append([][ccse.DigestSize]byte(nil), sourcePolicies...), fixture.authAudit, fixture.profileDigest))
+	if len(required) != maxAuditPolicyDigests {
+		t.Fatalf("test policy set = %d", len(required))
+	}
+	command := fixture.auditCommand(t, 1, fixture.profile.AuditDeploymentAnchorSHA256, [][ccse.DigestSize]byte{signed.digest})
+	command.Event = fixture.mutateAndResignAudit(t, command.Event, func(event *foundationv1.AuditEventSigningProjection) {
+		event.Metadata.PolicyDigestsSHA256 = append([][ccse.DigestSize]byte(nil), required...)
+		event.AppliedPolicyDigestsSHA256 = append([][ccse.DigestSize]byte(nil), required...)
+	})
+	evidence := newSignedDurableEvidenceWithKey(signed, key, sourcePolicies...)
+	plan, _, err := fixture.planner.planAuditAppend(context.Background(), command,
+		map[[ccse.DigestSize]byte]DurableEvidence{signed.digest: evidence}, nil, nil, nil)
+	if err != nil || !plan.CommitReady() {
+		t.Fatalf("exact 64 policies: plan=%+v err=%v", plan.Snapshot(), err)
+	}
+
+	overflowPolicies := append(append([][ccse.DigestSize]byte(nil), sourcePolicies...), testDigest(0xee))
+	overflow := newSignedDurableEvidenceWithKey(signed, key, overflowPolicies...)
+	if _, _, err := fixture.planner.planAuditAppend(context.Background(), command,
+		map[[ccse.DigestSize]byte]DurableEvidence{signed.digest: overflow}, nil, nil, nil); !errors.Is(err, ErrKeyNotAuthorized) {
+		t.Fatalf("65-policy overflow error = %v", err)
+	}
+}
+
 func TestAuditRetainsAndReauthorizesSignedSourceEvidence(t *testing.T) {
 	fixture := newGovernanceFixture(t)
 	approval := fixture.policyCommand(t, fixture.normalPolicy()).Approvals[0]
@@ -120,6 +258,43 @@ func TestAuditRetainsAndReauthorizesSignedSourceEvidence(t *testing.T) {
 		snapshot.AuditSourceEvidence[0].Digest() != digest || snapshot.AuditSourceEvidence[0].SignedEvidence().Record() == nil ||
 		len(snapshot.AuditSourceKeyPreconditions) != 1 || snapshot.AuditSourceKeyPreconditions[0].KeyID != "key-a" {
 		t.Fatalf("signed evidence not retained: %+v", snapshot)
+	}
+	if len(snapshot.AuditSourceStorageCapabilities) != 1 {
+		t.Fatalf("signed storage capabilities = %#v", snapshot.AuditSourceStorageCapabilities)
+	}
+	storage := snapshot.AuditSourceStorageCapabilities[0]
+	if storage.VerifyDigest() != nil || storage.EvidenceDigest() != digest ||
+		storage.Kind() != DurableEvidenceStorageSignedCCSE ||
+		storage.ContentType() != DurableEvidenceSignedCCSEContentType ||
+		storage.ExpectedAuditEventID() != snapshot.AuditEventID {
+		t.Fatalf("signed storage capability = %#v", storage)
+	}
+	var (
+		codecPreimage  []byte
+		codecSignature []byte
+	)
+	if err := ccse.Unmarshal(storage.CanonicalContent(), durableEvidenceStorageMaxBytes, func(in *ccse.Decoder) error {
+		version, decodeErr := in.Uint32()
+		if decodeErr != nil || version != durableEvidenceStorageCodecVersion {
+			return ErrAuditEvidence
+		}
+		codec, decodeErr := in.String(255)
+		if decodeErr != nil || codec != durableSignedCCSEStorageCodec {
+			return ErrAuditEvidence
+		}
+		codecPreimage, decodeErr = in.Bytes(2 << 20)
+		if decodeErr != nil {
+			return decodeErr
+		}
+		codecSignature, decodeErr = in.FixedBytes(64)
+		return decodeErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantRecord := snapshot.AuditSourceEvidence[0].SignedEvidence().Record()
+	wantPreimage, err := wantRecord.Preimage(ccse.DefaultLimits())
+	if err != nil || !bytes.Equal(codecPreimage, wantPreimage) || !bytes.Equal(codecSignature, wantRecord.Signature) {
+		t.Fatal("signed storage codec did not retain the exact CCSE preimage and signature")
 	}
 
 	key := fixture.iam.keys["key-a"]

@@ -239,26 +239,28 @@ const (
 // QuorumSatisfied is true, Accepted and Audit describe the immutable result
 // that WS0.2b must join with canonical AuditEvent/head and X/Y completion.
 type OwnershipTransferApprovalCollectionPlan struct {
-	disposition             OwnershipTransferCollectionDisposition
-	evaluatedAtUnixNano     int64
-	commitNotBeforeUnixNano int64
-	commitNotAfterUnixNano  int64
-	expectedVersion         uint64
-	expectedProgressDigest  [32]byte
-	expectedHomeRegion      string
-	expectedWriterEpoch     uint64
-	authorizedWriterEpoch   uint64
-	writerEvidenceDigest    [32]byte
-	dependencies            []SnapshotPrecondition
-	next                    OwnershipTransferApprovalCollectionSnapshot
-	idempotencyClaims       []idempotency.Claim
-	joinedAuditSnapshot     idempotency.Snapshot
-	identifierClaims        []globalid.Claim
-	quorumSatisfied         bool
-	accepted                *AcceptedOwnershipTransferSnapshot
-	audit                   *AuditIntent
-	idempotencyCompletion   []idempotency.Claim
-	digest                  [32]byte
+	disposition                OwnershipTransferCollectionDisposition
+	evaluatedAtUnixNano        int64
+	commitNotBeforeUnixNano    int64
+	commitNotAfterUnixNano     int64
+	expectedVersion            uint64
+	expectedProgressDigest     [32]byte
+	expectedHomeRegion         string
+	expectedWriterEpoch        uint64
+	authorizedWriterEpoch      uint64
+	authorizedWriterIdentity   string
+	authorizedWriterHomeRegion string
+	writerEvidenceDigest       [32]byte
+	dependencies               []SnapshotPrecondition
+	next                       OwnershipTransferApprovalCollectionSnapshot
+	idempotencyClaims          []idempotency.Claim
+	joinedAuditSnapshot        idempotency.Snapshot
+	identifierClaims           []globalid.Claim
+	quorumSatisfied            bool
+	accepted                   *AcceptedOwnershipTransferSnapshot
+	audit                      *AuditIntent
+	idempotencyCompletion      []idempotency.Claim
+	digest                     [32]byte
 }
 
 func (plan OwnershipTransferApprovalCollectionPlan) CommitReady() bool { return false }
@@ -292,6 +294,12 @@ func (plan OwnershipTransferApprovalCollectionPlan) ExpectedWriterEpoch() uint64
 }
 func (plan OwnershipTransferApprovalCollectionPlan) AuthorizedWriterEpoch() uint64 {
 	return plan.authorizedWriterEpoch
+}
+func (plan OwnershipTransferApprovalCollectionPlan) AuthorizedWriterIdentity() string {
+	return plan.authorizedWriterIdentity
+}
+func (plan OwnershipTransferApprovalCollectionPlan) AuthorizedWriterHomeRegion() string {
+	return plan.authorizedWriterHomeRegion
 }
 func (plan OwnershipTransferApprovalCollectionPlan) WriterEvidenceDigest() [32]byte {
 	return plan.writerEvidenceDigest

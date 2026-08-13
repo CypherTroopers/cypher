@@ -38,7 +38,7 @@ are bounded, valid UTF-8, NFC-normalized and free of control characters. The
 closed owner-domain catalog is versioned in source; adding a domain requires a
 reviewed code change.
 
-One operation carries at most 384 claims and at most 4 MiB of canonical claim
+One operation carries at most 768 claims and at most 4 MiB of canonical claim
 bytes. This covers the v1 ownership-transfer maximum (256 future key-closure
 records, 64 retained evidence assertions and the base identity/record/audit
 IDs) while keeping planner and transaction memory bounded.

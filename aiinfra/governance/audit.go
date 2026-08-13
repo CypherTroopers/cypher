@@ -18,15 +18,18 @@ import (
 	foundationv1 "github.com/cypherium/cypher/aiinfra/schema/foundation/v1"
 )
 
+const maxAuditPolicyDigests = 64
+
 // PlanAuditAppend validates one signed AuditEvent against the single-writer
 // stream head. PreviousEventDigestSHA256 uses ccse.Record.Digest exactly: the
 // SHA-256 digest of the canonical CCSE preimage defined by the existing API.
 func (p *Planner) PlanAuditAppend(ctx context.Context, command AuditAppendCommand) (MutationPlan, AuditIntent, error) {
-	return p.planAuditAppend(ctx, command, nil, nil, nil)
+	return p.planAuditAppend(ctx, command, nil, nil, nil, nil)
 }
 
 func (p *Planner) planAuditAppend(ctx context.Context, command AuditAppendCommand, transactionEvidence map[[ccse.DigestSize]byte]DurableEvidence,
-	joinedReservation *idempotency.Snapshot, joinedParent *idempotency.Binding) (MutationPlan, AuditIntent, error) {
+	joinedReservation *idempotency.Snapshot, joinedParent *idempotency.Binding,
+	existingEvidence map[[ccse.DigestSize]byte]durableEvidencePendingLink) (MutationPlan, AuditIntent, error) {
 	if p == nil || p.canonical == nil {
 		return MutationPlan{}, AuditIntent{}, ErrInvalidConfiguration
 	}
@@ -53,7 +56,12 @@ func (p *Planner) planAuditAppend(ctx context.Context, command AuditAppendComman
 		return MutationPlan{}, AuditIntent{}, err
 	}
 	event, ok := decoded.(foundationv1.AuditEventSigningProjection)
-	if !ok {
+	if !ok || len(event.Metadata.PolicyDigestsSHA256) == 0 ||
+		len(event.Metadata.PolicyDigestsSHA256) > maxAuditPolicyDigests ||
+		len(event.AppliedPolicyDigestsSHA256) == 0 ||
+		len(event.AppliedPolicyDigestsSHA256) > maxAuditPolicyDigests ||
+		hasDuplicateDigests(event.Metadata.PolicyDigestsSHA256) ||
+		hasDuplicateDigests(event.AppliedPolicyDigestsSHA256) {
 		return MutationPlan{}, AuditIntent{}, ErrInvalidSignedRecord
 	}
 	binding := idempotency.Binding{}
@@ -137,6 +145,9 @@ func (p *Planner) planAuditAppend(ctx context.Context, command AuditAppendComman
 	}
 	requiredPolicies := append([][ccse.DigestSize]byte(nil), sourceAuthorizationPolicies...)
 	requiredPolicies = uniqueSortedDigests(append(requiredPolicies, key.AuthorizationPolicyDigestSHA256, p.profileDigest))
+	if len(requiredPolicies) == 0 || len(requiredPolicies) > maxAuditPolicyDigests {
+		return MutationPlan{}, AuditIntent{}, fmt.Errorf("%w: audit authorization policy set exceeds protocol bound", ErrKeyNotAuthorized)
+	}
 	if !equalDigestSets(event.Metadata.PolicyDigestsSHA256, event.AppliedPolicyDigestsSHA256) ||
 		!equalDigestSets(event.AppliedPolicyDigestsSHA256, requiredPolicies) {
 		return MutationPlan{}, AuditIntent{}, fmt.Errorf("%w: exact audit authorization policy set differs", ErrKeyNotAuthorized)
@@ -157,6 +168,10 @@ func (p *Planner) planAuditAppend(ctx context.Context, command AuditAppendComman
 		profileActivation.GovernanceProfileDigestSHA256 != p.profileDigest {
 		return MutationPlan{}, AuditIntent{}, ErrAuditAnchor
 	}
+	profileAssertion, err := p.canonicalProfileAssertion(ctx, profileActivation)
+	if err != nil {
+		return MutationPlan{}, AuditIntent{}, fmt.Errorf("%w: canonical governance profile activation", ErrAuditAnchor)
+	}
 
 	head, err := p.audit.SnapshotAuditHead(ctx, p.profile.AuditReplayDomainID)
 	if err != nil {
@@ -167,6 +182,10 @@ func (p *Planner) planAuditAppend(ctx context.Context, command AuditAppendComman
 	}
 	if err := p.validateAuditHead(ctx, head, command.AtUnixNano); err != nil {
 		return MutationPlan{}, AuditIntent{}, err
+	}
+	writerLeaseAssertion, err := p.canonicalAuditWriterLeaseAssertion(ctx, head, key)
+	if err != nil {
+		return MutationPlan{}, AuditIntent{}, fmt.Errorf("%w: canonical audit writer lease", ErrAuditAnchor)
 	}
 	if head.Sequence == math.MaxUint64 || event.AuditSequence != head.Sequence+1 {
 		return MutationPlan{}, AuditIntent{}, ErrAuditSequence
@@ -223,6 +242,16 @@ func (p *Planner) planAuditAppend(ctx context.Context, command AuditAppendComman
 	if err != nil {
 		return MutationPlan{}, AuditIntent{}, ErrAuditSequence
 	}
+	storageCapabilities, err := newDurableEvidenceStorageCapabilitiesForAudit(sourceEvidence, event.AuditEventID, existingEvidence)
+	if err != nil {
+		return MutationPlan{}, AuditIntent{}, ErrAuditEvidence
+	}
+	keyReadSet := append([]KeyStatePrecondition(nil), sourceKeyPreconditions...)
+	keyReadSet = append(keyReadSet, keyPrecondition(key))
+	canonicalKeyAssertions, err := p.canonicalKeyStateAssertions(ctx, keyReadSet)
+	if err != nil {
+		return MutationPlan{}, AuditIntent{}, fmt.Errorf("%w: canonical key read set", err)
+	}
 	planValue := MutationPlanSnapshot{
 		CommitReady:                                    true,
 		EvaluatedAtUnixNano:                            command.AtUnixNano,
@@ -230,9 +259,13 @@ func (p *Planner) planAuditAppend(ctx context.Context, command AuditAppendComman
 		CommitNotAfterUnixNano:                         commitDeadline,
 		GovernanceProfileDigestSHA256:                  p.profileDigest,
 		GovernanceProfileActivation:                    profileActivation,
+		CanonicalStateAssertions:                       []CanonicalStateAssertion{profileAssertion},
+		CanonicalKeyStateAssertions:                    canonicalKeyAssertions,
+		CanonicalAuditWriterLeaseAssertion:             writerLeaseAssertion,
 		Kind:                                           MutationAuditAppend,
 		AuditSourceDigestsSHA256:                       append([][ccse.DigestSize]byte(nil), sources...),
 		AuditSourceEvidence:                            sourceEvidence,
+		AuditSourceStorageCapabilities:                 storageCapabilities,
 		AuditSourceKeyPreconditions:                    sourceKeyPreconditions,
 		AuditStreamID:                                  p.profile.AuditReplayDomainID,
 		AuditEventID:                                   event.AuditEventID,
@@ -290,6 +323,10 @@ func (p *Planner) planAuditAppend(ctx context.Context, command AuditAppendComman
 			intentValue.BreakGlassExpiresAtUnixNano = breakGlassExpiry
 			intentValue.BreakGlassScopes = scopes
 		}
+	}
+	planValue.CanonicalAuditAppend, err = newCanonicalAuditAppendCapability(planValue, event)
+	if err != nil {
+		return MutationPlan{}, AuditIntent{}, ErrAuditAnchor
 	}
 	plan, err := newMutationPlan(planValue)
 	if err != nil {
@@ -397,9 +434,26 @@ func (p *Planner) validateAuditSources(ctx context.Context, sources [][ccse.Dige
 				} else if evidence.keyPrecondition != (KeyStatePrecondition{}) || evidence.authorizationNotAfter != 0 {
 					return nil, nil, nil, 0, ErrAuditEvidence
 				}
-			} else if evidence.kind != EvidenceContentSHA256 || len(evidence.authorizationPolicyDigests) != 0 ||
-				evidence.keyPreconditionPresent || evidence.keyPrecondition != (KeyStatePrecondition{}) || evidence.authorizationNotAfter != 0 {
-				return nil, nil, nil, 0, ErrAuditEvidence
+			} else {
+				switch evidence.kind {
+				case EvidenceContentSHA256:
+					if evidence.semanticDomain != "" || len(evidence.content) == 0 || sha256.Sum256(evidence.content) != evidence.digest {
+						return nil, nil, nil, 0, ErrAuditEvidence
+					}
+				case EvidenceSemanticReceipt:
+					if evidence.semanticDomain != iamAuditEvidenceReceiptDomain || len(evidence.content) == 0 ||
+						len(evidence.content) > 64<<20 ||
+						domainSeparatedContentDigest(iamAuditEvidenceBundleDigestDomain, evidence.content) != evidence.digest {
+						return nil, nil, nil, 0, ErrAuditEvidence
+					}
+				default:
+					return nil, nil, nil, 0, ErrAuditEvidence
+				}
+				if len(evidence.authorizationPolicyDigests) != 0 || evidence.keyPreconditionPresent ||
+					evidence.keyPrecondition != (KeyStatePrecondition{}) || evidence.authorizationNotAfter != 0 ||
+					evidence.signed.record.MessageTypeID != 0 {
+					return nil, nil, nil, 0, ErrAuditEvidence
+				}
 			}
 			retained = append(retained, cloneDurableEvidence(evidence))
 			continue

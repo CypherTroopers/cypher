@@ -205,7 +205,8 @@ func authorizeHistoricalPolicyKey(signed signedRecordSnapshot, input GovernanceK
 		!containsMessageType(key.AllowedMessageTypeIDs, schema.MessageTypePolicyBundle) ||
 		isZeroDigest(key.AuthorizationPolicyDigestSHA256) || key.StateVersion == 0 || key.WriterEpoch == 0 ||
 		isZeroDigest(key.SnapshotDigestSHA256) || key.IdentityStateVersion == 0 || key.IdentityWriterEpoch == 0 ||
-		isZeroDigest(key.IdentitySnapshotDigestSHA256) || hasDuplicateUint32(key.AllowedMessageTypeIDs) ||
+		isZeroDigest(key.IdentitySnapshotDigestSHA256) || key.KeyMaterialStateVersion != 1 ||
+		isZeroDigest(key.KeyMaterialStateDigestSHA256) || hasDuplicateUint32(key.AllowedMessageTypeIDs) ||
 		hasDuplicateStrings(key.Roles) || containsEmpty(key.Roles) || key.Algorithm != signed.record.Domain.SignatureAlgorithm ||
 		key.Algorithm != signed.record.Envelope.SignatureAlgorithm {
 		return GovernanceKeySnapshot{}, ErrKeyNotAuthorized

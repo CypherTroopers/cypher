@@ -86,7 +86,7 @@ const insertBusinessHistorySQL = `
 // immutable history inserts.
 func (uow *CanonicalUOW) ApplyBusinessIdempotency(ctx context.Context,
 	mutation BusinessIdempotencyMutation) error {
-	state, err := uow.lock(ctx)
+	state, err := uow.lockForWrite(ctx)
 	if err != nil {
 		return err
 	}

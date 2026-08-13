@@ -16,6 +16,7 @@ CREATE TABLE cph_aiinfra.authoritative_uow (
     result_payload              BYTEA NOT NULL,
     evidence_assertion_count    SMALLINT NOT NULL,
     audit_event_id              TEXT COLLATE "C",
+    outer_payload_digest        BYTEA,
     transaction_id              XID8 NOT NULL,
     committed_at                TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT authoritative_uow_pk PRIMARY KEY (scope_sha256, message_id),
@@ -31,10 +32,13 @@ CREATE TABLE cph_aiinfra.authoritative_uow (
     CONSTRAINT authoritative_uow_payload_length CHECK (octet_length(result_payload) <= 1048576),
     CONSTRAINT authoritative_uow_evidence_count CHECK (evidence_assertion_count BETWEEN 0 AND 2048),
     CONSTRAINT authoritative_uow_event_length CHECK (audit_event_id IS NULL OR octet_length(audit_event_id) BETWEEN 1 AND 1024),
+    CONSTRAINT authoritative_uow_outer_payload_length CHECK (outer_payload_digest IS NULL OR octet_length(outer_payload_digest) = 32),
     CONSTRAINT authoritative_uow_kind_shape CHECK (
-        (uow_kind = 1 AND audit_event_id IS NULL AND evidence_assertion_count = 0)
+        (uow_kind = 1 AND audit_event_id IS NULL AND outer_payload_digest IS NULL
+            AND evidence_assertion_count = 0)
         OR
-        (uow_kind = 2 AND audit_event_id IS NOT NULL AND evidence_assertion_count > 0)
+        (uow_kind = 2 AND audit_event_id IS NOT NULL AND outer_payload_digest IS NOT NULL
+            AND evidence_assertion_count > 0)
     )
 );
 
@@ -370,7 +374,7 @@ CREATE TABLE cph_aiinfra.global_identifier_claim (
     CONSTRAINT global_identifier_claim_uow_fk FOREIGN KEY (uow_scope_sha256, uow_message_id)
         REFERENCES cph_aiinfra.authoritative_uow(scope_sha256, message_id) DEFERRABLE INITIALLY DEFERRED,
     CONSTRAINT global_identifier_claim_event_length CHECK (octet_length(audit_event_id) BETWEEN 1 AND 1024),
-    CONSTRAINT global_identifier_claim_ordinal_range CHECK (claim_ordinal BETWEEN 1 AND 384),
+    CONSTRAINT global_identifier_claim_ordinal_range CHECK (claim_ordinal BETWEEN 1 AND 768),
     CONSTRAINT global_identifier_claim_identifier_length CHECK (octet_length(identifier) BETWEEN 1 AND 1024),
     CONSTRAINT global_identifier_claim_mode CHECK (claim_mode IN (1, 2, 3)),
     CONSTRAINT global_identifier_claim_expected_domain_length CHECK (expected_owner_domain IS NULL OR octet_length(expected_owner_domain) BETWEEN 1 AND 255),
@@ -753,7 +757,11 @@ DECLARE
     result_payload BYTEA;
     inbox_transaction XID8;
     inbox_outcome BYTEA;
+    inbox_message_type BIGINT;
+    inbox_schema_major BIGINT;
+    inbox_schema_minor BIGINT;
     assertion_count BIGINT;
+    canonical_byte_count BIGINT;
 BEGIN
     SELECT transaction_id, content_type, payload
       INTO result_transaction, result_content_type, result_payload
@@ -761,7 +769,8 @@ BEGIN
      WHERE scope_sha256 = NEW.scope_sha256
        AND message_id = NEW.message_id
        AND result_digest = NEW.outcome_digest;
-    SELECT transaction_id, outcome_digest INTO inbox_transaction, inbox_outcome
+    SELECT transaction_id, outcome_digest, message_type_id, schema_major, schema_minor
+      INTO inbox_transaction, inbox_outcome, inbox_message_type, inbox_schema_major, inbox_schema_minor
       FROM cph_aiinfra.ccse_replay_inbox
      WHERE scope_sha256 = NEW.scope_sha256 AND message_id = NEW.message_id;
     IF result_transaction IS NULL OR inbox_transaction IS NULL
@@ -771,6 +780,12 @@ BEGIN
        OR result_content_type IS DISTINCT FROM NEW.result_content_type
        OR result_payload IS DISTINCT FROM NEW.result_payload THEN
         RAISE EXCEPTION 'authoritative UoW must share the exact CCSE inbox/result receipt'
+            USING ERRCODE = '23514';
+    END IF;
+    IF (inbox_message_type = 65547) IS DISTINCT FROM (NEW.uow_kind = 2)
+       OR (NEW.uow_kind = 2
+           AND (inbox_schema_major <> 1 OR inbox_schema_minor <> 0)) THEN
+        RAISE EXCEPTION 'AuditEvent outer and audited-final UoW kind must map exactly'
             USING ERRCODE = '23514';
     END IF;
     IF NEW.uow_kind = 2 AND NOT EXISTS (
@@ -790,6 +805,33 @@ BEGIN
        AND assertion.transaction_id = NEW.transaction_id;
     IF assertion_count <> NEW.evidence_assertion_count THEN
         RAISE EXCEPTION 'authoritative UoW evidence assertion count differs'
+            USING ERRCODE = '23514';
+    END IF;
+    SELECT
+        COALESCE((
+            SELECT sum(octet_length(evidence.canonical_content))
+              FROM cph_aiinfra.durable_evidence evidence
+             WHERE evidence.uow_scope_sha256 = NEW.scope_sha256
+               AND evidence.uow_message_id = NEW.message_id
+               AND evidence.transaction_id = NEW.transaction_id
+        ), 0)
+        + COALESCE((
+            SELECT sum(octet_length(revision.canonical_envelope))
+              FROM cph_aiinfra.durable_pending_revision revision
+             WHERE revision.uow_scope_sha256 = NEW.scope_sha256
+               AND revision.uow_message_id = NEW.message_id
+               AND revision.transaction_id = NEW.transaction_id
+        ), 0)
+        + COALESCE((
+            SELECT sum(octet_length(history.canonical_state))
+              FROM cph_aiinfra.canonical_state_history history
+             WHERE history.uow_scope_sha256 = NEW.scope_sha256
+               AND history.uow_message_id = NEW.message_id
+               AND history.transaction_id = NEW.transaction_id
+        ), 0)
+      INTO canonical_byte_count;
+    IF canonical_byte_count > 67108864 THEN
+        RAISE EXCEPTION 'authoritative UoW canonical byte budget exceeded'
             USING ERRCODE = '23514';
     END IF;
     RETURN NULL;
@@ -839,6 +881,8 @@ BEGIN
            AND inbox.schema_major = 1
            AND inbox.schema_minor = 0
            AND inbox.record_digest = NEW.record_digest
+           AND uow.outer_payload_digest = NEW.event_digest
+           AND NEW.event_digest = pg_catalog.sha256(NEW.canonical_event)
     ) THEN
         RAISE EXCEPTION 'AuditEvent is not the exact outer replay record of its audited-final UoW'
             USING ERRCODE = '23514';
@@ -1394,8 +1438,9 @@ BEGIN
         RAISE EXCEPTION 'durable pending head cannot be deleted' USING ERRCODE = '55000';
     END IF;
     IF TG_OP = 'INSERT' THEN
-        IF NEW.revision <> 1 OR NEW.pending_kind = 4 THEN
-            RAISE EXCEPTION 'durable pending row must start at revision one' USING ERRCODE = '23514';
+        IF NEW.revision <> 1 OR NEW.pending_kind = 4 OR NEW.status <> 1
+           OR NEW.terminal_outcome_digest IS NOT NULL THEN
+            RAISE EXCEPTION 'durable pending row must start open at revision one' USING ERRCODE = '23514';
         END IF;
         NEW.transaction_id := pg_current_xact_id();
         NEW.updated_at := clock_timestamp();
@@ -1408,8 +1453,15 @@ BEGIN
        OR NEW.audit_event_id IS DISTINCT FROM OLD.audit_event_id
        OR NEW.revision <> OLD.revision + 1
        OR NEW.previous_envelope_digest IS DISTINCT FROM OLD.envelope_digest
-       OR NEW.envelope_digest IS NOT DISTINCT FROM OLD.envelope_digest
        OR (OLD.status = 1 AND NEW.status NOT IN (1, 2))
+       OR (NEW.pending_kind = OLD.pending_kind AND NEW.status = 2 AND (
+            NEW.envelope_digest IS DISTINCT FROM OLD.envelope_digest
+            OR NEW.canonical_envelope IS DISTINCT FROM OLD.canonical_envelope
+            OR NEW.commit_not_before_unix_nano IS DISTINCT FROM OLD.commit_not_before_unix_nano
+            OR NEW.commit_not_after_unix_nano IS DISTINCT FROM OLD.commit_not_after_unix_nano
+       ))
+       OR (NOT (NEW.pending_kind = OLD.pending_kind AND NEW.status = 2)
+            AND NEW.envelope_digest IS NOT DISTINCT FROM OLD.envelope_digest)
        OR (NEW.pending_kind IS DISTINCT FROM OLD.pending_kind AND NOT (
             OLD.pending_kind IN (1, 2, 3, 5)
             AND NEW.pending_kind = 4
@@ -1497,6 +1549,152 @@ BEGIN
         ) THEN
             RAISE EXCEPTION 'durable pending phase does not match its authoritative UoW'
                 USING ERRCODE = '23514';
+        END IF;
+        IF NEW.status = 1 AND NEW.revision > 1 AND NOT EXISTS (
+            SELECT 1 FROM cph_aiinfra.durable_pending_revision source
+             WHERE source.pending_key = NEW.pending_key
+               AND source.revision = NEW.revision - 1
+               AND source.pending_kind = NEW.pending_kind
+               AND source.codec = NEW.codec
+               AND source.codec_version = NEW.codec_version
+               AND source.status = 1
+               AND source.terminal_outcome_digest IS NULL
+               AND source.envelope_digest = NEW.previous_envelope_digest
+               AND source.audit_event_id = NEW.audit_event_id
+               AND (
+                   NEW.pending_kind NOT IN (3, 7)
+                   OR (NEW.pending_kind = 3 AND NOT EXISTS (
+                       SELECT 1 FROM cph_aiinfra.durable_pending_evidence source_evidence
+                        WHERE source_evidence.pending_key = source.pending_key
+                          AND source_evidence.revision = source.revision
+                          AND NOT EXISTS (
+                              SELECT 1 FROM cph_aiinfra.durable_pending_evidence next_evidence
+                               WHERE next_evidence.pending_key = NEW.pending_key
+                                 AND next_evidence.revision = NEW.revision
+                                 AND next_evidence.evidence_digest = source_evidence.evidence_digest
+                          )
+                   ))
+                   OR (NEW.pending_kind = 7 AND (
+                       (
+                           (SELECT COUNT(*) FROM cph_aiinfra.durable_pending_evidence next_evidence
+                             WHERE next_evidence.pending_key = NEW.pending_key
+                               AND next_evidence.revision = NEW.revision) =
+                           (SELECT COUNT(*) FROM cph_aiinfra.durable_pending_evidence source_evidence
+                             WHERE source_evidence.pending_key = source.pending_key
+                               AND source_evidence.revision = source.revision) + 1
+                           AND NOT EXISTS (
+                               SELECT 1 FROM cph_aiinfra.durable_pending_evidence source_evidence
+                                WHERE source_evidence.pending_key = source.pending_key
+                                  AND source_evidence.revision = source.revision
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM cph_aiinfra.durable_pending_evidence next_evidence
+                                       WHERE next_evidence.pending_key = NEW.pending_key
+                                         AND next_evidence.revision = NEW.revision
+                                         AND next_evidence.evidence_digest = source_evidence.evidence_digest
+                                  )
+                           )
+                       )
+                       OR (
+                           (SELECT COUNT(*) FROM cph_aiinfra.durable_pending_evidence next_evidence
+                             WHERE next_evidence.pending_key = NEW.pending_key
+                               AND next_evidence.revision = NEW.revision) =
+                           (SELECT COUNT(*) FROM cph_aiinfra.durable_pending_evidence source_evidence
+                             WHERE source_evidence.pending_key = source.pending_key
+                               AND source_evidence.revision = source.revision)
+                           AND 1 = (
+                               SELECT COUNT(*) FROM cph_aiinfra.durable_pending_evidence source_evidence
+                                WHERE source_evidence.pending_key = source.pending_key
+                                  AND source_evidence.revision = source.revision
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM cph_aiinfra.durable_pending_evidence next_evidence
+                                       WHERE next_evidence.pending_key = NEW.pending_key
+                                         AND next_evidence.revision = NEW.revision
+                                         AND next_evidence.evidence_digest = source_evidence.evidence_digest
+                                  )
+                           )
+                           AND 1 = (
+                               SELECT COUNT(*) FROM cph_aiinfra.durable_pending_evidence next_evidence
+                                WHERE next_evidence.pending_key = NEW.pending_key
+                                  AND next_evidence.revision = NEW.revision
+                                  AND NOT EXISTS (
+                                      SELECT 1 FROM cph_aiinfra.durable_pending_evidence source_evidence
+                                       WHERE source_evidence.pending_key = source.pending_key
+                                         AND source_evidence.revision = source.revision
+                                         AND source_evidence.evidence_digest = next_evidence.evidence_digest
+                                  )
+                           )
+                       )
+                   ))
+               )
+        ) THEN
+            RAISE EXCEPTION 'open durable pending advance has no exact immutable predecessor'
+                USING ERRCODE = '23514';
+        END IF;
+        IF NEW.status = 2 AND NEW.pending_kind = 4 AND NOT EXISTS (
+            SELECT 1 FROM cph_aiinfra.durable_pending_revision source
+             WHERE source.pending_key = NEW.pending_key
+               AND source.revision = NEW.revision - 1
+               AND source.pending_kind IN (1, 2, 3, 5)
+               AND source.codec = 'cph.aiinfra.iam.pending.v1'
+               AND source.codec_version = 1
+               AND source.status = 1
+               AND source.terminal_outcome_digest IS NULL
+               AND source.envelope_digest = NEW.previous_envelope_digest
+               AND NEW.envelope_digest <> NEW.previous_envelope_digest
+               AND source.audit_event_id = NEW.audit_event_id
+	           AND NEW.commit_not_before_unix_nano = source.commit_not_after_unix_nano
+	           AND NEW.commit_not_after_unix_nano > NEW.commit_not_before_unix_nano
+	           AND NOT EXISTS (
+	               SELECT 1 FROM cph_aiinfra.durable_pending_evidence source_evidence
+	                WHERE source_evidence.pending_key = source.pending_key
+	                  AND source_evidence.revision = source.revision
+	                  AND NOT EXISTS (
+	                      SELECT 1 FROM cph_aiinfra.durable_pending_evidence terminal_evidence
+	                       WHERE terminal_evidence.pending_key = NEW.pending_key
+	                         AND terminal_evidence.revision = NEW.revision
+	                         AND terminal_evidence.evidence_digest = source_evidence.evidence_digest
+	                  )
+	           )
+        ) THEN
+            RAISE EXCEPTION 'reconciliation terminal has no exact immutable open source revision'
+                USING ERRCODE = '23514';
+        END IF;
+        IF NEW.status = 2 AND NEW.pending_kind <> 4 THEN
+            IF NOT EXISTS (
+                SELECT 1 FROM cph_aiinfra.durable_pending_revision source
+                 WHERE source.pending_key = NEW.pending_key
+                   AND source.revision = NEW.revision - 1
+                   AND source.pending_kind = NEW.pending_kind
+                   AND source.codec = NEW.codec
+                   AND source.codec_version = NEW.codec_version
+                   AND source.status = 1
+                   AND source.terminal_outcome_digest IS NULL
+                   AND source.envelope_digest = NEW.previous_envelope_digest
+                   AND source.envelope_digest = NEW.envelope_digest
+                   AND source.canonical_envelope = NEW.canonical_envelope
+                   AND source.commit_not_before_unix_nano = NEW.commit_not_before_unix_nano
+                   AND source.commit_not_after_unix_nano = NEW.commit_not_after_unix_nano
+                   AND source.audit_event_id = NEW.audit_event_id
+            ) THEN
+                RAISE EXCEPTION 'successful terminal must preserve its exact open semantic envelope'
+                    USING ERRCODE = '23514';
+            END IF;
+            IF EXISTS (
+                (SELECT evidence_digest FROM cph_aiinfra.durable_pending_evidence
+                  WHERE pending_key = NEW.pending_key AND revision = NEW.revision
+                 EXCEPT
+                 SELECT evidence_digest FROM cph_aiinfra.durable_pending_evidence
+                  WHERE pending_key = NEW.pending_key AND revision = NEW.revision - 1)
+                UNION ALL
+                (SELECT evidence_digest FROM cph_aiinfra.durable_pending_evidence
+                  WHERE pending_key = NEW.pending_key AND revision = NEW.revision - 1
+                 EXCEPT
+                 SELECT evidence_digest FROM cph_aiinfra.durable_pending_evidence
+                  WHERE pending_key = NEW.pending_key AND revision = NEW.revision)
+            ) THEN
+                RAISE EXCEPTION 'successful terminal must preserve its exact retained evidence set'
+                    USING ERRCODE = '23514';
+            END IF;
         END IF;
         IF NOT EXISTS (
             SELECT 1
@@ -1606,7 +1804,8 @@ BEGIN
                 'cph.aiinfra.iam.subject-key-set.v1',
                 'cph.aiinfra.iam.writer-lease.v1',
                 'cph.aiinfra.iam.ownership-transfer-profile-activation.v1',
-                'cph.aiinfra.governance.policy-registry.v1'
+                'cph.aiinfra.governance.policy-registry.v1',
+                'cph.aiinfra.governance.profile-activation.v1'
             ) AND NEW.terminal) THEN
             RAISE EXCEPTION 'canonical state initial terminal shape is invalid'
                 USING ERRCODE = '23514';
@@ -1632,7 +1831,8 @@ BEGIN
             'cph.aiinfra.iam.subject-key-set.v1',
             'cph.aiinfra.iam.writer-lease.v1',
             'cph.aiinfra.iam.ownership-transfer-profile-activation.v1',
-            'cph.aiinfra.governance.policy-registry.v1'
+            'cph.aiinfra.governance.policy-registry.v1',
+            'cph.aiinfra.governance.profile-activation.v1'
        ) AND NEW.terminal) THEN
         RAISE EXCEPTION 'canonical state transition is not monotonic'
             USING ERRCODE = '23514';
@@ -1674,6 +1874,30 @@ BEGIN
 END;
 $cph$;
 
+CREATE FUNCTION cph_aiinfra.assert_governance_profile_activation_timeline()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog
+AS $cph$
+BEGIN
+    IF NEW.state_namespace = 2
+       AND NEW.object_kind = 'cph.aiinfra.governance.profile-activation.v1'
+       AND EXISTS (
+            SELECT 1 FROM cph_aiinfra.canonical_state_history other
+             WHERE other.state_namespace = NEW.state_namespace
+               AND other.object_kind = NEW.object_kind
+               AND (other.object_id <> NEW.object_id OR other.version <> NEW.version)
+               AND other.valid_from_unix_nano < NEW.valid_until_unix_nano
+               AND NEW.valid_from_unix_nano < other.valid_until_unix_nano
+       ) THEN
+        RAISE EXCEPTION 'Governance profile activation timeline overlaps'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NULL;
+END;
+$cph$;
+
 CREATE FUNCTION cph_aiinfra.assert_canonical_state_consistency()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -1692,6 +1916,8 @@ BEGIN
                AND history.content_type = NEW.content_type
                AND history.canonical_state = NEW.canonical_state
                AND history.terminal = NEW.terminal
+               AND history.valid_from_unix_nano IS NOT DISTINCT FROM NEW.valid_from_unix_nano
+               AND history.valid_until_unix_nano IS NOT DISTINCT FROM NEW.valid_until_unix_nano
                AND history.audit_event_id = NEW.audit_event_id
                AND history.uow_scope_sha256 = NEW.uow_scope_sha256
                AND history.uow_message_id = NEW.uow_message_id
@@ -1710,10 +1936,27 @@ BEGIN
            AND head.content_type = NEW.content_type
            AND head.canonical_state = NEW.canonical_state
            AND head.terminal = NEW.terminal
+           AND head.valid_from_unix_nano IS NOT DISTINCT FROM NEW.valid_from_unix_nano
+           AND head.valid_until_unix_nano IS NOT DISTINCT FROM NEW.valid_until_unix_nano
            AND head.audit_event_id = NEW.audit_event_id
            AND head.uow_scope_sha256 = NEW.uow_scope_sha256
            AND head.uow_message_id = NEW.uow_message_id
            AND head.transaction_id = NEW.transaction_id
+    ) AND NOT EXISTS (
+        -- One audited cutover may intentionally advance the same sidecar more
+        -- than once (for example old-owner -> terminal -> new-owner on one
+        -- principal index). Every non-final history row must therefore have
+        -- the exact next version in the same authoritative UoW; the final row
+        -- remains byte-equal to the head above. The Go boundary separately
+        -- requires each successor's Expected row to equal its predecessor.
+        SELECT 1 FROM cph_aiinfra.canonical_state_history successor
+         WHERE successor.state_namespace = NEW.state_namespace
+           AND successor.object_kind = NEW.object_kind
+           AND successor.object_id = NEW.object_id
+           AND successor.version = NEW.version + 1
+           AND successor.uow_scope_sha256 = NEW.uow_scope_sha256
+           AND successor.uow_message_id = NEW.uow_message_id
+           AND successor.transaction_id = NEW.transaction_id
     ) THEN
         RAISE EXCEPTION 'canonical state history has no exact same-transaction head'
             USING ERRCODE = '23514';
@@ -1957,6 +2200,11 @@ CREATE CONSTRAINT TRIGGER canonical_state_history_consistency
 AFTER INSERT ON cph_aiinfra.canonical_state_history
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION cph_aiinfra.assert_canonical_state_consistency();
+
+CREATE CONSTRAINT TRIGGER canonical_state_history_profile_timeline
+AFTER INSERT ON cph_aiinfra.canonical_state_history
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION cph_aiinfra.assert_governance_profile_activation_timeline();
 
 CREATE CONSTRAINT TRIGGER canonical_state_history_uow
 AFTER INSERT ON cph_aiinfra.canonical_state_history

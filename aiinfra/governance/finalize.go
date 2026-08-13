@@ -55,7 +55,8 @@ func (p *Planner) FinalizePolicyMutation(ctx context.Context, pending PendingPol
 	auditPlan, actualIntent, err := p.planAuditAppend(ctx, AuditAppendCommand{
 		AtUnixNano: command.AtUnixNano, Event: command.AuditEvent,
 		SourceRecordDigestsSHA256: append([][32]byte(nil), policy.AuditSourceDigestsSHA256...),
-	}, transactionEvidence, &policy.JoinedAuditIdempotencySnapshot, &policy.PolicyIdempotencySnapshot.Binding)
+	}, transactionEvidence, &policy.JoinedAuditIdempotencySnapshot, &policy.PolicyIdempotencySnapshot.Binding,
+		policyPendingEvidenceLinks(policy))
 	if err != nil {
 		return MutationPlan{}, err
 	}
@@ -84,6 +85,7 @@ func (p *Planner) FinalizePolicyMutation(ctx context.Context, pending PendingPol
 	for index := range policy.AuditSourceEvidence {
 		policy.AuditSourceEvidence[index] = cloneDurableEvidence(policy.AuditSourceEvidence[index])
 	}
+	policy.AuditSourceStorageCapabilities = cloneDurableEvidenceStorageCapabilities(audit.AuditSourceStorageCapabilities)
 	policy.AuditSourceKeyPreconditions = append([]KeyStatePrecondition(nil), audit.AuditSourceKeyPreconditions...)
 	policy.ExpectedAuditEventAbsent = audit.ExpectedAuditEventAbsent
 	policy.DeploymentAnchorSHA256 = audit.DeploymentAnchorSHA256
@@ -104,6 +106,16 @@ func (p *Planner) FinalizePolicyMutation(ctx context.Context, pending PendingPol
 	policy.NextAuditRecordDigestSHA256 = audit.NextAuditRecordDigestSHA256
 	policy.AuditEventEvidence = audit.AuditEventEvidence
 	policy.AuditWriterKeyPrecondition = audit.AuditWriterKeyPrecondition
+	keyReadSet := append([]KeyStatePrecondition(nil), policy.AuditSourceKeyPreconditions...)
+	keyReadSet = append(keyReadSet, policy.ApprovalKeyPreconditions...)
+	keyReadSet = append(keyReadSet, policy.AuditWriterKeyPrecondition)
+	policy.CanonicalKeyStateAssertions, err = p.canonicalKeyStateAssertions(ctx, keyReadSet)
+	if err != nil {
+		return MutationPlan{}, fmt.Errorf("%w: canonical key read set", err)
+	}
+	policy.CanonicalAuditAppend = cloneCanonicalAuditAppendCapability(audit.CanonicalAuditAppend)
+	policy.CanonicalAuditWriterLeaseAssertion = cloneCanonicalAuditWriterLeaseAssertion(audit.CanonicalAuditWriterLeaseAssertion)
+	policy.CanonicalStateAssertions = cloneCanonicalStateAssertions(audit.CanonicalStateAssertions)
 	policy.IdempotencyOutcome = audit.IdempotencyOutcome
 	policy.IdentifierClaims, err = globalid.NormalizeClaims(append(append([]globalid.Claim(nil), policy.IdentifierClaims...), audit.IdentifierClaims...))
 	if err != nil {
@@ -117,6 +129,11 @@ func (p *Planner) FinalizePolicyMutation(ctx context.Context, pending PendingPol
 	if err != nil {
 		return MutationPlan{}, fmt.Errorf("%w: compound idempotency claims: %v", ErrInvalidCommand, err)
 	}
+	policyMutation, err := p.canonicalPolicyMutation(ctx, policy)
+	if err != nil {
+		return MutationPlan{}, fmt.Errorf("%w: canonical policy registry mutation", err)
+	}
+	policy.CanonicalStateMutations = []CanonicalStateMutation{policyMutation}
 	return newMutationPlan(policy)
 }
 
@@ -194,6 +211,23 @@ func policyTransactionEvidence(policy MutationPlanSnapshot) (map[[ccse.DigestSiz
 		}
 	}
 	return result, nil
+}
+
+func policyPendingEvidenceLinks(policy MutationPlanSnapshot) map[[ccse.DigestSize]byte]durableEvidencePendingLink {
+	return policyPendingEvidenceLinksFromDigests(policy.PolicyIdempotencySnapshot.Binding.Key,
+		policy.PolicyIdempotencySnapshot.Version, policy.ApprovalRecordDigestsSHA256)
+}
+
+func policyPendingEvidenceLinksFromDigests(key [ccse.MessageIDSize]byte, revision uint64,
+	digests [][ccse.DigestSize]byte) map[[ccse.DigestSize]byte]durableEvidencePendingLink {
+	if key == ([ccse.MessageIDSize]byte{}) || revision == 0 || len(digests) == 0 {
+		return nil
+	}
+	result := make(map[[ccse.DigestSize]byte]durableEvidencePendingLink, len(digests))
+	for _, digest := range digests {
+		result[digest] = durableEvidencePendingLink{pendingKey: key, pendingRevision: revision}
+	}
+	return result
 }
 
 func (p *Planner) revalidatePendingPolicy(ctx context.Context, policy MutationPlanSnapshot, at int64) error {

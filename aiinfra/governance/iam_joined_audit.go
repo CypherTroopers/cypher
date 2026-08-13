@@ -4,11 +4,10 @@
 package governance
 
 import (
-	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"fmt"
-	"sort"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/globalid"
@@ -16,12 +15,7 @@ import (
 	"github.com/cypherium/cypher/aiinfra/idempotency"
 )
 
-const iamJoinedAuditFragmentDigestDomain = "CPH-AIIE-GOVERNANCE-IAM-JOINED-AUDIT-FRAGMENT-V1\x00"
-
-// The bridge remains fail-closed until IAM's revalidated request carries the
-// closed typed evidence fragments needed to verify every domain-separated
-// evidence digest. Bare digest/domain references are not sufficient proof.
-const iamJoinedTypedEvidenceBridgeEnabled = false
+const iamJoinedAuditFragmentDigestDomain = "CPH-AIIE-GOVERNANCE-IAM-JOINED-AUDIT-FRAGMENT-V6\x00"
 
 // IAMJoinedAuditCommand supplies only the canonical Audit Writer's signed
 // event. All expected IAM intent, X/Y state, global-ID fences, evidence and
@@ -35,8 +29,12 @@ type IAMJoinedAuditCommand struct {
 // JoinedAuditFragmentSnapshot is a detached, non-committable half of the
 // WS0.2b compound transaction. It contains the complete canonical audit/head
 // CAS but deliberately cannot be converted into a standalone MutationPlan.
-// The coordinator must join it with the exact IAM request digest and state
-// commitment in one serializable transaction.
+// IAM state/persistence and Governance audit/profile/head values are
+// optimistic pre-sign snapshots: the coordinator must join and byte-exactly
+// assert/CAS them in one serializable final transaction. Replanning after the
+// AuditEvent is signed would create a signature/result cycle and is forbidden.
+// A reconciliation database clock observation is therefore a final-result
+// concern, not a field inferred or required by this pre-sign fragment.
 type JoinedAuditFragmentSnapshot struct {
 	CommitReady                        bool
 	EvaluatedAtUnixNano                int64
@@ -57,10 +55,15 @@ type JoinedAuditFragmentSnapshot struct {
 	ExpectedOutcome                    uint32
 	IAMExpectedAuditIntentDigestSHA256 [ccse.DigestSize]byte
 	GovernanceProfileActivation        GovernanceProfileActivationSnapshot
+	CanonicalStateAssertions           []CanonicalStateAssertion
+	CanonicalKeyStateAssertions        []CanonicalKeyStateAssertion
+	CanonicalAuditWriterLeaseAssertion CanonicalAuditWriterLeaseAssertion
 	CanonicalAuditIntent               AuditIntentSnapshot
 	AuditSourceDigestsSHA256           [][ccse.DigestSize]byte
 	AuditSourceEvidence                []DurableEvidence
+	AuditSourceStorageCapabilities     []DurableEvidenceStorageCapability
 	AuditSourceKeyPreconditions        []KeyStatePrecondition
+	CanonicalAuditAppend               CanonicalAuditAppendCapability
 	AuditStreamID                      string
 	AuditRecordID                      string
 	ExpectedAuditEventAbsent           bool
@@ -83,7 +86,9 @@ type JoinedAuditFragmentSnapshot struct {
 	AuditEventEvidence                 SignedEvidence
 	AuditWriterKeyPrecondition         KeyStatePrecondition
 	AuditEventIdentifierClaim          globalid.Claim
-	ExpectedIAMEvidenceReferences      []iam.ContentAddressedEvidenceReference
+	IAMAuditEvidenceBundleDigestSHA256 [ccse.DigestSize]byte
+	IAMAuditEvidenceBundleDomain       string
+	IAMAuditEvidenceCount              int
 }
 
 // JoinedAuditFragment is opaque and always non-committable on its own.
@@ -138,9 +143,15 @@ func (fragment JoinedAuditFragment) Snapshot() JoinedAuditFragmentSnapshot {
 		JoinedAuditEventID: fragment.request.JoinedAuditEventID(), ExpectedOutcome: fragment.expectedOutcome,
 		IAMExpectedAuditIntentDigestSHA256: fragment.iamIntentDigest,
 		GovernanceProfileActivation:        audit.GovernanceProfileActivation,
+		CanonicalStateAssertions:           cloneCanonicalStateAssertions(audit.CanonicalStateAssertions),
+		CanonicalKeyStateAssertions:        cloneCanonicalKeyStateAssertions(audit.CanonicalKeyStateAssertions),
+		CanonicalAuditWriterLeaseAssertion: cloneCanonicalAuditWriterLeaseAssertion(audit.CanonicalAuditWriterLeaseAssertion),
 		CanonicalAuditIntent:               fragment.intent.Snapshot(), AuditSourceDigestsSHA256: audit.AuditSourceDigestsSHA256,
-		AuditSourceEvidence: audit.AuditSourceEvidence, AuditSourceKeyPreconditions: audit.AuditSourceKeyPreconditions,
-		AuditStreamID: audit.AuditStreamID, AuditRecordID: audit.AuditRecordID,
+		AuditSourceEvidence:            audit.AuditSourceEvidence,
+		AuditSourceStorageCapabilities: cloneDurableEvidenceStorageCapabilities(audit.AuditSourceStorageCapabilities),
+		AuditSourceKeyPreconditions:    audit.AuditSourceKeyPreconditions,
+		CanonicalAuditAppend:           cloneCanonicalAuditAppendCapability(audit.CanonicalAuditAppend),
+		AuditStreamID:                  audit.AuditStreamID, AuditRecordID: audit.AuditRecordID,
 		ExpectedAuditEventAbsent: audit.ExpectedAuditEventAbsent, DeploymentAnchorSHA256: audit.DeploymentAnchorSHA256,
 		ExpectedAuditSequence: audit.ExpectedAuditSequence, ExpectedAuditHeadDigestSHA256: audit.ExpectedAuditHeadDigest,
 		ExpectedAuditHeadHomeRegion: audit.ExpectedAuditHeadHomeRegion, AuthorizedAuditHomeRegion: audit.AuthorizedAuditHomeRegion,
@@ -153,9 +164,14 @@ func (fragment JoinedAuditFragment) Snapshot() JoinedAuditFragmentSnapshot {
 		WriterLeaseNotBeforeUnixNano:    audit.ExpectedAuditWriterLeaseNotBeforeUnixNano,
 		WriterLeaseNotAfterUnixNano:     audit.ExpectedAuditWriterLeaseNotAfterUnixNano,
 		NextAuditSequence:               audit.NextAuditSequence, NextAuditRecordDigestSHA256: audit.NextAuditRecordDigestSHA256,
-		AuditEventEvidence: audit.AuditEventEvidence, AuditWriterKeyPrecondition: audit.AuditWriterKeyPrecondition,
-		AuditEventIdentifierClaim:     identifier,
-		ExpectedIAMEvidenceReferences: fragment.request.EvidenceReferences(),
+		AuditEventEvidence:                 audit.AuditEventEvidence,
+		AuditWriterKeyPrecondition:         audit.AuditWriterKeyPrecondition,
+		AuditEventIdentifierClaim:          identifier,
+		IAMAuditEvidenceBundleDigestSHA256: auditEvidenceBundleDigest(fragment.request),
+	}
+	if bundle, ok := fragment.request.AuditEvidenceBundle(); ok {
+		value.IAMAuditEvidenceCount = bundle.EvidenceCount()
+		value.IAMAuditEvidenceBundleDomain, _, _ = bundle.SemanticReceipt()
 	}
 	return cloneJoinedAuditFragmentSnapshot(value)
 }
@@ -173,9 +189,6 @@ func (p *Planner) PlanIAMJoinedAudit(ctx context.Context, command IAMJoinedAudit
 	request := command.Request
 	if err := request.VerifyDigest(); err != nil {
 		return JoinedAuditFragment{}, fmt.Errorf("%w: IAM joined request", ErrInvalidCommand)
-	}
-	if !iamJoinedTypedEvidenceBridgeEnabled {
-		return JoinedAuditFragment{}, fmt.Errorf("%w: IAM typed evidence bridge unavailable", ErrInvalidCommand)
 	}
 	execution, hasExecution := request.ExecutionFragment()
 	if !hasExecution || execution.CommitReady() || execution.VerifyDigest() != nil ||
@@ -222,58 +235,105 @@ func (p *Planner) PlanIAMJoinedAudit(ctx context.Context, command IAMJoinedAudit
 		return JoinedAuditFragment{}, ErrApprovalCollection
 	}
 
-	iamIntent, ok := request.ExpectedAuditIntent()
-	if !ok {
-		// Reconciliation requires an independently verified FAILED/TIMED_OUT
-		// evidence contract. Until IAM exposes its exact outcome/policy/window
-		// tuple, it remains fail-closed rather than becoming a caller assertion.
-		return JoinedAuditFragment{}, ErrInvalidCommand
-	}
-	if request.ExpectedOutcome() != 1 {
-		return JoinedAuditFragment{}, ErrInvalidCommand
-	}
-	sourceRecord, hasSource := iamIntent.SourceAuthorizationRecord()
-	if !hasSource || iamIntent.ActorKeyID() == "" {
+	bundle, ok := request.AuditEvidenceBundle()
+	if !ok || bundle.VerifyFor(request) != nil || bundle.EvidenceCount() <= 0 || bundle.EvidenceCount() > 384 {
 		return JoinedAuditFragment{}, ErrAuditEvidence
 	}
-	source, sourceKey, err := p.validateOpaqueIAMSource(ctx, sourceRecord, iamIntent.SourceAuthorizationDigest(), command.AtUnixNano)
-	if err != nil || source.record.Domain.SenderIdentity != iamIntent.ActorIdentity() ||
-		source.record.Domain.SignatureKeyID != iamIntent.ActorKeyID() {
+	domain, canonicalReceipt, bundleDigest := bundle.SemanticReceipt()
+	if domain != iamAuditEvidenceReceiptDomain || len(canonicalReceipt) == 0 || len(canonicalReceipt) > 64<<20 ||
+		bundleDigest != bundle.Digest() {
 		return JoinedAuditFragment{}, ErrAuditEvidence
 	}
-	sourcePolicies := append(iamIntent.PolicyDigestsSHA256(), sourceKey.AuthorizationPolicyDigestSHA256, p.profileDigest)
-	sourcePolicies = uniqueSortedDigests(sourcePolicies)
-	sources := append(iamIntent.EvidenceDigestsSHA256(), source.digest)
+	receiptEvidence, err := newIAMSemanticReceiptEvidence(domain, canonicalReceipt, bundleDigest)
+	if err != nil {
+		return JoinedAuditFragment{}, ErrAuditEvidence
+	}
+	sourceRecord, hasSource := bundle.SourceAuthorizationRecord()
+	sourceDigest := bundle.SourceAuthorizationDigest()
+	if !hasSource || isZeroDigest(sourceDigest) {
+		return JoinedAuditFragment{}, ErrAuditEvidence
+	}
+	sources := bundle.AuditSourceDigestsSHA256()
+	if sourceDigest == bundleDigest || len(sources) != 2 || hasDuplicateDigests(sources) ||
+		!containsDigest(sources, sourceDigest) || !containsDigest(sources, bundleDigest) {
+		return JoinedAuditFragment{}, ErrAuditEvidence
+	}
 	sources = uniqueSortedDigests(sources)
-	if !validIAMEvidenceReferences(request.EvidenceReferences(), sources, source.digest) {
-		return JoinedAuditFragment{}, ErrAuditEvidence
+
+	expectedOutcome := request.ExpectedOutcome()
+	if expectedOutcome != 1 && expectedOutcome != 3 && expectedOutcome != 4 {
+		return JoinedAuditFragment{}, ErrInvalidCommand
 	}
-	transactionEvidence := map[[ccse.DigestSize]byte]DurableEvidence{
-		source.digest: newSignedDurableEvidenceWithKey(source, sourceKey, sourcePolicies...),
-	}
-	// Resolve and validate the complete IAM evidence set before touching the
-	// caller-supplied AuditEvent. planAuditAppend receives only this closed map,
-	// so it cannot interleave an event signature check with late evidence I/O.
-	retainedEvidence, _, resolvedPolicies, evidenceDeadline, err := p.validateAuditSources(
-		ctx, sources, transactionEvidence, command.AtUnixNano,
+	transactionEvidence := map[[ccse.DigestSize]byte]DurableEvidence{bundleDigest: receiptEvidence}
+	var (
+		eventType        string
+		actorIdentity    string
+		actorKeyID       string
+		subjectIDs       []string
+		causeCode        string
+		occurredAt       int64
+		correlationID    [ccse.MessageIDSize]byte
+		causationID      ccse.OptionalMessageID
+		semanticPolicies [][ccse.DigestSize]byte
+		sourceDeadline   = int64(^uint64(0) >> 1)
 	)
-	if err != nil || len(retainedEvidence) != len(sources) || evidenceDeadline <= command.AtUnixNano {
-		return JoinedAuditFragment{}, ErrAuditEvidence
-	}
-	transactionEvidence = make(map[[ccse.DigestSize]byte]DurableEvidence, len(retainedEvidence))
-	for _, evidence := range retainedEvidence {
-		if _, duplicate := transactionEvidence[evidence.digest]; duplicate {
+	if expectedOutcome == 1 {
+		iamIntent, present := request.ExpectedAuditIntent()
+		if !present || iamIntent.ActorKeyID() == "" || iamIntent.SourceAuthorizationDigest() != sourceDigest {
 			return JoinedAuditFragment{}, ErrAuditEvidence
 		}
-		transactionEvidence[evidence.digest] = cloneDurableEvidence(evidence)
+		source, sourceKey, validateErr := p.validateOpaqueIAMSource(ctx, sourceRecord, sourceDigest, command.AtUnixNano)
+		if validateErr != nil || source.record.Domain.SenderIdentity != iamIntent.ActorIdentity() ||
+			source.record.Domain.SignatureKeyID != iamIntent.ActorKeyID() {
+			return JoinedAuditFragment{}, ErrAuditEvidence
+		}
+		sourcePolicies := uniqueSortedDigests(append(iamIntent.PolicyDigestsSHA256(), sourceKey.AuthorizationPolicyDigestSHA256, p.profileDigest))
+		transactionEvidence[sourceDigest] = newSignedDurableEvidenceWithKey(source, sourceKey, sourcePolicies...)
+		sourceDeadline = minimumInt64(source.record.Domain.ExpiresAtUnixNano, sourceKey.NotAfterUnixNano)
+		eventType, actorIdentity, actorKeyID = iamIntent.EventType(), iamIntent.ActorIdentity(), iamIntent.ActorKeyID()
+		subjectIDs, causeCode, occurredAt = iamIntent.SubjectIDs(), iamIntent.CauseCode(), iamIntent.OccurredAtUnixNano()
+		correlationID, causationID = iamIntent.CorrelationID(), iamIntent.CausationID()
+		semanticPolicies = sourcePolicies
+	} else {
+		requirement, present := request.ReconciliationAuditRequirement()
+		if !present || !requirement.FreshReconcilerAuthorityRequired() ||
+			requirement.HistoricalCausationDigest() != sourceDigest ||
+			requirement.AuditEventID() != eventID || requirement.AuditIdempotencyKey() != joinedBinding.Key ||
+			isZeroDigest(requirement.FreshRequirementDigest()) || requirement.EventType() == "" ||
+			requirement.CauseCode() == "" || len(requirement.SubjectIDs()) == 0 ||
+			requirement.OccurredAtUnixNano() != command.AtUnixNano {
+			return JoinedAuditFragment{}, ErrAuditEvidence
+		}
+		historical, sourceKey, validateErr := p.validateHistoricalOpaqueIAMSource(ctx, sourceRecord, sourceDigest)
+		if validateErr != nil || historical.record.Domain.SenderIdentity != requirement.LogicalActorIdentity() ||
+			historical.record.Domain.SignatureKeyID != requirement.LogicalActorKeyID() {
+			return JoinedAuditFragment{}, ErrAuditEvidence
+		}
+		// The expired/revoked original signer is causation only. It deliberately
+		// contributes no current key precondition and cannot constrain the new
+		// audit commit window. Fresh current authority is the AuditEvent writer
+		// validated by planAuditAppend against the active key/profile/lease.
+		historicalPolicies := uniqueSortedDigests(append(requirement.PolicyDigestsSHA256(), sourceKey.AuthorizationPolicyDigestSHA256))
+		transactionEvidence[sourceDigest] = newSignedDurableEvidence(historical, historicalPolicies...)
+		eventType, actorIdentity, actorKeyID = requirement.EventType(), p.profile.AuditWriterIdentity, p.profile.AuditWriterKeyID
+		subjectIDs, causeCode, occurredAt = requirement.SubjectIDs(), requirement.CauseCode(), requirement.OccurredAtUnixNano()
+		correlationID, causationID = requirement.CorrelationID(), requirement.CausationID()
+		semanticPolicies = historicalPolicies
 	}
-	policies := uniqueSortedDigests(resolvedPolicies)
+	policies := uniqueSortedDigests(append(semanticPolicies, p.profileDigest))
+	if len(policies) == 0 || len(policies) > maxAuditPolicyDigests {
+		return JoinedAuditFragment{}, ErrKeyNotAuthorized
+	}
+	existingEvidence, err := iamPendingEvidenceLinks(request, sourceDigest, eventID)
+	if err != nil {
+		return JoinedAuditFragment{}, ErrAuditEvidence
+	}
 	expected, err := newAuditIntent(AuditIntentSnapshot{
-		Required: true, StreamID: p.profile.AuditReplayDomainID, EventType: iamIntent.EventType(), AuditEventID: eventID,
-		ActorIdentity: iamIntent.ActorIdentity(), ActorKeyID: iamIntent.ActorKeyID(),
-		SubjectIDs: uniqueSortedStrings(iamIntent.SubjectIDs()), CauseCode: iamIntent.CauseCode(),
-		OccurredAtUnixNano: iamIntent.OccurredAtUnixNano(), Outcome: request.ExpectedOutcome(), IdempotencyKey: joinedBinding.Key,
-		CorrelationID: iamIntent.CorrelationID(), CausationID: iamIntent.CausationID(),
+		Required: true, StreamID: p.profile.AuditReplayDomainID, EventType: eventType, AuditEventID: eventID,
+		ActorIdentity: actorIdentity, ActorKeyID: actorKeyID,
+		SubjectIDs: uniqueSortedStrings(subjectIDs), CauseCode: causeCode,
+		OccurredAtUnixNano: occurredAt, Outcome: expectedOutcome, IdempotencyKey: joinedBinding.Key,
+		CorrelationID: correlationID, CausationID: causationID,
 		AppliedPolicyDigestsSHA256: policies, EvidenceDigestsSHA256: sources,
 	})
 	if err != nil {
@@ -281,7 +341,7 @@ func (p *Planner) PlanIAMJoinedAudit(ctx context.Context, command IAMJoinedAudit
 	}
 	auditPlan, actualIntent, err := p.planAuditAppend(ctx, AuditAppendCommand{
 		AtUnixNano: command.AtUnixNano, Event: command.AuditEvent, SourceRecordDigestsSHA256: sources,
-	}, transactionEvidence, ptrIdempotencySnapshot(decision.AuditSnapshot()), &parentBinding)
+	}, transactionEvidence, ptrIdempotencySnapshot(decision.AuditSnapshot()), &parentBinding, existingEvidence)
 	if err != nil {
 		return JoinedAuditFragment{}, err
 	}
@@ -296,7 +356,7 @@ func (p *Planner) PlanIAMJoinedAudit(ctx context.Context, command IAMJoinedAudit
 	}
 	commitNotBefore := maximumInt64(request.CommitNotBeforeUnixNano(), audit.CommitNotBeforeUnixNano)
 	commitNotAfter := minimumInt64(request.CommitNotAfterUnixNano(), audit.CommitNotAfterUnixNano)
-	commitNotAfter = minimumInt64(commitNotAfter, evidenceDeadline)
+	commitNotAfter = minimumInt64(commitNotAfter, sourceDeadline)
 	if commitNotAfter <= command.AtUnixNano || commitNotAfter <= commitNotBefore {
 		return JoinedAuditFragment{}, ErrPolicyExpired
 	}
@@ -304,7 +364,7 @@ func (p *Planner) PlanIAMJoinedAudit(ctx context.Context, command IAMJoinedAudit
 		request: request, audit: auditPlan, intent: actualIntent,
 		parentExpected: decision.ParentSnapshot(), joinedExpected: decision.AuditSnapshot(),
 		parentCompletion: parentCompletion, joinedCompletion: joinedCompletion,
-		expectedOutcome: request.ExpectedOutcome(), iamIntentDigest: iamIntent.Digest(),
+		expectedOutcome: expectedOutcome, iamIntentDigest: expectedIAMSemanticIntentDigest(request),
 		evaluatedAt: command.AtUnixNano, commitNotBefore: commitNotBefore, commitNotAfter: commitNotAfter,
 	}
 	fragment.digest, err = digestIAMJoinedAuditFragment(fragment)
@@ -348,6 +408,63 @@ func (p *Planner) validateOpaqueIAMSource(ctx context.Context, raw ccse.Record, 
 	return snapshot, key, nil
 }
 
+// validateHistoricalOpaqueIAMSource authenticates an expired/revoked original
+// IAM authorization as causation only. It deliberately performs no current
+// key lookup and produces no commit-time key precondition. The exact IAM
+// lifecycle/identity snapshot at issuance must still exist in the authoritative
+// historical registry and the original Ed25519 signature is verified again.
+func (p *Planner) validateHistoricalOpaqueIAMSource(ctx context.Context, raw ccse.Record,
+	expected [ccse.DigestSize]byte) (signedRecordSnapshot, GovernanceKeySnapshot, error) {
+	const maxIAMSourcePayloadBytes = 1 << 20
+	if isZeroDigest(expected) || !preflightRawRecord(&raw, maxIAMSourcePayloadBytes) {
+		return signedRecordSnapshot{}, GovernanceKeySnapshot{}, ErrAuditEvidence
+	}
+	record := cloneCCSERecord(&raw)
+	digest, err := record.Digest(ccse.DefaultLimits())
+	if err != nil || digest != expected || record.MessageTypeID == 0 || record.SchemaVersion != p.profile.SchemaVersion ||
+		record.Domain.ProtocolVersion != p.profile.ProtocolVersion || record.Envelope.ProtocolVersion != p.profile.ProtocolVersion ||
+		record.Domain.TenantOrganization != p.profile.TenantOrganization || record.Domain.ProviderOrganization != p.profile.ProviderOrganization ||
+		record.Domain.Environment != p.profile.Environment || record.Envelope.Environment != p.profile.Environment ||
+		record.Domain.ChainID != p.profile.ChainID || record.Envelope.ChainID != p.profile.ChainID ||
+		record.Domain.GenesisHash != p.profile.GenesisHash || record.Domain.Purpose == "" || record.Domain.ReplayDomainID == "" ||
+		record.Domain.CounterKind == 0 || record.Domain.CounterKind != record.Envelope.CounterKind ||
+		record.Domain.IssuedAtUnixNano < 0 || record.Domain.ExpiresAtUnixNano <= record.Domain.IssuedAtUnixNano ||
+		record.Domain.ExpiresAtUnixNano-record.Domain.IssuedAtUnixNano > p.profile.MaxRecordValidityNanos ||
+		sha256.Sum256(record.Payload) != record.Envelope.PayloadDigest {
+		return signedRecordSnapshot{}, GovernanceKeySnapshot{}, ErrAuditEvidence
+	}
+	if err := p.canonical.ValidateExtensions(ctx, record.MessageTypeID, record.SchemaVersion, record.Envelope.Extensions); err != nil {
+		return signedRecordSnapshot{}, GovernanceKeySnapshot{}, ErrAuditEvidence
+	}
+	if _, err := p.canonical.Decode(record.MessageTypeID, record.SchemaVersion, record.Payload); err != nil {
+		return signedRecordSnapshot{}, GovernanceKeySnapshot{}, ErrAuditEvidence
+	}
+	key, found, err := p.iam.ResolveGovernanceKeyAt(ctx, record.Domain.SignatureKeyID, record.Domain.IssuedAtUnixNano)
+	if err != nil || !found || !preflightKeySnapshot(key) {
+		return signedRecordSnapshot{}, GovernanceKeySnapshot{}, ErrAuditEvidence
+	}
+	key = cloneKeySnapshot(key)
+	if key.KeyID != record.Domain.SignatureKeyID || key.KeyID != record.Envelope.SignatureKeyID ||
+		key.SubjectIdentity != record.Domain.SenderIdentity || key.SubjectIdentity != record.Envelope.SenderIdentity ||
+		key.TargetIdentityKind != 1 || key.TargetPrincipalKind < 1 || key.TargetPrincipalKind > 8 ||
+		key.TargetIdentityID == "" || key.OrganizationIdentity == "" || key.LifecycleState != KeyLifecycleStateActive ||
+		key.RevokedAtUnixNano != 0 || key.NotBeforeUnixNano < 0 || key.NotAfterUnixNano <= key.NotBeforeUnixNano ||
+		record.Domain.IssuedAtUnixNano < key.NotBeforeUnixNano || record.Domain.ExpiresAtUnixNano > key.NotAfterUnixNano ||
+		!containsMessageType(key.AllowedMessageTypeIDs, record.MessageTypeID) || isZeroDigest(key.AuthorizationPolicyDigestSHA256) ||
+		key.StateVersion == 0 || key.WriterEpoch == 0 || isZeroDigest(key.SnapshotDigestSHA256) ||
+		key.IdentityStateVersion == 0 || key.IdentityWriterEpoch == 0 || isZeroDigest(key.IdentitySnapshotDigestSHA256) ||
+		key.KeyMaterialStateVersion != 1 || isZeroDigest(key.KeyMaterialStateDigestSHA256) ||
+		key.EnrollmentDomainID != p.profile.EnrollmentDomainID || key.EnrollmentEnvironment != p.profile.Environment ||
+		key.EnrollmentGenesisHash != p.profile.GenesisHash || hasDuplicateUint32(key.AllowedMessageTypeIDs) ||
+		hasDuplicateStrings(key.Roles) || containsEmpty(key.Roles) || key.Algorithm != ccse.SignatureAlgorithmEd25519 ||
+		key.Algorithm != record.Domain.SignatureAlgorithm || key.Algorithm != record.Envelope.SignatureAlgorithm ||
+		len(key.PublicKey) != ed25519.PublicKeySize || len(record.Signature) != ed25519.SignatureSize ||
+		!ed25519.Verify(ed25519.PublicKey(key.PublicKey), digest[:], record.Signature) {
+		return signedRecordSnapshot{}, GovernanceKeySnapshot{}, ErrAuditEvidence
+	}
+	return signedRecordSnapshot{record: record, digest: digest}, key, nil
+}
+
 func exactCompletionClaims(actual []idempotency.Claim, parent, joined idempotency.Claim) bool {
 	want, err := idempotency.NormalizeClaims([]idempotency.Claim{parent, joined})
 	if err != nil {
@@ -359,36 +476,6 @@ func exactCompletionClaims(actual []idempotency.Claim, parent, joined idempotenc
 	}
 	for index := range got {
 		if got[index] != want[index] {
-			return false
-		}
-	}
-	return true
-}
-
-func validIAMEvidenceReferences(references []iam.ContentAddressedEvidenceReference,
-	sources [][ccse.DigestSize]byte, signedSource [ccse.DigestSize]byte) bool {
-	if len(references) != len(sources) || len(references) == 0 || len(references) > 128 {
-		return false
-	}
-	seen := make(map[[ccse.DigestSize]byte]struct{}, len(references))
-	for _, reference := range references {
-		if isZeroDigest(reference.Digest) || reference.Domain == "" {
-			return false
-		}
-		if _, duplicate := seen[reference.Digest]; duplicate {
-			return false
-		}
-		seen[reference.Digest] = struct{}{}
-		if reference.Digest == signedSource {
-			if !reference.Embedded || reference.Domain != "iam.source-authorization.v1" {
-				return false
-			}
-		} else if reference.Embedded || reference.Domain != "iam.audit-evidence.v1" {
-			return false
-		}
-	}
-	for _, source := range sources {
-		if _, ok := seen[source]; !ok {
 			return false
 		}
 	}
@@ -417,30 +504,41 @@ func digestIAMJoinedAuditFragment(fragment JoinedAuditFragment) ([ccse.DigestSiz
 		!exactCompletionClaims(fragment.request.IdempotencyCompletionClaims(), parentCompletion, joinedCompletion) {
 		return [ccse.DigestSize]byte{}, ErrApprovalCollection
 	}
-	iamIntent, ok := fragment.request.ExpectedAuditIntent()
-	if !ok || iamIntent.Digest() != fragment.iamIntentDigest {
+	if expectedIAMSemanticIntentDigest(fragment.request) != fragment.iamIntentDigest {
 		return [ccse.DigestSize]byte{}, ErrInvalidCommand
 	}
 	audit := fragment.audit.Snapshot()
 	if audit.Kind != MutationAuditAppend || !audit.CommitReady || len(audit.IdempotencyClaims) != 1 ||
-		audit.IdempotencyClaims[0] != fragment.joinedCompletion || len(audit.IdentifierClaims) != 1 {
+		audit.IdempotencyClaims[0] != fragment.joinedCompletion || len(audit.IdentifierClaims) != 1 ||
+		validateCanonicalKeyStateAssertions(audit) != nil ||
+		validateCanonicalAuditWriterLeaseAssertion(audit) != nil ||
+		len(audit.CanonicalStateAssertions)+3*len(audit.CanonicalKeyStateAssertions)+1 > 384 {
 		return [ccse.DigestSize]byte{}, ErrInvalidCommand
 	}
-	refs := fragment.request.EvidenceReferences()
-	if len(refs) == 0 || len(refs) > 128 {
+	bundle, ok := fragment.request.AuditEvidenceBundle()
+	if !ok || bundle.VerifyFor(fragment.request) != nil || bundle.EvidenceCount() <= 0 || bundle.EvidenceCount() > 384 {
 		return [ccse.DigestSize]byte{}, ErrAuditEvidence
 	}
-	// Sort a detached copy so connector iteration cannot perturb the fragment.
-	refs = append([]iam.ContentAddressedEvidenceReference(nil), refs...)
-	sort.Slice(refs, func(i, j int) bool {
-		if comparison := bytes.Compare(refs[i].Digest[:], refs[j].Digest[:]); comparison != 0 {
-			return comparison < 0
+	domain, receipt, receiptDigest := bundle.SemanticReceipt()
+	if domain != iamAuditEvidenceReceiptDomain || receiptDigest != bundle.Digest() ||
+		domainSeparatedContentDigest(iamAuditEvidenceBundleDigestDomain, receipt) != receiptDigest {
+		return [ccse.DigestSize]byte{}, ErrAuditEvidence
+	}
+	links, err := iamPendingEvidenceLinks(fragment.request, bundle.SourceAuthorizationDigest(), audit.AuditEventID)
+	if err != nil {
+		return [ccse.DigestSize]byte{}, ErrAuditEvidence
+	}
+	expectedStorage, err := newDurableEvidenceStorageCapabilitiesForAudit(audit.AuditSourceEvidence,
+		audit.AuditEventID, links)
+	if err != nil || len(expectedStorage) != len(audit.AuditSourceStorageCapabilities) {
+		return [ccse.DigestSize]byte{}, ErrAuditEvidence
+	}
+	for index := range expectedStorage {
+		if !equalDurableEvidenceStorageCapabilities(expectedStorage[index],
+			audit.AuditSourceStorageCapabilities[index]) {
+			return [ccse.DigestSize]byte{}, ErrAuditEvidence
 		}
-		if refs[i].Domain != refs[j].Domain {
-			return refs[i].Domain < refs[j].Domain
-		}
-		return !refs[i].Embedded && refs[j].Embedded
-	})
+	}
 	w := newDigestWriter(iamJoinedAuditFragmentDigestDomain)
 	w.digest(fragment.request.Digest())
 	w.digest(fragment.request.PendingDigest())
@@ -460,24 +558,67 @@ func digestIAMJoinedAuditFragment(fragment JoinedAuditFragment) ([ccse.DigestSiz
 	w.int64(fragment.commitNotAfter)
 	w.digest(fragment.audit.Digest())
 	w.digest(fragment.intent.Digest())
-	w.uint64(uint64(len(refs)))
-	for _, reference := range refs {
-		w.digest(reference.Digest)
-		w.string(reference.Domain)
-		w.bool(reference.Embedded)
+	w.uint64(uint64(len(audit.CanonicalKeyStateAssertions)))
+	for _, assertion := range audit.CanonicalKeyStateAssertions {
+		if assertion.VerifyDigest() != nil {
+			return [ccse.DigestSize]byte{}, ErrSnapshotInconsistent
+		}
+		w.digest(assertion.digest)
 	}
+	if audit.CanonicalAuditWriterLeaseAssertion.VerifyDigest() != nil {
+		return [ccse.DigestSize]byte{}, ErrAuditAnchor
+	}
+	w.digest(audit.CanonicalAuditWriterLeaseAssertion.digest)
+	if audit.CanonicalAuditAppend.VerifyDigest() != nil {
+		return [ccse.DigestSize]byte{}, ErrAuditAnchor
+	}
+	w.digest(audit.CanonicalAuditAppend.digest)
+	w.uint64(uint64(len(audit.AuditSourceStorageCapabilities)))
+	for _, capability := range audit.AuditSourceStorageCapabilities {
+		if capability.VerifyDigest() != nil || capability.auditAssertionEventID != audit.AuditEventID {
+			return [ccse.DigestSize]byte{}, ErrAuditEvidence
+		}
+		w.digest(capability.digest)
+	}
+	w.string(domain)
+	w.digest(receiptDigest)
+	w.bytes(receipt)
+	w.uint64(uint64(bundle.EvidenceCount()))
 	return w.sum()
+}
+
+func auditEvidenceBundleDigest(request iam.JoinedAuditRequest) [ccse.DigestSize]byte {
+	bundle, ok := request.AuditEvidenceBundle()
+	if !ok || bundle.VerifyFor(request) != nil {
+		return [ccse.DigestSize]byte{}
+	}
+	return bundle.Digest()
+}
+
+func expectedIAMSemanticIntentDigest(request iam.JoinedAuditRequest) [ccse.DigestSize]byte {
+	if intent, ok := request.ExpectedAuditIntent(); ok && request.ExpectedOutcome() == 1 {
+		return intent.Digest()
+	}
+	if requirement, ok := request.ReconciliationAuditRequirement(); ok &&
+		(request.ExpectedOutcome() == 3 || request.ExpectedOutcome() == 4) {
+		return requirement.OriginalAuditIntentDigest()
+	}
+	return [ccse.DigestSize]byte{}
 }
 
 func cloneJoinedAuditFragmentSnapshot(value JoinedAuditFragmentSnapshot) JoinedAuditFragmentSnapshot {
 	value.CanonicalAuditIntent = cloneAuditIntentSnapshot(value.CanonicalAuditIntent)
+	value.CanonicalStateAssertions = cloneCanonicalStateAssertions(value.CanonicalStateAssertions)
+	value.CanonicalKeyStateAssertions = cloneCanonicalKeyStateAssertions(value.CanonicalKeyStateAssertions)
+	value.CanonicalAuditWriterLeaseAssertion = cloneCanonicalAuditWriterLeaseAssertion(value.CanonicalAuditWriterLeaseAssertion)
 	value.AuditSourceDigestsSHA256 = append([][ccse.DigestSize]byte(nil), value.AuditSourceDigestsSHA256...)
 	value.AuditSourceEvidence = append([]DurableEvidence(nil), value.AuditSourceEvidence...)
 	for index := range value.AuditSourceEvidence {
 		value.AuditSourceEvidence[index] = cloneDurableEvidence(value.AuditSourceEvidence[index])
 	}
+	value.AuditSourceStorageCapabilities = cloneDurableEvidenceStorageCapabilities(value.AuditSourceStorageCapabilities)
+	value.CanonicalAuditAppend = cloneCanonicalAuditAppendCapability(value.CanonicalAuditAppend)
 	value.AuditSourceKeyPreconditions = append([]KeyStatePrecondition(nil), value.AuditSourceKeyPreconditions...)
 	value.AuditEventEvidence = cloneSignedEvidence(value.AuditEventEvidence)
-	value.ExpectedIAMEvidenceReferences = append([]iam.ContentAddressedEvidenceReference(nil), value.ExpectedIAMEvidenceReferences...)
 	return value
 }

@@ -4,12 +4,15 @@
 package iam
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
+	"github.com/cypherium/cypher/aiinfra/globalid"
 	"github.com/cypherium/cypher/aiinfra/idempotency"
 	"github.com/cypherium/cypher/aiinfra/schema"
 	foundationv1 "github.com/cypherium/cypher/aiinfra/schema/foundation/v1"
@@ -85,6 +88,12 @@ func acceptedTransferFixture(t testing.TB) (transferCollectionFixture,
 	OwnershipTransferApprovalCollectionPlan, AcceptedOwnershipTransferSnapshot) {
 	t.Helper()
 	fixture := newTransferCollectionFixture(t)
+	return acceptedTransferFromFixture(t, fixture)
+}
+
+func acceptedTransferFromFixture(t testing.TB, fixture transferCollectionFixture) (transferCollectionFixture,
+	OwnershipTransferApprovalCollectionPlan, AcceptedOwnershipTransferSnapshot) {
+	t.Helper()
 	planner := testPlanner(t, fixture.view, fixture.profile)
 	first, err := planner.PlanOwnershipTransferApproval(context.Background(),
 		fixture.command(fixture.oldApproval, 0))
@@ -101,6 +110,12 @@ func acceptedTransferFixture(t testing.TB) (transferCollectionFixture,
 		t.Fatal("quorum collection not ready for acceptance")
 	}
 	applyTransferCollectionPlan(t, fixture.view, second)
+	return fixture, second, acceptedTransferCandidateFromPlan(t, second)
+}
+
+func acceptedTransferCandidateFromPlan(t testing.TB,
+	second OwnershipTransferApprovalCollectionPlan) AcceptedOwnershipTransferSnapshot {
+	t.Helper()
 	collection := second.NextCollection()
 	projection, canonical, transferDigest, err := normalizeOwnershipTransferPayload(collection.CanonicalPayload)
 	if err != nil {
@@ -115,7 +130,7 @@ func acceptedTransferFixture(t testing.TB) (transferCollectionFixture,
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fixture, second, candidate
+	return candidate
 }
 
 func cutoverCommandFixture(t testing.TB, fixture transferCollectionFixture,
@@ -162,16 +177,29 @@ func cutoverCommandFixture(t testing.TB, fixture transferCollectionFixture,
 	writer := installAuthorizationKey(t, fixture.view,
 		schema.MessageTypeAgentIdentity, schema.MessageTypeKeyLifecycle)
 
-	closure := accepted.FixedEvidence.KeyClosureSnapshots[0]
-	closureRecord := accepted.FixedEvidence.KeyClosureRecords[0].Record()
-	closureAuth, err := authorizationFromSignedRecord(closureRecord)
-	if err != nil {
-		t.Fatal(err)
+	closureFences := make([]WriterFence, 0, len(accepted.FixedEvidence.KeyClosureSnapshots))
+	for index, closure := range accepted.FixedEvidence.KeyClosureSnapshots {
+		var closureRecord ccse.Record
+		for _, retained := range accepted.FixedEvidence.KeyClosureRecords {
+			candidate := retained.Record()
+			if sha256.Sum256(candidate.Payload) == sha256.Sum256(closure.CanonicalPayload) {
+				closureRecord = candidate
+				break
+			}
+		}
+		closureAuth, closureErr := authorizationFromSignedRecord(closureRecord)
+		if closureErr != nil {
+			t.Fatal(closureErr)
+		}
+		closureEntity := EntityRef{Kind: EntityKeyLifecycle, PrincipalKind: closure.SubjectKind,
+			ID: closure.KeyID}
+		fixture.view.leases[closureEntity] = lease(closureEntity,
+			closureAuth.senderIdentity, closure.WriterEpoch, byte(0x41+index%128))
+		closureFences = append(closureFences, WriterFence{Entity: closureEntity,
+			WriterIdentity: closureAuth.senderIdentity, HomeRegion: closure.HomeRegion,
+			WriterEpoch: closure.WriterEpoch, ExpectedStateVersion: closure.StateVersion - 1,
+			EvidenceDigest: fixture.view.leases[closureEntity].EvidenceDigest})
 	}
-	closureEntity := EntityRef{Kind: EntityKeyLifecycle, PrincipalKind: closure.SubjectKind,
-		ID: closure.KeyID}
-	fixture.view.leases[closureEntity] = lease(closureEntity,
-		closureAuth.senderIdentity, closure.WriterEpoch, 0x41)
 	fixture.view.leases[previous.Ref] = lease(previous.Ref,
 		previousAuth.senderIdentity, previous.WriterEpoch, 0x42)
 	materialEntity := EntityRef{Kind: EntityKeyMaterial, PrincipalKind: newMaterial.SubjectKind,
@@ -193,11 +221,8 @@ func cutoverCommandFixture(t testing.TB, fixture transferCollectionFixture,
 		EvidenceDigest:      newMaterial.ChallengeEvidenceDigest}
 
 	command := OwnershipTransferCutoverCommand{TransferEvidenceDigest: transferDigest,
-		EvaluatedAtUnixNano: testNow,
-		KeyClosureWriterFences: []WriterFence{{Entity: closureEntity,
-			WriterIdentity: closureAuth.senderIdentity, HomeRegion: closure.HomeRegion,
-			WriterEpoch: closure.WriterEpoch, ExpectedStateVersion: closure.StateVersion - 1,
-			EvidenceDigest: fixture.view.leases[closureEntity].EvidenceDigest}},
+		EvaluatedAtUnixNano:    testNow,
+		KeyClosureWriterFences: closureFences,
 		PreviousTerminalIdentity: IdentityCommand{Projection: previousProjection,
 			ActorIdentity: previousAuth.senderIdentity, EvaluatedAtUnixNano: testNow,
 			CorrelationID: previousAuth.correlationID, CausationID: previousAuth.causationID,
@@ -244,7 +269,6 @@ func cutoverCommandFixture(t testing.TB, fixture transferCollectionFixture,
 				EvidenceDigest:       fixture.view.leases[next.Ref].EvidenceDigest}}}
 	_ = writer
 
-	_ = closureAuth // Closure evidence is retained once in the accepted snapshot.
 	for _, authorization := range []VerifiedAuthorization{previousAuth, lifecycleAuth, nextAuth} {
 		command.AuthenticatedEvidence = append(command.AuthenticatedEvidence,
 			authenticatedCutoverEvidence(t, fixture.view, authorization))
@@ -290,9 +314,48 @@ func TestOwnershipTransferCutoverIsOneAtomicDurablePlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertDurableEnvelopeRoundTrip(t, envelope)
-	request, err := acceptance.JoinedAuditRequest()
+	acceptanceEnvelope, err := acceptance.DurableEnvelope()
+	if err != nil {
+		t.Fatalf("maximum acceptance durable envelope: %v", err)
+	}
+	request, err := acceptanceEnvelope.JoinedAuditRequest()
 	if err != nil {
 		t.Fatal(err)
+	}
+	collectionEnvelope, err := quorum.DurableEnvelope()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedPendingPersistenceFromEnvelope(t, fixture.view, request,
+		DurablePendingOwnershipTransferCollection, collectionEnvelope, acceptance.cutover.AuditIntent())
+	planner := testPlanner(t, fixture.view, fixture.profile)
+	request, err = planner.BindPendingPersistenceCapability(context.Background(), request)
+	if err != nil {
+		t.Fatalf("acceptance pending persistence bind: %v", err)
+	}
+	persistence, ok := request.PendingPersistenceCapability()
+	if !ok || persistence.VerifyFor(request) != nil {
+		t.Fatal("acceptance pending persistence capability missing")
+	}
+	template, err := persistence.SuccessTerminalTemplate(request)
+	if err != nil || template.VerifyFor(request) != nil {
+		t.Fatalf("acceptance terminal template: %v", err)
+	}
+	acceptanceOutcome := digest(0xb7)
+	pendingRevisions, err := template.Finalize(request, acceptanceOutcome)
+	if err != nil || len(pendingRevisions) != 2 || pendingRevisions[0].VerifyDigest() != nil ||
+		pendingRevisions[1].VerifyDigest() != nil {
+		t.Fatalf("acceptance terminal/create revisions: %#v / %v", pendingRevisions, err)
+	}
+	closedCollection, childCutover := pendingRevisions[0].Record(), pendingRevisions[1].Record()
+	if closedCollection.ExpectedKind != DurablePendingOwnershipTransferCollection ||
+		closedCollection.Kind != DurablePendingOwnershipTransferCollection ||
+		closedCollection.TerminalOutcomeDigestSHA256 != acceptanceOutcome ||
+		childCutover.ExpectedKind != 0 || childCutover.Kind != DurablePendingOwnershipTransferCutover ||
+		childCutover.Revision != 1 || childCutover.Status != IAMPendingStatusOpen ||
+		!bytes.Equal(childCutover.CanonicalEnvelope, request.execution.PendingEnvelopeBytes()) {
+		t.Fatalf("acceptance persistence sequence mismatch: close=%#v child=%#v",
+			closedCollection, childCutover)
 	}
 	fragment, ok := request.ExecutionFragment()
 	if !ok || request.VerifyDigest() != nil || fragment.VerifyDigest() != nil ||
@@ -313,6 +376,19 @@ func TestOwnershipTransferCutoverIsOneAtomicDurablePlan(t *testing.T) {
 			Binding: claim.Binding, State: claim.NextState, Version: claim.NextVersion,
 			ProgressDigest: claim.NextProgressDigest}
 	}
+	childEvidence := make([]IAMPersistenceEvidenceRecord, len(persistence.Evidence()))
+	for index, evidence := range persistence.Evidence() {
+		childEvidence[index] = evidence.Record()
+	}
+	fixture.view.pendingPersistence[childCutover.PendingKey] = memoryPendingPersistence{
+		revision: IAMPendingStoredRevision{PendingKey: childCutover.PendingKey,
+			Kind: childCutover.Kind, Codec: childCutover.Codec, CodecVersion: childCutover.CodecVersion,
+			Revision: childCutover.Revision, EnvelopeDigestSHA256: childCutover.EnvelopeDigestSHA256,
+			CanonicalEnvelope:     childCutover.CanonicalEnvelope,
+			EvidenceDigestsSHA256: childCutover.EvidenceDigestsSHA256, Status: childCutover.Status,
+			CommitNotBeforeUnixNano: childCutover.CommitNotBeforeUnixNano,
+			CommitNotAfterUnixNano:  childCutover.CommitNotAfterUnixNano,
+			ExpectedAuditEventID:    childCutover.ExpectedAuditEventID}, evidence: childEvidence}
 	for _, claim := range fragment.CompoundMemberAdmissionClaims() {
 		fixture.view.compoundMembers[claim.Binding.Key] = idempotency.CompoundMemberSnapshot{
 			Binding: claim.Binding, ParentBinding: claim.ParentBinding,
@@ -331,6 +407,15 @@ func TestOwnershipTransferCutoverIsOneAtomicDurablePlan(t *testing.T) {
 	cutoverRequest, err := revalidated.JoinedAuditRequest()
 	if err != nil {
 		t.Fatalf("stored cutover joined request = %v", err)
+	}
+	cutoverRequest, err = planner.BindPendingPersistenceCapability(context.Background(), cutoverRequest)
+	if err != nil {
+		t.Fatalf("stored cutover persistence bind = %v", err)
+	}
+	cutoverPersistence, ok := cutoverRequest.PendingPersistenceCapability()
+	if !ok || cutoverPersistence.VerifyFor(cutoverRequest) != nil ||
+		cutoverPersistence.Source().ExpectedAuditEventID != childCutover.ExpectedAuditEventID {
+		t.Fatal("stored cutover did not preserve child link and original evidence provenance")
 	}
 	cutoverExecution, ok := cutoverRequest.ExecutionFragment()
 	if !ok || cutoverRequest.VerifyDigest() != nil || cutoverExecution.VerifyDigest() != nil ||
@@ -362,8 +447,9 @@ func TestOwnershipTransferCutoverIsOneAtomicDurablePlan(t *testing.T) {
 	reconciliation, err := testPlanner(t, fixture.view, fixture.profile).
 		PlanReconciliationFromDecoded(context.Background(), decodedCutover,
 			PendingReconciliationCommand{Disposition: PendingDispositionExpired,
-				EvaluatedAtUnixNano:   plan.CommitNotAfterUnixNano(),
-				FailureEvidenceDigest: digest(0xee)})
+				EvaluatedAtUnixNano: plan.CommitNotAfterUnixNano(),
+				Evidence: reconciliationEvidence(t, PendingDispositionExpired, plan.CommitNotAfterUnixNano(),
+					plan.CommitNotAfterUnixNano(), plan.Digest(), 0xee)})
 	if err != nil {
 		t.Fatalf("expired cutover reconciliation = %v", err)
 	}
@@ -385,8 +471,147 @@ func TestOwnershipTransferCutoverIsOneAtomicDurablePlan(t *testing.T) {
 	if _, err := testPlanner(t, fixture.view, fixture.profile).
 		PlanReconciliationFromDecoded(context.Background(), decodedCutover,
 			PendingReconciliationCommand{Disposition: PendingDispositionFailed,
-				EvaluatedAtUnixNano:   plan.CommitNotAfterUnixNano() - 1,
-				FailureEvidenceDigest: digest(0xef)}); !errors.Is(err, ErrInvalidCommitWindow) {
+				EvaluatedAtUnixNano: plan.CommitNotAfterUnixNano() - 1,
+				Evidence: reconciliationEvidence(t, PendingDispositionExpired, plan.CommitNotAfterUnixNano(),
+					plan.CommitNotAfterUnixNano(), plan.Digest(), 0xef)}); !errors.Is(err, ErrInvalidCommitWindow) {
 		t.Fatalf("pre-deadline FAILED reconciliation accepted: %v", err)
+	}
+}
+
+func TestOwnershipTransfer256ClosuresDurableRehydrateJoinedExecution(t *testing.T) {
+	if testing.Short() {
+		t.Skip("constructs the maximum signed ownership-transfer closure set")
+	}
+	fixture := expandTransferFixtureClosures(t, newTransferCollectionFixture(t), 256)
+	planner := testPlanner(t, fixture.view, fixture.profile)
+	first, err := planner.PlanOwnershipTransferApproval(context.Background(),
+		fixture.command(fixture.oldApproval, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstEnvelope, err := first.DurableEnvelope()
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstAdmission, err := planner.BindPendingAdmissionCapability(context.Background(), firstEnvelope)
+	if err != nil || firstAdmission.VerifyFor(firstEnvelope) != nil {
+		t.Fatalf("maximum collection admission capability: %v", err)
+	}
+	seedPendingAdmissionRevision(t, fixture.view, firstAdmission)
+	applyTransferCollectionPlan(t, fixture.view, first)
+	quorum, err := planner.PlanOwnershipTransferApproval(context.Background(),
+		fixture.command(fixture.newApproval, 1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	quorumEnvelope, err := quorum.DurableEnvelope()
+	if err != nil {
+		t.Fatal(err)
+	}
+	advance, err := planner.BindCollectionAdvanceCapability(context.Background(), quorumEnvelope)
+	if err != nil || advance.VerifyFor(quorumEnvelope) != nil ||
+		len(advance.SourceEvidence()) >= len(advance.EvidenceStorageCapabilities()) {
+		t.Fatalf("maximum collection advance capability: %v", err)
+	}
+	applyTransferCollectionPlan(t, fixture.view, quorum)
+	candidate := acceptedTransferCandidateFromPlan(t, quorum)
+	command := cutoverCommandFixture(t, fixture, candidate)
+	collection := quorum.NextCollection()
+	fence := fixture.command(fixture.newApproval, 1).Fence
+	fence.ExpectedStateVersion = collection.Version
+	acceptanceCommand := OwnershipTransferAcceptanceCommand{CollectionKey: collection.Binding.Key,
+		Cutover: command, EvaluatedAtUnixNano: testNow, Fence: fence}
+	acceptance, err := planner.PlanOwnershipTransferAcceptance(context.Background(), acceptanceCommand)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := acceptance.cutover
+	if plan.VerifyDigest() != nil || len(plan.Steps()) != 260 ||
+		len(plan.CompoundMemberAdmissionClaims()) != 259 ||
+		len(plan.CompoundMemberCompletionClaims()) != 259 {
+		t.Fatalf("maximum cutover shape: verify=%v steps=%d members=%d", plan.VerifyDigest(),
+			len(plan.Steps()), len(plan.CompoundMemberAdmissionClaims()))
+	}
+	acceptanceEnvelope, err := acceptance.DurableEnvelope()
+	if err != nil {
+		t.Fatalf("maximum acceptance durable envelope: %v", err)
+	}
+	request, err := acceptanceEnvelope.JoinedAuditRequest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertJoinedAuditRequestTamperResistance(t, request)
+	fragment, ok := request.ExecutionFragment()
+	if !ok || fragment.VerifyDigest() != nil || len(fragment.CompoundMemberAdmissionClaims()) != 259 {
+		t.Fatal("maximum acceptance execution fragment invalid")
+	}
+	reservedIdentifiers := fragment.IdentifierReservations()
+
+	accepted := acceptance.AcceptedTransfer()
+	fixture.view.acceptedTransfers[accepted.TransferEvidenceDigest] = accepted
+	for _, claim := range fragment.IdempotencyAdmissionClaims() {
+		fixture.view.idempotency[claim.Binding.Key] = idempotency.Snapshot{Binding: claim.Binding,
+			State: claim.NextState, Version: claim.NextVersion, ProgressDigest: claim.NextProgressDigest}
+	}
+	for _, claim := range fragment.CompoundMemberAdmissionClaims() {
+		fixture.view.compoundMembers[claim.Binding.Key] = idempotency.CompoundMemberSnapshot{
+			Binding: claim.Binding, ParentBinding: claim.ParentBinding, State: claim.NextState,
+			Version: claim.NextVersion, ProgressDigest: claim.ProgressDigest}
+	}
+	applyGlobalClaims(t, fixture.view, fragment.IdentifierReservations())
+	decoded, err := DecodeDurablePendingEnvelope(fragment.PendingEnvelopeBytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rehydrated, err := planner.RevalidateDurablePending(context.Background(), decoded, testNow+1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rehydratedRequest, err := rehydrated.JoinedAuditRequest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rehydratedExecution, ok := rehydratedRequest.ExecutionFragment()
+	if !ok || rehydratedRequest.VerifyDigest() != nil || rehydratedExecution.VerifyDigest() != nil ||
+		len(rehydratedExecution.OwnershipTransferCutoverWrites()) != 260 ||
+		len(rehydratedExecution.CompoundMemberCompletionClaims()) != 259 {
+		t.Fatal("maximum durable cutover did not rehydrate to the exact joined execution")
+	}
+	for _, reservation := range reservedIdentifiers {
+		expected, assertionErr := globalid.Assert(reservation.Identifier, globalid.Snapshot{
+			Identifier: reservation.Identifier, Owner: reservation.Owner,
+			Version: reservation.NextVersion}, reservation.Owner)
+		if assertionErr != nil || !containsGlobalClaim(rehydratedExecution.IdentifierAssertions(), expected) {
+			t.Fatalf("maximum cutover global final assertion missing for %q: %v",
+				reservation.Identifier, assertionErr)
+		}
+	}
+	rehydratedRequest, err = planner.BindCanonicalStateCapabilities(context.Background(), rehydratedRequest)
+	if err != nil || rehydratedRequest.VerifyDigest() != nil {
+		t.Fatalf("maximum cutover canonical state binding: %v / %v", err,
+			rehydratedRequest.VerifyDigest())
+	}
+	rehydratedExecution, ok = rehydratedRequest.ExecutionFragment()
+	stateBundle, hasState := rehydratedRequest.CanonicalStateBundle()
+	if !ok || !hasState || stateBundle.VerifyDigest() != nil ||
+		stateBundle.VerifyForExecution(rehydratedExecution) != nil ||
+		len(stateBundle.Assertions())+len(stateBundle.Absences()) > iamCanonicalStateMaxAssertions ||
+		len(stateBundle.Mutations()) > iamCanonicalStateMaxMutations ||
+		len(stateBundle.Mutations()) < len(rehydratedExecution.OwnershipTransferCutoverWrites()) {
+		t.Fatalf("maximum cutover canonical state bounds: reads=%d writes=%d verify=%v",
+			len(stateBundle.Assertions())+len(stateBundle.Absences()), len(stateBundle.Mutations()),
+			stateBundle.VerifyDigest())
+	}
+	bundle, ok := rehydratedRequest.AuditEvidenceBundle()
+	if !ok || bundle.VerifyFor(rehydratedRequest) != nil || len(bundle.AuditSourceDigestsSHA256()) > 2 {
+		t.Fatal("maximum cutover typed evidence aggregate invalid")
+	}
+
+	overflow := command
+	overflow.KeyClosureWriterFences = append(append([]WriterFence(nil), command.KeyClosureWriterFences...),
+		command.KeyClosureWriterFences[0])
+	acceptanceCommand.Cutover = overflow
+	if _, err := planner.PlanOwnershipTransferAcceptance(context.Background(), acceptanceCommand); !errors.Is(err, ErrTransferCollectionMismatch) {
+		t.Fatalf("257 closure command accepted: %v", err)
 	}
 }

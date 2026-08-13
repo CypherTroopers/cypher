@@ -420,12 +420,18 @@ func (p *Planner) planPolicyApproval(ctx context.Context, command PolicyApproval
 	if err != nil {
 		return MutationPlan{}, AuditIntent{}, ErrPolicyConflict
 	}
+	terminalTemplate, err := p.buildPolicyApprovalTerminalTemplate(ctx, idempotencyBinding,
+		idempotencyDecision.ParentSnapshot(), policyApprovalEntriesFromApprovals(collectedApprovals), eventID)
+	if err != nil {
+		return MutationPlan{}, AuditIntent{}, err
+	}
 	planValue := MutationPlanSnapshot{
 		EvaluatedAtUnixNano:                           command.AtUnixNano,
 		CommitNotBeforeUnixNano:                       commitNotBefore,
 		CommitNotAfterUnixNano:                        commitDeadline,
 		GovernanceProfileDigestSHA256:                 p.profileDigest,
 		GovernanceProfileActivation:                   profileActivation,
+		DurablePolicyApprovalTerminalTemplate:         terminalTemplate,
 		Kind:                                          action,
 		PolicyBundleID:                                bundle.PolicyBundleID,
 		PolicyRecordID:                                bundle.Metadata.RecordID,
@@ -699,15 +705,18 @@ func preflightHistoricalApprovalEvidence(evidence HistoricalPolicyApprovalEviden
 	if !preflightRawRecord(record, maxPayloadBytesFor(schema.MessageTypePolicyBundle)) || !preflightKeySnapshot(evidence.Key) {
 		return false
 	}
-	// Historical evidence retains both the transport record and the immutable
-	// verifier snapshot. Account for both representations before any allocating
-	// getter is called; a verifier constructed with wider limits must not bypass
-	// this receiver's per-record or aggregate budget.
-	limits := ccse.DefaultLimits()
-	limits.MaxPayloadBytes = maxPayloadBytesFor(schema.MessageTypePolicyBundle)
-	verifiedSize, err := evidence.Signed.Verified.PreflightSize(limits)
-	if err != nil || verifiedSize > uint64(limit) || !boundedSizeAdd(total, int(verifiedSize), limit) {
-		return false
+	// Live retained evidence may still carry the replay verifier capability, in
+	// which case both representations are budgeted. Durable reload deliberately
+	// has the literal zero VerifiedRecord and is budgeted solely from its complete
+	// raw signed record; historical authentication happens later against IAM's
+	// exact authoritative timeline.
+	if !zeroVerifiedRecord(evidence.Signed.Verified) {
+		limits := ccse.DefaultLimits()
+		limits.MaxPayloadBytes = maxPayloadBytesFor(schema.MessageTypePolicyBundle)
+		verifiedSize, err := evidence.Signed.Verified.PreflightSize(limits)
+		if err != nil || verifiedSize > uint64(limit) || !boundedSizeAdd(total, int(verifiedSize), limit) {
+			return false
+		}
 	}
 	for _, size := range []int{len(record.Payload), len(record.Signature), len(evidence.Key.PublicKey), 4 * len(evidence.Key.AllowedMessageTypeIDs)} {
 		if !boundedSizeAdd(total, size, limit) {
@@ -1481,15 +1490,22 @@ func keyPrecondition(snapshot GovernanceKeySnapshot) KeyStatePrecondition {
 	return KeyStatePrecondition{
 		KeyID: snapshot.KeyID, StateVersion: snapshot.StateVersion, WriterEpoch: snapshot.WriterEpoch,
 		SnapshotDigestSHA256: snapshot.SnapshotDigestSHA256,
+		IdentityKind:         snapshot.TargetIdentityKind, IdentityPrincipalKind: snapshot.TargetPrincipalKind,
+		IdentityObjectID:     snapshot.TargetIdentityID,
 		IdentityStateVersion: snapshot.IdentityStateVersion, IdentityWriterEpoch: snapshot.IdentityWriterEpoch,
 		IdentitySnapshotDigestSHA256:      snapshot.IdentitySnapshotDigestSHA256,
 		AuthorizationSnapshotDigestSHA256: digestGovernanceAuthorizationSnapshot(snapshot),
+		KeyMaterialStateVersion:           snapshot.KeyMaterialStateVersion,
+		KeyMaterialStateDigestSHA256:      snapshot.KeyMaterialStateDigestSHA256,
 	}
 }
 
 func validKeyStatePrecondition(value KeyStatePrecondition) bool {
 	return value.KeyID != "" && value.StateVersion != 0 && value.WriterEpoch != 0 &&
 		!isZeroDigest(value.SnapshotDigestSHA256) && value.IdentityStateVersion != 0 &&
-		value.IdentityWriterEpoch != 0 && !isZeroDigest(value.IdentitySnapshotDigestSHA256) &&
-		!isZeroDigest(value.AuthorizationSnapshotDigestSHA256)
+		value.IdentityKind == 1 && value.IdentityPrincipalKind >= 1 && value.IdentityPrincipalKind <= 8 &&
+		validDurableEvidenceStorageText(value.IdentityObjectID, 1024) && value.IdentityWriterEpoch != 0 &&
+		!isZeroDigest(value.IdentitySnapshotDigestSHA256) &&
+		!isZeroDigest(value.AuthorizationSnapshotDigestSHA256) && value.KeyMaterialStateVersion == 1 &&
+		!isZeroDigest(value.KeyMaterialStateDigestSHA256)
 }

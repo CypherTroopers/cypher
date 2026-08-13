@@ -12,26 +12,28 @@ import (
 	"strconv"
 )
 
-// AuditHeadRecord is the owned transaction-locked storage projection used by
-// a Governance AuditView adapter. The authorized tuple is explicit rather
-// than reconstructed from the last event.
+// AuditHeadRecord is the owned transaction-locked historical append head.
+// Authorized* mirrors Head* at rest and names the authority that signed the
+// latest event; it is not a mutable current-authorization cache. A Governance
+// AuditView adapter must combine this row with exact current profile,
+// key-state, and writer-lease canonical rows from the same CanonicalUOW.
 type AuditHeadRecord struct {
-	StreamID                           string
-	DeploymentAnchorDigest             [sha256.Size]byte
-	Sequence                           uint64
-	LastRecordDigest                   [sha256.Size]byte
-	AuditEventID                       string
-	HeadWriterIdentity                 string
-	AuthorizedWriterIdentity           string
-	HomeRegion                         string
-	AuthorizedHomeRegion               string
-	WriterEpoch                        uint64
-	AuthorizedWriterEpoch              uint64
-	HeadGovernanceProfileDigest        [sha256.Size]byte
-	AuthorizedGovernanceProfileDigest  [sha256.Size]byte
-	WriterLeaseEvidenceDigest          [sha256.Size]byte
-	WriterLeaseNotBeforeUnixNano       int64
-	WriterLeaseNotAfterUnixNano        int64
+	StreamID                          string
+	DeploymentAnchorDigest            [sha256.Size]byte
+	Sequence                          uint64
+	LastRecordDigest                  [sha256.Size]byte
+	AuditEventID                      string
+	HeadWriterIdentity                string
+	AuthorizedWriterIdentity          string
+	HomeRegion                        string
+	AuthorizedHomeRegion              string
+	WriterEpoch                       uint64
+	AuthorizedWriterEpoch             uint64
+	HeadGovernanceProfileDigest       [sha256.Size]byte
+	AuthorizedGovernanceProfileDigest [sha256.Size]byte
+	WriterLeaseEvidenceDigest         [sha256.Size]byte
+	WriterLeaseNotBeforeUnixNano      int64
+	WriterLeaseNotAfterUnixNano       int64
 }
 
 type AuditEventLookup struct {
@@ -52,9 +54,9 @@ const selectAuditHeadForUpdateSQL = `
 	WHERE stream_id = $1
 	FOR UPDATE`
 
-// LoadAuditHead returns the complete exact head on the active replay
-// transaction connection. The Governance adapter must not merge it with an
-// independently read lease/profile snapshot.
+// LoadAuditHead returns the complete exact historical head on the active
+// replay transaction connection. Any current lease/profile snapshot used by
+// the Governance adapter must be read through this same CanonicalUOW.
 func (uow *CanonicalUOW) LoadAuditHead(ctx context.Context,
 	streamID string) (AuditHeadRecord, bool, error) {
 	state, err := uow.lock(ctx)
@@ -121,8 +123,7 @@ func validAuditHeadRecord(record AuditHeadRecord) bool {
 const selectAuditEventForUpdateSQL = `
 	SELECT stream_id, audit_sequence, record_digest
 	FROM cph_aiinfra.audit_event
-	WHERE event_id = $1
-	FOR UPDATE`
+	WHERE event_id = $1`
 
 func (uow *CanonicalUOW) LoadAuditEvent(ctx context.Context,
 	eventID string) (AuditEventLookup, bool, error) {

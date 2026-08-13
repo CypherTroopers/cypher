@@ -179,6 +179,45 @@ again, and contradictory snapshots fail closed. No adapter may substitute a
 host clock, a mutable registry, a namespaced global-ID uniqueness rule, or
 string-fragment policy checks.
 
+`DecodeCanonicalIAMStateRecord` must be the storage-adapter read boundary for
+IAM-owned canonical-state rows once the production adapter is wired. It bounds and strictly decodes the v1 bytes,
+re-encodes them byte-for-byte, and verifies the exact namespace, kind, content
+type, ObjectID, semantic digest, terminal flag, validity shape and every row
+version derivable from the codec. Key material, lifecycle, writer lease, proof
+challenge, principal index and predecessor index are fully reversible. The
+subject-key-set codec is intentionally exposed only as `(subject kind,
+principal, key-set digest)`; it does not contain or reconstruct set members.
+
+Three v1 persistence gaps remain fail-closed rather than guessed:
+
+- Several frozen identity payloads have identical field layouts, while the
+  generic identity row omits MessageTypeID/principal kind. Such a row returns
+  all canonical schema candidates and cannot become an `IdentitySnapshot`
+  until an independent authoritative discriminator is available.
+- accepted-ownership-transfer retains the transfer payload and outer digests,
+  but authority-admission fingerprints replace the frozen profile,
+  historical authorization snapshots, receiver profiles, preconditions and
+  policy-decision preimages. The decoder can verify its retained structure and
+  row commitments, but cannot reconstruct an
+  `AcceptedOwnershipTransferSnapshot`. Its opaque getter is storage diagnostics
+  only: it verifies bounded framing, declared record type/payload hashes and
+  outer row commitments, not embedded signatures, fingerprints, frozen profile
+  or activation authority. It must never back
+  `LookupAcceptedOwnershipTransfer`.
+- ownership-transfer-profile-activation has a catalog entry and validity
+  shape, but no persisted IAM-owned canonical state encoding. It is rejected
+  by the read boundary.
+
+A reversible successor therefore requires a separately named/versioned kind
+and content type. It must commit the identity MessageTypeID/principal kind,
+the subject key-set members (or immutable content-addressed member rows), and
+the complete accepted-transfer/profile/admission preimages plus a canonical
+profile-activation encoding. Migration must backfill those bytes only from
+authoritative historical rows/evidence, verify v1 commitments before writing
+v2, and leave unverifiable v1 rows opaque. Dual-read may verify v1 and fully
+decode v2; it must never synthesize missing v1 fields. Existing v1 encoders and
+digests remain unchanged.
+
 This package does not silently add fields to the eight frozen foundation-v1
 identity projections or KeyLifecycle v1. Semantics that cannot be proven from
 those projections plus explicitly typed, signed evidence remain blocked behind

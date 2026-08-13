@@ -9,6 +9,7 @@ import (
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/globalid"
 	"github.com/cypherium/cypher/aiinfra/idempotency"
+	"github.com/cypherium/cypher/aiinfra/replayresult"
 )
 
 const (
@@ -135,6 +136,10 @@ type IAMExecutionFragment struct {
 	envelopeDigest            [32]byte
 	stateCommitment           [32]byte
 	failureOutcomeDigest      [32]byte
+	failureResult             replayresult.Result
+	finalClockRequirement     *ReconciliationFinalClockRequirement
+	canonicalState            *IAMCanonicalStateBundle
+	persistence               *IAMPendingPersistenceCapability
 	digest                    [32]byte
 }
 
@@ -157,6 +162,21 @@ func cloneIAMExecutionFragment(source IAMExecutionFragment) IAMExecutionFragment
 	if source.acceptedTransfer != nil {
 		write := cloneAcceptedTransferWrite(*source.acceptedTransfer)
 		result.acceptedTransfer = &write
+	}
+	if failure, ok := source.FailureResult(); ok {
+		result.failureResult, _ = replayresult.New(failure.ContentType(), failure.Payload())
+	}
+	if source.finalClockRequirement != nil {
+		clock := *source.finalClockRequirement
+		result.finalClockRequirement = &clock
+	}
+	if source.canonicalState != nil {
+		bundle := cloneIAMCanonicalStateBundle(*source.canonicalState)
+		result.canonicalState = &bundle
+	}
+	if source.persistence != nil {
+		capability := cloneIAMPendingPersistenceCapability(*source.persistence)
+		result.persistence = &capability
 	}
 	return result
 }
@@ -240,6 +260,34 @@ func (fragment IAMExecutionFragment) StateAndGlobalCASCommitment() [32]byte {
 func (fragment IAMExecutionFragment) FailureOutcomeDigest() ([32]byte, bool) {
 	return fragment.failureOutcomeDigest, fragment.failureOutcomeDigest != ([32]byte{})
 }
+func (fragment IAMExecutionFragment) FailureResult() (replayresult.Result, bool) {
+	if fragment.kind != DurablePendingReconciliation || fragment.failureResult.Verify() != nil ||
+		fragment.failureResult.Digest() != fragment.failureOutcomeDigest {
+		return replayresult.Result{}, false
+	}
+	return fragment.failureResult, true
+}
+func (fragment IAMExecutionFragment) ReconciliationFinalClockRequirement() (
+	ReconciliationFinalClockRequirement, bool) {
+	if fragment.kind != DurablePendingReconciliation || fragment.finalClockRequirement == nil {
+		return ReconciliationFinalClockRequirement{}, false
+	}
+	requirement := *fragment.finalClockRequirement
+	return requirement, requirement.Verify() == nil
+}
+func (fragment IAMExecutionFragment) CanonicalStateBundle() (IAMCanonicalStateBundle, bool) {
+	if fragment.canonicalState == nil || fragment.canonicalState.VerifyDigest() != nil {
+		return IAMCanonicalStateBundle{}, false
+	}
+	return cloneIAMCanonicalStateBundle(*fragment.canonicalState), true
+}
+func (fragment IAMExecutionFragment) PendingPersistenceCapability() (
+	IAMPendingPersistenceCapability, bool) {
+	if fragment.persistence == nil || fragment.persistence.VerifyDigest() != nil {
+		return IAMPendingPersistenceCapability{}, false
+	}
+	return cloneIAMPendingPersistenceCapability(*fragment.persistence), true
+}
 func (fragment IAMExecutionFragment) Digest() [32]byte { return fragment.digest }
 
 func (fragment IAMExecutionFragment) VerifyDigest() error {
@@ -249,7 +297,17 @@ func (fragment IAMExecutionFragment) VerifyDigest() error {
 		fragment.commitNotAfterUnixNano <= fragment.evaluatedAtUnixNano ||
 		fragment.pendingDigest == ([32]byte{}) || fragment.envelopeDigest == ([32]byte{}) ||
 		fragment.stateCommitment == ([32]byte{}) ||
-		(fragment.kind == DurablePendingReconciliation) != (fragment.failureOutcomeDigest != ([32]byte{})) {
+		(fragment.kind == DurablePendingReconciliation) != (fragment.failureOutcomeDigest != ([32]byte{})) ||
+		(fragment.kind == DurablePendingReconciliation &&
+			(fragment.failureResult.Verify() != nil || fragment.failureResult.Digest() != fragment.failureOutcomeDigest ||
+				fragment.finalClockRequirement == nil || fragment.finalClockRequirement.Verify() != nil)) ||
+		(fragment.kind != DurablePendingReconciliation && fragment.finalClockRequirement != nil) {
+		return ErrPendingPlanInvalid
+	}
+	if fragment.canonicalState != nil && fragment.canonicalState.VerifyDigest() != nil {
+		return ErrPendingPlanInvalid
+	}
+	if fragment.persistence != nil && fragment.persistence.VerifyDigest() != nil {
 		return ErrPendingPlanInvalid
 	}
 	return nil
@@ -266,7 +324,16 @@ func executionFragmentFromRequest(request JoinedAuditRequest) (IAMExecutionFragm
 		commitNotBeforeUnixNano: request.commitNotBeforeUnixNano,
 		commitNotAfterUnixNano:  request.commitNotAfterUnixNano,
 		pendingDigest:           request.PendingDigest(), envelopeDigest: request.DurableEnvelopeDigest(),
-		stateCommitment: request.stateCommitment, failureOutcomeDigest: request.failureOutcomeDigest}
+		stateCommitment: request.stateCommitment, failureOutcomeDigest: request.failureOutcomeDigest,
+		failureResult: request.failureResult}
+	if request.canonicalState != nil {
+		bundle := cloneIAMCanonicalStateBundle(*request.canonicalState)
+		fragment.canonicalState = &bundle
+	}
+	if request.persistence != nil {
+		capability := cloneIAMPendingPersistenceCapability(*request.persistence)
+		fragment.persistence = &capability
+	}
 	var err error
 	switch request.Kind() {
 	case DurablePendingMutation:
@@ -337,6 +404,11 @@ func executionFragmentFromRequest(request JoinedAuditRequest) (IAMExecutionFragm
 	case DurablePendingReconciliation:
 		// Reconciliation intentionally has no business mutation. Its exact X/Y
 		// completions and permanent identifier assertions are still exposed.
+		clock := request.envelope.reconciliation.failureEvidence.FinalClockRequirement()
+		if clock.Verify() != nil {
+			return IAMExecutionFragment{}, ErrPendingPlanInvalid
+		}
+		fragment.finalClockRequirement = &clock
 	default:
 		return IAMExecutionFragment{}, ErrPendingPlanInvalid
 	}
@@ -499,7 +571,8 @@ func iamExecutionFragmentDigest(fragment IAMExecutionFragment) ([32]byte, error)
 	}
 	if fragment.kind == DurablePendingReconciliation {
 		if len(fragment.mutations) != 0 || fragment.failureOutcomeDigest == ([32]byte{}) ||
-			len(fragment.idempotencyCompletions) != 2 {
+			len(fragment.idempotencyCompletions) != 2 || fragment.finalClockRequirement == nil ||
+			fragment.finalClockRequirement.Verify() != nil {
 			return zero, ErrPendingPlanInvalid
 		}
 		for _, claim := range fragment.idempotencyCompletions {
@@ -507,8 +580,30 @@ func iamExecutionFragmentDigest(fragment IAMExecutionFragment) ([32]byte, error)
 				return zero, ErrPendingPlanInvalid
 			}
 		}
-	} else if fragment.failureOutcomeDigest != ([32]byte{}) {
+	} else if fragment.failureOutcomeDigest != ([32]byte{}) || fragment.finalClockRequirement != nil {
 		return zero, ErrPendingPlanInvalid
+	}
+	canonicalStateDigest := [32]byte{}
+	if fragment.canonicalState != nil {
+		if fragment.canonicalState.VerifyDigest() != nil ||
+			fragment.canonicalState.AuditEventID() != fragment.auditEventAssertion.Identifier {
+			return zero, ErrPendingPlanInvalid
+		}
+		canonicalStateDigest = fragment.canonicalState.Digest()
+	}
+	persistenceDigest := [32]byte{}
+	if fragment.persistence != nil {
+		if fragment.persistence.VerifyDigest() != nil ||
+			fragment.persistence.auditEventID != fragment.auditEventAssertion.Identifier {
+			return zero, ErrPendingPlanInvalid
+		}
+		persistenceDigest = fragment.persistence.Digest()
+	}
+	finalClockPendingDigest := [32]byte{}
+	finalClockDigest := [32]byte{}
+	if fragment.finalClockRequirement != nil {
+		finalClockPendingDigest = fragment.finalClockRequirement.PendingDigest()
+		finalClockDigest = fragment.finalClockRequirement.Digest()
 	}
 	if fragment.kind == DurablePendingOwnershipTransferAcceptance {
 		if len(fragment.idempotencyAdmissions) != 2 || len(fragment.compoundMemberAdmissions) == 0 ||
@@ -562,6 +657,18 @@ func iamExecutionFragmentDigest(fragment IAMExecutionFragment) ([32]byte, error)
 		out.FixedBytes(fragment.stateCommitment[:], 32)
 		out.Bool(fragment.failureOutcomeDigest != ([32]byte{}))
 		out.FixedBytes(fragment.failureOutcomeDigest[:], 32)
+		if fragment.failureOutcomeDigest != ([32]byte{}) {
+			out.String(fragment.failureResult.ContentType())
+			out.Bytes(fragment.failureResult.Payload())
+			out.FixedBytes(finalClockPendingDigest[:], 32)
+			out.Int64(fragment.finalClockRequirement.OriginalCommitNotAfterUnixNano())
+			out.Int64(fragment.finalClockRequirement.AuditOccurredAtUnixNano())
+			out.FixedBytes(finalClockDigest[:], 32)
+		}
+		out.Bool(fragment.canonicalState != nil)
+		out.FixedBytes(canonicalStateDigest[:], 32)
+		out.Bool(fragment.persistence != nil)
+		out.FixedBytes(persistenceDigest[:], 32)
 	})
 	if err != nil {
 		return zero, err

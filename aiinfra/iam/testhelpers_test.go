@@ -4,13 +4,16 @@
 package iam
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/globalid"
@@ -38,6 +41,16 @@ type memoryView struct {
 	transferCollections map[[16]byte]OwnershipTransferApprovalCollectionSnapshot
 	acceptedTransfers   map[[32]byte]AcceptedOwnershipTransferSnapshot
 	compoundMembers     map[[16]byte]idempotency.CompoundMemberSnapshot
+	reconciliationNow   int64
+	pendingPersistence  map[[ccse.MessageIDSize]byte]memoryPendingPersistence
+	admissionEvidence   map[[sha256.Size]byte]IAMPersistenceEvidenceRecord
+}
+
+type viewWithoutCanonicalState struct{ View }
+
+type memoryPendingPersistence struct {
+	revision IAMPendingStoredRevision
+	evidence []IAMPersistenceEvidenceRecord
 }
 
 func newMemoryView() *memoryView {
@@ -49,7 +62,233 @@ func newMemoryView() *memoryView {
 		transferCollections: make(map[[16]byte]OwnershipTransferApprovalCollectionSnapshot),
 		acceptedTransfers:   make(map[[32]byte]AcceptedOwnershipTransferSnapshot),
 		compoundMembers:     make(map[[16]byte]idempotency.CompoundMemberSnapshot),
+		reconciliationNow:   -1,
+		pendingPersistence:  make(map[[ccse.MessageIDSize]byte]memoryPendingPersistence),
+		admissionEvidence:   make(map[[sha256.Size]byte]IAMPersistenceEvidenceRecord),
 	}
+}
+
+func (view *memoryView) LookupIAMPendingAdmissionEvidence(_ context.Context,
+	digest [sha256.Size]byte) (IAMPersistenceEvidenceRecord, bool, error) {
+	record, found := view.admissionEvidence[digest]
+	return cloneIAMPersistenceEvidenceRecord(record), found, nil
+}
+
+func (view *memoryView) SnapshotIAMPendingPersistence(_ context.Context,
+	key [ccse.MessageIDSize]byte, revision uint64, _ [][sha256.Size]byte) (IAMPendingStoredRevision,
+	[]IAMPersistenceEvidenceRecord, bool, error) {
+	value, found := view.pendingPersistence[key]
+	if !found || value.revision.Revision != revision {
+		return IAMPendingStoredRevision{}, nil, false, nil
+	}
+	records := make([]IAMPersistenceEvidenceRecord, len(value.evidence))
+	for index := range value.evidence {
+		records[index] = cloneIAMPersistenceEvidenceRecord(value.evidence[index])
+	}
+	return cloneIAMPendingStoredRevision(value.revision), records, true, nil
+}
+
+func seedPendingPersistence(t testing.TB, view *memoryView, request JoinedAuditRequest) {
+	t.Helper()
+	seedPendingPersistenceFromEnvelope(t, view, request, request.Kind(), request.envelope)
+}
+
+func seedPendingPersistenceFromEnvelope(t testing.TB, view *memoryView, request JoinedAuditRequest,
+	sourceKind DurablePendingKind, sourceEnvelope DurablePendingEnvelope, additionalAudits ...AuditIntent) {
+	t.Helper()
+	references := request.EvidenceReferences()
+	sourceReferences := append([]ContentAddressedEvidenceReference(nil), references...)
+	if sourceKind == DurablePendingOwnershipTransferCollection && sourceEnvelope.transfer != nil {
+		if sourceAudit, ok := sourceEnvelope.transfer.AuditIntent(); ok {
+			sourceReferences = auditEvidenceReferences(sourceAudit)
+			references = append(sourceReferences, references...)
+		}
+	}
+	sources := make(map[[sha256.Size]byte][]byte)
+	records := make([]IAMPersistenceEvidenceRecord, 0, len(references))
+	digests := make([][sha256.Size]byte, 0, len(sourceReferences))
+	var source ccse.Record
+	var hasSource bool
+	if request.audit != nil {
+		source, hasSource = request.audit.SourceAuthorizationRecord()
+	} else if request.reconciliation != nil {
+		source, hasSource = request.reconciliation.SourceAuthorizationRecord()
+	}
+	if !hasSource {
+		t.Fatal("pending persistence fixture requires source authorization")
+	}
+	sourceDigest, err := source.Digest(ccse.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceBytes, err := canonicalSignedAuthorizationEvidence(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources[sourceDigest] = sourceBytes
+	for _, audit := range additionalAudits {
+		references = append(references, auditEvidenceReferences(audit)...)
+		record, ok := audit.SourceAuthorizationRecord()
+		if !ok {
+			t.Fatal("additional audit source authorization missing")
+		}
+		digest := audit.SourceAuthorizationDigest()
+		canonical, canonicalErr := canonicalSignedAuthorizationEvidence(record)
+		if canonicalErr != nil {
+			t.Fatal(canonicalErr)
+		}
+		sources[digest] = canonical
+	}
+	seen := make(map[[sha256.Size]byte]struct{}, len(references))
+	for _, reference := range references {
+		if _, duplicate := seen[reference.Digest]; duplicate {
+			continue
+		}
+		seen[reference.Digest] = struct{}{}
+		record := IAMPersistenceEvidenceRecord{DigestSHA256: reference.Digest,
+			Kind: IAMEvidenceSemanticReceipt, ContentType: "application/cph.aiinfra.iam.evidence.v1",
+			CanonicalContent:     append([]byte("semantic:"), reference.Digest[:]...),
+			ExpectedAuditEventID: request.auditEventID}
+		if canonical, signed := sources[reference.Digest]; signed {
+			record.Kind = IAMEvidenceSignedCCSERecord
+			record.ContentType = IAMEvidenceContentTypeSignedCCSERecord
+			record.CanonicalContent = canonical
+		}
+		records = append(records, record)
+	}
+	seenSource := make(map[[sha256.Size]byte]struct{}, len(sourceReferences))
+	for _, reference := range sourceReferences {
+		if reference.Digest == ([sha256.Size]byte{}) {
+			continue
+		}
+		if _, duplicate := seenSource[reference.Digest]; duplicate {
+			continue
+		}
+		seenSource[reference.Digest] = struct{}{}
+		digests = append(digests, reference.Digest)
+	}
+	sort.Slice(digests, func(i, j int) bool { return bytes.Compare(digests[i][:], digests[j][:]) < 0 })
+	_, sourceNotBefore, sourceNotAfter, windowErr := durableEnvelopeFullWindow(sourceEnvelope)
+	if windowErr != nil {
+		t.Fatal(windowErr)
+	}
+	view.pendingPersistence[request.parentBinding.Key] = memoryPendingPersistence{
+		revision: IAMPendingStoredRevision{PendingKey: request.parentBinding.Key, Kind: sourceKind,
+			Codec: durablePendingCodec, CodecVersion: durablePendingCodecVersion,
+			Revision: request.parentExpected.Version, EnvelopeDigestSHA256: sourceEnvelope.digest,
+			CanonicalEnvelope: sourceEnvelope.Bytes(), EvidenceDigestsSHA256: digests,
+			Status: IAMPendingStatusOpen, CommitNotBeforeUnixNano: sourceNotBefore,
+			CommitNotAfterUnixNano: sourceNotAfter,
+			ExpectedAuditEventID:   request.auditEventID}, evidence: records}
+	if request.parentExpected.Version > 1 {
+		value := view.pendingPersistence[request.parentBinding.Key]
+		value.revision.PreviousEnvelopeDigestSHA256 = domainDigest(
+			durablePendingEnvelopeDigestDomain+"TEST-PREVIOUS\x00", sourceEnvelope.encoded)
+		view.pendingPersistence[request.parentBinding.Key] = value
+	}
+}
+
+func (view *memoryView) SnapshotReconciliationTransactionClock(_ context.Context,
+	pendingDigest [32]byte, deadline int64) (ReconciliationTransactionClockSnapshot, error) {
+	observed := view.reconciliationNow
+	if observed < 0 {
+		observed = deadline
+	}
+	return NewReconciliationTransactionClockSnapshot("test-serializable-tx", observed,
+		pendingDigest, deadline)
+}
+
+func (view *memoryView) CanonicalIAMStateAssertion(_ context.Context,
+	precondition SnapshotPrecondition, _ string) (CanonicalStateRecord, bool, error) {
+	kind, ok := canonicalStateKindForEntity(precondition.Entity)
+	if !ok || precondition.ExpectedStateVersion == 0 ||
+		precondition.ExpectedSnapshotDigest == ([32]byte{}) {
+		return CanonicalStateRecord{}, false, ErrViewInconsistent
+	}
+	contentType, _ := canonicalStateSpec(kind)
+	canonical, err := ccse.Marshal(4096, func(out *ccse.Encoder) {
+		encodeEntity(out, precondition.Entity)
+		out.Uint64(precondition.ExpectedStateVersion)
+		out.Uint64(precondition.ExpectedWriterEpoch)
+		out.Uint32(precondition.ExpectedState)
+		out.FixedBytes(precondition.ExpectedSnapshotDigest[:], 32)
+	})
+	if err != nil {
+		return CanonicalStateRecord{}, false, err
+	}
+	record := CanonicalStateRecord{Namespace: CanonicalStateNamespaceIAM, Kind: kind,
+		ObjectID: precondition.Entity.ID, Version: precondition.ExpectedStateVersion,
+		StateDigestSHA256: precondition.ExpectedSnapshotDigest, ContentType: contentType,
+		CanonicalState: canonical, Terminal: false,
+		AuditEventID: "historical:" + precondition.Entity.ID}
+	if kind == CanonicalStateKindIAMTransferProfileActivation {
+		record.HasValidityWindow = true
+		record.ValidFromUnixNano = testNotBefore
+		record.ValidUntilUnixNano = testNotAfter
+	}
+	return record, true, nil
+}
+
+func (view *memoryView) CanonicalIAMStateTransition(_ context.Context,
+	request CanonicalIAMStateTransition) (CanonicalStateRecord, bool, CanonicalStateRecord, error) {
+	kind, ok := canonicalStateKindForEntity(request.Entity)
+	if !ok {
+		return CanonicalStateRecord{}, false, CanonicalStateRecord{}, ErrViewInconsistent
+	}
+	contentType, _ := canonicalStateSpec(kind)
+	next := CanonicalStateRecord{Namespace: CanonicalStateNamespaceIAM, Kind: kind,
+		ObjectID: request.Entity.ID, Version: request.NextVersion,
+		StateDigestSHA256: request.SemanticStateDigestSHA256, ContentType: contentType,
+		CanonicalState: append([]byte(nil), request.CanonicalSemanticState...), Terminal: request.Terminal,
+		AuditEventID: request.AuditEventID, HasValidityWindow: request.HasValidityWindow,
+		ValidFromUnixNano: request.ValidFromUnixNano, ValidUntilUnixNano: request.ValidUntilUnixNano}
+	if request.ExpectedAbsent {
+		return CanonicalStateRecord{}, false, next, nil
+	}
+	canonical, err := ccse.Marshal(4096, func(out *ccse.Encoder) {
+		encodeEntity(out, request.Entity)
+		out.Uint64(request.ExpectedVersion)
+		out.Uint64(request.ExpectedWriterEpoch)
+		out.FixedBytes(request.ExpectedStateDigestSHA256[:], 32)
+	})
+	if err != nil {
+		return CanonicalStateRecord{}, false, CanonicalStateRecord{}, err
+	}
+	expected := CanonicalStateRecord{Namespace: CanonicalStateNamespaceIAM, Kind: kind,
+		ObjectID: request.Entity.ID, Version: request.ExpectedVersion,
+		StateDigestSHA256: request.ExpectedStateDigestSHA256, ContentType: contentType,
+		CanonicalState: canonical, AuditEventID: "historical:" + request.Entity.ID,
+		HasValidityWindow: request.HasValidityWindow,
+		ValidFromUnixNano: request.ValidFromUnixNano, ValidUntilUnixNano: request.ValidUntilUnixNano}
+	return expected, true, next, nil
+}
+
+func (view *memoryView) CanonicalIAMSidecarState(_ context.Context,
+	request CanonicalIAMSidecarRequest) (CanonicalStateRecord, bool,
+	CanonicalStateRecord, bool, error) {
+	if _, ok := canonicalStateSpec(request.Kind); !ok || request.ObjectID == "" {
+		return CanonicalStateRecord{}, false, CanonicalStateRecord{}, false, ErrViewInconsistent
+	}
+	var expected CanonicalStateRecord
+	if request.ExpectedPresent {
+		version := request.ExpectedVersion
+		if version == 0 {
+			version = 1
+		}
+		expected = canonicalStateRecordForSidecar(request, version, false)
+	}
+	var next CanonicalStateRecord
+	if request.NextPresent {
+		version := request.NextVersion
+		if version == 0 {
+			version = 1
+			if request.ExpectedPresent {
+				version = expected.Version + 1
+			}
+		}
+		next = canonicalStateRecordForSidecar(request, version, true)
+	}
+	return expected, request.ExpectedPresent, next, request.NextPresent, nil
 }
 
 func (view *memoryView) SnapshotCompoundMemberState(_ context.Context, key [16]byte) (
@@ -406,6 +645,42 @@ func materialSnapshotForTargetAndTransfer(t testing.TB, seed byte, subject strin
 	return material
 }
 
+func materialSnapshotForIndexedClosure(t testing.TB, index int, subject string,
+	target EntityRef) KeyMaterialSnapshot {
+	t.Helper()
+	seed := sha256.Sum256([]byte(fmt.Sprintf("iam-closure-key-%d", index)))
+	private := ed25519.NewKeyFromSeed(seed[:])
+	public := append(ed25519.PublicKey(nil), private.Public().(ed25519.PublicKey)...)
+	keyID, err := DeriveKeyID(ccse.SignatureAlgorithmEd25519, public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	challenge := sha256.Sum256([]byte(fmt.Sprintf("iam-closure-challenge-%d", index)))
+	expires := testNow + 1_000_000_000
+	domain := testEnrollmentDomain()
+	proofDigest, err := ProofOfPossessionDigest(keyID, subject, target.PrincipalKind,
+		target, [32]byte{}, domain, challenge, expires)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idempotencyKey := id16(byte(index))
+	idempotencyKey[0] ^= byte(index >> 8)
+	material := KeyMaterialSnapshot{KeyID: keyID, Algorithm: ccse.SignatureAlgorithmEd25519,
+		CanonicalPublicKey: public, SubjectIdentity: subject, SubjectKind: target.PrincipalKind,
+		TargetIdentity: target, EnrollmentDomain: domain, ProofChallenge: challenge,
+		ProofExpiresAtUnixNano: expires, ProofSignature: ed25519.Sign(private, proofDigest[:]),
+		ProofDigest: proofDigest, ChallengeEvidenceDigest: sha256.Sum256([]byte(fmt.Sprintf("closure-evidence-%d", index))),
+		EnrollmentAuthorityIdentity:   "spiffe://cph.example/service/enroller",
+		EnrollmentPolicyDigestsSHA256: [][32]byte{digest(0x54)},
+		WriterIdentity:                "spiffe://cph.example/service/iam-writer", HomeRegion: "eu-central-1",
+		WriterEpoch: 7, StateVersion: 1, IdempotencyKey: idempotencyKey}
+	material.EnrollmentBindingDigest, err = enrollmentBindingDigest(material)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return material
+}
+
 func testEnrollmentDomain() EnrollmentDomain {
 	return EnrollmentDomain{EnrollmentDomainID: "iam-enrollment:testnet", Environment: "testnet", GenesisHash: digest(0x92)}
 }
@@ -591,3 +866,55 @@ func requireErrorIs(t testing.TB, err, target error) {
 }
 
 func hashBytes(value []byte) [32]byte { return sha256.Sum256(value) }
+
+func reconciliationEvidence(t testing.TB, disposition PendingDisposition, observedAt,
+	deadline int64, pendingDigest [32]byte, seed byte) PendingReconciliationEvidence {
+	t.Helper()
+	_ = seed
+	if disposition != PendingDispositionExpired {
+		t.Fatal("test helper requires authenticated signed evidence for FAILED")
+	}
+	evidence, err := newPendingReconciliationEvidence(pendingReconciliationExpiredClockEvidence,
+		disposition, pendingDigest, deadline, observedAt, ccse.Record{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return evidence
+}
+
+func authenticateVerifiedEvidence(t testing.TB, view *memoryView, verified ccse.VerifiedRecord,
+	at int64) ccse.AuthenticatedEvidenceRecord {
+	t.Helper()
+	record := verified.Record()
+	material := view.materials[record.Envelope.SignatureKeyID]
+	keys := ccse.NewMemoryKeyRegistry()
+	if err := keys.Add(ccse.KeyRecord{KeyID: material.KeyID,
+		SubjectIdentity: material.SubjectIdentity, Algorithm: material.Algorithm,
+		PublicKey:         append([]byte(nil), material.CanonicalPublicKey...),
+		NotBeforeUnixNano: testNotBefore, NotAfterUnixNano: testNotAfter,
+		AllowedMessageTypes: []uint32{record.MessageTypeID}}); err != nil {
+		t.Fatal(err)
+	}
+	validator, err := foundationCanonicalValidator()
+	if err != nil {
+		t.Fatal(err)
+	}
+	authenticator := ccse.EvidenceAuthenticator{Expectations: ccse.Expectations{
+		MessageTypeID: record.MessageTypeID, SchemaVersion: record.SchemaVersion,
+		ProtocolVersion: record.Domain.ProtocolVersion, Purpose: record.Domain.Purpose,
+		SenderIdentity:       ccse.OptionalString{Present: true, Value: record.Domain.SenderIdentity},
+		Audience:             append([]string(nil), record.Domain.Audience...),
+		TenantOrganization:   record.Domain.TenantOrganization,
+		ProviderOrganization: record.Domain.ProviderOrganization,
+		Environment:          record.Domain.Environment, ChainID: record.Domain.ChainID,
+		GenesisHash: record.Domain.GenesisHash, ReplayDomainID: record.Domain.ReplayDomainID,
+		CounterKind: record.Domain.CounterKind, MaxClockSkew: time.Millisecond,
+		MaxValidityWindow: time.Second,
+	}, Limits: ccse.DefaultLimits(), Clock: ccse.ClockFunc(func() time.Time { return time.Unix(0, at) }),
+		Keys: keys, Schema: validator}
+	evidence, err := authenticator.Authenticate(context.Background(), &record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return evidence
+}

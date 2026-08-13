@@ -55,6 +55,26 @@ Message-ID conflicts, stale unsigned sequences, nested replay
 transactions, incomplete effect declarations and zero outcomes fail closed. No
 handler may perform a non-transactional external effect before commit.
 
+SQLSTATE `40001` aborts are retried in a fresh SERIALIZABLE transaction with a
+bounded, context-aware exponential backoff (three attempts by default, at most
+eight when explicitly configured). The handler can therefore run more than
+once; remote effects belong only in its durable outbox completion.
+
+Migration 4 adds the mutable delivery state beside the immutable outbox intent.
+`OutboxDispatcher` initializes a state row, commits a database-clock lease,
+then calls the publisher outside the database transaction. Success or failure
+is acknowledged only by the exact random lease token. Failed publication and
+expired-worker recovery redeliver the stable destination/deduplication key with
+bounded retry scheduling. Delivery is intentionally at-least-once: publishers
+must atomically deduplicate that key because a process can die after the remote
+publish succeeds and before PostgreSQL records its acknowledgement.
+The runtime role has no direct privilege on `ccse_outbox_delivery`: active
+lease tokens are bearer capabilities and cannot be exposed through table
+`SELECT`. Initialization/claim and fenced acknowledgement/rejection run only
+through three sealed schema-owner `SECURITY DEFINER` functions with a fixed
+`pg_catalog` search path, bounded inputs, database-clock deadlines and exact
+row-count enforcement.
+
 Migration 2 adds a closed canonical-state substrate without making every CCSE
 message an AuditEvent. Each v2 write belongs to one immutable
 `authoritative_uow` receipt containing the exact outer scope, MessageID,
@@ -84,11 +104,34 @@ exact `VerifiedRecord` and scope/MessageID owned by the active `Execute`
 transaction, binds one owned Admission or AuditedFinal result receipt, and
 returns a capability whose reads and writes use that transaction's connection.
 Global-ID, idempotency, pending and evidence inputs are bounded and normalized
-before SQL; authoritative reads use `FOR UPDATE`, and every mutation checks an
-exact one-row insert/CAS result. Any validation, query, driver, row-count or
-phase failure poisons the outer replay transaction. Admission forbids an audit
-append. AuditedFinal cannot complete until its exact audit event/head, global
+before SQL; mutable heads use `FOR UPDATE`, immutable histories/evidence use
+the same SERIALIZABLE connection, and every mutation checks an exact one-row
+insert/CAS result. Any validation, query, driver, row-count or phase failure
+poisons the outer replay transaction. An outer AuditEvent maps if and only if
+the UoW is AuditedFinal; Admission cannot downgrade one or append an audit
+event. AuditedFinal cannot complete until its exact audit event/head, global
 EventID claim and declared evidence assertions have all been written.
+The authoritative receipt stores the verified outer envelope payload digest
+for AuditedFinal only; deferred SQL binds it to `audit_event.event_digest`,
+while the event bytes must independently hash to that digest and the inbox
+continues to bind the complete signed-record digest.
+
+Handlers whose semantic result depends on transaction-bound reads use
+`OpenCanonicalUOW`, perform only reads and `SnapshotTransactionClock`, prove
+the result's outer record with `AssertOuterVerifiedRecord`, then call the
+one-shot `BindResult` before any mutation. The clock snapshot exposes immutable
+getters for the full xid8 text and Unix-nanosecond database time from that exact
+SERIALIZABLE transaction; its first valid observation is cached byte-exactly for
+all later calls on the same UoW. Pre-bind writes and completion fail
+closed, so a process clock or another connection cannot authorize commit-time
+revalidation.
+
+Immediately before PostgreSQL commit, the replay store first executes every
+deferred constraint and then performs a fresh uncached database-clock check of
+the bound half-open `CommitNotAfter` fence. No write is permitted after that
+observation. `CommitNotAfter` therefore names the database commit-
+authorization instant, not client acknowledgement or synchronous-replication
+latency after PostgreSQL has accepted `COMMIT`.
 
 The storage `pending_kind` catalog is exactly IAM kinds 1 through 5 plus
 storage kind 7 for a Governance policy-approval collection. IAM kinds use the
@@ -102,13 +145,34 @@ before SQL; its envelope or digest may be retained only as UoW evidence/result
 commitment. Governance Admission UoWs retain full signed approval/profile
 evidence in kind-7 revisions for reload and reconciliation.
 
+Every same-kind OPEN advance carries the preceding canonical envelope,
+digest, and commit window as explicit optimistic-CAS inputs. PostgreSQL locks
+and compares that complete predecessor before replacing the head, while the
+deferred history invariant requires the new revision to name the exact prior
+OPEN revision. IAM kind 3 is append-only and therefore retains every prior
+evidence link. Governance kind 7 permits exactly the two semantic transitions
+that its planner can produce: add one approval digest while retaining the
+entire prior set, or exchange exactly one prior digest for exactly one new
+digest. The deferred database invariant rejects no-op, multi-add, multi-drop,
+and arbitrary replacement sets even when the typed coordinator is bypassed.
+
+A successful same-kind terminal revision is lifecycle metadata, not a new
+semantic envelope: it preserves the preceding OPEN revision's codec, canonical
+bytes, envelope digest, commit window and retained evidence set exactly while
+adding only terminal status and outcome. Its update CAS includes the
+caller-owned preceding canonical bytes and commit window. Kind 4 reconciliation
+is the sole terminal path that changes
+kind and semantic envelope; its immutable predecessor must be an exact OPEN IAM
+kind 1, 2, 3 or 5 revision.
+
 `DurableEvidenceRecord` is a generic typed preimage carrier. Its digest framing
 belongs to the semantic codec (for example, IAM pending envelopes use their own
 domain separator), so this package cannot safely invent one generic hash rule.
 Callers must verify the kind-specific digest before `ReserveDurableEvidence`.
 New insertion and existing assertion are deliberately separate operations.
-`AssertDurableEvidenceContent` locks an existing digest and requires kind,
-content type, bytes and original AuditEvent provenance to match exactly; a
+`AssertDurableEvidenceContent` reads an immutable digest in the active
+SERIALIZABLE transaction and requires kind, content type, bytes and original
+AuditEvent attribution to match exactly; a
 collision, provenance mismatch or restore mismatch poisons the transaction.
 
 `Execute` checks `session_replication_role = origin` at transaction entry,
@@ -154,16 +218,16 @@ successful `VerifyReplayStore`/`NewReplayStore` call made by the dedicated
 runtime login after grants are installed.
 
 Migration 1 requires PostgreSQL 13 or newer because it uses the non-deprecated
-`xid8`/`pg_current_xact_id()` interface. Workstream 0 must still freeze an exact
-supported PostgreSQL image digest and driver version before promotion. Catalog
-column branches cover the relevant version differences. On PostgreSQL 18 and
-newer, every column-level `NOT NULL` entry is also required as its exact
+`xid8`/`pg_current_xact_id()` interface. Migration 2's complete constraint
+deparser contract is currently calibrated only for `server_version_num =
+180004` (PostgreSQL 18.4); every other minor or major version fails closed.
+Workstream 0 must still freeze that exact supported PostgreSQL image digest and
+the pinned driver version before promotion. On PostgreSQL 18.4, every
+column-level `NOT NULL` entry is also required as its exact
 `contype='n'` catalog constraint, including its generated name, key column,
-definition, validation/enforcement status and non-period form. On older
-versions the verifier requires the pre-18 catalog shape. The complete deparser
-contract is intentionally image-specific and may reject a different major
-version even when its DDL is semantically similar. Unreviewed PostgreSQL 19 and
-newer versions are rejected before catalog inspection.
+definition, validation/enforcement status and non-period form. Migration 1
+retains its reviewed version branches, but migration 2 rejects uncalibrated
+servers even when their DDL is semantically similar.
 
 The service must use a separate non-owner, non-superuser runtime role without
 `CREATEROLE`, `CREATEDB`, `REPLICATION`, `BYPASSRLS` or inherited privileges.
@@ -188,7 +252,8 @@ GRANT SELECT, INSERT ON cph_aiinfra.authoritative_uow, cph_aiinfra.audit_event,
   cph_aiinfra.global_identifier_claim, cph_aiinfra.durable_evidence,
   cph_aiinfra.durable_pending_revision, cph_aiinfra.durable_pending_evidence,
   cph_aiinfra.durable_evidence_assertion,
-  cph_aiinfra.canonical_state_history TO cph_aiinfra_runtime;
+  cph_aiinfra.canonical_state_history,
+  cph_aiinfra.canonical_semantic_projection TO cph_aiinfra_runtime;
 GRANT SELECT, INSERT, UPDATE ON cph_aiinfra.audit_head,
   cph_aiinfra.business_idempotency_head, cph_aiinfra.global_identifier_head,
   cph_aiinfra.durable_pending_head, cph_aiinfra.canonical_state_head
@@ -206,11 +271,20 @@ GRANT EXECUTE ON FUNCTION cph_aiinfra.assert_authoritative_uow(),
   cph_aiinfra.assert_durable_pending_consistency(),
   cph_aiinfra.assert_durable_pending_evidence_consistency(),
   cph_aiinfra.assert_canonical_state_consistency(),
+  cph_aiinfra.assert_governance_profile_activation_timeline(),
+  cph_aiinfra.assert_required_semantic_projection(),
+  cph_aiinfra.assert_semantic_projection_consistency(),
   cph_aiinfra.enforce_audit_head_change(),
   cph_aiinfra.enforce_business_idempotency_head_change(),
   cph_aiinfra.enforce_global_identifier_head_change(),
   cph_aiinfra.enforce_durable_pending_head_change(),
-  cph_aiinfra.enforce_canonical_state_head_change() TO cph_aiinfra_runtime;
+  cph_aiinfra.enforce_canonical_state_head_change(),
+  cph_aiinfra.enforce_outbox_delivery_transition() TO cph_aiinfra_runtime;
+GRANT EXECUTE ON FUNCTION
+  cph_aiinfra.claim_outbox_delivery(BYTEA, BYTEA, BIGINT, INTEGER),
+  cph_aiinfra.acknowledge_outbox_delivery(BYTEA, BYTEA, BYTEA),
+  cph_aiinfra.reject_outbox_delivery(BYTEA, BYTEA, BYTEA, BIGINT, BYTEA)
+  TO cph_aiinfra_runtime;
 ```
 
 Do not grant schema `CREATE`, table ownership, `DELETE`, `TRUNCATE`,
@@ -236,30 +310,54 @@ Normal unit, race and vet tests require no database. The offline SQL harness in
 [`integration/`](integration/) is schema evidence only and does not start an
 external service.
 
-Gate 0 additionally requires an immutable-digest PostgreSQL image, a pinned Go
-driver and driver-level fault/concurrency/restore tests covering handler
-failure, connection loss, process death before/after commit,
-restart/redelivery, serialization conflict, outbox dispatcher deduplication,
-backup and restore. Until those tests pass and an EvidenceRecord is retained,
-this package is an implemented fail-closed foundation, not evidence of
-crash-safe production readiness or regional financial RPO 0.
+The workspace now pins pgx v5.7.6 and has run the opt-in driver tests against a
+local disposable PostgreSQL 18.4 host package. That run exercised both sealed
+migrations, owner-side idempotent migration, exact restricted-runtime startup
+verification and an `OR TRUE` constraint-tamper rejection whose DDL was rolled
+back. The migration-2 lifecycle persisted Admission revision 1, reloaded and
+advanced it to revision 2, committed an AuditedFinal terminal revision, loaded
+the terminal state and durable evidence in a later UoW, and proved exact
+redelivery of both Admission and AuditedFinal without invoking either handler
+again. A separate database-clock test crossed the admitted deadline and
+committed the audited kind-4 reconciliation transition before reloading its
+terminal state.
 
-A local disposable PostgreSQL 18.4 calibration has exercised the complete
-migration-1 and runtime startup verifier, exact PostgreSQL 18 `NOT NULL` catalog
-rows, restricted-role ACLs, membership drift, publication/subscription drift,
-the immutable migration row and its cross-session execution fence. A local pgx
-driver smoke test also completed an authoritative `Execute`, reloaded its
-durable result and recovered an exact duplicate without rerunning the handler.
-This is diagnostic evidence only: it used an unpacked local package and an
-untracked driver harness rather than the retained immutable-image CI evidence
-required by Gate 0. The pinned production image must also run all malicious
-catalog cases
-(`OR TRUE`, trigger `WHEN false`, wrong-schema same-name function, invalid or
-partial index, inheritance child and unsafe parameter ACL), crash/restart and
-restore cases before promotion.
+The live fault test also observed complete rollback after an injected handler
+failure and after a deferred-constraint drain failure. It exercised concurrent
+exact redelivery and the cross-session execution fence followed by successful
+redelivery. A separate helper-process run terminated the exact runtime backend
+after staged canonical writes and killed a process before `AtomicTx.Complete`;
+both cases retained zero authoritative rows and exact redelivery then committed.
+It also exited the helper immediately after `Execute` returned from a successful
+commit and recovered the duplicate result in a new process. A test-only driver
+wrapper now stops at `driver.Tx.Commit` entry, after the handler returned and
+all replay writes, deferred constraints and commit-deadline checks completed;
+killing that child retains zero rows and exact redelivery commits. The live
+fault suite additionally constructs a real PostgreSQL SERIALIZABLE read/write
+conflict, observes SQLSTATE `40001`, and requires a fresh successful retry.
 
-Migration 2's handwritten deparser contracts and its admission/final/reconcile
-trigger graph have not been executed against any real PostgreSQL server in this
-workspace. Immutable-image migration, full catalog calibration, malicious
-drift, multi-admission, crash/reload, finalize/reconcile and backup/restore
-evidence therefore remain an explicit Gate-0 blocker.
+The opt-in outbox suite exercises publisher failure, database-clock retry,
+lease-expiry recovery, multi-worker `SKIP LOCKED`, immutable-intent tamper
+rejection, and the crash-after-publish-before-acknowledge window. Its idempotent
+sink observes two publication calls for that crash window but one logical
+effect, followed by a terminal fenced acknowledgement.
+
+The backup/restore harness in [`integration/`](integration/) has run a
+PostgreSQL 18.4 custom-format `pg_dump`/`pg_restore` fixed-point test. Restricted
+runtime verification passed on source and restore, all 22 authoritative tables
+matched as primary-key-ordered logical SHA-256 streams, and a terminal pending
+UoW's durable result was reloaded through `ReplayStore`. The retained local
+archive, digest, manifest and logs record that host-package run. Calibration
+also found PostgreSQL 18.4's first dump/restore changes only the deparser's
+parenthesis grouping for three compound `audit_head` checks. Startup therefore
+accepts a closed two-digest raw-definition set for that table; the other 14 v2
+tables retain one raw-definition digest each. Exact server version, complete
+per-constraint metadata and malicious-definition rejection remain mandatory.
+
+Gate 0 is still not complete. The successful historical runs used an unpacked
+host package, not PostgreSQL supplied by the release's immutable OCI digest;
+the newly added migration-3 semantic projection and migration-4 outbox tests
+also require the final integrated PostgreSQL 18.4 run. CI must retain the
+signed EvidenceRecord and supply-chain evidence. Until those items pass on the
+pinned image, this package remains a fail-closed storage foundation rather than
+evidence of crash-safe production readiness or regional financial RPO 0.

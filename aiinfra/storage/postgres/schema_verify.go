@@ -5,7 +5,10 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"slices"
@@ -50,6 +53,7 @@ type indexContract struct {
 	opclasses  []string
 	collations []string
 	definition string
+	predicate  string
 }
 
 type aclGrantContract struct {
@@ -466,6 +470,10 @@ func verifyTableConstraints(ctx context.Context, tx *sql.Tx, table string, expec
 	if err != nil {
 		return err
 	}
+	if _, isV2Table := v2ColumnContract[table]; isV2Table && serverVersion != v2CalibratedServerVersion {
+		return fmt.Errorf("%w: migration 2 constraint definitions are calibrated only for PostgreSQL 18.4, got server_version_num %d",
+			ErrSchemaShapeMismatch, serverVersion)
+	}
 	expected = constraintContractsForVersion(table, expected, serverVersion)
 	enforcedExpression := "true"
 	periodExpression := "false"
@@ -509,6 +517,8 @@ func verifyTableConstraints(ctx context.Context, tx *sql.Tx, table string, expec
 		return fmt.Errorf("%w: inspect constraints for %s: %v", ErrSchemaShapeMismatch, table, err)
 	}
 	defer rows.Close()
+	wantDefinitionDigests, sealedDefinitionDigest := v2ConstraintDefinitionDigestsForVersion(table, serverVersion)
+	definitionHash := sha256.New()
 	seen := make(map[string]struct{}, len(expected))
 	for rows.Next() {
 		var name, kind, definition, keyList, referencedTable, referencedList, indexName string
@@ -525,14 +535,20 @@ func verifyTableConstraints(ctx context.Context, tx *sql.Tx, table string, expec
 		if !ok {
 			return fmt.Errorf("%w: unexpected constraint %s.%s", ErrSchemaShapeMismatch, table, name)
 		}
+		normalizedDefinition := normalizeCatalogDefinition(definition)
+		if sealedDefinitionDigest {
+			writeConstraintDefinitionHash(definitionHash, name, definition)
+		}
 		if kind != contract.kind || deferrable != contract.deferrable || deferred != contract.initiallyDeferred ||
 			!validated || !enforced || period || noInherit != constraintNoInherit(contract.kind) || !local || inheritCount != 0 || !noParent ||
-			!slices.Equal(splitCatalogList(keyList), contract.keyColumns) ||
+			!constraintKeyColumnsEqual(kind, splitCatalogList(keyList), contract.keyColumns) ||
 			referencedTable != contract.referencedTable ||
 			!slices.Equal(splitCatalogList(referencedList), contract.referencedColumns) ||
 			indexName != contract.indexName ||
-			normalizeCatalogDefinition(definition) != normalizeCatalogDefinition(contract.definition) {
-			return fmt.Errorf("%w: exact constraint contract differs for %s.%s", ErrSchemaShapeMismatch, table, name)
+			(!sealedDefinitionDigest && normalizedDefinition != normalizeCatalogDefinition(contract.definition)) {
+			return fmt.Errorf("%w: exact constraint contract differs for %s.%s: definition=%q want=%q",
+				ErrSchemaShapeMismatch, table, name, normalizeCatalogDefinition(definition),
+				normalizeCatalogDefinition(contract.definition))
 		}
 		if kind == "f" && (updateAction != "a" || deleteAction != "a" || matchType != "s") {
 			return fmt.Errorf("%w: foreign-key action differs for %s.%s", ErrSchemaShapeMismatch, table, name)
@@ -545,7 +561,24 @@ func verifyTableConstraints(ctx context.Context, tx *sql.Tx, table string, expec
 	if len(seen) != len(expected) {
 		return fmt.Errorf("%w: %s constraint count is %d, want %d", ErrSchemaShapeMismatch, table, len(seen), len(expected))
 	}
+	if sealedDefinitionDigest {
+		actualDefinitionDigest := hex.EncodeToString(definitionHash.Sum(nil))
+		if !slices.Contains(wantDefinitionDigests, actualDefinitionDigest) {
+			return fmt.Errorf("%w: %s PostgreSQL 18 constraint-definition digest is %s, want one of %v",
+				ErrSchemaShapeMismatch, table, actualDefinitionDigest, wantDefinitionDigests)
+		}
+	}
 	return nil
+}
+
+func writeConstraintDefinitionHash(hash interface{ Write([]byte) (int, error) }, name, definition string) {
+	var length [4]byte
+	binary.BigEndian.PutUint32(length[:], uint32(len(name)))
+	_, _ = hash.Write(length[:])
+	_, _ = hash.Write([]byte(name))
+	binary.BigEndian.PutUint32(length[:], uint32(len(definition)))
+	_, _ = hash.Write(length[:])
+	_, _ = hash.Write([]byte(definition))
 }
 
 // constraintContractsForVersion returns a private constraint contract for one
@@ -596,6 +629,17 @@ func constraintNoInherit(kind string) bool {
 	default:
 		return false
 	}
+}
+
+func constraintKeyColumnsEqual(kind string, actual, expected []string) bool {
+	if kind != "c" && kind != "n" {
+		return slices.Equal(actual, expected)
+	}
+	actual = slices.Clone(actual)
+	expected = slices.Clone(expected)
+	slices.Sort(actual)
+	slices.Sort(expected)
+	return slices.Equal(actual, expected)
 }
 
 func splitCatalogList(value string) []string {
@@ -660,7 +704,7 @@ func verifyOutboxCollation(ctx context.Context, tx *sql.Tx) error {
 	query := fmt.Sprintf(`
 		SELECT a.attname, coll.oid::bigint, ncoll.nspname, coll.collname,
 		       coll.collprovider::text, coll.collisdeterministic, coll.collencoding,
-		       coll.collcollate, coll.collctype, %s, %s,
+		       COALESCE(coll.collcollate, ''), COALESCE(coll.collctype, ''), %s, %s,
 		       COALESCE(coll.collversion, '')
 		FROM pg_catalog.pg_attribute a
 		JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
@@ -735,7 +779,7 @@ func verifyV2TextCollation(ctx context.Context, tx *sql.Tx) error {
 	query := fmt.Sprintf(`
 		SELECT c.relname, a.attname, ncoll.nspname, coll.collname,
 		       coll.collprovider::text, coll.collisdeterministic, coll.collencoding,
-		       coll.collcollate, coll.collctype, %s, %s,
+		       COALESCE(coll.collcollate, ''), COALESCE(coll.collctype, ''), %s, %s,
 		       COALESCE(coll.collversion, '')
 		FROM pg_catalog.pg_attribute a
 		JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
@@ -785,7 +829,7 @@ func verifyFunctionContract(ctx context.Context, tx *sql.Tx) error {
 		return fmt.Errorf("%w: derive function contract: %v", ErrSchemaShapeMismatch, err)
 	}
 	rows, err := tx.QueryContext(ctx, `
-		SELECT p.proname, l.lanname, p.prosecdef, p.provolatile::text,
+		SELECT p.proname, p.proowner = n.nspowner, l.lanname, p.prosecdef, p.provolatile::text,
 		       COALESCE(array_to_string(p.proconfig, ','), ''),
 		       pg_get_function_identity_arguments(p.oid), pg_get_function_result(p.oid), p.prosrc,
 		       p.prokind::text, p.proisstrict, p.proretset, p.proleakproof,
@@ -803,20 +847,24 @@ func verifyFunctionContract(ctx context.Context, tx *sql.Tx) error {
 	seen := make(map[string]struct{}, len(expected))
 	for rows.Next() {
 		var name, language, volatility, configuration, arguments, result, body, kind, parallel string
-		var securityDefiner, strict, returnsSet, leakproof, noVariadic, noSupport bool
+		var schemaOwner, securityDefiner, strict, returnsSet, leakproof, noVariadic, noSupport bool
 		var argumentCount, defaultCount int64
 		var cost, resultRows float64
-		if err := rows.Scan(&name, &language, &securityDefiner, &volatility, &configuration,
+		if err := rows.Scan(&name, &schemaOwner, &language, &securityDefiner, &volatility, &configuration,
 			&arguments, &result, &body, &kind, &strict, &returnsSet, &leakproof,
 			&parallel, &argumentCount, &defaultCount, &noVariadic, &cost, &resultRows, &noSupport); err != nil {
 			return fmt.Errorf("%w: scan functions: %v", ErrSchemaShapeMismatch, err)
 		}
 		expectedBody, ok := expected[name]
-		if !ok || language != "plpgsql" || securityDefiner || volatility != "v" ||
-			configuration != "search_path=pg_catalog" || arguments != "" || result != "trigger" ||
+		contract := migrationFunctionShape(name)
+		if !ok || !contract.known || !schemaOwner || language != "plpgsql" ||
+			securityDefiner != contract.securityDefiner || volatility != "v" ||
+			configuration != "search_path=pg_catalog" || arguments != contract.arguments ||
+			result != contract.result ||
 			strings.TrimSpace(body) != strings.TrimSpace(expectedBody) || kind != "f" || strict ||
-			returnsSet || leakproof || parallel != "u" || argumentCount != 0 || defaultCount != 0 ||
-			!noVariadic || cost != 100 || resultRows != 0 || !noSupport {
+			returnsSet != contract.returnsSet || leakproof || parallel != "u" ||
+			argumentCount != contract.argumentCount || defaultCount != 0 ||
+			!noVariadic || cost != 100 || resultRows != contract.resultRows || !noSupport {
 			return fmt.Errorf("%w: function contract differs for %s", ErrSchemaShapeMismatch, name)
 		}
 		if _, duplicate := seen[name]; duplicate {
@@ -831,6 +879,42 @@ func verifyFunctionContract(ctx context.Context, tx *sql.Tx) error {
 		return fmt.Errorf("%w: function count is %d, want %d", ErrSchemaShapeMismatch, len(seen), len(expected))
 	}
 	return nil
+}
+
+type migrationFunctionShapeContract struct {
+	known           bool
+	securityDefiner bool
+	arguments       string
+	result          string
+	returnsSet      bool
+	argumentCount   int64
+	resultRows      float64
+}
+
+func migrationFunctionShape(name string) migrationFunctionShapeContract {
+	switch name {
+	case "claim_outbox_delivery":
+		return migrationFunctionShapeContract{
+			known: true, securityDefiner: true,
+			arguments:  "p_worker_sha256 bytea, p_lease_token bytea, p_lease_microseconds bigint, p_initialize_limit integer",
+			result:     "TABLE(claimed_event_id bytea, claimed_destination text, claimed_deduplication_key text, claimed_content_type text, claimed_payload bytea, claimed_payload_digest bytea, claimed_prior_attempt_count bigint)",
+			returnsSet: true, argumentCount: 4, resultRows: 1000,
+		}
+	case "acknowledge_outbox_delivery":
+		return migrationFunctionShapeContract{
+			known: true, securityDefiner: true,
+			arguments: "p_event_id bytea, p_worker_sha256 bytea, p_lease_token bytea",
+			result:    "bigint", argumentCount: 3,
+		}
+	case "reject_outbox_delivery":
+		return migrationFunctionShapeContract{
+			known: true, securityDefiner: true,
+			arguments: "p_event_id bytea, p_worker_sha256 bytea, p_lease_token bytea, p_retry_microseconds bigint, p_error_sha256 bytea",
+			result:    "bigint", argumentCount: 5,
+		}
+	default:
+		return migrationFunctionShapeContract{known: true, result: "trigger"}
+	}
 }
 
 func migrationFunctionBodies() (map[string]string, error) {
@@ -856,7 +940,7 @@ func migrationFunctionBodies() (map[string]string, error) {
 				continue
 			}
 			nameAt := functionAt + len(prefix)
-			nameEnd := strings.Index(statement[nameAt:], "()")
+			nameEnd := strings.IndexByte(statement[nameAt:], '(')
 			if nameEnd < 1 {
 				return nil, fmt.Errorf("malformed function name")
 			}
@@ -1220,7 +1304,8 @@ func verifyIndexContract(ctx context.Context, tx *sql.Tx) error {
 			!slices.Equal(splitCatalogList(keyList), contract.keyColumns) ||
 			!slices.Equal(splitCatalogList(opclassList), contract.opclasses) ||
 			!slices.Equal(splitCatalogList(collationList), contract.collations) ||
-			len(options) != len(contract.keyColumns) || expressions != "" || predicate != "" ||
+			len(options) != len(contract.keyColumns) || expressions != "" ||
+			normalizeCatalogDefinition(predicate) != normalizeCatalogDefinition(contract.predicate) ||
 			constraint != contract.constraint ||
 			normalizeCatalogDefinition(definition) != normalizeCatalogDefinition(contract.definition) {
 			return fmt.Errorf("%w: exact index contract differs for %s", ErrSchemaShapeMismatch, name)
@@ -1331,8 +1416,9 @@ func verifyRuntimeRole(ctx context.Context, tx *sql.Tx) error {
 			&deletePrivilege, &truncatePrivilege, &referencesPrivilege, &triggerPrivilege); err != nil {
 			return fmt.Errorf("%w: inspect privileges for %s: %v", ErrUnsafeRuntimeRole, table, err)
 		}
+		wantSelect := runtimeTableReadContract(table)
 		wantInsert, wantUpdate := runtimeTableWriteContract(table)
-		if ownsTable || !selectPrivilege || insertPrivilege != wantInsert || updatePrivilege != wantUpdate ||
+		if ownsTable || selectPrivilege != wantSelect || insertPrivilege != wantInsert || updatePrivilege != wantUpdate ||
 			deletePrivilege || truncatePrivilege || referencesPrivilege || triggerPrivilege {
 			return fmt.Errorf("%w: table privilege contract differs for %s", ErrUnsafeRuntimeRole, table)
 		}
@@ -1350,7 +1436,7 @@ func verifyRuntimeRole(ctx context.Context, tx *sql.Tx) error {
 		var executePrivilege bool
 		if err := tx.QueryRowContext(ctx,
 			"SELECT has_function_privilege(current_user, $1, 'EXECUTE')",
-			"cph_aiinfra."+function+"()",
+			migrationFunctionPrivilegeIdentity(function),
 		).Scan(&executePrivilege); err != nil {
 			return fmt.Errorf("%w: inspect function privilege for %s: %v", ErrUnsafeRuntimeRole, function, err)
 		}
@@ -1361,11 +1447,27 @@ func verifyRuntimeRole(ctx context.Context, tx *sql.Tx) error {
 	return verifyClosedRuntimeACL(ctx, tx)
 }
 
+func migrationFunctionPrivilegeIdentity(name string) string {
+	switch name {
+	case "claim_outbox_delivery":
+		return "cph_aiinfra.claim_outbox_delivery(bytea,bytea,bigint,integer)"
+	case "acknowledge_outbox_delivery":
+		return "cph_aiinfra.acknowledge_outbox_delivery(bytea,bytea,bytea)"
+	case "reject_outbox_delivery":
+		return "cph_aiinfra.reject_outbox_delivery(bytea,bytea,bytea,bigint,bytea)"
+	default:
+		return "cph_aiinfra." + name + "()"
+	}
+}
+
 func runtimeACLContract() map[aclGrantContract]struct{} {
 	expected := make(map[aclGrantContract]struct{})
 	expected[aclGrantContract{"schema", "cph_aiinfra", "USAGE"}] = struct{}{}
 	for table := range replayColumnContract {
-		privileges := []string{"SELECT"}
+		var privileges []string
+		if runtimeTableReadContract(table) {
+			privileges = append(privileges, "SELECT")
+		}
 		insert, update := runtimeTableWriteContract(table)
 		if insert {
 			privileges = append(privileges, "INSERT")
@@ -1387,9 +1489,20 @@ func runtimeACLContract() map[aclGrantContract]struct{} {
 	return expected
 }
 
+// Delivery lease tokens are bearer capabilities. The dispatcher reaches the
+// table only through the sealed SECURITY DEFINER functions; granting table
+// SELECT would disclose every active worker/token fence to another session
+// using the same runtime login.
+func runtimeTableReadContract(table string) bool {
+	return table != "ccse_outbox_delivery"
+}
+
 func runtimeTableWriteContract(table string) (insert, update bool) {
 	if table == "schema_migration" {
 		return false, true
+	}
+	if table == "ccse_outbox_delivery" {
+		return false, false
 	}
 	insert = true
 	switch table {
@@ -1490,8 +1603,9 @@ func postgresServerVersion(ctx context.Context, tx *sql.Tx) (int64, error) {
 }
 
 func validatePostgresServerVersion(version int64) error {
-	if version < 130000 || version >= 190000 {
-		return fmt.Errorf("%w: PostgreSQL server_version_num %d is outside the structurally reviewed 13-18 range", ErrSchemaShapeMismatch, version)
+	if version != v2CalibratedServerVersion {
+		return fmt.Errorf("%w: PostgreSQL server_version_num %d is not the calibrated %d release", ErrSchemaShapeMismatch,
+			version, v2CalibratedServerVersion)
 	}
 	return nil
 }

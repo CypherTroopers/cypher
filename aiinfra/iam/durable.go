@@ -21,8 +21,11 @@ const (
 	durablePendingMaxBytes             = 64 << 20
 	durablePendingEnvelopeDigestDomain = "CPH-AIIE-IAM-DURABLE-PENDING-ENVELOPE-V1\x00"
 	durablePendingMaxJSONDepth         = 64
-	durablePendingMaxJSONTokens        = 512 << 10
-	durablePendingMaxContainerTokens   = 2048
+	// A maximum transfer acceptance embeds the immutable 256-closure evidence
+	// once in the accepted snapshot and once in its staged cutover. Its bounded
+	// canonical JSON is about 4 MiB but legitimately exceeds 512K scalar tokens.
+	durablePendingMaxJSONTokens      = 2 << 20
+	durablePendingMaxContainerTokens = 2048
 )
 
 // DurablePendingKind is a closed discriminator for the versioned durable
@@ -64,9 +67,10 @@ type DurablePendingEnvelope struct {
 // pass it through Planner.RevalidateDurablePending before it becomes a
 // capability-bearing DurablePendingEnvelope.
 type DecodedDurablePendingEnvelope struct {
-	kind    DurablePendingKind
-	encoded []byte
-	digest  [32]byte
+	kind       DurablePendingKind
+	encoded    []byte
+	digest     [32]byte
+	collection *OwnershipTransferApprovalCollectionSnapshot
 }
 
 func (envelope DecodedDurablePendingEnvelope) Kind() DurablePendingKind { return envelope.kind }
@@ -77,6 +81,17 @@ func (envelope DecodedDurablePendingEnvelope) Bytes() []byte {
 	return append([]byte(nil), envelope.encoded...)
 }
 func (envelope DecodedDurablePendingEnvelope) Digest() [32]byte { return envelope.digest }
+
+// OwnershipTransferApprovalCollection exposes only the detached inert next
+// snapshot restored from a strict kind-3 envelope. It does not expose the
+// private plan or confer any execution capability.
+func (envelope DecodedDurablePendingEnvelope) OwnershipTransferApprovalCollection() (
+	OwnershipTransferApprovalCollectionSnapshot, bool) {
+	if envelope.kind != DurablePendingOwnershipTransferCollection || envelope.collection == nil {
+		return OwnershipTransferApprovalCollectionSnapshot{}, false
+	}
+	return cloneTransferCollection(*envelope.collection), true
+}
 
 func (envelope DurablePendingEnvelope) Kind() DurablePendingKind { return envelope.kind }
 func (envelope DurablePendingEnvelope) Bytes() []byte {
@@ -240,14 +255,14 @@ func newDurableEnvelope(wire durableEnvelopeWire, mutation *PendingMutationPlan,
 	DurablePendingEnvelope, error) {
 	encoded, err := marshalDurableWire(wire)
 	if err != nil {
-		return DurablePendingEnvelope{}, err
+		return DurablePendingEnvelope{}, fmt.Errorf("%w: encode durable envelope: %v", ErrPendingPlanInvalid, err)
 	}
 	envelope := DurablePendingEnvelope{kind: wire.Kind, encoded: encoded,
 		digest: domainDigest(durablePendingEnvelopeDigestDomain, encoded), capability: true, mutation: mutation,
 		enrollment: enrollment, transfer: transfer, reconciliation: reconciliation, cutover: cutover,
 		acceptance: acceptance}
 	if err := envelope.VerifyDigest(); err != nil {
-		return DurablePendingEnvelope{}, err
+		return DurablePendingEnvelope{}, fmt.Errorf("%w: verify durable envelope: %v", ErrPendingPlanInvalid, err)
 	}
 	return envelope, nil
 }
@@ -260,7 +275,12 @@ func DecodeDurablePendingEnvelope(input []byte) (DecodedDurablePendingEnvelope, 
 	if err != nil {
 		return DecodedDurablePendingEnvelope{}, err
 	}
-	return DecodedDurablePendingEnvelope{kind: envelope.kind, encoded: envelope.encoded, digest: envelope.digest}, nil
+	result := DecodedDurablePendingEnvelope{kind: envelope.kind, encoded: envelope.encoded, digest: envelope.digest}
+	if envelope.transfer != nil {
+		value := envelope.transfer.NextCollection()
+		result.collection = &value
+	}
+	return result, nil
 }
 
 func decodeDurablePendingEnvelope(input []byte) (DurablePendingEnvelope, error) {
@@ -384,21 +404,23 @@ func preflightDurableJSON(input []byte) error {
 		token, err := decoder.Token()
 		if err == io.EOF {
 			if len(stack) != 0 {
-				return ErrPendingPlanInvalid
+				return fmt.Errorf("%w: unterminated JSON depth %d", ErrPendingPlanInvalid, len(stack))
 			}
 			return nil
 		}
 		if err != nil {
-			return ErrPendingPlanInvalid
+			return fmt.Errorf("%w: JSON token: %v", ErrPendingPlanInvalid, err)
 		}
 		tokens++
 		if tokens > durablePendingMaxJSONTokens {
-			return ErrPendingPlanInvalid
+			return fmt.Errorf("%w: JSON tokens exceed %d", ErrPendingPlanInvalid,
+				durablePendingMaxJSONTokens)
 		}
 		if len(stack) > 0 {
 			stack[len(stack)-1].count++
 			if stack[len(stack)-1].count > durablePendingMaxContainerTokens {
-				return ErrPendingPlanInvalid
+				return fmt.Errorf("%w: JSON container tokens exceed %d", ErrPendingPlanInvalid,
+					durablePendingMaxContainerTokens)
 			}
 		}
 		switch value := token.(type) {
@@ -406,19 +428,21 @@ func preflightDurableJSON(input []byte) error {
 			switch value {
 			case '{', '[':
 				if len(stack) >= durablePendingMaxJSONDepth {
-					return ErrPendingPlanInvalid
+					return fmt.Errorf("%w: JSON depth exceeds %d", ErrPendingPlanInvalid,
+						durablePendingMaxJSONDepth)
 				}
 				stack = append(stack, frame{delim: value})
 			case '}', ']':
 				if len(stack) == 0 || (value == '}' && stack[len(stack)-1].delim != '{') ||
 					(value == ']' && stack[len(stack)-1].delim != '[') {
-					return ErrPendingPlanInvalid
+					return fmt.Errorf("%w: mismatched JSON delimiter", ErrPendingPlanInvalid)
 				}
 				stack = stack[:len(stack)-1]
 			}
 		case string:
 			if len(value) > durablePendingMaxBytes {
-				return ErrPendingPlanInvalid
+				return fmt.Errorf("%w: JSON string exceeds %d", ErrPendingPlanInvalid,
+					durablePendingMaxBytes)
 			}
 		}
 	}
@@ -438,11 +462,16 @@ type durableEnvelopeWire struct {
 
 func marshalDurableWire(wire durableEnvelopeWire) ([]byte, error) {
 	encoded, err := json.Marshal(wire)
-	if err != nil || len(encoded) == 0 || len(encoded) > durablePendingMaxBytes {
-		return nil, ErrPendingPlanInvalid
+	if err != nil {
+		return nil, fmt.Errorf("%w: JSON: %v", ErrPendingPlanInvalid, err)
+	}
+	if len(encoded) == 0 || len(encoded) > durablePendingMaxBytes {
+		return nil, fmt.Errorf("%w: durable bytes %d exceed %d", ErrPendingPlanInvalid,
+			len(encoded), durablePendingMaxBytes)
 	}
 	if err := preflightDurableJSON(encoded); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: JSON preflight (%d bytes): %v", ErrPendingPlanInvalid,
+			len(encoded), err)
 	}
 	return encoded, nil
 }
@@ -1149,26 +1178,28 @@ func acceptancePlanFromWire(wire durableAcceptanceWire) (PendingOwnershipTransfe
 }
 
 type durableTransferPlanWire struct {
-	Disposition           OwnershipTransferCollectionDisposition `json:"disposition"`
-	EvaluatedAt           int64                                  `json:"evaluated_at"`
-	CommitNotBefore       int64                                  `json:"commit_not_before"`
-	CommitNotAfter        int64                                  `json:"commit_not_after"`
-	ExpectedVersion       uint64                                 `json:"expected_version"`
-	ExpectedProgress      [32]byte                               `json:"expected_progress"`
-	ExpectedHomeRegion    string                                 `json:"expected_home_region"`
-	ExpectedWriterEpoch   uint64                                 `json:"expected_writer_epoch"`
-	AuthorizedWriterEpoch uint64                                 `json:"authorized_writer_epoch"`
-	WriterEvidence        [32]byte                               `json:"writer_evidence"`
-	Dependencies          []SnapshotPrecondition                 `json:"dependencies"`
-	Next                  durableTransferCollectionWire          `json:"next"`
-	IdempotencyClaims     []idempotency.Claim                    `json:"idempotency_claims"`
-	JoinedAuditSnapshot   idempotency.Snapshot                   `json:"joined_audit_snapshot"`
-	IdentifierClaims      []globalid.Claim                       `json:"identifier_claims"`
-	Quorum                bool                                   `json:"quorum"`
-	Accepted              *durableAcceptedTransferWire           `json:"accepted,omitempty"`
-	Audit                 *durableAuditWire                      `json:"audit,omitempty"`
-	Completions           []idempotency.Claim                    `json:"completions"`
-	Digest                [32]byte                               `json:"digest"`
+	Disposition                OwnershipTransferCollectionDisposition `json:"disposition"`
+	EvaluatedAt                int64                                  `json:"evaluated_at"`
+	CommitNotBefore            int64                                  `json:"commit_not_before"`
+	CommitNotAfter             int64                                  `json:"commit_not_after"`
+	ExpectedVersion            uint64                                 `json:"expected_version"`
+	ExpectedProgress           [32]byte                               `json:"expected_progress"`
+	ExpectedHomeRegion         string                                 `json:"expected_home_region"`
+	ExpectedWriterEpoch        uint64                                 `json:"expected_writer_epoch"`
+	AuthorizedWriterEpoch      uint64                                 `json:"authorized_writer_epoch"`
+	AuthorizedWriterIdentity   string                                 `json:"authorized_writer_identity"`
+	AuthorizedWriterHomeRegion string                                 `json:"authorized_writer_home_region"`
+	WriterEvidence             [32]byte                               `json:"writer_evidence"`
+	Dependencies               []SnapshotPrecondition                 `json:"dependencies"`
+	Next                       durableTransferCollectionWire          `json:"next"`
+	IdempotencyClaims          []idempotency.Claim                    `json:"idempotency_claims"`
+	JoinedAuditSnapshot        idempotency.Snapshot                   `json:"joined_audit_snapshot"`
+	IdentifierClaims           []globalid.Claim                       `json:"identifier_claims"`
+	Quorum                     bool                                   `json:"quorum"`
+	Accepted                   *durableAcceptedTransferWire           `json:"accepted,omitempty"`
+	Audit                      *durableAuditWire                      `json:"audit,omitempty"`
+	Completions                []idempotency.Claim                    `json:"completions"`
+	Digest                     [32]byte                               `json:"digest"`
 }
 
 func transferPlanToWire(plan OwnershipTransferApprovalCollectionPlan) *durableTransferPlanWire {
@@ -1176,8 +1207,11 @@ func transferPlanToWire(plan OwnershipTransferApprovalCollectionPlan) *durableTr
 		CommitNotBefore: plan.commitNotBeforeUnixNano, CommitNotAfter: plan.commitNotAfterUnixNano,
 		ExpectedVersion: plan.expectedVersion, ExpectedProgress: plan.expectedProgressDigest,
 		ExpectedHomeRegion: plan.expectedHomeRegion, ExpectedWriterEpoch: plan.expectedWriterEpoch,
-		AuthorizedWriterEpoch: plan.authorizedWriterEpoch, WriterEvidence: plan.writerEvidenceDigest,
-		Dependencies: plan.Dependencies(), Next: transferCollectionToWire(plan.next),
+		AuthorizedWriterEpoch:      plan.authorizedWriterEpoch,
+		AuthorizedWriterIdentity:   plan.authorizedWriterIdentity,
+		AuthorizedWriterHomeRegion: plan.authorizedWriterHomeRegion,
+		WriterEvidence:             plan.writerEvidenceDigest,
+		Dependencies:               plan.Dependencies(), Next: transferCollectionToWire(plan.next),
 		IdempotencyClaims: plan.IdempotencyClaims(), JoinedAuditSnapshot: plan.joinedAuditSnapshot,
 		IdentifierClaims: plan.IdentifierClaims(), Quorum: plan.quorumSatisfied,
 		Completions: plan.IdempotencyCompletionClaims(), Digest: plan.Digest()}
@@ -1201,7 +1235,9 @@ func transferPlanFromWire(wire durableTransferPlanWire) (OwnershipTransferApprov
 		commitNotAfterUnixNano: wire.CommitNotAfter, expectedVersion: wire.ExpectedVersion,
 		expectedProgressDigest: wire.ExpectedProgress, expectedHomeRegion: wire.ExpectedHomeRegion,
 		expectedWriterEpoch: wire.ExpectedWriterEpoch, authorizedWriterEpoch: wire.AuthorizedWriterEpoch,
-		writerEvidenceDigest: wire.WriterEvidence, dependencies: append([]SnapshotPrecondition(nil), wire.Dependencies...),
+		authorizedWriterIdentity:   wire.AuthorizedWriterIdentity,
+		authorizedWriterHomeRegion: wire.AuthorizedWriterHomeRegion,
+		writerEvidenceDigest:       wire.WriterEvidence, dependencies: append([]SnapshotPrecondition(nil), wire.Dependencies...),
 		next: next, idempotencyClaims: append([]idempotency.Claim(nil), wire.IdempotencyClaims...),
 		joinedAuditSnapshot: wire.JoinedAuditSnapshot, identifierClaims: append([]globalid.Claim(nil), wire.IdentifierClaims...),
 		quorumSatisfied: wire.Quorum, idempotencyCompletion: append([]idempotency.Claim(nil), wire.Completions...), digest: wire.Digest}
@@ -1238,23 +1274,43 @@ type durableReconciliationAuditWire struct {
 	HasSource           bool                   `json:"has_source"`
 	OriginalAuditDigest [32]byte               `json:"original_audit_digest"`
 	PolicyDigests       [][32]byte             `json:"policy_digests"`
+	SubjectIDs          []string               `json:"subject_ids"`
+	CauseCode           string                 `json:"cause_code"`
+	OccurredAt          int64                  `json:"occurred_at"`
+	FreshRequirement    [32]byte               `json:"fresh_requirement"`
 }
 
 type durableReconciliationWire struct {
-	OriginalEnvelope       []byte                            `json:"original_envelope"`
-	OriginalEnvelopeDigest [32]byte                          `json:"original_envelope_digest"`
-	PendingDigest          [32]byte                          `json:"pending_digest"`
-	Disposition            PendingDisposition                `json:"disposition"`
-	EvaluatedAt            int64                             `json:"evaluated_at"`
-	CommitNotBefore        int64                             `json:"commit_not_before"`
-	CommitNotAfter         int64                             `json:"commit_not_after"`
-	FailureEvidence        [32]byte                          `json:"failure_evidence"`
-	FailureOutcome         [32]byte                          `json:"failure_outcome"`
-	Completions            []idempotency.Claim               `json:"completions"`
-	MemberCompletions      []idempotency.CompoundMemberClaim `json:"member_completions,omitempty"`
-	Tombstones             []globalid.Claim                  `json:"tombstones"`
-	Audit                  durableReconciliationAuditWire    `json:"audit"`
-	Digest                 [32]byte                          `json:"digest"`
+	OriginalEnvelope         []byte                            `json:"original_envelope"`
+	OriginalEnvelopeDigest   [32]byte                          `json:"original_envelope_digest"`
+	PendingDigest            [32]byte                          `json:"pending_digest"`
+	Disposition              PendingDisposition                `json:"disposition"`
+	EvaluatedAt              int64                             `json:"evaluated_at"`
+	CommitNotBefore          int64                             `json:"commit_not_before"`
+	CommitNotAfter           int64                             `json:"commit_not_after"`
+	FailureEvidence          [32]byte                          `json:"failure_evidence"`
+	FailureEvidenceValue     durableReconciliationEvidenceWire `json:"failure_evidence_value"`
+	FailureResultContentType string                            `json:"failure_result_content_type"`
+	FailureResultPayload     []byte                            `json:"failure_result_payload"`
+	FailureOutcome           [32]byte                          `json:"failure_outcome"`
+	Completions              []idempotency.Claim               `json:"completions"`
+	MemberCompletions        []idempotency.CompoundMemberClaim `json:"member_completions,omitempty"`
+	Tombstones               []globalid.Claim                  `json:"tombstones"`
+	Audit                    durableReconciliationAuditWire    `json:"audit"`
+	Digest                   [32]byte                          `json:"digest"`
+}
+
+type durableReconciliationEvidenceWire struct {
+	Kind                        pendingReconciliationEvidenceKind `json:"kind"`
+	Disposition                 PendingDisposition                `json:"disposition"`
+	AuditOccurredAt             int64                             `json:"audit_occurred_at"`
+	FinalClockPendingDigest     [32]byte                          `json:"final_clock_pending_digest"`
+	FinalClockOriginalDeadline  int64                             `json:"final_clock_original_deadline"`
+	FinalClockAuditOccurredAt   int64                             `json:"final_clock_audit_occurred_at"`
+	FinalClockRequirementDigest [32]byte                          `json:"final_clock_requirement_digest"`
+	FailureRecord               ccse.Record                       `json:"failure_record"`
+	FailureDigest               [32]byte                          `json:"failure_digest"`
+	Digest                      [32]byte                          `json:"digest"`
 }
 
 func reconciliationToWire(plan PendingReconciliationPlan) *durableReconciliationWire {
@@ -1264,7 +1320,17 @@ func reconciliationToWire(plan PendingReconciliationPlan) *durableReconciliation
 		Disposition: plan.disposition, EvaluatedAt: plan.evaluatedAtUnixNano,
 		CommitNotBefore: plan.commitNotBeforeUnixNano, CommitNotAfter: plan.commitNotAfterUnixNano,
 		FailureEvidence: plan.failureEvidenceDigest,
-		FailureOutcome:  plan.failureOutcomeDigest, Completions: plan.IdempotencyCompletionClaims(),
+		FailureEvidenceValue: durableReconciliationEvidenceWire{
+			Kind: plan.failureEvidence.kind, Disposition: plan.failureEvidence.Disposition(),
+			AuditOccurredAt:             plan.failureEvidence.AuditOccurredAtUnixNano(),
+			FinalClockPendingDigest:     plan.failureEvidence.FinalClockRequirement().PendingDigest(),
+			FinalClockOriginalDeadline:  plan.failureEvidence.FinalClockRequirement().OriginalCommitNotAfterUnixNano(),
+			FinalClockAuditOccurredAt:   plan.failureEvidence.FinalClockRequirement().AuditOccurredAtUnixNano(),
+			FinalClockRequirementDigest: plan.failureEvidence.FinalClockRequirement().Digest(),
+			FailureRecord:               cloneCCSERecord(plan.failureEvidence.failureRecord),
+			FailureDigest:               plan.failureEvidence.failureRecordDigest, Digest: plan.failureEvidence.Digest()},
+		FailureResultContentType: plan.failureResult.ContentType(), FailureResultPayload: plan.failureResult.Payload(),
+		FailureOutcome: plan.failureOutcomeDigest, Completions: plan.IdempotencyCompletionClaims(),
 		MemberCompletions: plan.CompoundMemberCompletionClaims(),
 		Tombstones:        plan.IdentifierTombstoneAssertions(), Audit: durableReconciliationAuditWire{
 			AuditEventID: audit.auditEventID, EventType: audit.eventType, ActorIdentity: audit.logicalActorIdentity,
@@ -1272,10 +1338,26 @@ func reconciliationToWire(plan PendingReconciliationPlan) *durableReconciliation
 			AuditIdempotencyKey: audit.auditIdempotencyKey, SourceDigest: audit.sourceAuthorizationDigest,
 			SourceRecord: cloneCCSERecord(audit.sourceAuthorizationRecord), HasSource: audit.hasSourceAuthorization,
 			OriginalAuditDigest: audit.originalAuditIntentDigest,
-			PolicyDigests:       cloneDigests(audit.policyDigestsSHA256)}, Digest: plan.digest}
+			PolicyDigests:       cloneDigests(audit.policyDigestsSHA256), SubjectIDs: audit.SubjectIDs(),
+			CauseCode: audit.causeCode, OccurredAt: audit.occurredAtUnixNano,
+			FreshRequirement: audit.freshRequirementDigest}, Digest: plan.digest}
 }
 
 func reconciliationFromWire(wire durableReconciliationWire) (PendingReconciliationPlan, error) {
+	evidence, evidenceErr := newPendingReconciliationEvidence(wire.FailureEvidenceValue.Kind,
+		wire.FailureEvidenceValue.Disposition, wire.FailureEvidenceValue.FinalClockPendingDigest,
+		wire.FailureEvidenceValue.FinalClockOriginalDeadline,
+		wire.FailureEvidenceValue.AuditOccurredAt, wire.FailureEvidenceValue.FailureRecord)
+	finalClock := evidence.FinalClockRequirement()
+	if evidenceErr != nil || evidence.Digest() != wire.FailureEvidenceValue.Digest ||
+		evidence.Digest() != wire.FailureEvidence ||
+		finalClock.PendingDigest() != wire.FailureEvidenceValue.FinalClockPendingDigest ||
+		finalClock.OriginalCommitNotAfterUnixNano() != wire.FailureEvidenceValue.FinalClockOriginalDeadline ||
+		finalClock.AuditOccurredAtUnixNano() != wire.FailureEvidenceValue.FinalClockAuditOccurredAt ||
+		finalClock.Digest() != wire.FailureEvidenceValue.FinalClockRequirementDigest ||
+		evidence.failureRecordDigest != wire.FailureEvidenceValue.FailureDigest {
+		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+	}
 	audit := ReconciliationAuditRequirement{auditEventID: wire.Audit.AuditEventID,
 		eventType: wire.Audit.EventType, logicalActorIdentity: wire.Audit.ActorIdentity,
 		logicalActorKeyID: wire.Audit.ActorKeyID, correlationID: wire.Audit.CorrelationID,
@@ -1283,13 +1365,18 @@ func reconciliationFromWire(wire durableReconciliationWire) (PendingReconciliati
 		sourceAuthorizationDigest: wire.Audit.SourceDigest,
 		sourceAuthorizationRecord: cloneCCSERecord(wire.Audit.SourceRecord),
 		hasSourceAuthorization:    wire.Audit.HasSource, originalAuditIntentDigest: wire.Audit.OriginalAuditDigest,
-		policyDigestsSHA256: cloneDigests(wire.Audit.PolicyDigests)}
+		policyDigestsSHA256: cloneDigests(wire.Audit.PolicyDigests),
+		subjectIDs:          append([]string(nil), wire.Audit.SubjectIDs...), causeCode: wire.Audit.CauseCode,
+		occurredAtUnixNano: wire.Audit.OccurredAt, freshRequirementDigest: wire.Audit.FreshRequirement}
 	plan, err := newPendingReconciliationPlan(wire.PendingDigest, wire.Disposition, wire.EvaluatedAt,
-		wire.CommitNotBefore, wire.FailureEvidence, wire.Completions, wire.MemberCompletions,
+		wire.CommitNotBefore, evidence, wire.Completions, wire.MemberCompletions,
 		wire.Tombstones, audit,
 		wire.OriginalEnvelope)
 	if err != nil || plan.originalEnvelopeDigest != wire.OriginalEnvelopeDigest ||
 		plan.commitNotAfterUnixNano != wire.CommitNotAfter ||
+		plan.failureResult.ContentType() != wire.FailureResultContentType ||
+		!bytes.Equal(plan.failureResult.Payload(), wire.FailureResultPayload) ||
+		plan.audit.freshRequirementDigest != wire.Audit.FreshRequirement ||
 		plan.failureOutcomeDigest != wire.FailureOutcome || plan.digest != wire.Digest {
 		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
 	}

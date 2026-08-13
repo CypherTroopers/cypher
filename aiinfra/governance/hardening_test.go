@@ -86,6 +86,19 @@ func TestHistoricalEvidencePreflightBudgetsRawAndVerifiedRepresentations(t *test
 		total != rawSize+int(verifiedSize) {
 		t.Fatalf("exact aggregate preflight = %d, want %d", total, rawSize+int(verifiedSize))
 	}
+
+	// A durable reload cannot and must not recreate the replay verifier
+	// capability. Its complete raw record remains bounded and is authenticated
+	// by the historical IAM lookup after preflight.
+	evidence.Signed.Verified = ccse.VerifiedRecord{}
+	total = 0
+	if preflightHistoricalApprovalEvidence(evidence, &total, rawSize-1) {
+		t.Fatal("raw durable history passed a budget one byte below its retained representation")
+	}
+	total = 0
+	if !preflightHistoricalApprovalEvidence(evidence, &total, rawSize) || total != rawSize {
+		t.Fatalf("raw durable history preflight = %d, want %d", total, rawSize)
+	}
 }
 
 func TestAuditAppliedPoliciesExactlyBindEverySignedSourceAuthorization(t *testing.T) {

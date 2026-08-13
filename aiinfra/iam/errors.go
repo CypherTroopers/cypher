@@ -41,6 +41,8 @@ var (
 	ErrLookupLimit                   = errors.New("aiinfra iam: predecessor lookup limit exceeded")
 	ErrInvalidCommitWindow           = errors.New("aiinfra iam: invalid or expired commit window")
 	ErrPendingPlanInvalid            = errors.New("aiinfra iam: pending mutation plan is invalid")
+	ErrCanonicalStateInvalid         = errors.New("aiinfra iam: canonical state row is invalid")
+	ErrCanonicalStateUnrehydratable  = errors.New("aiinfra iam: canonical state row cannot rehydrate the semantic snapshot")
 	ErrGlobalIdentifier              = errors.New("aiinfra iam: global identifier registry conflict")
 	ErrIdempotencyInProgress         = errors.New("aiinfra iam: business mutation is already collecting")
 	ErrIdempotencyCompleted          = errors.New("aiinfra iam: business mutation already completed")

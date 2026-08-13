@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	latestSchemaVersion int64 = 2
+	latestSchemaVersion int64 = 4
 	// The runtime fence is the immutable v1 ledger row, not the latest schema.
 	executionFenceVersion int64 = 1
 	// ASCII "CPHAIIE0" interpreted as a positive signed 64-bit integer.
@@ -35,7 +35,7 @@ var (
 	errMigrationSourceMismatch  = errors.New("aiinfra postgres: embedded migration source does not match its pinned digest")
 )
 
-//go:embed migrations/0000_bootstrap.sql migrations/0001_ccse_replay.sql migrations/0002_canonical_uow.sql
+//go:embed migrations/0000_bootstrap.sql migrations/0001_ccse_replay.sql migrations/0002_canonical_uow.sql migrations/0003_semantic_projection_v2.sql migrations/0004_outbox_delivery.sql
 var migrationFiles embed.FS
 
 type pinnedMigrationSource struct {
@@ -79,10 +79,30 @@ var migrationRegistry = [...]migrationSpec{
 		version: 2,
 		path:    "migrations/0002_canonical_uow.sql",
 		digest: [sha256.Size]byte{
-			0xa1, 0xf1, 0xf2, 0x33, 0xfa, 0x2f, 0xe0, 0xf1,
-			0x07, 0x72, 0x33, 0xe0, 0x04, 0x3d, 0x25, 0xf7,
-			0x1c, 0x4a, 0x7a, 0x7a, 0x95, 0xb1, 0xc8, 0xb0,
-			0xa1, 0xe0, 0x90, 0x39, 0xfc, 0x64, 0xeb, 0xc1,
+			0x1e, 0x17, 0xbe, 0x9c, 0x59, 0xcd, 0x3d, 0x17,
+			0x80, 0x45, 0xb0, 0x5c, 0x26, 0xb8, 0xdb, 0x14,
+			0x5e, 0xf3, 0xff, 0x81, 0x6a, 0x6c, 0xde, 0x5a,
+			0x63, 0x1c, 0xa1, 0xa5, 0xb8, 0xc4, 0x85, 0xac,
+		},
+	},
+	{
+		version: 3,
+		path:    "migrations/0003_semantic_projection_v2.sql",
+		digest: [sha256.Size]byte{
+			0xb3, 0x85, 0x93, 0x5c, 0x79, 0x4d, 0x9f, 0x81,
+			0x9b, 0x33, 0x4b, 0x00, 0x2f, 0xe8, 0x0f, 0x04,
+			0xe4, 0xd2, 0xe9, 0xd6, 0xd8, 0x54, 0xd3, 0x0e,
+			0x75, 0x24, 0xf2, 0x19, 0x04, 0xe4, 0x02, 0x71,
+		},
+	},
+	{
+		version: 4,
+		path:    "migrations/0004_outbox_delivery.sql",
+		digest: [sha256.Size]byte{
+			0x4c, 0x81, 0x4e, 0xca, 0xd1, 0x48, 0x85, 0xe8,
+			0xed, 0x04, 0x72, 0x65, 0x35, 0xf6, 0xfb, 0x8b,
+			0x2d, 0xba, 0xf2, 0xb2, 0x4e, 0x5f, 0xf0, 0xc3,
+			0x70, 0xf9, 0x2c, 0x25, 0x84, 0x7c, 0xc4, 0x82,
 		},
 	},
 }
@@ -124,6 +144,33 @@ func CanonicalUOWMigrationDigest() ([sha256.Size]byte, error) {
 		return [sha256.Size]byte{}, err
 	}
 	const index = 1
+	if _, err := readPinnedMigration(migrationFiles, specs[index]); err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	return specs[index].digest, nil
+}
+
+// OutboxDeliveryMigrationDigest returns the immutable migration-4 source seal.
+func OutboxDeliveryMigrationDigest() ([sha256.Size]byte, error) {
+	specs, err := registeredMigrationSpecs()
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	const index = 3
+	if _, err := readPinnedMigration(migrationFiles, specs[index]); err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	return specs[index].digest, nil
+}
+
+// SemanticProjectionV2MigrationDigest returns the immutable migration-3
+// source seal. Migration 3 never backfills or rewrites frozen v1 rows.
+func SemanticProjectionV2MigrationDigest() ([sha256.Size]byte, error) {
+	specs, err := registeredMigrationSpecs()
+	if err != nil {
+		return [sha256.Size]byte{}, err
+	}
+	const index = 2
 	if _, err := readPinnedMigration(migrationFiles, specs[index]); err != nil {
 		return [sha256.Size]byte{}, err
 	}

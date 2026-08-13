@@ -8,6 +8,11 @@ import (
 	"github.com/cypherium/cypher/aiinfra/schema"
 )
 
+const (
+	maxTransferClosurePreconditions  = 2048
+	maxTransferEvidencePreconditions = 512
+)
+
 type transferByteBudget struct {
 	used uint64
 }
@@ -163,7 +168,8 @@ func preflightTransferSnapshotInto(budget *transferByteBudget, profile Ownership
 		len(fixed.KeyClosureSnapshots) != len(fixed.KeyClosureRecords) ||
 		len(fixed.EvidenceRecords) == 0 || len(fixed.EvidenceRecords) > 64 ||
 		len(fixed.EvidenceAdmissions) != len(fixed.EvidenceRecords) ||
-		len(fixed.ClosurePreconditions) > 2048 || len(fixed.EvidencePreconditions) > 512 {
+		len(fixed.ClosurePreconditions) > maxTransferClosurePreconditions ||
+		len(fixed.EvidencePreconditions) > maxTransferEvidencePreconditions {
 		return ErrTransferAuthorizationRequired
 	}
 	if err := budget.addBytes(canonical); err != nil {

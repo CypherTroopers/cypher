@@ -4,15 +4,18 @@
 package iam
 
 import (
+	"fmt"
+
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/globalid"
 	"github.com/cypherium/cypher/aiinfra/idempotency"
+	"github.com/cypherium/cypher/aiinfra/replayresult"
 )
 
 const (
-	pendingReconciliationOutcomeDomain    = "CPH-AIIE-IAM-PENDING-RECONCILIATION-OUTCOME-V1\x00"
-	pendingReconciliationPlanDomain       = "CPH-AIIE-IAM-PENDING-RECONCILIATION-PLAN-V1\x00"
-	transferCollectionFailureIntentDomain = "CPH-AIIE-IAM-TRANSFER-COLLECTION-FAILURE-INTENT-V1\x00"
+	pendingReconciliationPlanDomain             = "CPH-AIIE-IAM-PENDING-RECONCILIATION-PLAN-V1\x00"
+	pendingReconciliationFreshRequirementDomain = "CPH-AIIE-IAM-PENDING-RECONCILIATION-FRESH-REQUIREMENT-V1\x00"
+	transferCollectionFailureIntentDomain       = "CPH-AIIE-IAM-TRANSFER-COLLECTION-FAILURE-INTENT-V1\x00"
 )
 
 type PendingDisposition uint8
@@ -27,9 +30,9 @@ const (
 // WS0.2b verifies the referenced operational failure evidence; EXPIRED is
 // independently gated by the original CommitNotAfter fence.
 type PendingReconciliationCommand struct {
-	Disposition           PendingDisposition
-	EvaluatedAtUnixNano   int64
-	FailureEvidenceDigest [32]byte
+	Disposition         PendingDisposition
+	EvaluatedAtUnixNano int64
+	Evidence            PendingReconciliationEvidence
 }
 
 // ReconciliationAuditRequirement is consumed by the sole canonical Audit
@@ -49,6 +52,10 @@ type ReconciliationAuditRequirement struct {
 	hasSourceAuthorization    bool
 	originalAuditIntentDigest [32]byte
 	policyDigestsSHA256       [][32]byte
+	subjectIDs                []string
+	causeCode                 string
+	occurredAtUnixNano        int64
+	freshRequirementDigest    [32]byte
 }
 
 func (requirement ReconciliationAuditRequirement) AuditEventID() string {
@@ -85,6 +92,27 @@ func (requirement ReconciliationAuditRequirement) OriginalAuditIntentDigest() [3
 func (requirement ReconciliationAuditRequirement) PolicyDigestsSHA256() [][32]byte {
 	return cloneDigests(requirement.policyDigestsSHA256)
 }
+func (requirement ReconciliationAuditRequirement) SubjectIDs() []string {
+	return append([]string(nil), requirement.subjectIDs...)
+}
+func (requirement ReconciliationAuditRequirement) CauseCode() string { return requirement.causeCode }
+func (requirement ReconciliationAuditRequirement) OccurredAtUnixNano() int64 {
+	return requirement.occurredAtUnixNano
+}
+func (requirement ReconciliationAuditRequirement) FreshRequirementDigest() [32]byte {
+	return requirement.freshRequirementDigest
+}
+func (requirement ReconciliationAuditRequirement) HistoricalCausationRecord() (ccse.Record, bool) {
+	return requirement.SourceAuthorizationRecord()
+}
+func (requirement ReconciliationAuditRequirement) HistoricalCausationDigest() [32]byte {
+	return requirement.sourceAuthorizationDigest
+}
+
+// FreshReconcilerAuthorityRequired declares that the original source is only
+// historical causation. Governance must authorize the newly signed AuditEvent
+// with the current Audit Writer key/profile/lease at transaction time.
+func (ReconciliationAuditRequirement) FreshReconcilerAuthorityRequired() bool { return true }
 
 // PendingReconciliationPlan closes both X/Y rows to one exact failure outcome
 // while asserting that every admitted global identifier remains a permanent
@@ -99,6 +127,8 @@ type PendingReconciliationPlan struct {
 	commitNotBeforeUnixNano  int64
 	commitNotAfterUnixNano   int64
 	failureEvidenceDigest    [32]byte
+	failureEvidence          PendingReconciliationEvidence
+	failureResult            replayresult.Result
 	failureOutcomeDigest     [32]byte
 	idempotencyCompletion    []idempotency.Claim
 	compoundMemberCompletion []idempotency.CompoundMemberClaim
@@ -124,6 +154,10 @@ func (plan PendingReconciliationPlan) CommitNotAfterUnixNano() int64 {
 func (plan PendingReconciliationPlan) FailureOutcomeDigest() [32]byte {
 	return plan.failureOutcomeDigest
 }
+func (plan PendingReconciliationPlan) FailureEvidence() PendingReconciliationEvidence {
+	return clonePendingReconciliationEvidence(plan.failureEvidence)
+}
+func (plan PendingReconciliationPlan) FailureResult() replayresult.Result { return plan.failureResult }
 func (plan PendingReconciliationPlan) OriginalPendingEnvelopeBytes() []byte {
 	return append([]byte(nil), plan.originalPendingEnvelope...)
 }
@@ -143,11 +177,12 @@ func (plan PendingReconciliationPlan) AuditRequirement() ReconciliationAuditRequ
 	result := plan.audit
 	result.sourceAuthorizationRecord = cloneCCSERecord(plan.audit.sourceAuthorizationRecord)
 	result.policyDigestsSHA256 = cloneDigests(plan.audit.policyDigestsSHA256)
+	result.subjectIDs = append([]string(nil), plan.audit.subjectIDs...)
 	return result
 }
 func (plan PendingReconciliationPlan) VerifyDigest() error {
 	derived, err := newPendingReconciliationPlan(plan.pendingDigest, plan.disposition,
-		plan.evaluatedAtUnixNano, plan.commitNotBeforeUnixNano, plan.failureEvidenceDigest,
+		plan.evaluatedAtUnixNano, plan.commitNotBeforeUnixNano, plan.failureEvidence,
 		plan.idempotencyCompletion, plan.compoundMemberCompletion, plan.identifierTombstones, plan.audit,
 		plan.originalPendingEnvelope)
 	if err != nil || derived.digest != plan.digest || derived.failureOutcomeDigest != plan.failureOutcomeDigest {
@@ -194,8 +229,10 @@ func (plan OwnershipTransferApprovalCollectionPlan) PlanReconciliation(
 
 func reconcileTransferCollection(plan OwnershipTransferApprovalCollectionPlan,
 	command PendingReconciliationCommand, originalEnvelope []byte) (PendingReconciliationPlan, error) {
-	if command.EvaluatedAtUnixNano < plan.CommitNotAfterUnixNano() ||
-		command.FailureEvidenceDigest == ([32]byte{}) ||
+	if command.EvaluatedAtUnixNano < plan.CommitNotAfterUnixNano() || command.Evidence.Verify() != nil ||
+		command.Evidence.Disposition() != command.Disposition ||
+		command.Evidence.AuditOccurredAtUnixNano() != command.EvaluatedAtUnixNano ||
+		command.Evidence.OriginalCommitNotAfterUnixNano() != plan.CommitNotAfterUnixNano() ||
 		(command.Disposition != PendingDispositionExpired && command.Disposition != PendingDispositionFailed) {
 		return PendingReconciliationPlan{}, ErrInvalidCommitWindow
 	}
@@ -266,9 +303,14 @@ func reconcileTransferCollection(plan OwnershipTransferApprovalCollectionPlan,
 		auditIdempotencyKey: joinedBinding.Key, sourceAuthorizationDigest: authorization.recordDigest,
 		sourceAuthorizationRecord: cloneCCSERecord(authorization.sourceRecord), hasSourceAuthorization: true,
 		originalAuditIntentDigest: domainDigest(transferCollectionFailureIntentDomain, intentBytes),
-		policyDigestsSHA256:       cloneDigests(projection.Metadata.PolicyDigestsSHA256)}
+		policyDigestsSHA256:       cloneDigests(projection.Metadata.PolicyDigestsSHA256),
+		subjectIDs: uniqueStrings([]string{projection.TransferAuthorizationID,
+			projection.PreviousEntityID, projection.NextEntityID,
+			projection.PreviousPrincipalIdentity, projection.NextPrincipalIdentity}),
+		causeCode:          reconciliationCauseCode(command.Disposition),
+		occurredAtUnixNano: command.EvaluatedAtUnixNano}
 	return newPendingReconciliationPlan(plan.digest, command.Disposition,
-		command.EvaluatedAtUnixNano, plan.CommitNotAfterUnixNano(), command.FailureEvidenceDigest,
+		command.EvaluatedAtUnixNano, plan.CommitNotAfterUnixNano(), command.Evidence,
 		completion, nil, tombstones, requirement, originalEnvelope)
 }
 
@@ -307,7 +349,10 @@ func reconcilePending(pendingDigest [32]byte, admission PendingAdmissionIntent,
 	completion []idempotency.Claim, source AuditIntent,
 	memberCompletion []idempotency.CompoundMemberClaim, command PendingReconciliationCommand,
 	originalEnvelope []byte) (PendingReconciliationPlan, error) {
-	if command.EvaluatedAtUnixNano < 0 || command.FailureEvidenceDigest == ([32]byte{}) {
+	if command.EvaluatedAtUnixNano < 0 || command.Evidence.Verify() != nil ||
+		command.Evidence.Disposition() != command.Disposition ||
+		command.Evidence.AuditOccurredAtUnixNano() != command.EvaluatedAtUnixNano ||
+		command.Evidence.OriginalCommitNotAfterUnixNano() != admission.CommitNotAfterUnixNano() {
 		return PendingReconciliationPlan{}, ErrInvalidInput
 	}
 	switch command.Disposition {
@@ -330,7 +375,7 @@ func reconcilePending(pendingDigest [32]byte, admission PendingAdmissionIntent,
 		assertion, err := globalid.Assert(reservation.Identifier, globalid.Snapshot{
 			Identifier: reservation.Identifier, Owner: reservation.Owner, Version: reservation.NextVersion}, reservation.Owner)
 		if err != nil {
-			return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+			return PendingReconciliationPlan{}, fmt.Errorf("%w: identifier tombstone: %v", ErrPendingPlanInvalid, err)
 		}
 		tombstones = append(tombstones, assertion)
 	}
@@ -345,16 +390,17 @@ func reconcilePending(pendingDigest [32]byte, admission PendingAdmissionIntent,
 		correlationID: source.CorrelationID(), causationID: source.CausationID(),
 		auditIdempotencyKey:       source.ExpectedAuditIdempotencyKey(),
 		sourceAuthorizationDigest: source.SourceAuthorizationDigest(),
-		originalAuditIntentDigest: source.Digest()}
+		originalAuditIntentDigest: source.Digest(), subjectIDs: source.SubjectIDs(),
+		causeCode: reconciliationCauseCode(command.Disposition), occurredAtUnixNano: command.EvaluatedAtUnixNano}
 	requirement.sourceAuthorizationRecord, requirement.hasSourceAuthorization = source.SourceAuthorizationRecord()
 	requirement.policyDigestsSHA256 = source.PolicyDigestsSHA256()
 	return newPendingReconciliationPlan(pendingDigest, command.Disposition,
-		command.EvaluatedAtUnixNano, admission.CommitNotAfterUnixNano(), command.FailureEvidenceDigest,
+		command.EvaluatedAtUnixNano, admission.CommitNotAfterUnixNano(), command.Evidence,
 		completion, memberCompletion, tombstones, requirement, originalEnvelope)
 }
 
 func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDisposition,
-	evaluatedAt, notBefore int64, failureEvidence [32]byte, completion []idempotency.Claim,
+	evaluatedAt, notBefore int64, failureEvidence PendingReconciliationEvidence, completion []idempotency.Claim,
 	memberCompletion []idempotency.CompoundMemberClaim, tombstones []globalid.Claim,
 	audit ReconciliationAuditRequirement,
 	originalEnvelope []byte) (PendingReconciliationPlan, error) {
@@ -363,11 +409,11 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 		(original.Kind() != DurablePendingMutation && original.Kind() != DurablePendingKeyEnrollment &&
 			original.Kind() != DurablePendingOwnershipTransferCollection &&
 			original.Kind() != DurablePendingOwnershipTransferCutover) {
-		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: original envelope", ErrPendingPlanInvalid)
 	}
 	originalEvaluatedAt, originalCommitNotAfter, ok := durableEnvelopeWindow(original)
 	if !ok || originalCommitNotAfter <= originalEvaluatedAt {
-		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: original window", ErrPendingPlanInvalid)
 	}
 	maxLatency := originalCommitNotAfter - originalEvaluatedAt
 	if evaluatedAt > int64(^uint64(0)>>1)-maxLatency {
@@ -386,7 +432,7 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 	if len(memberCompletion) != 0 {
 		memberCompletion, err = idempotency.NormalizeCompoundMemberClaims(memberCompletion)
 		if err != nil || idempotency.ValidateDisjointClaimKeys(completion, memberCompletion) != nil {
-			return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+			return PendingReconciliationPlan{}, fmt.Errorf("%w: member completions", ErrPendingPlanInvalid)
 		}
 		memberCompletionBytes, err = idempotency.CompoundMemberCanonicalBytes(memberCompletion)
 		if err != nil {
@@ -396,26 +442,37 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 	if original.Kind() == DurablePendingOwnershipTransferCutover {
 		if original.cutover == nil || len(memberCompletion) == 0 ||
 			!sameCompoundMemberClaims(memberCompletion, original.cutover.memberCompletion) {
-			return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+			return PendingReconciliationPlan{}, fmt.Errorf("%w: cutover member completions", ErrPendingPlanInvalid)
 		}
 	} else if len(memberCompletion) != 0 {
-		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: unexpected member completions", ErrPendingPlanInvalid)
 	}
 	tombstoneBytes, err := globalid.CanonicalBytes(tombstones)
 	if err != nil {
 		return PendingReconciliationPlan{}, err
 	}
-	if pendingDigest == ([32]byte{}) || failureEvidence == ([32]byte{}) ||
+	if pendingDigest == ([32]byte{}) || failureEvidence.Verify() != nil ||
+		failureEvidence.FinalClockRequirement().Verify() != nil ||
+		failureEvidence.FinalClockRequirement().PendingDigest() != pendingDigest ||
+		failureEvidence.FinalClockRequirement().OriginalCommitNotAfterUnixNano() != notBefore ||
+		failureEvidence.FinalClockRequirement().AuditOccurredAtUnixNano() != evaluatedAt ||
+		failureEvidence.Disposition() != disposition ||
+		failureEvidence.AuditOccurredAtUnixNano() != evaluatedAt ||
+		failureEvidence.OriginalCommitNotAfterUnixNano() != notBefore ||
 		(disposition != PendingDispositionExpired && disposition != PendingDispositionFailed) ||
 		evaluatedAt < 0 || notBefore <= 0 || audit.auditEventID == "" || audit.eventType == "" ||
 		audit.auditIdempotencyKey == ([16]byte{}) || audit.originalAuditIntentDigest == ([32]byte{}) {
-		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: reconciliation components", ErrPendingPlanInvalid)
 	}
 	policies, err := canonicalDigests(audit.policyDigestsSHA256)
 	if err != nil || len(policies) == 0 {
-		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: reconciliation policies", ErrPendingPlanInvalid)
 	}
 	audit.policyDigestsSHA256 = policies
+	audit.subjectIDs, err = canonicalStrings(audit.subjectIDs)
+	if err != nil || len(audit.subjectIDs) == 0 || audit.causeCode == "" || audit.occurredAtUnixNano != evaluatedAt {
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: reconciliation audit tuple", ErrPendingPlanInvalid)
+	}
 	policyElements, err := encodedDigestSet(policies)
 	if err != nil {
 		return PendingReconciliationPlan{}, err
@@ -425,7 +482,7 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 	}
 	parent, joined, err := pendingCompletionBindings(completion)
 	if err != nil || audit.auditIdempotencyKey != joined.Key {
-		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: completion bindings", ErrPendingPlanInvalid)
 	}
 	reservation, err := joinedAuditEventReservation(parent, audit.auditEventID)
 	if err != nil {
@@ -433,7 +490,7 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 	}
 	eventAssertion, err := joinedAuditEventAssertion(reservation)
 	if err != nil || !containsGlobalClaim(tombstones, eventAssertion) {
-		return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: audit event tombstone", ErrPendingPlanInvalid)
 	}
 	if audit.hasSourceAuthorization {
 		recordDigest, digestErr := audit.sourceAuthorizationRecord.Digest(ccse.DefaultLimits())
@@ -442,18 +499,33 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 			audit.sourceAuthorizationRecord.Envelope.SignatureKeyID != audit.logicalActorKeyID ||
 			audit.sourceAuthorizationRecord.Envelope.CorrelationID != audit.correlationID ||
 			!audit.causationID.Present || audit.causationID.Value != audit.sourceAuthorizationRecord.Envelope.MessageID {
-			return PendingReconciliationPlan{}, ErrPendingPlanInvalid
+			return PendingReconciliationPlan{}, fmt.Errorf("%w: historical audit source", ErrPendingPlanInvalid)
 		}
 	}
-	outcomeProjection, err := ccse.Marshal(160, func(out *ccse.Encoder) {
+	failureResult, err := newPendingReconciliationResult(pendingDigest, failureEvidence)
+	if err != nil {
+		return PendingReconciliationPlan{}, fmt.Errorf("%w: failure result: %v", ErrPendingPlanInvalid, err)
+	}
+	outcome := failureResult.Digest()
+	freshProjection, err := ccse.Marshal(512<<10, func(out *ccse.Encoder) {
 		out.FixedBytes(pendingDigest[:], 32)
 		out.Uint32(uint32(disposition))
-		out.FixedBytes(failureEvidence[:], 32)
+		out.Int64(evaluatedAt)
+		out.Int64(notBefore)
+		out.Int64(commitNotAfter)
+		evidenceDigest := failureEvidence.Digest()
+		out.FixedBytes(evidenceDigest[:], 32)
+		out.FixedBytes(outcome[:], 32)
+		out.String(audit.auditEventID)
+		out.String(audit.eventType)
+		out.String(audit.causeCode)
+		out.Int64(audit.occurredAtUnixNano)
+		out.FixedBytes(audit.originalAuditIntentDigest[:], 32)
 	})
 	if err != nil {
 		return PendingReconciliationPlan{}, err
 	}
-	outcome := domainDigest(pendingReconciliationOutcomeDomain, outcomeProjection)
+	audit.freshRequirementDigest = domainDigest(pendingReconciliationFreshRequirementDomain, freshProjection)
 	for _, claim := range memberCompletion {
 		if idempotency.ValidateCompoundMemberOutcome(claim, outcome) != nil {
 			return PendingReconciliationPlan{}, ErrPendingPlanInvalid
@@ -466,6 +538,9 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 			return PendingReconciliationPlan{}, err
 		}
 	}
+	failureEvidenceDigest := failureEvidence.Digest()
+	failureEvidenceBytes := failureEvidence.CanonicalBytes()
+	failureResultPayload := failureResult.Payload()
 	encoded, err := ccse.Marshal(2<<20, func(out *ccse.Encoder) {
 		out.FixedBytes(originalEnvelopeDigest[:], 32)
 		out.Bytes(originalEnvelope)
@@ -474,7 +549,10 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 		out.Int64(evaluatedAt)
 		out.Int64(notBefore)
 		out.Int64(commitNotAfter)
-		out.FixedBytes(failureEvidence[:], 32)
+		out.FixedBytes(failureEvidenceDigest[:], 32)
+		out.Bytes(failureEvidenceBytes)
+		out.String(failureResult.ContentType())
+		out.Bytes(failureResultPayload)
 		out.FixedBytes(outcome[:], 32)
 		out.Bytes(completionBytes)
 		out.Bytes(memberCompletionBytes)
@@ -491,6 +569,13 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 		out.FixedBytes(audit.auditIdempotencyKey[:], 16)
 		out.FixedBytes(audit.sourceAuthorizationDigest[:], 32)
 		out.FixedBytes(audit.originalAuditIntentDigest[:], 32)
+		out.String(audit.causeCode)
+		out.Int64(audit.occurredAtUnixNano)
+		out.Uint32(uint32(len(audit.subjectIDs)))
+		for _, subject := range audit.subjectIDs {
+			out.String(subject)
+		}
+		out.FixedBytes(audit.freshRequirementDigest[:], 32)
 		out.EncodedSet(policyElements)
 		out.Bool(audit.hasSourceAuthorization)
 		if audit.hasSourceAuthorization {
@@ -505,11 +590,20 @@ func newPendingReconciliationPlan(pendingDigest [32]byte, disposition PendingDis
 		pendingDigest:          pendingDigest, disposition: disposition,
 		evaluatedAtUnixNano: evaluatedAt, commitNotBeforeUnixNano: notBefore,
 		commitNotAfterUnixNano: commitNotAfter,
-		failureEvidenceDigest:  failureEvidence, failureOutcomeDigest: outcome,
+		failureEvidenceDigest:  failureEvidenceDigest,
+		failureEvidence:        clonePendingReconciliationEvidence(failureEvidence),
+		failureResult:          failureResult, failureOutcomeDigest: outcome,
 		idempotencyCompletion:    append([]idempotency.Claim(nil), completion...),
 		compoundMemberCompletion: append([]idempotency.CompoundMemberClaim(nil), memberCompletion...),
 		identifierTombstones:     append([]globalid.Claim(nil), tombstones...), audit: audit,
 		digest: domainDigest(pendingReconciliationPlanDomain, encoded)}, nil
+}
+
+func reconciliationCauseCode(disposition PendingDisposition) string {
+	if disposition == PendingDispositionExpired {
+		return "iam-operation-deadline-exceeded"
+	}
+	return "iam-operation-failed"
 }
 
 func durableEnvelopeWindow(envelope DurablePendingEnvelope) (int64, int64, bool) {

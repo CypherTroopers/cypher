@@ -38,3 +38,11 @@ func enrollmentBindingDigest(material KeyMaterialSnapshot) ([32]byte, error) {
 	}
 	return domainDigest(enrollmentBindingDomain, encoded), nil
 }
+
+// KeyMaterialEnrollmentBindingDigest derives the frozen v1 enrollment
+// commitment for explicit audited bootstrap writers. The returned digest is
+// not authority by itself; NewKeyMaterialSemanticProjectionV2 subsequently
+// validates PoP, key ID, deployment anchors and every retained scalar.
+func KeyMaterialEnrollmentBindingDigest(material KeyMaterialSnapshot) ([32]byte, error) {
+	return enrollmentBindingDigest(cloneKeyMaterial(material))
+}

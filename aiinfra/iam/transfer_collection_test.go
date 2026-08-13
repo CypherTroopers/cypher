@@ -4,10 +4,13 @@
 package iam
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"errors"
+	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -314,6 +317,78 @@ func newTransferCollectionFixture(t testing.TB) transferCollectionFixture {
 		closures: []ccse.VerifiedRecord{closureRecord}, evidence: evidenceRecords, transferLease: transferLease}
 }
 
+func expandTransferFixtureClosures(t testing.TB, fixture transferCollectionFixture,
+	closureCount int) transferCollectionFixture {
+	t.Helper()
+	if closureCount < len(fixture.projection.OldKeyClosures) || closureCount > 256 {
+		t.Fatal("invalid closure expansion")
+	}
+	writer := installAuthorizationKey(t, fixture.view, schema.MessageTypeKeyLifecycle)
+	for index := len(fixture.projection.OldKeyClosures); index < closureCount; index++ {
+		material := materialSnapshotForIndexedClosure(t, index,
+			fixture.projection.PreviousPrincipalIdentity, fixture.previous.Ref)
+		activeProjection := lifecycleProjection(material, 2, 1, 7)
+		activeProjection.Metadata.RecordID = fmt.Sprintf("agent-transfer-old-key-%03d-active", index)
+		activeProjection.Metadata.IdempotencyKey = indexedID16(0x40, index)
+		activeProjection.Metadata.IntegrityDigest = sha256.Sum256([]byte(activeProjection.Metadata.RecordID))
+		activeProjection.Metadata.PolicyDigestsSHA256 = [][32]byte{digest(0x54)}
+		activeProjection.AllowedMessageTypeIDs = []uint32{schema.MessageTypeAgentIdentity}
+		active, err := NormalizeKeyLifecycle(activeProjection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture.view.materials[material.KeyID] = material
+		fixture.view.lifecycles[material.KeyID] = active
+		installGlobalID(fixture.view, material.KeyID, keyGlobalOwner(material.KeyID), 1)
+
+		terminalProjection := activeProjection
+		terminalProjection.Metadata.StateVersion = 2
+		terminalProjection.Metadata.WriterEpoch = 8
+		terminalProjection.Metadata.RecordID = fmt.Sprintf("agent-transfer-old-key-%03d-revoked", index)
+		terminalProjection.Metadata.IdempotencyKey = indexedID16(0x80, index)
+		terminalProjection.Metadata.IntegrityDigest = sha256.Sum256([]byte(terminalProjection.Metadata.RecordID))
+		terminalProjection.State = 4
+		terminalProjection.RevokedAtUnixNano = foundationv1.OptionalInt64{Present: true, Value: testNow}
+		terminalProjection.TransitionReasonCode = foundationv1.OptionalString{Present: true, Value: "ownership-transfer"}
+		payload, err := terminalProjection.CanonicalBytes()
+		if err != nil {
+			t.Fatal(err)
+		}
+		messageID := indexedID16(0xa0, index)
+		correlationID := indexedID16(0xb0, index)
+		record := verifiedFoundationRecord(t, writer, 0xe1, schema.MessageTypeKeyLifecycle,
+			payload, EntityRef{Kind: EntityKeyLifecycle, PrincipalKind: material.SubjectKind, ID: material.KeyID},
+			1, messageID, correlationID, "", nil)
+		fixture.projection.OldKeyClosures = append(fixture.projection.OldKeyClosures,
+			foundationv1.KeyClosureSigningProjection{KeyID: material.KeyID,
+				TerminalKeyLifecyclePayloadDigestSHA256: sha256.Sum256(payload)})
+		fixture.closures = append(fixture.closures, record)
+	}
+	payload, err := fixture.projection.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.payload = payload
+	previousReplay := EntityRef{Kind: EntityIdentity, PrincipalKind: 2,
+		ID: fixture.projection.PreviousEntityID}
+	correlation := id16(0xef)
+	fixture.oldApproval = verifiedFoundationRecord(t, fixture.oldAuthority, 0xc2,
+		schema.MessageTypeOwnershipTransferAuthorization, payload, previousReplay, 1,
+		id16(0xf0), correlation, "org-old", nil)
+	fixture.newApproval = verifiedFoundationRecord(t, fixture.newAuthority, 0xc3,
+		schema.MessageTypeOwnershipTransferAuthorization, payload, previousReplay, 1,
+		id16(0xf1), correlation, "org-new", nil)
+	return fixture
+}
+
+func indexedID16(prefix byte, index int) [16]byte {
+	var result [16]byte
+	result[0] = prefix
+	result[14] = byte(index >> 8)
+	result[15] = byte(index)
+	return result
+}
+
 func (fixture transferCollectionFixture) command(approval ccse.VerifiedRecord, expected uint64) OwnershipTransferApprovalIngestionCommand {
 	return OwnershipTransferApprovalIngestionCommand{Approval: approval,
 		PreviousTerminalIdentityPayload: fixture.projectionPayload(fixture.projection.PreviousTerminalIdentityPayloadDigestSHA256, true),
@@ -370,6 +445,38 @@ func applyTransferCollectionPlan(t testing.TB, view *memoryView, plan OwnershipT
 	view.transferCollections[next.Binding.Key] = next
 }
 
+func seedPendingAdmissionRevision(t testing.TB, view *memoryView,
+	capability IAMPendingAdmissionCapability) {
+	t.Helper()
+	revision := capability.PendingRevision().Record()
+	records := make([]IAMPersistenceEvidenceRecord, 0,
+		len(capability.EvidenceStorageCapabilities()))
+	for _, action := range capability.EvidenceStorageCapabilities() {
+		if action.VerifyDigest() != nil {
+			t.Fatal("invalid admission evidence action")
+		}
+		record := action.Evidence().Record()
+		records = append(records, record)
+		view.admissionEvidence[record.DigestSHA256] = cloneIAMPersistenceEvidenceRecord(record)
+	}
+	view.pendingPersistence[revision.PendingKey] = memoryPendingPersistence{
+		revision: IAMPendingStoredRevision{
+			PendingKey: revision.PendingKey, Kind: revision.Kind, Codec: revision.Codec,
+			CodecVersion: revision.CodecVersion, Revision: revision.Revision,
+			PreviousEnvelopeDigestSHA256: revision.PreviousEnvelopeDigestSHA256,
+			EnvelopeDigestSHA256:         revision.EnvelopeDigestSHA256,
+			CanonicalEnvelope:            append([]byte(nil), revision.CanonicalEnvelope...),
+			EvidenceDigestsSHA256: append([][sha256.Size]byte(nil),
+				revision.EvidenceDigestsSHA256...),
+			Status: revision.Status, CommitNotBeforeUnixNano: revision.CommitNotBeforeUnixNano,
+			CommitNotAfterUnixNano:      revision.CommitNotAfterUnixNano,
+			TerminalOutcomeDigestSHA256: revision.TerminalOutcomeDigestSHA256,
+			ExpectedAuditEventID:        revision.ExpectedAuditEventID,
+		},
+		evidence: records,
+	}
+}
+
 func TestOwnershipTransferApprovalCollectionAcceptsExactQuorum(t *testing.T) {
 	fixture := newTransferCollectionFixture(t)
 	planner := testPlanner(t, fixture.view, fixture.profile)
@@ -385,6 +492,20 @@ func TestOwnershipTransferApprovalCollectionAcceptsExactQuorum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	firstAdmission, err := planner.BindPendingAdmissionCapability(context.Background(), firstEnvelope)
+	if err != nil || firstAdmission.VerifyFor(firstEnvelope) != nil ||
+		firstAdmission.PendingRevision().Record().Kind != DurablePendingOwnershipTransferCollection ||
+		firstAdmission.PendingRevision().Record().Revision != 1 ||
+		len(firstAdmission.EvidenceStorageCapabilities()) < 3 ||
+		len(firstAdmission.CanonicalStateReads().Assertions()) < 2 {
+		t.Fatalf("transfer collection first admission capability: %v", err)
+	}
+	firstOuter, outerOK := firstAdmission.OuterRecord()
+	firstOuterDigest, outerErr := firstOuter.Digest(ccse.DefaultLimits())
+	if !outerOK || outerErr != nil || firstOuterDigest != fixture.oldApproval.Digest() ||
+		firstOuterDigest != firstAdmission.OuterRecordDigest() {
+		t.Fatal("first collection admission did not bind the exact ingested approval")
+	}
 	assertDurableEnvelopeRoundTrip(t, firstEnvelope)
 	if _, err := first.JoinedAuditRequest(); !errors.Is(err, ErrPendingPlanInvalid) {
 		t.Fatalf("non-quorum collection exposed joined success request: %v", err)
@@ -393,7 +514,37 @@ func TestOwnershipTransferApprovalCollectionAcceptsExactQuorum(t *testing.T) {
 		!hasIdentifierClaim(first.IdentifierClaims(), "agent-transfer-old-key-revoked", globalid.ReserveNew) {
 		t.Fatal("future key/lifecycle record IDs were not reserved at admission")
 	}
+	seedPendingAdmissionRevision(t, fixture.view, firstAdmission)
 	applyTransferCollectionPlan(t, fixture.view, first)
+	decodedFirst, err := DecodeDurablePendingEnvelope(firstEnvelope.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	revalidatedFirst, err := planner.RevalidateDurablePending(
+		context.Background(), decodedFirst, testNow+1)
+	revalidatedPlan, revalidatedOK := revalidatedFirst.OwnershipTransferCollectionPlan()
+	if err != nil || !revalidatedOK || revalidatedFirst.VerifyDigest() != nil ||
+		revalidatedFirst.Digest() != firstEnvelope.Digest() ||
+		revalidatedPlan.Digest() != first.Digest() {
+		t.Fatalf("stored transfer collection revalidation = %v / ok=%v / envelope=%v",
+			err, revalidatedOK, revalidatedFirst.VerifyDigest())
+	}
+	if _, joinedErr := revalidatedPlan.JoinedAuditRequest(); !errors.Is(joinedErr, ErrPendingPlanInvalid) {
+		t.Fatalf("revalidated non-quorum collection exposed joined success: %v", joinedErr)
+	}
+	claims := first.IdentifierClaims()
+	if len(claims) == 0 {
+		t.Fatal("transfer collection has no admitted global identifiers")
+	}
+	storedGlobal := fixture.view.globalIDs[claims[0].Identifier]
+	mutatedGlobal := storedGlobal
+	mutatedGlobal.Version++
+	fixture.view.globalIDs[claims[0].Identifier] = mutatedGlobal
+	if _, err := planner.RevalidateDurablePending(context.Background(), decodedFirst,
+		testNow+1); !errors.Is(err, ErrPendingPlanInvalid) {
+		t.Fatalf("stored transfer collection accepted global-id drift: %v", err)
+	}
+	fixture.view.globalIDs[claims[0].Identifier] = storedGlobal
 	second, err := planner.PlanOwnershipTransferApproval(context.Background(), fixture.command(fixture.newApproval, 1))
 	if err != nil {
 		t.Fatal(err)
@@ -411,6 +562,117 @@ func TestOwnershipTransferApprovalCollectionAcceptsExactQuorum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, bindErr := planner.BindPendingAdmissionCapability(context.Background(), secondEnvelope); !errors.Is(bindErr, ErrPendingPlanInvalid) {
+		t.Fatalf("collection continuation minted absent-row admission: %v", bindErr)
+	}
+	advance, err := planner.BindCollectionAdvanceCapability(context.Background(), secondEnvelope)
+	if err != nil || advance.VerifyDigest() != nil || advance.VerifyFor(secondEnvelope) != nil {
+		t.Fatalf("collection continuation capability: %v / %v / %v", err,
+			advance.VerifyDigest(), advance.VerifyFor(secondEnvelope))
+	}
+	source := advance.Source()
+	nextRevision := advance.NextRevision().Record()
+	if source.Revision != 1 || source.EnvelopeDigestSHA256 != firstEnvelope.Digest() ||
+		!bytes.Equal(source.CanonicalEnvelope, firstEnvelope.Bytes()) ||
+		nextRevision.Revision != 2 ||
+		nextRevision.PreviousEnvelopeDigestSHA256 != firstEnvelope.Digest() ||
+		!bytes.Equal(nextRevision.PreviousCanonicalEnvelope, firstEnvelope.Bytes()) ||
+		nextRevision.EnvelopeDigestSHA256 != secondEnvelope.Digest() ||
+		!bytes.Equal(nextRevision.CanonicalEnvelope, secondEnvelope.Bytes()) ||
+		nextRevision.Status != IAMPendingStatusOpen {
+		t.Fatal("collection continuation did not bind the exact predecessor and next revision")
+	}
+	joinedExpected, joinedPresent := second.JoinedAuditSnapshot()
+	if len(advance.SourceEvidence()) != len(firstAdmission.EvidenceStorageCapabilities()) ||
+		len(advance.EvidenceStorageCapabilities()) <= len(advance.SourceEvidence()) ||
+		len(advance.CanonicalStateReads().Assertions()) < 2 ||
+		len(advance.IdempotencyAdvanceClaims()) != 1 ||
+		!joinedPresent || advance.JoinedExpectedSnapshot() != joinedExpected ||
+		!sameGlobalClaims(advance.IdentifierClaims(), second.IdentifierClaims()) {
+		t.Fatal("collection continuation capability omitted a required storage action")
+	}
+	outer, outerOK := advance.OuterRecord()
+	outerDigest, outerErr := outer.Digest(ccse.DefaultLimits())
+	if !outerOK || outerErr != nil || outerDigest != fixture.newApproval.Digest() ||
+		outerDigest != advance.OuterRecordDigest() || advance.VerifyOuter(fixture.newApproval) != nil ||
+		advance.VerifyOuter(fixture.oldApproval) == nil {
+		t.Fatal("collection continuation did not bind the exact newly ingested approval")
+	}
+	outer.Signature[0] ^= 0xff
+	returnedAgain, _ := advance.OuterRecord()
+	if returnedDigest, digestErr := returnedAgain.Digest(ccse.DefaultLimits()); digestErr != nil || returnedDigest != fixture.newApproval.Digest() {
+		t.Fatal("collection continuation outer getter aliases internal state")
+	}
+	forgedOuter := advance
+	forgedOuter.outerRecord = cloneCCSERecord(advance.outerRecord)
+	forgedOuter.outerRecord.Signature[0] ^= 1
+	if forgedDigest, digestErr := digestIAMCollectionAdvanceCapability(forgedOuter); digestErr == nil && forgedDigest == advance.Digest() {
+		t.Fatal("collection continuation capability digest omitted the exact outer signature")
+	}
+	source.CanonicalEnvelope[0] ^= 0xff
+	if advance.VerifyFor(secondEnvelope) != nil {
+		t.Fatal("collection continuation source getter aliases internal state")
+	}
+	for _, action := range advance.EvidenceStorageCapabilities() {
+		_, _, linked := action.PendingLink()
+		if linked && action.Disposition() != IAMEvidenceStorageAssertExisting {
+			t.Fatal("source evidence was not frozen as an exact linked assertion")
+		}
+	}
+	actions := advance.EvidenceStorageCapabilities()
+	actions[0].evidence.record.CanonicalContent[0] ^= 0xff
+	if advance.VerifyFor(secondEnvelope) != nil {
+		t.Fatal("collection continuation evidence getter aliases internal state")
+	}
+	forgedIncomplete := advance
+	forgedIncomplete.state = cloneIAMPendingAdmissionStateCapability(advance.state)
+	forgedIncomplete.state.assertions = forgedIncomplete.state.assertions[1:]
+	forgedIncomplete.state.digest, _ = digestIAMPendingAdmissionState(
+		forgedIncomplete.state.assertions, forgedIncomplete.state.absences,
+		forgedIncomplete.state.auditEventID, forgedIncomplete.state.coverageDigest)
+	forgedIncomplete.digest, _ = digestIAMCollectionAdvanceCapability(forgedIncomplete)
+	if forgedIncomplete.VerifyDigest() != nil || forgedIncomplete.VerifyFor(secondEnvelope) == nil {
+		t.Fatal("self-consistent incomplete collection continuation state accepted")
+	}
+	stored := fixture.view.pendingPersistence[source.PendingKey]
+	mutated := stored
+	mutated.revision = cloneIAMPendingStoredRevision(stored.revision)
+	mutated.revision.CommitNotAfterUnixNano--
+	fixture.view.pendingPersistence[source.PendingKey] = mutated
+	if _, bindErr := planner.BindCollectionAdvanceCapability(context.Background(), secondEnvelope); !errors.Is(bindErr, ErrViewInconsistent) {
+		t.Fatalf("collection continuation accepted source window drift: %v", bindErr)
+	}
+	fixture.view.pendingPersistence[source.PendingKey] = stored
+	mutated = stored
+	mutated.evidence = append([]IAMPersistenceEvidenceRecord(nil), stored.evidence...)
+	mutated.evidence[0] = cloneIAMPersistenceEvidenceRecord(mutated.evidence[0])
+	mutated.evidence[0].CanonicalContent[0] ^= 0xff
+	fixture.view.pendingPersistence[source.PendingKey] = mutated
+	if _, bindErr := planner.BindCollectionAdvanceCapability(context.Background(), secondEnvelope); !errors.Is(bindErr, ErrViewInconsistent) {
+		t.Fatalf("collection continuation accepted source evidence drift: %v", bindErr)
+	}
+	fixture.view.pendingPersistence[source.PendingKey] = stored
+	mutated = stored
+	mutated.revision = cloneIAMPendingStoredRevision(stored.revision)
+	mutated.evidence = append([]IAMPersistenceEvidenceRecord(nil), stored.evidence...)
+	extraContent := []byte("unrelated-but-self-consistent-evidence")
+	extraDigest := sha256.Sum256(extraContent)
+	mutated.evidence = append(mutated.evidence, IAMPersistenceEvidenceRecord{
+		DigestSHA256: extraDigest, Kind: IAMEvidenceContentSHA256,
+		ContentType: "application/octet-stream", CanonicalContent: extraContent,
+		ExpectedAuditEventID: advance.AuditEventID(),
+	})
+	mutated.revision.EvidenceDigestsSHA256 = append(
+		mutated.revision.EvidenceDigestsSHA256, extraDigest)
+	sort.Slice(mutated.revision.EvidenceDigestsSHA256, func(i, j int) bool {
+		return bytes.Compare(mutated.revision.EvidenceDigestsSHA256[i][:],
+			mutated.revision.EvidenceDigestsSHA256[j][:]) < 0
+	})
+	fixture.view.pendingPersistence[source.PendingKey] = mutated
+	if _, bindErr := planner.BindCollectionAdvanceCapability(context.Background(), secondEnvelope); !errors.Is(bindErr, ErrViewInconsistent) {
+		t.Fatalf("collection continuation accepted unrelated source evidence: %v", bindErr)
+	}
+	fixture.view.pendingPersistence[source.PendingKey] = stored
 	assertDurableEnvelopeRoundTrip(t, secondEnvelope)
 	if _, err := second.JoinedAuditRequest(); !errors.Is(err, ErrPendingPlanInvalid) {
 		t.Fatalf("quorum vote exposed acceptance joined request: %v", err)
@@ -443,7 +705,9 @@ func TestOwnershipTransferCollectionCanReconcileAfterDeadline(t *testing.T) {
 	fixture.profile.transferCurrentErr = errors.New("live evidence policy replaced")
 	reconciliation, err := planner.PlanReconciliationFromDecoded(context.Background(), decoded,
 		PendingReconciliationCommand{Disposition: PendingDispositionExpired,
-			EvaluatedAtUnixNano: plan.CommitNotAfterUnixNano(), FailureEvidenceDigest: digest(0xdd)})
+			EvaluatedAtUnixNano: plan.CommitNotAfterUnixNano(),
+			Evidence: reconciliationEvidence(t, PendingDispositionExpired, plan.CommitNotAfterUnixNano(),
+				plan.CommitNotAfterUnixNano(), plan.Digest(), 0xdd)})
 	if err != nil {
 		t.Fatalf("collection reconciliation = %v", err)
 	}
@@ -462,8 +726,9 @@ func TestOwnershipTransferCollectionCanReconcileAfterDeadline(t *testing.T) {
 	}
 	if _, err := planner.PlanReconciliationFromDecoded(context.Background(), decoded,
 		PendingReconciliationCommand{Disposition: PendingDispositionFailed,
-			EvaluatedAtUnixNano:   plan.CommitNotAfterUnixNano() - 1,
-			FailureEvidenceDigest: digest(0xde)}); !errors.Is(err, ErrInvalidCommitWindow) {
+			EvaluatedAtUnixNano: plan.CommitNotAfterUnixNano() - 1,
+			Evidence: reconciliationEvidence(t, PendingDispositionExpired, plan.CommitNotAfterUnixNano(),
+				plan.CommitNotAfterUnixNano(), plan.Digest(), 0xde)}); !errors.Is(err, ErrInvalidCommitWindow) {
 		t.Fatalf("pre-deadline collection failure accepted: %v", err)
 	}
 }

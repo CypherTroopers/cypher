@@ -4,6 +4,7 @@
 package governance
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -35,10 +36,46 @@ func TestApprovalIngestionAtomicallyReservesJoinedOperationAndGlobalIDs(t *testi
 		got.NextAdmissionProfileActivation != got.GovernanceProfileActivation {
 		t.Fatalf("bad first ingestion plan: %+v", got)
 	}
+	if got.DurablePendingRevision.VerifyDigest() != nil || got.DurablePendingRevision.Revision() != 1 ||
+		got.DurablePendingRevision.Kind() != DurablePendingGovernancePolicyApprovalCollection ||
+		got.DurablePendingRevision.Status() != DurablePendingOpen ||
+		got.DurablePendingRevision.ExpectedKind() != 0 ||
+		got.NextEvidenceStorageCapability.VerifyDigest() != nil ||
+		got.NextEvidenceStorageCapability.Disposition() != DurableEvidenceStorageReserveNew {
+		t.Fatalf("first durable persistence closure: pending=%#v evidence=%#v",
+			got.DurablePendingRevision, got.NextEvidenceStorageCapability)
+	}
+	if len(got.CanonicalStateAssertions) != 1 || got.CanonicalStateAssertions[0].VerifyDigest() != nil ||
+		got.CanonicalStateAssertions[0].Record().Kind != CanonicalStateKindGovernanceProfileActivation ||
+		len(got.CanonicalKeyStateAssertions) != 1 || got.CanonicalKeyStateAssertions[0].VerifyDigest() != nil ||
+		got.CanonicalKeyStateAssertions[0].KeyPrecondition() != got.NextKeyPrecondition ||
+		len(got.CanonicalKeyStateAssertions[0].Records()) != 3 {
+		t.Fatalf("first admission canonical read set = %#v / %#v",
+			got.CanonicalStateAssertions, got.CanonicalKeyStateAssertions)
+	}
+	if decoded, decodeErr := DecodePolicyApprovalCollection(got.DurablePendingRevision.CanonicalEnvelope()); decodeErr != nil || decoded.Digest() != got.DurablePendingRevision.EnvelopeDigest() ||
+		decoded.Revision() != 1 || decoded.Binding() != got.Binding {
+		t.Fatalf("first pending codec = %#v / %v", decoded, decodeErr)
+	}
 	mutatedActivation := got
 	mutatedActivation.NextAdmissionProfileActivation.Version++
 	if _, err := newApprovalCollectionPlan(mutatedActivation); err == nil {
 		t.Fatal("approval collection plan accepted substituted activation version")
+	}
+	tamperedProfileRow := first.Snapshot()
+	tamperedProfileRow.CanonicalStateAssertions[0].record.CanonicalState[0] ^= 1
+	if _, err := newApprovalCollectionPlan(tamperedProfileRow); err == nil {
+		t.Fatal("approval collection plan accepted tampered profile row")
+	}
+	tamperedSignerRow := first.Snapshot()
+	tamperedSignerRow.CanonicalKeyStateAssertions[0].records[0].record.CanonicalState[0] ^= 1
+	if _, err := newApprovalCollectionPlan(tamperedSignerRow); err == nil {
+		t.Fatal("approval collection plan accepted tampered signer row")
+	}
+	missingReadSet := first.Snapshot()
+	missingReadSet.CanonicalKeyStateAssertions = nil
+	if _, err := newApprovalCollectionPlan(missingReadSet); err == nil {
+		t.Fatal("approval collection plan accepted missing signer read assertion")
 	}
 	var parentReserved, auditReserved bool
 	for _, claim := range got.Claims {
@@ -73,6 +110,31 @@ func TestApprovalIngestionAtomicallyReservesJoinedOperationAndGlobalIDs(t *testi
 	if len(secondValue.Claims) != 1 || secondValue.Claims[0].Mode != idempotency.AdvanceCollection ||
 		len(secondValue.NextCollectionRecordDigestsSHA256) != 2 || secondValue.JoinedAuditIdempotencySnapshot.State != idempotency.StateCollecting {
 		t.Fatalf("bad second ingestion plan: %+v", secondValue)
+	}
+	if secondValue.DurablePendingRevision.VerifyDigest() != nil ||
+		secondValue.DurablePendingRevision.Revision() != 2 ||
+		secondValue.DurablePendingRevision.ExpectedKind() != DurablePendingGovernancePolicyApprovalCollection ||
+		secondValue.DurablePendingRevision.PreviousEnvelopeDigest() != got.DurablePendingRevision.EnvelopeDigest() ||
+		!bytes.Equal(secondValue.DurablePendingRevision.PreviousCanonicalEnvelope(), got.DurablePendingRevision.CanonicalEnvelope()) {
+		t.Fatalf("advance durable persistence closure = %#v", secondValue.DurablePendingRevision)
+	}
+	sourcePrevious, sourcePresent := secondValue.DurablePendingRevision.SourcePreviousEnvelopeDigest()
+	sourceEvidence, evidencePresent := secondValue.DurablePendingRevision.SourceEvidenceDigests()
+	if !sourcePresent || !evidencePresent || sourcePrevious != ([ccse.DigestSize]byte{}) ||
+		!equalDigestSets(sourceEvidence, got.DurablePendingRevision.EvidenceDigests()) {
+		t.Fatalf("advance source fence previous=%x evidence=%x", sourcePrevious, sourceEvidence)
+	}
+	sourceEvidence[0][0] ^= 1
+	retainedEvidence, _ := secondValue.DurablePendingRevision.SourceEvidenceDigests()
+	if sourceEvidence[0] == retainedEvidence[0] {
+		t.Fatal("source evidence getter aliases retained capability")
+	}
+	tamperedSource := secondValue.DurablePendingRevision
+	tamperedSource.sourceEvidenceDigests = append([][ccse.DigestSize]byte(nil),
+		tamperedSource.sourceEvidenceDigests...)
+	tamperedSource.sourceEvidenceDigests[0][0] ^= 1
+	if tamperedSource.VerifyDigest() == nil {
+		t.Fatal("tampered source pending evidence accepted")
 	}
 
 	// Policy Sequence and per-sender CCSE replay counters are intentionally
@@ -196,8 +258,8 @@ func TestLegacyAdmissionCannotSucceedButCanTerminallyReconcile(t *testing.T) {
 		retained = append(retained, approval)
 	}
 	// Simulate the exact progress digest already stored by the V1 adapter. The
-	// V2 success path must reject it, while terminal reconciliation may verify
-	// and close it without pretending that an activation row was retained.
+	// V2 success and terminal paths must reject it rather than pretending that
+	// an activation row and canonical kind-7 pending predecessor were retained.
 	progress, err := legacyApprovalCollectionDigest(binding, retained)
 	if err != nil {
 		t.Fatal(err)
@@ -212,19 +274,11 @@ func TestLegacyAdmissionCannotSucceedButCanTerminallyReconcile(t *testing.T) {
 	at := command.Approvals[0].Record.Domain.ExpiresAtUnixNano
 	intent := fixture.reconciliationIntent(t, policy, command.Approvals, binding, at, 4)
 	audit := fixture.auditCommandForIntent(t, 1, fixture.profile.AuditDeploymentAnchorSHA256, intent)
-	plan, err := fixture.planner.ReconcilePolicyOperation(context.Background(), PolicyReconcileCommand{
+	_, err = fixture.planner.ReconcilePolicyOperation(context.Background(), PolicyReconcileCommand{
 		AtUnixNano: at, Binding: binding, Outcome: 4, AuditEvent: audit.Event,
 	})
-	if err != nil {
-		t.Fatalf("legacy terminal reconciliation: %v", err)
-	}
-	got := plan.Snapshot()
-	legacyRetained := false
-	for _, admission := range got.ApprovalAdmissionEvidence {
-		legacyRetained = legacyRetained || admission.GovernanceProfileActivation == (GovernanceProfileActivationSnapshot{})
-	}
-	if !plan.CommitReady() || got.Kind != MutationPolicyAbort || !legacyRetained {
-		t.Fatalf("legacy terminal plan = %+v", got)
+	if !errors.Is(err, ErrApprovalCollection) {
+		t.Fatalf("legacy terminal reconciliation error = %v", err)
 	}
 }
 
@@ -290,6 +344,7 @@ func (f *governanceFixture) clearPolicyAdmission(policy foundationv1.PolicyBundl
 	joined, _ := idempotency.JoinedAuditBinding(binding)
 	eventID, _ := idempotency.JoinedAuditEventID(binding)
 	delete(f.collections.collections, binding.Key)
+	delete(f.collections.persistence, binding.Key)
 	delete(f.idempotency.snapshots, binding.Key)
 	delete(f.idempotency.snapshots, joined.Key)
 	delete(f.ids.ids, policy.PolicyBundleID)
@@ -319,4 +374,19 @@ func (f *governanceFixture) applyApprovalCollectionPlan(t testing.TB, plan Appro
 		ValidatedAtUnixNano:           plan.NextAdmissionValidatedAtUnixNano,
 		AdmissionFingerprintSHA256:    plan.NextAdmissionFingerprintSHA256,
 	}}
+	pending := plan.DurablePendingRevision
+	if pending.VerifyDigest() != nil {
+		t.Fatal("invalid durable pending revision")
+	}
+	commitNotBefore, commitNotAfter := pending.CommitWindow()
+	outcome, _ := pending.TerminalOutcomeDigest()
+	f.collections.persistence[plan.Binding.Key] = PolicyApprovalCollectionPersistenceSnapshot{
+		PendingKey: pending.PendingKey(), Kind: pending.Kind(), Codec: pending.Codec(),
+		CodecVersion: pending.CodecVersion(), Revision: pending.Revision(),
+		PreviousEnvelopeDigestSHA256: pending.PreviousEnvelopeDigest(),
+		EnvelopeDigestSHA256:         pending.EnvelopeDigest(), CanonicalEnvelope: pending.CanonicalEnvelope(),
+		EvidenceDigestsSHA256: pending.EvidenceDigests(), Status: pending.Status(),
+		CommitNotBeforeUnixNano: commitNotBefore, CommitNotAfterUnixNano: commitNotAfter,
+		TerminalOutcomeDigestSHA256: outcome, ExpectedAuditEventID: pending.ExpectedAuditEventID(),
+	}
 }

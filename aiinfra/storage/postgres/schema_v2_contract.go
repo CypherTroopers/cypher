@@ -6,19 +6,22 @@ package postgres
 import (
 	"fmt"
 	"strings"
+
+	"github.com/cypherium/cypher/aiinfra/globalid"
 )
 
 const (
+	v2CalibratedServerVersion = int64(180004)
 	v2AuditEventMaxBytes      = 64 << 20
 	v2DurableEnvelopeMaxBytes = 64 << 20
 	v2EvidenceMaxBytes        = 64 << 20
 	v2CanonicalStateMaxBytes  = 64 << 20
-	v2MaxGlobalClaims         = 384
+	v2MaxGlobalClaims         = globalid.MaxClaims
 	v2MaxPendingEvidence      = 2048
 	v2MaxUOWBusinessClaims    = 384
 	v2MaxUOWPendingRevisions  = 384
 	v2MaxUOWEvidenceRecords   = 2048
-	v2MaxUOWCanonicalBytes    = 64 << 20
+	v2MaxUOWCanonicalBytes    = MaxCanonicalUOWBytes
 )
 
 // These are storage enum catalogs, not open application integers.  Changing
@@ -61,6 +64,7 @@ var v2ColumnContract = map[string][]columnContract{
 		{"result_payload", "bytea", true, ""},
 		{"evidence_assertion_count", "smallint", true, ""},
 		{"audit_event_id", "text", false, ""},
+		{"outer_payload_digest", "bytea", false, ""},
 		{"transaction_id", "xid8", true, ""},
 		{"committed_at", "timestamp with time zone", true, "clock_timestamp()"},
 	},
@@ -347,6 +351,41 @@ var v2RelationContract = map[string]string{
 // normalized clause and never accepts substring matches.
 var v2NamedConstraintDefinitions = mustV2NamedConstraintDefinitions()
 
+// PostgreSQL's constraint deparser is not an identity transform of the
+// migration source: it adds parentheses, rewrites IN to = ANY (ARRAY[...]),
+// expands BETWEEN and annotates NUMERIC constants. These per-table digests
+// seal the complete, name-ordered stream of length-prefixed constraint names
+// and raw pg_get_constraintdef bytes from PostgreSQL 18.4. Metadata (kind,
+// columns, FK target, deferrability and index) is still checked per constraint.
+var v2Postgres180004ConstraintDefinitionDigests = map[string]string{
+	"audit_event":                  "d2baf431e7bb2ec75fd0f00dd29f54d9e51b85282c63c5f1207fed00b33bade2",
+	"audit_head":                   "893b2754c4756c95b29387c25e34e2ef37c6e51a98ef9ccb25ebd2e724eb97fb",
+	"authoritative_uow":            "410d20dca07eafb4a653e4bc36a687f67573b0b18ca44872e4d501b2922c17cb",
+	"business_idempotency_head":    "ae2c8cdac8cd32f94a65547921ae37733ad58bccfab7d0f94fb71a471d65ca0b",
+	"business_idempotency_history": "bd13189508c27c5da5ae105f9d79f1b8ea8e397eb3547918419cfaf681c167cb",
+	"canonical_state_head":         "40af9b34f361797ce93a7f15dec38c23cbdadad1fc5a2e5ff4cc720fa98d8ff3",
+	"canonical_state_history":      "397858fe35771f1473ecd4c9a49e21f0437cc1bbd09efdce2ae785082857d7d1",
+	"durable_evidence":             "6d26d1d53f14c2e4755a20540f29af7627cab09b01f2ca4c7b1c69a7f4745966",
+	"durable_evidence_assertion":   "87afbc419f5a70ea8ae97b9599fb8d02f27c272e02deefc15154f004730ec10a",
+	"durable_pending_evidence":     "c0a6b4e62237d4935fa575fa1f0782413225c9445b5cadbb36b71192beca5059",
+	"durable_pending_head":         "d80bffce6398b7d1a5f2202223061a9d257c2faa03855dfc4ed6f24db3ae20b0",
+	"durable_pending_revision":     "070d34115049f4e32a56685f1ca7d728d088846c8ae2cad56b62b72711fd4386",
+	"global_identifier_claim":      "96d0799ea65a703d267d3717c8eb1a511c93ddafc5dd0a4cd225c402aeb1d515",
+	"global_identifier_head":       "e84e0889beb105b678fb5b6d5542cabbcc409cb7c6dc9b2487e485ce8512c32e",
+	"global_identifier_history":    "16bff2693e0625eb4d7e76106e1cb6fc9dd5a008525f3b4586eadc3cfc876edd",
+}
+
+// pg_dump 18.4 reconstructs audit_head's three compound AND checks without
+// the outer grouping around their first pair of predicates. PostgreSQL parses
+// both forms into the same Boolean expression, but pg_get_constraintdef emits
+// different byte strings for a directly migrated database and its first
+// pg_dump/pg_restore image. Seal that one reviewed round-trip form explicitly;
+// every other v2 table remains a single-digest contract. A restored database
+// is a fixed point: subsequent dump/restore cycles retain this digest.
+var v2Postgres180004RestoredConstraintDefinitionDigests = map[string]string{
+	"audit_head": "5f4ea54c818cbd163d83303d92e9c58c31b6626f6abd2f76ab0db56f8defdf86",
+}
+
 func mustV2NamedConstraintDefinitions() map[string]string {
 	contents, err := migrationFiles.ReadFile("migrations/0002_canonical_uow.sql")
 	if err != nil {
@@ -419,6 +458,21 @@ func v2Constraint(name, kind string, columns []string) constraintContract {
 	return constraintContract{kind: kind, keyColumns: columns, definition: definition}
 }
 
+func v2ConstraintDefinitionDigestsForVersion(table string, serverVersion int64) ([]string, bool) {
+	if serverVersion != v2CalibratedServerVersion {
+		return nil, false
+	}
+	digest, ok := v2Postgres180004ConstraintDefinitionDigests[table]
+	if !ok {
+		return nil, false
+	}
+	digests := []string{digest}
+	if restored, exists := v2Postgres180004RestoredConstraintDefinitionDigests[table]; exists {
+		digests = append(digests, restored)
+	}
+	return digests, true
+}
+
 func v2Primary(name string, columns ...string) constraintContract {
 	contract := v2Constraint(name, "p", columns)
 	contract.indexName = "cph_aiinfra." + name
@@ -468,9 +522,11 @@ func buildV2ConstraintContract() map[string]map[string]constraintContract {
 		"authoritative_uow_scope_length": {"scope_sha256"}, "authoritative_uow_message_length": {"message_id"},
 		"authoritative_uow_kind": {"uow_kind"}, "authoritative_uow_outcome_length": {"outcome_digest"},
 		"authoritative_uow_content_type_length": {"result_content_type"}, "authoritative_uow_payload_length": {"result_payload"},
-		"authoritative_uow_evidence_count": {"evidence_assertion_count"},
-		"authoritative_uow_event_length":   {"audit_event_id"},
-		"authoritative_uow_kind_shape":     {"uow_kind", "evidence_assertion_count", "audit_event_id"},
+		"authoritative_uow_evidence_count":       {"evidence_assertion_count"},
+		"authoritative_uow_event_length":         {"audit_event_id"},
+		"authoritative_uow_outer_payload_length": {"outer_payload_digest"},
+		"authoritative_uow_kind_shape": {"uow_kind", "evidence_assertion_count",
+			"audit_event_id", "outer_payload_digest"},
 	})
 
 	add("audit_event", "audit_event_pk", v2Primary("audit_event_pk", "event_id"))
@@ -491,15 +547,15 @@ func buildV2ConstraintContract() map[string]map[string]constraintContract {
 	checks("audit_head", map[string][]string{
 		"audit_head_stream_length": {"stream_id"}, "audit_head_anchor_length": {"deployment_anchor_digest"},
 		"audit_head_sequence_range": {"highest_sequence"},
-		"audit_head_digest_length": {"latest_record_digest"}, "audit_head_event_length": {"audit_event_id"},
-		"audit_head_writer_length": {"head_writer_identity", "authorized_writer_identity"},
-		"audit_head_region_length": {"home_region", "authorized_home_region"},
-		"audit_head_epoch_range": {"writer_epoch", "authorized_writer_epoch"},
-		"audit_head_profile_length": {"head_governance_profile_digest", "authorized_governance_profile_digest"},
+		"audit_head_digest_length":  {"latest_record_digest"}, "audit_head_event_length": {"audit_event_id"},
+		"audit_head_writer_length":       {"head_writer_identity", "authorized_writer_identity"},
+		"audit_head_region_length":       {"home_region", "authorized_home_region"},
+		"audit_head_epoch_range":         {"writer_epoch", "authorized_writer_epoch"},
+		"audit_head_profile_length":      {"head_governance_profile_digest", "authorized_governance_profile_digest"},
 		"audit_head_lease_digest_length": {"writer_lease_evidence_digest"},
-		"audit_head_lease_window": {"writer_lease_not_before_unix_nano", "writer_lease_not_after_unix_nano"},
-		"audit_head_authorized_shape": {"head_writer_identity", "authorized_writer_identity", "home_region", "authorized_home_region", "writer_epoch", "authorized_writer_epoch", "head_governance_profile_digest", "authorized_governance_profile_digest"},
-		"audit_head_uow_scope_length": {"uow_scope_sha256"}, "audit_head_uow_message_length": {"uow_message_id"},
+		"audit_head_lease_window":        {"writer_lease_not_before_unix_nano", "writer_lease_not_after_unix_nano"},
+		"audit_head_authorized_shape":    {"head_writer_identity", "authorized_writer_identity", "home_region", "authorized_home_region", "writer_epoch", "authorized_writer_epoch", "head_governance_profile_digest", "authorized_governance_profile_digest"},
+		"audit_head_uow_scope_length":    {"uow_scope_sha256"}, "audit_head_uow_message_length": {"uow_message_id"},
 	})
 
 	add("business_idempotency_head", "business_idempotency_head_pk", v2Primary("business_idempotency_head_pk", "idempotency_key"))
@@ -646,16 +702,16 @@ func pendingChecks(suffix string) map[string][]string {
 		prefix + "key_length": {"pending_key"}, prefix + "kind": {"pending_kind"},
 		prefix + "codec_length": {"codec"}, prefix + "codec_version_range": {"codec_version"},
 		prefix + "kind_codec_catalog": {"pending_kind", "codec", "codec_version"},
-		revisionRange: {"revision"}, prefix + "previous_length": {"previous_envelope_digest"},
+		revisionRange:                 {"revision"}, prefix + "previous_length": {"previous_envelope_digest"},
 		prefix + "digest_length": {"envelope_digest"}, prefix + "envelope_length": {"canonical_envelope"},
 		prefix + "evidence_count": {"evidence_count"}, prefix + "status": {"status"},
 		prefix + "kind_evidence_shape": {"pending_kind", "evidence_count"},
-		prefix + "window":         {"commit_not_before_unix_nano", "commit_not_after_unix_nano"},
-		prefix + "outcome_length": {"terminal_outcome_digest"},
-		revisionShape:             {"revision", "previous_envelope_digest"},
-		prefix + "status_shape":   {"status", "terminal_outcome_digest"}, prefix + "event_length": {"audit_event_id"},
+		prefix + "window":              {"commit_not_before_unix_nano", "commit_not_after_unix_nano"},
+		prefix + "outcome_length":      {"terminal_outcome_digest"},
+		revisionShape:                  {"revision", "previous_envelope_digest"},
+		prefix + "status_shape":        {"status", "terminal_outcome_digest"}, prefix + "event_length": {"audit_event_id"},
 		prefix + "reconciliation_shape": {"pending_kind", "revision", "status", "previous_envelope_digest"},
-		prefix + "uow_scope_length": {"uow_scope_sha256"}, prefix + "uow_message_length": {"uow_message_id"},
+		prefix + "uow_scope_length":     {"uow_scope_sha256"}, prefix + "uow_message_length": {"uow_message_id"},
 	}
 }
 
@@ -667,7 +723,7 @@ func canonicalStateChecks(suffix string) map[string][]string {
 		prefix + "digest_length": {"state_digest"}, prefix + "content_type_length": {"content_type"},
 		prefix + "content_length": {"canonical_state"}, prefix + "event_length": {"audit_event_id"},
 		prefix + "kind_content_catalog": {"state_namespace", "object_kind", "content_type"},
-		prefix + "validity_shape": {"object_kind", "valid_from_unix_nano", "valid_until_unix_nano"},
+		prefix + "validity_shape":       {"object_kind", "valid_from_unix_nano", "valid_until_unix_nano"},
 		prefix + "uow_scope_length":     {"uow_scope_sha256"}, prefix + "uow_message_length": {"uow_message_id"},
 	}
 }
@@ -788,6 +844,7 @@ func buildV2TriggerContract() map[string]triggerContract {
 	uowMember("canonical_state_head", true)
 	immutable("canonical_state_history")
 	add("canonical_state_history", "canonical_state_history_consistency", "assert_canonical_state_consistency", 5, true)
+	add("canonical_state_history", "canonical_state_history_profile_timeline", "assert_governance_profile_activation_timeline", 5, true)
 	uowMember("canonical_state_history", false)
 
 	if len(result) != len(v2TriggerDefinitions) {

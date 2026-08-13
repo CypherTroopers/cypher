@@ -124,6 +124,10 @@ event. X and Y complete with the same failure result; reserved global IDs remain
 permanent tombstones. A collecting operation is never deleted or reset to
 absent.
 
+Legacy V1 collections that do not retain a canonical kind-7 pending envelope
+fail closed in both success and reconciliation paths. They require an explicit
+offline migration; runtime code never synthesizes a predecessor from votes.
+
 ## IAM joined-audit boundary
 
 The IAM integration accepts only IAM's opaque, planner-verified

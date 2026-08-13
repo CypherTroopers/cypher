@@ -60,10 +60,10 @@ const (
 // workflow. For Admission rows it is not actual event provenance; an event
 // does not exist yet. It is compared on every explicit assertion.
 type DurableEvidenceRecord struct {
-	Digest           [sha256.Size]byte
-	Kind             DurableEvidenceKind
-	ContentType      string
-	CanonicalContent []byte
+	Digest               [sha256.Size]byte
+	Kind                 DurableEvidenceKind
+	ContentType          string
+	CanonicalContent     []byte
 	ExpectedAuditEventID string
 }
 
@@ -71,24 +71,32 @@ type DurableEvidenceRecord struct {
 // algorithm is intentionally owned by the semantic codec; this layer stores
 // the already-verified digest and byte-exact canonical envelope.
 type DurablePendingRevision struct {
-	PendingKey              [ccse.MessageIDSize]byte
+	PendingKey [ccse.MessageIDSize]byte
 	// ExpectedKind is zero for a version-one absent-row insert. For every
 	// update it names the exact locked head kind. Reconciliation is the sole
 	// kind-changing transition: OPEN 1/2/3/5 to TERMINAL 4.
-	ExpectedKind            DurablePendingKind
-	Kind                    DurablePendingKind
-	Codec                   string
-	CodecVersion            uint32
-	Revision                uint64
-	PreviousEnvelopeDigest  [sha256.Size]byte
-	EnvelopeDigest          [sha256.Size]byte
-	CanonicalEnvelope       []byte
-	EvidenceDigests         [][sha256.Size]byte
-	Status                  DurablePendingStatus
-	CommitNotBeforeUnixNano int64
-	CommitNotAfterUnixNano  int64
-	TerminalOutcomeDigest   [sha256.Size]byte
-	ExpectedAuditEventID    string
+	ExpectedKind           DurablePendingKind
+	Kind                   DurablePendingKind
+	Codec                  string
+	CodecVersion           uint32
+	Revision               uint64
+	PreviousEnvelopeDigest [sha256.Size]byte
+	// PreviousCanonicalEnvelope is an update-only exact CAS input. It is not
+	// duplicated in the stored next revision and is empty on reload.
+	PreviousCanonicalEnvelope []byte
+	// PreviousCommit* are update-only exact CAS inputs for every same-kind
+	// transition. They are zero for inserts, kind-changing reconciliation and
+	// reload snapshots, which do not carry an optimistic predecessor window.
+	PreviousCommitNotBeforeUnixNano int64
+	PreviousCommitNotAfterUnixNano  int64
+	EnvelopeDigest                  [sha256.Size]byte
+	CanonicalEnvelope               []byte
+	EvidenceDigests                 [][sha256.Size]byte
+	Status                          DurablePendingStatus
+	CommitNotBeforeUnixNano         int64
+	CommitNotAfterUnixNano          int64
+	TerminalOutcomeDigest           [sha256.Size]byte
+	ExpectedAuditEventID            string
 }
 
 // EvidenceAssertion proves that an audited-final UoW re-read retained
@@ -103,8 +111,7 @@ type EvidenceAssertion struct {
 const selectDurableEvidenceForUpdateSQL = `
 	SELECT evidence_kind, content_type, canonical_content, audit_event_id
 	FROM cph_aiinfra.durable_evidence
-	WHERE evidence_digest = $1
-	FOR UPDATE`
+	WHERE evidence_digest = $1`
 
 const insertDurableEvidenceSQL = `
 	INSERT INTO cph_aiinfra.durable_evidence
@@ -115,7 +122,7 @@ const insertDurableEvidenceSQL = `
 // ReserveDurableEvidence inserts a new immutable evidence row. An existing
 // digest, even with identical bytes, is a failed absent-row CAS.
 func (uow *CanonicalUOW) ReserveDurableEvidence(ctx context.Context, record DurableEvidenceRecord) error {
-	state, err := uow.lock(ctx)
+	state, err := uow.lockForWrite(ctx)
 	if err != nil {
 		return err
 	}
@@ -155,8 +162,9 @@ func (uow *CanonicalUOW) ReserveDurableEvidence(ctx context.Context, record Dura
 	return nil
 }
 
-// AssertDurableEvidenceContent locks an existing row and compares its complete
-// content and original AuditEvent provenance without manufacturing an update.
+// AssertDurableEvidenceContent reads an immutable row on the active
+// SERIALIZABLE transaction and compares its complete content and original
+// AuditEvent attribution without manufacturing an update.
 func (uow *CanonicalUOW) AssertDurableEvidenceContent(ctx context.Context,
 	record DurableEvidenceRecord) error {
 	state, err := uow.lock(ctx)
@@ -187,8 +195,8 @@ func (uow *CanonicalUOW) AssertDurableEvidenceContent(ctx context.Context,
 	return nil
 }
 
-// LoadDurableEvidence returns an owned exact row using the active transaction
-// connection and a row lock.
+// LoadDurableEvidence returns an owned exact immutable row using the active
+// transaction connection.
 func (uow *CanonicalUOW) LoadDurableEvidence(ctx context.Context,
 	digest [sha256.Size]byte) (DurableEvidenceRecord, bool, error) {
 	state, err := uow.lock(ctx)
@@ -252,7 +260,9 @@ const updatePendingHeadSQL = `
 		uow_message_id = $16
 	WHERE pending_key = $1 AND pending_kind = $19 AND codec = $20
 		AND codec_version = $21 AND audit_event_id = $5 AND revision = $17
-		AND envelope_digest = $18 AND status = 1
+		AND envelope_digest = $18 AND canonical_envelope = $22 AND status = 1
+		AND (NOT $23 OR (commit_not_before_unix_nano = $24
+			AND commit_not_after_unix_nano = $25))
 		AND terminal_outcome_digest IS NULL`
 
 const insertPendingRevisionSQL = `
@@ -275,7 +285,7 @@ const insertPendingEvidenceSQL = `
 // evidence set before SQL, then writes the head, exact revision, and links.
 func (uow *CanonicalUOW) ApplyDurablePendingRevision(ctx context.Context,
 	revision DurablePendingRevision) error {
-	state, err := uow.lock(ctx)
+	state, err := uow.lockForWrite(ctx)
 	if err != nil {
 		return err
 	}
@@ -308,7 +318,9 @@ func (uow *CanonicalUOW) ApplyDurablePendingRevision(ctx context.Context,
 			int16(prepared.Status), prepared.CommitNotBeforeUnixNano, prepared.CommitNotAfterUnixNano,
 			outcome, state.scope[:], state.entry.MessageID[:],
 			strconv.FormatUint(prepared.Revision-1, 10), prepared.PreviousEnvelopeDigest[:],
-			int16(prepared.ExpectedKind), expectedCodec, int64(1))
+			int16(prepared.ExpectedKind), expectedCodec, int64(1),
+			prepared.PreviousCanonicalEnvelope, hasPreviousWindowCAS(prepared),
+			prepared.PreviousCommitNotBeforeUnixNano, prepared.PreviousCommitNotAfterUnixNano)
 	}
 	if err != nil {
 		return poisonCanonicalLocked(state,
@@ -360,12 +372,37 @@ func preparePendingRevision(receipt CanonicalUOWReceipt,
 		validateCanonicalText(revision.ExpectedAuditEventID, 1024) != nil {
 		return DurablePendingRevision{}, ErrCanonicalInvalid
 	}
-	if (revision.Revision == 1 && (revision.ExpectedKind != 0 || nonzeroDigest(revision.PreviousEnvelopeDigest))) ||
+	if (revision.Revision == 1 && (revision.ExpectedKind != 0 ||
+		nonzeroDigest(revision.PreviousEnvelopeDigest) || len(revision.PreviousCanonicalEnvelope) != 0)) ||
 		(revision.Revision > 1 && (revision.ExpectedKind == 0 ||
-			!nonzeroDigest(revision.PreviousEnvelopeDigest))) ||
-		revision.EnvelopeDigest == revision.PreviousEnvelopeDigest ||
+			!nonzeroDigest(revision.PreviousEnvelopeDigest) ||
+			len(revision.PreviousCanonicalEnvelope) == 0 ||
+			len(revision.PreviousCanonicalEnvelope) > v2DurableEnvelopeMaxBytes)) ||
 		(revision.Kind == DurablePendingGovernancePolicyApprovalCollection && len(revision.EvidenceDigests) == 0) {
 		return DurablePendingRevision{}, ErrCanonicalInvalid
+	}
+	sameKindUpdate := hasPreviousWindowCAS(revision)
+	lifecycleTerminal := isLifecycleTerminal(revision)
+	if sameKindUpdate {
+		if revision.PreviousCommitNotBeforeUnixNano <= 0 ||
+			revision.PreviousCommitNotAfterUnixNano < revision.PreviousCommitNotBeforeUnixNano {
+			return DurablePendingRevision{}, ErrCanonicalInvalid
+		}
+	} else if revision.PreviousCommitNotBeforeUnixNano != 0 ||
+		revision.PreviousCommitNotAfterUnixNano != 0 {
+		return DurablePendingRevision{}, ErrCanonicalInvalid
+	}
+	if lifecycleTerminal {
+		if revision.EnvelopeDigest != revision.PreviousEnvelopeDigest ||
+			!bytes.Equal(revision.CanonicalEnvelope, revision.PreviousCanonicalEnvelope) ||
+			revision.PreviousCommitNotBeforeUnixNano != revision.CommitNotBeforeUnixNano ||
+			revision.PreviousCommitNotAfterUnixNano != revision.CommitNotAfterUnixNano {
+			return DurablePendingRevision{}, ErrCanonicalInvalid
+		}
+	} else {
+		if revision.Revision > 1 && revision.EnvelopeDigest == revision.PreviousEnvelopeDigest {
+			return DurablePendingRevision{}, ErrCanonicalInvalid
+		}
 	}
 	if revision.Kind == DurablePendingReconciliation {
 		if receipt.kind != CanonicalAuditedFinal || revision.Status != DurablePendingTerminal ||
@@ -382,7 +419,8 @@ func preparePendingRevision(receipt CanonicalUOWReceipt,
 			return DurablePendingRevision{}, ErrCanonicalUOWPhase
 		}
 	case DurablePendingTerminal:
-		if receipt.kind != CanonicalAuditedFinal || revision.ExpectedAuditEventID != receipt.auditEventID ||
+		if revision.Revision < 2 || receipt.kind != CanonicalAuditedFinal ||
+			revision.ExpectedAuditEventID != receipt.auditEventID ||
 			revision.TerminalOutcomeDigest != receipt.result.Digest() {
 			return DurablePendingRevision{}, ErrCanonicalUOWPhase
 		}
@@ -402,8 +440,18 @@ func preparePendingRevision(receipt CanonicalUOWReceipt,
 		}
 	}
 	revision.CanonicalEnvelope = bytes.Clone(revision.CanonicalEnvelope)
+	revision.PreviousCanonicalEnvelope = bytes.Clone(revision.PreviousCanonicalEnvelope)
 	revision.EvidenceDigests = digests
 	return revision, nil
+}
+
+func isLifecycleTerminal(revision DurablePendingRevision) bool {
+	return revision.Revision > 1 && revision.Kind != DurablePendingReconciliation &&
+		revision.ExpectedKind == revision.Kind && revision.Status == DurablePendingTerminal
+}
+
+func hasPreviousWindowCAS(revision DurablePendingRevision) bool {
+	return revision.Revision > 1 && revision.ExpectedKind == revision.Kind
 }
 
 const selectPendingHeadForUpdateSQL = `
@@ -419,11 +467,17 @@ const selectPendingEvidenceForUpdateSQL = `
 	SELECT evidence_ordinal, evidence_digest
 	FROM cph_aiinfra.durable_pending_evidence
 	WHERE pending_key = $1 AND revision = $2
-	ORDER BY evidence_ordinal
-	FOR UPDATE`
+	ORDER BY evidence_ordinal`
 
-// LoadDurablePending returns an owned, internally consistent head plus its
-// exact retained evidence set under transaction-local row locks.
+const selectTerminalSourceRevisionSQL = `
+	SELECT pending_kind, codec, codec_version, status, terminal_outcome_digest,
+		envelope_digest, canonical_envelope, commit_not_before_unix_nano,
+		commit_not_after_unix_nano, audit_event_id
+	FROM cph_aiinfra.durable_pending_revision
+	WHERE pending_key = $1 AND revision = $2`
+
+// LoadDurablePending returns an owned, internally consistent locked head plus
+// its immutable exact retained evidence set on the same transaction.
 func (uow *CanonicalUOW) LoadDurablePending(ctx context.Context,
 	key [ccse.MessageIDSize]byte) (DurablePendingRevision, bool, error) {
 	state, err := uow.lock(ctx)
@@ -431,6 +485,38 @@ func (uow *CanonicalUOW) LoadDurablePending(ctx context.Context,
 		return DurablePendingRevision{}, false, err
 	}
 	defer state.mu.Unlock()
+	return loadDurablePendingLocked(ctx, state, key)
+}
+
+// AssertDurablePendingOpen locks and byte-compares one complete optimistic
+// OPEN-head snapshot, including its immutable ordered evidence links. This is
+// the final-transaction fence used before changing an admitted operation into
+// a reconciliation revision; the update predicate alone intentionally cannot
+// reconstruct the semantic pre-sign snapshot.
+func (uow *CanonicalUOW) AssertDurablePendingOpen(ctx context.Context,
+	expected DurablePendingRevision) error {
+	state, err := uow.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer state.mu.Unlock()
+	prepared, err := preparePendingRevisionForReload(expected)
+	if err != nil || prepared.Status != DurablePendingOpen ||
+		nonzeroDigest(prepared.TerminalOutcomeDigest) {
+		return poisonCanonicalLocked(state, ErrCanonicalInvalid)
+	}
+	actual, found, err := loadDurablePendingLocked(ctx, state, prepared.PendingKey)
+	if err != nil {
+		return err
+	}
+	if !found || !equalDurablePendingSnapshot(actual, prepared) {
+		return poisonCanonicalLocked(state, ErrCanonicalCASMismatch)
+	}
+	return nil
+}
+
+func loadDurablePendingLocked(ctx context.Context, state *transactionState,
+	key [ccse.MessageIDSize]byte) (DurablePendingRevision, bool, error) {
 	if key == ([ccse.MessageIDSize]byte{}) {
 		return DurablePendingRevision{}, false, poisonCanonicalLocked(state, ErrCanonicalInvalid)
 	}
@@ -441,7 +527,7 @@ func (uow *CanonicalUOW) LoadDurablePending(ctx context.Context,
 	var previous, digest, envelope, outcome []byte
 	var notBefore, notAfter int64
 	var eventID string
-	err = state.tx.QueryRowContext(ctx, selectPendingHeadForUpdateSQL, key[:]).Scan(
+	err := state.tx.QueryRowContext(ctx, selectPendingHeadForUpdateSQL, key[:]).Scan(
 		&kind, &codec, &codecVersion, &revisionText, &previous, &digest, &envelope,
 		&evidenceCount, &status, &notBefore, &notAfter, &outcome, &eventID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -491,7 +577,96 @@ func (uow *CanonicalUOW) LoadDurablePending(ctx context.Context,
 	if err != nil {
 		return DurablePendingRevision{}, false, poisonCanonicalLocked(state, ErrCanonicalStateCorrupt)
 	}
+	if prepared.Status == DurablePendingTerminal {
+		if err := assertTerminalSourceRevisionLocked(ctx, state, prepared); err != nil {
+			return DurablePendingRevision{}, false, poisonCanonicalLocked(state, err)
+		}
+	}
 	return prepared, true, nil
+}
+
+func equalDurablePendingSnapshot(left, right DurablePendingRevision) bool {
+	if left.PendingKey != right.PendingKey || left.Kind != right.Kind || left.Codec != right.Codec ||
+		left.CodecVersion != right.CodecVersion || left.Revision != right.Revision ||
+		left.PreviousEnvelopeDigest != right.PreviousEnvelopeDigest ||
+		left.EnvelopeDigest != right.EnvelopeDigest || left.Status != right.Status ||
+		left.CommitNotBeforeUnixNano != right.CommitNotBeforeUnixNano ||
+		left.CommitNotAfterUnixNano != right.CommitNotAfterUnixNano ||
+		left.TerminalOutcomeDigest != right.TerminalOutcomeDigest ||
+		left.ExpectedAuditEventID != right.ExpectedAuditEventID ||
+		!bytes.Equal(left.CanonicalEnvelope, right.CanonicalEnvelope) ||
+		len(left.EvidenceDigests) != len(right.EvidenceDigests) {
+		return false
+	}
+	for index := range left.EvidenceDigests {
+		if left.EvidenceDigests[index] != right.EvidenceDigests[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func assertTerminalSourceRevisionLocked(ctx context.Context, state *transactionState,
+	terminal DurablePendingRevision) error {
+	var kind, status int16
+	var codec, eventID string
+	var codecVersion int64
+	var notBefore, notAfter int64
+	var outcome, envelopeDigest, canonicalEnvelope []byte
+	err := state.tx.QueryRowContext(ctx, selectTerminalSourceRevisionSQL,
+		terminal.PendingKey[:], strconv.FormatUint(terminal.Revision-1, 10)).Scan(
+		&kind, &codec, &codecVersion, &status, &outcome, &envelopeDigest,
+		&canonicalEnvelope, &notBefore, &notAfter, &eventID)
+	if err != nil {
+		return ErrCanonicalStateCorrupt
+	}
+	sourceKind := DurablePendingKind(kind)
+	if codecVersion != 1 || codec != durablePendingCodec(sourceKind) ||
+		DurablePendingStatus(status) != DurablePendingOpen || len(outcome) != 0 ||
+		len(envelopeDigest) != sha256.Size || len(canonicalEnvelope) == 0 ||
+		!bytes.Equal(envelopeDigest, terminal.PreviousEnvelopeDigest[:]) ||
+		eventID != terminal.ExpectedAuditEventID {
+		return ErrCanonicalStateCorrupt
+	}
+	if terminal.Kind == DurablePendingReconciliation {
+		if !validReconciliationSourceKind(sourceKind) ||
+			terminal.EnvelopeDigest == terminal.PreviousEnvelopeDigest {
+			return ErrCanonicalStateCorrupt
+		}
+		return nil
+	}
+	if sourceKind != terminal.Kind || terminal.EnvelopeDigest != terminal.PreviousEnvelopeDigest ||
+		!bytes.Equal(canonicalEnvelope, terminal.CanonicalEnvelope) ||
+		notBefore != terminal.CommitNotBeforeUnixNano || notAfter != terminal.CommitNotAfterUnixNano {
+		return ErrCanonicalStateCorrupt
+	}
+	rows, err := state.tx.QueryContext(ctx, selectPendingEvidenceForUpdateSQL,
+		terminal.PendingKey[:], strconv.FormatUint(terminal.Revision-1, 10))
+	if err != nil {
+		return ErrCanonicalStateCorrupt
+	}
+	defer rows.Close()
+	prior := make([][sha256.Size]byte, 0, len(terminal.EvidenceDigests))
+	for rows.Next() {
+		var ordinal int16
+		var encoded []byte
+		if err := rows.Scan(&ordinal, &encoded); err != nil ||
+			int(ordinal) != len(prior)+1 || len(encoded) != sha256.Size {
+			return ErrCanonicalStateCorrupt
+		}
+		var digest [sha256.Size]byte
+		copy(digest[:], encoded)
+		prior = append(prior, digest)
+	}
+	if err := rows.Err(); err != nil || len(prior) != len(terminal.EvidenceDigests) {
+		return ErrCanonicalStateCorrupt
+	}
+	for index := range prior {
+		if prior[index] != terminal.EvidenceDigests[index] {
+			return ErrCanonicalStateCorrupt
+		}
+	}
+	return nil
 }
 
 func preparePendingRevisionForReload(revision DurablePendingRevision) (DurablePendingRevision, error) {
@@ -507,19 +682,21 @@ func preparePendingRevisionForReload(revision DurablePendingRevision) (DurablePe
 		validateCanonicalText(revision.ExpectedAuditEventID, 1024) != nil ||
 		(revision.Revision == 1 && nonzeroDigest(revision.PreviousEnvelopeDigest)) ||
 		(revision.Revision > 1 && !nonzeroDigest(revision.PreviousEnvelopeDigest)) ||
-		revision.EnvelopeDigest == revision.PreviousEnvelopeDigest ||
 		(revision.Kind == DurablePendingGovernancePolicyApprovalCollection && len(revision.EvidenceDigests) == 0) {
 		return DurablePendingRevision{}, ErrCanonicalStateCorrupt
 	}
-	if revision.Kind == DurablePendingReconciliation &&
-		(revision.Revision < 2 || revision.Status != DurablePendingTerminal) {
+	if revision.Kind == DurablePendingReconciliation && (revision.Revision < 2 ||
+		revision.Status != DurablePendingTerminal || revision.EnvelopeDigest == revision.PreviousEnvelopeDigest) {
 		return DurablePendingRevision{}, ErrCanonicalStateCorrupt
 	}
 	if revision.Status == DurablePendingOpen {
 		if nonzeroDigest(revision.TerminalOutcomeDigest) {
 			return DurablePendingRevision{}, ErrCanonicalStateCorrupt
 		}
-	} else if revision.Status != DurablePendingTerminal || !nonzeroDigest(revision.TerminalOutcomeDigest) {
+	} else if revision.Status != DurablePendingTerminal || revision.Revision < 2 ||
+		!nonzeroDigest(revision.TerminalOutcomeDigest) ||
+		(revision.Kind != DurablePendingReconciliation &&
+			revision.EnvelopeDigest != revision.PreviousEnvelopeDigest) {
 		return DurablePendingRevision{}, ErrCanonicalStateCorrupt
 	}
 	for index, digest := range revision.EvidenceDigests {
@@ -566,7 +743,7 @@ const insertEvidenceAssertionSQL = `
 // UoW. The receipt's declared count must be met exactly before Complete.
 func (uow *CanonicalUOW) AssertDurableEvidence(ctx context.Context,
 	assertions []EvidenceAssertion) error {
-	state, err := uow.lock(ctx)
+	state, err := uow.lockForWrite(ctx)
 	if err != nil {
 		return err
 	}

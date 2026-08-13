@@ -1,0 +1,521 @@
+name: Gate 0 Release Evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: gate0-release-evidence-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  POSTGRES_IMAGE: docker.io/library/postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
+  POSTGRES_INDEX_DIGEST: sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
+  POSTGRES_LINUX_AMD64_MANIFEST: sha256:7e6103cf85f88f7a0eddb3ec0b1ba8940eba098ed118ade25a729ca9daee5568
+  GO_IMAGE: docker.io/library/golang:1.26.2-bookworm@sha256:47ce5636e9936b2c5cbf708925578ef386b4f8872aec74a67bd13a627d242b19
+  GO_INDEX_DIGEST: sha256:47ce5636e9936b2c5cbf708925578ef386b4f8872aec74a67bd13a627d242b19
+  GO_LINUX_AMD64_MANIFEST: sha256:6b9b1ff26b22fde9b31abc5c6994586f588107ee3aa54dba50626aaac5884995
+  WORKFLOW_PATH: .github/workflows/gate0-release-evidence.yml
+  GATE0_ROOT: .gate0-ci
+  GATE0_BUNDLE: .gate0-ci/evidence-bundle
+
+jobs:
+  gate0-candidate:
+    name: Immutable PostgreSQL 18.4 candidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: gate0-release
+    services:
+      postgres:
+        image: docker.io/library/postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.GATE0_POSTGRES_ADMIN_PASSWORD }}
+          POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Refuse missing protected identities and signing material
+        shell: bash
+        env:
+          APPROVER_IDENTITY: ${{ vars.GATE0_APPROVER_IDENTITY }}
+          RELEASE_PUBLIC_KEY_B64: ${{ vars.GATE0_RELEASE_ED25519_PUBLIC_KEY_B64 }}
+          RELEASE_PRIVATE_KEY_B64: ${{ secrets.GATE0_RELEASE_ED25519_PRIVATE_KEY_B64 }}
+          GH_BINARY_SHA256: ${{ vars.GATE0_GH_BINARY_SHA256 }}
+          TRUSTED_ROOT_SHA256: ${{ vars.GATE0_TRUSTED_ROOT_SHA256 }}
+          TRUSTED_ROOT_B64: ${{ secrets.GATE0_TRUSTED_ROOT_B64 }}
+          CHAIN_ID_SHA256: ${{ vars.GATE0_CHAIN_ID_SHA256 }}
+          GENESIS_HASH_SHA256: ${{ vars.GATE0_GENESIS_HASH_SHA256 }}
+          POSTGRES_PASSWORD: ${{ secrets.GATE0_POSTGRES_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${APPROVER_IDENTITY:?protected GATE0_APPROVER_IDENTITY is required}"
+          : "${RELEASE_PUBLIC_KEY_B64:?protected raw Ed25519 public key is required}"
+          : "${RELEASE_PRIVATE_KEY_B64:?protected raw Ed25519 private key is required}"
+          : "${GH_BINARY_SHA256:?reviewed runner gh binary SHA-256 is required}"
+          : "${TRUSTED_ROOT_SHA256:?reviewed trusted-root SHA-256 is required}"
+          : "${TRUSTED_ROOT_B64:?protected offline trusted root is required}"
+          : "${CHAIN_ID_SHA256:?protected GATE0_CHAIN_ID_SHA256 is required}"
+          : "${GENESIS_HASH_SHA256:?protected GATE0_GENESIS_HASH_SHA256 is required}"
+          : "${POSTGRES_PASSWORD:?PostgreSQL test credential is required}"
+          test "${APPROVER_IDENTITY}" != placeholder
+          [[ ${APPROVER_IDENTITY} =~ ^[A-Za-z0-9][A-Za-z0-9:/@._+=,-]{0,511}$ ]]
+          [[ ${GH_BINARY_SHA256} =~ ^[0-9a-f]{64}$ ]]
+          [[ ${TRUSTED_ROOT_SHA256} =~ ^[0-9a-f]{64}$ ]]
+          [[ ${CHAIN_ID_SHA256} =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ ${GENESIS_HASH_SHA256} =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "${CHAIN_ID_SHA256}" != "sha256:$(printf '0%.0s' {1..64})"
+          test "${GENESIS_HASH_SHA256}" != "sha256:$(printf '0%.0s' {1..64})"
+          umask 077
+                  GATE0_KEY_ROOT="${RUNNER_TEMP}/cph-gate0-release-material"
+                  export GATE0_KEY_ROOT
+                  printf 'GATE0_KEY_ROOT=%s\n' "${GATE0_KEY_ROOT}" >> "${GITHUB_ENV}"
+                  mkdir -p "${GATE0_KEY_ROOT}" "${GATE0_ROOT}/logs" "${GATE0_ROOT}/specs" \
+            "${GATE0_BUNDLE}/payload/artifacts" "${GATE0_BUNDLE}/payload/logs" "${GATE0_BUNDLE}/payload/provenance"
+                  printf '%s' "${RELEASE_PUBLIC_KEY_B64}" | base64 --decode > "${GATE0_KEY_ROOT}/release.pub"
+                  printf '%s' "${RELEASE_PRIVATE_KEY_B64}" | base64 --decode > "${GATE0_KEY_ROOT}/release.key"
+                  printf '%s' "${TRUSTED_ROOT_B64}" | base64 --decode > "${GATE0_KEY_ROOT}/trusted-root.jsonl"
+                  test "$(wc -c < "${GATE0_KEY_ROOT}/release.pub")" -eq 32
+                  test "$(wc -c < "${GATE0_KEY_ROOT}/release.key")" -eq 64
+                  test "$(sha256sum "${GATE0_KEY_ROOT}/trusted-root.jsonl" | awk '{print $1}')" = "${TRUSTED_ROOT_SHA256}"
+          test "$(sha256sum "$(command -v gh)" | awk '{print $1}')" = "${GH_BINARY_SHA256}"
+          {
+            printf 'CHAIN_ID_SHA256=%q\n' "${CHAIN_ID_SHA256}"
+            printf 'GENESIS_HASH_SHA256=%q\n' "${GENESIS_HASH_SHA256}"
+          } > "${GATE0_ROOT}/protected.env"
+
+      - name: Build evidence CLI and predeclare signed ExperimentPlan
+        shell: bash
+        env:
+          APPROVER_IDENTITY: ${{ vars.GATE0_APPROVER_IDENTITY }}
+        run: |
+          set -euo pipefail
+          docker run --rm --platform linux/amd64 \
+            -v "${GITHUB_WORKSPACE}:/workspace" -w /workspace \
+            -e GO111MODULE=on "${GO_IMAGE}" bash -lc '
+              set -euo pipefail
+              go version | tee .gate0-ci/logs/go-version.log
+              go mod verify | tee .gate0-ci/logs/dependency-verification.log
+              CGO_ENABLED=0 go build -trimpath -buildvcs=true -ldflags="-buildid=" \
+                -o .gate0-ci/gate0-evidence ./cmd/gate0-evidence
+            '
+          source "${GATE0_ROOT}/protected.env"
+          plan_frozen=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          plan_not_before=$(date -u -d '+5 seconds' +%Y-%m-%dT%H:%M:%SZ)
+                  plan_expires=$(date -u -d '+25 hours' +%Y-%m-%dT%H:%M:%SZ)
+          policy="sha256:$(sha256sum docs/ai-infrastructure/gate0-supply-chain.md | awk '{print $1}')"
+          jq -n --arg sha "${GITHUB_SHA}" --arg approver "${APPROVER_IDENTITY}" --arg frozen "${plan_frozen}" \
+            --arg not_before "${plan_not_before}" --arg expires "${plan_expires}" --arg policy "${policy}" \
+            --arg repo "${GITHUB_REPOSITORY}" --arg chain "${CHAIN_ID_SHA256}" --arg genesis "${GENESIS_HASH_SHA256}" '{
+              schema:"cph.aiinfra.gate0.plan-input.v1", experiment_plan_id:"gate0-release-plan-v1",
+              capability_id:"GATE-0-SUPPLY-CHAIN", component:"cph-aiinfra-postgres", owner_identity:$repo,
+              software_version:$sha, hardware_scope:["linux/amd64"], workload_scope:["gate0-release"],
+              region_scope:["github-hosted:ubuntu-24.04"], collection_not_before:$not_before,
+              observation_window_nanos:86400000000000, minimum_sample_size:10,
+              confidence_level_basis_points:10000, confidence_method:1, expires_at:$expires,
+              frozen_at:$frozen, approver_identity:$approver, policy_sha256:$policy,
+              ccse_boundary:{sender_identity:("github-actions:"+$repo), audience:("github-repository:"+$repo),
+                environment:"gate0-ci", signature_key_id:"gate0-release-key", chain_id_sha256:$chain,
+                genesis_hash_sha256:$genesis, replay_domain_id:"gate0-release-evidence"}
+            }' > "${GATE0_ROOT}/specs/plan.json"
+                  "${GATE0_ROOT}/gate0-evidence" plan -spec "${GATE0_ROOT}/specs/plan.json" \
+                    -private-key "${GATE0_KEY_ROOT}/release.key" -public-key "${GATE0_KEY_ROOT}/release.pub" \
+            -out "${GATE0_BUNDLE}/foundation-experiment-plan.ccse.json"
+          printf '%s\n' "collection_started=${plan_not_before}" "plan_expires=${plan_expires}" \
+            "policy=${policy}" > "${GATE0_ROOT}/plan-values.env"
+          while [[ $(date -u +%s) -lt $(date -u -d "${plan_not_before}" +%s) ]]; do sleep 1; done
+
+      - name: Assert pulled OCI identities within frozen plan window
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image inspect "${POSTGRES_IMAGE}" > "${GATE0_ROOT}/logs/postgres-image-inspect.json"
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${POSTGRES_IMAGE}")" = linux/amd64
+          docker buildx imagetools inspect "${POSTGRES_IMAGE}" --raw > "${GATE0_ROOT}/logs/postgres-oci-index.json"
+          test "sha256:$(sha256sum "${GATE0_ROOT}/logs/postgres-oci-index.json" | awk '{print $1}')" = "${POSTGRES_INDEX_DIGEST}"
+          jq -e --arg child "${POSTGRES_LINUX_AMD64_MANIFEST}" \
+            'any(.manifests[]; .platform.os == "linux" and .platform.architecture == "amd64" and .digest == $child)' \
+            "${GATE0_ROOT}/logs/postgres-oci-index.json"
+                  postgres_platform_image="${POSTGRES_IMAGE%@*}@${POSTGRES_LINUX_AMD64_MANIFEST}"
+                  docker buildx imagetools inspect "${postgres_platform_image}" --raw > "${GATE0_ROOT}/logs/postgres-oci-linux-amd64.json"
+                  test "sha256:$(sha256sum "${GATE0_ROOT}/logs/postgres-oci-linux-amd64.json" | awk '{print $1}')" = \
+                    "${POSTGRES_LINUX_AMD64_MANIFEST}"
+
+          docker pull --platform linux/amd64 "${GO_IMAGE}"
+          test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${GO_IMAGE}")" = linux/amd64
+          docker buildx imagetools inspect "${GO_IMAGE}" --raw > "${GATE0_ROOT}/logs/go-oci-index.json"
+          test "sha256:$(sha256sum "${GATE0_ROOT}/logs/go-oci-index.json" | awk '{print $1}')" = "${GO_INDEX_DIGEST}"
+          jq -e --arg child "${GO_LINUX_AMD64_MANIFEST}" \
+            'any(.manifests[]; .platform.os == "linux" and .platform.architecture == "amd64" and .digest == $child)' \
+            "${GATE0_ROOT}/logs/go-oci-index.json"
+                  go_platform_image="${GO_IMAGE%@*}@${GO_LINUX_AMD64_MANIFEST}"
+                  docker buildx imagetools inspect "${go_platform_image}" --raw > "${GATE0_ROOT}/logs/go-oci-linux-amd64.json"
+                  test "sha256:$(sha256sum "${GATE0_ROOT}/logs/go-oci-linux-amd64.json" | awk '{print $1}')" = \
+                    "${GO_LINUX_AMD64_MANIFEST}"
+
+      - name: Run compile and unit acceptance within frozen plan window
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --platform linux/amd64 \
+            -v "${GITHUB_WORKSPACE}:/workspace" -w /workspace -e GO111MODULE=on "${GO_IMAGE}" bash -lc '
+              set -euo pipefail
+              go test -mod=readonly ./aiinfra/... ./cmd/gate0-evidence -count=1 | tee .gate0-ci/logs/aiinfra-tests.log
+              go vet ./aiinfra/... ./cmd/gate0-evidence | tee .gate0-ci/logs/aiinfra-vet.log
+            '
+
+      - name: Run digest-locked Solidity conformance within frozen plan window
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --platform linux/amd64 \
+            -v "${GITHUB_WORKSPACE}:/workspace" -w /workspace -e GO111MODULE=on "${GO_IMAGE}" bash -lc '
+              set -euo pipefail
+              ./aiinfra/conformance/solidity/run-conformance.sh |
+                tee .gate0-ci/logs/solidity-conformance.log
+              solc=.codex-tmp/toolchains/solc-linux-amd64-v0.8.30+commit.73712a01
+              test "$(sha256sum "${solc}" | awk "{print \$1}")" = \
+                f3e987dc6ecebd4bd350c48edcbc320b46cf9e3109bd3fc3d88f1acaf4c428f7
+              "${solc}" --version | tee -a .gate0-ci/logs/solidity-conformance.log
+              sha256sum "${solc}" | tee -a .gate0-ci/logs/solidity-conformance.log
+            '
+
+      - name: Package exact tested source and verify detached signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          git ls-files -z | LC_ALL=C sort -z | tr '\0' '\n' > "${GATE0_ROOT}/source-files.txt"
+          test -s "${GATE0_ROOT}/source-files.txt"
+          source_epoch=$(git show -s --format=%ct "${GITHUB_SHA}")
+          "${GATE0_ROOT}/gate0-evidence" source-archive -root "${GITHUB_WORKSPACE}" \
+            -list "${GATE0_ROOT}/source-files.txt" \
+            -out "${GATE0_BUNDLE}/payload/artifacts/cypher-source.tar" -epoch "${source_epoch}"
+          "${GATE0_ROOT}/gate0-evidence" sign-file \
+            -in "${GATE0_BUNDLE}/payload/artifacts/cypher-source.tar" \
+                    -private-key "${GATE0_KEY_ROOT}/release.key" -public-key "${GATE0_KEY_ROOT}/release.pub" \
+            -out "${GATE0_BUNDLE}/payload/artifacts/cypher-source.tar.sig"
+          "${GATE0_ROOT}/gate0-evidence" verify-file \
+            -in "${GATE0_BUNDLE}/payload/artifacts/cypher-source.tar" \
+            -signature "${GATE0_BUNDLE}/payload/artifacts/cypher-source.tar.sig" \
+                    -public-key "${GATE0_KEY_ROOT}/release.pub" |
+            tee "${GATE0_ROOT}/logs/artifact-signature.log"
+
+      - name: Secret scanner self-test and repository scan
+        shell: bash
+        run: |
+          set -euo pipefail
+                  ./build/test-scan-secrets.sh | tee "${GATE0_ROOT}/logs/secret-scan-self-test.log"
+                  mapfile -d '' tracked_paths < <(git ls-files -z)
+                  ((${#tracked_paths[@]} > 0))
+                  {
+                    ./build/scan-secrets.sh "${tracked_paths[@]}"
+                    printf 'secret scan passed for %d exact tracked source files\n' "${#tracked_paths[@]}"
+                  } | tee "${GATE0_ROOT}/logs/secret-scan.log"
+
+      - name: Live PostgreSQL acceptance on pinned OCI image
+        shell: bash
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.GATE0_POSTGRES_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          owner_password=$(openssl rand -hex 32)
+          runtime_password=$(openssl rand -hex 32)
+          signal_password=$(openssl rand -hex 32)
+          restore_password=$(openssl rand -hex 32)
+          [[ ${owner_password} =~ ^[0-9a-f]{64}$ ]]
+          [[ ${runtime_password} =~ ^[0-9a-f]{64}$ ]]
+          [[ ${signal_password} =~ ^[0-9a-f]{64}$ ]]
+          [[ ${restore_password} =~ ^[0-9a-f]{64}$ ]]
+          export PGPASSWORD="${POSTGRES_PASSWORD}"
+          {
+            printf "CREATE ROLE cph_gate0_owner LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "${owner_password}"
+            printf "CREATE ROLE cph_gate0_runtime LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "${runtime_password}"
+            printf "CREATE ROLE cph_gate0_signal LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "${signal_password}"
+            printf "CREATE ROLE cph_gate0_restore_owner LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%s';\n" "${restore_password}"
+            printf '%s\n' 'GRANT pg_signal_backend TO cph_gate0_signal;'
+          } | docker run --rm --network host -i -e PGPASSWORD "${POSTGRES_IMAGE}" \
+            psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -d postgres
+          docker run --rm --network host -e PGPASSWORD "${POSTGRES_IMAGE}" \
+            createdb -h 127.0.0.1 -U postgres -O cph_gate0_owner cph_gate0_acceptance
+
+          export CPH_AIIE_POSTGRES_DISPOSABLE=YES
+          export CPH_AIIE_POSTGRES_OWNER_DSN="postgres://cph_gate0_owner:${owner_password}@127.0.0.1:5432/cph_gate0_acceptance?sslmode=disable"
+          export CPH_AIIE_POSTGRES_RUNTIME_DSN="postgres://cph_gate0_runtime:${runtime_password}@127.0.0.1:5432/cph_gate0_acceptance?sslmode=disable"
+          export CPH_AIIE_POSTGRES_ADMIN_DSN="postgres://cph_gate0_signal:${signal_password}@127.0.0.1:5432/cph_gate0_acceptance?sslmode=disable"
+          printf '%s\n' \
+            'semantic-v2 test: TestLivePostgresCanonicalAdmissionAndReload' \
+            'scope: audited-final ApplyCanonicalStates + AttachSemanticProjection + production adapter LookupKeyMaterial reload' \
+            > "${GATE0_ROOT}/logs/semantic-v2-live-scope.log"
+          docker run --rm --platform linux/amd64 --network host \
+            -v "${GITHUB_WORKSPACE}:/workspace" -w /workspace \
+            -e GO111MODULE=on -e CPH_AIIE_POSTGRES_DISPOSABLE \
+            -e CPH_AIIE_POSTGRES_OWNER_DSN -e CPH_AIIE_POSTGRES_RUNTIME_DSN -e CPH_AIIE_POSTGRES_ADMIN_DSN \
+            "${GO_IMAGE}" bash -lc '
+              set -euo pipefail
+              go test -mod=readonly ./aiinfra/storage/postgres \
+                -run "^TestLivePostgres(CanonicalAdmissionAndReload|AuditedReconciliationAfterDeadline|FaultRollbackAndConcurrentRedelivery|ConnectionLossProcessDeathAndRestart|OutboxRedeliveryAndDeduplication)$" \
+                -count=1 -v | tee .gate0-ci/logs/postgres-live-acceptance.log
+            '
+          grep -F -- '--- PASS: TestLivePostgresCanonicalAdmissionAndReload' \
+            "${GATE0_ROOT}/logs/postgres-live-acceptance.log" >> "${GATE0_ROOT}/logs/semantic-v2-live-scope.log"
+
+          restore_evidence="${GATE0_ROOT}/restore-evidence"
+          restore_archive="${restore_evidence}/cph-aiinfra.pgdump"
+          mkdir -m 0700 -- "${restore_evidence}"
+          {
+            printf 'evidence_format=CPH-AIIE-POSTGRES-BACKUP-RESTORE-V1\n'
+            printf 'started_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'git_commit=%s\n' "${GITHUB_SHA}"
+            printf 'postgres_image=%s\n' "${POSTGRES_IMAGE}"
+            printf 'go_image=%s\n' "${GO_IMAGE}"
+            printf 'source_database=cph_gate0_acceptance\n'
+            printf 'restore_database=cph_gate0_restored\n'
+          } > "${restore_evidence}/manifest.txt"
+          PGPASSWORD="${owner_password}" docker run --rm --network host -e PGPASSWORD \
+            -v "${GITHUB_WORKSPACE}:/workspace" "${POSTGRES_IMAGE}" \
+            pg_dump -h 127.0.0.1 -U cph_gate0_owner -d cph_gate0_acceptance --no-password --format=custom \
+              --compress=zstd:9 --serializable-deferrable --no-owner --verbose \
+              --file="/workspace/${restore_archive}" 2> "${restore_evidence}/pg-dump.log"
+          sha256sum "${restore_archive}" > "${restore_archive}.sha256"
+          docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "${POSTGRES_IMAGE}" \
+            pg_restore --list "/workspace/${restore_archive}" > "${restore_evidence}/archive.list"
+          docker run --rm --network host -e PGPASSWORD "${POSTGRES_IMAGE}" \
+            createdb -h 127.0.0.1 -U postgres -O cph_gate0_restore_owner \
+              --template=template0 --encoding=UTF8 cph_gate0_restored
+          restored_owner_dsn="postgres://cph_gate0_restore_owner:${restore_password}@127.0.0.1:5432/cph_gate0_restored?sslmode=disable"
+          restored_runtime_dsn="postgres://cph_gate0_runtime:${runtime_password}@127.0.0.1:5432/cph_gate0_restored?sslmode=disable"
+          test "$(PGPASSWORD="${restore_password}" docker run --rm --network host -e PGPASSWORD \
+            "${POSTGRES_IMAGE}" psql -XAt --no-password -h 127.0.0.1 -U cph_gate0_restore_owner \
+            -d cph_gate0_restored --set=ON_ERROR_STOP=1 \
+            --command="SELECT pg_catalog.count(*) FROM pg_catalog.pg_namespace WHERE nspname = 'cph_aiinfra'")" = 0
+          PGPASSWORD="${restore_password}" docker run --rm --network host -e PGPASSWORD \
+            -v "${GITHUB_WORKSPACE}:/workspace" "${POSTGRES_IMAGE}" \
+            pg_restore -h 127.0.0.1 -U cph_gate0_restore_owner -d cph_gate0_restored \
+              --no-password --exit-on-error \
+              --single-transaction --no-owner --verbose "/workspace/${restore_archive}" \
+              2> "${restore_evidence}/pg-restore.log"
+          export CPH_AIIE_POSTGRES_RESTORE_ACCEPTANCE=YES
+          export CPH_AIIE_POSTGRES_RESTORE_SOURCE_OWNER_DSN="${CPH_AIIE_POSTGRES_OWNER_DSN}"
+          export CPH_AIIE_POSTGRES_RESTORE_SOURCE_RUNTIME_DSN="${CPH_AIIE_POSTGRES_RUNTIME_DSN}"
+          export CPH_AIIE_POSTGRES_RESTORED_OWNER_DSN="${restored_owner_dsn}"
+          export CPH_AIIE_POSTGRES_RESTORED_RUNTIME_DSN="${restored_runtime_dsn}"
+          docker run --rm --platform linux/amd64 --network host \
+            -v "${GITHUB_WORKSPACE}:/workspace" -w /workspace -e GO111MODULE=on \
+            -e CPH_AIIE_POSTGRES_DISPOSABLE -e CPH_AIIE_POSTGRES_RESTORE_ACCEPTANCE \
+            -e CPH_AIIE_POSTGRES_RESTORE_SOURCE_OWNER_DSN -e CPH_AIIE_POSTGRES_RESTORE_SOURCE_RUNTIME_DSN \
+            -e CPH_AIIE_POSTGRES_RESTORED_OWNER_DSN -e CPH_AIIE_POSTGRES_RESTORED_RUNTIME_DSN \
+            "${GO_IMAGE}" bash -lc '
+              set -euo pipefail
+              go test -mod=readonly ./aiinfra/storage/postgres \
+                -run "^TestLivePostgresRestoredSnapshot$" -count=1 -v |
+                tee .gate0-ci/restore-evidence/go-restore-test.log
+            '
+          {
+            printf 'archive_sha256=%s\n' "$(cut -d' ' -f1 "${restore_archive}.sha256")"
+            printf 'completed_at_utc=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            printf 'status=accepted\n'
+          } >> "${restore_evidence}/manifest.txt"
+          cp -- "${restore_evidence}/manifest.txt" "${GATE0_ROOT}/logs/postgres-backup-restore.log"
+          printf '%s\n' '--- archive contents ---' >> "${GATE0_ROOT}/logs/postgres-backup-restore.log"
+          cat -- "${restore_evidence}/archive.list" >> "${GATE0_ROOT}/logs/postgres-backup-restore.log"
+          printf '%s\n' '--- logical restore verification ---' >> "${GATE0_ROOT}/logs/postgres-backup-restore.log"
+          cat -- "${restore_evidence}/go-restore-test.log" >> "${GATE0_ROOT}/logs/postgres-backup-restore.log"
+          printf '%s\n' 'REVOKE pg_signal_backend FROM cph_gate0_signal;' 'ALTER ROLE cph_gate0_signal NOLOGIN;' \
+            "SELECT NOT pg_has_role('cph_gate0_signal', 'pg_signal_backend', 'MEMBER');" |
+            docker run --rm --network host -i -e PGPASSWORD "${POSTGRES_IMAGE}" \
+              psql -X -v ON_ERROR_STOP=1 -h 127.0.0.1 -U postgres -d postgres |
+            tee "${GATE0_ROOT}/logs/postgres-signal-role-revocation.log"
+
+      - name: Generate GitHub OIDC build provenance
+        id: provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: ${{ github.workspace }}/.gate0-ci/evidence-bundle/payload/artifacts/cypher-source.tar
+          show-summary: false
+
+      - name: Retain and verify provenance offline
+        shell: bash
+        env:
+          GH_BINARY_SHA256: ${{ vars.GATE0_GH_BINARY_SHA256 }}
+          TRUSTED_ROOT_SHA256: ${{ vars.GATE0_TRUSTED_ROOT_SHA256 }}
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp -- "${BUNDLE_PATH}" "${GATE0_BUNDLE}/payload/provenance/attestation.jsonl"
+          artifact_sha=$(sha256sum "${GATE0_BUNDLE}/payload/artifacts/cypher-source.tar" | awk '{print $1}')
+          bundle_sha=$(sha256sum "${GATE0_BUNDLE}/payload/provenance/attestation.jsonl" | awk '{print $1}')
+          CPH_GATE0_GH_BINARY="$(command -v gh)" \
+          CPH_GATE0_GH_SHA256="${GH_BINARY_SHA256}" \
+          CPH_GATE0_PROVENANCE_ARTIFACT="${GATE0_BUNDLE}/payload/artifacts/cypher-source.tar" \
+          CPH_GATE0_PROVENANCE_ARTIFACT_SHA256="${artifact_sha}" \
+          CPH_GATE0_PROVENANCE_BUNDLE="${GATE0_BUNDLE}/payload/provenance/attestation.jsonl" \
+          CPH_GATE0_PROVENANCE_BUNDLE_SHA256="${bundle_sha}" \
+                  CPH_GATE0_PROVENANCE_TRUSTED_ROOT="${GATE0_KEY_ROOT}/trusted-root.jsonl" \
+          CPH_GATE0_PROVENANCE_TRUSTED_ROOT_SHA256="${TRUSTED_ROOT_SHA256}" \
+          CPH_GATE0_PROVENANCE_REPOSITORY="${GITHUB_REPOSITORY}" \
+          CPH_GATE0_PROVENANCE_SIGNER_WORKFLOW="${GITHUB_REPOSITORY}/${WORKFLOW_PATH}" \
+          CPH_GATE0_PROVENANCE_SIGNER_DIGEST="${GITHUB_SHA}" \
+          CPH_GATE0_PROVENANCE_SOURCE_DIGEST="${GITHUB_SHA}" \
+          CPH_GATE0_PROVENANCE_SOURCE_REF="${GITHUB_REF}" \
+          CPH_GATE0_PROVENANCE_LOG="${GATE0_BUNDLE}/payload/logs/provenance-verification.json" \
+            ./build/verify-github-provenance.sh | tee "${GATE0_ROOT}/logs/provenance-verifier.log"
+
+      - name: Assemble honest candidate logs and status
+        shell: bash
+        env:
+          APPROVER_IDENTITY: ${{ vars.GATE0_APPROVER_IDENTITY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${GATE0_BUNDLE}/payload/logs"
+          cp -- "${GATE0_ROOT}/logs/secret-scan.log" "${GATE0_BUNDLE}/payload/logs/check-secret-scan.log"
+          cp -- "${GATE0_ROOT}/logs/postgres-backup-restore.log" "${GATE0_BUNDLE}/payload/logs/check-backup-restore.log"
+          cp -- "${GATE0_ROOT}/logs/aiinfra-tests.log" "${GATE0_BUNDLE}/payload/logs/check-ccse-fail-closed.log"
+          cp -- "${GATE0_ROOT}/logs/artifact-signature.log" "${GATE0_BUNDLE}/payload/logs/check-artifact-signature.log"
+          cp -- "${GATE0_ROOT}/logs/provenance-verifier.log" "${GATE0_BUNDLE}/payload/logs/check-artifact-provenance.log"
+          for id in pilot-plan-owner-coverage rollback-drill sbom-policy telemetry-cardinality-redaction; do
+            printf 'INCOMPLETE: no independently verified CI log was supplied for %s\n' "${id}" > "${GATE0_BUNDLE}/payload/logs/check-${id}.log"
+          done
+          {
+            cat -- "${GATE0_ROOT}/logs/solidity-conformance.log"
+            printf '%s\n' \
+              'INCOMPLETE: Solidity passed with the SHA-256-locked solc binary, but the complete cross-language check is FAILED.' \
+              'C++ requires exact GCC 15.2.0, OpenSSL 3.5.5, and ICU 72.1/Unicode 15.0.0.' \
+              'No reviewed immutable C++ toolchain OCI/binary set is present in repository policy; mutable apt is forbidden.'
+            sha256sum aiinfra/conformance/cpp/toolchain.lock
+            cat -- aiinfra/conformance/cpp/toolchain.lock
+          } > "${GATE0_BUNDLE}/payload/logs/check-cross-language-signatures.log"
+          printf '%s\n' 'INCOMPLETE: a real rollback to a distinct previously approved artifact was not run.' > \
+            "${GATE0_BUNDLE}/payload/logs/rollback.log"
+          source "${GATE0_ROOT}/plan-values.env"
+          started="${collection_started}"
+          ended=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          created=$(date -u -d '+1 second' +%Y-%m-%dT%H:%M:%SZ)
+          expires="${plan_expires}"
+          test "$(date -u -d "${ended}" +%s)" -gt "$(date -u -d "${started}" +%s)"
+          test "$(date -u -d "${created}" +%s)" -ge "$(date -u -d "${ended}" +%s)"
+          test "$(date -u -d "${ended}" +%s)" -lt "$(date -u -d "${plan_expires}" +%s)"
+          while [[ $(date -u +%s) -lt $(date -u -d "${created}" +%s) ]]; do sleep 1; done
+          tree_sha="sha256:$(git archive --format=tar "${GITHUB_SHA}" | sha256sum | awk '{print $1}')"
+          workflow_sha="sha256:$(sha256sum "${WORKFLOW_PATH}" | awk '{print $1}')"
+          policy_sha="${policy}"
+          printf '%s\n' "started=${started}" "created=${created}" "ended=${ended}" "expires=${expires}" "tree=${tree_sha}" \
+            "workflow=${workflow_sha}" "policy=${policy_sha}" > "${GATE0_ROOT}/values.env"
+
+      - name: Create deterministic SPDX and signed FAILED candidate
+        shell: bash
+        env:
+          APPROVER_IDENTITY: ${{ vars.GATE0_APPROVER_IDENTITY }}
+        run: |
+          set -euo pipefail
+          source "${GATE0_ROOT}/protected.env"
+          source "${GATE0_ROOT}/values.env"
+          jq -n --arg sha "${GITHUB_SHA}" --arg created "${created}" '{
+            schema:"cph.aiinfra.gate0.sbom-input.v1", name:"cypher-gate0-release",
+            document_namespace:("https://cypherium.io/spdx/gate0/"+$sha), created_at:$created,
+            creator:"Tool:cph-gate0-evidence-v1", output_path:"artifacts/release.spdx.json",
+            components:[
+              {spdx_id:"SPDXRef-Package-release",name:"cypher-tested-source",version:$sha,
+                download_location:"NOASSERTION",path:"artifacts/cypher-source.tar"},
+              {spdx_id:"SPDXRef-Package-release-signature",name:"cypher-tested-source-signature",version:$sha,
+                download_location:"NOASSERTION",path:"artifacts/cypher-source.tar.sig"}
+            ]
+          }' > "${GATE0_ROOT}/specs/sbom.json"
+          "${GATE0_ROOT}/gate0-evidence" sbom -spec "${GATE0_ROOT}/specs/sbom.json" -root "${GATE0_BUNDLE}/payload" |
+            tee "${GATE0_BUNDLE}/payload/logs/check-sbom-policy.log"
+
+          jq -n --arg sha "${GITHUB_SHA}" --arg created "${created}" --arg ended "${ended}" --arg expires "${expires}" \
+            --arg started "${started}" \
+            --arg approver "${APPROVER_IDENTITY}" --arg policy "${policy}" --arg repo "${GITHUB_REPOSITORY}" \
+            --arg ref "${GITHUB_REF}" --arg run "${GITHUB_RUN_ID}" --arg attempt "${GITHUB_RUN_ATTEMPT}" \
+            --arg tree "${tree}" --arg workflow "${workflow}" --arg chain "${CHAIN_ID_SHA256}" \
+            --arg genesis "${GENESIS_HASH_SHA256}" '{
+              schema:"cph.aiinfra.gate0.bundle-input.v1", evidence_id:("gate0-release-"+($sha[0:12])),
+              capability_id:"GATE-0-SUPPLY-CHAIN", component:"cph-aiinfra-postgres", software_version:$sha,
+              created_at:$created, expires_at:$expires, approving_role:"release-approver", approver_identity:$approver,
+              policy_sha256:$policy, sbom_namespace:("https://cypherium.io/spdx/gate0/"+$sha),
+              ci_identity:{repository:$repo,workflow_ref:($repo+"/.github/workflows/gate0-release-evidence.yml@"+$ref),
+                workflow_sha256:$workflow,run_id:$run,run_attempt:$attempt,source_commit:$sha,source_tree_sha256:$tree,
+                runner_environment:"github-hosted:ubuntu-24.04",provenance_bundle:"provenance/attestation.jsonl",
+                provenance_verification_log:"logs/provenance-verification.json"},
+              images:[
+                {reference:"docker.io/library/golang:1.26.2-bookworm",index_digest:"sha256:47ce5636e9936b2c5cbf708925578ef386b4f8872aec74a67bd13a627d242b19",platform:"linux/amd64",platform_manifest_digest:"sha256:6b9b1ff26b22fde9b31abc5c6994586f588107ee3aa54dba50626aaac5884995"},
+                {reference:"docker.io/library/postgres:18.4-bookworm",index_digest:"sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382",platform:"linux/amd64",platform_manifest_digest:"sha256:7e6103cf85f88f7a0eddb3ec0b1ba8940eba098ed118ade25a729ca9daee5568"}
+              ],
+              artifacts:[{name:"release-artifact",path:"artifacts/cypher-source.tar",media_type:"application/x-tar"},
+                {name:"release-artifact-signature",path:"artifacts/cypher-source.tar.sig",media_type:"application/vnd.cph.ed25519-signature"},
+                {name:"release-sbom",path:"artifacts/release.spdx.json",media_type:"application/spdx+json"}],
+              checks:[
+                {id:"artifact-provenance",status:"PASSED"},{id:"artifact-signature",status:"PASSED"},
+                {id:"backup-restore",status:"PASSED"},{id:"ccse-fail-closed",status:"PASSED"},
+                {id:"cross-language-signatures",status:"FAILED"},{id:"pilot-plan-owner-coverage",status:"FAILED"},
+                {id:"rollback-drill",status:"FAILED"},{id:"sbom-policy",status:"PASSED"},
+                {id:"secret-scan",status:"PASSED"},{id:"telemetry-cardinality-redaction",status:"FAILED"}
+              ] | map(. + {started_at:$started,ended_at:$ended,log:("logs/check-"+.id+".log")}),
+              rollback_drill:{status:"FAILED",plan_id:"ROLLBACK-GATE0-01",started_at:$started,ended_at:$ended,
+                from_artifact_sha256:"",target_artifact_sha256:"",log:"logs/rollback.log"},
+              ccse_boundary:{sender_identity:("github-actions:"+$repo),audience:("github-repository:"+$repo),
+                environment:"gate0-ci",signature_key_id:"gate0-release-key",chain_id_sha256:$chain,
+                genesis_hash_sha256:$genesis,replay_domain_id:"gate0-release-evidence"}
+            }' > "${GATE0_ROOT}/specs/bundle.json"
+          "${GATE0_ROOT}/gate0-evidence" bundle -spec "${GATE0_ROOT}/specs/bundle.json" -root "${GATE0_BUNDLE}" \
+                    -private-key "${GATE0_KEY_ROOT}/release.key" -public-key "${GATE0_KEY_ROOT}/release.pub" | tee "${GATE0_ROOT}/logs/bundle-create.log"
+
+          jq -n --arg now "${created}" --arg sha "${GITHUB_SHA}" --arg approver "${APPROVER_IDENTITY}" \
+            --arg repo "${GITHUB_REPOSITORY}" --arg ref "${GITHUB_REF}" --arg chain "${CHAIN_ID_SHA256}" \
+            --arg genesis "${GENESIS_HASH_SHA256}" '{
+              schema:"cph.aiinfra.gate0.verify-policy.v1",now:$now,require_passed:false,expected_source_commit:$sha,
+              expected_repository:$repo,expected_workflow_ref:($repo+"/.github/workflows/gate0-release-evidence.yml@"+$ref),
+              expected_oci_index_digest:"sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382",
+              expected_platform_manifest_digest:"sha256:7e6103cf85f88f7a0eddb3ec0b1ba8940eba098ed118ade25a729ca9daee5568",
+              expected_images:[
+                {reference:"docker.io/library/golang:1.26.2-bookworm",index_digest:"sha256:47ce5636e9936b2c5cbf708925578ef386b4f8872aec74a67bd13a627d242b19",platform:"linux/amd64",platform_manifest_digest:"sha256:6b9b1ff26b22fde9b31abc5c6994586f588107ee3aa54dba50626aaac5884995"},
+                {reference:"docker.io/library/postgres:18.4-bookworm",index_digest:"sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382",platform:"linux/amd64",platform_manifest_digest:"sha256:7e6103cf85f88f7a0eddb3ec0b1ba8940eba098ed118ade25a729ca9daee5568"}
+              ],
+              expected_sbom_namespace:("https://cypherium.io/spdx/gate0/"+$sha),experiment_plan_id:"gate0-release-plan-v1",
+              capability_id:"GATE-0-SUPPLY-CHAIN",component:"cph-aiinfra-postgres",software_version:$sha,approver_identity:$approver,
+              ccse_boundary:{sender_identity:("github-actions:"+$repo),audience:("github-repository:"+$repo),
+                environment:"gate0-ci",signature_key_id:"gate0-release-key",chain_id_sha256:$chain,
+                genesis_hash_sha256:$genesis,replay_domain_id:"gate0-release-evidence"}
+            }' > "${GATE0_ROOT}/specs/verify.json"
+          "${GATE0_ROOT}/gate0-evidence" verify -spec "${GATE0_ROOT}/specs/verify.json" -root "${GATE0_BUNDLE}" \
+                    -public-key "${GATE0_KEY_ROOT}/release.pub" | tee "${GATE0_ROOT}/logs/bundle-verify.log"
+
+      - name: Upload signed FAILED candidate bundle for audit
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gate0-evidence-candidate-${{ github.sha }}
+          path: |
+            .gate0-ci/evidence-bundle
+            .gate0-ci/logs
+                    .gate0-ci/restore-evidence
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Refuse incomplete aggregate Gate 0 acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' \
+            'INCOMPLETE: a signed FAILED candidate bundle was retained, but Gate 0 is not accepted.' \
+            'Missing real independent evidence: cross-language-signatures, rollback-drill,' \
+            'telemetry-cardinality-redaction, and pilot-plan-owner-coverage.' \
+            'The workflow must remain non-successful until those checks have real PASSED logs.' |
+            tee "${GATE0_ROOT}/logs/gate0-incomplete.log"
+          exit 1

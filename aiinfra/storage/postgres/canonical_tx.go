@@ -12,11 +12,14 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/replayresult"
 	"github.com/cypherium/cypher/aiinfra/schema"
+	foundationv1 "github.com/cypherium/cypher/aiinfra/schema/foundation/v1"
+	foundationcanonical "github.com/cypherium/cypher/aiinfra/schema/foundation/v1/canonical"
 )
 
 var (
@@ -90,11 +93,18 @@ func (receipt CanonicalUOWReceipt) EvidenceAssertionCount() uint16 {
 }
 
 type canonicalTransactionState struct {
+	kind                     CanonicalUOWKind
+	auditEventID             string
+	evidenceAssertionCount   uint16
 	receipt                  CanonicalUOWReceipt
+	receiptBound             bool
 	outerRecordDigest        [sha256.Size]byte
+	outerPayloadDigest       [sha256.Size]byte
 	outerMessageTypeID       uint32
 	outerSchemaVersion       ccse.Version
 	outerCanonicalPayload    []byte
+	outerSignature           []byte
+	outerAudit               canonicalAuditEventBinding
 	auditEventAppended       bool
 	globalEventAsserted      bool
 	evidenceAssertions       uint16
@@ -105,12 +115,35 @@ type canonicalTransactionState struct {
 	evidenceRecordCount      uint16
 	canonicalStateWrites     uint16
 	canonicalStateAssertions uint16
+	semanticProjectionWrites uint16
 	canonicalBytes           uint64
-	canonicalStateKeys       map[canonicalStateKey]struct{}
+	transactionClock         CanonicalTransactionClockSnapshot
+	transactionClockSet      bool
+	commitDeadlineUnixNano   int64
+	commitDeadlineSet        bool
+	canonicalStateHeads      map[canonicalStateKey]CanonicalStateRecord
 }
 
+type canonicalAuditEventBinding struct {
+	eventID            string
+	streamID           string
+	sequence           uint64
+	previousDigest     [sha256.Size]byte
+	occurredAtUnixNano int64
+	writerIdentity     string
+	homeRegion         string
+	writerEpoch        uint64
+}
+
+var (
+	canonicalAuditValidatorOnce sync.Once
+	canonicalAuditValidator     *foundationcanonical.Validator
+	canonicalAuditValidatorErr  error
+)
+
 // CanonicalUOW is a capability for v2 internal tables on the exact active
-// ReplayStore transaction. It cannot be constructed outside BindCanonicalUOW.
+// ReplayStore transaction. OpenCanonicalUOW permits transaction-bound reads
+// and clock observations; BindResult must succeed before any mutation.
 type CanonicalUOW struct {
 	state *transactionState
 	bound *canonicalTransactionState
@@ -119,13 +152,16 @@ type CanonicalUOW struct {
 const insertAuthoritativeUOWSQL = `
 	INSERT INTO cph_aiinfra.authoritative_uow
 		(scope_sha256, message_id, uow_kind, outcome_digest, result_content_type,
-		 result_payload, evidence_assertion_count, audit_event_id, transaction_id)
-	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, pg_current_xact_id())`
+		 result_payload, evidence_assertion_count, audit_event_id,
+		 outer_payload_digest, transaction_id)
+	VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, pg_current_xact_id())`
 
-// BindCanonicalUOW binds one typed v2 receipt to the active Execute handler.
-// verified must be the exact immutable record passed to that handler.
-func BindCanonicalUOW(ctx context.Context, verified ccse.VerifiedRecord,
-	receipt CanonicalUOWReceipt) (*CanonicalUOW, error) {
+// OpenCanonicalUOW opens a transaction-bound planning capability before the
+// semantic result is known. verified must be the exact immutable record passed
+// to the active Execute handler. Only reads and SnapshotTransactionClock are
+// available until BindResult succeeds.
+func OpenCanonicalUOW(ctx context.Context, verified ccse.VerifiedRecord, kind CanonicalUOWKind,
+	auditEventID string, evidenceAssertionCount uint16) (*CanonicalUOW, error) {
 	active, ok := ctx.Value(replayTransactionContextKey{}).(replayTransactionContext)
 	if !ok || active.store == nil || active.state == nil || active.state.tx == nil ||
 		active.state.store != active.store {
@@ -151,49 +187,180 @@ func BindCanonicalUOW(ctx context.Context, verified ccse.VerifiedRecord,
 	if err != nil || scope != state.scope || entry.MessageID != state.entry.MessageID {
 		return nil, poisonCanonicalLocked(state, ErrCanonicalUOWMismatch)
 	}
-	if err := validateCanonicalReceipt(receipt); err != nil {
+	if err := validateCanonicalIntent(kind, auditEventID, evidenceAssertionCount); err != nil {
 		return nil, poisonCanonicalLocked(state, err)
 	}
-	if receipt.kind == CanonicalAuditedFinal &&
-		(verified.MessageTypeID() != schema.MessageTypeAuditEvent ||
-			verified.SchemaVersion() != (ccse.Version{Major: 1})) {
+	isAuditEvent := verified.MessageTypeID() == schema.MessageTypeAuditEvent
+	if (kind == CanonicalAuditedFinal) != isAuditEvent ||
+		(kind == CanonicalAuditedFinal &&
+			verified.SchemaVersion() != (ccse.Version{Major: 1, Minor: 0})) {
 		return nil, poisonCanonicalLocked(state, ErrCanonicalUOWMismatch)
+	}
+	envelope := verified.Envelope()
+	var auditBinding canonicalAuditEventBinding
+	if kind == CanonicalAuditedFinal {
+		auditBinding, err = bindCanonicalAuditPayload(verified, auditEventID)
+		if err != nil {
+			return nil, poisonCanonicalLocked(state, err)
+		}
+	}
+	bound := &canonicalTransactionState{kind: kind, auditEventID: auditEventID,
+		evidenceAssertionCount: evidenceAssertionCount, outerRecordDigest: verified.Digest(),
+		outerPayloadDigest: envelope.PayloadDigest,
+		outerMessageTypeID: verified.MessageTypeID(), outerSchemaVersion: verified.SchemaVersion(),
+		outerCanonicalPayload: verified.Payload(), outerSignature: verified.Signature(), outerAudit: auditBinding}
+	state.canonical = bound
+	state.claimed = true
+	return &CanonicalUOW{state: state, bound: bound}, nil
+}
+
+// BindResult authenticates and persists the semantic result selected after
+// transaction-bound planning. It is a one-shot phase transition; every
+// mutation and Complete fail closed until it succeeds.
+func (uow *CanonicalUOW) BindResult(ctx context.Context, receipt CanonicalUOWReceipt) error {
+	state, err := uow.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer state.mu.Unlock()
+	if uow.bound.receiptBound {
+		return poisonCanonicalLocked(state, ErrCanonicalUOWDuplicate)
+	}
+	if err := validateCanonicalReceipt(receipt); err != nil {
+		return poisonCanonicalLocked(state, err)
+	}
+	if receipt.kind != uow.bound.kind || receipt.auditEventID != uow.bound.auditEventID ||
+		receipt.evidenceAssertionCount != uow.bound.evidenceAssertionCount {
+		return poisonCanonicalLocked(state, ErrCanonicalUOWMismatch)
 	}
 	payload := receipt.result.Payload()
 	var auditEventID interface{}
+	var outerPayloadDigest interface{}
 	if receipt.kind == CanonicalAuditedFinal {
 		auditEventID = receipt.auditEventID
+		outerPayloadDigest = uow.bound.outerPayloadDigest[:]
 	}
 	digest := receipt.result.Digest()
 	result, err := state.tx.ExecContext(ctx, insertAuthoritativeUOWSQL,
 		state.scope[:], state.entry.MessageID[:], int16(receipt.kind), digest[:],
-		receipt.result.ContentType(), payload, int16(receipt.evidenceAssertionCount), auditEventID)
+		receipt.result.ContentType(), payload, int16(receipt.evidenceAssertionCount), auditEventID,
+		outerPayloadDigest)
 	if err != nil {
-		return nil, poisonCanonicalLocked(state, fmt.Errorf("%w: insert authoritative receipt: %v", ErrCanonicalCASMismatch, err))
+		return poisonCanonicalLocked(state, fmt.Errorf("%w: insert authoritative receipt: %v", ErrCanonicalCASMismatch, err))
 	}
 	if err := requireOneCanonicalRow(result); err != nil {
-		return nil, poisonCanonicalLocked(state, err)
+		return poisonCanonicalLocked(state, err)
 	}
-	bound := &canonicalTransactionState{receipt: receipt, outerRecordDigest: verified.Digest(),
-		outerMessageTypeID: verified.MessageTypeID(), outerSchemaVersion: verified.SchemaVersion(),
-		outerCanonicalPayload: verified.Payload()}
-	state.canonical = bound
-	state.claimed = true
-	return &CanonicalUOW{state: state, bound: bound}, nil
+	uow.bound.receipt = receipt
+	uow.bound.receiptBound = true
+	return nil
+}
+
+// AssertOuterVerifiedRecord proves that a semantic result was built from the
+// exact immutable record used to open this UoW. It is available only during
+// pre-result planning; a mismatch or a post-bind call poisons the transaction.
+func (uow *CanonicalUOW) AssertOuterVerifiedRecord(ctx context.Context,
+	verified ccse.VerifiedRecord) error {
+	state, err := uow.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer state.mu.Unlock()
+	if uow.bound.receiptBound {
+		return poisonCanonicalLocked(state, ErrCanonicalUOWPhase)
+	}
+	entry, err := verified.ReplayEntry()
+	if err != nil {
+		return poisonCanonicalLocked(state, ErrCanonicalUOWMismatch)
+	}
+	record := verified.Record()
+	recordDigest, err := record.Digest(ccse.DefaultLimits())
+	payload := verified.Payload()
+	envelope := verified.Envelope()
+	if err != nil || entry != state.entry || recordDigest != verified.Digest() ||
+		verified.Digest() != uow.bound.outerRecordDigest ||
+		envelope.PayloadDigest != uow.bound.outerPayloadDigest ||
+		sha256.Sum256(payload) != envelope.PayloadDigest ||
+		verified.MessageTypeID() != uow.bound.outerMessageTypeID ||
+		verified.SchemaVersion() != uow.bound.outerSchemaVersion ||
+		!bytes.Equal(payload, uow.bound.outerCanonicalPayload) ||
+		!bytes.Equal(verified.Signature(), uow.bound.outerSignature) {
+		return poisonCanonicalLocked(state, ErrCanonicalUOWMismatch)
+	}
+	return nil
+}
+
+// BindCanonicalUOW is the direct path for handlers whose result is already
+// known. Planning flows use OpenCanonicalUOW followed by BindResult.
+func BindCanonicalUOW(ctx context.Context, verified ccse.VerifiedRecord,
+	receipt CanonicalUOWReceipt) (*CanonicalUOW, error) {
+	uow, err := OpenCanonicalUOW(ctx, verified, receipt.kind, receipt.auditEventID,
+		receipt.evidenceAssertionCount)
+	if err != nil {
+		return nil, err
+	}
+	if err := uow.BindResult(ctx, receipt); err != nil {
+		return nil, err
+	}
+	return uow, nil
+}
+
+func bindCanonicalAuditPayload(verified ccse.VerifiedRecord,
+	receiptEventID string) (canonicalAuditEventBinding, error) {
+	canonicalAuditValidatorOnce.Do(func() {
+		canonicalAuditValidator, canonicalAuditValidatorErr = foundationcanonical.NewValidator()
+	})
+	if canonicalAuditValidatorErr != nil || canonicalAuditValidator == nil {
+		return canonicalAuditEventBinding{}, ErrCanonicalUOWMismatch
+	}
+	decoded, err := canonicalAuditValidator.Decode(schema.MessageTypeAuditEvent,
+		ccse.Version{Major: 1, Minor: 0}, verified.Payload())
+	if err != nil {
+		return canonicalAuditEventBinding{}, ErrCanonicalUOWMismatch
+	}
+	event, ok := decoded.(foundationv1.AuditEventSigningProjection)
+	if !ok {
+		return canonicalAuditEventBinding{}, ErrCanonicalUOWMismatch
+	}
+	domain, envelope := verified.Domain(), verified.Envelope()
+	if event.AuditEventID != receiptEventID || event.Metadata.RecordID != event.AuditEventID ||
+		event.AuditSequence == 0 || event.AuditSequence != event.Metadata.StateVersion ||
+		event.AuditSequence != domain.Counter || event.AuditSequence != envelope.Counter ||
+		domain.CounterKind != ccse.CounterSequence || envelope.CounterKind != ccse.CounterSequence ||
+		event.CorrelationID != envelope.CorrelationID ||
+		event.CausationID.Present != envelope.CausationID.Present ||
+		(event.CausationID.Present && event.CausationID.Value != envelope.CausationID.Value) ||
+		event.OccurredAtUnixNano > event.Metadata.CreatedAtUnixNano ||
+		event.Metadata.CreatedAtUnixNano > domain.IssuedAtUnixNano ||
+		validateCanonicalText(domain.ReplayDomainID, 255) != nil ||
+		validateCanonicalText(domain.SenderIdentity, 1024) != nil ||
+		validateCanonicalText(event.Metadata.HomeRegion, 255) != nil || event.Metadata.WriterEpoch == 0 {
+		return canonicalAuditEventBinding{}, ErrCanonicalUOWMismatch
+	}
+	return canonicalAuditEventBinding{eventID: event.AuditEventID,
+		streamID: domain.ReplayDomainID, sequence: event.AuditSequence,
+		previousDigest:     event.PreviousEventDigestSHA256,
+		occurredAtUnixNano: event.OccurredAtUnixNano, writerIdentity: domain.SenderIdentity,
+		homeRegion: event.Metadata.HomeRegion, writerEpoch: event.Metadata.WriterEpoch}, nil
 }
 
 func validateCanonicalReceipt(receipt CanonicalUOWReceipt) error {
 	if receipt.result.Verify() != nil {
 		return ErrCanonicalInvalid
 	}
-	switch receipt.kind {
+	return validateCanonicalIntent(receipt.kind, receipt.auditEventID, receipt.evidenceAssertionCount)
+}
+
+func validateCanonicalIntent(kind CanonicalUOWKind, auditEventID string,
+	evidenceAssertionCount uint16) error {
+	switch kind {
 	case CanonicalAdmission:
-		if receipt.auditEventID != "" || receipt.evidenceAssertionCount != 0 {
+		if auditEventID != "" || evidenceAssertionCount != 0 {
 			return ErrCanonicalInvalid
 		}
 	case CanonicalAuditedFinal:
-		if validateCanonicalText(receipt.auditEventID, 1024) != nil ||
-			receipt.evidenceAssertionCount == 0 || receipt.evidenceAssertionCount > v2MaxPendingEvidence {
+		if validateCanonicalText(auditEventID, 1024) != nil ||
+			evidenceAssertionCount == 0 || evidenceAssertionCount > v2MaxPendingEvidence {
 			return ErrCanonicalInvalid
 		}
 	default:
@@ -215,6 +382,19 @@ func (uow *CanonicalUOW) lock(ctx context.Context) (*transactionState, error) {
 	}
 	if state.poisoned != nil {
 		err := fmt.Errorf("%w: %v", ErrTransactionPoisoned, state.poisoned)
+		state.mu.Unlock()
+		return nil, err
+	}
+	return state, nil
+}
+
+func (uow *CanonicalUOW) lockForWrite(ctx context.Context) (*transactionState, error) {
+	state, err := uow.lock(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !uow.bound.receiptBound {
+		err := poisonCanonicalLocked(state, ErrCanonicalUOWPhase)
 		state.mu.Unlock()
 		return nil, err
 	}
@@ -243,11 +423,125 @@ func canonicalBudgetAllows(used uint64, additional int, maximum uint64) bool {
 	return additional >= 0 && used <= maximum && uint64(additional) <= maximum-used
 }
 
+// CanonicalTransactionClockSnapshot is a database-authenticated observation
+// from the exact SERIALIZABLE transaction owned by this capability. The
+// semantic adapter may bind these values to a pending-operation digest, but
+// must not substitute a process clock or a transaction identifier from a
+// different connection.
+type CanonicalTransactionClockSnapshot struct {
+	transactionID      string
+	observedAtUnixNano int64
+}
+
+func (snapshot CanonicalTransactionClockSnapshot) TransactionID() string {
+	return snapshot.transactionID
+}
+
+func (snapshot CanonicalTransactionClockSnapshot) ObservedAtUnixNano() int64 {
+	return snapshot.observedAtUnixNano
+}
+
+const snapshotCanonicalTransactionClockSQL = `
+	SELECT pg_catalog.pg_current_xact_id()::text,
+		(EXTRACT(EPOCH FROM observed_at) * 1000000000)::bigint
+	FROM (SELECT pg_catalog.clock_timestamp() AS observed_at) observation`
+
+const assertCanonicalCommitDeadlineSQL = `
+	SELECT pg_catalog.pg_current_xact_id()::text,
+		(EXTRACT(EPOCH FROM commit_observed_at) * 1000000000)::bigint
+	FROM (SELECT pg_catalog.clock_timestamp() AS commit_observed_at) deadline_observation`
+
+// SnapshotTransactionClock reads the current database clock and full xid8 on
+// the active CanonicalUOW transaction connection. Any malformed or failed
+// observation poisons the outer replay transaction.
+func (uow *CanonicalUOW) SnapshotTransactionClock(ctx context.Context) (CanonicalTransactionClockSnapshot, error) {
+	state, err := uow.lock(ctx)
+	if err != nil {
+		return CanonicalTransactionClockSnapshot{}, err
+	}
+	defer state.mu.Unlock()
+	if uow.bound.transactionClockSet {
+		return uow.bound.transactionClock, nil
+	}
+	var snapshot CanonicalTransactionClockSnapshot
+	if err := state.tx.QueryRowContext(ctx, snapshotCanonicalTransactionClockSQL).Scan(
+		&snapshot.transactionID, &snapshot.observedAtUnixNano); err != nil {
+		return CanonicalTransactionClockSnapshot{}, poisonCanonicalLocked(state,
+			fmt.Errorf("%w: snapshot transaction clock: %v", ErrCanonicalStateCorrupt, err))
+	}
+	transactionID, parseErr := strconv.ParseUint(snapshot.transactionID, 10, 64)
+	if parseErr != nil || transactionID == 0 ||
+		strconv.FormatUint(transactionID, 10) != snapshot.transactionID ||
+		snapshot.observedAtUnixNano < 0 {
+		return CanonicalTransactionClockSnapshot{}, poisonCanonicalLocked(state, ErrCanonicalStateCorrupt)
+	}
+	uow.bound.transactionClock = snapshot
+	uow.bound.transactionClockSet = true
+	return snapshot, nil
+}
+
+// AssertCommitDeadline performs a fresh, uncached database-clock observation
+// immediately before AtomicTx.Complete. SnapshotTransactionClock is cached so
+// it can be committed into a deterministic result; it must not be reused as
+// the final half-open commit-window fence after the transaction has applied
+// its state writes.
+func (uow *CanonicalUOW) AssertCommitDeadline(ctx context.Context, commitNotAfterUnixNano int64) error {
+	state, err := uow.lock(ctx)
+	if err != nil {
+		return err
+	}
+	defer state.mu.Unlock()
+	if (uow.bound.kind != CanonicalAdmission && uow.bound.kind != CanonicalAuditedFinal) ||
+		!uow.bound.receiptBound || !uow.bound.transactionClockSet || commitNotAfterUnixNano <= 0 {
+		return poisonCanonicalLocked(state, ErrCanonicalUOWPhase)
+	}
+	var transactionID string
+	var observedAt int64
+	if err := state.tx.QueryRowContext(ctx, assertCanonicalCommitDeadlineSQL).Scan(
+		&transactionID, &observedAt); err != nil {
+		return poisonCanonicalLocked(state,
+			fmt.Errorf("%w: assert commit deadline: %v", ErrCanonicalStateCorrupt, err))
+	}
+	if transactionID != uow.bound.transactionClock.transactionID ||
+		observedAt < uow.bound.transactionClock.observedAtUnixNano ||
+		observedAt >= commitNotAfterUnixNano {
+		return poisonCanonicalLocked(state, ErrCanonicalUOWMismatch)
+	}
+	uow.bound.commitDeadlineUnixNano = commitNotAfterUnixNano
+	uow.bound.commitDeadlineSet = true
+	return nil
+}
+
+// assertCanonicalCommitDeadlineBeforeCommit repeats the uncached deadline
+// fence after durable result/replay rows have been written and immediately
+// before database commit. All writes remain rollbackable on failure.
+func assertCanonicalCommitDeadlineBeforeCommit(ctx context.Context, state *transactionState) error {
+	if state == nil || state.canonical == nil || !state.canonical.commitDeadlineSet {
+		return nil
+	}
+	bound := state.canonical
+	var transactionID string
+	var observedAt int64
+	if err := state.tx.QueryRowContext(ctx, assertCanonicalCommitDeadlineSQL).Scan(
+		&transactionID, &observedAt); err != nil {
+		return fmt.Errorf("%w: final commit deadline: %v", ErrCanonicalStateCorrupt, err)
+	}
+	if !bound.transactionClockSet || transactionID != bound.transactionClock.transactionID ||
+		observedAt < bound.transactionClock.observedAtUnixNano ||
+		observedAt >= bound.commitDeadlineUnixNano {
+		return ErrCanonicalUOWMismatch
+	}
+	return nil
+}
+
 func validateCanonicalCompletionLocked(state *transactionState, completion DurableCompletion) error {
 	if state.canonical == nil {
 		return nil
 	}
 	bound := state.canonical
+	if !bound.receiptBound {
+		return ErrCanonicalUOWPhase
+	}
 	receipt := bound.receipt
 	if completion.ContentType != receipt.result.ContentType() ||
 		!bytes.Equal(completion.Payload, receipt.result.Payload()) ||
@@ -271,6 +565,8 @@ func validateCanonicalCompletionLocked(state *transactionState, completion Durab
 }
 
 // AuditEventRecord is the storage-neutral exact signed event projection.
+// EventDigest is the outer CCSE envelope's SHA-256 payload digest; RecordDigest
+// is the digest of the complete signed CCSE record and remains the chain link.
 type AuditEventRecord struct {
 	EventID             string
 	StreamID            string
@@ -281,26 +577,27 @@ type AuditEventRecord struct {
 	RecordDigest        [sha256.Size]byte
 	CanonicalEvent      []byte
 	OccurredAtUnixNano  int64
-	Head                 AuditHeadCAS
+	Head                AuditHeadCAS
 }
 
 // AuditHeadCAS is the complete governance authorization tuple committed by
 // MutationAuditAppend. Head* is the prior logical writer state; Authorized*
-// and the lease fields are the exact authority for this append and become the
-// next logical head state.
+// and the lease fields are the exact current authority for this append and
+// become the stored latest-event tuple. Current authority is independently
+// fenced by canonical profile/key/writer-lease assertions in the same UoW.
 type AuditHeadCAS struct {
-	DeploymentAnchorDigest            [sha256.Size]byte
-	ExpectedHeadWriterIdentity         string
-	AuthorizedWriterIdentity           string
-	ExpectedHeadHomeRegion             string
-	AuthorizedHomeRegion               string
-	ExpectedHeadWriterEpoch            uint64
-	AuthorizedWriterEpoch              uint64
+	DeploymentAnchorDigest              [sha256.Size]byte
+	ExpectedHeadWriterIdentity          string
+	AuthorizedWriterIdentity            string
+	ExpectedHeadHomeRegion              string
+	AuthorizedHomeRegion                string
+	ExpectedHeadWriterEpoch             uint64
+	AuthorizedWriterEpoch               uint64
 	ExpectedHeadGovernanceProfileDigest [sha256.Size]byte
-	AuthorizedGovernanceProfileDigest  [sha256.Size]byte
-	WriterLeaseEvidenceDigest          [sha256.Size]byte
-	WriterLeaseNotBeforeUnixNano       int64
-	WriterLeaseNotAfterUnixNano        int64
+	AuthorizedGovernanceProfileDigest   [sha256.Size]byte
+	WriterLeaseEvidenceDigest           [sha256.Size]byte
+	WriterLeaseNotBeforeUnixNano        int64
+	WriterLeaseNotAfterUnixNano         int64
 }
 
 const insertAuditEventSQL = `
@@ -336,19 +633,16 @@ const updateAuditHeadSQL = `
 		uow_scope_sha256 = $13, uow_message_id = $14
 	WHERE stream_id = $1 AND deployment_anchor_digest = $2
 		AND highest_sequence = $15 AND latest_record_digest = $16
-		AND head_writer_identity = $17 AND authorized_writer_identity = $6
-		AND home_region = $18 AND authorized_home_region = $7
-		AND writer_epoch = $19 AND authorized_writer_epoch = $8
+		AND head_writer_identity = $17 AND authorized_writer_identity = $17
+		AND home_region = $18 AND authorized_home_region = $18
+		AND writer_epoch = $19 AND authorized_writer_epoch = $19
 		AND head_governance_profile_digest = $20
-		AND authorized_governance_profile_digest = $9
-		AND writer_lease_evidence_digest = $10
-		AND writer_lease_not_before_unix_nano = $11
-		AND writer_lease_not_after_unix_nano = $12`
+		AND authorized_governance_profile_digest = $20`
 
 // AppendAuditEvent appends the audited-final receipt's exact event and advances
 // its stream head with a one-row CAS. Admission receipts cannot call it.
 func (uow *CanonicalUOW) AppendAuditEvent(ctx context.Context, event AuditEventRecord) error {
-	state, err := uow.lock(ctx)
+	state, err := uow.lockForWrite(ctx)
 	if err != nil {
 		return err
 	}
@@ -403,10 +697,17 @@ func (uow *CanonicalUOW) AppendAuditEvent(ctx context.Context, event AuditEventR
 }
 
 func validateAuditEventRecord(bound *canonicalTransactionState, event AuditEventRecord) error {
-	if bound == nil || bound.receipt.kind != CanonicalAuditedFinal ||
+	if bound == nil {
+		return ErrCanonicalUOWPhase
+	}
+	audit := bound.outerAudit
+	if bound.receipt.kind != CanonicalAuditedFinal ||
 		bound.outerMessageTypeID != schema.MessageTypeAuditEvent ||
-		bound.outerSchemaVersion != (ccse.Version{Major: 1}) ||
-		event.EventID != bound.receipt.auditEventID ||
+		bound.outerSchemaVersion != (ccse.Version{Major: 1, Minor: 0}) ||
+		event.EventID != bound.receipt.auditEventID || event.EventID != audit.eventID ||
+		event.StreamID != audit.streamID || event.Sequence != audit.sequence ||
+		event.OccurredAtUnixNano != audit.occurredAtUnixNano ||
+		event.EventDigest != bound.outerPayloadDigest ||
 		event.RecordDigest != bound.outerRecordDigest ||
 		!bytes.Equal(event.CanonicalEvent, bound.outerCanonicalPayload) ||
 		validateCanonicalText(event.EventID, 1024) != nil || validateCanonicalText(event.StreamID, 255) != nil ||
@@ -415,6 +716,11 @@ func validateAuditEventRecord(bound *canonicalTransactionState, event AuditEvent
 		len(event.CanonicalEvent) > v2AuditEventMaxBytes || event.OccurredAtUnixNano <= 0 ||
 		(event.Sequence == 1 && event.HasPrevious) || (event.Sequence > 1 && !event.HasPrevious) ||
 		(event.HasPrevious && event.PreviousEventDigest == ([sha256.Size]byte{})) ||
+		(event.Sequence == 1 && event.Head.DeploymentAnchorDigest != audit.previousDigest) ||
+		(event.Sequence > 1 && event.PreviousEventDigest != audit.previousDigest) ||
+		event.Head.AuthorizedWriterIdentity != audit.writerIdentity ||
+		event.Head.AuthorizedHomeRegion != audit.homeRegion ||
+		event.Head.AuthorizedWriterEpoch != audit.writerEpoch ||
 		!validateAuditHeadCAS(event) {
 		return ErrCanonicalUOWPhase
 	}

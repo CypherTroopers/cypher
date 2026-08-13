@@ -94,6 +94,23 @@ func (p *Planner) ReconcilePolicyOperation(ctx context.Context, command PolicyRe
 	if err != nil {
 		return MutationPlan{}, ErrInvalidCommand
 	}
+	var terminalTemplate DurablePendingTerminalTemplate
+	hasLegacy := false
+	for _, approval := range approvals {
+		hasLegacy = hasLegacy || approval.legacyAdmission
+	}
+	// Legacy V1 collection rows predate the canonical kind-7 pending envelope.
+	// Completing X/Y without an exact pending predecessor would violate the
+	// durable storage invariant, and synthesizing one from retained votes would
+	// manufacture state. Such rows require an explicit offline migration.
+	if hasLegacy {
+		return MutationPlan{}, ErrApprovalCollection
+	}
+	terminalTemplate, err = p.buildPolicyApprovalTerminalTemplate(ctx, command.Binding,
+		decision.ParentSnapshot(), policyApprovalEntriesFromApprovals(approvals), eventID)
+	if err != nil {
+		return MutationPlan{}, err
+	}
 	cause := "policy-mutation-failed"
 	eventType := "PolicyMutationFailed"
 	if command.Outcome == 4 {
@@ -122,7 +139,8 @@ func (p *Planner) ReconcilePolicyOperation(ctx context.Context, command PolicyRe
 	}
 	auditPlan, actualIntent, err := p.planAuditAppend(ctx, AuditAppendCommand{
 		AtUnixNano: command.AtUnixNano, Event: command.AuditEvent, SourceRecordDigestsSHA256: sources,
-	}, transactionEvidence, ptrIdempotencySnapshot(decision.AuditSnapshot()), &command.Binding)
+	}, transactionEvidence, ptrIdempotencySnapshot(decision.AuditSnapshot()), &command.Binding,
+		policyPendingEvidenceLinksFromDigests(command.Binding.Key, decision.ParentSnapshot().Version, recordDigests))
 	if err != nil {
 		return MutationPlan{}, err
 	}
@@ -158,10 +176,22 @@ func (p *Planner) ReconcilePolicyOperation(ctx context.Context, command PolicyRe
 	audit.PolicyDocumentDigestSHA256 = bundle.PolicyDocumentDigestSHA256
 	audit.PolicyDocumentEvidence = append([]byte(nil), document.CanonicalDocument...)
 	audit.PolicyIdempotencySnapshot = decision.ParentSnapshot()
+	audit.DurablePolicyApprovalTerminalTemplate = terminalTemplate
 	audit.JoinedAuditIdempotencySnapshot = decision.AuditSnapshot()
 	audit.ApprovalRecordDigestsSHA256 = recordDigests
 	audit.ApprovalEvidence = approvalEvidence
 	audit.ApprovalAdmissionEvidence = approvalAdmissionEvidence(approvals)
+	audit.ApprovalKeyPreconditions = make([]KeyStatePrecondition, len(approvals))
+	for index := range approvals {
+		audit.ApprovalKeyPreconditions[index] = keyPrecondition(approvals[index].admissionKey)
+	}
+	keyReadSet := append([]KeyStatePrecondition(nil), audit.AuditSourceKeyPreconditions...)
+	keyReadSet = append(keyReadSet, audit.ApprovalKeyPreconditions...)
+	keyReadSet = append(keyReadSet, audit.AuditWriterKeyPrecondition)
+	audit.CanonicalKeyStateAssertions, err = p.canonicalKeyStateAssertions(ctx, keyReadSet)
+	if err != nil {
+		return MutationPlan{}, fmt.Errorf("%w: canonical key read set", err)
+	}
 	audit.PolicyBundleOwnerDigestSHA256 = policyBundleOwnerDigest(bundle.PolicyKind, bundle.PolicyBundleID)
 	audit.IdentifierClaims = identifierClaims
 	audit.IdempotencyClaims = claims

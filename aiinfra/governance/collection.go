@@ -118,6 +118,14 @@ func (p *Planner) PlanPolicyApprovalIngestion(ctx context.Context, command Polic
 	if err != nil {
 		return ApprovalCollectionPlan{}, err
 	}
+	profileAssertion, err := p.canonicalProfileAssertion(ctx, currentActivation)
+	if err != nil {
+		return ApprovalCollectionPlan{}, fmt.Errorf("%w: canonical governance profile activation", ErrApprovalCollection)
+	}
+	keyAssertions, err := p.canonicalKeyStateAssertions(ctx, []KeyStatePrecondition{keyPrecondition(key)})
+	if err != nil {
+		return ApprovalCollectionPlan{}, fmt.Errorf("%w: canonical approval signer key", ErrApprovalCollection)
+	}
 
 	var (
 		existing       []policyApproval
@@ -234,6 +242,33 @@ func (p *Planner) PlanPolicyApprovalIngestion(ctx context.Context, command Polic
 	if commitDeadline <= commitNotBefore {
 		return ApprovalCollectionPlan{}, ErrPolicyExpired
 	}
+	var collectionClaim idempotency.Claim
+	for _, claim := range claims {
+		if claim.Binding == binding {
+			collectionClaim = claim
+			break
+		}
+	}
+	if collectionClaim.Binding != binding || collectionClaim.NextVersion == 0 ||
+		collectionClaim.NextProgressDigest != nextProgress {
+		return ApprovalCollectionPlan{}, ErrApprovalCollection
+	}
+	priorSnapshot := idempotency.Snapshot{}
+	if decision.Kind() == idempotency.ContinueCollection {
+		priorSnapshot = decision.ParentSnapshot()
+	}
+	durablePending, err := p.buildOpenPolicyApprovalPendingRevision(ctx, binding, priorSnapshot,
+		policyApprovalEntriesFromApprovals(existing), collectionClaim.NextVersion, nextProgress,
+		policyApprovalEntriesFromApprovals(next), commitNotBefore, commitDeadline, eventID)
+	if err != nil {
+		return ApprovalCollectionPlan{}, err
+	}
+	nextStorage, err := newDurableEvidenceStorageCapabilityWithPersistence(
+		newSignedDurableEvidence(approval.record, approval.key.AuthorizationPolicyDigestSHA256, p.profileDigest),
+		eventID, DurableEvidenceStorageReserveNew, [ccse.MessageIDSize]byte{}, 0, false)
+	if err != nil {
+		return ApprovalCollectionPlan{}, ErrApprovalCollection
+	}
 	value := ApprovalCollectionPlanSnapshot{
 		CommitReady:                           true,
 		EvaluatedAtUnixNano:                   command.AtUnixNano,
@@ -241,6 +276,8 @@ func (p *Planner) PlanPolicyApprovalIngestion(ctx context.Context, command Polic
 		CommitNotAfterUnixNano:                commitDeadline,
 		GovernanceProfileDigestSHA256:         p.profileDigest,
 		GovernanceProfileActivation:           currentActivation,
+		CanonicalStateAssertions:              []CanonicalStateAssertion{profileAssertion},
+		CanonicalKeyStateAssertions:           keyAssertions,
 		Disposition:                           disposition,
 		Binding:                               binding,
 		JoinedAuditIdempotencySnapshot:        decision.AuditSnapshot(),
@@ -257,6 +294,8 @@ func (p *Planner) PlanPolicyApprovalIngestion(ctx context.Context, command Polic
 		NextAdmissionValidatedAtUnixNano:      approval.admissionValidatedAt,
 		NextAdmissionFingerprintSHA256:        approval.admissionFingerprint,
 		JoinedAuditEventID:                    eventID,
+		DurablePendingRevision:                durablePending,
+		NextEvidenceStorageCapability:         nextStorage,
 		IdentifierClaims:                      identifierClaims,
 	}
 	if decision.Kind() == idempotency.ContinueCollection {
@@ -613,6 +652,7 @@ func policyApprovalAdmissionFingerprint(approval policyApproval) ([ccse.DigestSi
 		approval.admissionKey.StateVersion == 0 || approval.admissionKey.WriterEpoch == 0 ||
 		isZeroDigest(approval.admissionKey.SnapshotDigestSHA256) || approval.admissionKey.IdentityStateVersion == 0 ||
 		approval.admissionKey.IdentityWriterEpoch == 0 || isZeroDigest(approval.admissionKey.IdentitySnapshotDigestSHA256) ||
+		approval.admissionKey.KeyMaterialStateVersion != 1 || isZeroDigest(approval.admissionKey.KeyMaterialStateDigestSHA256) ||
 		len(approval.admissionKey.PublicKey) != ed25519.PublicKeySize || len(approval.record.record.Signature) != ed25519.SignatureSize ||
 		!ed25519.Verify(ed25519.PublicKey(approval.admissionKey.PublicKey), approval.record.digest[:], approval.record.record.Signature) ||
 		!validGovernanceProfileActivation(approval.admissionActivation, approval.record.record.Domain.IssuedAtUnixNano) ||
@@ -743,6 +783,8 @@ func newApprovalCollectionPlan(value ApprovalCollectionPlanSnapshot) (ApprovalCo
 	value.IdentifierClaims = append([]globalid.Claim(nil), value.IdentifierClaims...)
 	value.NextEvidence = cloneSignedEvidence(value.NextEvidence)
 	value.NextAdmissionKey = cloneKeySnapshot(value.NextAdmissionKey)
+	value.CanonicalStateAssertions = cloneCanonicalStateAssertions(value.CanonicalStateAssertions)
+	value.CanonicalKeyStateAssertions = cloneCanonicalKeyStateAssertions(value.CanonicalKeyStateAssertions)
 	digest, err := digestApprovalCollectionPlan(value)
 	if err != nil {
 		return ApprovalCollectionPlan{}, err

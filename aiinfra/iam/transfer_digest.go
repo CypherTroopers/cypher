@@ -523,6 +523,44 @@ func acceptedTransferDigest(snapshot AcceptedOwnershipTransferSnapshot) ([32]byt
 	return domainDigest(acceptedTransferDigestDomain, encoded), nil
 }
 
+// canonicalAcceptedTransferState returns the exact IAM-owned state preimage
+// whose domain digest is AcceptedOwnershipTransferSnapshot.SnapshotDigest.
+// Storage adapters must persist these bytes rather than reconstructing the
+// private transfer codec from public fields.
+func canonicalAcceptedTransferState(snapshot AcceptedOwnershipTransferSnapshot) ([]byte, [32]byte, error) {
+	digest, err := acceptedTransferDigest(snapshot)
+	if err != nil {
+		return nil, [32]byte{}, err
+	}
+	canonical, err := snapshot.Projection.CanonicalBytes()
+	if err != nil {
+		return nil, [32]byte{}, err
+	}
+	approvals, err := canonicalTransferAdmissions(snapshot.Approvals)
+	if err != nil {
+		return nil, [32]byte{}, err
+	}
+	fixed, err := canonicalTransferFixedEvidence(snapshot.FixedEvidence)
+	if err != nil {
+		return nil, [32]byte{}, err
+	}
+	encoded, err := ccse.Marshal(8<<20, func(out *ccse.Encoder) {
+		out.Bytes(canonical)
+		out.FixedBytes(snapshot.TransferEvidenceDigest[:], 32)
+		out.FixedBytes(snapshot.ProfileDigest[:], 32)
+		out.FixedBytes(snapshot.Profile.Activation.SnapshotDigest[:], 32)
+		out.Bytes(approvals)
+		out.Bytes(fixed)
+		out.Int64(snapshot.AcceptedAtUnixNano)
+		out.Uint64(snapshot.StateVersion)
+		out.Uint64(snapshot.WriterEpoch)
+	})
+	if err != nil || domainDigest(acceptedTransferDigestDomain, encoded) != digest {
+		return nil, [32]byte{}, ErrPendingPlanInvalid
+	}
+	return encoded, digest, nil
+}
+
 func sha256Bytes(value []byte) [32]byte {
 	return sha256.Sum256(value)
 }
@@ -533,6 +571,7 @@ func ownershipTransferCollectionPlanDigest(plan OwnershipTransferApprovalCollect
 	if err != nil || nextDigest != plan.next.ProgressDigest || plan.evaluatedAtUnixNano < 0 ||
 		plan.commitNotBeforeUnixNano < 0 || plan.commitNotBeforeUnixNano > plan.evaluatedAtUnixNano ||
 		plan.commitNotAfterUnixNano <= plan.evaluatedAtUnixNano || plan.authorizedWriterEpoch == 0 ||
+		plan.authorizedWriterIdentity == "" || plan.authorizedWriterHomeRegion == "" ||
 		plan.writerEvidenceDigest == zero {
 		return zero, ErrPendingPlanInvalid
 	}
@@ -565,6 +604,8 @@ func ownershipTransferCollectionPlanDigest(plan OwnershipTransferApprovalCollect
 		out.String(plan.expectedHomeRegion)
 		out.Uint64(plan.expectedWriterEpoch)
 		out.Uint64(plan.authorizedWriterEpoch)
+		out.String(plan.authorizedWriterIdentity)
+		out.String(plan.authorizedWriterHomeRegion)
 		out.FixedBytes(plan.writerEvidenceDigest[:], 32)
 		out.Bytes(dependencies)
 		out.FixedBytes(nextDigest[:], 32)
@@ -597,6 +638,7 @@ func verifyOwnershipTransferApprovalCollectionShape(plan OwnershipTransferApprov
 		return ErrPendingPlanInvalid
 	}
 	if next.Version == 0 || next.WriterEpoch != plan.authorizedWriterEpoch ||
+		plan.authorizedWriterIdentity == "" || plan.authorizedWriterHomeRegion != next.HomeRegion ||
 		plan.writerEvidenceDigest == ([32]byte{}) {
 		return ErrPendingPlanInvalid
 	}

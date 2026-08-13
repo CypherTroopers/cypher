@@ -50,6 +50,7 @@ var (
 	ErrAuditEvidence           = errors.New("aiinfra governance: required source record digest is absent from audit evidence")
 	ErrSnapshotInconsistent    = errors.New("aiinfra governance: authoritative snapshot is inconsistent")
 	ErrApprovalCollection      = errors.New("aiinfra governance: approval collection is required or inconsistent")
+	ErrSemanticUnrehydratable  = errors.New("aiinfra governance: canonical row has no lossless semantic companion")
 )
 
 // DuplicateCompletedError returns the durable outcome for an exact retry.
@@ -113,6 +114,8 @@ type GovernanceKeySnapshot struct {
 	AllowedMessageTypeIDs           []uint32
 	Roles                           []string
 	AuthorizationPolicyDigestSHA256 [ccse.DigestSize]byte
+	KeyMaterialStateVersion         uint64
+	KeyMaterialStateDigestSHA256    [ccse.DigestSize]byte
 	StateVersion                    uint64
 	WriterEpoch                     uint64
 	SnapshotDigestSHA256            [ccse.DigestSize]byte
@@ -132,10 +135,15 @@ type KeyStatePrecondition struct {
 	StateVersion                      uint64
 	WriterEpoch                       uint64
 	SnapshotDigestSHA256              [ccse.DigestSize]byte
+	IdentityKind                      uint32
+	IdentityPrincipalKind             uint32
+	IdentityObjectID                  string
 	IdentityStateVersion              uint64
 	IdentityWriterEpoch               uint64
 	IdentitySnapshotDigestSHA256      [ccse.DigestSize]byte
 	AuthorizationSnapshotDigestSHA256 [ccse.DigestSize]byte
+	KeyMaterialStateVersion           uint64
+	KeyMaterialStateDigestSHA256      [ccse.DigestSize]byte
 }
 
 // IAMView is intentionally local to avoid an iam <-> governance import cycle.
@@ -149,6 +157,27 @@ type IAMView interface {
 	// record, and must not reinterpret an old approval through current IAM
 	// state after rotation or revocation.
 	ResolveGovernanceKeyAt(context.Context, string, int64) (GovernanceKeySnapshot, bool, error)
+}
+
+// CanonicalGovernanceKeyStateProjection is the exact storage-neutral IAM
+// read-set behind one Governance key precondition. A composition-root adapter
+// must obtain all three rows from the same optimistic pre-sign snapshot used
+// to resolve the key. Governance retains the codec-owned bytes and the final
+// serializable UoW must assert them byte-for-byte; it must not reconstruct IAM
+// rows from the smaller KeyStatePrecondition tuple.
+type CanonicalGovernanceKeyStateProjection struct {
+	KeyMaterial CanonicalStateRecord
+	Lifecycle   CanonicalStateRecord
+	Identity    CanonicalStateRecord
+}
+
+// CanonicalGovernanceKeyStateView is an optional authoritative extension.
+// Planning fails closed when it is absent because a digest-only key fence
+// cannot be translated into an exact durable read assertion without guessing
+// IAM's private canonical codecs.
+type CanonicalGovernanceKeyStateView interface {
+	CanonicalGovernanceKeyState(context.Context, KeyStatePrecondition) (
+		CanonicalGovernanceKeyStateProjection, bool, error)
 }
 
 // PolicyRecordSnapshot describes one immutable policy-registry history item.
@@ -238,6 +267,181 @@ type GovernanceProfileCatalog interface {
 	ActiveGovernanceProfile(context.Context, int64) (GovernanceProfileActivationSnapshot, bool, error)
 }
 
+// CanonicalGovernanceProfileActivationView is an optional authoritative
+// extension implemented by a composition-root adapter. Governance owns the
+// closed activation codec and byte-compares the returned row to the exact
+// semantic snapshot; the adapter supplies authoritative row presence only.
+type CanonicalGovernanceProfileActivationView interface {
+	CanonicalGovernanceProfileActivation(context.Context, GovernanceProfileActivationSnapshot) (CanonicalStateRecord, bool, error)
+}
+
+// CanonicalPolicyRegistryTransition is the detached semantic request supplied
+// to the policy view's canonical codec. The view returns both the exact locked
+// row and the exact proposed row in one snapshot operation.
+type CanonicalPolicyRegistryTransition struct {
+	Action                         MutationKind
+	PolicyKind                     string
+	PolicyBundleID                 string
+	PolicyRecordID                 string
+	PolicySequence                 uint64
+	PolicyBundleDigestSHA256       [ccse.DigestSize]byte
+	CanonicalPolicyBundle          []byte
+	AuditEventID                   string
+	ExpectedHeadPresent            bool
+	ExpectedHeadSequence           uint64
+	ExpectedHeadBundleDigestSHA256 [ccse.DigestSize]byte
+	GovernanceProfileActivation    GovernanceProfileActivationSnapshot
+}
+
+// CanonicalGovernancePolicyRegistryView is an optional authoritative state
+// extension. Implementations obtain Expected and project Next under the
+// immutable canonical-state contract; Governance byte-compares both rows to
+// the signed canonical policy payload and exact registry head.
+type CanonicalGovernancePolicyRegistryView interface {
+	CanonicalGovernancePolicyRegistryTransition(context.Context, CanonicalPolicyRegistryTransition) (
+		expected CanonicalStateRecord, expectedPresent bool, next CanonicalStateRecord, err error)
+}
+
+const (
+	CanonicalStateNamespaceIAM        uint8 = 1
+	CanonicalStateNamespaceGovernance uint8 = 2
+
+	CanonicalStateKindIAMKeyMaterial  = "cph.aiinfra.iam.key-material.v1"
+	CanonicalStateKindIAMIdentity     = "cph.aiinfra.iam.identity.v1"
+	CanonicalStateKindIAMKeyLifecycle = "cph.aiinfra.iam.key-lifecycle.v1"
+	CanonicalStateKindIAMWriterLease  = "cph.aiinfra.iam.writer-lease.v1"
+
+	CanonicalStateContentTypeIAMKeyMaterial  = "application/cph.aiinfra.iam.key-material-state.v1"
+	CanonicalStateContentTypeIAMIdentity     = "application/cph.aiinfra.iam.identity-state.v1"
+	CanonicalStateContentTypeIAMKeyLifecycle = "application/cph.aiinfra.iam.key-lifecycle-state.v1"
+	CanonicalStateContentTypeIAMWriterLease  = "application/cph.aiinfra.iam.writer-lease-state.v1"
+
+	CanonicalStateKindGovernancePolicyRegistry    = "cph.aiinfra.governance.policy-registry.v1"
+	CanonicalStateKindGovernanceProfileActivation = "cph.aiinfra.governance.profile-activation.v1"
+
+	CanonicalStateContentTypeGovernancePolicyRegistry    = "application/cph.aiinfra.governance.policy-registry-state.v1"
+	CanonicalStateContentTypeGovernanceProfileActivation = "application/cph.aiinfra.governance.profile-activation-state.v1"
+)
+
+// CanonicalStateRecord is the storage-neutral exact row projection accepted
+// from the authoritative view. StateDigest is semantic-codec-owned, so this
+// package validates the complete row shape and immutable ownership but never
+// substitutes plain SHA-256 for that digest.
+type CanonicalStateRecord struct {
+	Namespace          uint8
+	Kind               string
+	ObjectID           string
+	Version            uint64
+	StateDigestSHA256  [ccse.DigestSize]byte
+	ContentType        string
+	CanonicalState     []byte
+	Terminal           bool
+	AuditEventID       string
+	HasValidityWindow  bool
+	ValidFromUnixNano  int64
+	ValidUntilUnixNano int64
+}
+
+// CanonicalStateAssertion is an opaque read assertion. Construction is
+// restricted to exact rows returned by an authoritative canonical-state view,
+// and its digest is re-derived from the complete retained row on every plan
+// verification.
+type CanonicalStateAssertion struct {
+	record CanonicalStateRecord
+	digest [ccse.DigestSize]byte
+}
+
+// CanonicalKeyStateAssertion is the opaque, storage-ready read capability for
+// one key authorization snapshot. Records returns the exact IAM
+// key-material/lifecycle/identity rows in deterministic order.
+type CanonicalKeyStateAssertion struct {
+	precondition KeyStatePrecondition
+	records      []CanonicalStateAssertion
+	digest       [ccse.DigestSize]byte
+}
+
+func (value CanonicalKeyStateAssertion) KeyPrecondition() KeyStatePrecondition {
+	return value.precondition
+}
+func (value CanonicalKeyStateAssertion) Records() []CanonicalStateRecord {
+	result := make([]CanonicalStateRecord, len(value.records))
+	for index := range value.records {
+		result[index] = value.records[index].Record()
+	}
+	return result
+}
+func (value CanonicalKeyStateAssertion) Digest() [ccse.DigestSize]byte { return value.digest }
+func (value CanonicalKeyStateAssertion) VerifyDigest() error {
+	digest, err := digestCanonicalKeyStateAssertion(value.precondition, value.records)
+	if err != nil || digest != value.digest {
+		return ErrSnapshotInconsistent
+	}
+	return nil
+}
+
+// CanonicalAuditWriterLeaseAssertion is the opaque current-authority read
+// capability. Record is a complete IAM writer-lease row ready for a storage
+// assertion; Requirement is the independently bound Governance tuple used to
+// select it.
+type CanonicalAuditWriterLeaseAssertion struct {
+	requirement CanonicalAuditWriterLeaseRequirement
+	record      CanonicalStateAssertion
+	digest      [ccse.DigestSize]byte
+}
+
+func (value CanonicalAuditWriterLeaseAssertion) Requirement() CanonicalAuditWriterLeaseRequirement {
+	return value.requirement
+}
+func (value CanonicalAuditWriterLeaseAssertion) Record() CanonicalStateRecord {
+	return value.record.Record()
+}
+func (value CanonicalAuditWriterLeaseAssertion) Digest() [ccse.DigestSize]byte { return value.digest }
+func (value CanonicalAuditWriterLeaseAssertion) VerifyDigest() error {
+	digest, err := digestCanonicalAuditWriterLeaseAssertion(value.requirement, value.record)
+	if err != nil || digest != value.digest {
+		return ErrSnapshotInconsistent
+	}
+	return nil
+}
+
+func (value CanonicalStateAssertion) Record() CanonicalStateRecord {
+	return cloneCanonicalStateRecord(value.record)
+}
+func (value CanonicalStateAssertion) Digest() [ccse.DigestSize]byte { return value.digest }
+func (value CanonicalStateAssertion) VerifyDigest() error {
+	digest, err := digestCanonicalStateAssertion(value.record)
+	if err != nil || digest != value.digest {
+		return ErrSnapshotInconsistent
+	}
+	return nil
+}
+
+// CanonicalStateMutation retains the complete expected->next CAS. A nil
+// Expected row is valid only for an absent-to-version-one insert.
+type CanonicalStateMutation struct {
+	expected *CanonicalStateRecord
+	next     CanonicalStateRecord
+	digest   [ccse.DigestSize]byte
+}
+
+func (value CanonicalStateMutation) Expected() (CanonicalStateRecord, bool) {
+	if value.expected == nil {
+		return CanonicalStateRecord{}, false
+	}
+	return cloneCanonicalStateRecord(*value.expected), true
+}
+func (value CanonicalStateMutation) Next() CanonicalStateRecord {
+	return cloneCanonicalStateRecord(value.next)
+}
+func (value CanonicalStateMutation) Digest() [ccse.DigestSize]byte { return value.digest }
+func (value CanonicalStateMutation) VerifyDigest() error {
+	digest, err := digestCanonicalStateMutation(value.expected, value.next)
+	if err != nil || digest != value.digest {
+		return ErrSnapshotInconsistent
+	}
+	return nil
+}
+
 // GovernanceProfileActivationSnapshot is the authoritative timeline row used
 // both for historical interpretation and as a commit-time CAS. Validity is a
 // half-open interval and EvidenceDigest names its immutable activation record.
@@ -281,6 +485,32 @@ type ApprovalCollectionView interface {
 	SnapshotPolicyApprovalCollection(context.Context, [ccse.MessageIDSize]byte) ([]PolicyApprovalCollectionEntry, error)
 }
 
+// PolicyApprovalCollectionPersistenceSnapshot is an exact, storage-neutral
+// read of the current open kind-7 head. It is accepted only through the
+// optional authoritative extension below and is redecoded/rederived before a
+// persistence capability is minted.
+type PolicyApprovalCollectionPersistenceSnapshot struct {
+	PendingKey                   [ccse.MessageIDSize]byte
+	Kind                         DurablePendingKind
+	Codec                        string
+	CodecVersion                 uint32
+	Revision                     uint64
+	PreviousEnvelopeDigestSHA256 [ccse.DigestSize]byte
+	EnvelopeDigestSHA256         [ccse.DigestSize]byte
+	CanonicalEnvelope            []byte
+	EvidenceDigestsSHA256        [][ccse.DigestSize]byte
+	Status                       DurablePendingStatus
+	CommitNotBeforeUnixNano      int64
+	CommitNotAfterUnixNano       int64
+	TerminalOutcomeDigestSHA256  [ccse.DigestSize]byte
+	ExpectedAuditEventID         string
+}
+
+type PolicyApprovalCollectionPersistenceView interface {
+	SnapshotPolicyApprovalCollectionPersistence(context.Context, [ccse.MessageIDSize]byte) (
+		PolicyApprovalCollectionPersistenceSnapshot, bool, error)
+}
+
 // PolicyDocumentSnapshot is metadata independently resolved by the content
 // digest committed in PolicyBundle. v1 keeps the policy document opaque, so
 // break-glass scope must be verified through this content-addressed view.
@@ -302,6 +532,11 @@ type EvidenceKind uint8
 const (
 	EvidenceContentSHA256 EvidenceKind = iota + 1
 	EvidenceSignedCCSERecord
+	// EvidenceSemanticReceipt is a protocol-owned, domain-separated canonical
+	// preimage. Unlike EvidenceContentSHA256, its address is not the plain
+	// SHA-256 of Content. The closed domain is retained and rechecked by every
+	// plan digest before a storage adapter may persist it.
+	EvidenceSemanticReceipt
 )
 
 // EvidenceSnapshot is a closed union. Content is used only by
@@ -341,6 +576,33 @@ type AuditHeadSnapshot struct {
 type AuditView interface {
 	SnapshotAuditHead(context.Context, string) (AuditHeadSnapshot, error)
 	LookupAuditEvent(context.Context, string) (AuditEventSnapshot, bool, error)
+}
+
+// CanonicalAuditWriterLeaseRequirement is the complete current-authority
+// tuple selected before the outer AuditEvent is signed. It is deliberately
+// separate from the immutable historical audit-head tuple so lease renewal
+// and higher-epoch failover remain reachable.
+type CanonicalAuditWriterLeaseRequirement struct {
+	StreamID                                string
+	WriterLeaseEntityKind                   uint32
+	WriterLeaseEntityPrincipalKind          uint32
+	WriterLeaseEntityID                     string
+	AuthorizedWriterIdentity                string
+	AuthorizedHomeRegion                    string
+	AuthorizedWriterEpoch                   uint64
+	AuthorizedGovernanceProfileDigestSHA256 [ccse.DigestSize]byte
+	WriterLeaseEvidenceDigestSHA256         [ccse.DigestSize]byte
+	WriterLeaseNotBeforeUnixNano            int64
+	WriterLeaseNotAfterUnixNano             int64
+}
+
+// CanonicalAuditWriterLeaseView is a fail-closed optional extension. It must
+// resolve the exact IAM writer-lease row semantically encoding requirement.
+// The final UoW asserts that row byte-for-byte rather than treating the
+// renewable tuple cached in audit_head as current authority.
+type CanonicalAuditWriterLeaseView interface {
+	CanonicalAuditWriterLease(context.Context, CanonicalAuditWriterLeaseRequirement) (
+		CanonicalStateRecord, bool, error)
 }
 
 // AuditEventSnapshot is the immutable uniqueness index for AuditEventID.
@@ -427,6 +689,11 @@ type MutationPlanSnapshot struct {
 	CommitNotAfterUnixNano                         int64
 	GovernanceProfileDigestSHA256                  [ccse.DigestSize]byte
 	GovernanceProfileActivation                    GovernanceProfileActivationSnapshot
+	CanonicalStateAssertions                       []CanonicalStateAssertion
+	CanonicalKeyStateAssertions                    []CanonicalKeyStateAssertion
+	CanonicalAuditWriterLeaseAssertion             CanonicalAuditWriterLeaseAssertion
+	CanonicalStateMutations                        []CanonicalStateMutation
+	DurablePolicyApprovalTerminalTemplate          DurablePendingTerminalTemplate
 	Kind                                           MutationKind
 	PolicyBundleID                                 string
 	PolicyRecordID                                 string
@@ -458,7 +725,9 @@ type MutationPlanSnapshot struct {
 	ApprovalRecordDigestsSHA256                    [][ccse.DigestSize]byte
 	AuditSourceDigestsSHA256                       [][ccse.DigestSize]byte
 	AuditSourceEvidence                            []DurableEvidence
+	AuditSourceStorageCapabilities                 []DurableEvidenceStorageCapability
 	AuditSourceKeyPreconditions                    []KeyStatePrecondition
+	CanonicalAuditAppend                           CanonicalAuditAppendCapability
 	ApprovalEvidence                               []SignedEvidence
 	ApprovalAdmissionEvidence                      []ApprovalAdmissionEvidence
 	ApprovalKeyPreconditions                       []KeyStatePrecondition
@@ -530,6 +799,7 @@ type DurableEvidence struct {
 	kind                       EvidenceKind
 	digest                     [ccse.DigestSize]byte
 	content                    []byte
+	semanticDomain             string
 	signed                     SignedEvidence
 	authorizationPolicyDigests [][ccse.DigestSize]byte
 	keyPreconditionPresent     bool
@@ -537,9 +807,313 @@ type DurableEvidence struct {
 	authorizationNotAfter      int64
 }
 
+// CanonicalAuditAppendCapability is the storage-neutral, immutable projection
+// of one exact AuditEvent append and its complete audit-head CAS. A storage
+// mapper copies its getters; it never decodes the signed payload or derives a
+// prior-head field itself.
+type CanonicalAuditAppendCapability struct {
+	eventID                             string
+	streamID                            string
+	sequence                            uint64
+	previousEventDigest                 [ccse.DigestSize]byte
+	hasPrevious                         bool
+	eventDigest                         [ccse.DigestSize]byte
+	recordDigest                        [ccse.DigestSize]byte
+	canonicalEvent                      []byte
+	occurredAtUnixNano                  int64
+	deploymentAnchorDigest              [ccse.DigestSize]byte
+	expectedHeadWriterIdentity          string
+	authorizedWriterIdentity            string
+	expectedHeadHomeRegion              string
+	authorizedHomeRegion                string
+	expectedHeadWriterEpoch             uint64
+	authorizedWriterEpoch               uint64
+	expectedHeadGovernanceProfileDigest [ccse.DigestSize]byte
+	authorizedGovernanceProfileDigest   [ccse.DigestSize]byte
+	writerLeaseEvidenceDigest           [ccse.DigestSize]byte
+	writerLeaseNotBeforeUnixNano        int64
+	writerLeaseNotAfterUnixNano         int64
+	digest                              [ccse.DigestSize]byte
+}
+
+func (value CanonicalAuditAppendCapability) EventID() string  { return value.eventID }
+func (value CanonicalAuditAppendCapability) StreamID() string { return value.streamID }
+func (value CanonicalAuditAppendCapability) Sequence() uint64 { return value.sequence }
+func (value CanonicalAuditAppendCapability) PreviousEventDigest() ([ccse.DigestSize]byte, bool) {
+	return value.previousEventDigest, value.hasPrevious
+}
+func (value CanonicalAuditAppendCapability) EventDigest() [ccse.DigestSize]byte {
+	return value.eventDigest
+}
+func (value CanonicalAuditAppendCapability) RecordDigest() [ccse.DigestSize]byte {
+	return value.recordDigest
+}
+func (value CanonicalAuditAppendCapability) CanonicalEvent() []byte {
+	return append([]byte(nil), value.canonicalEvent...)
+}
+func (value CanonicalAuditAppendCapability) OccurredAtUnixNano() int64 {
+	return value.occurredAtUnixNano
+}
+func (value CanonicalAuditAppendCapability) DeploymentAnchorDigest() [ccse.DigestSize]byte {
+	return value.deploymentAnchorDigest
+}
+func (value CanonicalAuditAppendCapability) ExpectedHeadWriterIdentity() string {
+	return value.expectedHeadWriterIdentity
+}
+func (value CanonicalAuditAppendCapability) AuthorizedWriterIdentity() string {
+	return value.authorizedWriterIdentity
+}
+func (value CanonicalAuditAppendCapability) ExpectedHeadHomeRegion() string {
+	return value.expectedHeadHomeRegion
+}
+func (value CanonicalAuditAppendCapability) AuthorizedHomeRegion() string {
+	return value.authorizedHomeRegion
+}
+func (value CanonicalAuditAppendCapability) ExpectedHeadWriterEpoch() uint64 {
+	return value.expectedHeadWriterEpoch
+}
+func (value CanonicalAuditAppendCapability) AuthorizedWriterEpoch() uint64 {
+	return value.authorizedWriterEpoch
+}
+func (value CanonicalAuditAppendCapability) ExpectedHeadGovernanceProfileDigest() [ccse.DigestSize]byte {
+	return value.expectedHeadGovernanceProfileDigest
+}
+func (value CanonicalAuditAppendCapability) AuthorizedGovernanceProfileDigest() [ccse.DigestSize]byte {
+	return value.authorizedGovernanceProfileDigest
+}
+func (value CanonicalAuditAppendCapability) WriterLeaseEvidenceDigest() [ccse.DigestSize]byte {
+	return value.writerLeaseEvidenceDigest
+}
+func (value CanonicalAuditAppendCapability) WriterLeaseNotBeforeUnixNano() int64 {
+	return value.writerLeaseNotBeforeUnixNano
+}
+func (value CanonicalAuditAppendCapability) WriterLeaseNotAfterUnixNano() int64 {
+	return value.writerLeaseNotAfterUnixNano
+}
+func (value CanonicalAuditAppendCapability) Digest() [ccse.DigestSize]byte { return value.digest }
+func (value CanonicalAuditAppendCapability) VerifyDigest() error {
+	digest, err := digestCanonicalAuditAppendCapability(value)
+	if err != nil || digest != value.digest {
+		return ErrAuditAnchor
+	}
+	return nil
+}
+
+// DurableEvidenceStorageKind uses the exact closed numeric representation of
+// the canonical storage contract. Value 3 is reserved for IAM authenticated
+// evidence and cannot be minted by Governance.
+type DurableEvidenceStorageKind uint8
+
+const (
+	DurableEvidenceStorageContentSHA256 DurableEvidenceStorageKind = 1
+	DurableEvidenceStorageSignedCCSE    DurableEvidenceStorageKind = 2
+	DurableEvidenceStorageSemantic      DurableEvidenceStorageKind = 4
+
+	DurableEvidenceContentSHA256ContentType = "application/vnd.cph.aiinfra.governance.content-sha256.v1"
+	DurableEvidenceSignedCCSEContentType    = "application/vnd.cph.aiinfra.governance.signed-ccse-record.v1+ccse"
+	DurableEvidenceSemanticContentType      = "application/vnd.cph.aiinfra.governance.semantic-receipt.v1+ccse"
+)
+
+// DurablePendingKind and DurablePendingStatus use the exact closed numeric
+// storage contract without importing a concrete database adapter. Governance
+// can mint only kind 7.
+type DurablePendingKind uint8
+type DurablePendingStatus uint8
+
+const (
+	DurablePendingGovernancePolicyApprovalCollection DurablePendingKind   = 7
+	DurablePendingOpen                               DurablePendingStatus = 1
+	DurablePendingTerminal                           DurablePendingStatus = 2
+)
+
+// DurablePendingRevisionCapability is the exact storage-ready kind-7
+// revision. All mutable bytes are private and every getter is detached.
+type DurablePendingRevisionCapability struct {
+	pendingKey                      [ccse.MessageIDSize]byte
+	expectedKind                    DurablePendingKind
+	kind                            DurablePendingKind
+	codec                           string
+	codecVersion                    uint32
+	revision                        uint64
+	previousEnvelopeDigest          [ccse.DigestSize]byte
+	previousCanonicalEnvelope       []byte
+	previousCommitNotBeforeUnixNano int64
+	previousCommitNotAfterUnixNano  int64
+	sourcePreviousEnvelopeDigest    [ccse.DigestSize]byte
+	sourceEvidenceDigests           [][ccse.DigestSize]byte
+	envelopeDigest                  [ccse.DigestSize]byte
+	canonicalEnvelope               []byte
+	evidenceDigests                 [][ccse.DigestSize]byte
+	status                          DurablePendingStatus
+	commitNotBeforeUnixNano         int64
+	commitNotAfterUnixNano          int64
+	terminalOutcomeDigest           [ccse.DigestSize]byte
+	expectedAuditEventID            string
+	terminalTemplateBaseDigest      [ccse.DigestSize]byte
+	digest                          [ccse.DigestSize]byte
+}
+
+func (value DurablePendingRevisionCapability) PendingKey() [ccse.MessageIDSize]byte {
+	return value.pendingKey
+}
+func (value DurablePendingRevisionCapability) ExpectedKind() DurablePendingKind {
+	return value.expectedKind
+}
+func (value DurablePendingRevisionCapability) Kind() DurablePendingKind { return value.kind }
+func (value DurablePendingRevisionCapability) Codec() string            { return value.codec }
+func (value DurablePendingRevisionCapability) CodecVersion() uint32     { return value.codecVersion }
+func (value DurablePendingRevisionCapability) Revision() uint64         { return value.revision }
+func (value DurablePendingRevisionCapability) PreviousEnvelopeDigest() [ccse.DigestSize]byte {
+	return value.previousEnvelopeDigest
+}
+func (value DurablePendingRevisionCapability) PreviousCanonicalEnvelope() []byte {
+	return append([]byte(nil), value.previousCanonicalEnvelope...)
+}
+func (value DurablePendingRevisionCapability) PreviousCommitWindow() (int64, int64) {
+	return value.previousCommitNotBeforeUnixNano, value.previousCommitNotAfterUnixNano
+}
+func (value DurablePendingRevisionCapability) SourcePreviousEnvelopeDigest() ([ccse.DigestSize]byte, bool) {
+	return value.sourcePreviousEnvelopeDigest, value.revision > 1
+}
+func (value DurablePendingRevisionCapability) SourceEvidenceDigests() ([][ccse.DigestSize]byte, bool) {
+	return append([][ccse.DigestSize]byte(nil), value.sourceEvidenceDigests...), value.revision > 1
+}
+func (value DurablePendingRevisionCapability) EnvelopeDigest() [ccse.DigestSize]byte {
+	return value.envelopeDigest
+}
+func (value DurablePendingRevisionCapability) CanonicalEnvelope() []byte {
+	return append([]byte(nil), value.canonicalEnvelope...)
+}
+func (value DurablePendingRevisionCapability) EvidenceDigests() [][ccse.DigestSize]byte {
+	return append([][ccse.DigestSize]byte(nil), value.evidenceDigests...)
+}
+func (value DurablePendingRevisionCapability) Status() DurablePendingStatus { return value.status }
+func (value DurablePendingRevisionCapability) CommitWindow() (int64, int64) {
+	return value.commitNotBeforeUnixNano, value.commitNotAfterUnixNano
+}
+func (value DurablePendingRevisionCapability) TerminalOutcomeDigest() ([ccse.DigestSize]byte, bool) {
+	return value.terminalOutcomeDigest, value.status == DurablePendingTerminal && !isZeroDigest(value.terminalOutcomeDigest)
+}
+func (value DurablePendingRevisionCapability) ExpectedAuditEventID() string {
+	return value.expectedAuditEventID
+}
+func (value DurablePendingRevisionCapability) TerminalTemplateBaseDigest() ([ccse.DigestSize]byte, bool) {
+	return value.terminalTemplateBaseDigest, value.status == DurablePendingTerminal && !isZeroDigest(value.terminalTemplateBaseDigest)
+}
+func (value DurablePendingRevisionCapability) Digest() [ccse.DigestSize]byte { return value.digest }
+func (value DurablePendingRevisionCapability) VerifyDigest() error {
+	digest, err := digestDurablePendingRevisionCapability(value)
+	if err != nil || digest != value.digest {
+		return ErrApprovalCollection
+	}
+	return nil
+}
+
+// DurablePendingTerminalTemplate binds every terminal field except the outer
+// audited replay outcome. The explicit V1 unset sentinel is included in its
+// BaseDigest. Finalize accepts only a nonzero result digest and cannot alter
+// any base field.
+type DurablePendingTerminalTemplate struct {
+	base       DurablePendingRevisionCapability
+	baseDigest [ccse.DigestSize]byte
+}
+
+func (value DurablePendingTerminalTemplate) BaseDigest() [ccse.DigestSize]byte {
+	return value.baseDigest
+}
+func (value DurablePendingTerminalTemplate) VerifyDigest() error {
+	digest, err := digestDurablePendingTerminalTemplate(value.base)
+	if err != nil || digest != value.baseDigest || value.base.terminalTemplateBaseDigest != value.baseDigest {
+		return ErrApprovalCollection
+	}
+	return nil
+}
+func (value DurablePendingTerminalTemplate) PendingKey() [ccse.MessageIDSize]byte {
+	return value.base.pendingKey
+}
+func (value DurablePendingTerminalTemplate) Revision() uint64 { return value.base.revision }
+func (value DurablePendingTerminalTemplate) ExpectedAuditEventID() string {
+	return value.base.expectedAuditEventID
+}
+func (value DurablePendingTerminalTemplate) Finalize(resultDigest [ccse.DigestSize]byte) (DurablePendingRevisionCapability, error) {
+	if value.VerifyDigest() != nil || isZeroDigest(resultDigest) {
+		return DurablePendingRevisionCapability{}, ErrApprovalCollection
+	}
+	result := cloneDurablePendingRevisionCapability(value.base)
+	result.terminalOutcomeDigest = resultDigest
+	var err error
+	result.digest, err = digestDurablePendingRevisionCapability(result)
+	if err != nil {
+		return DurablePendingRevisionCapability{}, ErrApprovalCollection
+	}
+	return result, nil
+}
+
+// DurableEvidenceStorageDisposition closes the coordinator action for one
+// evidence row. ReserveNew maps only to immutable insertion; AssertExisting
+// maps only to byte-exact assertion. It is not inferred from row presence.
+type DurableEvidenceStorageDisposition uint8
+
+const (
+	DurableEvidenceStorageReserveNew DurableEvidenceStorageDisposition = iota + 1
+	DurableEvidenceStorageAssertExisting
+)
+
+// DurableEvidenceStorageCapability is the sole storage-ready representation
+// of Governance audit evidence. Its canonical bytes and attribution are
+// private and digest-bound; a coordinator only copies the public getters into
+// its durable evidence row and performs no codec inference.
+type DurableEvidenceStorageCapability struct {
+	evidenceDigest   [ccse.DigestSize]byte
+	kind             DurableEvidenceStorageKind
+	contentType      string
+	canonicalContent []byte
+	// expectedAuditEventID is immutable evidence-row origin attribution.
+	// auditAssertionEventID is the current AuditEvent whose assertion consumes
+	// the row; these differ when IAM reuses admission evidence for a child.
+	expectedAuditEventID  string
+	auditAssertionEventID string
+	disposition           DurableEvidenceStorageDisposition
+	hasPendingLink        bool
+	pendingKey            [ccse.MessageIDSize]byte
+	pendingRevision       uint64
+	iamExistingProof      *durableEvidenceIAMExistingProof
+	digest                [ccse.DigestSize]byte
+}
+
+func (value DurableEvidenceStorageCapability) EvidenceDigest() [ccse.DigestSize]byte {
+	return value.evidenceDigest
+}
+func (value DurableEvidenceStorageCapability) Kind() DurableEvidenceStorageKind { return value.kind }
+func (value DurableEvidenceStorageCapability) ContentType() string              { return value.contentType }
+func (value DurableEvidenceStorageCapability) CanonicalContent() []byte {
+	return append([]byte(nil), value.canonicalContent...)
+}
+func (value DurableEvidenceStorageCapability) ExpectedAuditEventID() string {
+	return value.expectedAuditEventID
+}
+func (value DurableEvidenceStorageCapability) AuditAssertionEventID() string {
+	return value.auditAssertionEventID
+}
+func (value DurableEvidenceStorageCapability) Disposition() DurableEvidenceStorageDisposition {
+	return value.disposition
+}
+func (value DurableEvidenceStorageCapability) PendingLink() ([ccse.MessageIDSize]byte, uint64, bool) {
+	return value.pendingKey, value.pendingRevision, value.hasPendingLink
+}
+func (value DurableEvidenceStorageCapability) Digest() [ccse.DigestSize]byte { return value.digest }
+func (value DurableEvidenceStorageCapability) VerifyDigest() error {
+	digest, err := digestDurableEvidenceStorageCapability(value)
+	if err != nil || digest != value.digest {
+		return ErrAuditEvidence
+	}
+	return nil
+}
+
 func (e DurableEvidence) Kind() EvidenceKind             { return e.kind }
 func (e DurableEvidence) Digest() [ccse.DigestSize]byte  { return e.digest }
 func (e DurableEvidence) Content() []byte                { return append([]byte(nil), e.content...) }
+func (e DurableEvidence) SemanticDomain() string         { return e.semanticDomain }
 func (e DurableEvidence) SignedEvidence() SignedEvidence { return cloneSignedEvidence(e.signed) }
 func (e DurableEvidence) AuthorizationPolicyDigests() [][ccse.DigestSize]byte {
 	return append([][ccse.DigestSize]byte(nil), e.authorizationPolicyDigests...)
@@ -619,6 +1193,8 @@ type ApprovalCollectionPlanSnapshot struct {
 	CommitNotAfterUnixNano                int64
 	GovernanceProfileDigestSHA256         [ccse.DigestSize]byte
 	GovernanceProfileActivation           GovernanceProfileActivationSnapshot
+	CanonicalStateAssertions              []CanonicalStateAssertion
+	CanonicalKeyStateAssertions           []CanonicalKeyStateAssertion
 	Disposition                           ApprovalCollectionDisposition
 	Binding                               idempotency.Binding
 	JoinedAuditIdempotencySnapshot        idempotency.Snapshot
@@ -636,6 +1212,8 @@ type ApprovalCollectionPlanSnapshot struct {
 	NextAdmissionValidatedAtUnixNano      int64
 	NextAdmissionFingerprintSHA256        [ccse.DigestSize]byte
 	JoinedAuditEventID                    string
+	DurablePendingRevision                DurablePendingRevisionCapability
+	NextEvidenceStorageCapability         DurableEvidenceStorageCapability
 	IdentifierClaims                      []globalid.Claim
 }
 
@@ -652,6 +1230,11 @@ func (p ApprovalCollectionPlan) Snapshot() ApprovalCollectionPlanSnapshot {
 	value.IdentifierClaims = append([]globalid.Claim(nil), value.IdentifierClaims...)
 	value.NextEvidence = cloneSignedEvidence(value.NextEvidence)
 	value.NextAdmissionKey = cloneKeySnapshot(value.NextAdmissionKey)
+	value.CanonicalStateAssertions = cloneCanonicalStateAssertions(value.CanonicalStateAssertions)
+	value.CanonicalKeyStateAssertions = cloneCanonicalKeyStateAssertions(value.CanonicalKeyStateAssertions)
+	value.DurablePendingRevision = cloneDurablePendingRevisionCapability(value.DurablePendingRevision)
+	value.NextEvidenceStorageCapability = cloneDurableEvidenceStorageCapabilities(
+		[]DurableEvidenceStorageCapability{value.NextEvidenceStorageCapability})[0]
 	return value
 }
 func (p ApprovalCollectionPlan) Digest() [ccse.DigestSize]byte { return p.digest }

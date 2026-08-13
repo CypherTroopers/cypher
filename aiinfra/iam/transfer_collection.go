@@ -55,6 +55,13 @@ func (p *Planner) PlanOwnershipTransferApproval(ctx context.Context,
 	if err != nil {
 		return OwnershipTransferApprovalCollectionPlan{}, err
 	}
+	// The collection may later become the acceptance AuditEvent without another
+	// opportunity to change its frozen policy set. Reject an unrepresentable v1
+	// AuditEvent before reserving the first COLLECTING X/Y/global row.
+	if len(uniqueDigests(append(cloneDigests(projection.Metadata.PolicyDigestsSHA256),
+		profile.PolicyDigest))) > 62 {
+		return OwnershipTransferApprovalCollectionPlan{}, ErrPendingPlanInvalid
+	}
 	if command.EvaluatedAtUnixNano < profile.Activation.ValidFromUnixNano ||
 		command.EvaluatedAtUnixNano >= profile.Activation.ValidUntilUnixNano {
 		return OwnershipTransferApprovalCollectionPlan{}, ErrTransferAuthorizationRequired
@@ -119,7 +126,10 @@ func (p *Planner) PlanOwnershipTransferApproval(ctx context.Context,
 		Profile: profile, ProfileDigest: profileDigest, FixedEvidence: fixed,
 		HomeRegion: command.Fence.HomeRegion, WriterEpoch: command.Fence.WriterEpoch}
 	plan := OwnershipTransferApprovalCollectionPlan{evaluatedAtUnixNano: command.EvaluatedAtUnixNano,
-		authorizedWriterEpoch: command.Fence.WriterEpoch, writerEvidenceDigest: command.Fence.EvidenceDigest}
+		authorizedWriterEpoch:      command.Fence.WriterEpoch,
+		authorizedWriterIdentity:   command.Fence.WriterIdentity,
+		authorizedWriterHomeRegion: command.Fence.HomeRegion,
+		writerEvidenceDigest:       command.Fence.EvidenceDigest}
 	var parentSnapshot, auditSnapshot idempotency.Snapshot
 	switch decision.Kind() {
 	case idempotency.Proceed:

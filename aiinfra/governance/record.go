@@ -21,7 +21,12 @@ type signedRecordSnapshot struct {
 
 func (p *Planner) validateEvidenceSignedRecord(ctx context.Context, input SignedRecord, at int64) (signedRecordSnapshot, GovernanceKeySnapshot, error) {
 	const maxEvidencePayloadBytes = 1 << 20
-	snapshot, err := bindVerifiedSignedRecord(input, maxEvidencePayloadBytes)
+	// Durable evidence is restored after the replay-owning verifier process may
+	// have restarted. A zero VerifiedRecord is therefore expected; the raw
+	// record is rebound canonically here and authorizeKey below re-resolves IAM
+	// state and re-verifies the Ed25519 signature. A supplied nonzero verifier
+	// result is still required to match byte-for-byte.
+	snapshot, err := bindHistoricalSignedRecord(input, maxEvidencePayloadBytes)
 	if err != nil {
 		return signedRecordSnapshot{}, GovernanceKeySnapshot{}, ErrInvalidSignedRecord
 	}
@@ -141,8 +146,7 @@ func bindVerifiedSignedRecord(input SignedRecord, maxPayloadBytes int) (signedRe
 // byte-for-byte binding remains mandatory. Only the literal zero value selects
 // the raw historical path.
 func bindHistoricalSignedRecord(input SignedRecord, maxPayloadBytes int) (signedRecordSnapshot, error) {
-	if input.Verified.MessageTypeID() != 0 || input.Verified.SchemaVersion() != (ccse.Version{}) ||
-		input.Verified.Digest() != ([ccse.DigestSize]byte{}) {
+	if !zeroVerifiedRecord(input.Verified) {
 		return bindVerifiedSignedRecord(input, maxPayloadBytes)
 	}
 	if input.Record == nil || maxPayloadBytes <= 0 || !preflightRawRecord(input.Record, maxPayloadBytes) {
@@ -160,6 +164,11 @@ func bindHistoricalSignedRecord(input SignedRecord, maxPayloadBytes int) (signed
 	return signedRecordSnapshot{record: record, digest: digest}, nil
 }
 
+func zeroVerifiedRecord(value ccse.VerifiedRecord) bool {
+	return value.MessageTypeID() == 0 && value.SchemaVersion() == (ccse.Version{}) &&
+		value.Digest() == ([ccse.DigestSize]byte{})
+}
+
 func exactGovernanceKeySnapshot(left, right GovernanceKeySnapshot) bool {
 	return left.KeyID == right.KeyID && left.SubjectIdentity == right.SubjectIdentity &&
 		left.TargetIdentityKind == right.TargetIdentityKind && left.TargetPrincipalKind == right.TargetPrincipalKind &&
@@ -170,6 +179,8 @@ func exactGovernanceKeySnapshot(left, right GovernanceKeySnapshot) bool {
 		equalUint32Sets(left.AllowedMessageTypeIDs, right.AllowedMessageTypeIDs) &&
 		equalStringSets(left.Roles, right.Roles) &&
 		left.AuthorizationPolicyDigestSHA256 == right.AuthorizationPolicyDigestSHA256 &&
+		left.KeyMaterialStateVersion == right.KeyMaterialStateVersion &&
+		left.KeyMaterialStateDigestSHA256 == right.KeyMaterialStateDigestSHA256 &&
 		left.StateVersion == right.StateVersion && left.WriterEpoch == right.WriterEpoch &&
 		left.SnapshotDigestSHA256 == right.SnapshotDigestSHA256 &&
 		left.IdentityStateVersion == right.IdentityStateVersion &&
@@ -239,7 +250,8 @@ func (p *Planner) authorizeKey(ctx context.Context, signed signedRecordSnapshot,
 		return GovernanceKeySnapshot{}, ErrKeyNotAuthorized
 	}
 	if key.StateVersion == 0 || key.WriterEpoch == 0 || isZeroDigest(key.SnapshotDigestSHA256) ||
-		key.IdentityStateVersion == 0 || key.IdentityWriterEpoch == 0 || isZeroDigest(key.IdentitySnapshotDigestSHA256) {
+		key.IdentityStateVersion == 0 || key.IdentityWriterEpoch == 0 || isZeroDigest(key.IdentitySnapshotDigestSHA256) ||
+		key.KeyMaterialStateVersion != 1 || isZeroDigest(key.KeyMaterialStateDigestSHA256) {
 		return GovernanceKeySnapshot{}, ErrSnapshotInconsistent
 	}
 	if hasDuplicateUint32(key.AllowedMessageTypeIDs) || hasDuplicateStrings(key.Roles) || containsEmpty(key.Roles) {

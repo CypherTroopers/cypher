@@ -129,14 +129,54 @@ func assertJoinedAuditRequestTamperResistance(t testing.TB, request JoinedAuditR
 	if request.CommitReady() || request.VerifyDigest() != nil {
 		t.Fatalf("invalid joined request: %v", request.VerifyDigest())
 	}
+	bundle, hasBundle := request.AuditEvidenceBundle()
+	if !hasBundle || bundle.VerifyFor(request) != nil || bundle.Digest() == ([32]byte{}) ||
+		bundle.EvidenceCount() != len(request.EvidenceReferences()) {
+		t.Fatalf("invalid IAM typed evidence bundle: present=%v", hasBundle)
+	}
+	domain, canonical, receiptDigest := bundle.SemanticReceipt()
+	if domain != iamAuditEvidenceReceiptDomain || receiptDigest != bundle.Digest() ||
+		domainDigest(iamAuditEvidenceBundleDomain, canonical) != receiptDigest || len(canonical) == 0 ||
+		len(bundle.AuditSourceDigestsSHA256()) == 0 || len(bundle.AuditSourceDigestsSHA256()) > 2 {
+		t.Fatal("typed evidence semantic receipt mismatch")
+	}
+	canonical[0] ^= 1
+	if bundle.VerifyFor(request) != nil || bytes.Equal(canonical, bundle.CanonicalBytes()) {
+		t.Fatal("typed evidence canonical getter aliases retained bytes")
+	}
+	if source, ok := bundle.SourceAuthorizationRecord(); !ok {
+		t.Fatal("typed evidence historical source missing")
+	} else {
+		source.Signature[0] ^= 1
+		actual, _ := bundle.SourceAuthorizationRecord()
+		if bytes.Equal(source.Signature, actual.Signature) || bundle.VerifyFor(request) != nil {
+			t.Fatal("typed evidence source getter aliases retained record")
+		}
+	}
+	tamperedBundle := bundle
+	tamperedBundle.digest[0] ^= 1
+	if tamperedBundle.VerifyFor(request) == nil {
+		t.Fatal("typed evidence bundle digest tamper accepted")
+	}
+	mismatchedRequest := request
+	mismatchedRequest.digest[0] ^= 1
+	if bundle.VerifyFor(mismatchedRequest) == nil {
+		t.Fatal("typed evidence bundle accepted a different request")
+	}
 	fragment, ok := request.ExecutionFragment()
 	if !ok || fragment.CommitReady() || fragment.VerifyDigest() != nil {
 		t.Fatalf("invalid IAM execution fragment: ok=%v err=%v", ok, fragment.VerifyDigest())
 	}
 	requestOutcome, requestOutcomeKnown := request.FailureOutcomeDigest()
 	fragmentOutcome, fragmentOutcomeKnown := fragment.FailureOutcomeDigest()
+	requestResult, requestResultKnown := request.FailureResult()
+	fragmentResult, fragmentResultKnown := fragment.FailureResult()
 	if requestOutcomeKnown != (request.Kind() == DurablePendingReconciliation) ||
 		fragmentOutcomeKnown != requestOutcomeKnown || fragmentOutcome != requestOutcome ||
+		requestResultKnown != requestOutcomeKnown || fragmentResultKnown != requestOutcomeKnown ||
+		(requestResultKnown && (requestResult.Verify() != nil || fragmentResult.Verify() != nil ||
+			requestResult.Digest() != requestOutcome || fragmentResult.Digest() != requestOutcome ||
+			requestResult.ContentType() != PendingReconciliationResultContentType)) ||
 		(requestOutcomeKnown && requestOutcome == ([32]byte{})) ||
 		(!requestOutcomeKnown && requestOutcome != ([32]byte{})) {
 		t.Fatal("joined failure outcome availability mismatch")

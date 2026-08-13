@@ -18,8 +18,8 @@ import (
 )
 
 func TestMigrationRegistryLiteralPathAndDigestArePinned(t *testing.T) {
-	if latestSchemaVersion != 2 {
-		t.Fatalf("latest schema version = %d, want 2", latestSchemaVersion)
+	if latestSchemaVersion != 4 {
+		t.Fatalf("latest schema version = %d, want 4", latestSchemaVersion)
 	}
 	if executionFenceVersion != 1 {
 		t.Fatalf("execution fence version = %d, want permanent version 1", executionFenceVersion)
@@ -28,8 +28,8 @@ func TestMigrationRegistryLiteralPathAndDigestArePinned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(specs) != 2 {
-		t.Fatalf("migration registry length = %d, want 2", len(specs))
+	if len(specs) != 4 {
+		t.Fatalf("migration registry length = %d, want 4", len(specs))
 	}
 	v1 := specs[0]
 	if v1.version != 1 || v1.path != "migrations/0001_ccse_replay.sql" {
@@ -43,9 +43,25 @@ func TestMigrationRegistryLiteralPathAndDigestArePinned(t *testing.T) {
 	if v2.version != 2 || v2.path != "migrations/0002_canonical_uow.sql" {
 		t.Fatalf("migration registry entry = {version:%d path:%q}", v2.version, v2.path)
 	}
-	const wantV2Digest = "a1f1f233fa2fe0f1077233e0043d25f71c4a7a7a95b1c8b0a1e09039fc64ebc1"
+	const wantV2Digest = "1e17be9c59cd3d178045b05c26b8db145ef3ff816a6cde5a631ca1a5b8c485ac"
 	if got := hex.EncodeToString(v2.digest[:]); got != wantV2Digest {
 		t.Fatalf("migration 2 registry digest = %s, want %s", got, wantV2Digest)
+	}
+	v3 := specs[2]
+	if v3.version != 3 || v3.path != "migrations/0003_semantic_projection_v2.sql" {
+		t.Fatalf("migration registry entry = {version:%d path:%q}", v3.version, v3.path)
+	}
+	const wantV3Digest = "b385935c794d9f819b334b002fe80f04e4d2e9d6d854d30e7524f21904e40271"
+	if got := hex.EncodeToString(v3.digest[:]); got != wantV3Digest {
+		t.Fatalf("migration 3 registry digest = %s, want %s", got, wantV3Digest)
+	}
+	v4 := specs[3]
+	if v4.version != 4 || v4.path != "migrations/0004_outbox_delivery.sql" {
+		t.Fatalf("migration registry entry = {version:%d path:%q}", v4.version, v4.path)
+	}
+	const wantV4Digest = "4c814ecad14885e8ed04726535f6fb8b2dbaf2b24e5ff0c370f92c25847cc482"
+	if got := hex.EncodeToString(v4.digest[:]); got != wantV4Digest {
+		t.Fatalf("migration 4 registry digest = %s, want %s", got, wantV4Digest)
 	}
 
 	entries, err := migrationFiles.ReadDir("migrations")
@@ -56,7 +72,8 @@ func TestMigrationRegistryLiteralPathAndDigestArePinned(t *testing.T) {
 	for _, entry := range entries {
 		names = append(names, entry.Name())
 	}
-	wantNames := []string{"0000_bootstrap.sql", "0001_ccse_replay.sql", "0002_canonical_uow.sql"}
+	wantNames := []string{"0000_bootstrap.sql", "0001_ccse_replay.sql", "0002_canonical_uow.sql",
+		"0003_semantic_projection_v2.sql", "0004_outbox_delivery.sql"}
 	if !slices.Equal(names, wantNames) {
 		t.Fatalf("embedded migration file set = %q, want %q", names, wantNames)
 	}
@@ -259,7 +276,7 @@ func TestEmptyMigrationLedgerPlansEveryRegisteredMigration(t *testing.T) {
 	}
 }
 
-func TestAppliedVersionOnePlansOnlyVersionTwo(t *testing.T) {
+func TestAppliedVersionOnePlansRemainingSuffix(t *testing.T) {
 	specs, err := registeredMigrationSpecs()
 	if err != nil {
 		t.Fatal(err)
@@ -268,13 +285,17 @@ func TestAppliedVersionOnePlansOnlyVersionTwo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pending) != 1 || pending[0] != specs[1] {
-		t.Fatalf("pending migrations = %+v, want version 2", pending)
+	if !slices.Equal(pending, specs[1:]) {
+		t.Fatalf("pending migrations = %+v, want versions 2 through 4", pending)
 	}
 	if err := verifyCompleteMigrationLedger(specs, []migrationLedgerRecord{ledgerRecord(specs[0])}); !errors.Is(err, ErrMigrationLedgerGap) {
 		t.Fatalf("incomplete migration ledger error = %v, want %v", err, ErrMigrationLedgerGap)
 	}
-	if err := verifyCompleteMigrationLedger(specs, []migrationLedgerRecord{ledgerRecord(specs[0]), ledgerRecord(specs[1])}); err != nil {
+	complete := make([]migrationLedgerRecord, len(specs))
+	for index, spec := range specs {
+		complete[index] = ledgerRecord(spec)
+	}
+	if err := verifyCompleteMigrationLedger(specs, complete); err != nil {
 		t.Fatalf("complete migration ledger rejected: %v", err)
 	}
 }

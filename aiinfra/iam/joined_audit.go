@@ -5,17 +5,23 @@ package iam
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"reflect"
+	"sort"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/globalid"
 	"github.com/cypherium/cypher/aiinfra/idempotency"
+	"github.com/cypherium/cypher/aiinfra/replayresult"
 )
 
 const (
 	joinedAuditRequestDigestDomain = "CPH-AIIE-IAM-JOINED-AUDIT-REQUEST-V2\x00"
 	joinedAuditStateDigestDomain   = "CPH-AIIE-IAM-JOINED-AUDIT-STATE-COMMITMENT-V1\x00"
+	iamAuditEvidenceBundleDomain   = "CPH-AIIE-IAM-AUDIT-EVIDENCE-BUNDLE-V1\x00"
+	iamAuditEvidenceReceiptDomain  = "iam.audit-evidence-bundle.v1"
 )
 
 // ContentAddressedEvidenceReference makes every AuditIntent evidence digest
@@ -27,6 +33,89 @@ type ContentAddressedEvidenceReference struct {
 	Digest   [32]byte
 	Domain   string
 	Embedded bool
+}
+
+// IAMAuditEvidenceBundle is the closed, typed IAM evidence capability passed
+// to Governance.  A list of caller supplied digests is not proof: the bundle
+// instead commits the exact durable typed envelope digest/length (the envelope
+// is already the transaction's pending evidence value), the revalidated joined
+// request, the execution/state commitments, the outcome and commit window.
+//
+// All fields are private.  The only construction path is
+// JoinedAuditRequest.AuditEvidenceBundle, after the durable envelope has been
+// revalidated by Planner.  CanonicalBytes is a detached semantic receipt that
+// Governance may store as one content-addressed DurableEvidence value.
+type IAMAuditEvidenceBundle struct {
+	canonical           []byte
+	digest              [32]byte
+	sourceDigest        [32]byte
+	sourceRecord        ccse.Record
+	hasSource           bool
+	evidenceCount       int
+	requestDigest       [32]byte
+	envelopeDigest      [32]byte
+	stateCommitment     [32]byte
+	executionCommitment [32]byte
+}
+
+func (bundle IAMAuditEvidenceBundle) Digest() [32]byte { return bundle.digest }
+func (bundle IAMAuditEvidenceBundle) CanonicalBytes() []byte {
+	return append([]byte(nil), bundle.canonical...)
+}
+func (bundle IAMAuditEvidenceBundle) SemanticReceipt() (string, []byte, [32]byte) {
+	return iamAuditEvidenceReceiptDomain, bundle.CanonicalBytes(), bundle.digest
+}
+func (bundle IAMAuditEvidenceBundle) SourceAuthorizationDigest() [32]byte {
+	return bundle.sourceDigest
+}
+func (bundle IAMAuditEvidenceBundle) SourceAuthorizationRecord() (ccse.Record, bool) {
+	if !bundle.hasSource {
+		return ccse.Record{}, false
+	}
+	return cloneCCSERecord(bundle.sourceRecord), true
+}
+func (bundle IAMAuditEvidenceBundle) EvidenceCount() int { return bundle.evidenceCount }
+
+// AuditSourceDigestsSHA256 is intentionally small even when an ownership
+// transfer closes 256 keys.  The original signed authorization remains an
+// independently addressable causation source; the one bundle root represents
+// the complete bounded typed aggregate.  Governance must verify both.
+func (bundle IAMAuditEvidenceBundle) AuditSourceDigestsSHA256() [][32]byte {
+	result := make([][32]byte, 0, 2)
+	if bundle.sourceDigest != ([32]byte{}) {
+		result = append(result, bundle.sourceDigest)
+	}
+	if bundle.digest != ([32]byte{}) && bundle.digest != bundle.sourceDigest {
+		result = append(result, bundle.digest)
+	}
+	return result
+}
+
+// VerifyFor proves that this capability was derived from exactly request.  It
+// intentionally does not accept raw bytes or a digest supplied by a caller.
+func (bundle IAMAuditEvidenceBundle) VerifyFor(request JoinedAuditRequest) error {
+	if request.VerifyDigest() != nil {
+		return ErrPendingPlanInvalid
+	}
+	rebuilt, err := newIAMAuditEvidenceBundle(request)
+	if err != nil || bundle.digest == ([32]byte{}) || rebuilt.digest != bundle.digest ||
+		bundle.requestDigest != request.Digest() ||
+		bundle.envelopeDigest != request.DurableEnvelopeDigest() ||
+		bundle.stateCommitment != request.StateAndGlobalCASCommitment() ||
+		bundle.executionCommitment != rebuilt.executionCommitment ||
+		bundle.sourceDigest != rebuilt.sourceDigest || bundle.hasSource != rebuilt.hasSource ||
+		bundle.evidenceCount != rebuilt.evidenceCount ||
+		!bytes.Equal(bundle.canonical, rebuilt.canonical) {
+		return ErrPendingPlanInvalid
+	}
+	if bundle.hasSource {
+		actual, digestErr := bundle.sourceRecord.Digest(ccse.DefaultLimits())
+		if digestErr != nil || actual != bundle.sourceDigest ||
+			!reflect.DeepEqual(bundle.sourceRecord, rebuilt.sourceRecord) {
+			return ErrPendingPlanInvalid
+		}
+	}
+	return nil
 }
 
 // JoinedAuditRequest is the opaque IAM -> Governance bridge. Its fields are
@@ -57,7 +146,10 @@ type JoinedAuditRequest struct {
 	commitNotAfterUnixNano   int64
 	stateCommitment          [32]byte
 	failureOutcomeDigest     [32]byte
+	failureResult            replayresult.Result
 	evidenceReferences       []ContentAddressedEvidenceReference
+	canonicalState           *IAMCanonicalStateBundle
+	persistence              *IAMPendingPersistenceCapability
 	execution                *IAMExecutionFragment
 	digest                   [32]byte
 }
@@ -145,8 +237,54 @@ func (request JoinedAuditRequest) StateAndGlobalCASCommitment() [32]byte {
 func (request JoinedAuditRequest) FailureOutcomeDigest() ([32]byte, bool) {
 	return request.failureOutcomeDigest, request.failureOutcomeDigest != ([32]byte{})
 }
+func (request JoinedAuditRequest) FailureResult() (replayresult.Result, bool) {
+	if request.reconciliation == nil || request.failureResult.Verify() != nil ||
+		request.failureResult.Digest() != request.failureOutcomeDigest {
+		return replayresult.Result{}, false
+	}
+	return request.failureResult, true
+}
+
+// ReconciliationFinalClockRequirement returns the transaction-neutral
+// constraint that the final coordinator must satisfy with its active UoW
+// clock. No pre-sign transaction identifier is retained by IAM.
+func (request JoinedAuditRequest) ReconciliationFinalClockRequirement() (
+	ReconciliationFinalClockRequirement, bool) {
+	if request.reconciliation == nil || request.envelope.reconciliation == nil {
+		return ReconciliationFinalClockRequirement{}, false
+	}
+	requirement := request.envelope.reconciliation.failureEvidence.FinalClockRequirement()
+	return requirement, requirement.Verify() == nil
+}
 func (request JoinedAuditRequest) EvidenceReferences() []ContentAddressedEvidenceReference {
 	return append([]ContentAddressedEvidenceReference(nil), request.evidenceReferences...)
+}
+func (request JoinedAuditRequest) CanonicalStateBundle() (IAMCanonicalStateBundle, bool) {
+	if request.canonicalState == nil || request.canonicalState.VerifyDigest() != nil {
+		return IAMCanonicalStateBundle{}, false
+	}
+	return cloneIAMCanonicalStateBundle(*request.canonicalState), true
+}
+func (request JoinedAuditRequest) PendingPersistenceCapability() (
+	IAMPendingPersistenceCapability, bool) {
+	if request.persistence == nil || request.persistence.VerifyDigest() != nil {
+		return IAMPendingPersistenceCapability{}, false
+	}
+	return cloneIAMPendingPersistenceCapability(*request.persistence), true
+}
+
+// AuditEvidenceBundle returns the only aggregate evidence capability accepted
+// by the IAM/Governance bridge.  The bool is false for an inert, forged or
+// otherwise non-revalidated request.
+func (request JoinedAuditRequest) AuditEvidenceBundle() (IAMAuditEvidenceBundle, bool) {
+	if request.VerifyDigest() != nil {
+		return IAMAuditEvidenceBundle{}, false
+	}
+	bundle, err := newIAMAuditEvidenceBundle(request)
+	if err != nil {
+		return IAMAuditEvidenceBundle{}, false
+	}
+	return bundle, true
 }
 func (request JoinedAuditRequest) Digest() [32]byte { return request.digest }
 func (JoinedAuditRequest) CommitReady() bool        { return false }
@@ -172,33 +310,105 @@ func (request JoinedAuditRequest) ExpectedOutcome() uint32 {
 }
 
 func (request JoinedAuditRequest) VerifyDigest() error {
+	stage := func(name string) error {
+		return fmt.Errorf("%w: verify joined request %s", ErrPendingPlanInvalid, name)
+	}
 	if err := request.envelope.VerifyDigest(); err != nil {
 		return err
 	}
 	rebuilt, err := joinedAuditRequestFromEnvelope(request.envelope)
+	if err == nil && request.canonicalState != nil {
+		if request.canonicalState.VerifyDigest() != nil ||
+			request.canonicalState.AuditEventID() != request.auditEventID {
+			return stage("canonical bundle")
+		}
+		bundle := cloneIAMCanonicalStateBundle(*request.canonicalState)
+		rebuilt.canonicalState = &bundle
+		semanticExecution := cloneIAMExecutionFragment(*rebuilt.execution)
+		semanticExecution.canonicalState = nil
+		semanticExecution.persistence = nil
+		semanticExecution.digest = [32]byte{}
+		if bundle.VerifyForExecution(semanticExecution) != nil {
+			return stage("canonical coverage")
+		}
+		rebuilt.stateCommitment, err = joinedAuditStateCommitment(rebuilt)
+		if err == nil {
+			var execution IAMExecutionFragment
+			execution, err = executionFragmentFromRequest(rebuilt)
+			if err == nil {
+				rebuilt.execution = &execution
+				rebuilt.digest, err = joinedAuditRequestDigest(rebuilt)
+			}
+		}
+	}
+	if err == nil && request.persistence != nil {
+		if request.persistence.VerifyDigest() != nil ||
+			request.persistence.auditEventID != request.auditEventID {
+			return stage("persistence")
+		}
+		capability := cloneIAMPendingPersistenceCapability(*request.persistence)
+		rebuilt.persistence = &capability
+		rebuilt.stateCommitment, err = joinedAuditStateCommitment(rebuilt)
+		if err == nil {
+			var execution IAMExecutionFragment
+			execution, err = executionFragmentFromRequest(rebuilt)
+			if err == nil {
+				rebuilt.execution = &execution
+				rebuilt.digest, err = joinedAuditRequestDigest(rebuilt)
+			}
+		}
+	}
 	currentState, stateErr := joinedAuditStateCommitment(request)
 	currentDigest, digestErr := joinedAuditRequestDigest(request)
-	if err != nil || stateErr != nil || digestErr != nil ||
-		currentState != request.stateCommitment || currentDigest != request.digest ||
-		rebuilt.digest != request.digest || rebuilt.stateCommitment != request.stateCommitment ||
-		rebuilt.auditEventID != request.auditEventID || rebuilt.parentBinding != request.parentBinding ||
+	if err != nil {
+		return fmt.Errorf("%w: verify joined request rebuild: %v", ErrPendingPlanInvalid, err)
+	}
+	if stateErr != nil || currentState != request.stateCommitment {
+		return stage("state commitment")
+	}
+	if digestErr != nil || currentDigest != request.digest || rebuilt.digest != request.digest {
+		return stage("request digest")
+	}
+	if rebuilt.stateCommitment != request.stateCommitment {
+		return stage("rebuilt state")
+	}
+	if rebuilt.auditEventID != request.auditEventID || rebuilt.parentBinding != request.parentBinding ||
 		rebuilt.auditEventAssertion != request.auditEventAssertion ||
 		rebuilt.joinedBinding != request.joinedBinding || rebuilt.parentExpected != request.parentExpected ||
-		rebuilt.joinedExpected != request.joinedExpected ||
-		rebuilt.failureOutcomeDigest != request.failureOutcomeDigest ||
-		!sameIdempotencyClaims(rebuilt.admissionIdempotency, request.admissionIdempotency) ||
+		rebuilt.joinedExpected != request.joinedExpected {
+		return stage("bindings")
+	}
+	if rebuilt.failureOutcomeDigest != request.failureOutcomeDigest ||
+		!sameReplayResult(rebuilt.failureResult, request.failureResult) {
+		return stage("failure")
+	}
+	if !sameIdempotencyClaims(rebuilt.admissionIdempotency, request.admissionIdempotency) ||
 		!sameCompoundMemberClaims(rebuilt.compoundMemberAdmission, request.compoundMemberAdmission) ||
 		!sameCompoundMemberClaims(rebuilt.compoundMemberCompletion, request.compoundMemberCompletion) ||
-		!sameIdempotencyClaims(rebuilt.completion, request.completion) ||
-		!reflect.DeepEqual(rebuilt.admissionIdentifiers, request.admissionIdentifiers) ||
+		!sameIdempotencyClaims(rebuilt.completion, request.completion) {
+		return stage("idempotency")
+	}
+	if !reflect.DeepEqual(rebuilt.admissionIdentifiers, request.admissionIdentifiers) ||
 		!reflect.DeepEqual(rebuilt.identifierAssertions, request.identifierAssertions) ||
 		!reflect.DeepEqual(rebuilt.dependencies, request.dependencies) ||
-		!reflect.DeepEqual(rebuilt.casIntents, request.casIntents) ||
-		!reflect.DeepEqual(rebuilt.audit, request.audit) ||
-		!reflect.DeepEqual(rebuilt.reconciliation, request.reconciliation) ||
-		!reflect.DeepEqual(rebuilt.execution, request.execution) ||
-		!sameEvidenceReferences(rebuilt.evidenceReferences, request.evidenceReferences) {
-		return ErrPendingPlanInvalid
+		!reflect.DeepEqual(rebuilt.casIntents, request.casIntents) {
+		return stage("semantic state")
+	}
+	if !reflect.DeepEqual(rebuilt.audit, request.audit) ||
+		!reflect.DeepEqual(rebuilt.reconciliation, request.reconciliation) {
+		return stage("audit")
+	}
+	if !equalIAMCanonicalStateBundles(rebuilt.canonicalState, request.canonicalState) {
+		return stage("canonical state")
+	}
+	if !reflect.DeepEqual(rebuilt.persistence, request.persistence) {
+		return stage("persistence state")
+	}
+	if !reflect.DeepEqual(rebuilt.execution, request.execution) {
+		return stage("execution")
+	}
+	if !sameEvidenceReferences(rebuilt.evidenceReferences, request.evidenceReferences) {
+		return stage("evidence")
 	}
 	return nil
 }
@@ -333,6 +543,7 @@ func joinedAuditRequestFromEnvelope(envelope DurablePendingEnvelope) (JoinedAudi
 		request.completion = plan.IdempotencyCompletionClaims()
 		request.compoundMemberCompletion = plan.CompoundMemberCompletionClaims()
 		request.failureOutcomeDigest = plan.FailureOutcomeDigest()
+		request.failureResult = plan.FailureResult()
 		parent, joined, err := pendingCompletionBindings(request.completion)
 		if err != nil {
 			return JoinedAuditRequest{}, err
@@ -361,7 +572,8 @@ func joinedAuditRequestFromEnvelope(envelope DurablePendingEnvelope) (JoinedAudi
 		request.completion = plan.TransferCompletionClaims()
 		parent, joined, completionErr := pendingCompletionBindings(request.completion)
 		if completionErr != nil {
-			return JoinedAuditRequest{}, completionErr
+			return JoinedAuditRequest{}, fmt.Errorf("%w: acceptance completion bindings: %v",
+				ErrPendingPlanInvalid, completionErr)
 		}
 		request.parentBinding, request.joinedBinding = parent, joined
 		for _, claim := range request.completion {
@@ -384,7 +596,9 @@ func joinedAuditRequestFromEnvelope(envelope DurablePendingEnvelope) (JoinedAudi
 		request.identifierAssertions = plan.IdentifierAssertions()
 		request.dependencies = plan.Dependencies()
 		for _, step := range plan.Steps() {
-			request.casIntents = append(request.casIntents, step.Mutation.CAS())
+			cas := step.Mutation.CAS()
+			request.casIntents = append(request.casIntents, cas)
+			request.identifierAssertions = append(request.identifierAssertions, cas.IdentifierClaims...)
 		}
 		parent, joined, completionErr := pendingCompletionBindings(request.completion)
 		if completionErr != nil {
@@ -407,13 +621,17 @@ func joinedAuditRequestFromEnvelope(envelope DurablePendingEnvelope) (JoinedAudi
 	if len(request.admissionIdentifiers) != 0 {
 		request.admissionIdentifiers, err = normalizeGlobalClaims(request.admissionIdentifiers)
 		if err != nil {
-			return JoinedAuditRequest{}, ErrPendingPlanInvalid
+			return JoinedAuditRequest{}, fmt.Errorf("%w: admission identifiers", ErrPendingPlanInvalid)
 		}
 	}
 	if len(request.identifierAssertions) != 0 {
-		request.identifierAssertions, err = normalizeGlobalClaims(request.identifierAssertions)
+		if envelope.Kind() == DurablePendingOwnershipTransferCutover {
+			request.identifierAssertions, err = normalizeAggregatedGlobalClaims(request.identifierAssertions)
+		} else {
+			request.identifierAssertions, err = normalizeGlobalClaims(request.identifierAssertions)
+		}
 		if err != nil {
-			return JoinedAuditRequest{}, ErrPendingPlanInvalid
+			return JoinedAuditRequest{}, fmt.Errorf("%w: identifier assertions", ErrPendingPlanInvalid)
 		}
 	}
 	if len(request.compoundMemberAdmission) != 0 {
@@ -421,7 +639,7 @@ func joinedAuditRequestFromEnvelope(envelope DurablePendingEnvelope) (JoinedAudi
 			request.compoundMemberAdmission)
 		if err != nil || idempotency.ValidateDisjointClaimKeys(request.admissionIdempotency,
 			request.compoundMemberAdmission) != nil {
-			return JoinedAuditRequest{}, ErrPendingPlanInvalid
+			return JoinedAuditRequest{}, fmt.Errorf("%w: compound member admissions", ErrPendingPlanInvalid)
 		}
 	}
 	if len(request.compoundMemberCompletion) != 0 {
@@ -429,12 +647,12 @@ func joinedAuditRequestFromEnvelope(envelope DurablePendingEnvelope) (JoinedAudi
 			request.compoundMemberCompletion)
 		if err != nil || idempotency.ValidateDisjointClaimKeys(request.completion,
 			request.compoundMemberCompletion) != nil {
-			return JoinedAuditRequest{}, ErrPendingPlanInvalid
+			return JoinedAuditRequest{}, fmt.Errorf("%w: compound member completions", ErrPendingPlanInvalid)
 		}
 	}
 	request.dependencies, err = canonicalPreconditions(request.dependencies)
 	if err != nil {
-		return JoinedAuditRequest{}, ErrPendingPlanInvalid
+		return JoinedAuditRequest{}, fmt.Errorf("%w: dependencies", ErrPendingPlanInvalid)
 	}
 	if request.audit != nil {
 		request.auditEventID = request.audit.AuditEventID()
@@ -447,21 +665,21 @@ func joinedAuditRequestFromEnvelope(envelope DurablePendingEnvelope) (JoinedAudi
 	}
 	request.auditEventAssertion, err = deriveJoinedAuditEventAssertion(request)
 	if err != nil {
-		return JoinedAuditRequest{}, err
+		return JoinedAuditRequest{}, fmt.Errorf("%w: joined audit event assertion: %v", ErrPendingPlanInvalid, err)
 	}
 	state, err := joinedAuditStateCommitment(request)
 	if err != nil {
-		return JoinedAuditRequest{}, err
+		return JoinedAuditRequest{}, fmt.Errorf("%w: joined state commitment: %v", ErrPendingPlanInvalid, err)
 	}
 	request.stateCommitment = state
 	execution, err := executionFragmentFromRequest(request)
 	if err != nil {
-		return JoinedAuditRequest{}, err
+		return JoinedAuditRequest{}, fmt.Errorf("%w: execution fragment: %v", ErrPendingPlanInvalid, err)
 	}
 	request.execution = &execution
 	request.digest, err = joinedAuditRequestDigest(request)
 	if err != nil {
-		return JoinedAuditRequest{}, err
+		return JoinedAuditRequest{}, fmt.Errorf("%w: joined request digest: %v", ErrPendingPlanInvalid, err)
 	}
 	return request, nil
 }
@@ -528,6 +746,7 @@ func cloneAuditIntent(source AuditIntent) AuditIntent {
 func cloneCASIntent(source CASIntent) CASIntent {
 	result := source
 	result.Dependencies = append([]SnapshotPrecondition(nil), source.Dependencies...)
+	result.SubjectKeySetMembers = append([]SnapshotPrecondition(nil), source.SubjectKeySetMembers...)
 	result.IdentifierClaims = append([]globalid.Claim(nil), source.IdentifierClaims...)
 	result.IdempotencyClaims = append([]idempotency.Claim(nil), source.IdempotencyClaims...)
 	return result
@@ -555,6 +774,105 @@ func auditEvidenceReferences(audit AuditIntent) []ContentAddressedEvidenceRefere
 			Domain: "iam.audit-evidence.v1", Embedded: false})
 	}
 	return result
+}
+
+func newIAMAuditEvidenceBundle(request JoinedAuditRequest) (IAMAuditEvidenceBundle, error) {
+	if request.digest == ([32]byte{}) || request.envelope.digest == ([32]byte{}) ||
+		request.stateCommitment == ([32]byte{}) || request.execution == nil ||
+		request.execution.VerifyDigest() != nil || request.auditEventID == "" ||
+		len(request.evidenceReferences) == 0 || len(request.evidenceReferences) > 384 {
+		return IAMAuditEvidenceBundle{}, ErrPendingPlanInvalid
+	}
+	executionDigest := request.execution.Digest()
+	var source ccse.Record
+	var sourceDigest [32]byte
+	var hasSource bool
+	var semanticDigest [32]byte
+	if request.audit != nil && request.reconciliation == nil {
+		source, hasSource = request.audit.SourceAuthorizationRecord()
+		sourceDigest = request.audit.SourceAuthorizationDigest()
+		semanticDigest = request.audit.Digest()
+	} else if request.reconciliation != nil && request.audit == nil {
+		source, hasSource = request.reconciliation.SourceAuthorizationRecord()
+		sourceDigest = request.reconciliation.SourceAuthorizationDigest()
+		semanticDigest = request.reconciliation.FreshRequirementDigest()
+	} else {
+		return IAMAuditEvidenceBundle{}, ErrPendingPlanInvalid
+	}
+	if !hasSource || sourceDigest == ([32]byte{}) || semanticDigest == ([32]byte{}) {
+		return IAMAuditEvidenceBundle{}, ErrPendingPlanInvalid
+	}
+	actualSourceDigest, err := source.Digest(ccse.DefaultLimits())
+	if err != nil || actualSourceDigest != sourceDigest {
+		return IAMAuditEvidenceBundle{}, ErrPendingPlanInvalid
+	}
+	sourceBytes, err := canonicalSignedAuthorizationEvidence(source)
+	if err != nil {
+		return IAMAuditEvidenceBundle{}, err
+	}
+	seen := make(map[[32]byte]struct{}, len(request.evidenceReferences))
+	references := make([]ContentAddressedEvidenceReference, len(request.evidenceReferences))
+	copy(references, request.evidenceReferences)
+	for _, reference := range references {
+		if reference.Digest == ([32]byte{}) || reference.Domain == "" {
+			return IAMAuditEvidenceBundle{}, ErrPendingPlanInvalid
+		}
+		if _, duplicate := seen[reference.Digest]; duplicate {
+			return IAMAuditEvidenceBundle{}, ErrPendingPlanInvalid
+		}
+		seen[reference.Digest] = struct{}{}
+	}
+	if _, found := seen[sourceDigest]; !found {
+		return IAMAuditEvidenceBundle{}, ErrPendingPlanInvalid
+	}
+	sort.Slice(references, func(i, j int) bool {
+		if comparison := bytes.Compare(references[i].Digest[:], references[j].Digest[:]); comparison != 0 {
+			return comparison < 0
+		}
+		if references[i].Domain != references[j].Domain {
+			return references[i].Domain < references[j].Domain
+		}
+		return !references[i].Embedded && references[j].Embedded
+	})
+	canonical, err := ccse.Marshal(64<<20, func(out *ccse.Encoder) {
+		out.Uint32(1)
+		out.Uint32(uint32(request.Kind()))
+		out.Uint32(request.CodecVersion())
+		out.FixedBytes(request.digest[:], 32)
+		pendingDigest := request.PendingDigest()
+		out.FixedBytes(pendingDigest[:], 32)
+		envelopeDigest := request.DurableEnvelopeDigest()
+		out.FixedBytes(envelopeDigest[:], 32)
+		// Do not duplicate the potentially large durable envelope in the same UoW.
+		// PostgreSQL asserts the separately stored pending bytes by this exact
+		// digest and length before accepting the bundle receipt.
+		out.Uint64(uint64(len(request.envelope.encoded)))
+		out.FixedBytes(request.stateCommitment[:], 32)
+		out.FixedBytes(executionDigest[:], 32)
+		out.String(request.auditEventID)
+		out.Uint32(request.ExpectedOutcome())
+		out.Int64(request.evaluatedAtUnixNano)
+		out.Int64(request.commitNotBeforeUnixNano)
+		out.Int64(request.commitNotAfterUnixNano)
+		out.FixedBytes(request.failureOutcomeDigest[:], 32)
+		out.FixedBytes(semanticDigest[:], 32)
+		out.FixedBytes(sourceDigest[:], 32)
+		out.Bytes(sourceBytes)
+		out.Uint32(uint32(len(references)))
+		for _, reference := range references {
+			out.FixedBytes(reference.Digest[:], 32)
+			out.String(reference.Domain)
+			out.Bool(reference.Embedded)
+		}
+	})
+	if err != nil {
+		return IAMAuditEvidenceBundle{}, err
+	}
+	return IAMAuditEvidenceBundle{canonical: canonical,
+		digest: domainDigest(iamAuditEvidenceBundleDomain, canonical), sourceDigest: sourceDigest,
+		sourceRecord: cloneCCSERecord(source), hasSource: true, evidenceCount: len(references),
+		requestDigest: request.digest, envelopeDigest: request.envelope.digest,
+		stateCommitment: request.stateCommitment, executionCommitment: executionDigest}, nil
 }
 
 func joinedAuditStateCommitment(request JoinedAuditRequest) ([32]byte, error) {
@@ -615,6 +933,22 @@ func joinedAuditStateCommitment(request JoinedAuditRequest) ([32]byte, error) {
 		}
 		casElements = append(casElements, encoded)
 	}
+	canonicalStateDigest := [32]byte{}
+	if request.canonicalState != nil {
+		if request.canonicalState.VerifyDigest() != nil ||
+			request.canonicalState.AuditEventID() != request.auditEventID {
+			return zero, ErrPendingPlanInvalid
+		}
+		canonicalStateDigest = request.canonicalState.Digest()
+	}
+	persistenceDigest := [32]byte{}
+	if request.persistence != nil {
+		if request.persistence.VerifyDigest() != nil ||
+			request.persistence.auditEventID != request.auditEventID {
+			return zero, ErrPendingPlanInvalid
+		}
+		persistenceDigest = request.persistence.Digest()
+	}
 	encoded, err := ccse.Marshal(16<<20, func(out *ccse.Encoder) {
 		envelopeDigest := request.envelope.Digest()
 		out.FixedBytes(envelopeDigest[:], 32)
@@ -626,6 +960,10 @@ func joinedAuditStateCommitment(request JoinedAuditRequest) ([32]byte, error) {
 		out.Bytes(compoundMembers)
 		out.Bytes(compoundMemberCompletions)
 		out.EncodedList(casElements)
+		out.Bool(request.canonicalState != nil)
+		out.FixedBytes(canonicalStateDigest[:], 32)
+		out.Bool(request.persistence != nil)
+		out.FixedBytes(persistenceDigest[:], 32)
 	})
 	if err != nil {
 		return zero, err
@@ -655,12 +993,24 @@ func canonicalCASIntent(cas CASIntent) ([]byte, error) {
 			return nil, err
 		}
 	}
+	if cas.SubjectKeySetDigest != ([sha256.Size]byte{}) {
+		members, digest, memberErr := canonicalSubjectKeySetMembersV2(cas.SubjectKind,
+			cas.SubjectIdentity, cas.SubjectKeySetMembers)
+		if memberErr != nil || digest != cas.SubjectKeySetDigest ||
+			!sameSnapshotPreconditions(members, cas.SubjectKeySetMembers) {
+			return nil, ErrPendingPlanInvalid
+		}
+	} else if len(cas.SubjectKeySetMembers) != 0 {
+		return nil, ErrPendingPlanInvalid
+	}
 	return ccse.Marshal(8<<20, func(out *ccse.Encoder) {
 		encodeEntity(out, cas.Entity)
 		out.Bool(cas.ExpectedAbsent)
 		out.Uint64(cas.ExpectedStateVersion)
 		out.Uint64(cas.ExpectedEntityWriterEpoch)
 		out.Uint64(cas.AuthorizedWriterEpoch)
+		out.String(cas.AuthorizedWriterIdentity)
+		out.String(cas.AuthorizedWriterHomeRegion)
 		out.Bool(cas.ConsumeChallenge)
 		out.FixedBytes(cas.Challenge[:], 32)
 		out.FixedBytes(cas.ChallengeEvidenceDigest[:], 32)
@@ -685,6 +1035,9 @@ func canonicalCASIntent(cas CASIntent) ([]byte, error) {
 		out.Uint32(cas.SubjectKind)
 		out.String(cas.SubjectIdentity)
 		out.FixedBytes(cas.SubjectKeySetDigest[:], 32)
+		// SubjectKeySetMembers are validated against their digest above and are
+		// already byte-for-byte present in Dependencies. Avoid duplicating the
+		// maximum 256-member closure in this bounded capability encoding.
 		out.Bytes(idempotencyClaims)
 	})
 }
@@ -719,7 +1072,7 @@ func joinedAuditRequestDigest(request JoinedAuditRequest) ([32]byte, error) {
 	if request.audit != nil {
 		auditDigest = request.audit.Digest()
 	} else if request.reconciliation != nil {
-		auditDigest = request.reconciliation.OriginalAuditIntentDigest()
+		auditDigest = request.reconciliation.FreshRequirementDigest()
 	}
 	if request.execution == nil || request.execution.VerifyDigest() != nil {
 		return zero, ErrPendingPlanInvalid
@@ -747,6 +1100,10 @@ func joinedAuditRequestDigest(request JoinedAuditRequest) ([32]byte, error) {
 		out.FixedBytes(request.stateCommitment[:], 32)
 		out.Bool(request.failureOutcomeDigest != ([32]byte{}))
 		out.FixedBytes(request.failureOutcomeDigest[:], 32)
+		if request.failureOutcomeDigest != ([32]byte{}) {
+			out.String(request.failureResult.ContentType())
+			out.Bytes(request.failureResult.Payload())
+		}
 		out.FixedBytes(executionDigest[:], 32)
 	})
 	if err != nil {
@@ -760,6 +1117,15 @@ func sameEvidenceReferences(left, right []ContentAddressedEvidenceReference) boo
 		return false
 	}
 	return bytes.Equal(mustJSON(left), mustJSON(right))
+}
+
+func sameReplayResult(left, right replayresult.Result) bool {
+	leftErr, rightErr := left.Verify(), right.Verify()
+	if leftErr != nil || rightErr != nil {
+		return leftErr != nil && rightErr != nil
+	}
+	return left.Digest() == right.Digest() && left.ContentType() == right.ContentType() &&
+		bytes.Equal(left.Payload(), right.Payload())
 }
 
 func mustJSON(value any) []byte {

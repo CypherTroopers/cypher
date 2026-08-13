@@ -112,6 +112,7 @@ func TestMigrationFunctionBodiesAreDerivedFromSealedSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
+		"acknowledge_outbox_delivery",
 		"assert_audit_event_uow",
 		"assert_audit_head_event",
 		"assert_audit_uow_member",
@@ -123,13 +124,19 @@ func TestMigrationFunctionBodiesAreDerivedFromSealedSource(t *testing.T) {
 		"assert_durable_pending_consistency",
 		"assert_durable_pending_evidence_consistency",
 		"assert_global_identifier_consistency",
+		"assert_governance_profile_activation_timeline",
+		"assert_required_semantic_projection",
+		"assert_semantic_projection_consistency",
+		"claim_outbox_delivery",
 		"enforce_audit_head_change",
 		"enforce_business_idempotency_head_change",
 		"enforce_canonical_state_head_change",
 		"enforce_durable_pending_head_change",
 		"enforce_global_identifier_head_change",
+		"enforce_outbox_delivery_transition",
 		"enforce_replay_head_monotonic",
 		"reject_immutable_change",
+		"reject_outbox_delivery",
 		"stamp_unit_of_work_transaction",
 	}
 	if len(bodies) != len(want) {

@@ -395,6 +395,8 @@ func (p *Planner) revalidateStoredTransferCollection(ctx context.Context,
 	lease, leaseFound, err := p.view.LookupWriterLease(ctx, entity)
 	if err != nil || !leaseFound || lease.Entity != entity || lease.HomeRegion != plan.next.HomeRegion ||
 		lease.WriterEpoch != plan.authorizedWriterEpoch || lease.EvidenceDigest != plan.writerEvidenceDigest ||
+		lease.WriterIdentity != plan.authorizedWriterIdentity ||
+		lease.HomeRegion != plan.authorizedWriterHomeRegion ||
 		plan.evaluatedAtUnixNano < lease.ValidFromUnixNano || plan.evaluatedAtUnixNano >= lease.ValidUntilUnixNano {
 		return ErrWriterFenceMismatch
 	}
@@ -697,6 +699,7 @@ func (p *Planner) revalidateCutoverMutationState(ctx context.Context, plan Mutat
 	cas := plan.CAS()
 	lease, found, err := p.view.LookupWriterLease(ctx, cas.Entity)
 	if err != nil || !found || lease.Entity != cas.Entity || lease.WriterEpoch != cas.AuthorizedWriterEpoch ||
+		lease.WriterIdentity != cas.AuthorizedWriterIdentity || lease.HomeRegion != cas.AuthorizedWriterHomeRegion ||
 		lease.EvidenceDigest != cas.WriterEvidenceDigest || at < lease.ValidFromUnixNano ||
 		at >= lease.ValidUntilUnixNano {
 		return ErrWriterFenceMismatch
@@ -1006,6 +1009,7 @@ func (p *Planner) revalidateAdmissionState(ctx context.Context, admission Pendin
 	}
 	lease, found, err := p.view.LookupWriterLease(ctx, cas.Entity)
 	if err != nil || !found || lease.Entity != cas.Entity || lease.WriterEpoch != cas.AuthorizedWriterEpoch ||
+		lease.WriterIdentity != cas.AuthorizedWriterIdentity || lease.HomeRegion != cas.AuthorizedWriterHomeRegion ||
 		lease.EvidenceDigest != cas.WriterEvidenceDigest || at < lease.ValidFromUnixNano || at >= lease.ValidUntilUnixNano {
 		return ErrWriterFenceMismatch
 	}
@@ -1099,9 +1103,13 @@ func (view *pendingResumeView) SnapshotBusinessIdempotencyPair(ctx context.Conte
 	return view.View.SnapshotBusinessIdempotencyPair(ctx, parent, joined)
 }
 
-func (p *Planner) revalidateTransferCollection(context.Context,
-	OwnershipTransferApprovalCollectionPlan, int64) error {
-	return fmt.Errorf("%w: ownership-transfer recovery requires profile activation", ErrPendingPlanInvalid)
+func (p *Planner) revalidateTransferCollection(ctx context.Context,
+	plan OwnershipTransferApprovalCollectionPlan, at int64) error {
+	if at < plan.commitNotBeforeUnixNano || at >= plan.commitNotAfterUnixNano ||
+		plan.evaluatedAtUnixNano > at {
+		return ErrInvalidCommitWindow
+	}
+	return p.revalidateStoredTransferCollection(ctx, plan)
 }
 
 func (p *Planner) revalidateReconciliation(ctx context.Context,

@@ -77,6 +77,42 @@ func TestPolicyHistoryBindsExactActivationRows(t *testing.T) {
 	})
 }
 
+func TestPolicyHistoryRehydratesRawSignedRecordsAgainstAuthoritativeIAM(t *testing.T) {
+	fixture := newGovernanceFixture(t)
+	policy := fixture.normalPolicy()
+	record := fixture.policyRecordFromProjection(t, policy, nil)
+	fixture.setPolicyHistory(record)
+	snapshot := clonePolicyRegistrySnapshot(fixture.policies.snapshot)
+	for index := range snapshot.Head.ApprovalEvidence {
+		snapshot.Head.ApprovalEvidence[index].Signed.Verified = ccse.VerifiedRecord{}
+	}
+	for recordIndex := range snapshot.Records {
+		for evidenceIndex := range snapshot.Records[recordIndex].ApprovalEvidence {
+			snapshot.Records[recordIndex].ApprovalEvidence[evidenceIndex].Signed.Verified = ccse.VerifiedRecord{}
+		}
+	}
+	if err := fixture.planner.validatePolicyRegistrySnapshot(context.Background(), policy.PolicyKind, snapshot); err != nil {
+		t.Fatalf("raw durable policy history = %v", err)
+	}
+
+	t.Run("signature tamper", func(t *testing.T) {
+		tampered := clonePolicyRegistrySnapshot(snapshot)
+		tampered.Head.ApprovalEvidence[0].Signed.Record.Signature[0] ^= 1
+		tampered.Records[0].ApprovalEvidence[0].Signed.Record.Signature[0] ^= 1
+		if err := fixture.planner.validatePolicyRegistrySnapshot(context.Background(), policy.PolicyKind, tampered); !errors.Is(err, ErrSnapshotInconsistent) {
+			t.Fatalf("raw signature tamper error = %v", err)
+		}
+	})
+	t.Run("retained key substitution", func(t *testing.T) {
+		tampered := clonePolicyRegistrySnapshot(snapshot)
+		tampered.Head.ApprovalEvidence[0].Key.PublicKey[0] ^= 1
+		tampered.Records[0].ApprovalEvidence[0].Key.PublicKey[0] ^= 1
+		if err := fixture.planner.validatePolicyRegistrySnapshot(context.Background(), policy.PolicyKind, tampered); !errors.Is(err, ErrSnapshotInconsistent) {
+			t.Fatalf("historical IAM substitution error = %v", err)
+		}
+	})
+}
+
 func TestHistoricalBreakGlassScopeUsesProfileActiveAtAcceptance(t *testing.T) {
 	fixture := newGovernanceFixture(t)
 	oldProfile := cloneProfile(fixture.profile)

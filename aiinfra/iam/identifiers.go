@@ -4,8 +4,10 @@
 package iam
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/cypherium/cypher/aiinfra/globalid"
 )
@@ -77,6 +79,39 @@ func normalizeGlobalClaims(claims []globalid.Claim) ([]globalid.Claim, error) {
 		return nil, fmt.Errorf("%w: %v", ErrGlobalIdentifier, err)
 	}
 	return normalized, nil
+}
+
+// normalizeAggregatedGlobalClaims is used only when independently bounded
+// semantic sub-plans are joined. A 256-key cutover can repeat the same exact
+// principal/key assertions in many steps, so its raw concatenation can exceed
+// globalid.MaxClaims even though the unique transaction claim set cannot.
+// Validate before deduplicating and reject different claims for one identifier;
+// the ordinary normalizer then enforces the public bound on the unique set.
+func normalizeAggregatedGlobalClaims(claims []globalid.Claim) ([]globalid.Claim, error) {
+	if len(claims) == 0 || len(claims) > globalid.MaxClaims*4 {
+		return nil, fmt.Errorf("%w: aggregated claim count", ErrGlobalIdentifier)
+	}
+	owned := append([]globalid.Claim(nil), claims...)
+	for index := range owned {
+		if err := owned[index].Validate(); err != nil {
+			return nil, fmt.Errorf("%w: aggregated claim %d: %v", ErrGlobalIdentifier, index, err)
+		}
+	}
+	sort.Slice(owned, func(i, j int) bool {
+		return bytes.Compare([]byte(owned[i].Identifier), []byte(owned[j].Identifier)) < 0
+	})
+	unique := owned[:0]
+	for _, claim := range owned {
+		if len(unique) == 0 || unique[len(unique)-1].Identifier != claim.Identifier {
+			unique = append(unique, claim)
+			continue
+		}
+		if unique[len(unique)-1] != claim {
+			return nil, fmt.Errorf("%w: conflicting aggregated identifier %q",
+				ErrGlobalIdentifier, claim.Identifier)
+		}
+	}
+	return normalizeGlobalClaims(unique)
 }
 
 func (p *Planner) keyMaterialIdentifierClaims(ctx context.Context, entity, target EntityRef,

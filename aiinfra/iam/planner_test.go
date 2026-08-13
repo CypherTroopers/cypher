@@ -4,13 +4,17 @@
 package iam
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/cypherium/cypher/aiinfra/ccse"
 	"github.com/cypherium/cypher/aiinfra/globalid"
 	"github.com/cypherium/cypher/aiinfra/idempotency"
+	"github.com/cypherium/cypher/aiinfra/replayresult"
 	"github.com/cypherium/cypher/aiinfra/schema"
 	foundationv1 "github.com/cypherium/cypher/aiinfra/schema/foundation/v1"
 )
@@ -20,6 +24,47 @@ func installIdentityOwnership(view *memoryView, identity IdentitySnapshot) {
 	installGlobalID(view, identity.Ref.ID, owner, 1)
 	if identity.PrincipalIdentity != identity.Ref.ID {
 		installGlobalID(view, identity.PrincipalIdentity, owner, 1)
+	}
+}
+
+func TestPendingReconciliationResultPayloadBound(t *testing.T) {
+	if MaxPendingReconciliationResultPayloadBytes != replayresult.MaxPayloadBytes {
+		t.Fatalf("IAM result bound=%d replay bound=%d",
+			MaxPendingReconciliationResultPayloadBytes, replayresult.MaxPayloadBytes)
+	}
+	if _, err := replayresult.New(PendingReconciliationResultContentType,
+		make([]byte, MaxPendingReconciliationResultPayloadBytes)); err != nil {
+		t.Fatalf("max result payload rejected: %v", err)
+	}
+	if _, err := replayresult.New(PendingReconciliationResultContentType,
+		make([]byte, MaxPendingReconciliationResultPayloadBytes+1)); err == nil {
+		t.Fatal("max+1 result payload accepted")
+	}
+}
+
+func TestCanonicalWriterLeaseRequirementBuildsAndVerifiesExactRecord(t *testing.T) {
+	entity := EntityRef{Kind: EntityIdentity, PrincipalKind: 2, ID: "writer-lease-object"}
+	lease := WriterLeaseSnapshot{Entity: entity, WriterIdentity: "writer-a",
+		HomeRegion: "eu-central-1", WriterEpoch: 7, ValidFromUnixNano: testNotBefore,
+		ValidUntilUnixNano: testNotAfter, EvidenceDigest: digest(0xa7)}
+	requirement, err := NewCanonicalWriterLeaseRequirement(lease, "audit-writer-lease-origin")
+	if err != nil || requirement.VerifyDigest() != nil || requirement.Lease() != lease {
+		t.Fatalf("writer lease requirement = %#v / %v", requirement, err)
+	}
+	record, err := requirement.ExpectedRecord()
+	if err != nil || VerifyCanonicalWriterLeaseRecord(requirement, record) != nil {
+		t.Fatalf("writer lease record = %#v / %v", record, err)
+	}
+	aliased := record.CanonicalState
+	aliased[0] ^= 1
+	rebuilt, err := requirement.ExpectedRecord()
+	if err != nil || bytes.Equal(aliased, rebuilt.CanonicalState) {
+		t.Fatal("writer lease expected record aliases retained bytes")
+	}
+	tampered := rebuilt
+	tampered.StateDigestSHA256[0] ^= 1
+	if VerifyCanonicalWriterLeaseRecord(requirement, tampered) == nil {
+		t.Fatal("tampered writer lease row accepted")
 	}
 }
 
@@ -107,7 +152,8 @@ func TestPlanIdentityBootstrapBindsTargetGlobalIDsAndAuthorizationIdentity(t *te
 		EvaluatedAtUnixNano: testNow, CorrelationID: id16(0x31), CauseCode: "bootstrap",
 		Fence: fence(next.Ref, authorization.SenderIdentity(), 7, 0, 0x32), Authorization: authorization}
 
-	plan, err := testPlanner(t, view, &allowProfile{}).PlanIdentity(context.Background(), command)
+	planner := testPlanner(t, view, &allowProfile{})
+	plan, err := planner.PlanIdentity(context.Background(), command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,6 +163,113 @@ func TestPlanIdentityBootstrapBindsTargetGlobalIDsAndAuthorizationIdentity(t *te
 	envelope, err := plan.DurableEnvelope()
 	if err != nil {
 		t.Fatal(err)
+	}
+	admissionCapability, err := planner.BindPendingAdmissionCapability(context.Background(), envelope)
+	if err != nil || admissionCapability.VerifyDigest() != nil ||
+		admissionCapability.VerifyFor(envelope) != nil {
+		t.Fatalf("pending admission capability = %v / %v", err,
+			admissionCapability.VerifyDigest())
+	}
+	revision := admissionCapability.PendingRevision()
+	revisionRecord := revision.Record()
+	stateReads := admissionCapability.CanonicalStateReads()
+	if revision.VerifyDigest() != nil || revisionRecord.Revision != 1 ||
+		revisionRecord.Status != IAMPendingStatusOpen ||
+		revisionRecord.EnvelopeDigestSHA256 != envelope.Digest() ||
+		len(revisionRecord.EvidenceDigestsSHA256) != 2 ||
+		stateReads.VerifyFor(envelope) != nil ||
+		len(stateReads.Assertions()) == 0 || len(stateReads.Absences()) == 0 ||
+		len(admissionCapability.IdempotencyReservations()) != 2 ||
+		len(admissionCapability.IdentifierClaims()) == 0 {
+		t.Fatalf("incomplete pending admission capability: revision=%#v reads=%d/%d evidence=%d",
+			revisionRecord, len(stateReads.Assertions()), len(stateReads.Absences()),
+			len(admissionCapability.EvidenceStorageCapabilities()))
+	}
+	outer, ok := admissionCapability.OuterRecord()
+	outerDigest, outerErr := outer.Digest(ccse.DefaultLimits())
+	if !ok || outerErr != nil || outerDigest != admissionCapability.OuterRecordDigest() ||
+		outerDigest != plan.AuditIntent().SourceAuthorizationDigest() {
+		t.Fatal("pending admission exact outer record missing")
+	}
+	outer.Signature[0] ^= 1
+	reloadedOuter, _ := admissionCapability.OuterRecord()
+	if bytes.Equal(outer.Signature, reloadedOuter.Signature) {
+		t.Fatal("pending admission outer record getter aliases signature")
+	}
+	forgedOuter := admissionCapability
+	forgedOuter.outerRecord = cloneCCSERecord(admissionCapability.outerRecord)
+	forgedOuter.outerRecord.Signature[0] ^= 1
+	if forgedDigest, digestErr := digestIAMPendingAdmissionCapability(forgedOuter); digestErr == nil && forgedDigest == admissionCapability.Digest() {
+		t.Fatal("pending admission capability digest omitted the exact outer signature")
+	}
+	returnedRevision := revision.Record()
+	returnedRevision.CanonicalEnvelope[0] ^= 1
+	if bytes.Equal(returnedRevision.CanonicalEnvelope, admissionCapability.PendingRevision().Record().CanonicalEnvelope) {
+		t.Fatal("pending admission revision getter aliases canonical envelope")
+	}
+	returnedAssertions := stateReads.Assertions()
+	returnedStateRecord := returnedAssertions[0].Record()
+	returnedStateRecord.CanonicalState[0] ^= 1
+	if bytes.Equal(returnedStateRecord.CanonicalState,
+		admissionCapability.CanonicalStateReads().Assertions()[0].Record().CanonicalState) {
+		t.Fatal("pending admission state getter aliases canonical row")
+	}
+	forgedIncomplete := admissionCapability
+	forgedIncomplete.state = cloneIAMPendingAdmissionStateCapability(admissionCapability.state)
+	forgedIncomplete.state.assertions = forgedIncomplete.state.assertions[1:]
+	forgedIncomplete.state.digest, _ = digestIAMPendingAdmissionState(
+		forgedIncomplete.state.assertions, forgedIncomplete.state.absences,
+		forgedIncomplete.state.auditEventID, forgedIncomplete.state.coverageDigest)
+	forgedIncomplete.digest, _ = digestIAMPendingAdmissionCapability(forgedIncomplete)
+	if forgedIncomplete.VerifyDigest() != nil || forgedIncomplete.VerifyFor(envelope) == nil {
+		t.Fatal("self-consistent incomplete admission state coverage accepted")
+	}
+	forgedEvidence := admissionCapability
+	forgedEvidence.evidence = admissionCapability.EvidenceStorageCapabilities()
+	for index := range forgedEvidence.evidence {
+		if forgedEvidence.evidence[index].evidence.record.Kind != IAMEvidenceSemanticReceipt {
+			continue
+		}
+		forgedEvidence.evidence[index].evidence.record.CanonicalContent[0] ^= 1
+		forgedEvidence.evidence[index].evidence.record.DigestSHA256 = domainDigest(
+			iamPendingAdmissionEvidenceDomain,
+			forgedEvidence.evidence[index].evidence.record.CanonicalContent)
+		forgedEvidence.evidence[index].evidence.digest, _ = digestIAMPersistenceEvidenceRecord(
+			forgedEvidence.evidence[index].evidence.record)
+		forgedEvidence.evidence[index].digest, _ = digestIAMEvidenceStorageCapability(
+			forgedEvidence.evidence[index])
+		break
+	}
+	forgedEvidence.digest, _ = digestIAMPendingAdmissionCapability(forgedEvidence)
+	if forgedEvidence.VerifyDigest() != nil || forgedEvidence.VerifyFor(envelope) == nil {
+		t.Fatal("self-consistent forged admission evidence accepted")
+	}
+	for _, action := range admissionCapability.EvidenceStorageCapabilities() {
+		if action.VerifyDigest() != nil || action.Disposition() != IAMEvidenceStorageReserveNew {
+			t.Fatal("absent admission evidence did not bind ReserveNew")
+		}
+		record := action.Evidence().Record()
+		view.admissionEvidence[record.DigestSHA256] = record
+	}
+	existingCapability, err := planner.BindPendingAdmissionCapability(context.Background(), envelope)
+	if err != nil || existingCapability.VerifyFor(envelope) != nil {
+		t.Fatalf("existing pending admission evidence binding: %v", err)
+	}
+	for _, action := range existingCapability.EvidenceStorageCapabilities() {
+		if action.Disposition() != IAMEvidenceStorageAssertExisting {
+			t.Fatal("existing admission evidence did not bind AssertExisting")
+		}
+	}
+	for digestValue, record := range view.admissionEvidence {
+		original := cloneIAMPersistenceEvidenceRecord(record)
+		record.CanonicalContent = append([]byte(nil), record.CanonicalContent...)
+		record.CanonicalContent[0] ^= 1
+		view.admissionEvidence[digestValue] = record
+		if _, bindErr := planner.BindPendingAdmissionCapability(context.Background(), envelope); !errors.Is(bindErr, ErrViewInconsistent) {
+			t.Fatalf("mismatched existing admission evidence accepted: %v", bindErr)
+		}
+		view.admissionEvidence[digestValue] = original
+		break
 	}
 	assertDurableEnvelopeRoundTrip(t, envelope)
 	joinedRequest, err := envelope.JoinedAuditRequest()
@@ -148,6 +301,157 @@ func TestPlanIdentityBootstrapBindsTargetGlobalIDsAndAuthorizationIdentity(t *te
 	eventAssertion, _ := joinedAuditEventAssertion(eventReservation)
 	if !containsGlobalClaim(cas.IdentifierClaims, eventAssertion) {
 		t.Fatal("joined AuditEvent final assertion missing")
+	}
+	plannerWithoutCanonicalState, err := NewDefaultPlanner(
+		&viewWithoutCanonicalState{View: view}, &allowProfile{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plannerWithoutCanonicalState.BindCanonicalStateCapabilities(
+		context.Background(), joinedRequest); !errors.Is(err, ErrViewRequired) {
+		t.Fatalf("missing canonical state extension accepted: %v", err)
+	}
+	originalLease := view.leases[next.Ref]
+	changedWriter := originalLease
+	changedWriter.WriterIdentity += "/substituted"
+	view.leases[next.Ref] = changedWriter
+	if _, err := planner.BindCanonicalStateCapabilities(context.Background(), joinedRequest); !errors.Is(err,
+		ErrViewInconsistent) {
+		t.Fatalf("writer-lease identity substitution accepted: %v", err)
+	}
+	changedHome := originalLease
+	changedHome.HomeRegion += "-substituted"
+	view.leases[next.Ref] = changedHome
+	if _, err := planner.BindCanonicalStateCapabilities(context.Background(), joinedRequest); !errors.Is(err,
+		ErrViewInconsistent) {
+		t.Fatalf("writer-lease home substitution accepted: %v", err)
+	}
+	view.leases[next.Ref] = originalLease
+	joinedRequest, err = planner.BindCanonicalStateCapabilities(context.Background(), joinedRequest)
+	if err != nil || joinedRequest.VerifyDigest() != nil {
+		t.Fatalf("canonical state capability binding = %v", err)
+	}
+	stateBundle, ok := joinedRequest.CanonicalStateBundle()
+	if !ok || stateBundle.VerifyDigest() != nil || stateBundle.AuditEventID() != expectedAuditEventID ||
+		len(stateBundle.Mutations()) < 2 || len(stateBundle.Assertions()) == 0 ||
+		stateBundle.CoverageDigest() == ([32]byte{}) {
+		t.Fatalf("canonical state bundle = %#v / %v", stateBundle, ok)
+	}
+	var stateMutation CanonicalStateMutation
+	for _, mutation := range stateBundle.Mutations() {
+		if mutation.Next().Kind == CanonicalStateKindIAMIdentity {
+			stateMutation = mutation
+			break
+		}
+	}
+	if stateMutation.Digest() == ([32]byte{}) {
+		t.Fatal("identity canonical mutation missing")
+	}
+	if _, present := stateMutation.Expected(); present {
+		t.Fatal("bootstrap canonical state mutation unexpectedly has an expected row")
+	}
+	nextState := stateMutation.Next()
+	if nextState.Kind != CanonicalStateKindIAMIdentity ||
+		nextState.ContentType != CanonicalStateContentTypeIAMIdentity ||
+		nextState.ObjectID != next.Ref.ID || nextState.Version != next.StateVersion ||
+		nextState.StateDigestSHA256 != domainDigest(resolvedIdentitySnapshotDomain, next.CanonicalPayload) ||
+		!bytes.Equal(nextState.CanonicalState, next.CanonicalPayload) ||
+		nextState.AuditEventID != expectedAuditEventID {
+		t.Fatalf("canonical identity mutation mismatch: %#v", nextState)
+	}
+	aliasedState := stateMutation.Next()
+	aliasedState.CanonicalState[0] ^= 1
+	if stateBundle.VerifyDigest() != nil || bytes.Equal(aliasedState.CanonicalState,
+		stateMutation.Next().CanonicalState) {
+		t.Fatal("canonical state getter aliases retained bytes")
+	}
+	tamperedRequest := joinedRequest
+	tamperedState := cloneIAMCanonicalStateBundle(*joinedRequest.canonicalState)
+	tamperedState.mutations[0].next.CanonicalState[0] ^= 1
+	tamperedRequest.canonicalState = &tamperedState
+	if tamperedRequest.VerifyDigest() == nil {
+		t.Fatal("canonical state mutation tamper accepted")
+	}
+	forgedCoverageRequest := joinedRequest
+	forgedCoverage := cloneIAMCanonicalStateBundle(*joinedRequest.canonicalState)
+	forgedCoverage.coverageDigest[0] ^= 1
+	forgedCoverage.digest, err = digestCanonicalStateBundle(forgedCoverage.assertions,
+		forgedCoverage.absences, forgedCoverage.mutations, forgedCoverage.auditEventID,
+		forgedCoverage.coverageDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedCoverageRequest.canonicalState = &forgedCoverage
+	forgedCoverageRequest.stateCommitment, err = joinedAuditStateCommitment(forgedCoverageRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedCoverageExecution, err := executionFragmentFromRequest(forgedCoverageRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forgedCoverageRequest.execution = &forgedCoverageExecution
+	forgedCoverageRequest.digest, err = joinedAuditRequestDigest(forgedCoverageRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forgedCoverageRequest.VerifyDigest() == nil {
+		t.Fatal("self-consistent forged canonical coverage marker accepted")
+	}
+	if execution, ok := joinedRequest.ExecutionFragment(); !ok {
+		t.Fatal("canonical state execution fragment missing")
+	} else if executionBundle, hasBundle := execution.CanonicalStateBundle(); !hasBundle ||
+		executionBundle.Digest() != stateBundle.Digest() {
+		t.Fatal("canonical state bundle is not bound into execution")
+	}
+	seedPendingPersistence(t, view, joinedRequest)
+	joinedRequest, err = planner.BindPendingPersistenceCapability(context.Background(), joinedRequest)
+	if err != nil || joinedRequest.VerifyDigest() != nil {
+		t.Fatalf("pending persistence capability binding = %v", err)
+	}
+	persistence, ok := joinedRequest.PendingPersistenceCapability()
+	if !ok || persistence.VerifyDigest() != nil ||
+		persistence.Source().PendingKey != joinedRequest.ParentBinding().Key ||
+		persistence.Source().Revision != joinedRequest.ParentExpectedSnapshot().Version ||
+		len(persistence.Evidence()) != len(joinedRequest.EvidenceReferences()) {
+		t.Fatalf("pending persistence capability = %#v / %v", persistence, ok)
+	}
+	if execution, ok := joinedRequest.ExecutionFragment(); !ok {
+		t.Fatal("persistence execution fragment missing")
+	} else if executionPersistence, present := execution.PendingPersistenceCapability(); !present ||
+		executionPersistence.Digest() != persistence.Digest() {
+		t.Fatal("pending persistence is not bound into execution")
+	}
+	template, err := persistence.SuccessTerminalTemplate(joinedRequest)
+	if err != nil || template.VerifyFor(joinedRequest) != nil {
+		t.Fatalf("IAM success terminal template = %v", err)
+	}
+	joinedSuccessDigest := digest(0x3a)
+	revisions, err := template.Finalize(joinedRequest, joinedSuccessDigest)
+	if err != nil || len(revisions) != 1 || revisions[0].VerifyDigest() != nil {
+		t.Fatalf("success terminal pending revision = %#v / %v", revisions, err)
+	}
+	terminal := revisions[0].Record()
+	if terminal.PendingKey != joinedRequest.ParentBinding().Key || terminal.Revision != 2 ||
+		terminal.ExpectedKind != DurablePendingMutation || terminal.Kind != DurablePendingMutation ||
+		terminal.EnvelopeDigestSHA256 != joinedRequest.DurableEnvelopeDigest() ||
+		!bytes.Equal(terminal.CanonicalEnvelope, joinedRequest.DurableEnvelopeBytes()) ||
+		terminal.TerminalOutcomeDigestSHA256 != joinedSuccessDigest ||
+		terminal.ExpectedAuditEventID != expectedAuditEventID {
+		t.Fatalf("success terminal pending tuple = %#v", terminal)
+	}
+	aliasedSource := persistence.Source()
+	aliasedSource.CanonicalEnvelope[0] ^= 1
+	if persistence.VerifyDigest() != nil || bytes.Equal(aliasedSource.CanonicalEnvelope,
+		persistence.Source().CanonicalEnvelope) {
+		t.Fatal("pending persistence source getter aliases retained bytes")
+	}
+	tamperedPersistence := cloneIAMPendingPersistenceCapability(*joinedRequest.persistence)
+	tamperedPersistence.source.CanonicalEnvelope[0] ^= 1
+	tamperedPersistenceRequest := joinedRequest
+	tamperedPersistenceRequest.persistence = &tamperedPersistence
+	if tamperedPersistenceRequest.VerifyDigest() == nil {
+		t.Fatal("pending persistence tamper accepted")
 	}
 	if plan.AuditIntent().MessageID() != authorization.MessageID() ||
 		plan.AuditIntent().IdempotencyKey() != next.IdempotencyKey ||
@@ -200,12 +504,15 @@ func TestPlanIdentityBootstrapBindsTargetGlobalIDsAndAuthorizationIdentity(t *te
 		t.Fatalf("upstream resolver key substitution accepted: %v", err)
 	}
 	if _, err := plan.PlanReconciliation(PendingReconciliationCommand{Disposition: PendingDispositionExpired,
-		EvaluatedAtUnixNano: plan.CommitNotAfterUnixNano() - 1, FailureEvidenceDigest: digest(0x34)}); !errors.Is(err, ErrInvalidCommitWindow) {
+		EvaluatedAtUnixNano: plan.CommitNotAfterUnixNano() - 1,
+		Evidence: reconciliationEvidence(t, PendingDispositionExpired, plan.CommitNotAfterUnixNano(),
+			plan.CommitNotAfterUnixNano(), plan.Digest(), 0x34)}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("early expiry reconciliation = %v", err)
 	}
 	reconciliation, err := plan.PlanReconciliation(PendingReconciliationCommand{
 		Disposition: PendingDispositionExpired, EvaluatedAtUnixNano: plan.CommitNotAfterUnixNano(),
-		FailureEvidenceDigest: digest(0x34)})
+		Evidence: reconciliationEvidence(t, PendingDispositionExpired, plan.CommitNotAfterUnixNano(),
+			plan.CommitNotAfterUnixNano(), plan.Digest(), 0x34)})
 	if err != nil || reconciliation.CommitReady() || reconciliation.VerifyDigest() != nil ||
 		len(reconciliation.IdempotencyCompletionClaims()) != 2 ||
 		len(reconciliation.IdentifierTombstoneAssertions()) != len(admission.IdentifierReservations()) ||
@@ -263,13 +570,146 @@ func TestPlanIdentityBootstrapBindsTargetGlobalIDsAndAuthorizationIdentity(t *te
 	if !errors.Is(err, ErrAuthorizationMismatch) {
 		t.Fatalf("invalid authorization probed collecting outcome: %v", err)
 	}
-	replannedReconciliation, err := testPlanner(t, view, &allowProfile{}).
-		PlanReconciliationFromDecoded(context.Background(), decodedPending,
-			PendingReconciliationCommand{Disposition: PendingDispositionExpired,
-				EvaluatedAtUnixNano:   plan.CommitNotAfterUnixNano(),
-				FailureEvidenceDigest: digest(0x34)})
-	if err != nil || replannedReconciliation.Digest() != reconciliation.Digest() {
+	recoveryPlanner := testPlanner(t, view, &allowProfile{})
+	deadline := plan.CommitNotAfterUnixNano()
+	auditOccurredAt := deadline + 7
+	view.reconciliationNow = deadline + 19
+	preparedEvidence, err := recoveryPlanner.PreparePendingReconciliationEvidenceAt(context.Background(),
+		decodedPending, PendingDispositionExpired, ccse.AuthenticatedEvidenceRecord{}, auditOccurredAt)
+	if err != nil || preparedEvidence.Verify() != nil ||
+		preparedEvidence.OriginalCommitNotAfterUnixNano() != deadline ||
+		preparedEvidence.AuditOccurredAtUnixNano() != auditOccurredAt ||
+		preparedEvidence.ObservedAtUnixNano() != auditOccurredAt ||
+		preparedEvidence.FinalClockRequirement().PendingDigest() != plan.Digest() {
+		t.Fatalf("transaction-neutral final clock requirement = %#v / %v", preparedEvidence, err)
+	}
+	finalClock, err := NewReconciliationTransactionClockSnapshot("final-serializable-uow",
+		view.reconciliationNow, plan.Digest(), deadline)
+	if err != nil || preparedEvidence.FinalClockRequirement().ValidateObservation(finalClock) != nil {
+		t.Fatalf("later final UoW observation rejected: %#v / %v", finalClock, err)
+	}
+	earlyClock, err := NewReconciliationTransactionClockSnapshot("early-serializable-uow",
+		auditOccurredAt-1, plan.Digest(), deadline)
+	if err != nil || !errors.Is(preparedEvidence.FinalClockRequirement().ValidateObservation(earlyClock),
+		ErrInvalidCommitWindow) {
+		t.Fatalf("pre-audit final UoW observation accepted: %#v / %v", earlyClock, err)
+	}
+	if _, err := recoveryPlanner.PreparePendingReconciliationEvidenceAt(context.Background(), decodedPending,
+		PendingDispositionExpired, ccse.AuthenticatedEvidenceRecord{}, deadline-1); !errors.Is(err, ErrInvalidCommitWindow) {
+		t.Fatalf("pre-deadline signed occurrence accepted: %v", err)
+	}
+	tamperedEvidence := preparedEvidence
+	tamperedEvidence.auditOccurredAtUnixNano++
+	if tamperedEvidence.Verify() == nil {
+		t.Fatal("audit occurrence time tamper accepted")
+	}
+	replannedReconciliation, err := recoveryPlanner.PlanReconciliationFromDecoded(context.Background(),
+		decodedPending, PendingReconciliationCommand{Disposition: PendingDispositionExpired,
+			EvaluatedAtUnixNano: preparedEvidence.AuditOccurredAtUnixNano(), Evidence: preparedEvidence})
+	if err != nil || replannedReconciliation.VerifyDigest() != nil {
 		t.Fatalf("decoded pending terminal replan = %v", err)
+	}
+	replannedRequest, err := replannedReconciliation.JoinedAuditRequest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	replannedRequest, err = recoveryPlanner.BindPendingPersistenceCapability(
+		context.Background(), replannedRequest)
+	if err != nil || replannedRequest.VerifyDigest() != nil {
+		t.Fatalf("reconciliation pending persistence bind = %v", err)
+	}
+	reconciliationPersistence, ok := replannedRequest.PendingPersistenceCapability()
+	if !ok || reconciliationPersistence.VerifyFor(replannedRequest) != nil {
+		t.Fatal("reconciliation pending persistence capability missing")
+	}
+	storageCapabilities := reconciliationPersistence.EvidenceStorageCapabilities()
+	var freshFailureStorage bool
+	for _, capability := range storageCapabilities {
+		if capability.VerifyDigest() != nil || capability.AuditAssertionEventID() !=
+			replannedRequest.JoinedAuditEventID() {
+			t.Fatal("invalid reconciliation evidence storage capability")
+		}
+		evidence := capability.Evidence().Record()
+		if evidence.DigestSHA256 == preparedEvidence.Digest() {
+			_, _, linked := capability.PendingLink()
+			freshFailureStorage = capability.Disposition() == IAMEvidenceStorageReserveNew && !linked &&
+				bytes.Equal(evidence.CanonicalContent, preparedEvidence.CanonicalBytes())
+		}
+	}
+	if !freshFailureStorage {
+		t.Fatal("fresh reconciliation failure evidence lacks ReserveNew storage capability")
+	}
+	failureTemplate, err := reconciliationPersistence.FailureTerminalTemplate(replannedRequest)
+	if err != nil || failureTemplate.VerifyFor(replannedRequest) != nil {
+		t.Fatalf("reconciliation terminal template = %#v / %v", failureTemplate, err)
+	}
+	if _, err := failureTemplate.Finalize(replannedRequest,
+		replannedReconciliation.FailureOutcomeDigest()); !errors.Is(err, ErrPendingPlanInvalid) {
+		t.Fatalf("inner failure result accepted as outer result: %v", err)
+	}
+	outerFailureDigest := digest(0xcf)
+	failureRevisions, err := failureTemplate.Finalize(replannedRequest, outerFailureDigest)
+	if err != nil || len(failureRevisions) != 1 || failureRevisions[0].VerifyDigest() != nil {
+		t.Fatalf("reconciliation terminal revision = %#v / %v", failureRevisions, err)
+	}
+	failureRevision := failureRevisions[0].Record()
+	if failureRevision.ExpectedKind != DurablePendingMutation ||
+		failureRevision.Kind != DurablePendingReconciliation || failureRevision.Revision != 2 ||
+		failureRevision.PreviousEnvelopeDigestSHA256 != envelope.Digest() ||
+		!bytes.Equal(failureRevision.PreviousCanonicalEnvelope, envelope.Bytes()) ||
+		failureRevision.EnvelopeDigestSHA256 != replannedRequest.DurableEnvelopeDigest() ||
+		!bytes.Equal(failureRevision.CanonicalEnvelope, replannedRequest.DurableEnvelopeBytes()) ||
+		failureRevision.TerminalOutcomeDigestSHA256 != outerFailureDigest {
+		t.Fatalf("reconciliation predecessor/terminal tuple = %#v", failureRevision)
+	}
+	if _, err := recoveryPlanner.PlanReconciliationFromDecoded(context.Background(), decodedPending,
+		PendingReconciliationCommand{Disposition: PendingDispositionExpired,
+			EvaluatedAtUnixNano: finalClock.ObservedAtUnixNano, Evidence: preparedEvidence}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("database observation substituted for signed audit time: %v", err)
+	}
+	resultSnapshot, err := DecodePendingReconciliationResult(replannedReconciliation.FailureResult())
+	if err != nil || resultSnapshot.Verify() != nil ||
+		resultSnapshot.Digest() != replannedReconciliation.FailureOutcomeDigest() ||
+		resultSnapshot.PendingDigest() != plan.Digest() ||
+		resultSnapshot.Disposition() != PendingDispositionExpired ||
+		resultSnapshot.AuditOccurredAtUnixNano() != auditOccurredAt ||
+		resultSnapshot.FinalClockRequirement() != preparedEvidence.FinalClockRequirement() {
+		t.Fatalf("typed reconciliation result decode = %#v / %v", resultSnapshot, err)
+	}
+	aliasedEvidence := resultSnapshot.CanonicalEvidenceBytes()
+	aliasedEvidence[0] ^= 1
+	if resultSnapshot.Verify() != nil {
+		t.Fatal("result evidence getter aliases retained bytes")
+	}
+	tamperedResultPayload := replannedReconciliation.FailureResult().Payload()
+	tamperedResultPayload[len(tamperedResultPayload)-1] ^= 1
+	tamperedResult, err := replayresult.New(PendingReconciliationResultContentType, tamperedResultPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodePendingReconciliationResult(tamperedResult); !errors.Is(err, ErrPendingPlanInvalid) {
+		t.Fatalf("tampered reconciliation result accepted: %v", err)
+	}
+	trailingResult, err := replayresult.New(PendingReconciliationResultContentType,
+		append(replannedReconciliation.FailureResult().Payload(), 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodePendingReconciliationResult(trailingResult); !errors.Is(err, ErrPendingPlanInvalid) {
+		t.Fatalf("trailing reconciliation result accepted: %v", err)
+	}
+	wrongTypeResult, err := replayresult.New("application/octet-stream",
+		replannedReconciliation.FailureResult().Payload())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodePendingReconciliationResult(wrongTypeResult); !errors.Is(err, ErrPendingPlanInvalid) {
+		t.Fatalf("wrong reconciliation result type accepted: %v", err)
+	}
+	reconciliation = replannedReconciliation
+	reconciliationEnvelope, err = reconciliation.DurableEnvelope()
+	if err != nil {
+		t.Fatal(err)
 	}
 	for _, claim := range replannedReconciliation.IdempotencyCompletionClaims() {
 		view.idempotency[claim.Binding.Key] = idempotency.Snapshot{Binding: claim.Binding,
@@ -301,6 +741,129 @@ func TestPlanIdentityBootstrapBindsTargetGlobalIDsAndAuthorizationIdentity(t *te
 	_, err = testPlanner(t, view, &allowProfile{}).PlanIdentity(context.Background(), command)
 	if !errors.Is(err, idempotency.ErrJoinedStateMismatch) || errors.Is(err, ErrIdempotencyInProgress) {
 		t.Fatalf("mixed crash state did not fail closed: %v", err)
+	}
+}
+
+func TestPendingAdmissionRejectsAuditPolicySetBeyondV1Representability(t *testing.T) {
+	view := newMemoryView()
+	target := EntityRef{Kind: EntityIdentity, PrincipalKind: 2, ID: "agent-01"}
+	material := materialSnapshotForTarget(t, 0x22,
+		"spiffe://cph.example/agent/01", target)
+	lifecycle := lifecycleSnapshot(t, material, 1, 1, 7)
+	view.materials[material.KeyID] = material
+	view.lifecycles[material.KeyID] = lifecycle
+	installMaterialBootstrapIDs(view, material)
+	provider := activeProvider(t)
+	host := activeHost(t, material.KeyID)
+	view.identities[provider.Ref], view.identities[host.Ref] = provider, host
+
+	projection := agentProjection(material, 1, 1, 7)
+	projection.Metadata.RecordID = "agent-policy-boundary-pending"
+	projection.Metadata.PolicyDigestsSHA256 = make([][32]byte, 63)
+	for index := range projection.Metadata.PolicyDigestsSHA256 {
+		projection.Metadata.PolicyDigestsSHA256[index] = sha256.Sum256([]byte(fmt.Sprintf("policy-%03d", index)))
+	}
+	next, err := NormalizeIdentity(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorization := verifiedAuthorization(t, view, schema.MessageTypeAgentIdentity,
+		next.CanonicalPayload, next.Ref, 0, id16(0x35))
+	view.leases[next.Ref] = lease(next.Ref, authorization.SenderIdentity(), 7, 0x36)
+	command := IdentityCommand{Projection: projection, ActorIdentity: authorization.SenderIdentity(),
+		EvaluatedAtUnixNano: testNow, CorrelationID: id16(0x35), CauseCode: "bootstrap",
+		Fence: fence(next.Ref, authorization.SenderIdentity(), 7, 0, 0x36), Authorization: authorization}
+	if _, err := testPlanner(t, view, &allowProfile{}).PlanIdentity(context.Background(), command); !errors.Is(err, ErrPendingPlanInvalid) {
+		t.Fatalf("unrepresentable AuditEvent policy set reached pending admission: %v", err)
+	}
+	if len(view.idempotency) != 0 {
+		t.Fatal("unrepresentable audit policy set reserved idempotency state")
+	}
+}
+
+func TestPrepareFailedReconciliationRequiresSignedHistoricalEvidence(t *testing.T) {
+	view := newMemoryView()
+	view.reconciliationNow = testNow + 100_000_000
+	target := EntityRef{Kind: EntityIdentity, PrincipalKind: 2, ID: "agent-01"}
+	material := materialSnapshotForTarget(t, 0x23, "spiffe://cph.example/agent/01", target)
+	lifecycle := lifecycleSnapshot(t, material, 1, 1, 7)
+	view.materials[material.KeyID], view.lifecycles[material.KeyID] = material, lifecycle
+	installMaterialBootstrapIDs(view, material)
+	provider, host := activeProvider(t), activeHost(t, material.KeyID)
+	view.identities[provider.Ref], view.identities[host.Ref] = provider, host
+	projection := agentProjection(material, 1, 1, 7)
+	projection.Metadata.RecordID = "agent-failure-evidence-pending"
+	next, err := NormalizeIdentity(projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorization := verifiedAuthorization(t, view, schema.MessageTypeAgentIdentity,
+		next.CanonicalPayload, next.Ref, 0, id16(0x37))
+	view.leases[next.Ref] = lease(next.Ref, authorization.SenderIdentity(), 7, 0x38)
+	plan, err := testPlanner(t, view, &allowProfile{}).PlanIdentity(context.Background(), IdentityCommand{
+		Projection: projection, ActorIdentity: authorization.SenderIdentity(), EvaluatedAtUnixNano: testNow,
+		CorrelationID: id16(0x37), CauseCode: "bootstrap",
+		Fence: fence(next.Ref, authorization.SenderIdentity(), 7, 0, 0x38), Authorization: authorization})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := plan.DurableEnvelope()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeDurablePendingEnvelope(envelope.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reservation := range plan.AdmissionIntent().IdempotencyReservations() {
+		view.idempotency[reservation.Binding.Key] = idempotency.Snapshot{Binding: reservation.Binding,
+			State: reservation.NextState, Version: reservation.NextVersion,
+			ProgressDigest: reservation.NextProgressDigest}
+	}
+	applyGlobalClaims(t, view, plan.AdmissionIntent().IdentifierReservations())
+	failureSigner := materialSnapshotForTarget(t, 0x44,
+		"spiffe://cph.example/service/failure-observer",
+		EntityRef{Kind: EntityIdentity, PrincipalKind: 8, ID: "failure-observer"})
+	installActiveServiceMaterial(t, view, failureSigner, schema.MessageTypeEvidenceRecord)
+	failureProjection := ownershipTransferEvidenceProjection(0x45, 1)
+	failureProjection.Metadata.RecordID = "iam-pending-failure-record"
+	failureProjection.Metadata.IntegrityDigest = digest(0x46)
+	failureProjection.EvidenceID = "iam-pending-failure"
+	failureProjection.Component = "iam.pending.reconciliation"
+	failureProjection.EvidenceArtifactDigestsSHA256 = [][32]byte{plan.Digest()}
+	failureProjection.Status = uint32(foundationv1.EvidenceStatus_EVIDENCE_STATUS_FAILED)
+	failureProjection.Observations[0].CriterionPassed = false
+	payload, err := failureProjection.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified := verifiedFoundationRecord(t, failureSigner, 0x44, schema.MessageTypeEvidenceRecord,
+		payload, EntityRef{Kind: EntityIdentity, PrincipalKind: 8, ID: failureProjection.EvidenceID},
+		1, id16(0x47), id16(0x48), "", nil)
+	authenticated := authenticateVerifiedEvidence(t, view, verified, testNow)
+	planner := testPlanner(t, view, &allowProfile{})
+	evidence, err := planner.PreparePendingReconciliationEvidence(context.Background(), decoded,
+		PendingDispositionFailed, authenticated)
+	if err != nil || evidence.Verify() != nil {
+		t.Fatalf("signed FAILED evidence = %#v / %v", evidence, err)
+	}
+	if record, digest, ok := evidence.SignedFailureRecord(); !ok || digest != verified.Digest() ||
+		record.MessageTypeID != schema.MessageTypeEvidenceRecord {
+		t.Fatal("FAILED evidence did not retain exact signed record")
+	}
+	reconciliation, err := planner.PlanReconciliationFromDecoded(context.Background(), decoded,
+		PendingReconciliationCommand{Disposition: PendingDispositionFailed,
+			EvaluatedAtUnixNano: evidence.ObservedAtUnixNano(), Evidence: evidence})
+	if err != nil || reconciliation.VerifyDigest() != nil {
+		t.Fatalf("signed FAILED reconciliation = %v", err)
+	}
+	result := reconciliation.FailureResult()
+	if result.Verify() != nil || result.Digest() != reconciliation.FailureOutcomeDigest() {
+		t.Fatal("FAILED replay result preimage mismatch")
+	}
+	if _, err := planner.PreparePendingReconciliationEvidence(context.Background(), decoded,
+		PendingDispositionFailed, ccse.AuthenticatedEvidenceRecord{}); err == nil {
+		t.Fatal("digest-only/zero FAILED evidence accepted")
 	}
 }
 
@@ -343,7 +906,8 @@ func TestPlanKeyEnrollmentReservesJoinedAuditEventAndBindsAdmission(t *testing.T
 		EvaluatedAtUnixNano: testNow, CorrelationID: id16(0x3b), CauseCode: "initial-enrollment",
 		Fence: fence(lifecycleEntity, authorization.SenderIdentity(), 7, 0, 0x3c), Authorization: authorization}
 
-	plan, err := testPlanner(t, view, &allowProfile{}).PlanKeyEnrollment(context.Background(),
+	planner := testPlanner(t, view, &allowProfile{})
+	plan, err := planner.PlanKeyEnrollment(context.Background(),
 		KeyEnrollmentCommand{Material: materialCommand, Lifecycle: lifecycleCommand})
 	if err != nil {
 		t.Fatal(err)
@@ -357,6 +921,14 @@ func TestPlanKeyEnrollmentReservesJoinedAuditEventAndBindsAdmission(t *testing.T
 	enrollmentEnvelope, err := plan.DurableEnvelope()
 	if err != nil {
 		t.Fatal(err)
+	}
+	enrollmentAdmission, err := planner.BindPendingAdmissionCapability(
+		context.Background(), enrollmentEnvelope)
+	if err != nil || enrollmentAdmission.VerifyFor(enrollmentEnvelope) != nil ||
+		len(enrollmentAdmission.EvidenceStorageCapabilities()) != 2 ||
+		len(enrollmentAdmission.CanonicalStateReads().Assertions()) == 0 ||
+		len(enrollmentAdmission.CanonicalStateReads().Absences()) == 0 {
+		t.Fatalf("key enrollment admission capability: %v", err)
 	}
 	assertDurableEnvelopeRoundTrip(t, enrollmentEnvelope)
 	enrollmentRequest, err := plan.JoinedAuditRequest()
@@ -485,6 +1057,8 @@ func TestResolverRequiresCurrentActiveIdentityAndReturnsCASFingerprint(t *testin
 		t.Fatal(err)
 	}
 	if resolved.StateVersion == 0 || resolved.WriterEpoch == 0 || resolved.SnapshotDigest == ([32]byte{}) ||
+		resolved.MaterialStateVersion != material.StateVersion ||
+		resolved.MaterialSnapshotDigest != material.EnrollmentBindingDigest ||
 		resolved.IdentityStateVersion == 0 || resolved.IdentityWriterEpoch == 0 || resolved.IdentitySnapshotDigest == ([32]byte{}) {
 		t.Fatalf("missing resolver fingerprints: %#v", resolved)
 	}
