@@ -253,7 +253,28 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	stack.RegisterProtocols(eth.Protocols())
 	stack.RegisterLifecycle(eth)
 
-	eth.reconfig, _ = reconfig.New(stack, chainConfig, eth)
+	eth.reconfig, err = reconfig.New(stack, chainConfig, eth)
+	if err != nil {
+		return nil, err
+	}
+	if eth.txQUICIngress != nil && eth.reconfig != nil && chainConfig != nil && chainConfig.FairHotstuff {
+		eth.txQUICIngress.SetFHSRouteProvider(func() (TxQUICFHSRoute, error) {
+			route, err := eth.reconfig.CurrentFHSRoute()
+			if err != nil {
+				return TxQUICFHSRoute{}, err
+			}
+			if route == nil || route.Leader == nil {
+				return TxQUICFHSRoute{}, fmt.Errorf("Fair HotStuff route has no leader")
+			}
+			return TxQUICFHSRoute{
+				ProposalView:  route.ProposalView,
+				KeyNumber:     route.KeyNumber,
+				CommitteeHash: route.CommitteeHash,
+				LeaderIndex:   route.LeaderIndex,
+				LeaderAddress: route.Leader.Address,
+			}, nil
+		})
+	}
 	if eth.txQUICIngress != nil && config.TxQUIC.HTTP3Enabled {
 		if rpcHandler, err := stack.RPCHandler(); err == nil {
 			vhosts := stack.Config().HTTPVirtualHosts
