@@ -101,6 +101,26 @@ type bestCandidateInfo struct {
 	KeyNumber uint64
 }
 
+// FHSRoute is the authoritative transaction-ingress route for the next Fair
+// HotStuff proposal view. ProposalView is the exact view used by the FHS leader
+// election PRF; LeaderIndex is therefore never inferred from committee order.
+//
+// The route is intentionally expressed in rnet committee coordinates. The eth
+// TxQUIC layer owns the rnet->TxQUIC port mapping and route caching.
+type FHSRoute struct {
+	Enabled       bool          `json:"enabled"`
+	CurrentView   uint64        `json:"currentView"`
+	ProposalView  uint64        `json:"proposalView"`
+	TxNumber      uint64        `json:"txNumber"`
+	TxHash        common.Hash   `json:"txHash"`
+	KeyNumber     uint64        `json:"keyNumber"`
+	KeyHash       common.Hash   `json:"keyHash"`
+	CommitteeHash common.Hash   `json:"committeeHash"`
+	LeaderIndex   uint          `json:"leaderIndex"`
+	LeaderID      string        `json:"leaderId"`
+	Leader        *common.Cnode `json:"leader"`
+}
+
 type proposalBodyMsg struct {
 	Type uint32
 
@@ -1891,6 +1911,195 @@ func (s *Service) normalizeLeaderIndex(index uint) uint {
 
 func (s *Service) fairHotstuffEnabled() bool {
 	return s.chainConfig != nil && s.chainConfig.FairHotstuff
+}
+
+// refreshFHSRouteBaseLocked bootstraps/repairs the route view from canonical
+// chain state without discarding a validator's newer certified/timeout view.
+// This is important for common RPC nodes: they instantiate reconfig but do not
+// run the validator pacemaker, so currentView must still be usable as a routing
+// authority before miner.start is ever called on that node.
+func (s *Service) refreshFHSRouteBaseLocked() error {
+	if s == nil || !s.fairHotstuffEnabled() || s.bc == nil || s.kbc == nil {
+		return fmt.Errorf("Fair HotStuff route is unavailable")
+	}
+	curBlock := s.bc.CurrentBlock()
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curBlock == nil || curKeyBlock == nil {
+		return fmt.Errorf("Fair HotStuff canonical heads are unavailable")
+	}
+
+	passive := atomic.LoadInt32(&s.runningState) == 0
+	needsTxRefresh := s.currentView.TxHash == (common.Hash{}) || s.currentView.TxNumber < curBlock.NumberU64()
+	if passive && s.currentView.TxNumber == curBlock.NumberU64() && s.currentView.TxHash != curBlock.Hash() {
+		needsTxRefresh = true
+	}
+	needsKeyRefresh := s.currentView.KeyHash == (common.Hash{}) || s.currentView.KeyNumber < curKeyBlock.NumberU64()
+	if passive && s.currentView.KeyNumber == curKeyBlock.NumberU64() && s.currentView.KeyHash != curKeyBlock.Hash() {
+		needsKeyRefresh = true
+	}
+
+	routeBaseChanged := false
+	if needsTxRefresh {
+		s.currentView.TxNumber = curBlock.NumberU64()
+		s.currentView.TxHash = curBlock.Hash()
+		s.currentView.Round = 0
+		s.currentView.NoDone = true
+
+		canonicalView := curBlock.NumberU64()
+		if signInfo := curBlock.SignInfo(); signInfo != nil && signInfo.ViewNumber > canonicalView {
+			canonicalView = signInfo.ViewNumber
+		}
+		// A running validator may already know a newer TC/QC view than the
+		// canonical head. Never move that pacemaker backwards. Passive/common
+		// nodes, however, must advance to every newly imported canonical view.
+		if canonicalView > s.currentView.ViewNumber {
+			s.currentView.ViewNumber = canonicalView
+		}
+		routeBaseChanged = true
+	}
+	if needsKeyRefresh {
+		s.currentView.KeyNumber = curKeyBlock.NumberU64()
+		s.currentView.KeyHash = curKeyBlock.Hash()
+		s.currentView.CommitteeHash = curKeyBlock.CommitteeHash()
+		s.currentView.Round = 0
+		s.currentView.NoDone = true
+		routeBaseChanged = true
+	}
+	if s.currentView.CommitteeHash == (common.Hash{}) && s.currentView.KeyHash == curKeyBlock.Hash() {
+		s.currentView.CommitteeHash = curKeyBlock.CommitteeHash()
+		routeBaseChanged = true
+	}
+
+	// Common RPC nodes do not run the FHS pacemaker. Whenever canonical chain
+	// import moves their route base, maintain currentView.LeaderIndex exactly as
+	// a validator would: leader(currentView.ViewNumber+1, seed, committeeHash).
+	// CurrentFHSRoute then reads this field as the sole leader authority.
+	if routeBaseChanged {
+		if s.currentView.ViewNumber == ^uint64(0) {
+			return fmt.Errorf("Fair HotStuff proposal view overflow")
+		}
+		committee, err := s.loadViewCommittee(&s.currentView, false)
+		if err != nil {
+			return err
+		}
+		if committee == nil || len(committee.List) == 0 || committee.RlpHash() != s.currentView.CommitteeHash {
+			return fmt.Errorf("Fair HotStuff route committee is unavailable")
+		}
+		leaderIndex, err := fairHotstuffLeaderIndex(
+			s.chainConfig.FairHotstuffSeed,
+			s.ChainID(),
+			s.currentView.ViewNumber+1,
+			s.currentView.CommitteeHash,
+			len(committee.List),
+		)
+		if err != nil {
+			return err
+		}
+		s.currentView.LeaderIndex = leaderIndex
+	}
+	return nil
+}
+
+// CurrentFHSRoute returns the single authoritative route for the next proposal
+// view. The leader is always derived from
+//
+//	ProposalView + FairHotstuffSeed + CommitteeHash
+//
+// and currentView.LeaderIndex is repaired to that deterministic result before
+// the route is published. fixedCommittee only freezes committee membership; it
+// never selects committee index 0 as the Fair HotStuff leader.
+func (s *Service) CurrentFHSRoute() (*FHSRoute, error) {
+	if s == nil || !s.fairHotstuffEnabled() {
+		return nil, fmt.Errorf("Fair HotStuff is not enabled")
+	}
+
+	// Committee/view transitions can race this read. Retry against a fresh
+	// snapshot rather than combining a committee from one epoch with another
+	// epoch's proposal view.
+	for attempt := 0; attempt < 4; attempt++ {
+		s.muCurrentView.Lock()
+		if err := s.refreshFHSRouteBaseLocked(); err != nil {
+			s.muCurrentView.Unlock()
+			return nil, err
+		}
+		view := s.currentView
+		s.muCurrentView.Unlock()
+
+		if view.ViewNumber == ^uint64(0) {
+			return nil, fmt.Errorf("Fair HotStuff proposal view overflow")
+		}
+		proposalView := view.ViewNumber + 1
+		committee, err := s.loadViewCommittee(&view, true)
+		if err != nil {
+			return nil, err
+		}
+		if committee == nil || len(committee.List) == 0 || committee.RlpHash() != view.CommitteeHash {
+			return nil, fmt.Errorf("Fair HotStuff route committee is unavailable")
+		}
+
+		// currentView.LeaderIndex is the single authoritative leader selector.
+		// Recompute only as an invariant check; never infer a replacement from
+		// committee ordering and never silently route to index 0.
+		expectedIndex, err := fairHotstuffLeaderIndex(
+			s.chainConfig.FairHotstuffSeed,
+			s.ChainID(),
+			proposalView,
+			view.CommitteeHash,
+			len(committee.List),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if view.LeaderIndex != expectedIndex {
+			return nil, fmt.Errorf("Fair HotStuff leader invariant mismatch: proposalView=%d currentView.LeaderIndex=%d deterministic=%d", proposalView, view.LeaderIndex, expectedIndex)
+		}
+		if view.LeaderIndex >= uint(len(committee.List)) || committee.List[view.LeaderIndex] == nil {
+			return nil, fmt.Errorf("Fair HotStuff leader index %d is outside committee", view.LeaderIndex)
+		}
+
+		s.muCurrentView.Lock()
+		// If a QC/TC or key transition moved the view while the committee was
+		// resolved, restart with the new authoritative state.
+		if s.currentView.ViewNumber != view.ViewNumber ||
+			s.currentView.KeyNumber != view.KeyNumber ||
+			s.currentView.KeyHash != view.KeyHash ||
+			s.currentView.CommitteeHash != view.CommitteeHash ||
+			s.currentView.LeaderIndex != view.LeaderIndex {
+			s.muCurrentView.Unlock()
+			continue
+		}
+		s.muCurrentView.Unlock()
+
+		leader := committee.List[view.LeaderIndex]
+		leaderCopy := *leader
+		leaderID := bftview.GetNodeID(leader.Address, leader.Public)
+		if leaderID == "" {
+			return nil, fmt.Errorf("Fair HotStuff leader identity is empty")
+		}
+		return &FHSRoute{
+			Enabled:       true,
+			CurrentView:   view.ViewNumber,
+			ProposalView:  proposalView,
+			TxNumber:      view.TxNumber,
+			TxHash:        view.TxHash,
+			KeyNumber:     view.KeyNumber,
+			KeyHash:       view.KeyHash,
+			CommitteeHash: view.CommitteeHash,
+			LeaderIndex:   view.LeaderIndex,
+			LeaderID:      leaderID,
+			Leader:        &leaderCopy,
+		}, nil
+	}
+	return nil, fmt.Errorf("Fair HotStuff route changed repeatedly while resolving")
+}
+
+// CurrentFHSRoute exposes the service route to subsystems (notably TxQUIC)
+// without exporting the Service field from ReconfigBackend.
+func (backend *ReconfigBackend) CurrentFHSRoute() (*FHSRoute, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("reconfig service is unavailable")
+	}
+	return backend.service.CurrentFHSRoute()
 }
 
 func (s *Service) fairHotstuffLeaderIndexForTargetLocked(targetView uint64, committeeHash common.Hash) uint {

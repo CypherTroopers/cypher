@@ -13,6 +13,7 @@ import (
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/params"
 )
 
 func TestSummarizeTxQUICInsertSeparatesTransactionResultFromAdmission(t *testing.T) {
@@ -263,5 +264,189 @@ func TestTxQUICJoinHostPortSupportsIPv6(t *testing.T) {
 	}
 	if got := txQUICJoinHostPort("0.0.0.0", 4444); got != "0.0.0.0:4444" {
 		t.Fatalf("listen address = %q, want %q", got, "0.0.0.0:4444")
+	}
+}
+
+func testTxQUICFHSCommittee() params.GenesisCommittee {
+	return params.GenesisCommittee{
+		0: {Address: "127.0.0.1:7102", Public: "01"},
+		1: {Address: "127.0.0.1:7104", Public: "02"},
+		2: {Address: "127.0.0.1:7106", Public: "03"},
+		3: {Address: "127.0.0.1:7108", Public: "04"},
+	}
+}
+
+func TestApplyFixedCommitteeAutoRoleFairHotstuffDoesNotPinIndexZero(t *testing.T) {
+	chainConfig := &params.ChainConfig{
+		GenCommittee:   testTxQUICFHSCommittee(),
+		RnetPort:       "7999", // not a committee endpoint: common RPC node
+		FixedCommittee: true,
+		FixedLeader:    false,
+		FairHotstuff:   true,
+	}
+	config := TxQUICConfig{AutoRole: true, PortOffset: 2000}
+	config.ApplyFixedCommitteeAutoRole(chainConfig)
+
+	if config.RoutingMode != txQUICFHSDynamicRoutingMode {
+		t.Fatalf("routing mode = %q, want %q", config.RoutingMode, txQUICFHSDynamicRoutingMode)
+	}
+	if config.Enabled || !config.BridgeEnabled || !config.HTTP3Enabled {
+		t.Fatalf("common FHS role enabled/bridge/http3 = %v/%v/%v, want false/true/true", config.Enabled, config.BridgeEnabled, config.HTTP3Enabled)
+	}
+	if len(config.LeaderEndpoints) != 0 {
+		t.Fatalf("Fair HotStuff common route pinned static leaders: %v", config.LeaderEndpoints)
+	}
+	if len(config.BackupEndpoints) != len(chainConfig.GenCommittee) {
+		t.Fatalf("bootstrap committee endpoints = %d, want %d", len(config.BackupEndpoints), len(chainConfig.GenCommittee))
+	}
+	if config.BackupEndpoints[0] != "127.0.0.1:9102" || config.BackupEndpoints[1] != "127.0.0.1:9104" {
+		t.Fatalf("unexpected FHS bootstrap endpoints: %v", config.BackupEndpoints)
+	}
+}
+
+func TestApplyFixedCommitteeAutoRoleFairHotstuffValidatorIsDynamic(t *testing.T) {
+	chainConfig := &params.ChainConfig{
+		GenCommittee:   testTxQUICFHSCommittee(),
+		RnetPort:       "7104",
+		FixedCommittee: true,
+		FixedLeader:    false,
+		FairHotstuff:   true,
+	}
+	config := TxQUICConfig{AutoRole: true, PortOffset: 2000}
+	config.ApplyFixedCommitteeAutoRole(chainConfig)
+
+	if !config.Enabled || config.BridgeEnabled || config.HTTP3Enabled {
+		t.Fatalf("validator FHS role enabled/bridge/http3 = %v/%v/%v, want true/false/false", config.Enabled, config.BridgeEnabled, config.HTTP3Enabled)
+	}
+	if config.RoutingMode != txQUICFHSDynamicRoutingMode {
+		t.Fatalf("validator routing mode = %q, want %q", config.RoutingMode, txQUICFHSDynamicRoutingMode)
+	}
+	if config.Port != 9104 {
+		t.Fatalf("validator TxQUIC port = %d, want 9104", config.Port)
+	}
+	if len(config.LeaderEndpoints) != 0 {
+		t.Fatalf("validator FHS route pinned static leaders: %v", config.LeaderEndpoints)
+	}
+}
+
+func TestFixedCommitteeWithoutFixedLeaderDoesNotMeanIndexZero(t *testing.T) {
+	chainConfig := &params.ChainConfig{
+		GenCommittee:   testTxQUICFHSCommittee(),
+		RnetPort:       "7999",
+		FixedCommittee: true,
+		FixedLeader:    false,
+		FairHotstuff:   false,
+	}
+	config := TxQUICConfig{AutoRole: true, PortOffset: 2000}
+	config.ApplyFixedCommitteeAutoRole(chainConfig)
+	if len(config.LeaderEndpoints) != 0 {
+		t.Fatalf("fixedCommittee alone pinned leader index 0: %v", config.LeaderEndpoints)
+	}
+	if len(config.BackupEndpoints) != len(chainConfig.GenCommittee) {
+		t.Fatalf("legacy fixed committee endpoints = %d, want %d", len(config.BackupEndpoints), len(chainConfig.GenCommittee))
+	}
+}
+
+func TestTxQUICFHSRedirectRoundTripAndAck(t *testing.T) {
+	route := txQUICFHSRouteCache{
+		ProposalView:  41,
+		KeyNumber:     7,
+		CommitteeHash: common.HexToHash("0x1234"),
+		LeaderIndex:   2,
+		Endpoint:      "127.0.0.1:9106",
+	}
+	encoded := encodeTxQUICFHSRedirect(route)
+	decoded, ok := decodeTxQUICFHSRedirect(encoded)
+	if !ok {
+		t.Fatalf("failed to decode FHS redirect %q", encoded)
+	}
+	if decoded.ProposalView != route.ProposalView || decoded.KeyNumber != route.KeyNumber || decoded.CommitteeHash != route.CommitteeHash || decoded.LeaderIndex != route.LeaderIndex || decoded.Endpoint != route.Endpoint {
+		t.Fatalf("redirect round trip mismatch: got %#v want %#v", decoded, route)
+	}
+
+	err := validateTxQUICAck("127.0.0.1:9104", &txQUICAck{
+		Version: txQUICPacketV2,
+		Errors:  []string{encoded},
+	}, txQUICAckExpectation{})
+	var redirect *txQUICFHSRedirectError
+	if !errors.As(err, &redirect) {
+		t.Fatalf("redirect ACK error = %v, want txQUICFHSRedirectError", err)
+	}
+	if redirect.route.Endpoint != route.Endpoint || redirect.route.ProposalView != route.ProposalView {
+		t.Fatalf("redirect ACK route = %#v, want %#v", redirect.route, route)
+	}
+}
+
+func TestTxQUICFHSRouteCacheKeepsNewerRedirectOverStaleProvider(t *testing.T) {
+	committeeHash := common.HexToHash("0x4567")
+	provided := TxQUICFHSRoute{
+		ProposalView:  10,
+		KeyNumber:     3,
+		CommitteeHash: committeeHash,
+		LeaderIndex:   1,
+		LeaderAddress: "127.0.0.1:7104",
+	}
+	q := &TxQUICIngress{
+		config: TxQUICConfig{
+			RoutingMode:     txQUICFHSDynamicRoutingMode,
+			PortOffset:      2000,
+			BackupEndpoints: []string{"127.0.0.1:9102", "127.0.0.1:9104", "127.0.0.1:9106", "127.0.0.1:9108"},
+		},
+		routeProvider: func() (TxQUICFHSRoute, error) { return provided, nil },
+	}
+
+	route, err := q.refreshFHSRouteCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if route.Endpoint != "127.0.0.1:9104" || route.ProposalView != 10 {
+		t.Fatalf("provider route = %#v", route)
+	}
+
+	redirect := txQUICFHSRouteCache{
+		ProposalView:  11,
+		KeyNumber:     3,
+		CommitteeHash: committeeHash,
+		LeaderIndex:   2,
+		Endpoint:      "127.0.0.1:9106",
+	}
+	if !q.applyFHSRedirect(redirect) {
+		t.Fatal("valid newer committee redirect was rejected")
+	}
+	if got, err := q.refreshFHSRouteCache(); err != nil || got.ProposalView != 11 || got.Endpoint != redirect.Endpoint || !got.FromRedirect {
+		t.Fatalf("stale provider overwrote newer redirect: route=%#v err=%v", got, err)
+	}
+
+	conflict := redirect
+	conflict.Endpoint = "127.0.0.1:9108"
+	conflict.LeaderIndex = 3
+	if q.applyFHSRedirect(conflict) {
+		t.Fatal("same-view conflicting deterministic leader redirect was accepted")
+	}
+
+	futureEpoch := redirect
+	futureEpoch.KeyNumber++
+	futureEpoch.ProposalView++
+	if q.applyFHSRedirect(futureEpoch) {
+		t.Fatal("remote redirect advanced key epoch without local authoritative provider")
+	}
+}
+
+func TestTxQUICFHSValidatorIngressFailsClosedWhenProviderFails(t *testing.T) {
+	q := &TxQUICIngress{
+		config: TxQUICConfig{RoutingMode: txQUICFHSDynamicRoutingMode},
+		routeCache: txQUICFHSRouteCache{
+			ProposalView:  20,
+			KeyNumber:     4,
+			CommitteeHash: common.HexToHash("0x9999"),
+			LeaderIndex:   0,
+			Endpoint:      "127.0.0.1:9102",
+		},
+		routeProvider: func() (TxQUICFHSRoute, error) {
+			return TxQUICFHSRoute{}, errors.New("route provider unavailable")
+		},
+	}
+	if _, _, err := q.localFHSIngressRedirect(); err == nil || !strings.Contains(err.Error(), "route provider unavailable") {
+		t.Fatalf("validator ingress accepted stale cache after provider failure: %v", err)
 	}
 }
