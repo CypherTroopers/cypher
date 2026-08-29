@@ -1,14 +1,73 @@
- multiple mining contribution models.
+Multiple Mining Contribution Models
 
-1. Core Miner
-Core miners perform PoW mining for KeyBlocks generated approximately every 10 minutes.
+ColossusX can provide multiple mining models that allow node operators to contribute to the network in different ways.
 
-2. Network Miner
-Network miners perform PoW mining while also contributing available RPC capacity for transaction processing and network decentralization.
+1. ColossusX Miner
 
-3. AI Miner
-AI miners perform PoW mining while also serving AI inference workloads. Rewards are calculated based on the number of valid generated tokens.
+A ColossusX Miner performs PoW mining for KeyBlocks, which are generated approximately every 10 minutes.
 
-4. ColossusX Full Miner
-Colossus miners combine all contribution layers: PoW mining, AI inference, and RPC transaction processing. This mode is designed for high-performance 
-machines with sufficient compute power and network bandwidth.
+If the miner’s PoW is selected for a KeyBlock, the miner receives a mining reward.
+
+ColossusX PoW uses a large DAG of approximately 32GB, so a mining environment with sufficient memory is required.
+
+Main Roles
+
+* Perform PoW mining for KeyBlocks
+* Earn mining rewards when the PoW is selected
+* Requires an approximately 32GB DAG
+
+⸻
+
+2. RPC Miner
+
+An RPC Miner operates its own node as a Public RPC endpoint.
+
+By providing RPC access to users and dApps, and by validating and relaying incoming transactions to the network, the RPC Miner contributes to the network infrastructure.
+
+When a transaction is submitted through that RPC endpoint, the RPC Miner can receive 20% of the transaction fee (Tx Fee) as a reward.
+
+Since RPC Miners do not need to perform PoW mining, they do not require the 32GB DAG.
+
+Main Roles
+
+* Provide a Public RPC node
+* Provide network access for users and dApps
+* Validate and relay transactions to the network
+* Earn 20% of the Tx Fee generated through the RPC endpoint
+* No 32GB DAG required
+
+⸻
+
+3. Full Miner
+
+A Full Miner operates as both a ColossusX Miner and an RPC Miner at the same time.
+
+While performing PoW mining for KeyBlocks, the node can also operate as a Public RPC endpoint and participate in transaction validation and relay.
+
+This means a Full Miner can earn both:
+
+PoW Mining Rewards + RPC Tx Fee Rewards
+
+Main Roles
+
+* Perform ColossusX PoW mining
+* Provide a Public RPC node
+* Validate and relay transactions
+* Earn PoW mining rewards
+* Earn Tx Fee rewards through RPC usage
+* Requires an approximately 32GB DAG
+
+⸻
+
+Three Mining Models
+
+Model	PoW	Public RPC	TX Validation & Relay	32GB DAG	Reward
+ColossusX Miner	✅	Optional	✅	✅ Required	PoW Reward
+RPC Miner	❌	✅	✅	❌ Not Required	20% of Tx Fee
+Full Miner	✅	✅	✅	✅ Required	PoW Reward + RPC Reward
+
+With this model, network participation is not limited to users with high-performance mining hardware.
+
+Users operating standard servers can also contribute to the network by providing RPC infrastructure, validating transactions, and relaying them to the network, while earning rewards for their contribution.
+
+In other words, ColossusX can reward both computational contribution and network infrastructure contribution.
