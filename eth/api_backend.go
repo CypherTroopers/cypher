@@ -307,8 +307,29 @@ func (b *EthAPIBackend) currentCommonRPCAdmissionKeyBlockNumber() (uint64, error
 	return currentKey.NumberU64(), nil
 }
 
+type commonRPCLocalTxPool interface {
+	AddLocal(*types.Transaction) error
+}
+
+func acceptCommonRPCTransactionLocally(pool commonRPCLocalTxPool, tx *types.Transaction) error {
+	if pool == nil {
+		return fmt.Errorf("common RPC local transaction pool is unavailable")
+	}
+	if tx == nil {
+		return fmt.Errorf("nil common RPC transaction")
+	}
+	err := pool.AddLocal(tx)
+	if errors.Is(err, core.ErrAlreadyKnown) {
+		return nil
+	}
+	return err
+}
+
 func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction, sync bool) error {
 	if b.shouldRecordCommonRPCAdmission() && b.eth.txQUICIngress != nil {
+		if signedTx == nil {
+			return fmt.Errorf("nil transaction")
+		}
 		timestamp := uint64(time.Now().Unix())
 		keyBlockNumber, err := b.currentCommonRPCAdmissionKeyBlockNumber()
 		if err != nil {
@@ -327,24 +348,37 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction,
 			return err
 		}
 
-		if sync {
-			if err := b.eth.txQUICIngress.SendLocalTxsWithAdmissionsSync(
-				ctx,
-				[]*types.Transaction{signedTx},
-				[]*types.CommonTxAdmission{admission},
-				b.eth.accountManager,
-			); err != nil {
-				log.Error("Failed to submit common RPC tx via TxQUIC", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
-				return err
-			}
-		} else if err := b.eth.txQUICIngress.EnqueueLocalTxsWithAdmissions(
-			ctx,
-			[]*types.Transaction{signedTx},
-			[]*types.CommonTxAdmission{admission},
-			b.eth.accountManager,
-		); err != nil {
-			log.Error("Failed to enqueue common RPC tx via TxQUIC", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
+		// Durable local acceptance is the RPC success boundary. The local TxPool
+		// validates the transaction, journals it, and re-announces it after a
+		// restart. TxQUIC and ordinary eth/p2p are independent delivery paths.
+		if err := acceptCommonRPCTransactionLocally(b.eth.txPool, signedTx); err != nil {
+			core.DropCommonRPCAdmissions(types.Transactions{signedTx})
+			log.Error("Failed to retain common RPC transaction locally", "tx", signedTx.Hash(), "err", err)
 			return err
+		}
+
+		// Admission metadata is committee-wide state, not leader-local state.
+		// The existing relay uses dedicated KCP fanout with committee-restricted
+		// eth/p2p fallback and is independent of the current proposal view.
+		core.RelayCommonRPCAdmissions([]*types.CommonTxAdmission{admission})
+
+		txs := []*types.Transaction{signedTx}
+		admissions := []*types.CommonTxAdmission{admission}
+		if sync {
+			if err := b.eth.txQUICIngress.SendLocalTxsWithAdmissionsSync(ctx, txs, admissions, b.eth.accountManager); err == nil {
+				return nil
+			} else {
+				log.Warn("Immediate TxQUIC committee delivery failed; transaction remains locally journaled",
+					"tx", signedTx.Hash(),
+					"err", err)
+			}
+		}
+		if err := b.eth.txQUICIngress.EnqueueLocalTxsWithAdmissions(ctx, txs, admissions, b.eth.accountManager); err != nil {
+			// This is not an RPC failure: the transaction is already validated,
+			// journaled, and being propagated by the ordinary txpool gossip path.
+			log.Warn("TxQUIC retry queue unavailable; relying on durable txpool gossip",
+				"tx", signedTx.Hash(),
+				"err", err)
 		}
 		return nil
 	}

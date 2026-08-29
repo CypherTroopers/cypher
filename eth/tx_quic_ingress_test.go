@@ -46,7 +46,7 @@ func TestValidateTxQUICAckDoesNotHideRejectedTxBehindAdmission(t *testing.T) {
 	tx := types.NewTransaction(1, [20]byte{1}, nil, 21000, nil, nil)
 	expectTxAndAdmission := txQUICAckExpectation{txHashes: []common.Hash{tx.Hash()}, admissions: 1}
 	err := validateTxQUICAck("leader", &txQUICAck{
-		Version:           txQUICPacketV2,
+		Version:           txQUICPacketV3,
 		Accepted:          1,
 		Rejected:          1,
 		AcceptedAdmission: 1,
@@ -61,26 +61,26 @@ func TestValidateTxQUICAckDoesNotHideRejectedTxBehindAdmission(t *testing.T) {
 	if !errors.As(err, &rejected) {
 		t.Fatalf("ack error = %v, want permanent transaction rejection", err)
 	}
-	if err := validateTxQUICAck("leader", &txQUICAck{Version: txQUICPacketV2, AcceptedTx: 1, Accepted: 1, Hashes: []common.Hash{tx.Hash()}}, txQUICAckExpectation{txHashes: []common.Hash{tx.Hash()}}); err != nil {
+	if err := validateTxQUICAck("leader", &txQUICAck{Version: txQUICPacketV3, AcceptedTx: 1, Accepted: 1, Hashes: []common.Hash{tx.Hash()}}, txQUICAckExpectation{txHashes: []common.Hash{tx.Hash()}}); err != nil {
 		t.Fatalf("accepted transaction ack rejected: %v", err)
 	}
-	if err := validateTxQUICAck("leader", &txQUICAck{Version: txQUICPacketV2, AcceptedAdmission: 1, Accepted: 1}, txQUICAckExpectation{admissions: 1}); err != nil {
+	if err := validateTxQUICAck("leader", &txQUICAck{Version: txQUICPacketV3, AcceptedAdmission: 1, Accepted: 1}, txQUICAckExpectation{admissions: 1}); err != nil {
 		t.Fatalf("admission-only ack rejected: %v", err)
 	}
-	if err := validateTxQUICAck("leader", &txQUICAck{Version: txQUICPacketV2, AcceptedAdmission: 1, Accepted: 1}, expectTxAndAdmission); err == nil {
+	if err := validateTxQUICAck("leader", &txQUICAck{Version: txQUICPacketV3, AcceptedAdmission: 1, Accepted: 1}, expectTxAndAdmission); err == nil {
 		t.Fatal("admission acceptance hid a missing transaction result")
 	}
 	if err := validateTxQUICAck("leader", &txQUICAck{Version: 1, AcceptedTx: 1, Accepted: 1, Hashes: []common.Hash{tx.Hash()}}, txQUICAckExpectation{txHashes: []common.Hash{tx.Hash()}}); err == nil {
 		t.Fatal("old ACK version was accepted")
 	}
-	if err := validateTxQUICAck("leader", &txQUICAck{Version: txQUICPacketV2, AcceptedTx: 1, Accepted: 1, Hashes: []common.Hash{common.HexToHash("0xdead")}}, txQUICAckExpectation{txHashes: []common.Hash{tx.Hash()}}); err == nil {
+	if err := validateTxQUICAck("leader", &txQUICAck{Version: txQUICPacketV3, AcceptedTx: 1, Accepted: 1, Hashes: []common.Hash{common.HexToHash("0xdead")}}, txQUICAckExpectation{txHashes: []common.Hash{tx.Hash()}}); err == nil {
 		t.Fatal("ACK for an unexpected transaction hash was accepted")
 	}
-	if err := validateTxQUICAck("relay", &txQUICAck{Version: txQUICPacketV2, Forwarded: 1}, txQUICAckExpectation{txHashes: []common.Hash{tx.Hash()}}); err == nil {
+	if err := validateTxQUICAck("relay", &txQUICAck{Version: txQUICPacketV3, Forwarded: 1}, txQUICAckExpectation{txHashes: []common.Hash{tx.Hash()}}); err == nil {
 		t.Fatal("self-reported forwarding bypassed the expected transaction result")
 	}
 	if err := validateTxQUICAck("relay", &txQUICAck{
-		Version:    txQUICPacketV2,
+		Version:    txQUICPacketV3,
 		Rejected:   1,
 		Forwarded:  1,
 		RejectedTx: 1,
@@ -347,106 +347,69 @@ func TestFixedCommitteeWithoutFixedLeaderDoesNotMeanIndexZero(t *testing.T) {
 	}
 }
 
-func TestTxQUICFHSRedirectRoundTripAndAck(t *testing.T) {
-	route := txQUICFHSRouteCache{
-		ProposalView:  41,
-		KeyNumber:     7,
-		CommitteeHash: common.HexToHash("0x1234"),
-		LeaderIndex:   2,
-		Endpoint:      "127.0.0.1:9106",
+func TestTxQUICProtocolV3UsesCommitteeIngressSemantics(t *testing.T) {
+	if txQUICProtocolName != "cypher-tx-quic/3" {
+		t.Fatalf("protocol = %q, want cypher-tx-quic/3", txQUICProtocolName)
 	}
-	encoded := encodeTxQUICFHSRedirect(route)
-	decoded, ok := decodeTxQUICFHSRedirect(encoded)
-	if !ok {
-		t.Fatalf("failed to decode FHS redirect %q", encoded)
-	}
-	if decoded.ProposalView != route.ProposalView || decoded.KeyNumber != route.KeyNumber || decoded.CommitteeHash != route.CommitteeHash || decoded.LeaderIndex != route.LeaderIndex || decoded.Endpoint != route.Endpoint {
-		t.Fatalf("redirect round trip mismatch: got %#v want %#v", decoded, route)
-	}
-
-	err := validateTxQUICAck("127.0.0.1:9104", &txQUICAck{
-		Version: txQUICPacketV2,
-		Errors:  []string{encoded},
-	}, txQUICAckExpectation{})
-	var redirect *txQUICFHSRedirectError
-	if !errors.As(err, &redirect) {
-		t.Fatalf("redirect ACK error = %v, want txQUICFHSRedirectError", err)
-	}
-	if redirect.route.Endpoint != route.Endpoint || redirect.route.ProposalView != route.ProposalView {
-		t.Fatalf("redirect ACK route = %#v, want %#v", redirect.route, route)
+	if txQUICPacketV3 != 3 {
+		t.Fatalf("packet version = %d, want 3", txQUICPacketV3)
 	}
 }
 
-func TestTxQUICFHSRouteCacheKeepsNewerRedirectOverStaleProvider(t *testing.T) {
+func TestTxQUICFHSForwardEndpointsUseCurrentRouteOnlyAsPreference(t *testing.T) {
 	committeeHash := common.HexToHash("0x4567")
-	provided := TxQUICFHSRoute{
-		ProposalView:  10,
-		KeyNumber:     3,
-		CommitteeHash: committeeHash,
-		LeaderIndex:   1,
-		LeaderAddress: "127.0.0.1:7104",
-	}
 	q := &TxQUICIngress{
 		config: TxQUICConfig{
-			RoutingMode:     txQUICFHSDynamicRoutingMode,
-			PortOffset:      2000,
-			BackupEndpoints: []string{"127.0.0.1:9102", "127.0.0.1:9104", "127.0.0.1:9106", "127.0.0.1:9108"},
+			RoutingMode: txQUICFHSDynamicRoutingMode,
+			PortOffset:  2000,
+			BackupEndpoints: []string{
+				"127.0.0.1:9102",
+				"127.0.0.1:9104",
+				"127.0.0.1:9106",
+			},
 		},
-		routeProvider: func() (TxQUICFHSRoute, error) { return provided, nil },
+		routeProvider: func() (TxQUICFHSRoute, error) {
+			return TxQUICFHSRoute{
+				ProposalView:  10,
+				KeyNumber:     3,
+				CommitteeHash: committeeHash,
+				LeaderIndex:   1,
+				LeaderAddress: "127.0.0.1:7104",
+			}, nil
+		},
 	}
 
-	route, err := q.refreshFHSRouteCache()
+	got, err := q.fhsForwardEndpoints()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if route.Endpoint != "127.0.0.1:9104" || route.ProposalView != 10 {
-		t.Fatalf("provider route = %#v", route)
+	want := []string{"127.0.0.1:9104", "127.0.0.1:9102", "127.0.0.1:9106"}
+	if len(got) != len(want) {
+		t.Fatalf("endpoints = %v, want %v", got, want)
 	}
-
-	redirect := txQUICFHSRouteCache{
-		ProposalView:  11,
-		KeyNumber:     3,
-		CommitteeHash: committeeHash,
-		LeaderIndex:   2,
-		Endpoint:      "127.0.0.1:9106",
-	}
-	if !q.applyFHSRedirect(redirect) {
-		t.Fatal("valid newer committee redirect was rejected")
-	}
-	if got, err := q.refreshFHSRouteCache(); err != nil || got.ProposalView != 11 || got.Endpoint != redirect.Endpoint || !got.FromRedirect {
-		t.Fatalf("stale provider overwrote newer redirect: route=%#v err=%v", got, err)
-	}
-
-	conflict := redirect
-	conflict.Endpoint = "127.0.0.1:9108"
-	conflict.LeaderIndex = 3
-	if q.applyFHSRedirect(conflict) {
-		t.Fatal("same-view conflicting deterministic leader redirect was accepted")
-	}
-
-	futureEpoch := redirect
-	futureEpoch.KeyNumber++
-	futureEpoch.ProposalView++
-	if q.applyFHSRedirect(futureEpoch) {
-		t.Fatal("remote redirect advanced key epoch without local authoritative provider")
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("endpoints = %v, want %v", got, want)
+		}
 	}
 }
 
-func TestTxQUICFHSValidatorIngressFailsClosedWhenProviderFails(t *testing.T) {
+func TestTxQUICFHSForwardEndpointsRemainAvailableWhenRouteProviderLags(t *testing.T) {
 	q := &TxQUICIngress{
-		config: TxQUICConfig{RoutingMode: txQUICFHSDynamicRoutingMode},
-		routeCache: txQUICFHSRouteCache{
-			ProposalView:  20,
-			KeyNumber:     4,
-			CommitteeHash: common.HexToHash("0x9999"),
-			LeaderIndex:   0,
-			Endpoint:      "127.0.0.1:9102",
+		config: TxQUICConfig{
+			RoutingMode:     txQUICFHSDynamicRoutingMode,
+			BackupEndpoints: []string{"127.0.0.1:9102", "127.0.0.1:9104"},
 		},
 		routeProvider: func() (TxQUICFHSRoute, error) {
-			return TxQUICFHSRoute{}, errors.New("route provider unavailable")
+			return TxQUICFHSRoute{}, errors.New("canonical route is behind")
 		},
 	}
-	if _, _, err := q.localFHSIngressRedirect(); err == nil || !strings.Contains(err.Error(), "route provider unavailable") {
-		t.Fatalf("validator ingress accepted stale cache after provider failure: %v", err)
+
+	got, routeErr := q.fhsForwardEndpoints()
+	if routeErr == nil || !strings.Contains(routeErr.Error(), "canonical route is behind") {
+		t.Fatalf("route error = %v, want canonical lag error", routeErr)
+	}
+	if len(got) != 2 || got[0] != "127.0.0.1:9102" || got[1] != "127.0.0.1:9104" {
+		t.Fatalf("fallback committee endpoints = %v", got)
 	}
 }

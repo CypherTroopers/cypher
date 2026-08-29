@@ -943,6 +943,9 @@ func (pm *ProtocolManager) txBroadcastLoop() {
 	for {
 		select {
 		case event := <-pm.txsCh:
+			if admissions := core.CommonRPCAdmissionsForTransactions(event.Txs); len(admissions) > 0 {
+				pm.BroadcastCommonTxAdmissions(admissions)
+			}
 			// For testing purpose only, disable propagation
 			if pm.broadcastTxAnnouncesOnly {
 				pm.BroadcastTransactions(event.Txs, false)

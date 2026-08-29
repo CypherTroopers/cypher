@@ -6,10 +6,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/ethdb/memorydb"
 )
 
 func resetCommonRPCAdmissionTestState(t *testing.T) (common.Address, *big.Int) {
@@ -18,6 +20,7 @@ func resetCommonRPCAdmissionTestState(t *testing.T) (common.Address, *big.Int) {
 	commonRPCAdmissions = sync.Map{}
 	atomic.StoreInt64(&commonRPCAdmissionCount, 0)
 	atomic.StoreInt64(&commonRPCAdmissionLastCleanup, 0)
+	SetCommonRPCAdmissionDatabase(nil)
 
 	key, err := crypto.GenerateKey()
 	if err != nil {
@@ -128,5 +131,33 @@ func TestBuildCommonAdmissionIndexRejectsBoundaryInvalidAdmission(t *testing.T) 
 	}
 	if !strings.Contains(err.Error(), "outside grace") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCommonRPCAdmissionPersistsAcrossMemoryReset(t *testing.T) {
+	miner, chainID := resetCommonRPCAdmissionTestState(t)
+	db := memorydb.New()
+	SetCommonRPCAdmissionDatabase(db)
+	t.Cleanup(func() {
+		SetCommonRPCAdmissionDatabase(nil)
+		_ = db.Close()
+	})
+
+	tx := types.NewTransaction(0, common.Address{9}, big.NewInt(1), 21000, big.NewInt(1), nil)
+	signedCommonRPCAdmissionForTest(t, tx, miner, chainID, 3, uint64(time.Now().Unix()))
+
+	commonRPCAdmissions = sync.Map{}
+	atomic.StoreInt64(&commonRPCAdmissionCount, 0)
+
+	loaded := CommonRPCAdmissionsForTransactions(types.Transactions{tx})
+	if len(loaded) != 1 || loaded[0] == nil || loaded[0].TxHash != tx.Hash() {
+		t.Fatalf("persisted admissions = %#v, want sidecar for %s", loaded, tx.Hash())
+	}
+
+	DropCommonRPCAdmissions(types.Transactions{tx})
+	commonRPCAdmissions = sync.Map{}
+	atomic.StoreInt64(&commonRPCAdmissionCount, 0)
+	if loaded := CommonRPCAdmissionsForTransactions(types.Transactions{tx}); len(loaded) != 0 {
+		t.Fatalf("finalized admission remained persisted: %#v", loaded)
 	}
 }

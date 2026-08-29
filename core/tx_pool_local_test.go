@@ -132,7 +132,7 @@ func TestTruncatePendingAppliesAccountSlotsToLocals(t *testing.T) {
 	}
 }
 
-func TestEvictStaleTransactionsAppliesLifetimesToLocals(t *testing.T) {
+func TestEvictStaleTransactionsPreservesLocals(t *testing.T) {
 	key, err := crypto.GenerateKey()
 	if err != nil {
 		t.Fatalf("failed to generate key: %v", err)
@@ -169,11 +169,11 @@ func TestEvictStaleTransactionsAppliesLifetimesToLocals(t *testing.T) {
 
 	pool.evictStaleTransactionsLocked(now)
 
-	if pool.all.Get(pendingTx.Hash()) != nil {
-		t.Fatalf("expected stale local pending transaction to be evicted")
+	if pool.all.Get(pendingTx.Hash()) == nil {
+		t.Fatalf("stale local pending transaction was evicted")
 	}
-	if pool.all.Get(queuedTx.Hash()) != nil {
-		t.Fatalf("expected stale local queued transaction to be evicted")
+	if pool.all.Get(queuedTx.Hash()) == nil {
+		t.Fatalf("stale local queued transaction was evicted")
 	}
 }
 

@@ -10,7 +10,9 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
+	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/log"
+	"github.com/cypherium/cypher/rlp"
 )
 
 const (
@@ -25,6 +27,123 @@ type commonRPCAdmissionEntry struct {
 	admission *types.CommonTxAdmission
 	storedAt  time.Time
 	updatedAt time.Time
+}
+
+type commonRPCAdmissionDiskEntry struct {
+	Admission types.CommonTxAdmission
+	StoredAt  uint64
+	UpdatedAt uint64
+}
+
+var commonRPCAdmissionDBMu sync.RWMutex
+var commonRPCAdmissionDB ethdb.KeyValueStore
+var commonRPCAdmissionDBPrefix = []byte("common-rpc-admission-v1:")
+
+// SetCommonRPCAdmissionDatabase installs the durable key-value store used for
+// admission sidecars. The chain database is process-local and already follows
+// the node's genesis lifecycle.
+func SetCommonRPCAdmissionDatabase(db ethdb.KeyValueStore) {
+	commonRPCAdmissionDBMu.Lock()
+	commonRPCAdmissionDB = db
+	commonRPCAdmissionDBMu.Unlock()
+}
+
+func currentCommonRPCAdmissionDatabase() ethdb.KeyValueStore {
+	commonRPCAdmissionDBMu.RLock()
+	db := commonRPCAdmissionDB
+	commonRPCAdmissionDBMu.RUnlock()
+	return db
+}
+
+func commonRPCAdmissionDBKey(txHash common.Hash) []byte {
+	key := make([]byte, len(commonRPCAdmissionDBPrefix)+len(txHash))
+	copy(key, commonRPCAdmissionDBPrefix)
+	copy(key[len(commonRPCAdmissionDBPrefix):], txHash[:])
+	return key
+}
+
+func persistCommonRPCAdmissionEntry(txHash common.Hash, entry *commonRPCAdmissionEntry) error {
+	db := currentCommonRPCAdmissionDatabase()
+	if db == nil {
+		return nil
+	}
+	if entry == nil || entry.admission == nil || entry.admission.TxHash != txHash {
+		return fmt.Errorf("invalid common RPC admission persistence entry for %s", txHash)
+	}
+	storedAt := entry.storedAt
+	if storedAt.IsZero() {
+		storedAt = time.Now()
+	}
+	updatedAt := entry.updatedAt
+	if updatedAt.IsZero() {
+		updatedAt = storedAt
+	}
+	encoded, err := rlp.EncodeToBytes(&commonRPCAdmissionDiskEntry{
+		Admission: *copyCommonRPCAdmission(entry.admission),
+		StoredAt:  uint64(storedAt.Unix()),
+		UpdatedAt: uint64(updatedAt.Unix()),
+	})
+	if err != nil {
+		return err
+	}
+	return db.Put(commonRPCAdmissionDBKey(txHash), encoded)
+}
+
+func deletePersistedCommonRPCAdmission(txHash common.Hash) {
+	db := currentCommonRPCAdmissionDatabase()
+	if db == nil {
+		return
+	}
+	if err := db.Delete(commonRPCAdmissionDBKey(txHash)); err != nil {
+		log.Debug("Failed to delete persisted common RPC admission", "tx", txHash, "err", err)
+	}
+}
+
+func loadPersistedCommonRPCAdmissionEntry(txHash common.Hash, now time.Time) (*commonRPCAdmissionEntry, bool) {
+	db := currentCommonRPCAdmissionDatabase()
+	if db == nil {
+		return nil, false
+	}
+	encoded, err := db.Get(commonRPCAdmissionDBKey(txHash))
+	if err != nil || len(encoded) == 0 {
+		return nil, false
+	}
+	var disk commonRPCAdmissionDiskEntry
+	if err := rlp.DecodeBytes(encoded, &disk); err != nil || disk.Admission.TxHash != txHash {
+		deletePersistedCommonRPCAdmission(txHash)
+		return nil, false
+	}
+	if err := types.VerifyCommonTxAdmissionSignature(&disk.Admission); err != nil {
+		deletePersistedCommonRPCAdmission(txHash)
+		return nil, false
+	}
+	storedAtUnix := disk.StoredAt
+	if storedAtUnix == 0 {
+		storedAtUnix = disk.Admission.Timestamp
+	}
+	if storedAtUnix == 0 {
+		storedAtUnix = uint64(now.Unix())
+	}
+	updatedAtUnix := disk.UpdatedAt
+	if updatedAtUnix == 0 {
+		updatedAtUnix = storedAtUnix
+	}
+	entry := &commonRPCAdmissionEntry{
+		admission: copyCommonRPCAdmission(&disk.Admission),
+		storedAt:  time.Unix(int64(storedAtUnix), 0),
+		updatedAt: time.Unix(int64(updatedAtUnix), 0),
+	}
+	if commonRPCAdmissionEntryExpired(entry, now) {
+		deletePersistedCommonRPCAdmission(txHash)
+		return nil, false
+	}
+	actual, loaded := commonRPCAdmissions.LoadOrStore(txHash, entry)
+	if loaded {
+		existing, ok := actual.(*commonRPCAdmissionEntry)
+		return existing, ok && existing != nil && existing.admission != nil
+	}
+	atomic.AddInt64(&commonRPCAdmissionCount, 1)
+	return entry, true
 }
 
 var commonRPCAdmissions sync.Map // map[common.Hash]*commonRPCAdmissionEntry
@@ -99,6 +218,12 @@ func relayCommonRPCAdmissions(admissions []*types.CommonTxAdmission) {
 	callCommonRPCAdmissionRelay(commonRPCAdmissionRelay.Load(), admissions)
 }
 
+// RelayCommonRPCAdmissions exposes the committee-wide admission relay to the
+// common RPC and TxQUIC ingress paths. Delivery is idempotent by TxHash.
+func RelayCommonRPCAdmissions(admissions []*types.CommonTxAdmission) {
+	relayCommonRPCAdmissions(admissions)
+}
+
 func signCommonRPCAdmission(admission *types.CommonTxAdmission) error {
 	value := commonRPCAdmissionSigner.Load()
 	if value == nil {
@@ -146,6 +271,9 @@ func cleanupCommonRPCAdmissions(now time.Time) {
 		if !hashOK || !entryOK || commonRPCAdmissionEntryExpired(entry, now) {
 			if commonRPCAdmissions.CompareAndDelete(key, value) {
 				removed++
+				if hashOK {
+					deletePersistedCommonRPCAdmission(hash)
+				}
 			}
 			return true
 		}
@@ -165,6 +293,7 @@ func cleanupCommonRPCAdmissions(now time.Time) {
 		for i := 0; i < overflow; i++ {
 			if commonRPCAdmissions.CompareAndDelete(candidates[i].hash, candidates[i].value) {
 				removed++
+				deletePersistedCommonRPCAdmission(candidates[i].hash)
 			}
 		}
 	}
@@ -182,13 +311,14 @@ func cleanupCommonRPCAdmissions(now time.Time) {
 func loadCommonRPCAdmissionEntry(txHash common.Hash, now time.Time) (*commonRPCAdmissionEntry, bool) {
 	value, ok := commonRPCAdmissions.Load(txHash)
 	if !ok {
-		return nil, false
+		return loadPersistedCommonRPCAdmissionEntry(txHash, now)
 	}
 	entry, ok := value.(*commonRPCAdmissionEntry)
 	if !ok || commonRPCAdmissionEntryExpired(entry, now) {
 		if commonRPCAdmissions.CompareAndDelete(txHash, value) {
 			atomic.AddInt64(&commonRPCAdmissionCount, -1)
 		}
+		deletePersistedCommonRPCAdmission(txHash)
 		return nil, false
 	}
 	return entry, true
@@ -215,6 +345,9 @@ func storeVerifiedCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
 		value, loaded := commonRPCAdmissions.LoadOrStore(sealed.TxHash, replacement)
 		if !loaded {
 			atomic.AddInt64(&commonRPCAdmissionCount, 1)
+			if err := persistCommonRPCAdmissionEntry(sealed.TxHash, replacement); err != nil {
+				log.Error("Failed to persist common RPC admission", "tx", sealed.TxHash, "err", err)
+			}
 			break
 		}
 		entry, _ := value.(*commonRPCAdmissionEntry)
@@ -223,12 +356,20 @@ func storeVerifiedCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
 			current = entry.admission
 		}
 		if !types.IsBetterCommonTxAdmission(sealed, current) {
+			if entry != nil {
+				if err := persistCommonRPCAdmissionEntry(sealed.TxHash, entry); err != nil {
+					log.Error("Failed to refresh persisted common RPC admission", "tx", sealed.TxHash, "err", err)
+				}
+			}
 			return false
 		}
 		if entry != nil && !entry.storedAt.IsZero() {
 			replacement.storedAt = entry.storedAt
 		}
 		if commonRPCAdmissions.CompareAndSwap(sealed.TxHash, value, replacement) {
+			if err := persistCommonRPCAdmissionEntry(sealed.TxHash, replacement); err != nil {
+				log.Error("Failed to persist replacement common RPC admission", "tx", sealed.TxHash, "err", err)
+			}
 			break
 		}
 	}
@@ -310,6 +451,13 @@ func SignAndRecordCommonRPCAdmission(txHash common.Hash, miner common.Address, c
 		return nil, err
 	}
 	storeVerifiedCommonRPCAdmission(admission)
+	entry, ok := loadCommonRPCAdmissionEntry(txHash, time.Now())
+	if !ok {
+		return nil, fmt.Errorf("common RPC admission was not retained for tx=%s", txHash)
+	}
+	if err := persistCommonRPCAdmissionEntry(txHash, entry); err != nil {
+		return nil, fmt.Errorf("persist common RPC admission for tx=%s: %w", txHash, err)
+	}
 	return copyCommonRPCAdmission(admission), nil
 }
 
@@ -335,6 +483,31 @@ func CommonRPCAdmissionMiner(txHash common.Hash) (common.Address, bool) {
 		return common.Address{}, false
 	}
 	return entry.admission.Miner, true
+}
+
+// CommonRPCAdmissionsForTransactions returns verified stored sidecars without
+// applying block-boundary rules. It is used to re-relay journaled transactions
+// after restart or peer reconnection.
+func CommonRPCAdmissionsForTransactions(txs types.Transactions) []*types.CommonTxAdmission {
+	now := time.Now()
+	maybeCleanupCommonRPCAdmissions(now, false)
+	admissions := make([]*types.CommonTxAdmission, 0, len(txs))
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		entry, ok := loadCommonRPCAdmissionEntry(tx.Hash(), now)
+		if !ok || entry.admission == nil {
+			continue
+		}
+		admission := copyCommonRPCAdmission(entry.admission)
+		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
+			deletePersistedCommonRPCAdmission(tx.Hash())
+			continue
+		}
+		admissions = append(admissions, admission)
+	}
+	return admissions
 }
 
 // BuildCommonTxAdmissions converts recorded tx admissions into signed block-body data.
@@ -368,10 +541,13 @@ func BuildCommonTxAdmissions(txs types.Transactions, keyBlockNumber uint64, txBl
 // DropCommonRPCAdmissions removes finalized tx admission records from memory.
 func DropCommonRPCAdmissions(txs types.Transactions) {
 	for _, tx := range txs {
-		if tx != nil {
-			if _, loaded := commonRPCAdmissions.LoadAndDelete(tx.Hash()); loaded {
-				atomic.AddInt64(&commonRPCAdmissionCount, -1)
-			}
+		if tx == nil {
+			continue
 		}
+		hash := tx.Hash()
+		if _, loaded := commonRPCAdmissions.LoadAndDelete(hash); loaded {
+			atomic.AddInt64(&commonRPCAdmissionCount, -1)
+		}
+		deletePersistedCommonRPCAdmission(hash)
 	}
 }

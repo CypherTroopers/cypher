@@ -38,11 +38,10 @@ import (
 )
 
 const (
-	txQUICProtocolName = "cypher-tx-quic/2"
-	txQUICPacketV2     = uint(2)
+	txQUICProtocolName = "cypher-tx-quic/3"
+	txQUICPacketV3     = uint(3)
 
 	txQUICFHSDynamicRoutingMode = "fhs-dynamic"
-	txQUICFHSRedirectPrefix     = "fhs-redirect-v1|"
 
 	txQUICForwardIdleTimeout     = 60 * time.Second
 	txQUICForwardKeepAlivePeriod = 10 * time.Second
@@ -142,7 +141,6 @@ type txQUICFHSRouteCache struct {
 	CommitteeHash common.Hash
 	LeaderIndex   uint
 	Endpoint      string
-	FromRedirect  bool
 }
 
 func newTxQUICAckExpectation(txs []*types.Transaction, admissions []*types.CommonTxAdmission) txQUICAckExpectation {
@@ -163,7 +161,7 @@ func newTxQUICAckExpectation(txs []*types.Transaction, admissions []*types.Commo
 func txQUICAckExpectationFromPayload(payload []byte) (txQUICAckExpectation, error) {
 	var packet txQUICPacket
 	if err := rlp.DecodeBytes(payload, &packet); err == nil && len(packet.Items) > 0 {
-		if packet.Version != txQUICPacketV2 {
+		if packet.Version != txQUICPacketV3 {
 			return txQUICAckExpectation{}, fmt.Errorf("unsupported txquic packet version %d", packet.Version)
 		}
 		txs, admissions, err := packetItemsToTxsAndAdmissions(&packet)
@@ -212,19 +210,6 @@ func (e *txQUICRemoteRejectError) Retryable() bool {
 		}
 	}
 	return true
-}
-
-type txQUICFHSRedirectError struct {
-	from  string
-	route txQUICFHSRouteCache
-}
-
-func (e *txQUICFHSRedirectError) Error() string {
-	if e == nil {
-		return "txquic Fair HotStuff redirect"
-	}
-	return fmt.Sprintf("txquic Fair HotStuff redirect from %s to %s proposalView=%d leaderIndex=%d",
-		e.from, e.route.Endpoint, e.route.ProposalView, e.route.LeaderIndex)
 }
 
 type txQUICBridgeItem struct {
@@ -312,9 +297,9 @@ func (config *TxQUICConfig) ApplyFixedCommitteeAutoRole(chainConfig *params.Chai
 		config.HTTP3Enabled = false
 		config.Port = localRnetPort + config.PortOffset
 		if chainConfig.FairHotstuff {
-			// FHS validators accept TxQUIC traffic only when CurrentFHSRoute says
-			// they are the current proposal leader. A stale common-node route gets
-			// a redirect instead of silently landing on an old fixed leader.
+			// Every authenticated FHS committee member is a transaction ingress.
+			// Leader election controls proposal authority, not mempool admission.
+			// This removes proposal-view synchronization from the correctness path.
 			config.RoutingMode = txQUICFHSDynamicRoutingMode
 		} else {
 			config.RoutingMode = "local"
@@ -331,9 +316,9 @@ func (config *TxQUICConfig) ApplyFixedCommitteeAutoRole(chainConfig *params.Chai
 	config.LeaderEndpoints = nil
 	config.BackupEndpoints = nil
 
-	// Fair HotStuff never derives a leader from committee ordering. Keep the
-	// whole fixed committee only as a bounded bootstrap/fallback set; the actual
-	// destination comes from CurrentFHSRoute and its route cache.
+	// CurrentFHSRoute is only a latency hint. The complete committee remains
+	// available as stable ingress replicas, and acceptance by any authenticated
+	// committee member is sufficient for successful transaction submission.
 	if chainConfig.FairHotstuff {
 		config.RoutingMode = txQUICFHSDynamicRoutingMode
 		for i := 0; i < len(chainConfig.GenCommittee); i++ {
@@ -406,7 +391,6 @@ func NewTxQUICIngress(config TxQUICConfig, txpool *core.TxPool) *TxQUICIngress {
 	if config.BridgeEnabled {
 		q.bridgeQueue = make(chan txQUICBridgeItem, config.BridgeQueueSize)
 		q.admissionQueue = make(chan txQUICAdmissionItem, config.BridgeQueueSize)
-		core.SetCommonRPCAdmissionDedicatedRelay(q.ForwardAdmissions)
 	}
 	q.parseAllowlist()
 	q.parseSigners()
@@ -696,204 +680,81 @@ func (q *TxQUICIngress) refreshFHSRouteCache() (txQUICFHSRouteCache, error) {
 	return result, nil
 }
 
-func (q *TxQUICIngress) knownFHSCommitteeEndpoint(endpoint string) bool {
-	endpoint = strings.TrimSpace(endpoint)
-	if endpoint == "" {
-		return false
+func (q *TxQUICIngress) fhsForwardEndpoints() ([]string, error) {
+	if q == nil {
+		return nil, fmt.Errorf("nil txquic ingress")
 	}
-	for _, configured := range q.config.BackupEndpoints {
-		if strings.EqualFold(strings.TrimSpace(configured), endpoint) {
-			return true
-		}
-	}
-	for _, configured := range q.config.LeaderEndpoints {
-		if strings.EqualFold(strings.TrimSpace(configured), endpoint) {
-			return true
-		}
-	}
-	return false
-}
 
-func (q *TxQUICIngress) applyFHSRedirect(route txQUICFHSRouteCache) bool {
-	if q == nil || route.ProposalView == 0 || route.CommitteeHash == (common.Hash{}) || !q.knownFHSCommitteeEndpoint(route.Endpoint) {
-		return false
-	}
-	q.routeMu.Lock()
-	defer q.routeMu.Unlock()
-	current := q.routeCache
-
-	// Redirects are allowed to advance only the FHS proposal view inside the
-	// locally known key/committee epoch. Key/committee transitions remain the
-	// sole authority of CurrentFHSRoute after canonical sync; a remote endpoint
-	// cannot manufacture a future epoch and poison the route cache.
-	if current.Endpoint == "" || route.KeyNumber != current.KeyNumber || route.CommitteeHash != current.CommitteeHash {
-		return false
-	}
-	if route.ProposalView < current.ProposalView {
-		return false
-	}
-	if route.ProposalView == current.ProposalView && !strings.EqualFold(route.Endpoint, current.Endpoint) {
-		// Same view + same committee has exactly one deterministic leader.
-		return false
-	}
-	route.FromRedirect = true
-	q.routeCache = route
-	return true
-}
-
-func encodeTxQUICFHSRedirect(route txQUICFHSRouteCache) string {
-	return fmt.Sprintf("%s%d|%d|%s|%d|%s",
-		txQUICFHSRedirectPrefix,
-		route.ProposalView,
-		route.KeyNumber,
-		route.CommitteeHash.Hex(),
-		route.LeaderIndex,
-		route.Endpoint)
-}
-
-func decodeTxQUICFHSRedirect(message string) (txQUICFHSRouteCache, bool) {
-	if !strings.HasPrefix(message, txQUICFHSRedirectPrefix) {
-		return txQUICFHSRouteCache{}, false
-	}
-	parts := strings.SplitN(strings.TrimPrefix(message, txQUICFHSRedirectPrefix), "|", 5)
-	if len(parts) != 5 {
-		return txQUICFHSRouteCache{}, false
-	}
-	proposalView, err := strconv.ParseUint(parts[0], 10, 64)
-	if err != nil || proposalView == 0 {
-		return txQUICFHSRouteCache{}, false
-	}
-	keyNumber, err := strconv.ParseUint(parts[1], 10, 64)
-	if err != nil {
-		return txQUICFHSRouteCache{}, false
-	}
-	hashText := strings.TrimSpace(parts[2])
-	if len(hashText) != 66 || !strings.HasPrefix(hashText, "0x") {
-		return txQUICFHSRouteCache{}, false
-	}
-	committeeHash := common.HexToHash(hashText)
-	if committeeHash == (common.Hash{}) {
-		return txQUICFHSRouteCache{}, false
-	}
-	leaderIndex64, err := strconv.ParseUint(parts[3], 10, 64)
-	if err != nil {
-		return txQUICFHSRouteCache{}, false
-	}
-	endpoint := strings.TrimSpace(parts[4])
-	if _, _, ok := splitHostPortLoose(endpoint); !ok {
-		return txQUICFHSRouteCache{}, false
-	}
-	return txQUICFHSRouteCache{
-		ProposalView:  proposalView,
-		KeyNumber:     keyNumber,
-		CommitteeHash: committeeHash,
-		LeaderIndex:   uint(leaderIndex64),
-		Endpoint:      endpoint,
-		FromRedirect:  true,
-	}, true
-}
-
-func (q *TxQUICIngress) localFHSIngressRedirect() (txQUICFHSRouteCache, bool, error) {
-	if q == nil || !strings.EqualFold(q.config.RoutingMode, txQUICFHSDynamicRoutingMode) {
-		return txQUICFHSRouteCache{}, false, nil
-	}
-	route, err := q.refreshFHSRouteCache()
-	// Validator ingress is authoritative and must fail closed. A common-node
-	// sender may use a cached route while its local provider catches up, but a
-	// validator must never accept a batch based only on a stale cached leader.
-	if err != nil {
-		return txQUICFHSRouteCache{}, false, err
-	}
-	if route.Endpoint == "" {
-		return txQUICFHSRouteCache{}, false, fmt.Errorf("Fair HotStuff route is empty")
-	}
-	localIndex := bftview.IamMember()
-	if localIndex < 0 {
-		return txQUICFHSRouteCache{}, false, fmt.Errorf("TxQUIC FHS ingress local committee identity is unavailable")
-	}
-	if uint(localIndex) == route.LeaderIndex {
-		return route, false, nil
-	}
-	return route, true, nil
-}
-
-func (q *TxQUICIngress) nextFHSDynamicEndpoint(route txQUICFHSRouteCache, attempted map[string]struct{}) string {
-	if endpoint := strings.TrimSpace(route.Endpoint); endpoint != "" {
-		if _, used := attempted[endpoint]; !used {
-			return endpoint
-		}
-	}
-	for _, endpoint := range q.config.BackupEndpoints {
+	route, routeErr := q.refreshFHSRouteCache()
+	endpoints := make([]string, 0, len(q.config.BackupEndpoints)+len(q.config.LeaderEndpoints)+1)
+	seen := make(map[string]struct{})
+	add := func(endpoint string) {
 		endpoint = strings.TrimSpace(endpoint)
 		if endpoint == "" {
-			continue
+			return
 		}
-		if _, used := attempted[endpoint]; !used {
-			return endpoint
+		key := strings.ToLower(endpoint)
+		if _, exists := seen[key]; exists {
+			return
 		}
+		seen[key] = struct{}{}
+		endpoints = append(endpoints, endpoint)
 	}
-	return ""
+
+	// Prefer the locally observed leader for lower latency, but never depend on
+	// it for correctness. A stale leader is still a valid committee ingress.
+	add(route.Endpoint)
+	for _, endpoint := range q.config.BackupEndpoints {
+		add(endpoint)
+	}
+	for _, endpoint := range q.config.LeaderEndpoints {
+		add(endpoint)
+	}
+
+	if len(endpoints) == 0 {
+		if routeErr != nil {
+			return nil, routeErr
+		}
+		return nil, fmt.Errorf("no Fair HotStuff committee ingress endpoint is configured")
+	}
+	return endpoints, routeErr
 }
 
 func (q *TxQUICIngress) forwardFHSDynamicPayload(ctx context.Context, payload []byte) (string, error) {
 	if q == nil {
 		return "", fmt.Errorf("nil txquic ingress")
 	}
-	attempted := make(map[string]struct{})
-	errs := make([]string, 0, len(q.config.BackupEndpoints)+2)
-	maxAttempts := len(q.config.BackupEndpoints) + 2
-	if maxAttempts < 3 {
-		maxAttempts = 3
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		route, routeErr := q.refreshFHSRouteCache()
-		if routeErr != nil && route.Endpoint == "" {
-			errs = append(errs, routeErr.Error())
+	endpoints, routeErr := q.fhsForwardEndpoints()
+	if len(endpoints) == 0 {
+		if routeErr != nil {
+			return "", routeErr
 		}
-		endpoint := q.nextFHSDynamicEndpoint(route, attempted)
-		if endpoint == "" {
-			break
-		}
-		attempted[endpoint] = struct{}{}
+		return "", fmt.Errorf("no Fair HotStuff committee ingress endpoint is available")
+	}
+	if routeErr != nil {
+		log.Debug("TxQUIC FHS route hint unavailable; using committee ingress set", "err", routeErr, "endpoints", len(endpoints))
+	}
 
+	errs := make([]string, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("Fair HotStuff committee ingress forwarding stopped: %w", err)
+		}
 		err := q.forwardPayloadContext(ctx, endpoint, payload)
 		if err == nil {
 			return endpoint, nil
 		}
-		var redirect *txQUICFHSRedirectError
-		if errors.As(err, &redirect) {
-			if redirect != nil && q.applyFHSRedirect(redirect.route) {
-				// A newer view may legitimately elect an endpoint already tried in
-				// the previous view. Clear per-call endpoint suppression when the
-				// redirect advances the route so the new leader can be retried now.
-				if redirect.route.KeyNumber > route.KeyNumber ||
-					redirect.route.CommitteeHash != route.CommitteeHash ||
-					redirect.route.ProposalView > route.ProposalView {
-					attempted = make(map[string]struct{})
-				}
-				log.Info("TxQUIC refreshed Fair HotStuff route from redirect",
-					"from", endpoint,
-					"proposalView", redirect.route.ProposalView,
-					"leaderIndex", redirect.route.LeaderIndex,
-					"endpoint", redirect.route.Endpoint)
-				continue
-			}
-			errs = append(errs, fmt.Sprintf("%s: invalid FHS redirect", endpoint))
-			continue
-		}
 		var rejected *txQUICRemoteRejectError
-		if errors.As(err, &rejected) {
-			if !rejected.Retryable() {
-				return "", rejected
-			}
+		if errors.As(err, &rejected) && !rejected.Retryable() {
+			return "", rejected
 		}
 		errs = append(errs, fmt.Sprintf("%s: %v", endpoint, err))
 	}
-	if len(errs) == 0 {
-		return "", fmt.Errorf("no Fair HotStuff TxQUIC route is available")
-	}
-	return "", fmt.Errorf("all Fair HotStuff endpoints failed: %s", strings.Join(errs, "; "))
+	return "", fmt.Errorf("all Fair HotStuff committee ingress endpoints failed: %s", strings.Join(errs, "; "))
 }
 
 func (q *TxQUICIngress) forwardPayloadSync(ctx context.Context, payload []byte) (string, error) {
@@ -1192,7 +1053,7 @@ func (q *TxQUICIngress) encodeTxPayloadWithAdmissionValidation(txs []*types.Tran
 	}
 
 	pkt := &txQUICPacket{
-		Version:   txQUICPacketV2,
+		Version:   txQUICPacketV3,
 		Sender:    sender,
 		Nonce:     atomic.AddUint64(&q.outboundNonce, 1),
 		Timestamp: uint64(time.Now().Unix()),
@@ -1239,7 +1100,7 @@ func (q *TxQUICIngress) encodeAdmissionPayload(admissions []*types.CommonTxAdmis
 		return nil, fmt.Errorf("no valid admissions to forward")
 	}
 	pkt := &txQUICPacket{
-		Version:   txQUICPacketV2,
+		Version:   txQUICPacketV3,
 		Nonce:     atomic.AddUint64(&q.outboundNonce, 1),
 		Timestamp: uint64(time.Now().Unix()),
 		Items:     items,
@@ -1326,7 +1187,7 @@ func (q *TxQUICIngress) handleConn(conn *quic.Conn) {
 func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 	defer q.wg.Done()
 	defer stream.Close()
-	ack := txQUICAck{Version: txQUICPacketV2}
+	ack := txQUICAck{Version: txQUICPacketV3}
 	_ = stream.SetReadDeadline(time.Now().Add(q.config.ReadTimeout))
 	payload, err := io.ReadAll(io.LimitReader(stream, q.config.MaxPayload+1))
 	if err != nil {
@@ -1367,21 +1228,10 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 		q.writeAck(stream, ack)
 		return
 	}
-	if route, redirect, routeErr := q.localFHSIngressRedirect(); routeErr != nil {
-		ack.Errors = append(ack.Errors, "fhs route unavailable: "+routeErr.Error())
-		log.Warn("TxQUIC cannot resolve current Fair HotStuff leader", "remote", remote, "err", routeErr)
-		q.writeAck(stream, ack)
-		return
-	} else if redirect {
-		ack.Errors = append(ack.Errors, encodeTxQUICFHSRedirect(route))
-		log.Debug("TxQUIC redirecting stale Fair HotStuff route",
-			"remote", remote,
-			"proposalView", route.ProposalView,
-			"leaderIndex", route.LeaderIndex,
-			"endpoint", route.Endpoint)
-		q.writeAck(stream, ack)
-		return
-	}
+	// In FHS mode, every authenticated committee node accepts the batch into
+	// its local TxPool. Proposal leadership is intentionally not checked here.
+	// The ordinary committee transaction gossip path delivers the transaction
+	// to the current and future leaders without a route-dependent rejection.
 	forwarded := q.routePayload(payload)
 	acceptedAdmission, rejectedAdmission := q.insertAdmissions(admissions)
 	acceptedTx, rejectedTx, hashes, txRejects := q.insertLocal(txs)
@@ -1500,6 +1350,7 @@ func classifyTxQUICInsertError(err error) uint {
 
 func (q *TxQUICIngress) insertAdmissions(admissions []*types.CommonTxAdmission) (int, int) {
 	accepted, rejected := 0, 0
+	newlyAccepted := make([]*types.CommonTxAdmission, 0, len(admissions))
 	for _, admission := range admissions {
 		if admission == nil {
 			rejected++
@@ -1510,11 +1361,15 @@ func (q *TxQUICIngress) insertAdmissions(admissions []*types.CommonTxAdmission) 
 			log.Info("TxQUIC admission rejected", "tx", admission.TxHash, "miner", admission.Miner, "err", err)
 			continue
 		}
-		// StoreCommonRPCAdmission returns false for an exact duplicate or a
-		// deterministically worse-but-valid sidecar. Delivery is nevertheless
-		// idempotently complete, so a lost ACK must not cause infinite retries.
-		core.StoreCommonRPCAdmission(admission)
+		// Exact duplicates remain idempotently accepted for ACK purposes. Only a
+		// new or deterministically better sidecar is re-relayed to the committee.
+		if core.StoreCommonRPCAdmission(admission) {
+			newlyAccepted = append(newlyAccepted, copyCommonTxAdmissionForQUIC(admission))
+		}
 		accepted++
+	}
+	if len(newlyAccepted) > 0 {
+		core.RelayCommonRPCAdmissions(newlyAccepted)
 	}
 	return accepted, rejected
 }
@@ -1729,13 +1584,8 @@ func validateTxQUICAck(endpoint string, ack *txQUICAck, expectation txQUICAckExp
 	if ack == nil {
 		return fmt.Errorf("nil txquic ack from %s", endpoint)
 	}
-	if ack.Version != txQUICPacketV2 {
+	if ack.Version != txQUICPacketV3 {
 		return fmt.Errorf("unsupported txquic ack version %d from %s", ack.Version, endpoint)
-	}
-	for _, message := range ack.Errors {
-		if route, ok := decodeTxQUICFHSRedirect(message); ok {
-			return &txQUICFHSRedirectError{from: endpoint, route: route}
-		}
 	}
 	if ack.Accepted != ack.AcceptedTx+ack.AcceptedAdmission || ack.Rejected != ack.RejectedTx+ack.RejectedAdmission {
 		return fmt.Errorf("inconsistent txquic ack counters from %s", endpoint)
@@ -1840,7 +1690,7 @@ func endpointForwardTimeout(forwardTimeout time.Duration, readTimeout time.Durat
 func (q *TxQUICIngress) decodeAndAuthenticate(payload []byte) ([]*types.Transaction, []*types.CommonTxAdmission, bool, common.Address, error) {
 	var pkt txQUICPacket
 	if err := rlp.DecodeBytes(payload, &pkt); err == nil && len(pkt.Items) > 0 {
-		if pkt.Version != txQUICPacketV2 {
+		if pkt.Version != txQUICPacketV3 {
 			return nil, nil, false, common.Address{}, fmt.Errorf("unsupported txquic packet version %d", pkt.Version)
 		}
 		if isAdmissionOnlyPacket(&pkt) && len(pkt.Signature) == 0 {

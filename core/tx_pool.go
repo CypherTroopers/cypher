@@ -499,6 +499,9 @@ func (pool *TxPool) loop() {
 		case <-evict.C:
 			pool.mu.Lock()
 			for addr := range pool.queue {
+				if pool.locals.contains(addr) {
+					continue
+				}
 				if time.Since(pool.beats[addr]) > pool.config.Lifetime {
 					list := pool.queue[addr].Flatten()
 					for _, tx := range list {
@@ -998,7 +1001,10 @@ func (pool *TxPool) PendingClassStats() (fastPending int, slowPending int, class
 func (pool *TxPool) evictStaleTransactionsLocked(now time.Time) {
 	var evictedPending int
 	var evictedQueued int
-	for _, list := range pool.pending {
+	for addr, list := range pool.pending {
+		if pool.locals.contains(addr) {
+			continue
+		}
 		for _, tx := range list.Flatten() {
 			seenAt, ok := pool.seen[tx.Hash()]
 			if !ok {
@@ -1011,7 +1017,10 @@ func (pool *TxPool) evictStaleTransactionsLocked(now time.Time) {
 			}
 		}
 	}
-	for _, list := range pool.queue {
+	for addr, list := range pool.queue {
+		if pool.locals.contains(addr) {
+			continue
+		}
 		for _, tx := range list.Flatten() {
 			seenAt, ok := pool.seen[tx.Hash()]
 			if !ok {
