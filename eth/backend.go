@@ -125,6 +125,7 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
+	core.SetCommonRPCAdmissionDatabase(chainDb)
 	_, _, genesisErr := core.SetupGenesisKeyBlock(chainDb, config.GenesisKey)
 	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
 		return nil, genesisErr
@@ -215,6 +216,19 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	}
 	eth.bloomIndexer.Start(eth.blockchain)
 
+	if config.TxQUIC.BridgeEnabled {
+		// Common RPC acceptance is durable only when transactions are local and
+		// journaled. Do not allow command-line txpool settings to silently turn
+		// the committee-ingress outbox back into an in-memory best-effort queue.
+		if config.TxPool.NoLocals {
+			log.Warn("Disabling txpool.nolocals for durable common RPC ingress")
+			config.TxPool.NoLocals = false
+		}
+		if config.TxPool.Journal == "" {
+			log.Warn("Restoring transaction journal for durable common RPC ingress", "journal", core.DefaultTxPoolConfig.Journal)
+			config.TxPool.Journal = core.DefaultTxPoolConfig.Journal
+		}
+	}
 	if config.TxPool.Journal != "" {
 		config.TxPool.Journal = stack.ResolvePath(config.TxPool.Journal)
 	}

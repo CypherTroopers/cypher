@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/eth/downloader"
@@ -61,6 +62,9 @@ func (pm *ProtocolManager) syncTransactions(p *peer) {
 		return
 	}
 	pm.scheduleInitialTransactionSync(p, txs)
+	if admissions := core.CommonRPCAdmissionsForTransactions(txs); len(admissions) > 0 {
+		pm.BroadcastCommonTxAdmissions(admissions)
+	}
 }
 
 // scheduleInitialTransactionSync selects the initial transaction exchange
