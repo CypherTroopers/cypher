@@ -403,6 +403,8 @@ func (api *PrivateMinerAPI) Start(threads *int) error {
 
 */
 func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password string) (string, error) {
+	api.e.miningLifecycleMu.Lock()
+	defer api.e.miningLifecycleMu.Unlock()
 	miningThreads := runtime.NumCPU()
 	if threads != nil {
 		miningThreads = *threads
@@ -455,8 +457,18 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	if err := api.e.reconfig.MinerStart(server); err != nil {
 		return "", err
 	}
+	if err := api.e.startPoWResultTransport(); err != nil {
+		if stopErr := api.e.reconfig.MinerStop(); stopErr != nil {
+			log.Warn("Failed to roll back reconfig after PoW result transport start failure", "err", stopErr)
+		}
+		return "", fmt.Errorf("start fixed-mode PoW result transport: %w", err)
+	}
 
 	if err := api.e.StartMining(miningThreads, true, eb, pubKey); err != nil {
+		api.e.stopPoWResultTransport()
+		if stopErr := api.e.reconfig.MinerStop(); stopErr != nil {
+			log.Warn("Failed to roll back reconfig after mining start failure", "err", stopErr)
+		}
 		return "", err
 	}
 	return "Mining started", nil
@@ -465,12 +477,15 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 // Stop terminates the miner, both at the consensus engine level as well as at
 // the block creation level.
 func (api *PrivateMinerAPI) Stop() {
+	api.e.miningLifecycleMu.Lock()
+	defer api.e.miningLifecycleMu.Unlock()
 	type threaded interface {
 		SetThreads(threads int)
 	}
 	if th, ok := api.e.engine.(threaded); ok {
 		th.SetThreads(-1)
 	}
+	api.e.stopPoWResultTransport()
 	api.e.StopMining()
 	api.e.reconfig.MinerStop()
 }

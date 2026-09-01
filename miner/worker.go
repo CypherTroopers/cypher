@@ -1,6 +1,7 @@
 package miner
 
 import (
+	"context"
 	"math/big"
 	"net"
 	"strconv"
@@ -89,6 +90,8 @@ type worker struct {
 
 	shouldStart int32 // should start indicates whether we should start after sync
 
+	powResultCtx    context.Context
+	powResultCancel context.CancelFunc
 }
 
 func newWorker(config *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, candidatePool *core.CandidatePool, extIP net.IP) *worker {
@@ -137,6 +140,10 @@ func (self *worker) start() {
 	}
 
 	atomic.StoreInt32(&self.running, 1)
+	if self.powResultCancel != nil {
+		self.powResultCancel()
+	}
+	self.powResultCtx, self.powResultCancel = context.WithCancel(context.Background())
 	self.keyHeadSub = self.eth.KeyBlockChain().SubscribeChainEvent(self.keyHeadCh)
 
 	go self.autoCommit()
@@ -149,6 +156,11 @@ func (self *worker) start() {
 func (self *worker) stop() {
 	self.mu.Lock()
 	defer self.mu.Unlock()
+	if self.powResultCancel != nil {
+		self.powResultCancel()
+		self.powResultCancel = nil
+		self.powResultCtx = nil
+	}
 	if atomic.LoadInt32(&self.running) == 0 {
 		return
 	}
@@ -232,10 +244,34 @@ func (self *worker) wait() {
 			}
 
 			if self.config != nil && (self.config.FixedLeader || self.config.FixedCommittee) {
-				validators := self.eth.KeyBlockChain().CurrentCommittee()
-				if err := core.BroadcastPoWResultUDP(self.config.RnetPort, validators, types.NewPoWResultFromCandidate(candidate)); err != nil {
-					log.Error("Fail to broadcast fixed-mode PoW result", "err", err)
+				committee := self.eth.KeyBlockChain().CurrentCommittee()
+				validators := make([]*common.Cnode, len(committee))
+				for index, validator := range committee {
+					if validator != nil {
+						copy := *validator
+						validators[index] = &copy
+					}
 				}
+				result := types.NewPoWResultFromCandidate(candidate)
+				rnetPort := self.config.RnetPort
+				self.mu.Lock()
+				deliveryCtx := self.powResultCtx
+				self.mu.Unlock()
+				if deliveryCtx == nil {
+					log.Debug("Discarding fixed-mode PoW result after miner stopped", "parent", result.ParentHash)
+					continue
+				}
+				go func() {
+					err := core.BroadcastPoWResultContext(deliveryCtx, rnetPort, validators, result)
+					if err == nil {
+						return
+					}
+					if deliveryCtx.Err() != nil {
+						log.Debug("Stopped fixed-mode PoW result retry after keyblock or miner change", "err", err)
+						return
+					}
+					log.Error("Fail to broadcast fixed-mode PoW result", "err", err)
+				}()
 				continue
 			}
 
@@ -296,18 +332,13 @@ func (self *worker) commitNewWork() {
 			return
 		}
 	}
-	tstamp := tstart.Unix()
-	minKeyBlockTime := int64(keyBlock.Time()) + int64(params.KeyBlockMinInterval/time.Second)
-	if minKeyBlockTime > tstamp {
-		// Keep the candidate/keyblock timestamp valid, but do not delay PoW work.
-		// Common miners must start mining immediately after a new keyblock so their
-		// UDP PoWResult can reach validators before the next keyblock proposal.
-		tstamp = minKeyBlockTime
-	}
-
 	port, _ := strconv.Atoi(self.config.RnetPort)
 	candidate := types.NewCandidate(keyBlock.Hash(), nil, keyBlock.Number().Uint64()+uint64(1), txBlock.NumberU64(), nil, self.IP, common.HexString(self.pubKey), self.coinBase.String(), port)
-	candidate.KeyCandidate.Time = uint64(tstamp)
+	// Every fixed-mode mining attempt for this key height uses the same consensus
+	// slot, including attempts that start after the slot has elapsed. Non-fixed
+	// mining keeps the legacy minimum-timestamp behavior.
+	fixedMode := self.config != nil && (self.config.FixedLeader || self.config.FixedCommittee)
+	candidate.KeyCandidate.Time = keyBlockCandidateTimestamp(keyBlock, tstart, fixedMode)
 	committeeSize := len(self.eth.KeyBlockChain().CurrentCommittee())
 
 	if err := self.engine.PrepareCandidate(self.chain, candidate, committeeSize); err != nil {
@@ -322,6 +353,17 @@ func (self *worker) commitNewWork() {
 		//log.Info(fmt.Sprintf("Commit %d mining work", work.keyBlock.Number()), "elapsed", common.PrettyDuration(time.Since(tstart)))
 		self.push(work)
 	}
+}
+
+func keyBlockCandidateTimestamp(parent *types.KeyBlock, startedAt time.Time, fixedMode bool) uint64 {
+	if parent == nil || fixedMode && parent.IsZeroTimeGenesis() {
+		return uint64(startedAt.Unix())
+	}
+	slot := parent.Time() + uint64(params.KeyBlockMinInterval/time.Second)
+	if fixedMode || startedAt.Unix() <= int64(slot) {
+		return slot
+	}
+	return uint64(startedAt.Unix())
 }
 
 func (self *worker) SetPubKey(pubKey ed25519.PublicKey) {

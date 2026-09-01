@@ -421,7 +421,7 @@ func TestProposalNoWorkWatermarkQuiescesIdenticalMaintenanceInputs(t *testing.T)
 				{name: "finality", mutate: func(s *proposalWorkStamp) { s.finality = !s.finality }},
 				{name: "key interval", mutate: func(s *proposalWorkStamp) {
 					s.keyblockReady = !s.keyblockReady
-					s.keyblockPending = s.keyblockReady && s.view.NoDone
+					s.keyblockPending = s.keyblockReady
 				}},
 				{name: "proposal view", mutate: func(s *proposalWorkStamp) { s.proposalView++; s.proposalViewID = common.HexToHash("0x2200") }},
 				{name: "proposal leader", mutate: func(s *proposalWorkStamp) { s.proposalLeaderID = "next-leader" }},
@@ -461,25 +461,33 @@ func TestProposalNoWorkWatermarkQuiescesIdenticalMaintenanceInputs(t *testing.T)
 				t.Fatal("pending keyblock trigger left a no-work watermark")
 			}
 
-			// Once the keyblock wake has changed proposal state, an otherwise
-			// identical unpublishable result can quiesce normally.
+			// Local proposal-mode changes cannot suppress a due fixed keyblock.
 			afterKeyWake := intervalReady
 			afterKeyWake.view.NoDone = false
-			afterKeyWake.keyblockPending = false
-			if !service.rememberProposalNoWorkIfCurrent(afterKeyWake, afterKeyWake, true) {
-				t.Fatal("failed to install post-keyblock-wake watermark")
+			if service.rememberProposalNoWorkIfCurrent(afterKeyWake, afterKeyWake, true) {
+				t.Fatal("keyblock wake installed a no-work watermark")
 			}
-			if !service.proposalNoWorkMatchesCurrent(afterKeyWake, afterKeyWake, true) {
-				t.Fatal("post-keyblock-wake no-work state did not quiesce")
+
+			// A new canonical key head resets the interval and may quiesce normally.
+			afterKeyCommit := afterKeyWake
+			afterKeyCommit.keyNumber++
+			afterKeyCommit.keyHash = common.HexToHash("0x31")
+			afterKeyCommit.keyblockReady = false
+			afterKeyCommit.keyblockPending = false
+			if !service.rememberProposalNoWorkIfCurrent(afterKeyCommit, afterKeyCommit, true) {
+				t.Fatal("failed to install post-keyblock-commit watermark")
+			}
+			if !service.proposalNoWorkMatchesCurrent(afterKeyCommit, afterKeyCommit, true) {
+				t.Fatal("post-keyblock-commit no-work state did not quiesce")
 			}
 
 			// A stale concurrent comparison must not erase a newer bounded marker.
-			newer := afterKeyWake
+			newer := afterKeyCommit
 			newer.poolRevision++
 			if !service.rememberProposalNoWorkIfCurrent(newer, newer, true) {
 				t.Fatal("failed to replace bounded watermark")
 			}
-			if service.proposalNoWorkMatchesCurrent(afterKeyWake, afterKeyWake, true) {
+			if service.proposalNoWorkMatchesCurrent(afterKeyCommit, afterKeyCommit, true) {
 				t.Fatal("stale comparison matched newer watermark")
 			}
 			service.muProposalNoWork.Lock()

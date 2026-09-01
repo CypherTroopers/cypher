@@ -130,7 +130,7 @@ func (s *Service) AcceptFHSTimeoutCertificate(tc *hotstuff.TimeoutCertificate) e
 	store.safetyMu.Unlock()
 
 	s.muCurrentView.Lock()
-	if s.currentView.ViewNumber <= tc.Statement.TimedOutView {
+	if s.currentView.ViewNumber < tc.Statement.TimedOutView {
 		s.currentView.ViewNumber = tc.Statement.TimedOutView
 		s.currentView.LeaderIndex = s.fairHotstuffLeaderIndexForCurrentLocked()
 		s.currentView.NoDone = true
