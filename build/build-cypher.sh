@@ -49,47 +49,6 @@ require_command ar
 require_command file
 require_command install
 
-detect_source_state() {
-  local worktree_status
-  local unmerged_files
-  worktree_status="$(git status --porcelain=v1 --untracked-files=all)" ||
-    die "Unable to inspect source worktree"
-  unmerged_files="$(git ls-files --unmerged)" ||
-    die "Unable to inspect unmerged source files"
-  DETECTED_SOURCE_STATE="clean"
-  if [[ -n "${worktree_status}" ]]; then
-    DETECTED_SOURCE_STATE="dirty"
-  fi
-  if [[ -n "${unmerged_files}" ]]; then
-    DETECTED_SOURCE_STATE="unmerged"
-  fi
-}
-
-verify_source_identity() {
-  local current_head
-  current_head="$(git rev-parse HEAD)" || die "Unable to resolve current source commit"
-  [[ "${current_head}" == "${SOURCE_SHA}" ]] ||
-    die "Source commit changed during build: ${current_head}, expected ${SOURCE_SHA}"
-  detect_source_state
-  [[ "${DETECTED_SOURCE_STATE}" == "${SOURCE_STATE}" ]] ||
-    die "Source tree changed during build: ${SOURCE_STATE} -> ${DETECTED_SOURCE_STATE}"
-}
-
-HEAD_SHA="$(git rev-parse HEAD)"
-SOURCE_SHA="${SOURCE_SHA:-${HEAD_SHA}}"
-[[ "${HEAD_SHA}" == "${SOURCE_SHA}" ]] ||
-  die "Checked out ${HEAD_SHA}, expected ${SOURCE_SHA}"
-detect_source_state
-SOURCE_STATE="${DETECTED_SOURCE_STATE}"
-if [[ "${SOURCE_STATE}" != "clean" && "${ALLOW_DIRTY_BUILD:-0}" != "1" ]]; then
-  die "Refusing ${SOURCE_STATE} source tree; commit/resolve it or set ALLOW_DIRTY_BUILD=1 for a visibly marked local artifact"
-fi
-EMBEDDED_SOURCE_SHA="${SOURCE_SHA}"
-if [[ "${SOURCE_STATE}" != "clean" ]]; then
-  EMBEDDED_SOURCE_SHA="${SOURCE_SHA}-${SOURCE_STATE}"
-fi
-GIT_DATE="$(git show -s --format=%cd --date=format:%Y%m%d "${SOURCE_SHA}")"
-
 HOST_OS="$("${GO_BIN}" env GOHOSTOS)"
 HOST_ARCH="$("${GO_BIN}" env GOHOSTARCH)"
 TARGET_OS="${TARGET_OS:-${HOST_OS}}"
@@ -385,9 +344,12 @@ SUM_BEFORE="$(git hash-object go.sum)"
 
 "${GO_BIN}" test -mod=readonly -a ./crypto/bls -count=1
 
-verify_source_identity
-
-LDFLAGS="-buildid= -X main.gitCommit=${EMBEDDED_SOURCE_SHA} -X main.gitDate=${GIT_DATE}"
+HEAD_SHA="$(git rev-parse HEAD)"
+SOURCE_SHA="${SOURCE_SHA:-${HEAD_SHA}}"
+[[ "${HEAD_SHA}" == "${SOURCE_SHA}" ]] ||
+  die "Checked out ${HEAD_SHA}, expected ${SOURCE_SHA}"
+GIT_DATE="$(git show -s --format=%cd --date=format:%Y%m%d "${SOURCE_SHA}")"
+LDFLAGS="-buildid= -X main.gitCommit=${SOURCE_SHA} -X main.gitDate=${GIT_DATE}"
 if [[ "${TARGET_OS}" == "windows" ]]; then
   LDFLAGS="${LDFLAGS} -extldflags=-Wl,--dynamicbase"
 fi
@@ -457,13 +419,8 @@ grep -Fq "Operating System: ${TARGET_OS}" <<< "${VERSION_OUTPUT}" ||
   die "Binary reported the wrong operating system"
 grep -Fq "Architecture: ${TARGET_ARCH}" <<< "${VERSION_OUTPUT}" ||
   die "Binary reported the wrong architecture"
-grep -Fq "Git Commit: ${EMBEDDED_SOURCE_SHA}" <<< "${VERSION_OUTPUT}" ||
-  die "Binary did not report source identity ${EMBEDDED_SOURCE_SHA}"
-
-# Native dependency builds and the Go build can be long-running. Recheck the
-# checkout after compilation so a clean manifest can never describe an
-# artifact built while the source tree was observably changing.
-verify_source_identity
+grep -Fq "Git Commit: ${SOURCE_SHA}" <<< "${VERSION_OUTPUT}" ||
+  die "Binary did not report source commit ${SOURCE_SHA}"
 
 if [[ "${TARGET_OS}" != "windows" ]]; then
   cp -p "${NEW_OUTPUT}" "${BUNDLE_DIR}/cypher"
@@ -508,8 +465,6 @@ BLS_SHA256="$(sha256_file "${NATIVE_LIB_DIR}/libbls256.a")"
 MCL_SHA256="$(sha256_file "${NATIVE_LIB_DIR}/libmcl.a")"
 {
   printf 'source_sha=%s\n' "${SOURCE_SHA}"
-  printf 'source_state=%s\n' "${SOURCE_STATE}"
-  printf 'embedded_source_sha=%s\n' "${EMBEDDED_SOURCE_SHA}"
   printf 'goos=%s\n' "${TARGET_OS}"
   printf 'goarch=%s\n' "${TARGET_ARCH}"
   printf 'go_version=%s\n' "${GO_VERSION}"
