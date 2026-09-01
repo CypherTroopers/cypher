@@ -28,6 +28,7 @@ import (
 	"math/big"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -1696,9 +1697,13 @@ type RPCTransaction struct {
 	CommonTxApprover                *common.Address `json:"commonTxApprover,omitempty"`
 	CommonTxApproverReward          *hexutil.Big    `json:"commonTxApproverReward,omitempty"`
 	CommonTxBurn                    *hexutil.Big    `json:"commonTxBurn,omitempty"`
+	CommonTxAdmissionID             *common.Hash    `json:"commonTxAdmissionId,omitempty"`
+	CommonTxAdmissionTxRoot         *common.Hash    `json:"commonTxAdmissionTxRoot,omitempty"`
+	CommonTxAdmissionGenesisHash    *common.Hash    `json:"commonTxAdmissionGenesisHash,omitempty"`
+	CommonTxAdmissionBatchIndex     *hexutil.Uint64 `json:"commonTxAdmissionBatchIndex,omitempty"`
+	CommonTxAdmissionItemIndex      *hexutil.Uint64 `json:"commonTxAdmissionItemIndex,omitempty"`
 	CommonTxAdmissionChainID        *hexutil.Big    `json:"commonTxAdmissionChainId,omitempty"`
 	CommonTxAdmissionKeyBlockNumber *hexutil.Uint64 `json:"commonTxAdmissionKeyBlockNumber,omitempty"`
-	CommonTxAdmissionTxBlockNumber  *hexutil.Uint64 `json:"commonTxAdmissionTxBlockNumber,omitempty"`
 	CommonTxAdmissionTimestamp      *hexutil.Uint64 `json:"commonTxAdmissionTimestamp,omitempty"`
 	CommonTxAdmissionSignature      hexutil.Bytes   `json:"commonTxAdmissionSignature,omitempty"`
 }
@@ -1745,6 +1750,33 @@ func setRPCTransactionEffectiveGasPrice(result *RPCTransaction, tx *types.Transa
 	}
 }
 
+func commonRPCAdmissionForBlockTransaction(block *types.Block, txHash common.Hash) (*types.CommonTxAdmissionBatch, uint16, uint16, bool) {
+	if block == nil {
+		return nil, 0, 0, false
+	}
+	txIndex := -1
+	for index, tx := range block.Transactions() {
+		if tx != nil && tx.Hash() == txHash {
+			txIndex = index
+			break
+		}
+	}
+	refs := block.CommonTxAdmissionRefs()
+	if txIndex < 0 || txIndex >= len(refs) {
+		return nil, 0, 0, false
+	}
+	ref := refs[txIndex]
+	batches := block.CommonTxAdmissionBatches()
+	if int(ref.Batch) >= len(batches) || batches[ref.Batch] == nil {
+		return nil, 0, 0, false
+	}
+	batch := batches[ref.Batch]
+	if int(ref.Item) >= len(batch.TxHashes) || batch.TxHashes[ref.Item] != txHash {
+		return nil, 0, 0, false
+	}
+	return batch, ref.Batch, ref.Item, true
+}
+
 func addBlobRPCReceiptFields(fields map[string]interface{}, config *params.ChainConfig, block *types.Block, tx *types.Transaction) {
 	if fields == nil || tx == nil || tx.Type() != types.BlobTxType {
 		return
@@ -1768,26 +1800,28 @@ func fillCommonRPCTransactionFields(result *RPCTransaction, block *types.Block, 
 	result.CommonTxAdmissionRoot = &admissionRoot
 	result.CommonTxRewardRoot = &rewardRoot
 
-	for _, admission := range block.CommonTxAdmissions() {
-		if admission == nil || admission.TxHash != txHash {
-			continue
-		}
-
+	if admission, batchIndexValue, itemIndexValue, ok := commonRPCAdmissionForBlockTransaction(block, txHash); ok {
 		approver := admission.Miner
+		admissionID := admission.AdmissionID
+		txRoot := admission.TxRoot
+		genesisHash := admission.GenesisHash
+		batchIndex := hexutil.Uint64(batchIndexValue)
+		itemIndex := hexutil.Uint64(itemIndexValue)
 		keyBlockNumber := hexutil.Uint64(admission.KeyBlockNumber)
-		txBlockNumber := hexutil.Uint64(admission.TxBlockNumber)
 		timestamp := hexutil.Uint64(admission.Timestamp)
 
 		result.CommonTxApprover = &approver
+		result.CommonTxAdmissionID = &admissionID
+		result.CommonTxAdmissionTxRoot = &txRoot
+		result.CommonTxAdmissionGenesisHash = &genesisHash
+		result.CommonTxAdmissionBatchIndex = &batchIndex
+		result.CommonTxAdmissionItemIndex = &itemIndex
 		if admission.ChainID != nil {
 			result.CommonTxAdmissionChainID = (*hexutil.Big)(new(big.Int).Set(admission.ChainID))
 		}
 		result.CommonTxAdmissionKeyBlockNumber = &keyBlockNumber
-		result.CommonTxAdmissionTxBlockNumber = &txBlockNumber
 		result.CommonTxAdmissionTimestamp = &timestamp
 		result.CommonTxAdmissionSignature = hexutil.Bytes(admission.Signature)
-
-		break
 	}
 
 	for _, reward := range block.CommonTxRewards() {
@@ -1818,23 +1852,21 @@ func addCommonRPCReceiptFields(fields map[string]interface{}, block *types.Block
 	fields["commonTxAdmissionRoot"] = header.CommonTxAdmissionRoot
 	fields["commonTxRewardRoot"] = header.CommonTxRewardRoot
 
-	for _, admission := range block.CommonTxAdmissions() {
-		if admission == nil || admission.TxHash != txHash {
-			continue
-		}
-
+	if admission, batchIndex, itemIndex, ok := commonRPCAdmissionForBlockTransaction(block, txHash); ok {
 		fields["commonTxApprover"] = admission.Miner
+		fields["commonTxAdmissionId"] = admission.AdmissionID
+		fields["commonTxAdmissionTxRoot"] = admission.TxRoot
+		fields["commonTxAdmissionGenesisHash"] = admission.GenesisHash
+		fields["commonTxAdmissionBatchIndex"] = hexutil.Uint64(batchIndex)
+		fields["commonTxAdmissionItemIndex"] = hexutil.Uint64(itemIndex)
 
 		if admission.ChainID != nil {
 			fields["commonTxAdmissionChainId"] = (*hexutil.Big)(new(big.Int).Set(admission.ChainID))
 		}
 
 		fields["commonTxAdmissionKeyBlockNumber"] = hexutil.Uint64(admission.KeyBlockNumber)
-		fields["commonTxAdmissionTxBlockNumber"] = hexutil.Uint64(admission.TxBlockNumber)
 		fields["commonTxAdmissionTimestamp"] = hexutil.Uint64(admission.Timestamp)
 		fields["commonTxAdmissionSignature"] = hexutil.Bytes(admission.Signature)
-
-		break
 	}
 
 	for _, reward := range block.CommonTxRewards() {
@@ -1956,6 +1988,15 @@ type PublicTransactionPoolAPI struct {
 	am        *accounts.Manager
 	nonceLock *AddrLocker
 
+	singleRawTxMu              sync.Mutex
+	singleRawTxQueue           []*singleRawTxRequest
+	singleRawTxPendingCount    int
+	singleRawTxPendingBytes    int
+	singleRawTxWorkerRunning   bool
+	singleRawTxCoalesceDelay   time.Duration
+	singleRawTxQueueCountLimit int
+	singleRawTxQueueBytesLimit int
+
 	// Only used for AutoTransaction API
 	autoTransactionRunning bool
 	quitAutoTransaction    int32
@@ -1963,7 +2004,14 @@ type PublicTransactionPoolAPI struct {
 
 // NewPublicTransactionPoolAPI creates a new RPC service with methods specific for the transaction pool.
 func NewPublicTransactionPoolAPI(b Backend, nonceLock *AddrLocker) *PublicTransactionPoolAPI {
-	return &PublicTransactionPoolAPI{b, b.AccountManager(), nonceLock, false, 0}
+	return &PublicTransactionPoolAPI{
+		b:                          b,
+		am:                         b.AccountManager(),
+		nonceLock:                  nonceLock,
+		singleRawTxCoalesceDelay:   singleRawTxDefaultCoalesceDelay,
+		singleRawTxQueueCountLimit: singleRawTxDefaultQueueCountLimit,
+		singleRawTxQueueBytesLimit: singleRawTxDefaultQueueBytesLimit,
+	}
 }
 
 // GetBlockTransactionCountByNumber returns the number of transactions in the block with the given block number.
@@ -2486,6 +2534,14 @@ func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction, sy
 	if err := b.SendTx(ctx, tx, sync); err != nil {
 		return common.Hash{}, err
 	}
+	emitSubmittedTransactionCheckpoint(tx, from)
+	return tx.Hash(), nil
+}
+
+func emitSubmittedTransactionCheckpoint(tx *types.Transaction, from common.Address) {
+	if tx == nil {
+		return
+	}
 	if tx.To() == nil {
 		addr := crypto.CreateAddress(from, tx.Nonce())
 		//log.Info("Submitted contract creation", "fullhash", tx.Hash().Hex(), "to", addr.Hex())
@@ -2494,7 +2550,6 @@ func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction, sy
 		//log.Info("Submitted transaction", "fullhash", tx.Hash().Hex(), "recipient", tx.To())
 		log.EmitCheckpoint(log.TxCreated, "tx", tx.Hash().Hex(), "to", tx.To().Hex())
 	}
-	return tx.Hash(), nil
 }
 
 // SendTransaction creates a transaction for the given argument, sign it and submit it to the
@@ -2708,26 +2763,491 @@ func (s *PublicTransactionPoolAPI) AutoTransaction(ctx context.Context, run int,
 	}
 }
 
-// SendRawTransaction will add the signed transaction to the transaction pool.
-// The sender is responsible for signing the transaction and using the correct nonce.
-func (s *PublicTransactionPoolAPI) SendRawTransaction(ctx context.Context, encodedTx hexutil.Bytes) (common.Hash, error) {
-	log.Info("SendRawTransaction")
+const (
+	// A public request is bounded independently from the transport batches it
+	// produces. This admits a tens-of-thousands burst without ever constructing
+	// an unbounded TxPool/TxQUIC operation.
+	MaxRawTxRequestCount = 65_536
+	// Hex JSON doubles the wire size. Sixty MiB leaves framing headroom below
+	// the RPC server's 128 MiB request ceiling.
+	MaxRawTxRequestBytes = 60 * 1024 * 1024
+
+	// Backend and TxQUIC work remains bounded to fixed micro-batches. These are
+	// scheduling limits, not the public request limit above.
+	MaxRawTxBatchCount = 512
+	MaxRawTxBatchBytes = 4 * 1024 * 1024
+	// Backend calls overlap so independent admission signatures and durable
+	// outbox writes can be group-committed. TxPool mutation remains serialized
+	// by the pool lock, and the fixed bound prevents an RPC burst from creating
+	// one goroutine per micro-batch.
+	rawTxBackendParallelism = 8
+	// A single-RPC coalescer wave feeds every bounded backend worker. Individual
+	// backend calls still obey MaxRawTxBatchCount/Bytes, while the independent
+	// queue limits below bound work waiting behind the active wave.
+	singleRawTxWaveCount = rawTxBackendParallelism * MaxRawTxBatchCount
+	singleRawTxWaveBytes = rawTxBackendParallelism * MaxRawTxBatchBytes
+
+	// Parallel eth_sendRawTransaction calls share this short collection window.
+	// Pending work includes both queued and currently submitted transactions so
+	// a slow backend cannot turn the coalescer into unbounded memory storage.
+	singleRawTxDefaultCoalesceDelay   = 2 * time.Millisecond
+	singleRawTxDefaultQueueCountLimit = MaxRawTxRequestCount
+	singleRawTxDefaultQueueBytesLimit = MaxRawTxRequestBytes
+)
+
+// RawTxResult is aligned with one eth_sendRawTransactions input. A decoded
+// transaction retains its hash even when fee, sender, pool, or outbox handling
+// fails, allowing clients to reconcile partial batches safely.
+type RawTxResult struct {
+	Hash  *common.Hash `json:"hash,omitempty"`
+	Error string       `json:"error,omitempty"`
+}
+
+type rawTxSubmissionResult struct {
+	hash    common.Hash
+	decoded bool
+	err     error
+}
+
+type singleRawTxRequest struct {
+	encoded  hexutil.Bytes
+	response chan singleRawTxResponse
+}
+
+type singleRawTxResponse struct {
+	result rawTxSubmissionResult
+	err    error
+}
+
+func validateRawTransactionSignatureSize(tx *types.Transaction, config *params.ChainConfig) error {
+	if tx == nil {
+		return types.ErrInvalidSig
+	}
+	v, r, s := tx.RawSignatureValues()
+	if v == nil || r == nil || s == nil || v.Sign() < 0 || r.Sign() < 0 || s.Sign() < 0 {
+		return types.ErrInvalidSig
+	}
+	// R and S are secp256k1 scalars. Legacy V additionally carries chain ID,
+	// whose configured size is allowed, but an unauthenticated raw RPC must not
+	// feed megabyte-sized integers into signer selection or decimal logging.
+	if r.BitLen() > 256 || s.BitLen() > 256 {
+		return types.ErrInvalidSig
+	}
+	maxVBits := 256
+	if config != nil && config.ChainID != nil && config.ChainID.BitLen()+2 > maxVBits {
+		maxVBits = config.ChainID.BitLen() + 2
+	}
+	if v.BitLen() > maxVBits {
+		return types.ErrInvalidSig
+	}
+	return nil
+}
+
+// rawTransactionSignerClass mirrors MakeSignerAutoJudgement, whose result can
+// only be the active fork signer or EIP-155 signer. Keeping this bounded class
+// avoids attacker-controlled big.Int string keys and per-transaction logging.
+func rawTransactionSignerClass(config *params.ChainConfig, v *big.Int) uint8 {
+	if config == nil || config.ChainID == nil || v == nil || v.Cmp(big.NewInt(28)) <= 0 {
+		return 0
+	}
+	maxRecoverV := new(big.Int).Lsh(new(big.Int).Set(config.ChainID), 1)
+	maxRecoverV.Add(maxRecoverV, big.NewInt(36))
+	if v.Cmp(maxRecoverV) <= 0 {
+		return 1
+	}
+	return 0
+}
+
+func decodeRawTransaction(encodedTx hexutil.Bytes) (*types.Transaction, error) {
 	tx := new(types.Transaction)
 	if len(encodedTx) > 0 && encodedTx[0] < 0x80 {
 		if err := tx.UnmarshalBinary(encodedTx); err != nil {
-			return common.Hash{}, err
+			return nil, err
 		}
 	} else if err := rlp.DecodeBytes(encodedTx, tx); err != nil {
-		return common.Hash{}, err
+		return nil, err
 	}
-
-	// MetaMask uses standard eth_sendRawTransaction and cannot pass Cypherium
-	// route options. Default external raw transactions to the fast lane so they
-	// are eligible for normal tx block production.
 	if tx.RouteHint() == types.TxRouteAuto {
 		tx = tx.WithRouteHint(types.TxRouteFast)
 	}
-	return SubmitTransaction(ctx, s.b, tx, true)
+	return tx, nil
+}
+
+func validateRawTransactionRequest(encoded []hexutil.Bytes) error {
+	if len(encoded) == 0 {
+		return fmt.Errorf("raw transaction batch is empty")
+	}
+	if len(encoded) > MaxRawTxRequestCount {
+		return fmt.Errorf("raw transaction request count %d exceeds limit %d", len(encoded), MaxRawTxRequestCount)
+	}
+	totalBytes := 0
+	for _, raw := range encoded {
+		if len(raw) > MaxRawTxRequestBytes-totalBytes {
+			return fmt.Errorf("raw transaction request bytes exceed limit %d", MaxRawTxRequestBytes)
+		}
+		totalBytes += len(raw)
+	}
+	return nil
+}
+
+func (s *PublicTransactionPoolAPI) submitRawTransactionMicroBatch(ctx context.Context, encoded []hexutil.Bytes, current *types.Block) []rawTxSubmissionResult {
+	type uniqueRawTransaction struct {
+		tx      *types.Transaction
+		signer  types.Signer
+		sender  common.Address
+		indexes []int
+		err     error
+	}
+
+	started := time.Now()
+	results := make([]rawTxSubmissionResult, len(encoded))
+	decodedTxs := make([]*types.Transaction, len(encoded))
+	decodeErrs := make([]error, len(encoded))
+	core.RunBoundedCryptoJobs(len(encoded), func(index int) {
+		decodedTxs[index], decodeErrs[index] = decodeRawTransaction(encoded[index])
+	})
+	decodeElapsed := time.Since(started)
+
+	validTxs := make(types.Transactions, 0, len(encoded))
+	validEntries := make([]*uniqueRawTransaction, 0, len(encoded))
+	recoverableEntries := make([]*uniqueRawTransaction, 0, len(encoded))
+	entries := make([]*uniqueRawTransaction, 0, len(encoded))
+	entryByHash := make(map[common.Hash]*uniqueRawTransaction, len(encoded))
+	signerCache := make(map[uint8]types.Signer, 2)
+	totalBytes := 0
+	for i, raw := range encoded {
+		totalBytes += len(raw)
+		tx, err := decodedTxs[i], decodeErrs[i]
+		if err != nil {
+			results[i].err = err
+			continue
+		}
+		results[i].decoded = true
+		results[i].hash = tx.Hash()
+		if entry := entryByHash[results[i].hash]; entry != nil {
+			entry.indexes = append(entry.indexes, i)
+			continue
+		}
+		entry := &uniqueRawTransaction{tx: tx, indexes: []int{i}}
+		entryByHash[results[i].hash] = entry
+		entries = append(entries, entry)
+		if err := validateRawTransactionSignatureSize(tx, s.b.ChainConfig()); err != nil {
+			entry.err = err
+			continue
+		}
+		if err := checkTxFee(tx.GasFeeCap(), tx.Gas(), s.b.RPCTxFeeCap()); err != nil {
+			entry.err = err
+			continue
+		}
+		key := rawTransactionSignerClass(s.b.ChainConfig(), tx.V())
+		signer := signerCache[key]
+		if signer == nil {
+			if key == 1 {
+				signer = types.NewEIP155Signer(s.b.ChainConfig().ChainID)
+			} else {
+				signer = types.MakeSigner(s.b.ChainConfig(), current.Number())
+			}
+			signerCache[key] = signer
+		}
+		entry.signer = signer
+		recoverableEntries = append(recoverableEntries, entry)
+	}
+	preparedElapsed := time.Since(started) - decodeElapsed
+
+	recoveryStarted := time.Now()
+	core.RunBoundedCryptoJobs(len(recoverableEntries), func(index int) {
+		entry := recoverableEntries[index]
+		entry.sender, entry.err = types.Sender(entry.signer, entry.tx)
+	})
+	recoveryElapsed := time.Since(recoveryStarted)
+	for _, entry := range recoverableEntries {
+		if entry.err != nil {
+			continue
+		}
+		validTxs = append(validTxs, entry.tx)
+		validEntries = append(validEntries, entry)
+	}
+	backendElapsed := time.Duration(0)
+	if len(validTxs) > 0 {
+		backendStarted := time.Now()
+		backendResults := s.b.SendTxBatch(ctx, validTxs)
+		backendElapsed = time.Since(backendStarted)
+		if len(backendResults) != len(validTxs) {
+			log.Error("Transaction backend returned misaligned batch results", "transactions", len(validTxs), "results", len(backendResults))
+		}
+		for i, entry := range validEntries {
+			if i >= len(backendResults) {
+				entry.err = fmt.Errorf("transaction backend omitted batch result")
+				continue
+			}
+			entry.err = backendResults[i]
+			if entry.err == nil {
+				emitSubmittedTransactionCheckpoint(entry.tx, entry.sender)
+			}
+		}
+	}
+	for _, entry := range entries {
+		for _, index := range entry.indexes {
+			results[index].err = entry.err
+		}
+	}
+	log.Debug("Submitted raw transaction batch", "requested", len(encoded), "decoded", len(validTxs), "bytes", totalBytes,
+		"decode", decodeElapsed, "prepare", preparedElapsed, "senderRecovery", recoveryElapsed,
+		"backend", backendElapsed, "total", time.Since(started))
+	return results
+}
+
+func (s *PublicTransactionPoolAPI) submitRawTransactionBatch(ctx context.Context, encoded []hexutil.Bytes) ([]rawTxSubmissionResult, error) {
+	if err := validateRawTransactionRequest(encoded); err != nil {
+		return nil, err
+	}
+	current := s.b.CurrentBlock()
+	if current == nil {
+		return nil, fmt.Errorf("current block is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	type rawTxMicroBatch struct {
+		start     int
+		end       int
+		oversized bool
+	}
+	microBatches := make([]rawTxMicroBatch, 0, (len(encoded)+MaxRawTxBatchCount-1)/MaxRawTxBatchCount)
+	executable := 0
+	for start := 0; start < len(encoded); {
+		// Keep oversized items in the ordered work plan. Cancellation is checked
+		// before each plan entry, preserving the previous boundary between a
+		// request cancellation and an item-local structural error.
+		if len(encoded[start]) > MaxRawTxBatchBytes {
+			microBatches = append(microBatches, rawTxMicroBatch{start: start, end: start + 1, oversized: true})
+			start++
+			continue
+		}
+		end, batchBytes := start, 0
+		for end < len(encoded) && end-start < MaxRawTxBatchCount {
+			nextBytes := len(encoded[end])
+			if end > start && nextBytes > MaxRawTxBatchBytes-batchBytes {
+				break
+			}
+			batchBytes += nextBytes
+			end++
+		}
+		microBatches = append(microBatches, rawTxMicroBatch{start: start, end: end})
+		executable++
+		start = end
+	}
+
+	results := make([]rawTxSubmissionResult, len(encoded))
+	workerCount := executable
+	if workerCount > rawTxBackendParallelism {
+		workerCount = rawTxBackendParallelism
+	}
+	jobs := make(chan rawTxMicroBatch)
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	// Once an unbuffered job handoff succeeds, node-side admission, TxPool, and
+	// durable outbox work must finish even if the RPC client disconnects. Values
+	// attached to the request context remain available to the backend.
+	workCtx := context.WithoutCancel(ctx)
+	for worker := 0; worker < workerCount; worker++ {
+		go func() {
+			defer workers.Done()
+			for batch := range jobs {
+				microResults := s.submitRawTransactionMicroBatch(workCtx, encoded[batch.start:batch.end], current)
+				copy(results[batch.start:batch.end], microResults)
+			}
+		}()
+	}
+
+	for _, batch := range microBatches {
+		if err := ctx.Err(); err != nil {
+			for index := batch.start; index < len(results); index++ {
+				results[index].err = err
+			}
+			break
+		}
+		// A transaction larger than one transport batch cannot be forwarded
+		// durably. Reject just that item without affecting neighboring items.
+		if batch.oversized {
+			results[batch.start].err = fmt.Errorf("raw transaction bytes %d exceed per-transaction limit %d", len(encoded[batch.start]), MaxRawTxBatchBytes)
+			continue
+		}
+		select {
+		case jobs <- batch:
+		case <-ctx.Done():
+			err := ctx.Err()
+			for index := batch.start; index < len(results); index++ {
+				results[index].err = err
+			}
+			close(jobs)
+			workers.Wait()
+			return results, nil
+		}
+	}
+	close(jobs)
+	workers.Wait()
+	return results, nil
+}
+
+func (s *PublicTransactionPoolAPI) enqueueSingleRawTransaction(encodedTx hexutil.Bytes) (<-chan singleRawTxResponse, error) {
+	if len(encodedTx) > MaxRawTxBatchBytes {
+		return nil, fmt.Errorf("raw transaction bytes %d exceed per-transaction limit %d", len(encodedTx), MaxRawTxBatchBytes)
+	}
+
+	s.singleRawTxMu.Lock()
+	if s.singleRawTxPendingCount >= s.singleRawTxQueueCountLimit {
+		s.singleRawTxMu.Unlock()
+		return nil, fmt.Errorf("single raw transaction queue count exceeds limit %d", s.singleRawTxQueueCountLimit)
+	}
+	if len(encodedTx) > s.singleRawTxQueueBytesLimit-s.singleRawTxPendingBytes {
+		s.singleRawTxMu.Unlock()
+		return nil, fmt.Errorf("single raw transaction queue bytes exceed limit %d", s.singleRawTxQueueBytesLimit)
+	}
+	// The RPC decoder owns encodedTx only for the lifetime of this call. Keep an
+	// independent copy because cancellation stops waiting, not node-side work.
+	request := &singleRawTxRequest{response: make(chan singleRawTxResponse, 1)}
+	request.encoded = append(hexutil.Bytes(nil), encodedTx...)
+	s.singleRawTxQueue = append(s.singleRawTxQueue, request)
+	s.singleRawTxPendingCount++
+	s.singleRawTxPendingBytes += len(request.encoded)
+	startWorker := !s.singleRawTxWorkerRunning
+	if startWorker {
+		s.singleRawTxWorkerRunning = true
+	}
+	s.singleRawTxMu.Unlock()
+
+	if startWorker {
+		go s.runSingleRawTxCoalescer()
+	}
+	return request.response, nil
+}
+
+func (s *PublicTransactionPoolAPI) takeSingleRawTxBatch() []*singleRawTxRequest {
+	s.singleRawTxMu.Lock()
+	defer s.singleRawTxMu.Unlock()
+
+	if len(s.singleRawTxQueue) == 0 {
+		s.singleRawTxWorkerRunning = false
+		return nil
+	}
+	end, batchBytes := 0, 0
+	for end < len(s.singleRawTxQueue) && end < singleRawTxWaveCount {
+		nextBytes := len(s.singleRawTxQueue[end].encoded)
+		if end > 0 && nextBytes > singleRawTxWaveBytes-batchBytes {
+			break
+		}
+		batchBytes += nextBytes
+		end++
+	}
+	batch := append([]*singleRawTxRequest(nil), s.singleRawTxQueue[:end]...)
+	for index := 0; index < end; index++ {
+		s.singleRawTxQueue[index] = nil
+	}
+	if end == len(s.singleRawTxQueue) {
+		s.singleRawTxQueue = nil
+	} else {
+		s.singleRawTxQueue = s.singleRawTxQueue[end:]
+	}
+	return batch
+}
+
+func (s *PublicTransactionPoolAPI) completeSingleRawTxBatch(batch []*singleRawTxRequest) {
+	batchBytes := 0
+	for _, request := range batch {
+		batchBytes += len(request.encoded)
+	}
+	s.singleRawTxMu.Lock()
+	s.singleRawTxPendingCount -= len(batch)
+	s.singleRawTxPendingBytes -= batchBytes
+	s.singleRawTxMu.Unlock()
+}
+
+func (s *PublicTransactionPoolAPI) runSingleRawTxCoalescer() {
+	if delay := s.singleRawTxCoalesceDelay; delay > 0 {
+		timer := time.NewTimer(delay)
+		<-timer.C
+	}
+	for {
+		batch := s.takeSingleRawTxBatch()
+		if len(batch) == 0 {
+			return
+		}
+		encoded := make([]hexutil.Bytes, len(batch))
+		for index, request := range batch {
+			encoded[index] = request.encoded
+		}
+		// RPC cancellation only abandons the response wait. Once admitted to this
+		// bounded queue, durable pool/outbox submission belongs to the node.
+		results, err := s.submitRawTransactionBatch(context.Background(), encoded)
+		s.completeSingleRawTxBatch(batch)
+		for index, request := range batch {
+			response := singleRawTxResponse{err: err}
+			if err == nil {
+				if index < len(results) {
+					response.result = results[index]
+				} else {
+					response.err = fmt.Errorf("raw transaction backend returned %d results for %d transactions", len(results), len(batch))
+				}
+			}
+			request.response <- response
+		}
+	}
+}
+
+// SendRawTransactions accepts a bounded burst and submits it as fixed-size
+// backend micro-batches. Structural request errors have no side effects;
+// transaction-specific failures are returned in input order.
+func (s *PublicTransactionPoolAPI) SendRawTransactions(ctx context.Context, encoded []hexutil.Bytes) ([]RawTxResult, error) {
+	submissions, err := s.submitRawTransactionBatch(ctx, encoded)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]RawTxResult, len(submissions))
+	for i, submission := range submissions {
+		if submission.decoded {
+			hash := submission.hash
+			results[i].Hash = &hash
+		}
+		if submission.err != nil {
+			results[i].Error = submission.err.Error()
+		}
+	}
+	return results, nil
+}
+
+// SendRawTransaction will add the signed transaction to the transaction pool.
+// The sender is responsible for signing the transaction and using the correct nonce.
+func (s *PublicTransactionPoolAPI) SendRawTransaction(ctx context.Context, encodedTx hexutil.Bytes) (common.Hash, error) {
+	// A request cancelled before admission has not crossed the node-side work
+	// boundary. Reject it without consuming coalescer capacity or creating
+	// admission/outbox state. Cancellation after enqueue remains intentionally
+	// detached so accepted durable work is never abandoned with the client.
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return common.Hash{}, err
+		}
+	}
+	responseCh, err := s.enqueueSingleRawTransaction(encodedTx)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case response := <-responseCh:
+		if response.err != nil {
+			return common.Hash{}, response.err
+		}
+		if response.result.err != nil {
+			return common.Hash{}, response.result.err
+		}
+		return response.result.hash, nil
+	case <-ctx.Done():
+		return common.Hash{}, ctx.Err()
+	}
 }
 
 func (s *PublicTransactionPoolAPI) SendRawTransactionWithOpts(ctx context.Context, encodedTx hexutil.Bytes, opts SendTxOpts) (common.Hash, error) {

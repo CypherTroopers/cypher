@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"math/big"
 	"sort"
@@ -12,40 +14,142 @@ import (
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/log"
+	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
 )
 
-const (
-	commonRPCAdmissionTTL             = 30 * time.Minute
-	commonRPCAdmissionCleanupInterval = time.Minute
-	commonRPCAdmissionMaxEntries      = 1000000
-	commonRPCAdmissionBoundaryGrace   = 2 * time.Minute
-	commonRPCAdmissionFutureClockSkew = 30 * time.Second
+var (
+	ErrInvalidCommonRPCAdmission  = errors.New("invalid common RPC admission")
+	ErrCommonRPCAdmissionCapacity = errors.New("common RPC admission capacity exceeded")
 )
 
-type commonRPCAdmissionEntry struct {
-	admission *types.CommonTxAdmission
+const (
+	commonRPCAdmissionTTL              = 30 * time.Minute
+	commonRPCAdmissionCleanupInterval  = time.Minute
+	commonRPCAdmissionMaxEntries       = 1000000
+	commonRPCAdmissionPersistentGCPage = 1024
+	commonRPCAdmissionFutureClockSkew  = 30 * time.Second
+)
+
+// CommonRPCAdmissionResult is aligned with the input transaction hash. Batch
+// and Item identify its current deterministic winner. Updated is true only
+// when this operation inserted or replaced the tx index. Inserted is the
+// narrower compensation boundary: it is true only when this operation created
+// a previously absent tx index. Batch is immutable after publication and must
+// be treated as read-only.
+type CommonRPCAdmissionResult struct {
+	Batch    *types.CommonTxAdmissionBatch
+	Item     uint16
+	Updated  bool
+	Inserted bool
+}
+
+type commonRPCAdmissionIndexEntry struct {
+	batch     *types.CommonTxAdmissionBatch
+	item      uint16
 	storedAt  time.Time
 	updatedAt time.Time
 }
 
-type commonRPCAdmissionDiskEntry struct {
-	Admission types.CommonTxAdmission
-	StoredAt  uint64
-	UpdatedAt uint64
+type commonRPCAdmissionBatchEntry struct {
+	batch          *types.CommonTxAdmissionBatch
+	storedAt       time.Time
+	updatedAt      time.Time
+	references     uint32
+	unreferencedAt time.Time
 }
 
-var commonRPCAdmissionDBMu sync.RWMutex
-var commonRPCAdmissionDB ethdb.KeyValueStore
-var commonRPCAdmissionDBPrefix = []byte("common-rpc-admission-v1:")
+type commonRPCAdmissionDiskIndex struct {
+	AdmissionID common.Hash
+	Item        uint16
+	StoredAt    uint64
+	UpdatedAt   uint64
+}
 
-// SetCommonRPCAdmissionDatabase installs the durable key-value store used for
-// admission sidecars. The chain database is process-local and already follows
-// the node's genesis lifecycle.
+type commonRPCAdmissionDiskBatch struct {
+	Batch          types.CommonTxAdmissionBatch
+	StoredAt       uint64
+	UpdatedAt      uint64
+	References     uint32
+	UnreferencedAt uint64
+}
+
+var (
+	commonRPCAdmissionDBMu sync.RWMutex
+	commonRPCAdmissionDB   ethdb.KeyValueStore
+
+	commonRPCAdmissionIndexDBPrefix = []byte("common-rpc-admission-index:")
+	commonRPCAdmissionBatchDBPrefix = []byte("common-rpc-admission-batch:")
+	commonRPCAdmissionIndexGCCursor = []byte("common-rpc-admission-index-gc-cursor")
+	commonRPCAdmissionBatchGCCursor = []byte("common-rpc-admission-batch-gc-cursor")
+
+	commonRPCAdmissionPersistentGCMu          sync.Mutex
+	commonRPCAdmissionPersistentIndexPosition []byte
+	commonRPCAdmissionPersistentBatchPosition []byte
+)
+
+const commonRPCAdmissionStoreStripeCount = 256
+
+var commonRPCAdmissionStoreLocks [commonRPCAdmissionStoreStripeCount]sync.Mutex
+var commonRPCAdmissionBatchLocks [commonRPCAdmissionStoreStripeCount]sync.Mutex
+
+var (
+	commonRPCAdmissionIndexes sync.Map // map[common.Hash]*commonRPCAdmissionIndexEntry
+	commonRPCAdmissionBatches sync.Map // map[common.Hash]*commonRPCAdmissionBatchEntry
+	commonRPCAdmissionCount   int64
+	commonRPCAdmissionLastGC  int64
+
+	commonRPCAdmissionSigner          atomic.Value // func(*types.CommonTxAdmissionBatch) error
+	commonRPCAdmissionFinalizedLookup atomic.Value // commonRPCAdmissionFinalizedLookupHolder
+)
+
+type commonRPCAdmissionFinalizedLookupHolder struct {
+	lookup func(common.Hash) bool
+}
+
+func commonRPCAdmissionStoreLock(txHash common.Hash) *sync.Mutex {
+	return &commonRPCAdmissionStoreLocks[int(txHash[0])]
+}
+
+// SetCommonRPCAdmissionDatabase installs the chain-local durable store. It is a
+// lifecycle operation; clearing the read-through caches prevents a new genesis
+// from observing admission state belonging to an old database.
 func SetCommonRPCAdmissionDatabase(db ethdb.KeyValueStore) {
+	var indexCursor, batchCursor []byte
+	if db != nil {
+		if raw, err := db.Get(commonRPCAdmissionIndexGCCursor); err == nil && len(raw) == common.HashLength {
+			indexCursor = append(indexCursor, raw...)
+		}
+		if raw, err := db.Get(commonRPCAdmissionBatchGCCursor); err == nil && len(raw) == common.HashLength {
+			batchCursor = append(batchCursor, raw...)
+		}
+	}
 	commonRPCAdmissionDBMu.Lock()
 	commonRPCAdmissionDB = db
 	commonRPCAdmissionDBMu.Unlock()
+	commonRPCAdmissionPersistentGCMu.Lock()
+	commonRPCAdmissionPersistentIndexPosition = indexCursor
+	commonRPCAdmissionPersistentBatchPosition = batchCursor
+	commonRPCAdmissionPersistentGCMu.Unlock()
+	commonRPCAdmissionIndexes.Range(func(key, _ interface{}) bool { commonRPCAdmissionIndexes.Delete(key); return true })
+	commonRPCAdmissionBatches.Range(func(key, _ interface{}) bool { commonRPCAdmissionBatches.Delete(key); return true })
+	atomic.StoreInt64(&commonRPCAdmissionCount, countPersistedCommonRPCAdmissionIndexes(db))
+	atomic.StoreInt64(&commonRPCAdmissionLastGC, 0)
+}
+
+func countPersistedCommonRPCAdmissionIndexes(db ethdb.KeyValueStore) int64 {
+	if db == nil {
+		return 0
+	}
+	iterator := db.NewIterator(commonRPCAdmissionIndexDBPrefix, nil)
+	defer iterator.Release()
+	var count int64
+	for iterator.Next() {
+		if len(iterator.Key()) == len(commonRPCAdmissionIndexDBPrefix)+common.HashLength {
+			count++
+		}
+	}
+	return count
 }
 
 func currentCommonRPCAdmissionDatabase() ethdb.KeyValueStore {
@@ -55,117 +159,18 @@ func currentCommonRPCAdmissionDatabase() ethdb.KeyValueStore {
 	return db
 }
 
-func commonRPCAdmissionDBKey(txHash common.Hash) []byte {
-	key := make([]byte, len(commonRPCAdmissionDBPrefix)+len(txHash))
-	copy(key, commonRPCAdmissionDBPrefix)
-	copy(key[len(commonRPCAdmissionDBPrefix):], txHash[:])
+func commonRPCAdmissionIndexDBKey(txHash common.Hash) []byte {
+	key := make([]byte, len(commonRPCAdmissionIndexDBPrefix)+common.HashLength)
+	copy(key, commonRPCAdmissionIndexDBPrefix)
+	copy(key[len(commonRPCAdmissionIndexDBPrefix):], txHash[:])
 	return key
 }
 
-func persistCommonRPCAdmissionEntry(txHash common.Hash, entry *commonRPCAdmissionEntry) error {
-	db := currentCommonRPCAdmissionDatabase()
-	if db == nil {
-		return nil
-	}
-	if entry == nil || entry.admission == nil || entry.admission.TxHash != txHash {
-		return fmt.Errorf("invalid common RPC admission persistence entry for %s", txHash)
-	}
-	storedAt := entry.storedAt
-	if storedAt.IsZero() {
-		storedAt = time.Now()
-	}
-	updatedAt := entry.updatedAt
-	if updatedAt.IsZero() {
-		updatedAt = storedAt
-	}
-	encoded, err := rlp.EncodeToBytes(&commonRPCAdmissionDiskEntry{
-		Admission: *copyCommonRPCAdmission(entry.admission),
-		StoredAt:  uint64(storedAt.Unix()),
-		UpdatedAt: uint64(updatedAt.Unix()),
-	})
-	if err != nil {
-		return err
-	}
-	return db.Put(commonRPCAdmissionDBKey(txHash), encoded)
-}
-
-func deletePersistedCommonRPCAdmission(txHash common.Hash) {
-	db := currentCommonRPCAdmissionDatabase()
-	if db == nil {
-		return
-	}
-	if err := db.Delete(commonRPCAdmissionDBKey(txHash)); err != nil {
-		log.Debug("Failed to delete persisted common RPC admission", "tx", txHash, "err", err)
-	}
-}
-
-func loadPersistedCommonRPCAdmissionEntry(txHash common.Hash, now time.Time) (*commonRPCAdmissionEntry, bool) {
-	db := currentCommonRPCAdmissionDatabase()
-	if db == nil {
-		return nil, false
-	}
-	encoded, err := db.Get(commonRPCAdmissionDBKey(txHash))
-	if err != nil || len(encoded) == 0 {
-		return nil, false
-	}
-	var disk commonRPCAdmissionDiskEntry
-	if err := rlp.DecodeBytes(encoded, &disk); err != nil || disk.Admission.TxHash != txHash {
-		deletePersistedCommonRPCAdmission(txHash)
-		return nil, false
-	}
-	if err := types.VerifyCommonTxAdmissionSignature(&disk.Admission); err != nil {
-		deletePersistedCommonRPCAdmission(txHash)
-		return nil, false
-	}
-	storedAtUnix := disk.StoredAt
-	if storedAtUnix == 0 {
-		storedAtUnix = disk.Admission.Timestamp
-	}
-	if storedAtUnix == 0 {
-		storedAtUnix = uint64(now.Unix())
-	}
-	updatedAtUnix := disk.UpdatedAt
-	if updatedAtUnix == 0 {
-		updatedAtUnix = storedAtUnix
-	}
-	entry := &commonRPCAdmissionEntry{
-		admission: copyCommonRPCAdmission(&disk.Admission),
-		storedAt:  time.Unix(int64(storedAtUnix), 0),
-		updatedAt: time.Unix(int64(updatedAtUnix), 0),
-	}
-	if commonRPCAdmissionEntryExpired(entry, now) {
-		deletePersistedCommonRPCAdmission(txHash)
-		return nil, false
-	}
-	actual, loaded := commonRPCAdmissions.LoadOrStore(txHash, entry)
-	if loaded {
-		existing, ok := actual.(*commonRPCAdmissionEntry)
-		return existing, ok && existing != nil && existing.admission != nil
-	}
-	atomic.AddInt64(&commonRPCAdmissionCount, 1)
-	return entry, true
-}
-
-var commonRPCAdmissions sync.Map // map[common.Hash]*commonRPCAdmissionEntry
-var commonRPCAdmissionCount int64
-var commonRPCAdmissionLastCleanup int64
-var commonRPCAdmissionSigner atomic.Value         // func(*types.CommonTxAdmission) error
-var commonRPCAdmissionRelay atomic.Value          // fallback func([]*types.CommonTxAdmission)
-var commonRPCAdmissionDedicatedRelay atomic.Value // preferred func([]*types.CommonTxAdmission)
-
-func copyCommonRPCAdmission(admission *types.CommonTxAdmission) *types.CommonTxAdmission {
-	if admission == nil {
-		return nil
-	}
-	cpy := *admission
-	if admission.ChainID != nil {
-		cpy.ChainID = new(big.Int).Set(admission.ChainID)
-	}
-	if len(admission.Signature) > 0 {
-		cpy.Signature = make([]byte, len(admission.Signature))
-		copy(cpy.Signature, admission.Signature)
-	}
-	return &cpy
+func commonRPCAdmissionBatchDBKey(admissionID common.Hash) []byte {
+	key := make([]byte, len(commonRPCAdmissionBatchDBPrefix)+common.HashLength)
+	copy(key, commonRPCAdmissionBatchDBPrefix)
+	copy(key[len(commonRPCAdmissionBatchDBPrefix):], admissionID[:])
+	return key
 }
 
 func copyAdmissionChainID(chainID *big.Int) *big.Int {
@@ -175,379 +180,1087 @@ func copyAdmissionChainID(chainID *big.Int) *big.Int {
 	return new(big.Int).Set(chainID)
 }
 
-// SetCommonRPCAdmissionSigner installs the local ECDSA signer used to seal
-// CommonTxAdmission records before they are committed into a block body or
-// propagated to peers.
-func SetCommonRPCAdmissionSigner(signer func(*types.CommonTxAdmission) error) {
-	commonRPCAdmissionSigner.Store(signer)
+func copyCommonRPCAdmissionBatch(batch *types.CommonTxAdmissionBatch) *types.CommonTxAdmissionBatch {
+	if batch == nil {
+		return nil
+	}
+	cpy := *batch
+	cpy.ChainID = copyAdmissionChainID(batch.ChainID)
+	cpy.TxHashes = append([]common.Hash(nil), batch.TxHashes...)
+	cpy.Signature = append([]byte(nil), batch.Signature...)
+	return &cpy
 }
 
-// SetCommonRPCAdmissionRelay installs the fallback transport used to propagate
-// signed local admissions. The preferred production path is the dedicated
-// committee channel installed with SetCommonRPCAdmissionDedicatedRelay.
-func SetCommonRPCAdmissionRelay(relay func([]*types.CommonTxAdmission)) {
-	commonRPCAdmissionRelay.Store(relay)
-}
-
-// SetCommonRPCAdmissionDedicatedRelay installs the preferred dedicated committee
-// transport used to propagate signed common RPC admissions. When installed, this
-// relay is used instead of the generic eth/p2p fallback relay.
-func SetCommonRPCAdmissionDedicatedRelay(relay func([]*types.CommonTxAdmission)) {
-	commonRPCAdmissionDedicatedRelay.Store(relay)
-}
-
-func callCommonRPCAdmissionRelay(value interface{}, admissions []*types.CommonTxAdmission) bool {
-	if value == nil {
+// Signatures may differ for the same semantic AdmissionID. The ID commits all
+// consensus fields, so signature bytes intentionally do not participate here.
+func commonRPCAdmissionBatchesEqual(a, b *types.CommonTxAdmissionBatch) bool {
+	if a == nil || b == nil || a.ChainID == nil || b.ChainID == nil {
+		return a == b
+	}
+	if a.ChainID.Cmp(b.ChainID) != 0 || a.GenesisHash != b.GenesisHash || a.TxRoot != b.TxRoot ||
+		a.AdmissionID != b.AdmissionID || a.Miner != b.Miner || a.KeyBlockNumber != b.KeyBlockNumber ||
+		a.Timestamp != b.Timestamp || len(a.TxHashes) != len(b.TxHashes) {
 		return false
 	}
-	relay, ok := value.(func([]*types.CommonTxAdmission))
-	if !ok || relay == nil {
-		return false
+	for i := range a.TxHashes {
+		if a.TxHashes[i] != b.TxHashes[i] {
+			return false
+		}
 	}
-	relay(admissions)
 	return true
 }
 
-func relayCommonRPCAdmissions(admissions []*types.CommonTxAdmission) {
-	if len(admissions) == 0 {
-		return
+func encodeCommonRPCAdmissionBatchEntry(entry *commonRPCAdmissionBatchEntry) ([]byte, error) {
+	if entry == nil || entry.batch == nil || entry.batch.AdmissionID == (common.Hash{}) {
+		return nil, fmt.Errorf("invalid common RPC admission batch persistence entry")
 	}
-	if callCommonRPCAdmissionRelay(commonRPCAdmissionDedicatedRelay.Load(), admissions) {
-		return
+	storedAt := entry.storedAt
+	if storedAt.IsZero() {
+		storedAt = time.Now()
 	}
-	callCommonRPCAdmissionRelay(commonRPCAdmissionRelay.Load(), admissions)
+	updatedAt := entry.updatedAt
+	if updatedAt.IsZero() {
+		updatedAt = storedAt
+	}
+	return rlp.EncodeToBytes(&commonRPCAdmissionDiskBatch{
+		Batch: *copyCommonRPCAdmissionBatch(entry.batch), StoredAt: uint64(storedAt.Unix()), UpdatedAt: uint64(updatedAt.Unix()),
+		References: entry.references, UnreferencedAt: func() uint64 {
+			if entry.unreferencedAt.IsZero() {
+				return 0
+			}
+			return uint64(entry.unreferencedAt.Unix())
+		}(),
+	})
 }
 
-// RelayCommonRPCAdmissions exposes the committee-wide admission relay to the
-// common RPC and TxQUIC ingress paths. Delivery is idempotent by TxHash.
-func RelayCommonRPCAdmissions(admissions []*types.CommonTxAdmission) {
-	relayCommonRPCAdmissions(admissions)
+func encodeCommonRPCAdmissionIndexEntry(txHash common.Hash, entry *commonRPCAdmissionIndexEntry) ([]byte, error) {
+	if entry == nil || entry.batch == nil || int(entry.item) >= len(entry.batch.TxHashes) || entry.batch.TxHashes[entry.item] != txHash {
+		return nil, fmt.Errorf("invalid common RPC admission index persistence entry for %s", txHash)
+	}
+	storedAt := entry.storedAt
+	if storedAt.IsZero() {
+		storedAt = time.Now()
+	}
+	updatedAt := entry.updatedAt
+	if updatedAt.IsZero() {
+		updatedAt = storedAt
+	}
+	return rlp.EncodeToBytes(&commonRPCAdmissionDiskIndex{
+		AdmissionID: entry.batch.AdmissionID, Item: entry.item, StoredAt: uint64(storedAt.Unix()), UpdatedAt: uint64(updatedAt.Unix()),
+	})
 }
 
-func signCommonRPCAdmission(admission *types.CommonTxAdmission) error {
+func deletePersistedCommonRPCAdmissionIndex(txHash common.Hash) {
+	if db := currentCommonRPCAdmissionDatabase(); db != nil {
+		if err := db.Delete(commonRPCAdmissionIndexDBKey(txHash)); err != nil {
+			log.Debug("Failed to delete persisted common RPC admission index", "tx", txHash, "err", err)
+		}
+	}
+}
+
+func deletePersistedCommonRPCAdmissionBatch(admissionID common.Hash) {
+	if db := currentCommonRPCAdmissionDatabase(); db != nil {
+		if err := db.Delete(commonRPCAdmissionBatchDBKey(admissionID)); err != nil {
+			log.Debug("Failed to delete persisted common RPC admission batch", "admission", admissionID, "err", err)
+		}
+	}
+}
+
+func SetCommonRPCAdmissionSigner(signer func(*types.CommonTxAdmissionBatch) error) {
+	commonRPCAdmissionSigner.Store(signer)
+}
+
+func signCommonRPCAdmission(batch *types.CommonTxAdmissionBatch) error {
 	value := commonRPCAdmissionSigner.Load()
 	if value == nil {
 		return fmt.Errorf("common RPC admission signer is not installed")
 	}
-	signer, ok := value.(func(*types.CommonTxAdmission) error)
+	signer, ok := value.(func(*types.CommonTxAdmissionBatch) error)
 	if !ok || signer == nil {
 		return fmt.Errorf("common RPC admission signer has invalid type")
 	}
-	return signer(admission)
+	return signer(batch)
 }
 
-func commonRPCAdmissionEntryExpired(entry *commonRPCAdmissionEntry, now time.Time) bool {
-	if entry == nil || entry.admission == nil {
+func SetCommonRPCAdmissionFinalizedLookup(lookup func(common.Hash) bool) {
+	commonRPCAdmissionFinalizedLookup.Store(commonRPCAdmissionFinalizedLookupHolder{lookup: lookup})
+}
+
+func isFinalizedCommonRPCTransaction(txHash common.Hash) bool {
+	value := commonRPCAdmissionFinalizedLookup.Load()
+	if value == nil {
+		return false
+	}
+	holder, ok := value.(commonRPCAdmissionFinalizedLookupHolder)
+	return ok && holder.lookup != nil && holder.lookup(txHash)
+}
+
+func commonRPCAdmissionBodyCollectable(entry *commonRPCAdmissionBatchEntry, now time.Time) bool {
+	return entry != nil && entry.references == 0 && !entry.unreferencedAt.IsZero() && now.Sub(entry.unreferencedAt) > commonRPCAdmissionTTL
+}
+
+func reserveCommonRPCAdmissionEntries(count int64) bool {
+	if count <= 0 {
 		return true
 	}
-	return now.Sub(entry.updatedAt) > commonRPCAdmissionTTL
+	for {
+		current := atomic.LoadInt64(&commonRPCAdmissionCount)
+		if current > commonRPCAdmissionMaxEntries-count {
+			return false
+		}
+		if atomic.CompareAndSwapInt64(&commonRPCAdmissionCount, current, current+count) {
+			return true
+		}
+	}
+}
+
+func releaseCommonRPCAdmissionEntries(count int64) {
+	for ; count > 0; count-- {
+		decrementCommonRPCAdmissionCount()
+	}
+}
+
+func decrementCommonRPCAdmissionCount() {
+	for {
+		current := atomic.LoadInt64(&commonRPCAdmissionCount)
+		if current <= 0 || atomic.CompareAndSwapInt64(&commonRPCAdmissionCount, current, current-1) {
+			return
+		}
+	}
+}
+
+func unixTimeOr(value uint64, fallback time.Time) time.Time {
+	if value == 0 {
+		return fallback
+	}
+	return time.Unix(int64(value), 0)
+}
+
+func loadPersistedCommonRPCAdmissionBatch(admissionID common.Hash, now time.Time) (*commonRPCAdmissionBatchEntry, bool) {
+	if value, ok := commonRPCAdmissionBatches.Load(admissionID); ok {
+		entry, valid := value.(*commonRPCAdmissionBatchEntry)
+		if valid && entry != nil && entry.batch != nil {
+			return entry, true
+		}
+	}
+	db := currentCommonRPCAdmissionDatabase()
+	if db == nil {
+		return nil, false
+	}
+	raw, err := db.Get(commonRPCAdmissionBatchDBKey(admissionID))
+	if err != nil || len(raw) == 0 {
+		return nil, false
+	}
+	var disk commonRPCAdmissionDiskBatch
+	if err := rlp.DecodeBytes(raw, &disk); err != nil || disk.Batch.AdmissionID != admissionID {
+		deletePersistedCommonRPCAdmissionBatch(admissionID)
+		return nil, false
+	}
+	if err := types.VerifyCommonTxAdmissionSignature(&disk.Batch); err != nil {
+		deletePersistedCommonRPCAdmissionBatch(admissionID)
+		return nil, false
+	}
+	storedAt := unixTimeOr(disk.StoredAt, time.Unix(int64(disk.Batch.Timestamp), 0))
+	updatedAt := unixTimeOr(disk.UpdatedAt, storedAt)
+	unreferencedAt := unixTimeOr(disk.UnreferencedAt, time.Time{})
+	if (disk.References > 0 && !unreferencedAt.IsZero()) || (disk.References == 0 && unreferencedAt.IsZero()) {
+		deletePersistedCommonRPCAdmissionBatch(admissionID)
+		return nil, false
+	}
+	entry := &commonRPCAdmissionBatchEntry{
+		batch: copyCommonRPCAdmissionBatch(&disk.Batch), storedAt: storedAt, updatedAt: updatedAt,
+		references: disk.References, unreferencedAt: unreferencedAt,
+	}
+	actual, loaded := commonRPCAdmissionBatches.LoadOrStore(admissionID, entry)
+	if loaded {
+		existing, ok := actual.(*commonRPCAdmissionBatchEntry)
+		return existing, ok && existing != nil && existing.batch != nil
+	}
+	return entry, true
+}
+
+func loadPersistedCommonRPCAdmissionIndexLocked(txHash common.Hash, now time.Time) (*commonRPCAdmissionIndexEntry, bool) {
+	db := currentCommonRPCAdmissionDatabase()
+	if db == nil {
+		return nil, false
+	}
+	raw, err := db.Get(commonRPCAdmissionIndexDBKey(txHash))
+	if err != nil || len(raw) == 0 {
+		return nil, false
+	}
+	var disk commonRPCAdmissionDiskIndex
+	if err := rlp.DecodeBytes(raw, &disk); err != nil || disk.AdmissionID == (common.Hash{}) {
+		deletePersistedCommonRPCAdmissionIndex(txHash)
+		return nil, false
+	}
+	body, ok := loadPersistedCommonRPCAdmissionBatch(disk.AdmissionID, now)
+	if !ok || body == nil || body.batch == nil || int(disk.Item) >= len(body.batch.TxHashes) || body.batch.TxHashes[disk.Item] != txHash {
+		deletePersistedCommonRPCAdmissionIndex(txHash)
+		return nil, false
+	}
+	storedAt := unixTimeOr(disk.StoredAt, body.storedAt)
+	updatedAt := unixTimeOr(disk.UpdatedAt, storedAt)
+	entry := &commonRPCAdmissionIndexEntry{batch: body.batch, item: disk.Item, storedAt: storedAt, updatedAt: updatedAt}
+	actual, loaded := commonRPCAdmissionIndexes.LoadOrStore(txHash, entry)
+	if loaded {
+		existing, ok := actual.(*commonRPCAdmissionIndexEntry)
+		return existing, ok && existing != nil && existing.batch != nil
+	}
+	return entry, true
+}
+
+func loadCommonRPCAdmissionIndex(txHash common.Hash, now time.Time) (*commonRPCAdmissionIndexEntry, bool) {
+	if value, ok := commonRPCAdmissionIndexes.Load(txHash); ok {
+		entry, valid := value.(*commonRPCAdmissionIndexEntry)
+		if valid && entry != nil && entry.batch != nil && !isFinalizedCommonRPCTransaction(txHash) {
+			return entry, true
+		}
+	}
+	lock := commonRPCAdmissionStoreLock(txHash)
+	lock.Lock()
+	defer lock.Unlock()
+	return loadCommonRPCAdmissionIndexLocked(txHash, now)
+}
+
+func loadCommonRPCAdmissionIndexLocked(txHash common.Hash, now time.Time) (*commonRPCAdmissionIndexEntry, bool) {
+	value, ok := commonRPCAdmissionIndexes.Load(txHash)
+	if !ok {
+		return loadPersistedCommonRPCAdmissionIndexLocked(txHash, now)
+	}
+	entry, valid := value.(*commonRPCAdmissionIndexEntry)
+	if !valid || entry == nil || entry.batch == nil || isFinalizedCommonRPCTransaction(txHash) {
+		return nil, false
+	}
+	return entry, true
 }
 
 func maybeCleanupCommonRPCAdmissions(now time.Time, force bool) {
-	last := atomic.LoadInt64(&commonRPCAdmissionLastCleanup)
+	last := atomic.LoadInt64(&commonRPCAdmissionLastGC)
 	if !force && now.Unix()-last < int64(commonRPCAdmissionCleanupInterval/time.Second) && atomic.LoadInt64(&commonRPCAdmissionCount) <= commonRPCAdmissionMaxEntries {
 		return
 	}
-	if !atomic.CompareAndSwapInt64(&commonRPCAdmissionLastCleanup, last, now.Unix()) && !force {
+	if !atomic.CompareAndSwapInt64(&commonRPCAdmissionLastGC, last, now.Unix()) && !force {
 		return
 	}
 	cleanupCommonRPCAdmissions(now)
 }
 
 func cleanupCommonRPCAdmissions(now time.Time) {
-	type candidate struct {
-		hash     common.Hash
-		storedAt time.Time
-		value    interface{}
-	}
-	candidates := make([]candidate, 0)
-	var total int64
-	var removed int64
-
-	commonRPCAdmissions.Range(func(key interface{}, value interface{}) bool {
-		total++
+	finalized := make([]common.Hash, 0)
+	commonRPCAdmissionIndexes.Range(func(key, value interface{}) bool {
 		hash, hashOK := key.(common.Hash)
-		entry, entryOK := value.(*commonRPCAdmissionEntry)
-		if !hashOK || !entryOK || commonRPCAdmissionEntryExpired(entry, now) {
-			if commonRPCAdmissions.CompareAndDelete(key, value) {
-				removed++
-				if hashOK {
-					deletePersistedCommonRPCAdmission(hash)
-				}
-			}
+		entry, entryOK := value.(*commonRPCAdmissionIndexEntry)
+		if !hashOK || !entryOK || entry == nil || entry.batch == nil {
+			commonRPCAdmissionIndexes.CompareAndDelete(key, value)
 			return true
 		}
-		candidates = append(candidates, candidate{hash: hash, storedAt: entry.storedAt, value: value})
+		if isFinalizedCommonRPCTransaction(hash) {
+			finalized = append(finalized, hash)
+		}
 		return true
 	})
-
-	remaining := total - removed
-	if remaining > commonRPCAdmissionMaxEntries {
-		sort.Slice(candidates, func(i, j int) bool {
-			return candidates[i].storedAt.Before(candidates[j].storedAt)
-		})
-		overflow := int(remaining - commonRPCAdmissionMaxEntries)
-		if overflow > len(candidates) {
-			overflow = len(candidates)
+	if db := currentCommonRPCAdmissionDatabase(); db != nil && len(finalized) > 0 {
+		var stripes [commonRPCAdmissionStoreStripeCount]bool
+		for _, hash := range finalized {
+			stripes[int(hash[0])] = true
 		}
-		for i := 0; i < overflow; i++ {
-			if commonRPCAdmissions.CompareAndDelete(candidates[i].hash, candidates[i].value) {
-				removed++
-				deletePersistedCommonRPCAdmission(candidates[i].hash)
+		batch := db.NewBatch()
+		release, forget, err := stageCommonRPCAdmissionIndexDeletes(batch, finalized, stripes)
+		if err != nil {
+			log.Warn("Failed to stage finalized common RPC admission cleanup", "err", err)
+		} else {
+			err = batch.Write()
+			if err == nil {
+				forget()
+			} else {
+				log.Warn("Failed to commit finalized common RPC admission cleanup", "err", err)
 			}
+			release()
 		}
 	}
-
-	newCount := total - removed
-	if newCount < 0 {
-		newCount = 0
-	}
-	atomic.StoreInt64(&commonRPCAdmissionCount, newCount)
-	if removed > 0 {
-		log.Debug("Cleaned common RPC admissions", "removed", removed, "remaining", newCount)
-	}
-}
-
-func loadCommonRPCAdmissionEntry(txHash common.Hash, now time.Time) (*commonRPCAdmissionEntry, bool) {
-	value, ok := commonRPCAdmissions.Load(txHash)
-	if !ok {
-		return loadPersistedCommonRPCAdmissionEntry(txHash, now)
-	}
-	entry, ok := value.(*commonRPCAdmissionEntry)
-	if !ok || commonRPCAdmissionEntryExpired(entry, now) {
-		if commonRPCAdmissions.CompareAndDelete(txHash, value) {
-			atomic.AddInt64(&commonRPCAdmissionCount, -1)
+	commonRPCAdmissionBatches.Range(func(key, value interface{}) bool {
+		entry, ok := value.(*commonRPCAdmissionBatchEntry)
+		if !ok || entry == nil || entry.batch == nil || commonRPCAdmissionBodyCollectable(entry, now) {
+			commonRPCAdmissionBatches.CompareAndDelete(key, value)
 		}
-		deletePersistedCommonRPCAdmission(txHash)
-		return nil, false
-	}
-	return entry, true
+		return true
+	})
+	cleanupPersistedCommonRPCAdmissions(now)
 }
 
-// StoreCommonRPCAdmission verifies and stores a signed admission received from
-// the local RPC path, the dedicated committee channel, or P2P. If multiple valid
-// admissions exist for the same tx, the deterministic lowest winner hash is kept.
-func StoreCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
-	if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
-		log.Warn("Rejected common RPC admission", "err", err)
+func prunePersistedCommonRPCAdmissionIndex(raw []byte, txHash common.Hash, now time.Time) bool {
+	var disk commonRPCAdmissionDiskIndex
+	if err := rlp.DecodeBytes(raw, &disk); err != nil || disk.AdmissionID == (common.Hash{}) {
 		return false
 	}
-	return storeVerifiedCommonRPCAdmission(admission)
+	return isFinalizedCommonRPCTransaction(txHash)
 }
 
-func storeVerifiedCommonRPCAdmission(admission *types.CommonTxAdmission) bool {
+func prunePersistedCommonRPCAdmissionBatch(raw []byte, admissionID common.Hash, now time.Time) bool {
+	var disk commonRPCAdmissionDiskBatch
+	if err := rlp.DecodeBytes(raw, &disk); err != nil || disk.Batch.AdmissionID != admissionID {
+		return true
+	}
+	if disk.References != 0 || disk.UnreferencedAt == 0 {
+		return false
+	}
+	return now.Sub(time.Unix(int64(disk.UnreferencedAt), 0)) > commonRPCAdmissionTTL
+}
+
+func scanCommonRPCAdmissionPrefix(db ethdb.KeyValueStore, prefix, cursor []byte, now time.Time, prune func([]byte, common.Hash, time.Time) bool) (keys [][]byte, next []byte, touched bool, err error) {
+	iterator := db.NewIterator(prefix, cursor)
+	defer iterator.Release()
+	last := append([]byte(nil), cursor...)
+	visited := 0
+	exhausted := true
+	for iterator.Next() {
+		key := iterator.Key()
+		if len(key) < len(prefix) {
+			continue
+		}
+		suffix := key[len(prefix):]
+		if len(cursor) > 0 && visited == 0 && bytes.Equal(suffix, cursor) {
+			continue
+		}
+		visited++
+		if len(suffix) != common.HashLength {
+			keys = append(keys, append([]byte(nil), key...))
+		} else {
+			last = append(last[:0], suffix...)
+			if prune(iterator.Value(), common.BytesToHash(suffix), now) {
+				keys = append(keys, append([]byte(nil), key...))
+			}
+		}
+		if visited >= commonRPCAdmissionPersistentGCPage {
+			exhausted = false
+			break
+		}
+	}
+	if err := iterator.Error(); err != nil {
+		return nil, nil, false, err
+	}
+	if !exhausted && visited > 0 {
+		next = append(next, last...)
+	}
+	return keys, next, visited > 0 || len(cursor) > 0, nil
+}
+
+// Pending transaction indexes are never evicted by age or capacity. Finalized
+// indexes decrement durable certificate references; only zero-reference bodies
+// are eligible for bounded-retention collection.
+func cleanupPersistedCommonRPCAdmissions(now time.Time) {
+	db := currentCommonRPCAdmissionDatabase()
+	if db == nil {
+		return
+	}
+	commonRPCAdmissionPersistentGCMu.Lock()
+	defer commonRPCAdmissionPersistentGCMu.Unlock()
+	indexKeys, nextIndex, touchedIndex, err := scanCommonRPCAdmissionPrefix(db, commonRPCAdmissionIndexDBPrefix, commonRPCAdmissionPersistentIndexPosition, now, prunePersistedCommonRPCAdmissionIndex)
+	if err != nil {
+		log.Warn("Failed to scan persisted common RPC admission indexes", "err", err)
+		return
+	}
+	if touchedIndex {
+		batch := db.NewBatch()
+		hashes := make([]common.Hash, 0, len(indexKeys))
+		var stripes [commonRPCAdmissionStoreStripeCount]bool
+		for _, key := range indexKeys {
+			if len(key) == len(commonRPCAdmissionIndexDBPrefix)+common.HashLength {
+				hash := common.BytesToHash(key[len(commonRPCAdmissionIndexDBPrefix):])
+				hashes = append(hashes, hash)
+				stripes[int(hash[0])] = true
+			} else if err := batch.Delete(key); err != nil {
+				log.Warn("Failed to stage malformed common RPC admission index cleanup", "err", err)
+				return
+			}
+		}
+		release, forget, stageErr := stageCommonRPCAdmissionIndexDeletes(batch, hashes, stripes)
+		if stageErr != nil {
+			log.Warn("Failed to stage persisted common RPC admission index cleanup", "err", stageErr)
+			return
+		}
+		if len(nextIndex) == 0 {
+			err = batch.Delete(commonRPCAdmissionIndexGCCursor)
+		} else {
+			err = batch.Put(commonRPCAdmissionIndexGCCursor, nextIndex)
+		}
+		if err == nil {
+			err = batch.Write()
+		}
+		if err == nil {
+			forget()
+			commonRPCAdmissionPersistentIndexPosition = append(commonRPCAdmissionPersistentIndexPosition[:0], nextIndex...)
+		} else {
+			log.Warn("Failed to clean persisted common RPC admission indexes", "err", err)
+		}
+		release()
+		if err != nil {
+			return
+		}
+	}
+
+	var allBatchIDs = make(map[common.Hash]struct{}, commonRPCAdmissionStoreStripeCount)
+	for i := 0; i < commonRPCAdmissionStoreStripeCount; i++ {
+		var id common.Hash
+		id[0] = byte(i)
+		allBatchIDs[id] = struct{}{}
+	}
+	releaseBatches := lockCommonRPCAdmissionBatchIDs(allBatchIDs)
+	defer releaseBatches()
+	bodyKeys, nextBody, touchedBody, err := scanCommonRPCAdmissionPrefix(db, commonRPCAdmissionBatchDBPrefix, commonRPCAdmissionPersistentBatchPosition, now, prunePersistedCommonRPCAdmissionBatch)
+	if err != nil {
+		log.Warn("Failed to scan persisted common RPC admission batches", "err", err)
+		return
+	}
+	if !touchedBody {
+		return
+	}
+	batch := db.NewBatch()
+	for _, key := range bodyKeys {
+		if err := batch.Delete(key); err != nil {
+			log.Warn("Failed to stage common RPC admission batch cleanup", "err", err)
+			return
+		}
+	}
+	if len(nextBody) == 0 {
+		if err := batch.Delete(commonRPCAdmissionBatchGCCursor); err != nil {
+			return
+		}
+	} else if err := batch.Put(commonRPCAdmissionBatchGCCursor, nextBody); err != nil {
+		return
+	}
+	if err := batch.Write(); err != nil {
+		log.Warn("Failed to clean persisted common RPC admissions", "err", err)
+		return
+	}
+	commonRPCAdmissionPersistentBatchPosition = append(commonRPCAdmissionPersistentBatchPosition[:0], nextBody...)
+}
+
+func lockCommonRPCAdmissionStripes(stripes [commonRPCAdmissionStoreStripeCount]bool) func() {
+	for i := 0; i < len(stripes); i++ {
+		if stripes[i] {
+			commonRPCAdmissionStoreLocks[i].Lock()
+		}
+	}
+	return func() {
+		for i := len(stripes) - 1; i >= 0; i-- {
+			if stripes[i] {
+				commonRPCAdmissionStoreLocks[i].Unlock()
+			}
+		}
+	}
+}
+
+func lockCommonRPCAdmissionBatchIDs(ids map[common.Hash]struct{}) func() {
+	var stripes [commonRPCAdmissionStoreStripeCount]bool
+	for id := range ids {
+		stripes[int(id[0])] = true
+	}
+	for i := 0; i < len(stripes); i++ {
+		if stripes[i] {
+			commonRPCAdmissionBatchLocks[i].Lock()
+		}
+	}
+	return func() {
+		for i := len(stripes) - 1; i >= 0; i-- {
+			if stripes[i] {
+				commonRPCAdmissionBatchLocks[i].Unlock()
+			}
+		}
+	}
+}
+
+func copyCommonRPCAdmissionBatchEntry(entry *commonRPCAdmissionBatchEntry) *commonRPCAdmissionBatchEntry {
+	if entry == nil {
+		return nil
+	}
+	return &commonRPCAdmissionBatchEntry{
+		batch: entry.batch, storedAt: entry.storedAt, updatedAt: entry.updatedAt,
+		references: entry.references, unreferencedAt: entry.unreferencedAt,
+	}
+}
+
+func validateCommonRPCAdmissionNetwork(batch *types.CommonTxAdmissionBatch, chainID *big.Int, genesisHash common.Hash) error {
+	if chainID == nil || chainID.Sign() <= 0 || batch == nil || batch.ChainID == nil || batch.ChainID.Cmp(chainID) != 0 {
+		return fmt.Errorf("%w: admission chain does not match the local chain", ErrInvalidCommonRPCAdmission)
+	}
+	if genesisHash == (common.Hash{}) || batch.GenesisHash != genesisHash {
+		return fmt.Errorf("%w: admission genesis does not match the local genesis", ErrInvalidCommonRPCAdmission)
+	}
+	if err := types.VerifyCommonTxAdmissionSignature(batch); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidCommonRPCAdmission, err)
+	}
+	return nil
+}
+
+// VerifyAndStoreCommonRPCAdmissionBatch verifies one untrusted certificate once
+// and atomically stores all winner-index changes. Results align with TxHashes.
+func VerifyAndStoreCommonRPCAdmissionBatch(batch *types.CommonTxAdmissionBatch, chainID *big.Int, genesisHash common.Hash) ([]CommonRPCAdmissionResult, error) {
+	sealed := copyCommonRPCAdmissionBatch(batch)
+	if err := validateCommonRPCAdmissionNetwork(sealed, chainID, genesisHash); err != nil {
+		return nil, err
+	}
+	return storeVerifiedCommonRPCAdmissionBatch(sealed)
+}
+
+func storeVerifiedCommonRPCAdmissionBatch(candidate *types.CommonTxAdmissionBatch) ([]CommonRPCAdmissionResult, error) {
+	results := make([]CommonRPCAdmissionResult, len(candidate.TxHashes))
 	now := time.Now()
 	maybeCleanupCommonRPCAdmissions(now, false)
+	var stripes [commonRPCAdmissionStoreStripeCount]bool
+	for _, txHash := range candidate.TxHashes {
+		stripes[int(txHash[0])] = true
+	}
+	release := lockCommonRPCAdmissionStripes(stripes)
+	defer release()
 
-	sealed := copyCommonRPCAdmission(admission)
-	replacement := &commonRPCAdmissionEntry{admission: sealed, storedAt: now, updatedAt: now}
-	for {
-		value, loaded := commonRPCAdmissions.LoadOrStore(sealed.TxHash, replacement)
-		if !loaded {
-			atomic.AddInt64(&commonRPCAdmissionCount, 1)
-			if err := persistCommonRPCAdmissionEntry(sealed.TxHash, replacement); err != nil {
-				log.Error("Failed to persist common RPC admission", "tx", sealed.TxHash, "err", err)
+	planned := make([]*commonRPCAdmissionIndexEntry, len(candidate.TxHashes))
+	changed := make([]bool, len(candidate.TxHashes))
+	loaded := make([]bool, len(candidate.TxHashes))
+	changedCount := 0
+	newCount := int64(0)
+	affectedBatchIDs := map[common.Hash]struct{}{candidate.AdmissionID: {}}
+	for i, txHash := range candidate.TxHashes {
+		if isFinalizedCommonRPCTransaction(txHash) {
+			results[i] = CommonRPCAdmissionResult{Batch: candidate, Item: uint16(i)}
+			continue
+		}
+		current, exists := loadCommonRPCAdmissionIndexLocked(txHash, now)
+		loaded[i] = exists
+		if exists && !types.IsBetterCommonTxAdmission(candidate, current.batch, txHash) {
+			planned[i] = current
+			results[i] = CommonRPCAdmissionResult{Batch: current.batch, Item: current.item}
+			continue
+		}
+		entry := &commonRPCAdmissionIndexEntry{batch: candidate, item: uint16(i), storedAt: now, updatedAt: now}
+		if exists {
+			if !current.storedAt.IsZero() {
+				entry.storedAt = current.storedAt
 			}
-			break
+			affectedBatchIDs[current.batch.AdmissionID] = struct{}{}
+		} else {
+			newCount++
 		}
-		entry, _ := value.(*commonRPCAdmissionEntry)
-		current := (*types.CommonTxAdmission)(nil)
-		if entry != nil {
-			current = entry.admission
+		planned[i] = entry
+		changed[i] = true
+		changedCount++
+		results[i] = CommonRPCAdmissionResult{Batch: candidate, Item: uint16(i), Updated: true, Inserted: !exists}
+	}
+	if changedCount == 0 {
+		return results, nil
+	}
+	releaseBatches := lockCommonRPCAdmissionBatchIDs(affectedBatchIDs)
+	defer releaseBatches()
+
+	canonical := candidate
+	body, bodyLoaded := loadPersistedCommonRPCAdmissionBatch(candidate.AdmissionID, now)
+	if bodyLoaded {
+		if !commonRPCAdmissionBatchesEqual(candidate, body.batch) {
+			return nil, fmt.Errorf("%w: admission ID %s resolves to conflicting batch bodies", ErrInvalidCommonRPCAdmission, candidate.AdmissionID)
 		}
-		if !types.IsBetterCommonTxAdmission(sealed, current) {
-			if entry != nil {
-				if err := persistCommonRPCAdmissionEntry(sealed.TxHash, entry); err != nil {
-					log.Error("Failed to refresh persisted common RPC admission", "tx", sealed.TxHash, "err", err)
-				}
+		canonical = body.batch
+	} else {
+		body = &commonRPCAdmissionBatchEntry{batch: canonical, storedAt: now, updatedAt: now}
+	}
+	bodyUpdates := make(map[common.Hash]*commonRPCAdmissionBatchEntry, len(affectedBatchIDs))
+	bodyUpdates[canonical.AdmissionID] = copyCommonRPCAdmissionBatchEntry(body)
+	for id := range affectedBatchIDs {
+		if id == canonical.AdmissionID {
+			continue
+		}
+		entry, ok := loadPersistedCommonRPCAdmissionBatch(id, now)
+		if !ok || entry == nil || entry.batch == nil {
+			return nil, fmt.Errorf("common RPC admission body %s is missing for an indexed transaction", id)
+		}
+		bodyUpdates[id] = copyCommonRPCAdmissionBatchEntry(entry)
+	}
+	for i, update := range changed {
+		if !update {
+			continue
+		}
+		if loaded[i] {
+			oldBody := bodyUpdates[planned[i].batch.AdmissionID]
+			// planned currently points at the new batch; recover the old winner
+			// while its tx stripe is held.
+			oldWinner, exists := loadCommonRPCAdmissionIndexLocked(candidate.TxHashes[i], now)
+			if !exists || oldWinner == nil || oldWinner.batch == nil {
+				return nil, fmt.Errorf("common RPC admission index %s disappeared during winner replacement", candidate.TxHashes[i])
 			}
-			return false
-		}
-		if entry != nil && !entry.storedAt.IsZero() {
-			replacement.storedAt = entry.storedAt
-		}
-		if commonRPCAdmissions.CompareAndSwap(sealed.TxHash, value, replacement) {
-			if err := persistCommonRPCAdmissionEntry(sealed.TxHash, replacement); err != nil {
-				log.Error("Failed to persist replacement common RPC admission", "tx", sealed.TxHash, "err", err)
+			oldBody = bodyUpdates[oldWinner.batch.AdmissionID]
+			if oldBody == nil || oldBody.references == 0 {
+				return nil, fmt.Errorf("common RPC admission body %s has invalid reference count", oldWinner.batch.AdmissionID)
 			}
-			break
+			oldBody.references--
+		}
+		newBody := bodyUpdates[canonical.AdmissionID]
+		if newBody.references == ^uint32(0) {
+			return nil, fmt.Errorf("common RPC admission body %s reference count overflow", canonical.AdmissionID)
+		}
+		newBody.references++
+		planned[i].batch = canonical
+		results[i].Batch = canonical
+	}
+	for _, update := range bodyUpdates {
+		update.updatedAt = now
+		if update.references == 0 {
+			if update.unreferencedAt.IsZero() {
+				update.unreferencedAt = now
+			}
+		} else {
+			update.unreferencedAt = time.Time{}
 		}
 	}
-	if atomic.LoadInt64(&commonRPCAdmissionCount) > commonRPCAdmissionMaxEntries {
-		maybeCleanupCommonRPCAdmissions(now, true)
+	if !reserveCommonRPCAdmissionEntries(newCount) {
+		return nil, fmt.Errorf("%w: %d pending indexes already retained", ErrCommonRPCAdmissionCapacity, atomic.LoadInt64(&commonRPCAdmissionCount))
 	}
-	return true
+	reserved := true
+	defer func() {
+		if reserved {
+			releaseCommonRPCAdmissionEntries(newCount)
+		}
+	}()
+
+	if db := currentCommonRPCAdmissionDatabase(); db != nil {
+		writeBatch := db.NewBatch()
+		for id, update := range bodyUpdates {
+			raw, err := encodeCommonRPCAdmissionBatchEntry(update)
+			if err != nil {
+				return nil, err
+			}
+			if err := writeBatch.Put(commonRPCAdmissionBatchDBKey(id), raw); err != nil {
+				return nil, err
+			}
+		}
+		for i, update := range changed {
+			if !update {
+				continue
+			}
+			raw, err := encodeCommonRPCAdmissionIndexEntry(candidate.TxHashes[i], planned[i])
+			if err != nil {
+				return nil, err
+			}
+			if err := writeBatch.Put(commonRPCAdmissionIndexDBKey(candidate.TxHashes[i]), raw); err != nil {
+				return nil, err
+			}
+		}
+		if err := writeBatch.Write(); err != nil {
+			return nil, fmt.Errorf("persist common RPC admission batch: %w", err)
+		}
+	}
+	for id, update := range bodyUpdates {
+		commonRPCAdmissionBatches.Store(id, update)
+	}
+	for i, update := range changed {
+		if !update {
+			continue
+		}
+		commonRPCAdmissionIndexes.Store(candidate.TxHashes[i], planned[i])
+	}
+	reserved = false
+	return results, nil
 }
 
-func commonRPCAdmissionDurationSeconds(d time.Duration) uint64 {
-	if d <= 0 {
+// SignAndRecordCommonRPCAdmissions signs one ordered micro-batch exactly once,
+// verifies it once, and commits its body and changed indexes in one DB batch.
+func SignAndRecordCommonRPCAdmissions(txHashes []common.Hash, miner common.Address, chainID *big.Int, genesisHash common.Hash, keyBlockNumber, timestamp uint64) ([]CommonRPCAdmissionResult, error) {
+	if len(txHashes) == 0 || len(txHashes) > types.MaxCommonTxAdmissionBatchItems {
+		return nil, fmt.Errorf("invalid common RPC admission transaction count %d", len(txHashes))
+	}
+	if miner == (common.Address{}) || chainID == nil || chainID.Sign() <= 0 || genesisHash == (common.Hash{}) || timestamp == 0 {
+		return nil, fmt.Errorf("invalid common RPC admission identity or boundary")
+	}
+	seen := make(map[common.Hash]struct{}, len(txHashes))
+	for i, txHash := range txHashes {
+		if txHash == (common.Hash{}) {
+			return nil, fmt.Errorf("invalid common RPC admission transaction hash at %d", i)
+		}
+		if _, duplicate := seen[txHash]; duplicate {
+			return nil, fmt.Errorf("duplicate common RPC admission transaction %s", txHash)
+		}
+		seen[txHash] = struct{}{}
+	}
+	batch := &types.CommonTxAdmissionBatch{
+		ChainID: copyAdmissionChainID(chainID), GenesisHash: genesisHash, Miner: miner,
+		KeyBlockNumber: keyBlockNumber, Timestamp: timestamp, TxHashes: append([]common.Hash(nil), txHashes...),
+	}
+	batch.TxRoot = types.DeriveCommonTxAdmissionTxRoot(batch.TxHashes)
+	batch.AdmissionID = types.CommonTxAdmissionID(batch)
+	if err := signCommonRPCAdmission(batch); err != nil {
+		return nil, err
+	}
+	if batch.ChainID == nil || batch.ChainID.Cmp(chainID) != 0 || batch.GenesisHash != genesisHash || batch.Miner != miner ||
+		batch.KeyBlockNumber != keyBlockNumber || batch.Timestamp != timestamp || len(batch.TxHashes) != len(txHashes) {
+		return nil, fmt.Errorf("common RPC admission signer modified signed batch fields")
+	}
+	for i := range txHashes {
+		if batch.TxHashes[i] != txHashes[i] {
+			return nil, fmt.Errorf("common RPC admission signer modified transaction hashes")
+		}
+	}
+	if err := types.VerifyCommonTxAdmissionSignature(batch); err != nil {
+		return nil, err
+	}
+	return storeVerifiedCommonRPCAdmissionBatch(copyCommonRPCAdmissionBatch(batch))
+}
+
+// CommonRPCAdmissionForTransaction restores and returns the immutable winning
+// certificate and item for txHash.
+func CommonRPCAdmissionForTransaction(txHash common.Hash) (CommonRPCAdmissionResult, bool) {
+	if txHash == (common.Hash{}) || isFinalizedCommonRPCTransaction(txHash) {
+		return CommonRPCAdmissionResult{}, false
+	}
+	entry, ok := loadCommonRPCAdmissionIndex(txHash, time.Now())
+	if !ok || entry == nil || entry.batch == nil {
+		return CommonRPCAdmissionResult{}, false
+	}
+	return CommonRPCAdmissionResult{Batch: entry.batch, Item: entry.item}, true
+}
+
+func HasCommonRPCAdmission(txHash common.Hash) bool {
+	_, ok := CommonRPCAdmissionForTransaction(txHash)
+	return ok
+}
+
+type commonRPCAdmissionExpectedIndex struct {
+	admissionID common.Hash
+	item        uint16
+}
+
+// DropRejectedCommonRPCAdmissions compensates durable admission indexes that
+// were created immediately before TxPool definitively rejected their
+// transactions. It intentionally ignores winner replacements: removing a
+// replacement could also erase evidence retained for an older accepted/outbox
+// lifecycle. The caller must keep its exact-txHash submission lease held while
+// checking that each transaction is absent from TxPool and invoking this
+// function.
+//
+// Every deletion is conditional on the currently stored AdmissionID and item.
+// Certificate reference updates and index deletes commit in one database batch;
+// memory and the capacity counter change only after that commit succeeds.
+func DropRejectedCommonRPCAdmissions(results []CommonRPCAdmissionResult) error {
+	targets := make(map[common.Hash]commonRPCAdmissionExpectedIndex, len(results))
+	var stripes [commonRPCAdmissionStoreStripeCount]bool
+	for _, result := range results {
+		if !result.Updated || !result.Inserted {
+			continue
+		}
+		if result.Batch == nil || result.Batch.AdmissionID == (common.Hash{}) || int(result.Item) >= len(result.Batch.TxHashes) {
+			return fmt.Errorf("%w: invalid rejected admission result", ErrInvalidCommonRPCAdmission)
+		}
+		hash := result.Batch.TxHashes[result.Item]
+		if hash == (common.Hash{}) {
+			return fmt.Errorf("%w: rejected admission has an empty transaction hash", ErrInvalidCommonRPCAdmission)
+		}
+		expected := commonRPCAdmissionExpectedIndex{admissionID: result.Batch.AdmissionID, item: result.Item}
+		if previous, exists := targets[hash]; exists && previous != expected {
+			return fmt.Errorf("%w: conflicting rejected admission results for %s", ErrInvalidCommonRPCAdmission, hash)
+		}
+		targets[hash] = expected
+		stripes[int(hash[0])] = true
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+
+	releaseTx := lockCommonRPCAdmissionStripes(stripes)
+	defer releaseTx()
+	now := time.Now()
+	current := make(map[common.Hash]*commonRPCAdmissionIndexEntry, len(targets))
+	batchIDs := make(map[common.Hash]struct{})
+	for hash, expected := range targets {
+		entry, exists := loadCommonRPCAdmissionIndexForRemovalLocked(hash, now)
+		if !exists || entry == nil || entry.batch == nil || entry.batch.AdmissionID != expected.admissionID || entry.item != expected.item {
+			continue
+		}
+		current[hash] = entry
+		batchIDs[entry.batch.AdmissionID] = struct{}{}
+	}
+	if len(current) == 0 {
+		return nil
+	}
+
+	releaseBatches := lockCommonRPCAdmissionBatchIDs(batchIDs)
+	defer releaseBatches()
+	bodyUpdates := make(map[common.Hash]*commonRPCAdmissionBatchEntry, len(batchIDs))
+	for id := range batchIDs {
+		body, ok := loadPersistedCommonRPCAdmissionBatch(id, now)
+		if !ok || body == nil || body.batch == nil {
+			return fmt.Errorf("common RPC admission body %s is missing during rejected-index cleanup", id)
+		}
+		bodyUpdates[id] = copyCommonRPCAdmissionBatchEntry(body)
+	}
+	for hash, entry := range current {
+		body := bodyUpdates[entry.batch.AdmissionID]
+		if body == nil || body.references == 0 {
+			return fmt.Errorf("common RPC admission body %s has invalid reference count while dropping rejected %s", entry.batch.AdmissionID, hash)
+		}
+		body.references--
+		body.updatedAt = now
+		if body.references == 0 {
+			body.unreferencedAt = now
+		}
+	}
+
+	if db := currentCommonRPCAdmissionDatabase(); db != nil {
+		writeBatch := db.NewBatch()
+		for id, body := range bodyUpdates {
+			raw, err := encodeCommonRPCAdmissionBatchEntry(body)
+			if err != nil {
+				return err
+			}
+			if err := writeBatch.Put(commonRPCAdmissionBatchDBKey(id), raw); err != nil {
+				return fmt.Errorf("stage rejected common RPC admission body %s: %w", id, err)
+			}
+		}
+		for hash := range current {
+			if err := writeBatch.Delete(commonRPCAdmissionIndexDBKey(hash)); err != nil {
+				return fmt.Errorf("stage rejected common RPC admission index %s: %w", hash, err)
+			}
+		}
+		if err := writeBatch.Write(); err != nil {
+			return fmt.Errorf("commit rejected common RPC admission cleanup: %w", err)
+		}
+	}
+	for id, body := range bodyUpdates {
+		commonRPCAdmissionBatches.Store(id, body)
+	}
+	for hash := range current {
+		commonRPCAdmissionIndexes.Delete(hash)
+		decrementCommonRPCAdmissionCount()
+	}
+	return nil
+}
+
+func commonRPCAdmissionDurationSeconds(duration time.Duration) uint64 {
+	if duration <= 0 {
 		return 0
 	}
-	return uint64(d / time.Second)
+	return uint64(duration / time.Second)
 }
 
-func commonRPCAdmissionAddSeconds(value uint64, seconds uint64) uint64 {
+func commonRPCAdmissionAddSeconds(value, seconds uint64) uint64 {
 	if ^uint64(0)-value < seconds {
 		return ^uint64(0)
 	}
 	return value + seconds
 }
 
-func validateCommonRPCAdmissionForBlock(admission *types.CommonTxAdmission, keyBlockNumber uint64, txBlockNumber uint64, blockTimestamp uint64) error {
-	if admission == nil {
-		return fmt.Errorf("nil common RPC admission")
+func validateCommonRPCAdmissionForBlock(batch *types.CommonTxAdmissionBatch, keyBlockNumber, blockTimestamp uint64) error {
+	if batch == nil {
+		return fmt.Errorf("nil common RPC admission batch")
 	}
-	if admission.TxBlockNumber != 0 {
-		return fmt.Errorf("common RPC admission for %s has tx block number %d before finalization", admission.TxHash, admission.TxBlockNumber)
+	if batch.Timestamp == 0 || blockTimestamp == 0 {
+		return fmt.Errorf("common RPC admission %s has invalid timestamp boundary", batch.AdmissionID)
 	}
-	if admission.Timestamp == 0 {
-		return fmt.Errorf("common RPC admission for %s has empty timestamp", admission.TxHash)
+	if batch.Timestamp > commonRPCAdmissionAddSeconds(blockTimestamp, commonRPCAdmissionDurationSeconds(commonRPCAdmissionFutureClockSkew)) {
+		return fmt.Errorf("common RPC admission %s is from the future: admission=%d block=%d", batch.AdmissionID, batch.Timestamp, blockTimestamp)
 	}
-	if blockTimestamp == 0 {
-		return fmt.Errorf("common RPC admission for %s cannot be boundary-checked without block timestamp", admission.TxHash)
+	if batch.KeyBlockNumber > keyBlockNumber {
+		return fmt.Errorf("common RPC admission %s is bound to future key block", batch.AdmissionID)
 	}
-	if admission.Timestamp > commonRPCAdmissionAddSeconds(blockTimestamp, commonRPCAdmissionDurationSeconds(commonRPCAdmissionFutureClockSkew)) {
-		return fmt.Errorf("common RPC admission for %s is from the future: admission=%d block=%d", admission.TxHash, admission.Timestamp, blockTimestamp)
+	// An admission is durable ingress evidence, not a lease on a proposal
+	// boundary. Once a genesis-authorized signer has admitted a transaction for
+	// this chain, queueing, restart, or key-block progress must not silently
+	// expire it before finalization. KeyBlockNumber and Timestamp remain signed
+	// audit data; only evidence from the future is invalid at proposal time.
+	return nil
+}
+
+func commonRPCAdmissionForBlockTransaction(tx *types.Transaction, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, timestamp uint64, now time.Time) (CommonRPCAdmissionResult, error) {
+	if tx == nil {
+		return CommonRPCAdmissionResult{}, fmt.Errorf("nil transaction in common RPC admission set")
 	}
-	if admission.KeyBlockNumber == keyBlockNumber {
-		return nil
+	if config == nil || !config.FairHotstuff || config.ChainID == nil || config.ChainID.Sign() <= 0 || genesisHash == (common.Hash{}) {
+		return CommonRPCAdmissionResult{}, fmt.Errorf("cannot select common RPC admission without a valid Fair HotStuff chain identity")
 	}
-	if admission.KeyBlockNumber < keyBlockNumber && keyBlockNumber-admission.KeyBlockNumber == 1 {
-		graceUntil := commonRPCAdmissionAddSeconds(admission.Timestamp, commonRPCAdmissionDurationSeconds(commonRPCAdmissionBoundaryGrace))
-		if blockTimestamp <= graceUntil {
-			return nil
+	txHash := tx.Hash()
+	entry, ok := loadCommonRPCAdmissionIndex(txHash, now)
+	if !ok || entry == nil || entry.batch == nil || int(entry.item) >= len(entry.batch.TxHashes) || entry.batch.TxHashes[entry.item] != txHash {
+		return CommonRPCAdmissionResult{}, fmt.Errorf("Fair HotStuff transaction %s has no common RPC admission", txHash)
+	}
+	batch := entry.batch
+	if batch.ChainID == nil || batch.ChainID.Cmp(config.ChainID) != 0 || batch.GenesisHash != genesisHash {
+		return CommonRPCAdmissionResult{}, fmt.Errorf("common RPC admission for %s belongs to another chain genesis", txHash)
+	}
+	if !config.IsCommonRPCSigner(batch.Miner) {
+		return CommonRPCAdmissionResult{}, fmt.Errorf("common RPC admission for %s signer %s is not genesis-authorized", txHash, batch.Miner)
+	}
+	if err := validateCommonRPCAdmissionForBlock(batch, keyBlockNumber, timestamp); err != nil {
+		return CommonRPCAdmissionResult{}, err
+	}
+	return CommonRPCAdmissionResult{Batch: batch, Item: entry.item}, nil
+}
+
+func HasCommonRPCAdmissionForBlock(tx *types.Transaction, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, txBlockNumber, timestamp uint64) bool {
+	_, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, txBlockNumber, timestamp)
+	return err == nil
+}
+
+// CommonRPCAdmissionForBlockTransaction returns the already-verified winning
+// certificate selection in one lookup. Block number is intentionally not part
+// of the pre-admission certificate boundary.
+func CommonRPCAdmissionForBlockTransaction(tx *types.Transaction, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, txBlockNumber, timestamp uint64) (CommonRPCAdmissionResult, error) {
+	_ = txBlockNumber
+	return commonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, timestamp, time.Now())
+}
+
+// BuildCommonTxAdmissions returns unique certificates in AdmissionID order and
+// refs aligned with block transaction order. Failure is mandatory for missing,
+// future-boundary, unauthorized, wrong-chain, or wrong-genesis evidence.
+func BuildCommonTxAdmissions(txs types.Transactions, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, txBlockNumber, timestamp uint64) ([]*types.CommonTxAdmissionBatch, []types.CommonTxAdmissionRef, error) {
+	_ = txBlockNumber
+	if config == nil || !config.FairHotstuff || config.ChainID == nil || config.ChainID.Sign() <= 0 || genesisHash == (common.Hash{}) {
+		return nil, nil, fmt.Errorf("cannot build common RPC admissions without a valid Fair HotStuff chain identity")
+	}
+	now := time.Now()
+	maybeCleanupCommonRPCAdmissions(now, false)
+	selections := make([]CommonRPCAdmissionResult, len(txs))
+	unique := make(map[common.Hash]*types.CommonTxAdmissionBatch)
+	ids := make([]common.Hash, 0)
+	for i, tx := range txs {
+		selection, err := commonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, timestamp, now)
+		if err != nil {
+			return nil, nil, err
 		}
-		return fmt.Errorf("common RPC admission for %s crossed key block boundary outside grace: admissionKey=%d blockKey=%d admissionTime=%d blockTime=%d grace=%s", admission.TxHash, admission.KeyBlockNumber, keyBlockNumber, admission.Timestamp, blockTimestamp, commonRPCAdmissionBoundaryGrace)
+		selections[i] = selection
+		id := selection.Batch.AdmissionID
+		if _, exists := unique[id]; !exists {
+			unique[id] = selection.Batch
+			ids = append(ids, id)
+		}
 	}
-	if admission.KeyBlockNumber > keyBlockNumber {
-		return fmt.Errorf("common RPC admission for %s is bound to future key block: admissionKey=%d blockKey=%d", admission.TxHash, admission.KeyBlockNumber, keyBlockNumber)
+	sort.Slice(ids, func(i, j int) bool { return bytes.Compare(ids[i][:], ids[j][:]) < 0 })
+	if len(ids) > int(^uint16(0))+1 {
+		return nil, nil, fmt.Errorf("too many common RPC admission batches: %d", len(ids))
 	}
-	return fmt.Errorf("common RPC admission for %s is bound to stale key block: admissionKey=%d blockKey=%d", admission.TxHash, admission.KeyBlockNumber, keyBlockNumber)
+	batches := make([]*types.CommonTxAdmissionBatch, len(ids))
+	positions := make(map[common.Hash]uint16, len(ids))
+	for i, id := range ids {
+		batches[i] = unique[id]
+		positions[id] = uint16(i)
+	}
+	refs := make([]types.CommonTxAdmissionRef, len(selections))
+	for i, selection := range selections {
+		refs[i] = types.CommonTxAdmissionRef{Batch: positions[selection.Batch.AdmissionID], Item: selection.Item}
+	}
+	return batches, refs, nil
 }
 
-// SignAndRecordCommonRPCAdmission signs and stores a local common RPC tx
-// admission. TxBlockNumber is intentionally zero here because the block proposer
-// has not selected the tx block yet. The signed record is later carried unchanged
-// in the block body and validated by signature recovery.
-func SignAndRecordCommonRPCAdmission(txHash common.Hash, miner common.Address, chainID *big.Int, keyBlockNumber uint64, timestamp uint64) (*types.CommonTxAdmission, error) {
-	if txHash == (common.Hash{}) || miner == (common.Address{}) {
-		return nil, fmt.Errorf("invalid common RPC admission: tx=%s miner=%s", txHash, miner)
+func commonRPCAdmissionHashesForRefs(batches []*types.CommonTxAdmissionBatch, refs []types.CommonTxAdmissionRef) ([]common.Hash, [commonRPCAdmissionStoreStripeCount]bool, error) {
+	hashes := make([]common.Hash, 0, len(refs))
+	seen := make(map[common.Hash]struct{}, len(refs))
+	var stripes [commonRPCAdmissionStoreStripeCount]bool
+	for i, ref := range refs {
+		if int(ref.Batch) >= len(batches) || batches[ref.Batch] == nil || int(ref.Item) >= len(batches[ref.Batch].TxHashes) {
+			return nil, stripes, fmt.Errorf("invalid common RPC admission reference at %d", i)
+		}
+		hash := batches[ref.Batch].TxHashes[ref.Item]
+		if hash == (common.Hash{}) {
+			return nil, stripes, fmt.Errorf("empty common RPC admission transaction at reference %d", i)
+		}
+		if _, duplicate := seen[hash]; duplicate {
+			continue
+		}
+		seen[hash] = struct{}{}
+		hashes = append(hashes, hash)
+		stripes[int(hash[0])] = true
 	}
-	if chainID == nil || chainID.Sign() <= 0 {
-		return nil, fmt.Errorf("invalid common RPC admission chain id for tx=%s miner=%s", txHash, miner)
-	}
-	admission := &types.CommonTxAdmission{
-		ChainID:        copyAdmissionChainID(chainID),
-		TxHash:         txHash,
-		Miner:          miner,
-		KeyBlockNumber: keyBlockNumber,
-		TxBlockNumber:  0,
-		Timestamp:      timestamp,
-	}
-	if err := signCommonRPCAdmission(admission); err != nil {
-		return nil, err
-	}
-	if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
-		return nil, err
-	}
-	storeVerifiedCommonRPCAdmission(admission)
-	entry, ok := loadCommonRPCAdmissionEntry(txHash, time.Now())
-	if !ok {
-		return nil, fmt.Errorf("common RPC admission was not retained for tx=%s", txHash)
-	}
-	if err := persistCommonRPCAdmissionEntry(txHash, entry); err != nil {
-		return nil, fmt.Errorf("persist common RPC admission for tx=%s: %w", txHash, err)
-	}
-	return copyCommonRPCAdmission(admission), nil
+	return hashes, stripes, nil
 }
 
-// RecordCommonRPCAdmission records that a local common RPC miner accepted a tx,
-// signs the admission when the local coinbase wallet is available, and relays the
-// signed record to peers. It remains the stable entry point used by SendTx.
-func RecordCommonRPCAdmission(txHash common.Hash, miner common.Address, chainID *big.Int) {
-	if txHash == (common.Hash{}) || miner == (common.Address{}) {
-		return
+func stageFinalizedCommonRPCAdmissionDeletes(writer ethdb.KeyValueWriter, batches []*types.CommonTxAdmissionBatch, refs []types.CommonTxAdmissionRef) (release func(), forget func(), err error) {
+	if len(refs) == 0 {
+		return func() {}, func() {}, nil
 	}
-	admission, err := SignAndRecordCommonRPCAdmission(txHash, miner, chainID, 0, uint64(time.Now().Unix()))
+	if writer == nil {
+		return nil, nil, fmt.Errorf("common RPC admission finalization writer is nil")
+	}
+	hashes, stripes, err := commonRPCAdmissionHashesForRefs(batches, refs)
 	if err != nil {
-		log.Error("Failed to sign common RPC admission", "tx", txHash, "miner", miner, "err", err)
-		return
+		return nil, nil, err
 	}
-	relayCommonRPCAdmissions([]*types.CommonTxAdmission{admission})
+	return stageCommonRPCAdmissionIndexDeletes(writer, hashes, stripes)
 }
 
-// CommonRPCAdmissionMiner returns the local recorded common RPC miner for txHash.
-func CommonRPCAdmissionMiner(txHash common.Hash) (common.Address, bool) {
-	entry, ok := loadCommonRPCAdmissionEntry(txHash, time.Now())
-	if !ok || entry.admission == nil || entry.admission.Miner == (common.Address{}) {
-		return common.Address{}, false
+func loadCommonRPCAdmissionIndexForRemovalLocked(txHash common.Hash, now time.Time) (*commonRPCAdmissionIndexEntry, bool) {
+	if value, ok := commonRPCAdmissionIndexes.Load(txHash); ok {
+		entry, valid := value.(*commonRPCAdmissionIndexEntry)
+		if valid && entry != nil && entry.batch != nil {
+			return entry, true
+		}
 	}
-	return entry.admission.Miner, true
+	return loadPersistedCommonRPCAdmissionIndexLocked(txHash, now)
 }
 
-// CommonRPCAdmissionsForTransactions returns verified stored sidecars without
-// applying block-boundary rules. It is used to re-relay journaled transactions
-// after restart or peer reconnection.
-func CommonRPCAdmissionsForTransactions(txs types.Transactions) []*types.CommonTxAdmission {
+// stageCommonRPCAdmissionIndexDeletes atomically removes transaction indexes
+// and decrements their certificate-body references. The caller must invoke
+// forget only after the writer has committed, and release on every path.
+func stageCommonRPCAdmissionIndexDeletes(writer ethdb.KeyValueWriter, hashes []common.Hash, stripes [commonRPCAdmissionStoreStripeCount]bool) (release func(), forget func(), err error) {
+	if writer == nil {
+		return nil, nil, fmt.Errorf("common RPC admission removal writer is nil")
+	}
+	releaseTx := lockCommonRPCAdmissionStripes(stripes)
 	now := time.Now()
-	maybeCleanupCommonRPCAdmissions(now, false)
-	admissions := make([]*types.CommonTxAdmission, 0, len(txs))
-	for _, tx := range txs {
-		if tx == nil {
-			continue
+	current := make(map[common.Hash]*commonRPCAdmissionIndexEntry, len(hashes))
+	batchIDs := make(map[common.Hash]struct{})
+	for _, hash := range hashes {
+		entry, exists := loadCommonRPCAdmissionIndexForRemovalLocked(hash, now)
+		if exists {
+			current[hash] = entry
+			batchIDs[entry.batch.AdmissionID] = struct{}{}
 		}
-		entry, ok := loadCommonRPCAdmissionEntry(tx.Hash(), now)
-		if !ok || entry.admission == nil {
-			continue
-		}
-		admission := copyCommonRPCAdmission(entry.admission)
-		if err := types.VerifyCommonTxAdmissionSignature(admission); err != nil {
-			deletePersistedCommonRPCAdmission(tx.Hash())
-			continue
-		}
-		admissions = append(admissions, admission)
 	}
-	return admissions
-}
-
-// BuildCommonTxAdmissions converts recorded tx admissions into signed block-body data.
-func BuildCommonTxAdmissions(txs types.Transactions, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) []*types.CommonTxAdmission {
-	now := time.Now()
-	maybeCleanupCommonRPCAdmissions(now, false)
-	admissions := make([]*types.CommonTxAdmission, 0)
-	for _, tx := range txs {
-		if tx == nil {
-			continue
-		}
-		txHash := tx.Hash()
-		entry, ok := loadCommonRPCAdmissionEntry(txHash, now)
-		if !ok || entry.admission == nil {
-			continue
-		}
-		sealed := copyCommonRPCAdmission(entry.admission)
-		if err := types.VerifyCommonTxAdmissionSignature(sealed); err != nil {
-			log.Warn("Invalid common RPC admission signature", "tx", txHash, "miner", sealed.Miner, "err", err)
-			continue
-		}
-		if err := validateCommonRPCAdmissionForBlock(sealed, keyBlockNumber, txBlockNumber, timestamp); err != nil {
-			log.Debug("Skipping common RPC admission outside key block boundary", "tx", txHash, "miner", sealed.Miner, "err", err)
-			continue
-		}
-		admissions = append(admissions, sealed)
+	releaseBatches := lockCommonRPCAdmissionBatchIDs(batchIDs)
+	bodyUpdates := make(map[common.Hash]*commonRPCAdmissionBatchEntry, len(batchIDs))
+	fail := func(err error) (func(), func(), error) {
+		releaseBatches()
+		releaseTx()
+		return nil, nil, err
 	}
-	return admissions
-}
-
-// DropCommonRPCAdmissions removes finalized tx admission records from memory.
-func DropCommonRPCAdmissions(txs types.Transactions) {
-	for _, tx := range txs {
-		if tx == nil {
-			continue
+	for id := range batchIDs {
+		body, ok := loadPersistedCommonRPCAdmissionBatch(id, now)
+		if !ok || body == nil || body.batch == nil {
+			return fail(fmt.Errorf("common RPC admission body %s is missing during index removal", id))
 		}
-		hash := tx.Hash()
-		if _, loaded := commonRPCAdmissions.LoadAndDelete(hash); loaded {
-			atomic.AddInt64(&commonRPCAdmissionCount, -1)
-		}
-		deletePersistedCommonRPCAdmission(hash)
+		bodyUpdates[id] = copyCommonRPCAdmissionBatchEntry(body)
 	}
+	for hash, entry := range current {
+		body := bodyUpdates[entry.batch.AdmissionID]
+		if body == nil || body.references == 0 {
+			return fail(fmt.Errorf("common RPC admission body %s has invalid reference count while removing %s", entry.batch.AdmissionID, hash))
+		}
+		body.references--
+		body.updatedAt = now
+		if body.references == 0 {
+			body.unreferencedAt = now
+		}
+	}
+	for id, body := range bodyUpdates {
+		raw, encodeErr := encodeCommonRPCAdmissionBatchEntry(body)
+		if encodeErr != nil {
+			return fail(encodeErr)
+		}
+		if putErr := writer.Put(commonRPCAdmissionBatchDBKey(id), raw); putErr != nil {
+			return fail(fmt.Errorf("stage common RPC admission body reference update for %s: %w", id, putErr))
+		}
+	}
+	for _, hash := range hashes {
+		if deleteErr := writer.Delete(commonRPCAdmissionIndexDBKey(hash)); deleteErr != nil {
+			return fail(fmt.Errorf("stage common RPC admission index deletion for %s: %w", hash, deleteErr))
+		}
+	}
+	release = func() {
+		releaseBatches()
+		releaseTx()
+	}
+	forget = func() {
+		for id, body := range bodyUpdates {
+			commonRPCAdmissionBatches.Store(id, body)
+		}
+		for hash := range current {
+			commonRPCAdmissionIndexes.Delete(hash)
+			decrementCommonRPCAdmissionCount()
+		}
+	}
+	return release, forget, nil
 }

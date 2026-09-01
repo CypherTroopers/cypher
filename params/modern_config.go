@@ -236,6 +236,7 @@ type chainConfigJSON struct {
 	FixedLeader            bool                  `json:"fixedLeader,omitempty"`
 	FairHotstuff           bool                  `json:"fairHotstuff,omitempty"`
 	FairHotstuffSeed       common.Hash           `json:"fairHotstuffSeed,omitempty"`
+	CommonRPCSigners       []common.Address      `json:"commonRPCSigners,omitempty"`
 	EnabledTPS             bool                  `json:"enabledTPS,omitempty"`
 }
 
@@ -275,6 +276,7 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 	c.FixedLeader = dec.FixedLeader
 	c.FairHotstuff = dec.FairHotstuff
 	c.FairHotstuffSeed = dec.FairHotstuffSeed
+	c.CommonRPCSigners = append([]common.Address(nil), dec.CommonRPCSigners...)
 	c.EnabledTPS = dec.EnabledTPS
 	c.SetModernForkConfig(&ModernForkConfig{
 		BerlinBlock:       dec.BerlinBlock,
@@ -323,6 +325,7 @@ func (c *ChainConfig) MarshalJSON() ([]byte, error) {
 		FixedLeader:            c.FixedLeader,
 		FairHotstuff:           c.FairHotstuff,
 		FairHotstuffSeed:       c.FairHotstuffSeed,
+		CommonRPCSigners:       append([]common.Address(nil), c.CommonRPCSigners...),
 		EnabledTPS:             c.EnabledTPS,
 	}
 	if cfg := c.ModernForkConfig(); cfg != nil {

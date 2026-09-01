@@ -21,6 +21,12 @@ type fhsParentQCFixture struct {
 	newKeys    []*bls.PublicKey
 }
 
+type unauthenticatedAsyncFHSApp struct {
+	*fhsAsyncValidationApp
+}
+
+func (*unauthenticatedAsyncFHSApp) RequireMessageAuth() bool { return false }
+
 func makeTestCommittee(t *testing.T, size int) ([]bls.SecretKey, []*bls.PublicKey) {
 	t.Helper()
 	secrets := make([]bls.SecretKey, size)
@@ -240,6 +246,46 @@ func TestStandaloneFHSQCBroadcastSurvivesLostView(t *testing.T) {
 	}
 	if certified != 1 {
 		t.Fatalf("tampered QC changed certification count to %d", certified)
+	}
+}
+
+func TestStandaloneFHSQCBroadcastStagesCatchupOffControlLoop(t *testing.T) {
+	fixture := newFHSParentQCFixture(t, true)
+	certified := 0
+	fixture.app.onCertified = func(got *SignedState) error {
+		certified++
+		if !SignedStateSemanticEqual(got, fixture.parentQC) {
+			t.Fatalf("standalone QC = %#v, want parent QC", got)
+		}
+		return nil
+	}
+	async := &fhsAsyncValidationApp{fhsFutureJumpApp: &fhsFutureJumpApp{recoveryTestApp: fixture.app}}
+	app := &unauthenticatedAsyncFHSApp{fhsAsyncValidationApp: async}
+	manager := NewHotstuffProtocolManager(app, nil, nil)
+	msg := &HotstuffMessage{
+		Code: MsgQCBroadcast, Number: fixture.parentQC.Number, ViewId: fixture.parentQC.ViewID,
+		Id: fixture.parentQC.LeaderID, PubKey: fixture.oldKeys[0].Serialize(), DataB: append([]byte(nil), fixture.parentQC.Sign...),
+		DataC: append([]byte(nil), fixture.parentQC.Mask...), DataD: append([]byte(nil), fixture.parentQC.State...),
+	}
+	if err := manager.handleQCBroadcastMsg(msg); !errors.Is(err, ErrProposalValidationPending) {
+		t.Fatalf("standalone QC control-loop result = %v, want %v", err, ErrProposalValidationPending)
+	}
+	if certified != 0 || async.adoptCalls != 0 || len(async.highScheduled) != 1 {
+		t.Fatalf("standalone QC performed synchronous catch-up: certified=%d adopt=%d scheduled=%d",
+			certified, async.adoptCalls, len(async.highScheduled))
+	}
+	request := async.highScheduled[0]
+	if request.Key.TargetView != fixture.parentQC.Number+1 {
+		t.Fatalf("standalone QC target view = %d, want %d", request.Key.TargetView, fixture.parentQC.Number+1)
+	}
+	if err := manager.HandleFHSHighQCValidationResult(&FHSHighQCValidationResult{
+		Key: request.Key, ApplicationData: "verified",
+	}); err != nil {
+		t.Fatalf("complete standalone QC catch-up: %v", err)
+	}
+	if certified != 1 || len(async.highApplied) != 1 || manager.pendingHighQC != nil {
+		t.Fatalf("standalone QC continuation did not complete exactly once: certified=%d applied=%d pending=%v",
+			certified, len(async.highApplied), manager.pendingHighQC)
 	}
 }
 

@@ -38,3 +38,31 @@ func TestHeaderRLPMatchesHashWithHotstuffSignInfo(t *testing.T) {
 		t.Fatal("freezer lookup accepted malformed header RLP")
 	}
 }
+
+func TestReadBlockRejectsCorruptCommonTransactionBody(t *testing.T) {
+	db := NewMemoryDatabase()
+	tx := types.NewTransaction(0, common.Address{1}, big.NewInt(1), 21_000, big.NewInt(1), nil)
+	batch := &types.CommonTxAdmissionBatch{
+		ChainID:     big.NewInt(1),
+		GenesisHash: common.Hash{1},
+		Miner:       common.Address{2},
+		Timestamp:   1,
+		TxHashes:    []common.Hash{tx.Hash()},
+		Signature:   make([]byte, 65),
+	}
+	batch.TxRoot = types.DeriveCommonTxAdmissionTxRoot(batch.TxHashes)
+	batch.AdmissionID = types.CommonTxAdmissionID(batch)
+	refs := []types.CommonTxAdmissionRef{{}}
+	reward := &types.CommonTxReward{TxHash: tx.Hash(), Approver: batch.Miner, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
+	block := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(1)}).WithBody(types.Transactions{tx}, nil)
+	block.AttachCommonTxData([]*types.CommonTxAdmissionBatch{batch}, refs, []*types.CommonTxReward{reward})
+	WriteBlock(db, block)
+
+	if restored := ReadBlock(db, block.Hash(), block.NumberU64()); restored == nil || restored.Hash() != block.Hash() {
+		t.Fatalf("valid stored block was not restored: %#v", restored)
+	}
+	WriteBody(db, block.Hash(), block.NumberU64(), &types.Body{Transactions: block.Transactions()})
+	if restored := ReadBlock(db, block.Hash(), block.NumberU64()); restored != nil {
+		t.Fatalf("body with mismatched sidecar roots was accepted as %s", restored.Hash())
+	}
+}

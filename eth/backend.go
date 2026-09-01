@@ -23,6 +23,7 @@ import (
 	"math/big"
 	"net"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/bloombits"
 	"github.com/cypherium/cypher/core/rawdb"
+	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
 	"github.com/cypherium/cypher/eth/downloader"
@@ -71,7 +73,9 @@ type Ethereum struct {
 	txQUICIngress   *TxQUICIngress
 
 	// DB interfaces
-	chainDb ethdb.Database // Block chain database
+	chainDb     ethdb.Database // Block chain database
+	txOutboxDb  ethdb.Database // Dedicated durable TxQUIC outbox database (bridge nodes only)
+	txIngressDb ethdb.Database // Dedicated durable TxQUIC ingress database (committee nodes only)
 
 	eventMux       *event.TypeMux
 	engine         consensus.Engine
@@ -96,6 +100,52 @@ type Ethereum struct {
 	lock      sync.RWMutex // Protects the variadic fields (e.g. gas price and etherbase)
 
 	consensusServicePendingLogsFeed *event.Feed
+}
+
+type txQUICFinalizedStateReader interface {
+	CurrentBlock() *types.Block
+	StateAt(common.Hash) (*state.StateDB, error)
+}
+
+// txQUICFinalizedNonceObsolete uses one isolated state snapshot for a whole
+// micro-batch. It is safe as a terminal delivery predicate only when CurrentBlock
+// is final; New wires it exclusively for Fair HotStuff after its 2-chain commit.
+func txQUICFinalizedNonceObsolete(chain txQUICFinalizedStateReader, chainID *big.Int, txs types.Transactions) []bool {
+	obsolete := make([]bool, len(txs))
+	if chain == nil || chainID == nil || len(txs) == 0 {
+		return obsolete
+	}
+	head := chain.CurrentBlock()
+	if head == nil {
+		return obsolete
+	}
+	finalizedState, err := chain.StateAt(head.Root())
+	if err != nil {
+		log.Warn("Failed to open finalized state for TxQUIC cleanup", "root", head.Root(), "err", err)
+		return obsolete
+	}
+	signer := types.LatestSignerForChainID(chainID)
+	nonces := make(map[common.Address]uint64)
+	for index, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		sender, err := types.Sender(signer, tx)
+		if err != nil {
+			continue
+		}
+		nonce, cached := nonces[sender]
+		if !cached {
+			nonce = finalizedState.GetNonce(sender)
+			nonces[sender] = nonce
+		}
+		obsolete[index] = nonce > tx.Nonce()
+	}
+	if err := finalizedState.Error(); err != nil {
+		log.Warn("Failed to read finalized state for TxQUIC cleanup", "root", head.Root(), "err", err)
+		return make([]bool, len(txs))
+	}
+	return obsolete
 }
 
 // New creates a new Ethereum object (including the initialisation of the common Ethereum object).
@@ -126,17 +176,32 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		return nil, err
 	}
 	core.SetCommonRPCAdmissionDatabase(chainDb)
-	_, _, genesisErr := core.SetupGenesisKeyBlock(chainDb, config.GenesisKey)
-	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
-		return nil, genesisErr
+	_, _, keyGenesisErr := core.SetupGenesisKeyBlock(chainDb, config.GenesisKey)
+	if keyGenesisErr != nil {
+		return nil, keyGenesisErr
 	}
-	chainConfig, genesisHash, _ := core.SetupGenesisBlock(chainDb, config.Genesis)
-	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
-		return nil, genesisErr
+	chainConfig, genesisHash, blockGenesisErr := core.SetupGenesisBlock(chainDb, config.Genesis)
+	if blockGenesisErr != nil {
+		return nil, blockGenesisErr
+	}
+	if chainConfig != nil && chainConfig.ChainID != nil && chainConfig.ChainID.IsUint64() {
+		// Bind every TxQUIC packet and acknowledgement to this chain before
+		// auto-role selection can enable either side of the transport.
+		config.TxQUIC.ChainID = chainConfig.ChainID.Uint64()
+		config.TxQUIC.GenesisHash = genesisHash
+		config.TxQUIC.FairHotstuff = chainConfig.FairHotstuff
+	} else if config.TxQUIC.Enabled || config.TxQUIC.BridgeEnabled {
+		return nil, fmt.Errorf("TxQUIC requires a non-negative uint64 chain ID")
 	}
 	log.Info("Initialised chain configuration", "config", chainConfig)
 	chainConfig.RnetPort = config.RnetPort
 	chainConfig.EnabledTPS = config.EnableTPS
+	if chainConfig.FairHotstuff {
+		// Admission authorization is consensus state committed by genesis. Derive
+		// the TxQUIC packet allowlist from it so an operator-local TOML value
+		// cannot admit a signer whose reward validators must reject.
+		config.TxQUIC.AllowedSigners = append([]common.Address(nil), chainConfig.CommonRPCSigners...)
+	}
 	config.TxQUIC.ApplyFixedCommitteeAutoRole(chainConfig)
 	config.TxQUIC.ApplyHTTP3RPCDefaults(stack.Config().HTTPHost, stack.Config().HTTPPort)
 
@@ -209,17 +274,19 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
-	if compat, ok := genesisErr.(*params.ConfigCompatError); ok {
-		log.Warn("Rewinding chain to upgrade configuration", "err", compat)
-		eth.blockchain.SetHead(compat.RewindTo)
-		rawdb.WriteChainConfig(chainDb, genesisHash, chainConfig)
+	if chainConfig != nil && chainConfig.FairHotstuff {
+		core.SetCommonRPCAdmissionFinalizedLookup(func(hash common.Hash) bool {
+			return eth.blockchain.IsFinalizedTransaction(hash)
+		})
+	} else {
+		core.SetCommonRPCAdmissionFinalizedLookup(nil)
 	}
 	eth.bloomIndexer.Start(eth.blockchain)
 
 	if config.TxQUIC.BridgeEnabled {
-		// Common RPC acceptance is durable only when transactions are local and
-		// journaled. Do not allow command-line txpool settings to silently turn
-		// the committee-ingress outbox back into an in-memory best-effort queue.
+		// Keep common RPC transactions local as an additional recovery path. The
+		// bridge's synchronously-written outbox is the RPC durability boundary;
+		// the tx journal remains an asynchronous secondary copy.
 		if config.TxPool.NoLocals {
 			log.Warn("Disabling txpool.nolocals for durable common RPC ingress")
 			config.TxPool.NoLocals = false
@@ -228,12 +295,67 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 			log.Warn("Restoring transaction journal for durable common RPC ingress", "journal", core.DefaultTxPoolConfig.Journal)
 			config.TxPool.Journal = core.DefaultTxPoolConfig.Journal
 		}
+		outboxCache, outboxHandles := config.DatabaseCache/16, config.DatabaseHandles/16
+		if outboxCache < 16 {
+			outboxCache = 16
+		}
+		if outboxCache > 128 {
+			outboxCache = 128
+		}
+		if outboxHandles < 16 {
+			outboxHandles = 16
+		}
+		if outboxHandles > 128 {
+			outboxHandles = 128
+		}
+		eth.txOutboxDb, err = stack.OpenDatabase("txoutbox", outboxCache, outboxHandles, "eth/db/txoutbox/")
+		if err != nil {
+			return nil, fmt.Errorf("open TxQUIC outbox database: %w", err)
+		}
+	}
+	if config.TxQUIC.Enabled {
+		ingressCache, ingressHandles := config.DatabaseCache/16, config.DatabaseHandles/16
+		if ingressCache < 16 {
+			ingressCache = 16
+		}
+		if ingressCache > 128 {
+			ingressCache = 128
+		}
+		if ingressHandles < 16 {
+			ingressHandles = 16
+		}
+		if ingressHandles > 128 {
+			ingressHandles = 128
+		}
+		eth.txIngressDb, err = stack.OpenDatabase("txingress", ingressCache, ingressHandles, "eth/db/txingress/")
+		if err != nil {
+			return nil, fmt.Errorf("open TxQUIC ingress database: %w", err)
+		}
 	}
 	if config.TxPool.Journal != "" {
 		config.TxPool.Journal = stack.ResolvePath(config.TxPool.Journal)
 	}
 	eth.txPool = core.NewTxPool(config.TxPool, chainConfig, eth.blockchain)
 	eth.txQUICIngress = NewTxQUICIngress(config.TxQUIC, eth.txPool)
+	eth.txQUICIngress.SetCanonicalTxLookup(func(hash common.Hash) bool {
+		return eth.blockchain.GetTransactionLookup(hash) != nil
+	})
+	if chainConfig != nil && chainConfig.FairHotstuff {
+		// Receipt sync may publish lookup entries ahead of the FHS state head;
+		// require exact canonical membership at or below the finalized head.
+		eth.txQUICIngress.SetFinalizedTxLookup(func(hash common.Hash) bool {
+			return eth.blockchain.IsFinalizedTransaction(hash)
+		})
+		eth.txQUICIngress.SetObsoleteTxLookup(func(txs types.Transactions) []bool {
+			return txQUICFinalizedNonceObsolete(eth.blockchain, chainConfig.ChainID, txs)
+		})
+	}
+	if eth.txOutboxDb != nil {
+		eth.txQUICIngress.SetDurableOutbox(NewTxOutbox(eth.txOutboxDb, config.TxQUIC), eth.accountManager)
+	}
+	if eth.txIngressDb != nil {
+		eth.txQUICIngress.SetDurableIngress(NewTxQUICIngressStore(eth.txIngressDb, config.TxQUIC))
+	}
 
 	cacheLimit := cacheConfig.TrieCleanLimit + cacheConfig.TrieDirtyLimit + cacheConfig.SnapshotLimit
 	checkpoint := config.Checkpoint
@@ -250,6 +372,23 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	}
 
 	eth.miner = miner.New(eth, chainConfig, eth.EventMux(), eth.engine, extIP)
+	// Every TxQUIC bridge packet is authenticated with the node etherbase. Resolve
+	// and publish that address while constructing the service, before discovery
+	// policy and RPC become visible. A bridge without a local signing wallet must
+	// fail closed instead of accepting transactions it cannot authenticate.
+	if config.TxQUIC.BridgeEnabled {
+		etherbase, err := eth.Etherbase()
+		if err != nil {
+			return nil, fmt.Errorf("resolve TxQUIC bridge signer: %w", err)
+		}
+		if eth.accountManager == nil {
+			return nil, fmt.Errorf("TxQUIC bridge account manager is unavailable")
+		}
+		if _, err := eth.accountManager.Find(accounts.Account{Address: etherbase}); err != nil {
+			return nil, fmt.Errorf("TxQUIC bridge etherbase %s has no local signing wallet: %w", etherbase, err)
+		}
+		eth.SetEtherbase(etherbase)
+	}
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), eth, nil, "hexNodeId", config.EVMCallTimeOut}
 	gpoParams := config.GPO
 	if gpoParams.Default == nil {
@@ -280,14 +419,30 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 			if route == nil || route.Leader == nil {
 				return TxQUICFHSRoute{}, fmt.Errorf("Fair HotStuff route has no leader")
 			}
+			committeeAddresses := make([]string, len(route.Committee))
+			committeePublicKeys := make([]string, len(route.Committee))
+			for index, member := range route.Committee {
+				if member == nil || strings.TrimSpace(member.Address) == "" || strings.TrimSpace(member.Public) == "" {
+					return TxQUICFHSRoute{}, fmt.Errorf("Fair HotStuff route has invalid committee member %d", index)
+				}
+				committeeAddresses[index] = member.Address
+				committeePublicKeys[index] = member.Public
+			}
 			return TxQUICFHSRoute{
-				ProposalView:  route.ProposalView,
-				KeyNumber:     route.KeyNumber,
-				CommitteeHash: route.CommitteeHash,
-				LeaderIndex:   route.LeaderIndex,
-				LeaderAddress: route.Leader.Address,
+				ProposalView:        route.ProposalView,
+				KeyNumber:           route.KeyNumber,
+				CommitteeHash:       route.CommitteeHash,
+				LeaderIndex:         route.LeaderIndex,
+				LeaderAddress:       route.Leader.Address,
+				CommitteeAddresses:  committeeAddresses,
+				CommitteePublicKeys: committeePublicKeys,
 			}, nil
 		})
+		if config.TxQUIC.Enabled {
+			if err := eth.txQUICIngress.SetFHSReceiptSigner(eth.reconfig.TxQUICReceiptPublicKey, eth.reconfig.SignTxQUICReceipt); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if eth.txQUICIngress != nil && config.TxQUIC.HTTP3Enabled {
 		if rpcHandler, err := stack.RPCHandler(); err == nil {
@@ -317,6 +472,15 @@ func makeExtraData(extra []byte, hasPrivate bool) []byte {
 		extra = nil
 	}
 	return extra
+}
+
+// ResolveTxQUICTransaction exposes only authenticated, fsync-complete ingress
+// data to the consensus proposal data-availability layer.
+func (s *Ethereum) ResolveTxQUICTransaction(hash common.Hash) (*types.Transaction, error) {
+	if s == nil || s.txQUICIngress == nil {
+		return nil, nil
+	}
+	return s.txQUICIngress.ResolveTransaction(hash)
 }
 
 // CreateConsensusEngine creates the required type of consensus engine instance for an Ethereum service.
@@ -467,6 +631,16 @@ func (s *Ethereum) Stop() error {
 	if s.txQUICIngress != nil {
 		s.txQUICIngress.Stop()
 	}
+	if s.txOutboxDb != nil {
+		if err := s.txOutboxDb.Close(); err != nil {
+			log.Warn("Failed to close TxQUIC outbox database", "err", err)
+		}
+	}
+	if s.txIngressDb != nil {
+		if err := s.txIngressDb.Close(); err != nil {
+			log.Warn("Failed to close TxQUIC ingress database", "err", err)
+		}
+	}
 	s.protocolManager.Stop()
 	s.candidatePool.StopPoWResultUDP()
 	s.bloomIndexer.Close()
@@ -476,6 +650,8 @@ func (s *Ethereum) Stop() error {
 	s.blockchain.Stop()
 	s.keyBlockChain.Stop()
 	s.engine.Close()
+	core.SetCommonRPCAdmissionFinalizedLookup(nil)
+	core.SetCommonRPCAdmissionDatabase(nil)
 	s.chainDb.Close()
 	s.eventMux.Stop()
 	return nil

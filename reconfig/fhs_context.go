@@ -71,27 +71,31 @@ func (s *Service) AcceptFHSTimeoutCertificate(tc *hotstuff.TimeoutCertificate) e
 	}
 
 	store := s.fhsStore
-	store.mu.Lock()
+	store.safetyMu.Lock()
 	if err := store.loadLocked(); err != nil {
-		store.mu.Unlock()
+		store.safetyMu.Unlock()
 		return err
+	}
+	if store.recoveryPendingLocked() {
+		store.safetyMu.Unlock()
+		return errFHSRecoveryPending
 	}
 	// A QC for this or a later view already supersedes the timeout proof. Do
 	// not let a delayed/replayed TC recreate stale pacemaker state after the QC
 	// and its committee transition were durably installed.
 	if highest := store.state.HighestQC; highest != nil && tc.Statement.TimedOutView <= highest.Number {
-		store.mu.Unlock()
+		store.safetyMu.Unlock()
 		return nil
 	}
 	alreadyPersisted := false
 	if highest := store.state.HighestTC; highest != nil {
 		if tc.Statement.TimedOutView < highest.Statement.TimedOutView {
-			store.mu.Unlock()
+			store.safetyMu.Unlock()
 			return nil
 		}
 		if tc.Statement.TimedOutView == highest.Statement.TimedOutView {
 			if tc.Statement != highest.Statement {
-				store.mu.Unlock()
+				store.safetyMu.Unlock()
 				return fmt.Errorf("conflicting timeout certificates for view %d", tc.Statement.TimedOutView)
 			}
 			alreadyPersisted = true
@@ -108,22 +112,22 @@ func (s *Service) AcceptFHSTimeoutCertificate(tc *hotstuff.TimeoutCertificate) e
 		}
 		encoded, err := store.encodeSafety(next, store.highestBlockHash)
 		if err != nil {
-			store.mu.Unlock()
+			store.safetyMu.Unlock()
 			return err
 		}
 		batch := store.db.NewBatch()
 		if err := rawdb.WriteFHSSafetyState(batch, encoded); err != nil {
-			store.mu.Unlock()
+			store.safetyMu.Unlock()
 			return err
 		}
 		if err := writeFHSBatchSync(batch); err != nil {
 			store.lastPersistenceErr = err
-			store.mu.Unlock()
+			store.safetyMu.Unlock()
 			return err
 		}
 		store.state = next
 	}
-	store.mu.Unlock()
+	store.safetyMu.Unlock()
 
 	s.muCurrentView.Lock()
 	if s.currentView.ViewNumber <= tc.Statement.TimedOutView {

@@ -17,10 +17,15 @@ const (
 	hotstuffPriorityQueueMaxBytes   = 8 * 1024 * 1024
 	hotstuffQueueProducerWait       = 100 * time.Millisecond
 	hotstuffQueueEntryOverheadBytes = 256
-	hotstuffQueuePerSenderEntries   = 8
-	hotstuffQueuePerSenderBytes     = 640 * 1024
-	hotstuffQueueRecentDigestMax    = 4096
-	hotstuffQueueReplayTTL          = 5 * time.Second
+	// A lagging replica can receive several certified views from the same
+	// authenticated leader while asynchronous body/state validation catches up.
+	// Eight entries proved too small in a normal two-chain catch-up and allowed
+	// a QCBroadcast to be dropped. Thirty-two still reserves capacity for every
+	// member of the maximum 100-node committee (3,200 < 4,096 global entries).
+	hotstuffQueuePerSenderEntries = 32
+	hotstuffQueuePerSenderBytes   = 640 * 1024
+	hotstuffQueueRecentDigestMax  = 4096
+	hotstuffQueueReplayTTL        = 5 * time.Second
 )
 
 // hotstuffMessageQueue serializes all producers through one channel-owned,
@@ -306,16 +311,4 @@ func (q *hotstuffMessageQueue) push(msg *hotstuffMsg) bool {
 
 func (q *hotstuffMessageQueue) pushPriority(msg *hotstuffMsg) bool {
 	return q != nil && pushHotstuffWithTimeout(q.priorityInput, msg)
-}
-
-func (q *hotstuffMessageQueue) pop() *hotstuffMsg {
-	if q == nil {
-		return nil
-	}
-	select {
-	case msg := <-q.next:
-		return msg
-	default:
-		return nil
-	}
 }

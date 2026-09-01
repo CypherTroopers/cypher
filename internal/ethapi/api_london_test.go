@@ -3,7 +3,10 @@ package ethapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,19 +20,22 @@ import (
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
+	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/eth/downloader"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
+	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
 )
 
 type londonAPITestBackend struct {
-	headers map[uint64]*types.Header
-	config  *params.ChainConfig
-	price   *big.Int
-	tip     *big.Int
+	headers     map[uint64]*types.Header
+	config      *params.ChainConfig
+	price       *big.Int
+	tip         *big.Int
+	sendBatchFn func(types.Transactions) []error
 }
 
 type feePolicyTestBackend struct {
@@ -179,6 +185,12 @@ func (b *londonAPITestBackend) SubscribeChainSideEvent(chan<- core.ChainSideEven
 	return nil
 }
 func (b *londonAPITestBackend) SendTx(context.Context, *types.Transaction, bool) error { return nil }
+func (b *londonAPITestBackend) SendTxBatch(_ context.Context, txs types.Transactions) []error {
+	if b.sendBatchFn != nil {
+		return b.sendBatchFn(txs)
+	}
+	return make([]error, len(txs))
+}
 func (b *londonAPITestBackend) GetTransaction(context.Context, common.Hash) (*types.Transaction, common.Hash, uint64, uint64, error) {
 	return nil, common.Hash{}, 0, 0, nil
 }
@@ -555,5 +567,811 @@ func TestUnpricedCallMessageUsesZeroFee(t *testing.T) {
 	lowerUnpricedCallFees(evm, msg)
 	if evm.Context.BaseFee.Sign() != 0 || evm.Context.BlobBaseFee.Sign() != 0 {
 		t.Fatalf("unpriced call fees were not lowered: base=%v blob=%v", evm.Context.BaseFee, evm.Context.BlobBaseFee)
+	}
+}
+func signedRawTransactionsForTest(t *testing.T, count int) ([]hexutil.Bytes, types.Transactions) {
+	t.Helper()
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	to := common.HexToAddress("0x1000000000000000000000000000000000000001")
+	raw := make([]hexutil.Bytes, count)
+	txs := make(types.Transactions, count)
+	for i := 0; i < count; i++ {
+		tx := types.NewTransaction(uint64(i), to, big.NewInt(1), 21_000, big.NewInt(20), nil)
+		tx, err = types.SignTx(tx, types.NewEIP155Signer(big.NewInt(1337)), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := tx.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw[i] = encoded
+		txs[i] = tx
+	}
+	return raw, txs
+}
+
+func TestSendRawTransactionsRejectsStructuralLimitsWithoutBackendCall(t *testing.T) {
+	backend := newLondonAPITestBackend()
+	var calls int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		calls++
+		return make([]error, len(txs))
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	if _, err := api.SendRawTransactions(context.Background(), nil); err == nil {
+		t.Fatal("expected empty batch error")
+	}
+	tooMany := make([]hexutil.Bytes, MaxRawTxRequestCount+1)
+	if _, err := api.SendRawTransactions(context.Background(), tooMany); err == nil {
+		t.Fatal("expected request count limit error")
+	}
+	tooLarge := []hexutil.Bytes{make([]byte, MaxRawTxRequestBytes+1)}
+	if _, err := api.SendRawTransactions(context.Background(), tooLarge); err == nil {
+		t.Fatal("expected request byte limit error")
+	}
+	if calls != 0 {
+		t.Fatalf("backend calls = %d, want 0", calls)
+	}
+}
+
+func TestSendRawTransactionsSubmitsOneAlignedBackendBatch(t *testing.T) {
+	raw, signed := signedRawTransactionsForTest(t, 2)
+	inputs := []hexutil.Bytes{raw[0], {0xff, 0x00}, raw[1]}
+	backendErr := errors.New("injected backend rejection")
+	backend := newLondonAPITestBackend()
+	var calls int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		calls++
+		if len(txs) != 2 {
+			t.Fatalf("backend transactions = %d, want 2", len(txs))
+		}
+		for i, tx := range txs {
+			if tx.RouteHint() != types.TxRouteFast {
+				t.Fatalf("transaction %d route = %d, want fast", i, tx.RouteHint())
+			}
+		}
+		return []error{nil, backendErr}
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	results, err := api.SendRawTransactions(context.Background(), inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("backend calls = %d, want 1", calls)
+	}
+	if len(results) != len(inputs) {
+		t.Fatalf("results = %d, want %d", len(results), len(inputs))
+	}
+	if results[0].Hash == nil || *results[0].Hash != signed[0].Hash() || results[0].Error != "" {
+		t.Fatalf("unexpected first result: %+v", results[0])
+	}
+	if results[1].Hash != nil || results[1].Error == "" {
+		t.Fatalf("malformed transaction result = %+v", results[1])
+	}
+	if results[2].Hash == nil || *results[2].Hash != signed[1].Hash() || results[2].Error != backendErr.Error() {
+		t.Fatalf("unexpected backend rejection result: %+v", results[2])
+	}
+}
+
+func TestSendRawTransactionsDeduplicatesHashesAndFansOutResults(t *testing.T) {
+	raw, signed := signedRawTransactionsForTest(t, 2)
+	inputs := []hexutil.Bytes{raw[0], raw[0], raw[1], raw[1], raw[0]}
+	backendErr := errors.New("injected unique transaction rejection")
+	backend := newLondonAPITestBackend()
+	var calls int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		calls++
+		if len(txs) != 2 {
+			t.Fatalf("backend transactions = %d, want 2 unique transactions", len(txs))
+		}
+		if txs[0].Hash() != signed[0].Hash() || txs[1].Hash() != signed[1].Hash() {
+			t.Fatalf("backend transaction order = [%s, %s], want [%s, %s]",
+				txs[0].Hash(), txs[1].Hash(), signed[0].Hash(), signed[1].Hash())
+		}
+		return []error{nil, backendErr}
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	results, err := api.SendRawTransactions(context.Background(), inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("backend calls = %d, want 1", calls)
+	}
+	if len(results) != len(inputs) {
+		t.Fatalf("results = %d, want %d", len(results), len(inputs))
+	}
+	for _, index := range []int{0, 1, 4} {
+		if results[index].Hash == nil || *results[index].Hash != signed[0].Hash() || results[index].Error != "" {
+			t.Fatalf("idempotent duplicate result %d mismatch: %+v", index, results[index])
+		}
+	}
+	for _, index := range []int{2, 3} {
+		if results[index].Hash == nil || *results[index].Hash != signed[1].Hash() || results[index].Error != backendErr.Error() {
+			t.Fatalf("rejected duplicate result %d mismatch: %+v", index, results[index])
+		}
+	}
+}
+
+func TestSendRawTransactionsAcceptsMaximumCountInOneBackendCall(t *testing.T) {
+	raw, _ := signedRawTransactionsForTest(t, MaxRawTxBatchCount)
+	backend := newLondonAPITestBackend()
+	var calls, received int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		calls++
+		received = len(txs)
+		return make([]error, len(txs))
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	results, err := api.SendRawTransactions(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != MaxRawTxBatchCount || calls != 1 || received != MaxRawTxBatchCount {
+		t.Fatalf("batch mismatch: results=%d calls=%d received=%d", len(results), calls, received)
+	}
+}
+
+func TestSendRawTransactionsSplitsBurstIntoBoundedMicroBatches(t *testing.T) {
+	const tail = 17
+	count := MaxRawTxBatchCount*2 + tail
+	raw, signed := signedRawTransactionsForTest(t, count)
+	backend := newLondonAPITestBackend()
+	backendErr := errors.New("injected reversed-batch rejection")
+	batchDone := []chan struct{}{make(chan struct{}), make(chan struct{}), make(chan struct{})}
+	seen := make([]int, count)
+	var mu sync.Mutex
+	var calls, received int
+	completionOrder := make([]int, 0, len(batchDone))
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		if len(txs) == 0 || len(txs) > MaxRawTxBatchCount {
+			t.Errorf("backend micro-batch size = %d", len(txs))
+		}
+		batchBytes := 0
+		for _, tx := range txs {
+			encoded, err := tx.MarshalBinary()
+			if err != nil {
+				t.Error(err)
+				continue
+			}
+			batchBytes += len(encoded)
+		}
+		if batchBytes > MaxRawTxBatchBytes {
+			t.Errorf("backend micro-batch bytes = %d, limit %d", batchBytes, MaxRawTxBatchBytes)
+		}
+		ordinal := int(txs[0].Nonce()) / MaxRawTxBatchCount
+		if ordinal+1 < len(batchDone) {
+			<-batchDone[ordinal+1]
+		}
+		backendResults := make([]error, len(txs))
+		mu.Lock()
+		calls++
+		received += len(txs)
+		completionOrder = append(completionOrder, ordinal)
+		for index, tx := range txs {
+			nonce := int(tx.Nonce())
+			if nonce < 0 || nonce >= len(seen) {
+				t.Errorf("backend nonce %d is outside request", nonce)
+				continue
+			}
+			seen[nonce]++
+			if nonce%257 == 0 {
+				backendResults[index] = backendErr
+			}
+		}
+		mu.Unlock()
+		close(batchDone[ordinal])
+		return backendResults
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	results, err := api.SendRawTransactions(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 3 || received != count || len(results) != count {
+		t.Fatalf("burst mismatch: calls=%d received=%d results=%d", calls, received, len(results))
+	}
+	if fmt.Sprint(completionOrder) != "[2 1 0]" {
+		t.Fatalf("backend completion order = %v, want reverse input order", completionOrder)
+	}
+	for index, result := range results {
+		if seen[index] != 1 {
+			t.Fatalf("transaction %d backend submissions = %d, want 1", index, seen[index])
+		}
+		wantError := ""
+		if index%257 == 0 {
+			wantError = backendErr.Error()
+		}
+		if result.Error != wantError || result.Hash == nil || *result.Hash != signed[index].Hash() {
+			t.Fatalf("result %d mismatch: %+v", index, result)
+		}
+	}
+}
+
+func TestSendRawTransactionsSplitsBurstByEncodedBytes(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	to := common.HexToAddress("0x1000000000000000000000000000000000000001")
+	data := make([]byte, MaxRawTxBatchBytes/2)
+	raw := make([]hexutil.Bytes, 3)
+	for index := range raw {
+		tx := types.NewTransaction(uint64(index), to, big.NewInt(1), 10_000_000, big.NewInt(20), data)
+		tx, err = types.SignTx(tx, types.NewEIP155Signer(big.NewInt(1337)), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw[index], err = tx.MarshalBinary()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(raw[index]) > MaxRawTxBatchBytes {
+			t.Fatalf("test transaction exceeds per-item bound: %d", len(raw[index]))
+		}
+	}
+	if len(raw[0])+len(raw[1]) <= MaxRawTxBatchBytes {
+		t.Fatal("test transactions do not straddle the byte bound")
+	}
+
+	backend := newLondonAPITestBackend()
+	var mu sync.Mutex
+	var calls, received int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		batchBytes := 0
+		for _, tx := range txs {
+			encoded, err := tx.MarshalBinary()
+			if err != nil {
+				t.Error(err)
+				continue
+			}
+			batchBytes += len(encoded)
+		}
+		if batchBytes > MaxRawTxBatchBytes {
+			t.Errorf("backend micro-batch bytes = %d, limit %d", batchBytes, MaxRawTxBatchBytes)
+		}
+		mu.Lock()
+		calls++
+		received += len(txs)
+		mu.Unlock()
+		return make([]error, len(txs))
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	results, err := api.SendRawTransactions(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 3 || received != len(raw) || len(results) != len(raw) {
+		t.Fatalf("byte split mismatch: calls=%d received=%d results=%d", calls, received, len(results))
+	}
+}
+
+func TestSendRawTransactionsAcceptsTwentyThousandAsMicroBatches(t *testing.T) {
+	const count = 20_000
+	raw, signed := signedRawTransactionsForTest(t, count)
+	backend := newLondonAPITestBackend()
+	wantCalls := (count + MaxRawTxBatchCount - 1) / MaxRawTxBatchCount
+	backendErr := errors.New("injected parallel backend rejection")
+	started := make(chan struct{}, wantCalls)
+	release := make(chan struct{})
+	seen := make([]int, count)
+	var mu sync.Mutex
+	var calls, received, active, maxActive int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		if len(txs) == 0 || len(txs) > MaxRawTxBatchCount {
+			t.Errorf("backend micro-batch size = %d", len(txs))
+		}
+		batchBytes := 0
+		backendResults := make([]error, len(txs))
+		mu.Lock()
+		calls++
+		received += len(txs)
+		active++
+		if active > maxActive {
+			maxActive = active
+		}
+		for index, tx := range txs {
+			nonce := int(tx.Nonce())
+			if nonce < 0 || nonce >= len(seen) {
+				t.Errorf("backend nonce %d is outside request", nonce)
+				continue
+			}
+			seen[nonce]++
+			encoded, err := tx.MarshalBinary()
+			if err != nil {
+				t.Error(err)
+			} else {
+				batchBytes += len(encoded)
+			}
+			if nonce%997 == 0 {
+				backendResults[index] = backendErr
+			}
+		}
+		mu.Unlock()
+		if batchBytes > MaxRawTxBatchBytes {
+			t.Errorf("backend micro-batch bytes = %d, limit %d", batchBytes, MaxRawTxBatchBytes)
+		}
+		started <- struct{}{}
+		<-release
+		mu.Lock()
+		active--
+		mu.Unlock()
+		return backendResults
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	type rpcResult struct {
+		results []RawTxResult
+		err     error
+	}
+	finished := make(chan rpcResult, 1)
+	go func() {
+		results, err := api.SendRawTransactions(context.Background(), raw)
+		finished <- rpcResult{results: results, err: err}
+	}()
+	for index := 0; index < rawTxBackendParallelism; index++ {
+		select {
+		case <-started:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("only %d/%d backend workers started", index, rawTxBackendParallelism)
+		}
+	}
+	mu.Lock()
+	if calls != rawTxBackendParallelism || active != rawTxBackendParallelism || maxActive != rawTxBackendParallelism {
+		t.Fatalf("initial backend concurrency calls=%d active=%d max=%d, want %d", calls, active, maxActive, rawTxBackendParallelism)
+	}
+	mu.Unlock()
+	close(release)
+	response := <-finished
+	if response.err != nil {
+		t.Fatal(response.err)
+	}
+	results := response.results
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != wantCalls || received != count || maxActive > rawTxBackendParallelism || len(results) != count {
+		t.Fatalf("20k burst mismatch: calls=%d/%d received=%d maxActive=%d results=%d", calls, wantCalls, received, maxActive, len(results))
+	}
+	for index, result := range results {
+		if seen[index] != 1 {
+			t.Fatalf("transaction %d backend submissions = %d, want 1", index, seen[index])
+		}
+		wantError := ""
+		if index%997 == 0 {
+			wantError = backendErr.Error()
+		}
+		if result.Error != wantError || result.Hash == nil || *result.Hash != signed[index].Hash() {
+			t.Fatalf("result %d mismatch: %+v", index, result)
+		}
+	}
+}
+
+func TestSendRawTransactionsCancellationStopsUnacceptedMicroBatches(t *testing.T) {
+	const count = rawTxBackendParallelism*MaxRawTxBatchCount + 17
+	raw, signed := signedRawTransactionsForTest(t, count)
+	backend := newLondonAPITestBackend()
+	started := make(chan struct{}, rawTxBackendParallelism+1)
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var calls, active int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		mu.Lock()
+		calls++
+		active++
+		mu.Unlock()
+		started <- struct{}{}
+		<-release
+		mu.Lock()
+		active--
+		mu.Unlock()
+		return make([]error, len(txs))
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	ctx, cancel := context.WithCancel(context.Background())
+	type rpcResult struct {
+		results []RawTxResult
+		err     error
+	}
+	finished := make(chan rpcResult, 1)
+	go func() {
+		results, err := api.SendRawTransactions(ctx, raw)
+		finished <- rpcResult{results: results, err: err}
+	}()
+	for index := 0; index < rawTxBackendParallelism; index++ {
+		select {
+		case <-started:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("only %d/%d backend workers started", index, rawTxBackendParallelism)
+		}
+	}
+	cancel()
+	// All workers are occupied, so the unbuffered ninth handoff must observe
+	// cancellation rather than accepting more node-side durable work.
+	select {
+	case <-started:
+		t.Fatal("backend accepted a micro-batch after request cancellation")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	response := <-finished
+	if response.err != nil {
+		t.Fatal(response.err)
+	}
+	mu.Lock()
+	if calls != rawTxBackendParallelism || active != 0 {
+		t.Fatalf("backend calls=%d active=%d, want %d/0", calls, active, rawTxBackendParallelism)
+	}
+	mu.Unlock()
+	if len(response.results) != count {
+		t.Fatalf("results=%d, want %d", len(response.results), count)
+	}
+	accepted := rawTxBackendParallelism * MaxRawTxBatchCount
+	for index, result := range response.results {
+		if index < accepted {
+			if result.Hash == nil || *result.Hash != signed[index].Hash() || result.Error != "" {
+				t.Fatalf("accepted result %d mismatch: %+v", index, result)
+			}
+			continue
+		}
+		if result.Hash != nil || result.Error != context.Canceled.Error() {
+			t.Fatalf("unscheduled result %d mismatch: %+v", index, result)
+		}
+	}
+}
+
+func TestSendRawTransactionsRejectsOversizedItemWithoutRejectingNeighbors(t *testing.T) {
+	raw, signed := signedRawTransactionsForTest(t, 2)
+	inputs := []hexutil.Bytes{raw[0], make([]byte, MaxRawTxBatchBytes+1), raw[1]}
+	backend := newLondonAPITestBackend()
+	var mu sync.Mutex
+	var calls, received int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		mu.Lock()
+		calls++
+		received += len(txs)
+		mu.Unlock()
+		return make([]error, len(txs))
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	results, err := api.SendRawTransactions(context.Background(), inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 2 || received != 2 {
+		t.Fatalf("backend calls=%d received=%d, want 2/2", calls, received)
+	}
+	if results[0].Hash == nil || *results[0].Hash != signed[0].Hash() || results[0].Error != "" {
+		t.Fatalf("first result mismatch: %+v", results[0])
+	}
+	if results[1].Hash != nil || results[1].Error == "" {
+		t.Fatalf("oversized result mismatch: %+v", results[1])
+	}
+	if results[2].Hash == nil || *results[2].Hash != signed[1].Hash() || results[2].Error != "" {
+		t.Fatalf("last result mismatch: %+v", results[2])
+	}
+}
+
+func TestSendRawTransactionsHandlesBackendResultLengthMismatch(t *testing.T) {
+	raw, _ := signedRawTransactionsForTest(t, 2)
+	backend := newLondonAPITestBackend()
+	backend.sendBatchFn = func(types.Transactions) []error { return []error{nil} }
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	results, err := api.SendRawTransactions(context.Background(), raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results[0].Error != "" || results[1].Error == "" {
+		t.Fatalf("misaligned backend results were not isolated: %+v", results)
+	}
+}
+
+func TestSendRawTransactionUsesBatchBackendAndPreservesError(t *testing.T) {
+	raw, _ := signedRawTransactionsForTest(t, 1)
+	want := errors.New("single batch failure")
+	backend := newLondonAPITestBackend()
+	var calls int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		calls++
+		return []error{want}
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	if _, err := api.SendRawTransaction(context.Background(), raw[0]); !errors.Is(err, want) {
+		t.Fatalf("single transaction error = %v, want %v", err, want)
+	}
+	if calls != 1 {
+		t.Fatalf("backend calls = %d, want 1", calls)
+	}
+}
+
+func TestSendRawTransactionCoalescesConcurrentRequests(t *testing.T) {
+	const count = MaxRawTxBatchCount + 1
+	raw, signed := signedRawTransactionsForTest(t, count)
+	wantBackendErr := errors.New("injected coalesced rejection")
+	backend := newLondonAPITestBackend()
+	seen := make(map[common.Hash]int, count)
+	backendStarted := make(chan struct{}, 2)
+	releaseBackend := make(chan struct{})
+	var backendMu sync.Mutex
+	var backendCalls, received, largestBatch, active, maxActive int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		backendMu.Lock()
+		backendCalls++
+		received += len(txs)
+		active++
+		if active > maxActive {
+			maxActive = active
+		}
+		if len(txs) > largestBatch {
+			largestBatch = len(txs)
+		}
+		results := make([]error, len(txs))
+		for index, tx := range txs {
+			seen[tx.Hash()]++
+			if tx.Nonce()%17 == 0 {
+				results[index] = wantBackendErr
+			}
+		}
+		backendMu.Unlock()
+		backendStarted <- struct{}{}
+		<-releaseBackend
+		backendMu.Lock()
+		active--
+		backendMu.Unlock()
+		return results
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	// Production remains at 2ms; a wider deterministic test window separates
+	// scheduler variance from the batching invariant exercised here.
+	api.singleRawTxCoalesceDelay = time.Second
+
+	start := make(chan struct{})
+	errs := make([]error, count)
+	hashes := make([]common.Hash, count)
+	var callers sync.WaitGroup
+	callers.Add(count)
+	for index := range raw {
+		go func(index int) {
+			defer callers.Done()
+			<-start
+			hashes[index], errs[index] = api.SendRawTransaction(context.Background(), raw[index])
+		}(index)
+	}
+	close(start)
+	for index := 0; index < 2; index++ {
+		select {
+		case <-backendStarted:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("only %d/2 coalesced backend calls started", index)
+		}
+	}
+	backendMu.Lock()
+	if backendCalls != 2 || active != 2 || maxActive != 2 {
+		t.Fatalf("coalesced backend concurrency calls=%d active=%d max=%d, want 2", backendCalls, active, maxActive)
+	}
+	backendMu.Unlock()
+	close(releaseBackend)
+	callers.Wait()
+
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	if backendCalls != 2 {
+		t.Fatalf("backend calls = %d, want 2 bounded micro-batches", backendCalls)
+	}
+	if received != count || largestBatch > MaxRawTxBatchCount {
+		t.Fatalf("backend received=%d largestBatch=%d, want %d and <=%d", received, largestBatch, count, MaxRawTxBatchCount)
+	}
+	for index, tx := range signed {
+		if seen[tx.Hash()] != 1 {
+			t.Fatalf("transaction %d backend submissions = %d, want 1", index, seen[tx.Hash()])
+		}
+		if tx.Nonce()%17 == 0 {
+			if !errors.Is(errs[index], wantBackendErr) || hashes[index] != (common.Hash{}) {
+				t.Fatalf("transaction %d rejection mismatch: hash=%s err=%v", index, hashes[index], errs[index])
+			}
+		} else if errs[index] != nil || hashes[index] != tx.Hash() {
+			t.Fatalf("transaction %d result mismatch: hash=%s/%s err=%v", index, hashes[index], tx.Hash(), errs[index])
+		}
+	}
+}
+
+func TestSendRawTransactionCancellationDoesNotCancelAcceptedSubmission(t *testing.T) {
+	raw, signed := signedRawTransactionsForTest(t, 2)
+	backend := newLondonAPITestBackend()
+	backendStarted := make(chan struct{})
+	releaseBackend := make(chan struct{})
+	backendDone := make(chan struct{})
+	var backendCalls int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		backendCalls++
+		if len(txs) != 2 {
+			t.Errorf("unexpected durable submission: %+v", txs)
+		} else {
+			got := map[common.Hash]bool{txs[0].Hash(): true, txs[1].Hash(): true}
+			if !got[signed[0].Hash()] || !got[signed[1].Hash()] {
+				t.Errorf("durable submission hashes do not match callers: %+v", txs)
+			}
+		}
+		close(backendStarted)
+		<-releaseBackend
+		close(backendDone)
+		return make([]error, len(txs))
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	api.singleRawTxCoalesceDelay = 100 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	canceledCallerDone := make(chan error, 1)
+	continuingCallerDone := make(chan struct {
+		hash common.Hash
+		err  error
+	}, 1)
+	start := make(chan struct{})
+	go func() {
+		<-start
+		_, err := api.SendRawTransaction(ctx, raw[0])
+		canceledCallerDone <- err
+	}()
+	go func() {
+		<-start
+		hash, err := api.SendRawTransaction(context.Background(), raw[1])
+		continuingCallerDone <- struct {
+			hash common.Hash
+			err  error
+		}{hash: hash, err: err}
+	}()
+	close(start)
+	<-backendStarted
+	cancel()
+	if err := <-canceledCallerDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled caller error = %v, want %v", err, context.Canceled)
+	}
+	close(releaseBackend)
+	<-backendDone
+	continuing := <-continuingCallerDone
+	if continuing.err != nil || continuing.hash != signed[1].Hash() {
+		t.Fatalf("uncanceled caller result = %s/%v, want %s/nil", continuing.hash, continuing.err, signed[1].Hash())
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		api.singleRawTxMu.Lock()
+		idle := !api.singleRawTxWorkerRunning && api.singleRawTxPendingCount == 0 && api.singleRawTxPendingBytes == 0
+		api.singleRawTxMu.Unlock()
+		if idle {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("single transaction worker did not become idle")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if backendCalls != 1 {
+		t.Fatalf("backend calls = %d, want exactly one after caller cancellation", backendCalls)
+	}
+}
+
+func TestSendRawTransactionAlreadyCancelledDoesNotEnqueue(t *testing.T) {
+	raw, _ := signedRawTransactionsForTest(t, 1)
+	backend := newLondonAPITestBackend()
+	backendCalled := make(chan struct{}, 1)
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		backendCalled <- struct{}{}
+		return make([]error, len(txs))
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	hash, err := api.SendRawTransaction(ctx, raw[0])
+	if !errors.Is(err, context.Canceled) || hash != (common.Hash{}) {
+		t.Fatalf("already-cancelled submission = %s/%v, want zero/%v", hash, err, context.Canceled)
+	}
+	select {
+	case <-backendCalled:
+		t.Fatal("already-cancelled submission reached the backend")
+	case <-time.After(20 * time.Millisecond):
+	}
+	api.singleRawTxMu.Lock()
+	defer api.singleRawTxMu.Unlock()
+	if api.singleRawTxWorkerRunning || len(api.singleRawTxQueue) != 0 || api.singleRawTxPendingCount != 0 || api.singleRawTxPendingBytes != 0 {
+		t.Fatalf("already-cancelled submission consumed queue state: running=%t queued=%d count=%d bytes=%d",
+			api.singleRawTxWorkerRunning, len(api.singleRawTxQueue), api.singleRawTxPendingCount, api.singleRawTxPendingBytes)
+	}
+}
+
+func TestSendRawTransactionQueueBoundsIncludeInflightWork(t *testing.T) {
+	raw, _ := signedRawTransactionsForTest(t, 2)
+	tests := []struct {
+		name      string
+		configure func(*PublicTransactionPoolAPI)
+		wantError string
+	}{
+		{
+			name: "count",
+			configure: func(api *PublicTransactionPoolAPI) {
+				api.singleRawTxQueueCountLimit = 1
+			},
+			wantError: "queue count exceeds limit",
+		},
+		{
+			name: "bytes",
+			configure: func(api *PublicTransactionPoolAPI) {
+				api.singleRawTxQueueCountLimit = 2
+				api.singleRawTxQueueBytesLimit = len(raw[0]) + len(raw[1]) - 1
+			},
+			wantError: "queue bytes exceed limit",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			backend := newLondonAPITestBackend()
+			backendStarted := make(chan struct{})
+			releaseBackend := make(chan struct{})
+			var backendCalls int
+			backend.sendBatchFn = func(txs types.Transactions) []error {
+				backendCalls++
+				close(backendStarted)
+				<-releaseBackend
+				return make([]error, len(txs))
+			}
+			api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+			api.singleRawTxCoalesceDelay = 0
+			test.configure(api)
+
+			firstDone := make(chan error, 1)
+			go func() {
+				_, err := api.SendRawTransaction(context.Background(), raw[0])
+				firstDone <- err
+			}()
+			<-backendStarted
+			if _, err := api.SendRawTransaction(context.Background(), raw[1]); err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("second request error = %v, want %q", err, test.wantError)
+			}
+			close(releaseBackend)
+			if err := <-firstDone; err != nil {
+				t.Fatalf("first request failed: %v", err)
+			}
+			if backendCalls != 1 {
+				t.Fatalf("backend calls = %d, want 1", backendCalls)
+			}
+		})
+	}
+}
+
+func TestSendRawTransactionsRejectsOversizedSignatureIntegerBeforeBackend(t *testing.T) {
+	backend := newLondonAPITestBackend()
+	var calls int
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		calls++
+		return make([]error, len(txs))
+	}
+	to := common.HexToAddress("0x1000000000000000000000000000000000000001")
+	oversizedV := new(big.Int).Lsh(big.NewInt(1), 1<<20)
+	raw, err := rlp.EncodeToBytes([]interface{}{
+		uint64(0), big.NewInt(1), uint64(21_000), to, big.NewInt(0), []byte(nil),
+		oversizedV, big.NewInt(1), big.NewInt(1),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	results, err := api.SendRawTransactions(context.Background(), []hexutil.Bytes{raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("backend calls = %d, want 0", calls)
+	}
+	if len(results) != 1 || results[0].Hash == nil || results[0].Error == "" {
+		t.Fatalf("unexpected oversized-signature result: %+v", results)
 	}
 }

@@ -94,3 +94,29 @@ func TestFHSBlockProofGuardRejectsBeforeAlternateImportPaths(t *testing.T) {
 		t.Fatalf("signature verifier calls = %v, want [7]", validator.calls)
 	}
 }
+
+func TestIsFinalizedTransactionRejectsReceiptSyncLookupAheadOfStateHead(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	tx := types.NewTransaction(0, common.Address{1}, big.NewInt(1), params.TxGas, big.NewInt(1), nil)
+	genesis := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(0), Difficulty: big.NewInt(1)})
+	block := types.NewBlockWithHeader(&types.Header{
+		ParentHash: genesis.Hash(), Number: big.NewInt(1), Difficulty: big.NewInt(1),
+	}).WithBody(types.Transactions{tx}, nil)
+	rawdb.WriteBlock(db, block)
+	rawdb.WriteCanonicalHash(db, block.Hash(), block.NumberU64())
+	rawdb.WriteTxLookupEntries(db, block)
+
+	bc := &BlockChain{db: db, chainConfig: &params.ChainConfig{FairHotstuff: true}}
+	bc.currentBlock.Store(genesis)
+	if bc.IsFinalizedTransaction(tx.Hash()) {
+		t.Fatal("receipt-sync lookup ahead of the FHS state head was treated as finalized")
+	}
+	bc.currentBlock.Store(block)
+	if !bc.IsFinalizedTransaction(tx.Hash()) {
+		t.Fatal("canonical transaction at the FHS state head was not finalized")
+	}
+	rawdb.WriteCanonicalHash(db, common.HexToHash("0xdead"), block.NumberU64())
+	if bc.IsFinalizedTransaction(tx.Hash()) {
+		t.Fatal("transaction outside the canonical block body was treated as finalized")
+	}
+}

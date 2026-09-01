@@ -17,6 +17,9 @@ type proposedChain struct {
 	unappliedBlocks    *lane.Deque
 	invalidBlockHashes mapset.Set // This is thread-safe. This set is referred to as our "guard" below.
 	proposedTxes       map[common.Hash]time.Time
+	certifiedTxes      map[common.Hash]struct{}
+	nextProposedExpiry time.Time
+	revision           uint64
 }
 
 func newProposedChain() *proposedChain {
@@ -25,6 +28,7 @@ func newProposedChain() *proposedChain {
 		unappliedBlocks:    lane.NewDeque(),
 		invalidBlockHashes: mapset.NewSet(),
 		proposedTxes:       make(map[common.Hash]time.Time),
+		certifiedTxes:      make(map[common.Hash]struct{}),
 	}
 }
 
@@ -33,6 +37,9 @@ func (chain *proposedChain) clear(block *types.Block) {
 	chain.unappliedBlocks = lane.NewDeque()
 	chain.invalidBlockHashes.Clear()
 	chain.proposedTxes = make(map[common.Hash]time.Time)
+	chain.certifiedTxes = make(map[common.Hash]struct{})
+	chain.nextProposedExpiry = time.Time{}
+	chain.revision++
 }
 
 // Append a new speculative block
@@ -40,6 +47,7 @@ func (chain *proposedChain) extend(block *types.Block) {
 	chain.head = block
 	chain.recordProposedTransactions(block.Transactions(), time.Now())
 	chain.unappliedBlocks.Append(block)
+	chain.revision++
 }
 
 func (chain *proposedChain) adoptCertified(block *types.Block) {
@@ -47,9 +55,13 @@ func (chain *proposedChain) adoptCertified(block *types.Block) {
 		return
 	}
 	if chain.head != nil && chain.head.Hash() == block.Hash() {
+		if chain.promoteCertifiedTransactions(block) {
+			chain.revision++
+		}
 		return
 	}
 	chain.extend(block)
+	chain.promoteCertifiedTransactions(block)
 }
 
 func (chain *proposedChain) markCommitted(block *types.Block) {
@@ -58,6 +70,7 @@ func (chain *proposedChain) markCommitted(block *types.Block) {
 	}
 	chain.removeProposedTxes(block)
 	chain.cleanupExpiredProposedTxes(time.Now())
+	chain.revision++
 }
 
 // Set the parent of the speculative chain
@@ -65,6 +78,7 @@ func (chain *proposedChain) markCommitted(block *types.Block) {
 // Note: This is only called when not minter
 func (chain *proposedChain) setHead(block *types.Block) {
 	chain.head = block
+	chain.revision++
 }
 
 // Accept this block, removing it from the speculative chain
@@ -85,10 +99,12 @@ func (chain *proposedChain) accept(acceptedBlock *types.Block) {
 	if earliestProposed == nil {
 		chain.head = acceptedBlock
 		chain.cleanupExpiredProposedTxes(time.Now())
+		chain.revision++
 	} else if expectedBlock := earliestProposed.Hash() == acceptedBlock.Hash(); expectedBlock {
 		// Remove the txes in this accepted block from our blacklist.
 		chain.removeProposedTxes(acceptedBlock)
 		chain.cleanupExpiredProposedTxes(time.Now())
+		chain.revision++
 	} else {
 		log.Info("Another node minted; Clearing speculative state", "block", acceptedBlock.Hash())
 
@@ -98,6 +114,7 @@ func (chain *proposedChain) accept(acceptedBlock *types.Block) {
 
 // Remove all blocks in the chain from the specified one until the end
 func (chain *proposedChain) unwindFrom(invalidHash common.Hash, headBlock *types.Block) {
+	chain.revision++
 
 	// check our "guard" to see if this is a (descendant) block we're
 	// expected to be ruled invalid. if we find it, remove from the guard
@@ -151,8 +168,37 @@ func (chain *proposedChain) unwindFrom(invalidHash common.Hash, headBlock *types
 // flown through raft).
 func (chain *proposedChain) recordProposedTransactions(txes types.Transactions, now time.Time) {
 	for _, tx := range txes {
+		if _, certified := chain.certifiedTxes[tx.Hash()]; certified {
+			continue
+		}
 		chain.proposedTxes[tx.Hash()] = now
 	}
+	chain.recomputeNextProposedExpiry()
+}
+
+// promoteCertifiedTransactions moves a speculative exclusion onto the
+// consensus lifecycle. A wall-clock TTL is appropriate for an abandoned local
+// proposal, but a certified parent must remain excluded until commit or an
+// explicit unwind. Otherwise a view lasting longer than proposedTxTTL lets the
+// next leader select the same canonical-pool nonce window against the already
+// executed certified state.
+func (chain *proposedChain) promoteCertifiedTransactions(block *types.Block) bool {
+	changed := false
+	for _, tx := range block.Transactions() {
+		hash := tx.Hash()
+		if _, proposed := chain.proposedTxes[hash]; proposed {
+			delete(chain.proposedTxes, hash)
+			changed = true
+		}
+		if _, certified := chain.certifiedTxes[hash]; !certified {
+			chain.certifiedTxes[hash] = struct{}{}
+			changed = true
+		}
+	}
+	if changed {
+		chain.recomputeNextProposedExpiry()
+	}
+	return changed
 }
 
 // Removes txes in block from our "blacklist" of "proposed tx" hashes. When we
@@ -164,20 +210,45 @@ func (chain *proposedChain) recordProposedTransactions(txes types.Transactions, 
 // need them in there anymore) so that it doesn't grow endlessly.
 func (chain *proposedChain) removeProposedTxes(block *types.Block) {
 	for _, tx := range block.Transactions() {
-		delete(chain.proposedTxes, tx.Hash())
+		hash := tx.Hash()
+		delete(chain.proposedTxes, hash)
+		delete(chain.certifiedTxes, hash)
 	}
+	chain.recomputeNextProposedExpiry()
 }
 
-func (chain *proposedChain) cleanupExpiredProposedTxes(now time.Time) {
-	for hash, ts := range chain.proposedTxes {
-		if now.Sub(ts) > proposedTxTTL {
-			delete(chain.proposedTxes, hash)
+func (chain *proposedChain) recomputeNextProposedExpiry() {
+	chain.nextProposedExpiry = time.Time{}
+	for _, proposedAt := range chain.proposedTxes {
+		expires := proposedAt.Add(proposedTxTTL)
+		if chain.nextProposedExpiry.IsZero() || expires.Before(chain.nextProposedExpiry) {
+			chain.nextProposedExpiry = expires
 		}
 	}
 }
 
+func (chain *proposedChain) cleanupExpiredProposedTxes(now time.Time) bool {
+	removed := false
+	nextExpiry := time.Time{}
+	for hash, ts := range chain.proposedTxes {
+		if now.Sub(ts) > proposedTxTTL {
+			delete(chain.proposedTxes, hash)
+			removed = true
+			continue
+		}
+		expires := ts.Add(proposedTxTTL)
+		if nextExpiry.IsZero() || expires.Before(nextExpiry) {
+			nextExpiry = expires
+		}
+	}
+	chain.nextProposedExpiry = nextExpiry
+	return removed
+}
+
 func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes, now time.Time) AddressTxes {
-	chain.cleanupExpiredProposedTxes(now)
+	if chain.cleanupExpiredProposedTxes(now) {
+		chain.revision++
+	}
 
 	// PendingByLane already returns a fresh map. Reuse that map and compact
 	// each tx slice in-place instead of allocating another AddressTxes map and
@@ -185,7 +256,11 @@ func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes, now time.T
 	for addr, txes := range addrTxes {
 		writeIndex := 0
 		for _, tx := range txes {
-			if _, blocked := chain.proposedTxes[tx.Hash()]; blocked {
+			hash := tx.Hash()
+			if _, blocked := chain.proposedTxes[hash]; blocked {
+				continue
+			}
+			if _, certified := chain.certifiedTxes[hash]; certified {
 				continue
 			}
 			txes[writeIndex] = tx

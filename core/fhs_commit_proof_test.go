@@ -1,9 +1,12 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/rawdb"
@@ -14,6 +17,111 @@ import (
 	"github.com/cypherium/cypher/reconfig/hotstuff"
 	lru "github.com/hashicorp/golang-lru"
 )
+
+func TestInsertChainRetriesFHSPublicationBusyAfterUnlock(t *testing.T) {
+	bc := &BlockChain{}
+	release := make(chan struct{})
+	waiting := make(chan struct{})
+	var calls, waits int32
+	bc.fhsSyncWaitPublication = func() {
+		atomic.AddInt32(&waits, 1)
+		close(waiting)
+		<-release
+	}
+
+	type result struct {
+		n   int
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		n, err := bc.insertChainWithFHSPublicationRetry(func() (int, error) {
+			if atomic.AddInt32(&calls, 1) == 1 {
+				return 3, ErrFHSFinalizedSyncPublicationBusy
+			}
+			return 7, nil
+		})
+		done <- result{n: n, err: err}
+	}()
+
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	select {
+	case <-waiting:
+	case <-time.After(time.Second):
+		t.Fatal("insertion did not wait after the retryable publication conflict")
+	}
+	// The live publication must be able to take chainmu while the importer is
+	// waiting; otherwise this retry path recreates the original ABBA deadlock.
+	chainLockAvailable := make(chan struct{})
+	go func() {
+		bc.chainmu.Lock()
+		bc.chainmu.Unlock()
+		close(chainLockAvailable)
+	}()
+	select {
+	case <-chainLockAvailable:
+	case <-time.After(time.Second):
+		t.Fatal("chainmu remained locked while waiting for the publication barrier")
+	}
+	close(release)
+	released = true
+
+	select {
+	case got := <-done:
+		if got.err != nil || got.n != 7 {
+			t.Fatalf("retry result = (%d, %v), want (7, nil)", got.n, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("insertion did not retry after publication release")
+	}
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("insertion calls = %d, want 2", got)
+	}
+	if got := atomic.LoadInt32(&waits); got != 1 {
+		t.Fatalf("publication waits = %d, want 1", got)
+	}
+}
+
+func TestInsertChainDoesNotRetryNonBusyError(t *testing.T) {
+	bc := &BlockChain{}
+	var calls, waits int32
+	bc.fhsSyncWaitPublication = func() { atomic.AddInt32(&waits, 1) }
+	wantErr := errors.New("invalid proof")
+	n, err := bc.insertChainWithFHSPublicationRetry(func() (int, error) {
+		atomic.AddInt32(&calls, 1)
+		return 4, wantErr
+	})
+	if n != 4 || !errors.Is(err, wantErr) {
+		t.Fatalf("non-busy result = (%d, %v), want (4, %v)", n, err, wantErr)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("insertion calls = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&waits); got != 0 {
+		t.Fatalf("publication waits = %d, want 0", got)
+	}
+}
+
+func TestFHSFinalizedSyncLifecycleRejectsPartialHooks(t *testing.T) {
+	bc := &BlockChain{
+		fhsSyncBeforeKeyCommit: func(*types.Block, *hotstuff.SignedState) (bool, error) {
+			return true, nil
+		},
+	}
+	block := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(1)})
+	_, err := bc.commitFHSSyncVerifiedProposal(
+		&VerifiedProposal{Block: block},
+		&hotstuff.SignedState{},
+	)
+	if err == nil || err.Error() != "incomplete Fair HotStuff finalized sync key lifecycle" {
+		t.Fatalf("partial lifecycle error = %v", err)
+	}
+}
 
 func makeFHSCommitProofValidator(t *testing.T) (*BlockValidator, []bls.SecretKey, []*bls.PublicKey, common.Hash) {
 	t.Helper()

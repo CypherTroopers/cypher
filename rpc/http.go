@@ -95,10 +95,11 @@ type HTTPTimeouts struct {
 	// ReadHeaderTimeout. It is valid to use them both.
 	ReadTimeout time.Duration
 
-	// WriteTimeout is the maximum duration before timing out
-	// writes of the response. It is reset whenever a new
-	// request's header is read. Like ReadTimeout, it does not
-	// let Handlers make decisions on a per-request basis.
+	// WriteTimeout is the maximum duration for writing a response once it is
+	// ready. The JSON-RPC handler reapplies this budget when response encoding
+	// starts so bounded long-running methods don't inherit a deadline that
+	// elapsed while they were executing. Other HTTP handlers retain net/http's
+	// header-relative WriteTimeout behavior.
 	WriteTimeout time.Duration
 
 	// IdleTimeout is the maximum amount of time to wait for the
@@ -228,12 +229,29 @@ func (hc *httpConn) doRequest(ctx context.Context, msg interface{}) (io.ReadClos
 type httpServerConn struct {
 	io.Reader
 	io.Writer
-	r *http.Request
+	r                    *http.Request
+	responseWriter       http.ResponseWriter
+	responseWriteTimeout time.Duration
 }
 
 func newHTTPServerConn(r *http.Request, w http.ResponseWriter) ServerCodec {
 	body := io.LimitReader(r.Body, maxRequestContentLength)
-	conn := &httpServerConn{Reader: body, Writer: w, r: r}
+	writeTimeout := defaultWriteTimeout
+	if server, ok := r.Context().Value(http.ServerContextKey).(*http.Server); ok && server != nil && server.WriteTimeout > 0 {
+		writeTimeout = server.WriteTimeout
+	}
+	conn := &httpServerConn{
+		Reader:               body,
+		Writer:               w,
+		r:                    r,
+		responseWriter:       w,
+		responseWriteTimeout: writeTimeout,
+	}
+	// net/http starts WriteTimeout when it reads the request headers. Clear that
+	// transport deadline before executing the RPC. SetWriteDeadline installs a
+	// fresh, bounded response deadline immediately before JSON encoding. Clearing
+	// up front is required because an expired HTTP/2 deadline cannot be extended.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	return NewCodec(conn)
 }
 
@@ -245,8 +263,17 @@ func (t *httpServerConn) RemoteAddr() string {
 	return t.r.RemoteAddr
 }
 
-// SetWriteDeadline does nothing and always returns nil.
-func (t *httpServerConn) SetWriteDeadline(time.Time) error { return nil }
+// SetWriteDeadline installs a fresh response-write budget on the underlying HTTP
+// connection. jsonCodec supplies its generic fallback deadline here, but HTTP
+// uses the actual server WriteTimeout captured for this request. An explicit
+// request-context deadline remains authoritative when it expires sooner.
+func (t *httpServerConn) SetWriteDeadline(_ time.Time) error {
+	deadline := time.Now().Add(t.responseWriteTimeout)
+	if requestDeadline, ok := t.r.Context().Deadline(); ok && requestDeadline.Before(deadline) {
+		deadline = requestDeadline
+	}
+	return http.NewResponseController(t.responseWriter).SetWriteDeadline(deadline)
+}
 
 // ServeHTTP serves JSON-RPC requests over HTTP.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

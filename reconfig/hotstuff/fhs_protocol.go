@@ -2,11 +2,13 @@ package hotstuff
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/crypto/bls"
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
@@ -17,6 +19,11 @@ const (
 	maxFHSNewViewReportBytes   = 8 * 1024
 	maxFHSAggregateReportBytes = 256 * 1024
 	maxFHSAggregateQCBytes     = 320 * 1024
+	// HighQC validation may retain more than one already-authenticated control
+	// message while the body/EVM worker catches up. Keep the aggregate memory
+	// bounded independently from the per-message wire limit and count limit;
+	// three envelopes leave RLP headroom for two maximum-size continuations.
+	maxFHSHighQCContinuationBytes = 3 * MaxHotstuffControlBytes
 )
 
 func validateFHSNewViewReportSize(encoded []byte, report *NewViewReport) error {
@@ -32,6 +39,306 @@ func (hsm *HotstuffProtocolManager) fhsApplication() (FHSApplication, bool) {
 	}
 	app, ok := hsm.app.(FHSApplication)
 	return app, ok
+}
+
+// validateFHSHighQCScheduleTarget prevents an authenticated sender from using
+// arbitrary target views to start HighQC workers. The current canonical target
+// is checked immediately. A future target is eligible only when the verified
+// HighQC directly certifies its preceding view; a verified TC is accepted by
+// the caller first and advances CurrentState to the exact target. Future views
+// without either proof remain in the existing bounded NewView queue.
+func (hsm *HotstuffProtocolManager) validateFHSHighQCScheduleTarget(ctx *FHSViewContext, highQC *SignedState) error {
+	app, ok := hsm.fhsApplication()
+	if !ok || ctx == nil {
+		return ErrInvalidLeaderView
+	}
+	var currentTarget uint64
+	if readiness, ok := hsm.app.(FHSProposalReadinessApplication); ok {
+		_, currentTarget, _ = readiness.FHSProposalReadinessSnapshot()
+	} else {
+		_, _, currentTarget = hsm.app.CurrentState()
+	}
+	if currentTarget == 0 || ctx.TargetView == 0 {
+		return ErrInvalidLeaderView
+	}
+	if ctx.TargetView < currentTarget {
+		return ErrOldState
+	}
+	directQCProof := highQC != nil && highQC.Number < ctx.TargetView && ctx.TargetView-highQC.Number == 1
+	current := hsm.app.CurrentN()
+	farFuture := ctx.TargetView > current && ctx.TargetView-current > maxPendingNewViewIDs
+	if (farFuture || ctx.TargetView > currentTarget) && !directQCProof {
+		return ErrFutureState
+	}
+	if ctx.TargetView == currentTarget {
+		return app.ValidateFHSContext(ctx)
+	}
+	return nil
+}
+
+// sameFHSHighQCContinuationSlot assigns one pending slot to each authenticated
+// signer and message kind across every view. A single signer therefore cannot
+// consume the continuation count by changing only the target view.
+func sameFHSHighQCContinuationSlot(a, b *HotstuffMessage) bool {
+	return a != nil && b != nil && a.Code == b.Code && a.Id == b.Id
+}
+
+// preferFHSHighQCContinuation deterministically advances a signer's slot. A
+// strictly higher view replaces a lower view, so a stale first arrival cannot
+// hide the signer's later valid NewView. Same-height conflicts and equivalent
+// wire encodings retain the first authenticated copy, preventing hash-grinding
+// from repeatedly rewriting the slot.
+func preferFHSHighQCContinuation(candidate, existing *HotstuffMessage) bool {
+	if candidate == nil || existing == nil {
+		return candidate != nil
+	}
+	return candidate.Number > existing.Number
+}
+
+func fhsHighQCContinuationMessageBytes(msg *HotstuffMessage) (int, error) {
+	if msg == nil {
+		return 0, nil
+	}
+	canonical := cloneFHSPrepare(msg)
+	canonical.ReceivedAt = time.Time{}
+	encoded, err := rlp.EncodeToBytes(canonical)
+	if err != nil {
+		return 0, err
+	}
+	return len(encoded), nil
+}
+
+func fhsHighQCContinuationBytes(pending *pendingFHSHighQCValidation) (int, error) {
+	if pending == nil {
+		return 0, ErrInvalidHighQC
+	}
+	total := len(pending.leaderViews) * common.HashLength
+	for _, msg := range pending.messages {
+		size, err := fhsHighQCContinuationMessageBytes(msg)
+		if err != nil {
+			return 0, err
+		}
+		if size > maxFHSHighQCContinuationBytes-total {
+			return 0, fmt.Errorf("FHS HighQC continuation byte limit reached")
+		}
+		total += size
+	}
+	return total, nil
+}
+
+func appendFHSHighQCContinuation(pending *pendingFHSHighQCValidation, resumeMessage *HotstuffMessage, resumeLeaderView common.Hash) error {
+	if pending == nil {
+		return ErrInvalidHighQC
+	}
+	if resumeMessage != nil {
+		replace := -1
+		for index, existing := range pending.messages {
+			if sameFHSHighQCContinuationSlot(existing, resumeMessage) {
+				if !preferFHSHighQCContinuation(resumeMessage, existing) {
+					return nil
+				}
+				replace = index
+				break
+			}
+		}
+		if replace < 0 {
+			if len(pending.messages) >= maxPendingNewViewsPerID {
+				return fmt.Errorf("FHS HighQC continuation limit reached")
+			}
+		}
+		used, err := fhsHighQCContinuationBytes(pending)
+		if err != nil {
+			return err
+		}
+		if replace >= 0 {
+			replacedBytes, err := fhsHighQCContinuationMessageBytes(pending.messages[replace])
+			if err != nil {
+				return err
+			}
+			used -= replacedBytes
+		}
+		size, err := fhsHighQCContinuationMessageBytes(resumeMessage)
+		if err != nil {
+			return err
+		}
+		if size > maxFHSHighQCContinuationBytes-used {
+			return fmt.Errorf("FHS HighQC continuation byte limit reached")
+		}
+		if replace >= 0 {
+			pending.messages[replace] = cloneFHSPrepare(resumeMessage)
+		} else {
+			pending.messages = append(pending.messages, cloneFHSPrepare(resumeMessage))
+		}
+	}
+	if resumeLeaderView != (common.Hash{}) {
+		if pending.leaderViews == nil {
+			pending.leaderViews = make(map[common.Hash]struct{})
+		}
+		if _, duplicate := pending.leaderViews[resumeLeaderView]; !duplicate {
+			if len(pending.leaderViews) >= maxPendingNewViewsPerID {
+				return fmt.Errorf("FHS HighQC leader continuation limit reached")
+			}
+			used, err := fhsHighQCContinuationBytes(pending)
+			if err != nil {
+				return err
+			}
+			if common.HashLength > maxFHSHighQCContinuationBytes-used {
+				return fmt.Errorf("FHS HighQC continuation byte limit reached")
+			}
+			pending.leaderViews[resumeLeaderView] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (hsm *HotstuffProtocolManager) scheduleFHSHighQCCatchup(qc *SignedState, targetView uint64, resumeMessage *HotstuffMessage, resumeLeaderView common.Hash) error {
+	app, ok := hsm.fhsApplication()
+	if !ok || qc == nil {
+		return ErrInvalidHighQC
+	}
+	local := hsm.app.HighestCertified()
+	if local != nil {
+		switch {
+		case local.Number > qc.Number:
+			return nil
+		case local.Number == qc.Number:
+			if SignedStateSemanticEqual(local, qc) {
+				return nil
+			}
+			return ErrInvalidHighQC
+		}
+	}
+	async, ok := hsm.app.(FHSHighQCValidationApplication)
+	if !ok {
+		return app.AdoptFHSHighQC(qc)
+	}
+	id, err := SignedStateID(qc)
+	if err != nil {
+		return ErrInvalidHighQC
+	}
+	qcID := id.Hash()
+	if targetView == 0 {
+		targetView = qc.Number + 1
+	}
+	previous := hsm.pendingHighQC
+	if pending := hsm.pendingHighQC; pending != nil {
+		switch {
+		case pending.key.QCID == qcID:
+			if !SignedStateSemanticEqual(pending.qc, qc) {
+				return ErrInvalidHighQC
+			}
+			if targetView < pending.key.TargetView {
+				return ErrOldState
+			}
+			// TargetView only identifies the control-plane continuation; the
+			// expensive worker validates the same semantic QC. Coalesce a newer
+			// valid target behind the existing worker instead of cancelling and
+			// restarting identical body/EVM work.
+			if err := appendFHSHighQCContinuation(pending, resumeMessage, resumeLeaderView); err != nil {
+				return err
+			}
+			return ErrProposalValidationPending
+		case pending.qc != nil && pending.qc.Number >= qc.Number:
+			return ErrOldState
+		}
+	}
+
+	hsm.validationSequence++
+	if hsm.validationSequence == 0 {
+		hsm.validationSequence++
+	}
+	key := FHSHighQCValidationKey{RequestID: hsm.validationSequence, QCID: qcID, TargetView: targetView}
+	pending := &pendingFHSHighQCValidation{
+		key:         key,
+		qc:          CloneSignedState(qc),
+		leaderViews: make(map[common.Hash]struct{}),
+	}
+	// A newer certificate supersedes the worker, not the already-authenticated
+	// control messages waiting behind it. Move those bounded continuations to
+	// the replacement request and revalidate them only after the newer QC has
+	// been installed. If the bound is already full, leave the old request alive
+	// and reject the additional continuation instead of silently dropping one.
+	if previous != nil {
+		for _, message := range previous.messages {
+			if err := appendFHSHighQCContinuation(pending, message, common.Hash{}); err != nil {
+				return err
+			}
+		}
+		leaderViews := make([]common.Hash, 0, len(previous.leaderViews))
+		for viewID := range previous.leaderViews {
+			leaderViews = append(leaderViews, viewID)
+		}
+		sort.Slice(leaderViews, func(i, j int) bool { return bytes.Compare(leaderViews[i][:], leaderViews[j][:]) < 0 })
+		for _, viewID := range leaderViews {
+			if err := appendFHSHighQCContinuation(pending, nil, viewID); err != nil {
+				return err
+			}
+		}
+	}
+	if err := appendFHSHighQCContinuation(pending, resumeMessage, resumeLeaderView); err != nil {
+		return err
+	}
+	hsm.pendingHighQC = pending
+	if err := async.ScheduleFHSHighQCValidation(&FHSHighQCValidationRequest{Key: key, QC: CloneSignedState(qc)}); err != nil {
+		if hsm.pendingHighQC == pending {
+			// The application scheduler rejects a lower target before cancelling
+			// its still-live worker. Restore that exact manager request and retain
+			// the authenticated continuation behind it. When the older worker
+			// completes, normal replay will re-evaluate the newer certificate and
+			// schedule it against the then-current canonical state.
+			if previous != nil && errors.Is(err, ErrOldState) {
+				hsm.pendingHighQC = previous
+				if retainErr := appendFHSHighQCContinuation(previous, resumeMessage, resumeLeaderView); retainErr != nil {
+					return retainErr
+				}
+				return ErrProposalValidationPending
+			}
+			hsm.pendingHighQC = nil
+		}
+		return err
+	}
+	return ErrProposalValidationPending
+}
+
+// RecoverFHSHighQC starts the same bounded validation/catch-up path used for a
+// network HighQC, without manufacturing a wire message during startup. The
+// caller keeps normal consensus gated until the asynchronous result installs
+// this exact durable certificate.
+func (hsm *HotstuffProtocolManager) RecoverFHSHighQC(qc *SignedState, targetView uint64) error {
+	if hsm == nil {
+		return ErrInvalidHighQC
+	}
+	hsm.applyScheduledFHSEpochReset()
+	return hsm.scheduleFHSHighQCCatchup(qc, targetView, nil, common.Hash{})
+}
+
+// certifyFHSQC schedules any missing body/EVM catch-up before invoking the
+// ordinary certification callback. The QCBroadcast itself is retained as an
+// exact continuation, so after the worker publishes the QC it is replayed and
+// performs only the small idempotent completion callback. Applications without
+// the async interface keep the synchronous behavior used by focused tests.
+func (hsm *HotstuffProtocolManager) certifyFHSQC(qc *SignedState, resumeMessage *HotstuffMessage) error {
+	if hsm == nil || qc == nil {
+		return ErrInvalidHighQC
+	}
+	if _, ok := hsm.fhsApplication(); !ok {
+		return hsm.app.OnCertified(qc)
+	}
+	if _, ok := hsm.app.(FHSHighQCValidationApplication); !ok {
+		return hsm.app.OnCertified(qc)
+	}
+	if local := hsm.app.HighestCertified(); local != nil {
+		switch {
+		case local.Number > qc.Number:
+			return nil
+		case local.Number == qc.Number:
+			if !SignedStateSemanticEqual(local, qc) {
+				return ErrInvalidHighQC
+			}
+			return hsm.app.OnCertified(qc)
+		}
+	}
+	return hsm.scheduleFHSHighQCCatchup(qc, qc.Number+1, resumeMessage, common.Hash{})
 }
 
 func (hsm *HotstuffProtocolManager) usesFHSProtocolV2() bool {
@@ -301,25 +608,26 @@ func (hsm *HotstuffProtocolManager) validateFHSNewViewMsg(msg *HotstuffMessage) 
 			return nil, nil, err
 		}
 	}
+	vote := &VoteInfo{Index: index, PubKey: keys[index], KSign: sign, ValidKSign: true}
+	if err := hsm.validateFHSHighQCScheduleTarget(ctx, report.HighQC); err != nil {
+		if errors.Is(err, ErrFutureState) {
+			return nil, vote, ErrFutureState
+		}
+		return nil, nil, err
+	}
 	if report.HighQC != nil {
-		if err := app.AdoptFHSHighQC(report.HighQC); err != nil {
+		if err := hsm.scheduleFHSHighQCCatchup(report.HighQC, ctx.TargetView, msg, common.Hash{}); err != nil {
 			return nil, nil, err
 		}
 	}
-	// Apply the anti-DoS distance gate only after the sender, report and any
-	// carried quorum proof have fully verified. A 2f+1 TC may legitimately move
-	// a restarted replica by more than the volatile pending-window distance;
-	// AcceptFHSTimeoutCertificate has now durably advanced CurrentN in that
-	// case. A far report without such proof remains outside the bounded queue.
-	if ctx.TargetView > hsm.app.CurrentN()+maxPendingNewViewIDs {
-		return nil, &VoteInfo{Index: index, PubKey: keys[index], KSign: sign, ValidKSign: true}, ErrFutureState
-	}
+	// A synchronous catch-up may have advanced the canonical target. Repeat the
+	// exact-context check before creating any volatile view state.
 	if err := app.ValidateFHSContext(ctx); err != nil {
 		return nil, nil, err
 	}
 	state, _, currentTarget := hsm.app.CurrentState()
 	if currentTarget < ctx.TargetView {
-		return nil, &VoteInfo{Index: index, PubKey: keys[index], KSign: sign, ValidKSign: true}, ErrFutureState
+		return nil, vote, ErrFutureState
 	}
 	if currentTarget > ctx.TargetView {
 		return nil, nil, ErrOldState
@@ -329,7 +637,6 @@ func (hsm *HotstuffProtocolManager) validateFHSNewViewMsg(msg *HotstuffMessage) 
 		return nil, nil, err
 	}
 	v.fhsTimeout = CloneTimeoutCertificate(tc)
-	vote := &VoteInfo{Index: index, PubKey: keys[index], KSign: sign, ValidKSign: true}
 	return v, vote, nil
 }
 
@@ -425,7 +732,7 @@ func (hsm *HotstuffProtocolManager) buildFHSAggregate(v *View) (*AggregateQC, *S
 }
 
 func (hsm *HotstuffProtocolManager) activateFHSLeaderView(v *View) error {
-	app, ok := hsm.fhsApplication()
+	_, ok := hsm.fhsApplication()
 	if !ok {
 		return ErrInvalidLeaderView
 	}
@@ -438,8 +745,11 @@ func (hsm *HotstuffProtocolManager) activateFHSLeaderView(v *View) error {
 		(localHighest.Number == highest.Number && !SignedStateSemanticEqual(localHighest, highest))) {
 		return ErrInvalidHighQC
 	}
+	if err := hsm.validateFHSHighQCScheduleTarget(v.fhsContext, highest); err != nil {
+		return err
+	}
 	if highest != nil {
-		if err := app.AdoptFHSHighQC(highest); err != nil {
+		if err := hsm.scheduleFHSHighQCCatchup(highest, v.number, nil, v.hash); err != nil {
 			return err
 		}
 	}
@@ -471,46 +781,140 @@ func (hsm *HotstuffProtocolManager) tryFHSPropose() error {
 	if err := hsm.verifyFHSContextCertificate(v.fhsContext, v.fhsTimeout, keys); err != nil {
 		return err
 	}
-	err, kProposal, tProposal, extra := hsm.app.Propose(v.number, v.hash, v.leaderId)
-	if err != nil {
+	async, ok := hsm.app.(FHSProposalBuildApplication)
+	if !ok {
+		return ErrInvalidProposal
+	}
+	if v.fhsBuild != nil {
+		return ErrProposalValidationPending
+	}
+	var parentQCID common.Hash
+	if v.fhsHighest != nil {
+		id, err := SignedStateID(v.fhsHighest)
+		if err != nil {
+			return ErrInvalidHighQC
+		}
+		parentQCID = id.Hash()
+	}
+	hsm.validationSequence++
+	if hsm.validationSequence == 0 {
+		hsm.validationSequence++
+	}
+	key := FHSProposalBuildKey{
+		RequestID:          hsm.validationSequence,
+		ViewNumber:         v.number,
+		ViewID:             v.hash,
+		LeaderID:           v.leaderId,
+		CurrentStateDigest: StateDigest(v.currentState),
+		ParentQCID:         parentQCID,
+	}
+	v.fhsBuild = &key
+	request := &FHSProposalBuildRequest{
+		Key:          key,
+		CurrentState: append([]byte(nil), v.currentState...),
+		ParentQC:     CloneSignedState(v.fhsHighest),
+	}
+	if err := async.ScheduleFHSProposalBuild(request); err != nil {
+		v.fhsBuild = nil
 		return err
 	}
-	if len(kProposal) == 0 && len(tProposal) == 0 {
+	return ErrProposalValidationPending
+}
+
+// CompleteFHSProposalBuild verifies a worker result against the exact active
+// leader view, seals the wire message, and only then permits the application to
+// publish its staged proposal. After Apply succeeds, all remaining operations
+// are infallible local state changes followed by the existing recoverable
+// network broadcast.
+func (hsm *HotstuffProtocolManager) CompleteFHSProposalBuild(result *FHSProposalBuildResult) error {
+	if hsm == nil || result == nil {
+		return ErrInvalidProposal
+	}
+	v := hsm.leaderView
+	if v == nil || v.fhsBuild == nil || *v.fhsBuild != result.Key ||
+		v.number != result.Key.ViewNumber || v.hash != result.Key.ViewID || v.leaderId != result.Key.LeaderID ||
+		v.phaseAsLeader != PhaseTryPropose {
+		return ErrOldState
+	}
+	state, leaderID, number := hsm.app.CurrentState()
+	if leaderID != v.leaderId || number != v.number || !bytes.Equal(state, v.currentState) ||
+		StateDigest(state) != result.Key.CurrentStateDigest || !SignedStateSemanticEqual(hsm.app.HighestCertified(), v.fhsHighest) {
+		v.fhsBuild = nil
+		return ErrOldState
+	}
+	var parentQCID common.Hash
+	if v.fhsHighest != nil {
+		id, err := SignedStateID(v.fhsHighest)
+		if err != nil {
+			v.fhsBuild = nil
+			return ErrInvalidHighQC
+		}
+		parentQCID = id.Hash()
+	}
+	if parentQCID != result.Key.ParentQCID {
+		v.fhsBuild = nil
+		return ErrOldState
+	}
+	if result.Err != nil {
+		v.fhsBuild = nil
+		return fmt.Errorf("FHS proposal construction failed: %w", result.Err)
+	}
+	if len(result.TProposal) == 0 {
+		v.fhsBuild = nil
+		return ErrInvalidProposal
+	}
+	ref, err := types.DecodeHotstuffProposalRef(result.TProposal)
+	if err != nil || ref.ViewNumber != v.number || ref.ViewID != v.hash || ref.LeaderID != v.leaderId ||
+		ref.ParentQCID != parentQCID || ref.ExtraHash != types.HotstuffProposalExtraHash(result.Extra) {
+		v.fhsBuild = nil
 		return ErrInvalidProposal
 	}
 	aggregateBytes, err := EncodeAggregateQC(v.fhsAggregate)
 	if err != nil {
+		v.fhsBuild = nil
 		return err
 	}
-	msg := hsm.newMsg(MsgPrepare, v.number, v.hash, kProposal, tProposal, aggregateBytes)
+	msg := hsm.newMsg(MsgPrepare, v.number, v.hash, nil, result.TProposal, aggregateBytes)
 	if v.fhsTimeout != nil {
 		msg.DataD, err = EncodeTimeoutCertificate(v.fhsTimeout)
 		if err != nil {
+			v.fhsBuild = nil
 			return err
 		}
 	}
 	msg.DataE = append([]byte(nil), v.currentState...)
-	msg.DataF = append([]byte(nil), extra...)
+	msg.DataF = append([]byte(nil), result.Extra...)
 	if v.fhsHighest != nil {
 		msg.DataG, err = EncodeSignedState(v.fhsHighest)
 		if err != nil {
+			v.fhsBuild = nil
 			return err
 		}
 	}
 	if err := hsm.sealMessage(msg); err != nil {
+		v.fhsBuild = nil
 		return err
 	}
 	if err := ValidateHotstuffWireMessage(msg); err != nil {
+		v.fhsBuild = nil
 		return err
 	}
-	if len(kProposal) > 0 {
-		v.proposedKState = append([]byte(nil), kProposal...)
-		v.proposedKDigest = hotstuffDigest(v.proposedKState)
+	async, ok := hsm.app.(FHSProposalBuildApplication)
+	if !ok {
+		v.fhsBuild = nil
+		return ErrInvalidProposal
 	}
-	if len(tProposal) > 0 {
-		v.proposedTState = append([]byte(nil), tProposal...)
-		v.proposedTDigest = hotstuffDigest(v.proposedTState)
+	if err := async.ApplyFHSProposalBuild(result); err != nil {
+		v.fhsBuild = nil
+		if err == ErrOldState {
+			return ErrOldState
+		}
+		return fmt.Errorf("apply FHS proposal construction: %w", err)
 	}
+	defer async.FinishFHSProposalBuild(result)
+	v.fhsBuild = nil
+	v.proposedTState = append([]byte(nil), result.TProposal...)
+	v.proposedTDigest = hotstuffDigest(v.proposedTState)
 	v.leaderMsg[MsgPrepare] = msg
 	v.phaseAsLeader = PhasePreCommit
 	v.waitingMoreVoteInfo = true
@@ -521,9 +925,28 @@ func (hsm *HotstuffProtocolManager) tryFHSPropose() error {
 	return nil
 }
 
+// HandleFHSProposalBuildResult applies the same epoch-reset barriers as all
+// other asynchronous FHS completions.
+func (hsm *HotstuffProtocolManager) HandleFHSProposalBuildResult(result *FHSProposalBuildResult) error {
+	if hsm == nil || result == nil {
+		return ErrInvalidProposal
+	}
+	if hsm.applyScheduledFHSEpochReset() {
+		return ErrOldState
+	}
+	err := hsm.CompleteFHSProposalBuild(result)
+	if hsm.applyScheduledFHSEpochReset() {
+		return ErrOldState
+	}
+	return err
+}
+
 func (hsm *HotstuffProtocolManager) handleFHSPrepareMsg(msg *HotstuffMessage) error {
 	app, ok := hsm.fhsApplication()
 	if !ok || msg == nil {
+		return ErrInvalidProposal
+	}
+	if len(msg.DataA) != 0 || len(msg.DataB) == 0 {
 		return ErrInvalidProposal
 	}
 	aggregate, err := DecodeAggregateQC(msg.DataC)
@@ -567,13 +990,19 @@ func (hsm *HotstuffProtocolManager) handleFHSPrepareMsg(msg *HotstuffMessage) er
 		(localHighest.Number == highest.Number && !SignedStateSemanticEqual(localHighest, highest))) {
 		return ErrInvalidHighQC
 	}
-	if highest != nil {
-		if err := app.AdoptFHSHighQC(highest); err != nil {
+	// A TC is an independent quorum proof and must advance the durable pacemaker
+	// before target gating. Without it, only the exact canonical target or an
+	// immediately preceding HighQC may start expensive catch-up work.
+	if tc != nil {
+		if err := app.AcceptFHSTimeoutCertificate(tc); err != nil {
 			return err
 		}
 	}
-	if tc != nil {
-		if err := app.AcceptFHSTimeoutCertificate(tc); err != nil {
+	if err := hsm.validateFHSHighQCScheduleTarget(ctx, highest); err != nil {
+		return err
+	}
+	if highest != nil {
+		if err := hsm.scheduleFHSHighQCCatchup(highest, ctx.TargetView, msg, common.Hash{}); err != nil {
 			return err
 		}
 	}
@@ -583,6 +1012,34 @@ func (hsm *HotstuffProtocolManager) handleFHSPrepareMsg(msg *HotstuffMessage) er
 	state, leaderID, number := hsm.app.CurrentState()
 	if leaderID != ctx.LeaderID || number != ctx.TargetView {
 		return ErrInvalidLeaderView
+	}
+	ref, err := types.DecodeHotstuffProposalRef(msg.DataB)
+	if err != nil || ref.ChainID != hsm.app.ChainID() || ref.ViewNumber != ctx.TargetView ||
+		ref.ViewID != ctx.ID() || ref.LeaderID != ctx.LeaderID || ref.KeyHash != ctx.KeyHash ||
+		ref.ExtraHash != types.HotstuffProposalExtraHash(msg.DataF) {
+		return ErrInvalidProposal
+	}
+	var parentQCID common.Hash
+	if highest != nil {
+		id, err := SignedStateID(highest)
+		if err != nil {
+			return ErrInvalidHighQC
+		}
+		parentQCID = id.Hash()
+	}
+	if ref.ParentQCID != parentQCID {
+		return ErrInvalidProposal
+	}
+	// Service-level proposal scheduling deliberately cannot cancel a manager-
+	// owned HighQC worker. Retain this fully authenticated, canonical Prepare on
+	// that semantic QC continuation before any proposal worker is requested.
+	// This also covers the genesis/highest=nil edge where no schedule call above
+	// had an opportunity to attach the message.
+	if pending := hsm.pendingHighQC; pending != nil {
+		if err := appendFHSHighQCContinuation(pending, msg, common.Hash{}); err != nil {
+			return err
+		}
+		return ErrProposalValidationPending
 	}
 
 	v := hsm.views[msg.ViewId]
@@ -601,36 +1058,277 @@ func (hsm *HotstuffProtocolManager) handleFHSPrepareMsg(msg *HotstuffMessage) er
 		}
 		return ErrViewPhaseNotMatch
 	}
-	v.fhsAggregate = aggregate
-	v.fhsHighest = CloneSignedState(highest)
-	v.fhsTimeout = CloneTimeoutCertificate(tc)
-	v.currentState = append(v.currentState[:0], state...)
-
-	if err := hsm.app.OnPropose(msg.DataB, msg.DataF, v.number, highest); err != nil {
-		return ErrInvalidProposal
-	}
-	if len(msg.DataA) > 0 {
-		v.proposedKState = append([]byte(nil), msg.DataA...)
-		v.proposedKDigest = hotstuffDigest(v.proposedKState)
-	}
-	if len(msg.DataB) > 0 {
-		v.proposedTState = append([]byte(nil), msg.DataB...)
-		v.proposedTDigest = hotstuffDigest(v.proposedTState)
-	}
-	persisted := &PersistedVote{
+	key := FHSProposalValidationKey{
 		ViewNumber: v.number,
 		ViewID:     v.hash,
 		LeaderID:   v.leaderId,
-		KState:     append([]byte(nil), v.proposedKState...),
-		TState:     append([]byte(nil), v.proposedTState...),
-		Extra:      append([]byte(nil), msg.DataF...),
+		ProposalID: ref.ProposalID(),
 	}
-	if len(persisted.KState) > 0 {
-		persisted.KStateHash = StateDigest(persisted.KState)
+	if existing := v.leaderMsg[MsgPrepare]; existing != nil && !sameFHSPrepare(existing, msg) {
+		return ErrInvalidProposal
 	}
-	if len(persisted.TState) > 0 {
-		persisted.TStateHash = StateDigest(persisted.TState)
+	if v.fhsValidation != nil {
+		if v.fhsValidation.ViewNumber != key.ViewNumber || v.fhsValidation.ViewID != key.ViewID ||
+			v.fhsValidation.LeaderID != key.LeaderID || v.fhsValidation.ProposalID != key.ProposalID {
+			return ErrInvalidProposal
+		}
+		return ErrProposalValidationPending
 	}
+	if v.leaderMsg[MsgPrepare] == nil {
+		v.fhsAggregate = aggregate
+		v.fhsHighest = CloneSignedState(highest)
+		v.fhsTimeout = CloneTimeoutCertificate(tc)
+		v.currentState = append(v.currentState[:0], state...)
+		v.proposedKState = nil
+		v.proposedKDigest = nil
+		v.proposedTState = append([]byte(nil), msg.DataB...)
+		v.proposedTDigest = hotstuffDigest(v.proposedTState)
+		v.leaderMsg[MsgPrepare] = cloneFHSPrepare(msg)
+	}
+	prepare := v.leaderMsg[MsgPrepare]
+
+	if async, ok := hsm.app.(FHSProposalValidationApplication); ok {
+		hsm.validationSequence++
+		if hsm.validationSequence == 0 {
+			hsm.validationSequence++
+		}
+		key.RequestID = hsm.validationSequence
+		request := &FHSProposalValidationRequest{
+			Key:         key,
+			ProposalRef: append([]byte(nil), prepare.DataB...),
+			Extra:       append([]byte(nil), prepare.DataF...),
+			ParentQC:    CloneSignedState(v.fhsHighest),
+		}
+		v.fhsValidation = &key
+		if err := async.ScheduleFHSProposalValidation(request); err != nil {
+			v.fhsValidation = nil
+			return err
+		}
+		return ErrProposalValidationPending
+	}
+
+	if err := hsm.app.OnPropose(prepare.DataB, prepare.DataF, v.number, v.fhsHighest); err != nil {
+		return ErrInvalidProposal
+	}
+	return hsm.finishFHSPrepare(v, prepare, key, app)
+}
+
+func sameFHSPrepare(a, b *HotstuffMessage) bool {
+	if a == nil || b == nil || a.Code != b.Code || a.Number != b.Number || a.ViewId != b.ViewId || a.Id != b.Id {
+		return false
+	}
+	return bytes.Equal(a.DataA, b.DataA) && bytes.Equal(a.DataB, b.DataB) && bytes.Equal(a.DataC, b.DataC) &&
+		bytes.Equal(a.DataD, b.DataD) && bytes.Equal(a.DataE, b.DataE) && bytes.Equal(a.DataF, b.DataF) &&
+		bytes.Equal(a.DataG, b.DataG) && bytes.Equal(a.PubKey, b.PubKey) && bytes.Equal(a.AuthSig, b.AuthSig)
+}
+
+func cloneFHSPrepare(msg *HotstuffMessage) *HotstuffMessage {
+	if msg == nil {
+		return nil
+	}
+	clone := *msg
+	clone.PubKey = append([]byte(nil), msg.PubKey...)
+	clone.DataA = append([]byte(nil), msg.DataA...)
+	clone.DataB = append([]byte(nil), msg.DataB...)
+	clone.DataC = append([]byte(nil), msg.DataC...)
+	clone.DataD = append([]byte(nil), msg.DataD...)
+	clone.DataE = append([]byte(nil), msg.DataE...)
+	clone.DataF = append([]byte(nil), msg.DataF...)
+	clone.DataG = append([]byte(nil), msg.DataG...)
+	clone.AuthSig = append([]byte(nil), msg.AuthSig...)
+	return &clone
+}
+
+// CompleteFHSProposalValidation installs a worker result and performs the
+// safety WAL/sign/send sequence on the serialized HotStuff control loop.
+func (hsm *HotstuffProtocolManager) CompleteFHSProposalValidation(result *FHSProposalValidationResult) error {
+	if hsm == nil || result == nil {
+		return ErrInvalidProposal
+	}
+	app, ok := hsm.fhsApplication()
+	if !ok {
+		return ErrInvalidProposal
+	}
+	v := hsm.views[result.Key.ViewID]
+	if v == nil || v.fhsValidation == nil || *v.fhsValidation != result.Key ||
+		v.number != result.Key.ViewNumber || v.leaderId != result.Key.LeaderID {
+		return ErrOldState
+	}
+	state, leaderID, number := hsm.app.CurrentState()
+	if leaderID != v.leaderId || number != v.number || v.phaseAsReplica != PhasePrepare ||
+		!bytes.Equal(state, v.currentState) || !SignedStateSemanticEqual(hsm.app.HighestCertified(), v.fhsHighest) {
+		v.fhsValidation = nil
+		return ErrOldState
+	}
+	prepare := v.leaderMsg[MsgPrepare]
+	if prepare == nil || !bytes.Equal(prepare.DataB, v.proposedTState) {
+		v.fhsValidation = nil
+		return ErrInvalidProposal
+	}
+	if result.Err != nil {
+		v.fhsValidation = nil
+		return fmt.Errorf("FHS proposal validation failed: %w", result.Err)
+	}
+	async, ok := hsm.app.(FHSProposalValidationApplication)
+	if !ok {
+		v.fhsValidation = nil
+		return ErrInvalidProposal
+	}
+	if err := async.ApplyFHSProposalValidation(result); err != nil {
+		v.fhsValidation = nil
+		if err == ErrOldState {
+			return ErrOldState
+		}
+		return ErrInvalidProposal
+	}
+	defer async.FinishFHSProposalValidation(result)
+	v.fhsValidation = nil
+	return hsm.finishFHSPrepare(v, prepare, result.Key, app)
+}
+
+// HandleFHSProposalValidationResult applies the same epoch-reset barriers as a
+// normal control message, so a result from a discarded committee generation
+// cannot reach the safety WAL or signer.
+func (hsm *HotstuffProtocolManager) HandleFHSProposalValidationResult(result *FHSProposalValidationResult) error {
+	if hsm == nil || result == nil {
+		return ErrInvalidProposal
+	}
+	if hsm.applyScheduledFHSEpochReset() {
+		return ErrOldState
+	}
+	err := hsm.CompleteFHSProposalValidation(result)
+	if hsm.applyScheduledFHSEpochReset() {
+		return ErrOldState
+	}
+	return err
+}
+
+func snapshotFHSHighQCContinuations(pending *pendingFHSHighQCValidation) ([]*HotstuffMessage, []common.Hash) {
+	if pending == nil {
+		return nil, nil
+	}
+	messages := make([]*HotstuffMessage, 0, len(pending.messages))
+	for _, msg := range pending.messages {
+		messages = append(messages, cloneFHSPrepare(msg))
+	}
+	leaderViews := make([]common.Hash, 0, len(pending.leaderViews))
+	for viewID := range pending.leaderViews {
+		leaderViews = append(leaderViews, viewID)
+	}
+	sort.Slice(leaderViews, func(i, j int) bool { return bytes.Compare(leaderViews[i][:], leaderViews[j][:]) < 0 })
+	return messages, leaderViews
+}
+
+func expectedFHSHighQCContinuationError(err error) bool {
+	return err == nil || errors.Is(err, ErrInsufficientQC) || errors.Is(err, ErrProposalValidationPending) || errors.Is(err, ErrOldState)
+}
+
+func (hsm *HotstuffProtocolManager) replayFHSHighQCContinuations(messages []*HotstuffMessage, leaderViews []common.Hash) error {
+	var replayErr error
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		if err := hsm.HandleMessage(msg); !expectedFHSHighQCContinuationError(err) {
+			replayErr = err
+		}
+	}
+	for _, viewID := range leaderViews {
+		v := hsm.views[viewID]
+		if v == nil {
+			continue
+		}
+		if err := hsm.activateFHSLeaderView(v); !expectedFHSHighQCContinuationError(err) {
+			replayErr = err
+		}
+	}
+	return replayErr
+}
+
+func (hsm *HotstuffProtocolManager) retryFHSHighQCContinuations(messages []*HotstuffMessage, leaderViews []common.Hash) error {
+	// The staged result was built over an obsolete canonical base. Release only
+	// that request, then feed its authenticated continuations through the normal
+	// validation path. The first still-relevant continuation schedules a fresh
+	// worker against the new base; later ones join the same bounded request.
+	hsm.pendingHighQC = nil
+	if hsm.applyScheduledFHSEpochReset() {
+		return ErrOldState
+	}
+	if err := hsm.replayFHSHighQCContinuations(messages, leaderViews); err != nil {
+		return err
+	}
+	return ErrOldState
+}
+
+// HandleFHSHighQCValidationResult installs a fully staged certificate chain on
+// the serialized control loop, then replays only the continuations that were
+// cryptographically accepted for that exact semantic QC. A superseded worker
+// result cannot publish application state or resume an obsolete view.
+func (hsm *HotstuffProtocolManager) HandleFHSHighQCValidationResult(result *FHSHighQCValidationResult) error {
+	if hsm == nil || result == nil {
+		return ErrInvalidHighQC
+	}
+	if hsm.applyScheduledFHSEpochReset() {
+		return ErrOldState
+	}
+	pending := hsm.pendingHighQC
+	if pending == nil || pending.key != result.Key {
+		return ErrOldState
+	}
+	async, ok := hsm.app.(FHSHighQCValidationApplication)
+	if !ok {
+		hsm.pendingHighQC = nil
+		return ErrInvalidHighQC
+	}
+	messages, leaderViews := snapshotFHSHighQCContinuations(pending)
+	if result.Err != nil {
+		if errors.Is(result.Err, ErrOldState) {
+			return hsm.retryFHSHighQCContinuations(messages, leaderViews)
+		}
+		hsm.pendingHighQC = nil
+		return fmt.Errorf("FHS HighQC validation failed: %w", result.Err)
+	}
+	if err := async.ApplyFHSHighQCValidation(result); err != nil {
+		if errors.Is(err, ErrOldState) {
+			return hsm.retryFHSHighQCContinuations(messages, leaderViews)
+		}
+		hsm.pendingHighQC = nil
+		return ErrInvalidHighQC
+	}
+	defer async.FinishFHSHighQCValidation(result)
+	certified := CloneSignedState(pending.qc)
+	hsm.pendingHighQC = nil
+	if hsm.applyScheduledFHSEpochReset() {
+		// Apply may commit the key carrier finalized by this exact QC. That
+		// transition deliberately discards every old-epoch wire continuation and
+		// leader view, but the applied certificate still owns the one small
+		// certification completion that rearms the pacemaker and emits the first
+		// NewView for the new epoch. Replaying the old QCBroadcast here would
+		// evaluate an obsolete committee envelope; invoke only its already-
+		// authenticated certificate continuation instead.
+		return hsm.app.OnCertified(certified)
+	}
+
+	return hsm.replayFHSHighQCContinuations(messages, leaderViews)
+}
+
+func (hsm *HotstuffProtocolManager) finishFHSPrepare(v *View, msg *HotstuffMessage, expected FHSProposalValidationKey, app FHSApplication) error {
+	if v == nil || msg == nil || app == nil {
+		return ErrInvalidProposal
+	}
+	ref, err := types.DecodeHotstuffProposalRef(msg.DataB)
+	if err != nil || expected.ViewNumber != v.number || expected.ViewID != v.hash || expected.LeaderID != v.leaderId ||
+		expected.ProposalID != ref.ProposalID() || !bytes.Equal(msg.DataB, v.proposedTState) || len(v.proposedKState) != 0 {
+		return ErrInvalidProposal
+	}
+	persisted := &PersistedVote{
+		ViewNumber:      v.number,
+		ViewID:          v.hash,
+		LeaderID:        v.leaderId,
+		ProposalRef:     append([]byte(nil), v.proposedTState...),
+		ProposalRefHash: StateDigest(v.proposedTState),
+	}
+	persisted.ProposalID = ref.ProposalID()
 	// The WAL must be durable before either the signature or the message can
 	// escape to the network.
 	if err := app.PersistFHSVote(persisted); err != nil {

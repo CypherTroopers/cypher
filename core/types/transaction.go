@@ -50,6 +50,13 @@ type Transaction struct {
 	from atomic.Value
 }
 
+// IsInitialized reports whether the transaction has a decoded or constructed
+// inner payload. It lets trust-boundary validation reject a zero Transaction
+// value without calling accessors which require an inner payload.
+func (tx *Transaction) IsInitialized() bool {
+	return tx != nil && tx.data != nil
+}
+
 type TxRouteHint uint8
 
 const (
@@ -395,6 +402,52 @@ func (tx *Transaction) Size() common.StorageSize {
 	return common.StorageSize(c)
 }
 
+// AccessListEntryCounts returns the number of access-list addresses and
+// storage keys without copying the access list. Consensus work metering calls
+// this on immutable transactions before EVM execution, where the public
+// AccessList accessor's defensive deep copy would otherwise amplify memory
+// pressure for a maximum-size proposal.
+func (tx *Transaction) AccessListEntryCounts() (addresses, storageKeys uint64, overflow bool) {
+	if tx == nil || tx.data == nil {
+		return 0, 0, false
+	}
+	var accessList AccessList
+	switch inner := tx.data.(type) {
+	case *AccessListTx:
+		accessList = inner.AccessList
+	case *DynamicFeeTx:
+		accessList = inner.AccessList
+	case *BlobTx:
+		accessList = inner.AccessList
+	case *SetCodeTx:
+		accessList = inner.AccessList
+	default:
+		return 0, 0, false
+	}
+	addresses = uint64(len(accessList))
+	for index := range accessList {
+		count := uint64(len(accessList[index].StorageKeys))
+		if count > ^uint64(0)-storageKeys {
+			return addresses, storageKeys, true
+		}
+		storageKeys += count
+	}
+	return addresses, storageKeys, false
+}
+
+// SetCodeAuthorizationCount returns the EIP-7702 authorization count without
+// making the deep copy required by SetCodeAuthorizations.
+func (tx *Transaction) SetCodeAuthorizationCount() uint64 {
+	if tx == nil {
+		return 0
+	}
+	inner, ok := tx.data.(*SetCodeTx)
+	if !ok {
+		return 0
+	}
+	return uint64(len(inner.AuthList))
+}
+
 func (tx *Transaction) AsMessage(s Signer) (Message, error) {
 	msg := Message{txType: tx.Type(), nonce: tx.Nonce(), gasLimit: tx.Gas(), gasPrice: tx.GasPrice(), gasFeeCap: tx.GasFeeCap(), gasTipCap: tx.GasTipCap(), blobGasFeeCap: tx.BlobGasFeeCap(), blobGas: tx.BlobGas(), to: tx.To(), amount: tx.Value(), data: tx.Data(), accessList: tx.AccessList(), blobHashes: tx.BlobHashes(), authList: tx.SetCodeAuthorizations(), checkNonce: true}
 	var err error
@@ -479,16 +532,20 @@ func (s *TxByPriceAndTime) Pop() interface{} {
 }
 
 type TransactionsByPriceAndNonce struct {
-	txs    map[common.Address]Transactions
-	heads  TxByPriceAndTime
-	signer Signer
+	txs         map[common.Address]Transactions
+	heads       TxByPriceAndTime
+	config      *params.ChainConfig
+	blockNumber *big.Int
 }
 
 func NewTransactionsByPriceAndNonce(config *params.ChainConfig, blockNumber *big.Int, txs map[common.Address]Transactions) *TransactionsByPriceAndNonce {
-	var signer Signer
+	number := new(big.Int)
+	if blockNumber != nil {
+		number.Set(blockNumber)
+	}
 	heads := make(TxByPriceAndTime, 0, len(txs))
 	for from, accTxs := range txs {
-		signer = MakeSignerAutoJudgement(config, blockNumber, accTxs[0].V())
+		signer := MakeSignerAutoJudgement(config, number, accTxs[0].V())
 		acc, err := Sender(signer, accTxs[0])
 		if err == nil {
 			heads = append(heads, accTxs[0])
@@ -501,7 +558,7 @@ func NewTransactionsByPriceAndNonce(config *params.ChainConfig, blockNumber *big
 		}
 	}
 	heap.Init(&heads)
-	return &TransactionsByPriceAndNonce{txs: txs, heads: heads, signer: signer}
+	return &TransactionsByPriceAndNonce{txs: txs, heads: heads, config: config, blockNumber: number}
 }
 
 func (t *TransactionsByPriceAndNonce) Peek() *Transaction {
@@ -511,7 +568,15 @@ func (t *TransactionsByPriceAndNonce) Peek() *Transaction {
 	return t.heads[0]
 }
 func (t *TransactionsByPriceAndNonce) Shift() {
-	acc, _ := Sender(t.signer, t.heads[0])
+	if len(t.heads) == 0 {
+		return
+	}
+	current := t.heads[0]
+	acc, err := Sender(MakeSignerAutoJudgement(t.config, t.blockNumber, current.V()), current)
+	if err != nil {
+		heap.Pop(&t.heads)
+		return
+	}
 	if txs, ok := t.txs[acc]; ok && len(txs) > 0 {
 		t.heads[0], t.txs[acc] = txs[0], txs[1:]
 		heap.Fix(&t.heads, 0)

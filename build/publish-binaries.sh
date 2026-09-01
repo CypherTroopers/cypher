@@ -53,6 +53,10 @@ verify_manifest() {
     die "Unexpected checksum file set in ${directory}"
   [[ "$(manifest_value "${manifest}" source_sha)" == "${SOURCE_SHA}" ]] ||
     die "Source SHA mismatch in ${manifest}"
+  [[ "$(manifest_value "${manifest}" source_state)" == "clean" ]] ||
+    die "Refusing non-clean source artifact in ${manifest}"
+  [[ "$(manifest_value "${manifest}" embedded_source_sha)" == "${SOURCE_SHA}" ]] ||
+    die "Embedded source identity mismatch in ${manifest}"
   [[ "$(manifest_value "${manifest}" goos)" == "${expected_os}" ]] ||
     die "GOOS mismatch in ${manifest}"
   [[ "$(manifest_value "${manifest}" goarch)" == "${expected_arch}" ]] ||

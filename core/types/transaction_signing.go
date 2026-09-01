@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/cypherium/cypher/log"
-
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/params"
@@ -75,7 +73,6 @@ func MakeSignerRecover(config *params.ChainConfig, blockNumber, Vb *big.Int) Sig
 	chainIdMul := new(big.Int).Mul(config.ChainID, big.NewInt(2))
 	V := new(big.Int).Sub(Vb, chainIdMul)
 	V.Sub(V, big8)
-	log.Info("MakeSignerRecover", "V", V.Uint64(), "ChainID", config.ChainID)
 	if V.Cmp(big.NewInt(28)) <= 0 {
 		signer = NewEIP155Signer(config.ChainID)
 		return signer

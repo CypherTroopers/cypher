@@ -265,7 +265,8 @@ func (c *FallbackConn) Send(msg Message) (uint64, error) {
 	}
 
 	n, err := active.Send(msg)
-	if err != nil && active.Type() == PlainQUIC {
+	if err != nil && active.Type() == PlainQUIC &&
+		!IsPermanentSendError(err) && !isQUICStreamLocalSendError(err) {
 		if c.onQUICFailure != nil {
 			c.onQUICFailure()
 		}

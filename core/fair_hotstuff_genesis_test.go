@@ -30,6 +30,7 @@ func testFairHotstuffGenesis() *Genesis {
 		ChainID:              big.NewInt(10101919),
 		FairHotstuff:         true,
 		FairHotstuffSeed:     seed,
+		CommonRPCSigners:     []common.Address{common.HexToAddress("0x1000000000000000000000000000000000000001")},
 		GenCommittee:         committee,
 		TransactionSizeLimit: DefaultTxPoolConfig.TransactionSizeLimit,
 	}

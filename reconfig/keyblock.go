@@ -474,9 +474,6 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
-	if !mb.Store(keyblock) {
-		return nil, nil, nil, fmt.Errorf("failed to persist proposed committee for key block %d/%s", keyblock.NumberU64(), keyblock.Hash())
-	}
 	if keyS.fixedModeEnabled() {
 		return keyblock, mb, powSubmitter, nil
 	}

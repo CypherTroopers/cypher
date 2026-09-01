@@ -72,8 +72,10 @@ const (
 	GetPooledTransactionsMsg      = 0x09
 	PooledTransactionsMsg         = 0x0a
 
-	CandidateMsg         = 0x0b
-	CommonTxAdmissionMsg = 0x0c
+	CandidateMsg = 0x0b
+	// DisabledAdmissionOnlyMsg is permanently rejected. Keeping the code point
+	// explicit prevents it from being accidentally reused for a naked sidecar.
+	DisabledAdmissionOnlyMsg = 0x0c
 )
 
 type errCode int
@@ -178,10 +180,11 @@ func (request *newBlockData) sanityCheck() error {
 
 // blockBody represents the data content of a single block.
 type blockBody struct {
-	Transactions       []*types.Transaction       // Transactions contained within a block
-	Uncles             []*types.Header            // Uncles contained within a block
-	CommonTxAdmissions []*types.CommonTxAdmission // Common transaction admissions contained within a block
-	CommonTxRewards    []*types.CommonTxReward    // Common transaction rewards contained within a block
+	Transactions             []*types.Transaction            // Transactions contained within a block
+	Uncles                   []*types.Header                 // Uncles contained within a block
+	CommonTxAdmissionBatches []*types.CommonTxAdmissionBatch // Signed common-RPC admission batches contained within a block
+	CommonTxAdmissionRefs    []types.CommonTxAdmissionRef    // Transaction-aligned selections from admission batches
+	CommonTxRewards          []*types.CommonTxReward         // Common transaction rewards contained within a block
 }
 
 type blockBodiesData []*blockBody

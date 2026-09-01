@@ -92,6 +92,33 @@ func (api *PublicEthereumAPI) ChainId() hexutil.Uint64 {
 	return (hexutil.Uint64)(chainID.Uint64())
 }
 
+func commonRPCAdmissionForBlockTransaction(block *types.Block, hash common.Hash) (*types.CommonTxAdmissionBatch, uint16, uint16, bool) {
+	if block == nil {
+		return nil, 0, 0, false
+	}
+	txIndex := -1
+	for index, tx := range block.Transactions() {
+		if tx != nil && tx.Hash() == hash {
+			txIndex = index
+			break
+		}
+	}
+	refs := block.CommonTxAdmissionRefs()
+	if txIndex < 0 || txIndex >= len(refs) {
+		return nil, 0, 0, false
+	}
+	ref := refs[txIndex]
+	batches := block.CommonTxAdmissionBatches()
+	if int(ref.Batch) >= len(batches) || batches[ref.Batch] == nil {
+		return nil, 0, 0, false
+	}
+	batch := batches[ref.Batch]
+	if int(ref.Item) >= len(batch.TxHashes) || batch.TxHashes[ref.Item] != hash {
+		return nil, 0, 0, false
+	}
+	return batch, ref.Batch, ref.Item, true
+}
+
 // addCommonRPCFields appends Cypherium common RPC admission/reward fields to
 // eth_getTransactionByHash / eth_getTransactionReceipt responses.
 func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash common.Hash) {
@@ -103,23 +130,21 @@ func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash 
 	fields["commonTxAdmissionRoot"] = header.CommonTxAdmissionRoot
 	fields["commonTxRewardRoot"] = header.CommonTxRewardRoot
 
-	for _, admission := range block.CommonTxAdmissions() {
-		if admission == nil || admission.TxHash != hash {
-			continue
-		}
-
+	if admission, batchIndex, itemIndex, ok := commonRPCAdmissionForBlockTransaction(block, hash); ok {
 		fields["commonTxApprover"] = admission.Miner
+		fields["commonTxAdmissionId"] = admission.AdmissionID
+		fields["commonTxAdmissionTxRoot"] = admission.TxRoot
+		fields["commonTxAdmissionGenesisHash"] = admission.GenesisHash
+		fields["commonTxAdmissionBatchIndex"] = hexutil.Uint64(batchIndex)
+		fields["commonTxAdmissionItemIndex"] = hexutil.Uint64(itemIndex)
 
 		if admission.ChainID != nil {
 			fields["commonTxAdmissionChainId"] = (*hexutil.Big)(admission.ChainID)
 		}
 
 		fields["commonTxAdmissionKeyBlockNumber"] = hexutil.Uint64(admission.KeyBlockNumber)
-		fields["commonTxAdmissionTxBlockNumber"] = hexutil.Uint64(admission.TxBlockNumber)
 		fields["commonTxAdmissionTimestamp"] = hexutil.Uint64(admission.Timestamp)
 		fields["commonTxAdmissionSignature"] = hexutil.Bytes(admission.Signature)
-
-		break
 	}
 
 	for _, reward := range block.CommonTxRewards() {

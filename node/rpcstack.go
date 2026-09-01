@@ -397,6 +397,12 @@ type gzipResponseWriter struct {
 	http.ResponseWriter
 }
 
+// Unwrap lets http.ResponseController reach the underlying writer for optional
+// connection controls such as response write deadlines.
+func (w *gzipResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
+}
+
 func (w *gzipResponseWriter) WriteHeader(status int) {
 	w.Header().Del("Content-Length")
 	w.ResponseWriter.WriteHeader(status)

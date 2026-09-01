@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/eth/downloader"
@@ -47,6 +46,11 @@ type txsync struct {
 
 // syncTransactions starts sending all currently pending transactions to the given peer.
 func (pm *ProtocolManager) syncTransactions(p *peer) {
+	// Pending FHS transactions are recovered from the durable TxQUIC ingress
+	// store. Initial eth peer sync is transaction-only and must remain disabled.
+	if pm != nil && pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+		return
+	}
 	// Assemble the set of transaction to broadcast or announce to the remote
 	// peer. Fun fact, this is quite an expensive operation as it needs to sort
 	// the transactions if the sorting is not cached yet. However, with a random
@@ -62,15 +66,15 @@ func (pm *ProtocolManager) syncTransactions(p *peer) {
 		return
 	}
 	pm.scheduleInitialTransactionSync(p, txs)
-	if admissions := core.CommonRPCAdmissionsForTransactions(txs); len(admissions) > 0 {
-		pm.BroadcastCommonTxAdmissions(admissions)
-	}
 }
 
 // scheduleInitialTransactionSync selects the initial transaction exchange
 // mechanism negotiated with a peer. Modern peers receive hash announcements;
 // only legacy eth/64 peers may enter txsyncLoop64.
 func (pm *ProtocolManager) scheduleInitialTransactionSync(p *peer, txs types.Transactions) {
+	if pm != nil && pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+		return
+	}
 	// eth/65 and newer exchange pooled transaction hashes and let the receiver
 	// request the transactions it is missing. Feeding such a peer into the
 	// legacy txsyncLoop64 is a programming error and deliberately panics in that

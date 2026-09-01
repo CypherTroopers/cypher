@@ -18,10 +18,12 @@
 package reconfig
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
+	"sort"
 	"sync"
 	"time"
 
@@ -54,6 +56,99 @@ type txService struct {
 	chainEventSub   event.Subscription
 }
 
+var (
+	errProposalGenerationChanged = errors.New("proposal generation changed during construction")
+	errProposalNoWork            = errors.New("no publishable proposal work")
+)
+
+// proposalGeneration identifies every input that makes proposal execution
+// deterministic. It is captured while txService.mu protects proposedChain,
+// then checked again immediately before the completed block is published.
+// This lets expensive selection, EVM execution and encoding run without
+// serializing certificate adoption or chain-head maintenance behind txService.mu.
+type proposalGeneration struct {
+	proposedRevision uint64
+	parentHash       common.Hash
+	parentRoot       common.Hash
+	parentNumber     uint64
+	keyHash          common.Hash
+	keyNumber        uint64
+}
+
+// txProposalCandidate is an unpublished proposal build. Expensive selection,
+// execution and encoding may fill it on a worker, but only install may extend
+// proposedChain or remove failed transactions from the pool.
+type txProposalCandidate struct {
+	block               *types.Block
+	encoded             []byte
+	generation          proposalGeneration
+	failedTxes          types.Transactions
+	blockType           uint8
+	admissionCount      int
+	admissionBatchCount int
+	rewardCount         int
+}
+
+// keyProposalCandidate carries an unpublished key-block carrier and the exact
+// transaction/key-chain generation against which it was assembled.
+type keyProposalCandidate struct {
+	block      *types.Block
+	encoded    []byte
+	generation proposalGeneration
+}
+
+func proposalHasNoPublishableWork(txCount, failedCount int, allowFinality bool) bool {
+	return txCount == 0 && failedCount == 0 && !allowFinality
+}
+
+// proposalLaneBuildError preserves a real lane failure when the other lane is
+// merely empty. Only two no-work results collapse to the sentinel that tells
+// the proposal scheduler to wait for a new TxPool/keyblock/finality trigger.
+func proposalLaneBuildError(primary, fallback error) error {
+	if primary == nil {
+		return fallback
+	}
+	if fallback == nil {
+		return nil
+	}
+	primaryNoWork := errors.Is(primary, errProposalNoWork)
+	fallbackNoWork := errors.Is(fallback, errProposalNoWork)
+	switch {
+	case primaryNoWork && fallbackNoWork:
+		return errProposalNoWork
+	case primaryNoWork:
+		return fallback
+	case fallbackNoWork:
+		return primary
+	default:
+		return fallback
+	}
+}
+
+func (generation proposalGeneration) matches(revision uint64, parent *types.Block, keyBlock *types.KeyBlock) bool {
+	if parent == nil || keyBlock == nil || revision != generation.proposedRevision {
+		return false
+	}
+	return parent.Hash() == generation.parentHash &&
+		parent.Root() == generation.parentRoot &&
+		parent.NumberU64() == generation.parentNumber &&
+		keyBlock.Hash() == generation.keyHash &&
+		keyBlock.NumberU64() == generation.keyNumber
+}
+
+func proposalTransactionSender(config *params.ChainConfig, blockNumber *big.Int, tx *types.Transaction) (common.Address, error) {
+	if config == nil || config.ChainID == nil {
+		return common.Address{}, errors.New("missing chain configuration for proposal transaction")
+	}
+	if blockNumber == nil {
+		return common.Address{}, errors.New("missing proposal block number")
+	}
+	if tx == nil || tx.V() == nil {
+		return common.Address{}, errors.New("missing proposal transaction signature")
+	}
+	return types.Sender(types.MakeSignerAutoJudgement(config, blockNumber, tx.V()), tx)
+}
+
 func newTxService(s serviceI, backend *ReconfigBackend, config *params.ChainConfig) *txService {
 	txS := &txService{
 		s:      s,
@@ -72,12 +167,16 @@ func newTxService(s serviceI, backend *ReconfigBackend, config *params.ChainConf
 
 	txS.bc.ProcInsertDone = txS.procBlockDone
 	if lifecycle, ok := s.(interface {
-		beforeFHSFinalizedSyncKeyCommit(*types.Block, *hotstuff.SignedState) error
+		beforeFHSFinalizedSyncKeyCommit(*types.Block, *hotstuff.SignedState) (bool, error)
+		waitFHSValidationPublication()
 		afterFHSFinalizedSyncCommit(*types.Block, *hotstuff.SignedState, *hotstuff.SignedState) error
+		finishFHSFinalizedSyncKeyCommit(*types.Block, core.FHSFinalizedSyncKeyCommitOutcome)
 	}); ok {
 		txS.bc.SetFHSFinalizedSyncLifecycle(
 			lifecycle.beforeFHSFinalizedSyncKeyCommit,
+			lifecycle.waitFHSValidationPublication,
 			lifecycle.afterFHSFinalizedSyncCommit,
+			lifecycle.finishFHSFinalizedSyncKeyCommit,
 		)
 	}
 
@@ -86,7 +185,22 @@ func newTxService(s serviceI, backend *ReconfigBackend, config *params.ChainConf
 	return txS
 }
 
-func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, error) {
+// proposalExclusionState snapshots the speculative transaction filter without
+// scanning it. The expiry lets proposal maintenance wake once when a stale
+// exclusion becomes eligible for lazy cleanup.
+func (txS *txService) proposalExclusionState() (revision uint64, nextExpiry time.Time, ok bool) {
+	if txS == nil {
+		return 0, time.Time{}, false
+	}
+	txS.mu.Lock()
+	defer txS.mu.Unlock()
+	if txS.proposedChain == nil {
+		return 0, time.Time{}, false
+	}
+	return txS.proposedChain.revision, txS.proposedChain.nextProposedExpiry, true
+}
+
+func (txS *txService) buildProposalNewKeyBlock(keyblock *types.KeyBlock) (*keyProposalCandidate, error) {
 	txS.mu.Lock()
 	defer txS.mu.Unlock()
 
@@ -95,6 +209,10 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 		return nil, fmt.Errorf("cannot determine key block carrier parent")
 	}
 	if err := verifyKeyBlockCarrierParent(keyblock, work.header.Number.Uint64()-1); err != nil {
+		return nil, err
+	}
+	generation, err := txS.captureProposalGeneration(work)
+	if err != nil {
 		return nil, err
 	}
 
@@ -115,7 +233,39 @@ func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, 
 
 	log.Info("Generated next keyblock", "block num", block.Number(), "key T_number", keyblock.T_Number())
 
-	return block.EncodeToBytes(), nil
+	encoded := block.EncodeToBytes()
+	if len(encoded) == 0 {
+		return nil, fmt.Errorf("failed to encode key block proposal")
+	}
+	return &keyProposalCandidate{block: block, encoded: encoded, generation: generation}, nil
+}
+
+func (txS *txService) installKeyProposalCandidate(candidate *keyProposalCandidate, beforePublish func() error) error {
+	if candidate == nil || candidate.block == nil || len(candidate.encoded) == 0 {
+		return fmt.Errorf("incomplete key block proposal candidate")
+	}
+	txS.mu.Lock()
+	defer txS.mu.Unlock()
+	if !txS.proposalGenerationCurrentLocked(candidate.generation) {
+		return fmt.Errorf("%w: parent=%s key=%s", errProposalGenerationChanged, candidate.generation.parentHash, candidate.generation.keyHash)
+	}
+	if beforePublish != nil {
+		if err := beforePublish(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (txS *txService) tryProposalNewKeyBlock(keyblock *types.KeyBlock) ([]byte, error) {
+	candidate, err := txS.buildProposalNewKeyBlock(keyblock)
+	if err != nil {
+		return nil, err
+	}
+	if err := txS.installKeyProposalCandidate(candidate, nil); err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), candidate.encoded...), nil
 }
 
 func txEffectiveGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
@@ -140,45 +290,47 @@ func txEffectiveGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
 	return new(big.Int).Add(baseFee, tip)
 }
 
-func commonAdmissionApproverByTx(admissions []*types.CommonTxAdmission) map[common.Hash]common.Address {
-	indexed := make(map[common.Hash]common.Address, len(admissions))
-	for _, admission := range admissions {
-		if admission == nil || admission.TxHash == (common.Hash{}) || admission.Miner == (common.Address{}) {
-			continue
-		}
-		if _, exists := indexed[admission.TxHash]; !exists {
-			indexed[admission.TxHash] = admission.Miner
-		}
+func buildCommonTxRewards(txs types.Transactions, receipts types.Receipts, batches []*types.CommonTxAdmissionBatch, refs []types.CommonTxAdmissionRef, baseFee *big.Int) ([]*types.CommonTxReward, error) {
+	if len(receipts) != len(txs) {
+		return nil, fmt.Errorf("common RPC reward receipt count %d does not match transaction count %d", len(receipts), len(txs))
 	}
-	return indexed
-}
-
-func buildCommonTxRewards(txs types.Transactions, receipts types.Receipts, admissions []*types.CommonTxAdmission, baseFee *big.Int) []*types.CommonTxReward {
-	approverByTx := commonAdmissionApproverByTx(admissions)
-	if len(approverByTx) == 0 {
-		return nil
+	if len(refs) != len(txs) {
+		return nil, fmt.Errorf("common RPC admission reference count %d does not match transaction count %d", len(refs), len(txs))
 	}
-	rewards := make([]*types.CommonTxReward, 0, len(approverByTx))
+	rewards := make([]*types.CommonTxReward, 0, len(txs))
 	for i, tx := range txs {
-		if tx == nil || i >= len(receipts) || receipts[i] == nil {
-			continue
+		if tx == nil || receipts[i] == nil {
+			return nil, fmt.Errorf("missing transaction or receipt at index %d while building common RPC reward", i)
 		}
 		txHash := tx.Hash()
-		approver, ok := approverByTx[txHash]
-		if !ok {
-			continue
+		ref := refs[i]
+		if int(ref.Batch) >= len(batches) || batches[ref.Batch] == nil {
+			return nil, fmt.Errorf("Fair HotStuff transaction %s has invalid common RPC admission batch %d", txHash, ref.Batch)
+		}
+		batch := batches[ref.Batch]
+		if int(ref.Item) >= len(batch.TxHashes) || batch.TxHashes[ref.Item] != txHash || batch.Miner == (common.Address{}) {
+			return nil, fmt.Errorf("Fair HotStuff transaction %s has invalid common RPC admission item %d", txHash, ref.Item)
 		}
 		actualFee := new(big.Int).Mul(new(big.Int).SetUint64(receipts[i].GasUsed), txEffectiveGasPrice(tx, baseFee))
 		reward := new(big.Int).Div(actualFee, big.NewInt(5))
 		burn := new(big.Int).Sub(actualFee, reward)
 		rewards = append(rewards, &types.CommonTxReward{
 			TxHash:         txHash,
-			Approver:       approver,
+			Approver:       batch.Miner,
 			ApproverReward: reward,
 			Burn:           burn,
 		})
 	}
-	return rewards
+	return rewards, nil
+}
+
+// addFHSProposalSidecarWork applies the same admission/reward meter used by
+// validators to the final locally constructed sidecars before publication.
+func addFHSProposalSidecarWork(meter *core.FHSBlockWorkMeter, batches []*types.CommonTxAdmissionBatch, refs []types.CommonTxAdmissionRef, rewards []*types.CommonTxReward) error {
+	if meter == nil {
+		return nil
+	}
+	return meter.AddCommonSidecars(batches, refs, rewards)
 }
 
 func applyCommonTxRewards(st *state.StateDB, rewards []*types.CommonTxReward) {
@@ -193,52 +345,155 @@ func applyCommonTxRewards(st *state.StateDB, rewards []*types.CommonTxReward) {
 	}
 }
 
-// Try proposal new txBlock for current txs
-func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
+// currentProposalParent returns the exact parent whose state a new proposal
+// must extend. Callers that also inspect proposedChain must hold txService.mu.
+func (txS *txService) currentProposalParent() *types.Block {
+	if txS == nil || txS.bc == nil {
+		return nil
+	}
+	parent := txS.bc.CurrentBlock()
+	if txS.config != nil && txS.config.FairHotstuff {
+		if svc, ok := txS.s.(*Service); ok {
+			if certified := svc.highestFHSCertifiedProposal(); certified != nil && certified.Block != nil {
+				parent = certified.Block
+			}
+		}
+	}
+	return parent
+}
+
+// captureProposalGeneration must be called with txService.mu held, after work
+// and the proposed-transaction filter have been constructed.
+func (txS *txService) captureProposalGeneration(work *work) (proposalGeneration, error) {
+	var generation proposalGeneration
+	if txS == nil || work == nil || work.header == nil || txS.proposedChain == nil || txS.kbc == nil {
+		return generation, fmt.Errorf("cannot capture incomplete proposal generation")
+	}
+	parent := txS.currentProposalParent()
+	keyBlock := txS.kbc.CurrentBlock()
+	if parent == nil || keyBlock == nil {
+		return generation, fmt.Errorf("cannot capture proposal generation without parent and key block")
+	}
+	if work.header.ParentHash != parent.Hash() || work.header.Number == nil || work.header.Number.Uint64() != parent.NumberU64()+1 {
+		return generation, errProposalGenerationChanged
+	}
+	return proposalGeneration{
+		proposedRevision: txS.proposedChain.revision,
+		parentHash:       parent.Hash(),
+		parentRoot:       parent.Root(),
+		parentNumber:     parent.NumberU64(),
+		keyHash:          keyBlock.Hash(),
+		keyNumber:        keyBlock.NumberU64(),
+	}, nil
+}
+
+// proposalGenerationCurrentLocked must be called with txService.mu held.
+func (txS *txService) proposalGenerationCurrentLocked(generation proposalGeneration) bool {
+	if txS == nil || txS.proposedChain == nil || txS.kbc == nil {
+		return false
+	}
+	return generation.matches(txS.proposedChain.revision, txS.currentProposalParent(), txS.kbc.CurrentBlock())
+}
+
+// buildProposalNewBlock constructs but does not publish a tx-block proposal.
+func (txS *txService) buildProposalNewBlock(blockType uint8) (*txProposalCandidate, error) {
+	if txS.config != nil && txS.config.FairHotstuff && blockType != types.FastTx_Block && blockType != types.SlowTx_Block {
+		return nil, fmt.Errorf("cannot build Fair HotStuff transaction proposal with block type %d", blockType)
+	}
 	allAddrTxes, err := txS.loadPendingAddressTxes(blockType)
 	if err != nil {
 		return nil, err
 	}
 
-	var failedTxes types.Transactions
-	data, err := func() ([]byte, error) {
+	var (
+		work                  *work
+		filteredAddrTxes      AddressTxes
+		generation            proposalGeneration
+		allowFHSFinalityBlock bool
+	)
+	if err := func() error {
 		txS.mu.Lock()
 		defer txS.mu.Unlock()
 
-		work := txS.createWork(blockType)
-		transactions := txS.getTransactions(blockType, allAddrTxes)
-
-		committedTxes, publicReceipts, logs, failed := work.commitTransactions(transactions, txS.bc)
-		failedTxes = failed
-		txCount := len(committedTxes)
-
-		allowFHSFinalityBlock := false
+		work = txS.createWork(blockType)
+		filteredAddrTxes = txS.filterProposalTransactions(blockType, allAddrTxes)
 		if txS.config != nil && txS.config.FairHotstuff {
 			if svc, ok := txS.s.(*Service); ok {
 				allowFHSFinalityBlock = svc.needsFHSFinalityBlock()
 			}
 		}
-		if txCount == 0 && !allowFHSFinalityBlock {
-			log.Info("Not minting a new block since there are no pending transactions")
-			return nil, fmt.Errorf("Not minting a new block since there are no pending transactions")
+		var captureErr error
+		generation, captureErr = txS.captureProposalGeneration(work)
+		return captureErr
+	}(); err != nil {
+		return nil, err
+	}
+	if txS.config != nil && txS.config.FairHotstuff {
+		if txS.bc == nil || txS.bc.Genesis() == nil || txS.bc.Genesis().Hash() == (common.Hash{}) {
+			return nil, fmt.Errorf("cannot filter Fair HotStuff admissions without genesis block")
+		}
+		filteredAddrTxes = filterFHSAdmittedAddressTxes(
+			filteredAddrTxes,
+			txS.config,
+			txS.bc.Genesis().Hash(),
+			generation.keyNumber,
+			work.header.Number.Uint64(),
+			work.header.Time,
+		)
+	}
+	transactions := types.NewTransactionsByPriceAndNonce(txS.config, work.header.Number, filteredAddrTxes)
+
+	var (
+		failedTxes          types.Transactions
+		proposedBlock       *types.Block
+		admissionCount      int
+		admissionBatchCount int
+		rewardCount         int
+	)
+	data, err := func() ([]byte, error) {
+		// Selection, transaction execution, reward settlement and block encoding
+		// intentionally run outside txService.mu. The generation check below is
+		// the only path that may publish this speculative result.
+		committedTxes, publicReceipts, logs, failed := work.commitTransactions(transactions, txS.bc)
+		failedTxes = failed
+		txCount := len(committedTxes)
+
+		// A proposal attempt can consume only permanently invalid transaction
+		// heads (stale nonce, invalid sender or intrinsic-gas failure). Publishing
+		// one bounded empty cleanup proposal lets the normal generation barrier
+		// remove those heads after publication. Returning early here would skip
+		// failed-TX GC forever and repeatedly select the same invalid heads.
+		if proposalHasNoPublishableWork(txCount, len(failedTxes), allowFHSFinalityBlock) {
+			return nil, errProposalNoWork
 		}
 
 		//txS.firePendingBlockEvents(logs)
 
 		header := work.header
-		header.KeyHash = txS.kbc.CurrentBlock().Hash()
+		header.KeyHash = generation.keyHash
 		header.BlockType = blockType
 		// Blob gas is a block-body commitment. Derive it from the exact set of
 		// transactions that survived proposal execution instead of leaving the
 		// Cancun header at its zero default.
 		header.BlobGasUsed = core.CalcBlobGasUsed(committedTxes)
 
-		keyBlockNumber := uint64(0)
-		if currentKey := txS.kbc.CurrentBlock(); currentKey != nil {
-			keyBlockNumber = currentKey.NumberU64()
+		if txS.bc == nil || txS.bc.Genesis() == nil {
+			return nil, fmt.Errorf("cannot build Fair HotStuff admissions without genesis block")
 		}
-		commonAdmissions := core.BuildCommonTxAdmissions(committedTxes, keyBlockNumber, header.Number.Uint64(), header.Time)
-		commonRewards := buildCommonTxRewards(committedTxes, publicReceipts, commonAdmissions, header.BaseFee)
+		commonAdmissionBatches, commonAdmissionRefs, err := core.BuildCommonTxAdmissions(committedTxes, txS.config, txS.bc.Genesis().Hash(), generation.keyNumber, header.Number.Uint64(), header.Time)
+		if err != nil {
+			return nil, fmt.Errorf("build complete Fair HotStuff admission set: %w", err)
+		}
+		commonRewards, err := buildCommonTxRewards(committedTxes, publicReceipts, commonAdmissionBatches, commonAdmissionRefs, header.BaseFee)
+		if err != nil {
+			return nil, err
+		}
+		if err := addFHSProposalSidecarWork(work.fhsWorkMeter, commonAdmissionBatches, commonAdmissionRefs, commonRewards); err != nil {
+			return nil, fmt.Errorf("locally constructed Fair HotStuff sidecar work is invalid: %w", err)
+		}
+		admissionCount = len(commonAdmissionRefs)
+		admissionBatchCount = len(commonAdmissionBatches)
+		rewardCount = len(commonRewards)
 		applyCommonTxRewards(work.publicState, commonRewards)
 
 		// commit state root after all state transitions and Common RPC reward settlement.
@@ -246,7 +501,7 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 		header.Root = work.publicState.IntermediateRoot(false)
 
 		block := types.NewBlock(header, committedTxes, nil, publicReceipts, new(trie.Trie))
-		block.AttachCommonTxData(commonAdmissions, commonRewards)
+		block.AttachCommonTxData(commonAdmissionBatches, commonAdmissionRefs, commonRewards)
 		encodedBlock := block.EncodeToBytes()
 		if len(encodedBlock) == 0 {
 			return nil, fmt.Errorf("failed to encode tx block proposal")
@@ -271,78 +526,65 @@ func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
 		for _, l := range logs {
 			l.BlockHash = headerHash
 		}
-
-		log.Info("Generated next block", "block num", block.Number(), "num txes", txCount, "commonAdmissions", len(commonAdmissions), "commonRewards", len(commonRewards))
-
-		txS.proposedChain.extend(block)
-
-		elapsed := time.Since(time.Unix(int64(header.Time), 0))
-		log.Info("🔨  Mined block", "number", block.Number(), "hash", fmt.Sprintf("%x", block.Hash().Bytes()[:4]), "elapsed", elapsed)
+		proposedBlock = block
 		return encodedBlock, nil
 	}()
-
-	if len(failedTxes) > 0 {
-		txS.txPool.RemoveBatch(failedTxes)
-		log.Warn("Removed failed proposal txs from txpool", "count", len(failedTxes))
+	candidate := &txProposalCandidate{
+		block:               proposedBlock,
+		encoded:             append([]byte(nil), data...),
+		generation:          generation,
+		failedTxes:          append(types.Transactions(nil), failedTxes...),
+		blockType:           blockType,
+		admissionCount:      admissionCount,
+		admissionBatchCount: admissionBatchCount,
+		rewardCount:         rewardCount,
 	}
-
-	return data, err
+	return candidate, err
 }
 
-// Verify txBlock is kept for legacy callers. Production HotStuff v2 uses
-// verifyHotstuffProposal so the execution result can be cached and committed
-// after Decide without running StateProcessor a second time.
-func (txS *txService) verifyTxBlock(txblock *types.Block) error {
-	var retErr error
-	bc := txS.bc
-	kbc := txS.kbc
-	blockNum := txblock.NumberU64()
-	header := txblock.Header()
-	log.Info("verifyTxBlock", "txblock num", blockNum)
+// installProposalCandidate is the sole publication point for a staged tx
+// proposal. The generation check and proposed-chain extension are atomic with
+// respect to all other proposed-chain maintenance; failed TX GC only follows a
+// successful publication.
+func (txS *txService) installProposalCandidate(candidate *txProposalCandidate, beforePublish func() error) error {
+	if candidate == nil || candidate.block == nil || len(candidate.encoded) == 0 {
+		return fmt.Errorf("incomplete tx block proposal candidate")
+	}
+	txS.mu.Lock()
+	if !txS.proposalGenerationCurrentLocked(candidate.generation) {
+		txS.mu.Unlock()
+		return fmt.Errorf("%w: parent=%s key=%s", errProposalGenerationChanged, candidate.generation.parentHash, candidate.generation.keyHash)
+	}
+	if beforePublish != nil {
+		if err := beforePublish(); err != nil {
+			txS.mu.Unlock()
+			return err
+		}
+	}
+	txS.proposedChain.extend(candidate.block)
+	txS.mu.Unlock()
 
-	if blockNum <= bc.CurrentBlockN() {
-		retErr = fmt.Errorf("invalid header, number:%d, current block number:%d", blockNum, bc.CurrentBlockN())
-		return retErr
-	}
-	currentKey := kbc.CurrentBlock()
-	if currentKey == nil {
-		return fmt.Errorf("cannot verify txblock: missing current keyblock")
-	}
-	if header.KeyHash != currentKey.Hash() {
-		retErr = fmt.Errorf("keyhash:%x does not match current keyhash: %x", header.KeyHash, currentKey.Hash())
-		return retErr
-	}
-	err = bc.Engine().VerifyHeader(bc, header, false)
-	if err != nil {
-		retErr = fmt.Errorf("invalid header, error:%s", err.Error())
-		return retErr
-	}
-	err = bc.Validator().ValidateBody(txblock)
-	if err != nil {
-		retErr = fmt.Errorf("invalid body, error:%s", err.Error())
-		return retErr
-	}
-	parent := bc.GetBlock(txblock.ParentHash(), txblock.NumberU64()-1)
-	if parent == nil {
-		retErr = fmt.Errorf("cannot get parent block, number:%d parent:%x", txblock.NumberU64()-1, txblock.ParentHash())
-		return retErr
-	}
-	statedb, err := bc.StateAt(parent.Root())
-	if err != nil {
-		retErr = fmt.Errorf("cannot get parent statedb, error:%s", err.Error())
-		return retErr
-	}
-	receipts, _, usedGas, err := bc.Processor().Process(txblock, statedb, vm.Config{})
-	if err != nil {
-		retErr = fmt.Errorf("cannot process block state, error:%s", err.Error())
-		return retErr
-	}
-	err = bc.Validator().ValidateState(txblock, statedb, receipts, usedGas)
-	if err != nil {
-		retErr = fmt.Errorf("invalid state, error:%s", err.Error())
-		return retErr
-	}
+	log.Info("Generated next block", "block num", candidate.block.Number(), "num txes", len(candidate.block.Transactions()),
+		"commonAdmissionRefs", candidate.admissionCount, "commonAdmissionBatches", candidate.admissionBatchCount, "commonRewards", candidate.rewardCount)
+	elapsed := time.Since(time.Unix(int64(candidate.block.Time()), 0))
+	log.Info("🔨  Mined block", "number", candidate.block.Number(), "hash", fmt.Sprintf("%x", candidate.block.Hash().Bytes()[:4]), "elapsed", elapsed)
 	return nil
+}
+
+// Try proposal new txBlock for synchronous non-FHS callers.
+func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
+	candidate, err := txS.buildProposalNewBlock(blockType)
+	if err != nil {
+		return nil, err
+	}
+	if err := txS.installProposalCandidate(candidate, nil); err != nil {
+		return nil, err
+	}
+	if len(candidate.failedTxes) > 0 {
+		txS.txPool.RemoveBatch(candidate.failedTxes)
+		log.Warn("Removed failed proposal txs from txpool", "count", len(candidate.failedTxes))
+	}
+	return append([]byte(nil), candidate.encoded...), nil
 }
 
 // verifyHotstuffProposal is the production HotStuff proposal validation path.
@@ -451,26 +693,6 @@ func (txS *txService) verifyHotstuffProposalWithKeyContext(ref *types.HotstuffPr
 	return verified, nil
 }
 
-// New txBlock done, when consensus agreement completed. This legacy path is
-// kept for compatibility with non-v2 callers and still imports through the
-// normal chain insertion path.
-func (txS *txService) decideNewBlock(block *types.Block, sig []byte, mask []byte, viewID common.Hash, leaderID string) error {
-	log.Info("decideNewBlock", "TxBlock Number", block.NumberU64(), "txs", len(block.Transactions()))
-	bc := txS.bc
-	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
-		return nil
-	}
-	block.SetSignature(sig, mask, viewID, leaderID, block.NumberU64())
-	_, err := bc.InsertBlock(block)
-	if err != nil {
-		log.Error("decideNewBlock.InsertChain", "error", err)
-		return err
-	}
-	txS.mux.Post(core.NewMinedBlockEvent{Block: block})
-	log.Info("decideNewBlock InsertBlock ok")
-	return nil
-}
-
 // decideVerifiedProposal commits the exact execution result obtained during
 // VotePrepare validation. It is used by legacy Decide and by delayed FHS
 // 2-chain commit, and deliberately avoids a second StateProcessor execution.
@@ -556,7 +778,6 @@ func (txS *txService) decideVerifiedProposalWithChild(ref *types.HotstuffProposa
 func (txS *txService) procBlockDone(newBlock *types.Block) {
 	log.Info("chainBlockEvent...", "number", newBlock.NumberU64())
 	txS.txPool.RemoveBatch(newBlock.Transactions())
-	core.DropCommonRPCAdmissions(newBlock.Transactions())
 
 	if txS.config != nil && txS.config.FairHotstuff {
 		txS.mu.Lock()
@@ -565,7 +786,9 @@ func (txS *txService) procBlockDone(newBlock *types.Block) {
 	} else if txS.s.isRunning() {
 		txS.updateChainPerNewHead(newBlock)
 	} else {
+		txS.mu.Lock()
 		txS.proposedChain.setHead(newBlock)
+		txS.mu.Unlock()
 	}
 
 	txS.s.procBlockDone(newBlock)
@@ -583,7 +806,9 @@ func (txS *txService) eventLoop() {
 			if txS.s.isRunning() {
 				txS.updateChainPerNewHead(newBlock)
 			} else {
+				txS.mu.Lock()
 				txS.proposedChain.setHead(newBlock)
+				txS.mu.Unlock()
 			}
 
 			txS.s.procBlockDone(newBlock)
@@ -612,12 +837,16 @@ const (
 	slowPerAccountTierSmall  = 64
 	fastPerAccountTierMedium = 128
 	slowPerAccountTierMedium = 128
-	fastPerAccountTierLarge  = 16384
-	slowPerAccountTierLarge  = 16384
-	fastBlockMaxTxCount      = uint64(16384)
-	slowBlockMaxTxCount      = uint64(16384)
-	fastBlockGasTargetPct    = uint64(95)
-	slowBlockGasTargetPct    = uint64(99)
+	// Transactions from one sender form a strict nonce chain and cannot use the
+	// disjoint native-transfer executor. Keep that serial portion within one
+	// validation/view budget while preserving the 16,384 transaction global
+	// block limit for independent senders.
+	fastPerAccountTierLarge = params.MaxTxCountPerSenderPerBlock
+	slowPerAccountTierLarge = params.MaxTxCountPerSenderPerBlock
+	fastBlockMaxTxCount     = uint64(params.MaxTxCountPerBlock)
+	slowBlockMaxTxCount     = uint64(params.MaxTxCountPerBlock)
+	fastBlockGasTargetPct   = uint64(95)
+	slowBlockGasTargetPct   = uint64(99)
 
 	fastTxBlockProposalMaxBytes = 64 * 1024 * 1024
 	slowTxBlockProposalMaxBytes = 64 * 1024 * 1024
@@ -653,7 +882,7 @@ const (
 	deployBlockMaxTxCount = uint64(4)
 	heavyBlockMaxTxCount  = uint64(8)
 	dataBlockMaxTxCount   = uint64(8)
-	dexBlockMaxTxCount    = uint64(16384)
+	dexBlockMaxTxCount    = uint64(params.MaxTxCountPerBlock)
 
 	deployDrainMaxTxCount = uint64(16)
 	heavyDrainMaxTxCount  = uint64(32)
@@ -734,6 +963,114 @@ func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
 	return limited
 }
 
+// filterFHSAdmittedAddressTxes keeps only each sender's contiguous nonce prefix
+// whose admissions are valid for the proposal boundary. Later nonces cannot be
+// executed when an earlier nonce lacks proof, so retaining a suffix would only
+// create repeated speculative EVM work and invalid proposals.
+func filterFHSAdmittedAddressTxes(addrTxes AddressTxes, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) AddressTxes {
+	return limitFHSAdmissionBatchPrefixes(addrTxes, int(params.MaxFHSCommonTxAdmissionBatchesPerBlock), func(tx *types.Transaction) (common.Hash, bool) {
+		selection, err := core.CommonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, txBlockNumber, timestamp)
+		if err != nil || selection.Batch == nil {
+			return common.Hash{}, false
+		}
+		return selection.Batch.AdmissionID, true
+	})
+}
+
+// limitFHSAdmissionBatchPrefixes applies the consensus certificate-count bound
+// before EVM execution. It greedily selects the certificate which unlocks the
+// largest number of transactions at the current sender nonce frontiers. This
+// prevents many one-item certificates on an early address from starving a
+// later 512-item certificate. Ties use AdmissionID, so map iteration and worker
+// scheduling cannot change the proposal. Every selected certificate unlocks at
+// least one transaction and the final result retains only executable prefixes.
+func limitFHSAdmissionBatchPrefixes(addrTxes AddressTxes, maxBatches int, admissionBatch func(*types.Transaction) (common.Hash, bool)) AddressTxes {
+	filtered := make(AddressTxes, len(addrTxes))
+	if maxBatches <= 0 || admissionBatch == nil {
+		return filtered
+	}
+	type admittedSender struct {
+		address  common.Address
+		txs      types.Transactions
+		batchIDs []common.Hash
+	}
+	addresses := make([]common.Address, 0, len(addrTxes))
+	for address := range addrTxes {
+		addresses = append(addresses, address)
+	}
+	sort.Slice(addresses, func(i, j int) bool {
+		return bytes.Compare(addresses[i][:], addresses[j][:]) < 0
+	})
+	senders := make([]admittedSender, 0, len(addresses))
+	for _, address := range addresses {
+		txs := addrTxes[address]
+		batchIDs := make([]common.Hash, 0, len(txs))
+		for _, tx := range txs {
+			batchID, ok := admissionBatch(tx)
+			if !ok || batchID == (common.Hash{}) {
+				break
+			}
+			batchIDs = append(batchIDs, batchID)
+		}
+		if len(batchIDs) > 0 {
+			senders = append(senders, admittedSender{address: address, txs: txs[:len(batchIDs)], batchIDs: batchIDs})
+		}
+	}
+	selectedBatches := make(map[common.Hash]struct{}, maxBatches)
+	scores := make(map[common.Hash]int, len(senders))
+	for len(selectedBatches) < maxBatches {
+		clear(scores)
+		for _, sender := range senders {
+			frontier := 0
+			for frontier < len(sender.batchIDs) {
+				if _, selected := selectedBatches[sender.batchIDs[frontier]]; !selected {
+					break
+				}
+				frontier++
+			}
+			if frontier == len(sender.batchIDs) {
+				continue
+			}
+			candidate := sender.batchIDs[frontier]
+			unlocked := 0
+			for index := frontier; index < len(sender.batchIDs); index++ {
+				batchID := sender.batchIDs[index]
+				if batchID != candidate {
+					if _, selected := selectedBatches[batchID]; !selected {
+						break
+					}
+				}
+				unlocked++
+			}
+			scores[candidate] += unlocked
+		}
+		var best common.Hash
+		bestScore := 0
+		for batchID, score := range scores {
+			if score > bestScore || (score == bestScore && score > 0 && (best == (common.Hash{}) || bytes.Compare(batchID[:], best[:]) < 0)) {
+				best, bestScore = batchID, score
+			}
+		}
+		if bestScore == 0 {
+			break
+		}
+		selectedBatches[best] = struct{}{}
+	}
+	for _, sender := range senders {
+		count := 0
+		for count < len(sender.batchIDs) {
+			if _, selected := selectedBatches[sender.batchIDs[count]]; !selected {
+				break
+			}
+			count++
+		}
+		if count > 0 {
+			filtered[sender.address] = sender.txs[:count]
+		}
+	}
+	return filtered
+}
+
 func fastEligibleTx(tx *types.Transaction) bool {
 	return core.IsFastLaneEligible(tx)
 }
@@ -775,7 +1112,8 @@ func classifyCommitTxError(err error) failedTxAction {
 	case errors.Is(err, core.ErrIntrinsicGas),
 		errors.Is(err, core.ErrGasLimit),
 		errors.Is(err, core.ErrGasUintOverflow),
-		errors.Is(err, core.ErrInvalidSender):
+		errors.Is(err, core.ErrInvalidSender),
+		errors.Is(err, core.ErrFHSPerTransactionWorkLimit):
 		return failedTxDropAndPop
 
 	case errors.Is(err, core.ErrNonceTooHigh),
@@ -834,6 +1172,9 @@ func (txS *txService) createWork(blockType uint8) *work {
 			}
 		}
 	}
+	if parent == nil {
+		panic("failed to get proposal parent")
+	}
 	parentNumber := parent.Number()
 
 	parentTime := int64(parent.Time())
@@ -881,7 +1222,7 @@ func (txS *txService) createWork(blockType uint8) *work {
 	gasTarget := blockGasTarget(blockType, header.GasLimit)
 	pendingTotal, _ := txS.txPool.Stats()
 
-	return &work{
+	work := &work{
 		config:         txS.config,
 		publicState:    publicState,
 		header:         header,
@@ -892,6 +1233,10 @@ func (txS *txService) createWork(blockType uint8) *work {
 		blockType:      blockType,
 		size:           header.Size(),
 	}
+	if txS.config != nil && txS.config.FairHotstuff {
+		work.fhsWorkMeter = core.NewFHSBlockWorkMeter()
+	}
+	return work
 }
 
 // deriveCancunHeaderFields initializes the fields whose values are known before
@@ -967,12 +1312,12 @@ func (txS *txService) loadPendingAddressTxes(blockType uint8) (AddressTxes, erro
 	}
 
 	pendingTotal, _ := txS.txPool.Stats()
-	perAccountLimit := blockProposalLimit(blockType, pendingTotal)
-	maxTx := int(blockMaxTxCount(blockType))
+	maxTx, perAccountLimit := proposalPoolScanLimits(blockType, pendingTotal, txS.config != nil && txS.config.FairHotstuff)
 	gasTarget := uint64(0)
 	if head := txS.bc.CurrentBlock(); head != nil && head.Header() != nil {
 		gasTarget = blockGasTarget(blockType, head.Header().GasLimit)
 	}
+	gasTarget = proposalPoolScanGasTarget(gasTarget, txS.config != nil && txS.config.FairHotstuff)
 
 	return txS.txPool.PendingByLaneAndClassesLimited(
 		lane,
@@ -983,10 +1328,48 @@ func (txS *txService) loadPendingAddressTxes(blockType uint8) (AddressTxes, erro
 	)
 }
 
-func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) *types.TransactionsByPriceAndNonce {
+// proposalPoolScanLimits keeps the speculative two-chain pipeline bounded
+// without hiding the next nonce window. The TxPool remains based on canonical
+// state while an FHS proposer executes on its highest certified parent, so the
+// pool's first window can consist entirely of transactions already consumed by
+// that parent. Read at most one preceding global/per-account window in
+// addition to the next proposal window, then re-apply the proposal limit after
+// filtering. FHS two-chain commit guarantees there is at most one certified,
+// uncommitted parent between those states.
+func proposalPoolScanLimits(blockType uint8, pending int, fairHotstuff bool) (maxTx, perAccount int) {
+	maxTx = int(blockMaxTxCount(blockType))
+	perAccount = blockProposalLimit(blockType, pending)
+	if fairHotstuff {
+		maxTx *= 2
+		perAccount *= 2
+	}
+	return maxTx, perAccount
+}
+
+// proposalPoolScanGasTarget mirrors the two-window count scan above. The
+// first gas window may consist entirely of transactions already executed by
+// the highest certified (but not yet canonical) parent. Selection filters
+// those hashes before execution and the work itself retains the ordinary
+// one-block gas target, so this only prevents the next nonce window from being
+// hidden during the immutable TxPool snapshot.
+func proposalPoolScanGasTarget(gasTarget uint64, fairHotstuff bool) uint64 {
+	if !fairHotstuff || gasTarget == 0 {
+		return gasTarget
+	}
+	if gasTarget > math.MaxUint64/2 {
+		return math.MaxUint64
+	}
+	return gasTarget * 2
+}
+
+// filterProposalTransactions must be called with txService.mu held. It only
+// snapshots the speculative-chain exclusion set; sender recovery and heap
+// construction are deliberately left to the lock-free proposal build phase.
+func (txS *txService) filterProposalTransactions(blockType uint8, allAddrTxes AddressTxes) AddressTxes {
 	addrTxes := txS.proposedChain.withoutProposedTxes(allAddrTxes, time.Now())
 	pendingTotal, _ := txS.txPool.Stats()
 	perAccountLimit := blockProposalLimit(blockType, pendingTotal)
+	addrTxes = limitAddressTxes(addrTxes, perAccountLimit)
 
 	availableBeforeFilter := countAddressTxes(allAddrTxes)
 	availableTxs := countAddressTxes(addrTxes)
@@ -1017,7 +1400,7 @@ func (txS *txService) getTransactions(blockType uint8, allAddrTxes AddressTxes) 
 		"perAccountLimit", perAccountLimit,
 		"maxTx", blockMaxTxCount(blockType),
 		"gasTargetPct", blockGasTarget(blockType, txS.bc.CurrentBlock().Header().GasLimit))
-	return types.NewTransactionsByPriceAndNonce(txS.config, txS.bc.CurrentBlock().Number(), addrTxes)
+	return addrTxes
 }
 
 // Sends-off events asynchronously.
@@ -1232,13 +1615,34 @@ type work struct {
 	maxTxCount     uint64
 	gasTarget      uint64
 	resourceBudget *txResourceBudget
+	fhsWorkMeter   *core.FHSBlockWorkMeter
 	blockType      uint8
 	size           common.StorageSize
 }
 
+// nextFHSWorkMeter checks a proposal candidate against the same meter used by
+// validators. The returned snapshot is installed only after EVM execution
+// succeeds, so a failed candidate cannot consume the following candidates'
+// consensus budget.
+func (env *work) nextFHSWorkMeter(index int, tx *types.Transaction) (*core.FHSBlockWorkMeter, error) {
+	if env == nil || env.fhsWorkMeter == nil {
+		return nil, nil
+	}
+	next := *env.fhsWorkMeter
+	if err := next.AddTransaction(index, tx); err != nil {
+		return nil, err
+	}
+	return &next, nil
+}
+
 const (
-	osakaBlockSizeBuffer     = common.StorageSize(1_000_000)
-	osakaPerTxBodySizeBuffer = common.StorageSize(512)
+	osakaBlockSizeBuffer = common.StorageSize(1_000_000)
+	// A full 512-transaction admission certificate plus aligned references and
+	// deterministic rewards amortizes to less than 300 encoded bytes per tx,
+	// even with full-width boundary and fee fields. Keep additional headroom
+	// while allowing 16,384 signed native transfers beside the separate 1 MiB
+	// block/finality-proof reserve.
+	osakaPerTxBodySizeBuffer = common.StorageSize(320)
 )
 
 func (env *work) txFitsBlockSize(tx *types.Transaction) bool {
@@ -1258,7 +1662,6 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 	var failedTxes types.Transactions
 
 	gp := new(core.GasPool).AddGas(env.header.GasLimit)
-	signer := types.NewEIP155Signer(env.config.ChainID)
 	txCount := 0
 
 	for {
@@ -1296,6 +1699,16 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 				continue
 			}
 		}
+		candidateWorkMeter, workErr := env.nextFHSWorkMeter(txCount, tx)
+		if workErr != nil {
+			action := failedTxKeepAndPop
+			if errors.Is(workErr, core.ErrFHSPerTransactionWorkLimit) {
+				action = failedTxDropAndPop
+			}
+			logFailedTxAction(tx, workErr, action)
+			applyFailedTxAction(txes, &failedTxes, tx, action)
+			continue
+		}
 		resourceClass := core.ClassifyTxResource(tx)
 		if env.resourceBudget != nil && !env.resourceBudget.CanInclude(resourceClass, tx.Gas()) {
 			log.Debug("Skipping tx above resource class budget", "hash", tx.Hash(), "class", resourceClass, "gas", tx.Gas(), "blockType", env.blockType)
@@ -1304,7 +1717,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		}
 
 		// Check sender
-		from, err := types.Sender(signer, tx)
+		from, err := proposalTransactionSender(env.config, env.header.Number, tx)
 		if err != nil {
 			log.Warn("Discarding transaction with invalid sender", "hash", tx.Hash(), "err", err)
 			applyFailedTxAction(txes, &failedTxes, tx, failedTxDropAndPop)
@@ -1326,6 +1739,9 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 			applyFailedTxAction(txes, &failedTxes, tx, action)
 		default:
 			txCount++
+			if candidateWorkMeter != nil {
+				env.fhsWorkMeter = candidateWorkMeter
+			}
 			committedTxes = append(committedTxes, tx)
 			// Reserve conservative room for the per-transaction CommonTxAdmission
 			// and CommonTxReward RLP objects attached after execution.

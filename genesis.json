@@ -39,6 +39,7 @@
     "fixedCommittee": true,
     "fixedLeader": false,
     "fairHotstuff": true,
+    "commonRPCSigners": ["0xeb8c07def4c5a2541de730b027376e1068aa861a"],
     "rnettransport": "quic",
     "rnetfallbacktransport": "none",
     "fairHotstuffSeed": "0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627",
@@ -153,7 +154,7 @@
 
   "nonce": "0x0",
 
-  "mixHash": "0x998bdc7bdb712a076b112129c2101b75b04687ea851aa24b74068a231a9c8d3f",
+  "mixHash": "0x958661fda822c1cf99ef5c25865c8deb6411888df8117384980c077f86df1264",
 
   "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 

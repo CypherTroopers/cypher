@@ -88,14 +88,95 @@ type TimeoutCertificate struct {
 // PersistedVote is the write-ahead safety record. It is written synchronously
 // before a VotePrepare is exposed to the network.
 type PersistedVote struct {
+	ViewNumber      uint64
+	ViewID          common.Hash
+	LeaderID        string
+	ProposalID      common.Hash
+	ProposalRef     []byte
+	ProposalRefHash common.Hash
+}
+
+// FHSProposalValidationKey identifies one application validation without
+// relying on mutable View pointers. It is local control-plane state and is
+// never encoded on the network.
+type FHSProposalValidationKey struct {
+	RequestID  uint64
 	ViewNumber uint64
 	ViewID     common.Hash
 	LeaderID   string
-	KStateHash common.Hash
-	TStateHash common.Hash
-	KState     []byte
-	TState     []byte
-	Extra      []byte
+	ProposalID common.Hash
+}
+
+// FHSProposalValidationRequest contains the immutable inputs needed by an
+// application worker. Workers must not mutate HotStuff views or safety state.
+type FHSProposalValidationRequest struct {
+	Key         FHSProposalValidationKey
+	ProposalRef []byte
+	Extra       []byte
+	ParentQC    *SignedState
+}
+
+// FHSProposalValidationResult is delivered back to the serialized HotStuff
+// control loop. ApplicationData is process-local validation output; it is not
+// a wire field and must only be installed after the key is still active.
+type FHSProposalValidationResult struct {
+	Key             FHSProposalValidationKey
+	Err             error
+	ApplicationData interface{}
+}
+
+// FHSProposalBuildKey identifies one local leader construction request. The
+// state and parent-QC commitments prevent a worker result from being installed
+// into a later timeout view which happens to extend the same block parent.
+// These records are process-local and are never encoded on the network.
+type FHSProposalBuildKey struct {
+	RequestID          uint64
+	ViewNumber         uint64
+	ViewID             common.Hash
+	LeaderID           string
+	CurrentStateDigest common.Hash
+	ParentQCID         common.Hash
+}
+
+// FHSProposalBuildRequest contains immutable control-plane inputs. A worker may
+// build and persist content-addressed proposal data, but it must not publish a
+// speculative chain head, mutate the txpool, send a manifest, or touch HotStuff
+// view state.
+type FHSProposalBuildRequest struct {
+	Key          FHSProposalBuildKey
+	CurrentState []byte
+	ParentQC     *SignedState
+}
+
+// FHSProposalBuildResult returns an ordinary proposal reference to the
+// serialized HotStuff loop. ApplicationData is local staged publication state.
+type FHSProposalBuildResult struct {
+	Key             FHSProposalBuildKey
+	TProposal       []byte
+	Extra           []byte
+	Err             error
+	ApplicationData interface{}
+}
+
+// FHSHighQCValidationKey identifies one local, asynchronous certificate
+// catch-up. QCID commits to certificate semantics (not its signer subset), and
+// TargetView binds the result to the control-plane continuation that requested
+// it. These records are process-local and never enter the wire protocol.
+type FHSHighQCValidationKey struct {
+	RequestID  uint64
+	QCID       common.Hash
+	TargetView uint64
+}
+
+type FHSHighQCValidationRequest struct {
+	Key FHSHighQCValidationKey
+	QC  *SignedState
+}
+
+type FHSHighQCValidationResult struct {
+	Key             FHSHighQCValidationKey
+	Err             error
+	ApplicationData interface{}
 }
 
 type FHSSafetyState struct {
@@ -117,6 +198,35 @@ type FHSApplication interface {
 	PersistFHSVote(*PersistedVote) error
 	PersistFHSTimeoutVote(*TimeoutStatement) error
 	AcceptFHSTimeoutCertificate(*TimeoutCertificate) error
+}
+
+// FHSProposalValidationApplication is optional. Production nodes implement it
+// to keep body retrieval and execution off the HotStuff control loop. Test and
+// legacy applications may omit it and use the synchronous OnPropose callback.
+type FHSProposalValidationApplication interface {
+	ScheduleFHSProposalValidation(*FHSProposalValidationRequest) error
+	ApplyFHSProposalValidation(*FHSProposalValidationResult) error
+	FinishFHSProposalValidation(*FHSProposalValidationResult)
+}
+
+// FHSProposalBuildApplication keeps leader selection, execution, encoding and
+// body persistence off the serialized HotStuff loop. Production FHS nodes must
+// implement this interface; the manager intentionally has no synchronous FHS
+// proposal fallback.
+type FHSProposalBuildApplication interface {
+	ScheduleFHSProposalBuild(*FHSProposalBuildRequest) error
+	ApplyFHSProposalBuild(*FHSProposalBuildResult) error
+	FinishFHSProposalBuild(*FHSProposalBuildResult)
+}
+
+// FHSHighQCValidationApplication lets production nodes stage body retrieval
+// and historical EVM execution away from the serialized HotStuff loop. Apply
+// must only publish a fully staged result after the manager confirms that its
+// request key is still active.
+type FHSHighQCValidationApplication interface {
+	ScheduleFHSHighQCValidation(*FHSHighQCValidationRequest) error
+	ApplyFHSHighQCValidation(*FHSHighQCValidationResult) error
+	FinishFHSHighQCValidation(*FHSHighQCValidationResult)
 }
 
 func digestToHash(data []byte) common.Hash {
@@ -518,9 +628,7 @@ func ClonePersistedVote(in *PersistedVote) *PersistedVote {
 		return nil
 	}
 	out := *in
-	out.KState = append([]byte(nil), in.KState...)
-	out.TState = append([]byte(nil), in.TState...)
-	out.Extra = append([]byte(nil), in.Extra...)
+	out.ProposalRef = append([]byte(nil), in.ProposalRef...)
 	return &out
 }
 

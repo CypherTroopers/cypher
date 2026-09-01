@@ -21,9 +21,22 @@ import (
 const (
 	quicPeerAuthVersion = 1
 	quicPeerAuthDomain  = "cypher-rnet-quic-peer-v1"
+	blsTLSAuthDomain    = "cypher-bls-tls-attestation"
+	maxBLSIdentityBytes = 512
 )
 
 var quicPeerAuthOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 1}
+var blsTLSAuthOID = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 57264, 1, 2}
+
+type blsTLSAttestation struct {
+	Application string
+	Identity    []byte
+	PublicKey   []byte
+	Serial      []byte
+	NotBefore   int64
+	NotAfter    int64
+	Signature   []byte
+}
 
 type quicPeerAttestation struct {
 	Version   int
@@ -72,6 +85,181 @@ func writeQUICAuthPart(hash interface{ Write([]byte) (int, error) }, value []byt
 	binary.BigEndian.PutUint64(size[:], uint64(len(value)))
 	_, _ = hash.Write(size[:])
 	_, _ = hash.Write(value)
+}
+
+func blsTLSAuthDigest(application string, identity, publicKey, subjectPublicKeyInfo, serial []byte, notBefore, notAfter int64) []byte {
+	hash := sha256.New()
+	writeQUICAuthPart(hash, []byte(blsTLSAuthDomain))
+	writeQUICAuthPart(hash, []byte(application))
+	writeQUICAuthPart(hash, identity)
+	writeQUICAuthPart(hash, publicKey)
+	writeQUICAuthPart(hash, subjectPublicKeyInfo)
+	writeQUICAuthPart(hash, serial)
+	var encodedTime [8]byte
+	binary.BigEndian.PutUint64(encodedTime[:], uint64(notBefore))
+	writeQUICAuthPart(hash, encodedTime[:])
+	binary.BigEndian.PutUint64(encodedTime[:], uint64(notAfter))
+	writeQUICAuthPart(hash, encodedTime[:])
+	return hash.Sum(nil)
+}
+
+// GenerateBLSTLSCertificate creates a short-lived, self-signed TLS certificate
+// whose ephemeral public key is authenticated by a canonical BLS identity. The
+// caller controls the application domain and opaque identity commitment, so a
+// credential cannot be replayed across protocols or consensus generations.
+func GenerateBLSTLSCertificate(application string, identity, publicKey []byte, sign func([]byte) ([]byte, error)) (tls.Certificate, error) {
+	if application == "" || len(application) > 128 || len(identity) == 0 || len(identity) > 4096 ||
+		len(publicKey) == 0 || len(publicKey) > maxBLSIdentityBytes || sign == nil {
+		return tls.Certificate{}, fmt.Errorf("invalid BLS TLS certificate identity")
+	}
+	public := bls.GetPublicKey(publicKey)
+	if public == nil || !bytes.Equal(public.Serialize(), publicKey) {
+		return tls.Certificate{}, fmt.Errorf("invalid BLS TLS public key")
+	}
+	_, tlsPrivate, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	spki, err := x509.MarshalPKIXPublicKey(tlsPrivate.Public())
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	serialLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serial, err := rand.Int(rand.Reader, serialLimit)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	if serial.Sign() == 0 {
+		serial.SetInt64(1)
+	}
+	now := time.Now().UTC().Truncate(time.Second)
+	notBefore := now.Add(-5 * time.Minute)
+	notAfter := now.Add(24 * time.Hour)
+	digest := blsTLSAuthDigest(application, identity, publicKey, spki, serial.Bytes(), notBefore.Unix(), notAfter.Unix())
+	signature, err := sign(digest)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	if len(signature) == 0 || len(signature) > maxBLSIdentityBytes {
+		return tls.Certificate{}, fmt.Errorf("BLS TLS signer returned an invalid signature length")
+	}
+	var proof bls.Sign
+	if err := proof.Deserialize(signature); err != nil || !bytes.Equal(proof.Serialize(), signature) || !proof.VerifyHash(public, digest) {
+		return tls.Certificate{}, fmt.Errorf("BLS TLS signer returned an invalid signature")
+	}
+	attestation, err := asn1.Marshal(blsTLSAttestation{
+		Application: application,
+		Identity:    append([]byte(nil), identity...),
+		PublicKey:   append([]byte(nil), publicKey...),
+		Serial:      append([]byte(nil), serial.Bytes()...),
+		NotBefore:   notBefore.Unix(),
+		NotAfter:    notAfter.Unix(),
+		Signature:   append([]byte(nil), signature...),
+	})
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	template := &x509.Certificate{
+		SerialNumber:    serial,
+		NotBefore:       notBefore,
+		NotAfter:        notAfter,
+		KeyUsage:        x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		ExtraExtensions: []pkix.Extension{{Id: blsTLSAuthOID, Critical: true, Value: attestation}},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, tlsPrivate.Public(), tlsPrivate)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: tlsPrivate, Leaf: leaf}, nil
+}
+
+// VerifyBLSTLSCertificate replaces WebPKI verification with a mandatory BLS
+// attestation check against the exact application identity and committee key.
+func VerifyBLSTLSCertificate(rawCerts [][]byte, application string, identity, expectedPublicKey []byte) error {
+	if application == "" || len(identity) == 0 || len(expectedPublicKey) == 0 || len(expectedPublicKey) > maxBLSIdentityBytes {
+		return fmt.Errorf("missing expected BLS TLS identity")
+	}
+	if len(rawCerts) != 1 {
+		return fmt.Errorf("BLS TLS peer must present exactly one certificate")
+	}
+	certificate, err := x509.ParseCertificate(rawCerts[0])
+	if err != nil {
+		return fmt.Errorf("parse BLS TLS certificate: %w", err)
+	}
+	if err := certificate.CheckSignature(certificate.SignatureAlgorithm, certificate.RawTBSCertificate, certificate.Signature); err != nil {
+		return fmt.Errorf("invalid self-signed BLS TLS certificate: %w", err)
+	}
+	now := time.Now()
+	if now.Before(certificate.NotBefore) || now.After(certificate.NotAfter) {
+		return fmt.Errorf("expired or not-yet-valid BLS TLS certificate")
+	}
+	if certificate.NotAfter.Sub(certificate.NotBefore) <= 0 || certificate.NotAfter.Sub(certificate.NotBefore) > 25*time.Hour {
+		return fmt.Errorf("BLS TLS certificate lifetime exceeds its bound")
+	}
+	if certificate.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
+		return fmt.Errorf("BLS TLS certificate lacks digital-signature usage")
+	}
+	serverAuth := false
+	for _, usage := range certificate.ExtKeyUsage {
+		if usage == x509.ExtKeyUsageServerAuth {
+			serverAuth = true
+			break
+		}
+	}
+	if !serverAuth {
+		return fmt.Errorf("BLS TLS certificate cannot authenticate a server")
+	}
+	var encodedAttestation []byte
+	for _, extension := range certificate.Extensions {
+		if !extension.Id.Equal(blsTLSAuthOID) {
+			continue
+		}
+		if encodedAttestation != nil {
+			return fmt.Errorf("duplicate BLS TLS attestation extension")
+		}
+		if !extension.Critical {
+			return fmt.Errorf("BLS TLS attestation extension is not critical")
+		}
+		encodedAttestation = extension.Value
+	}
+	if len(encodedAttestation) == 0 {
+		return fmt.Errorf("BLS TLS certificate has no attestation")
+	}
+	var attestation blsTLSAttestation
+	rest, err := asn1.Unmarshal(encodedAttestation, &attestation)
+	if err != nil || len(rest) != 0 {
+		return fmt.Errorf("invalid BLS TLS attestation encoding")
+	}
+	if attestation.Application != application || !bytes.Equal(attestation.Identity, identity) || !bytes.Equal(attestation.PublicKey, expectedPublicKey) {
+		return fmt.Errorf("BLS TLS application, identity or public key mismatch")
+	}
+	if len(attestation.PublicKey) == 0 || len(attestation.PublicKey) > maxBLSIdentityBytes ||
+		len(attestation.Signature) == 0 || len(attestation.Signature) > maxBLSIdentityBytes {
+		return fmt.Errorf("invalid BLS TLS attestation key or signature length")
+	}
+	if len(attestation.Serial) == 0 || new(big.Int).SetBytes(attestation.Serial).Cmp(certificate.SerialNumber) != 0 ||
+		attestation.NotBefore != certificate.NotBefore.Unix() || attestation.NotAfter != certificate.NotAfter.Unix() {
+		return fmt.Errorf("BLS TLS certificate metadata is not attested")
+	}
+	public := bls.GetPublicKey(attestation.PublicKey)
+	if public == nil || !bytes.Equal(public.Serialize(), attestation.PublicKey) {
+		return fmt.Errorf("invalid or non-canonical BLS TLS public key")
+	}
+	var signature bls.Sign
+	if err := signature.Deserialize(attestation.Signature); err != nil || !bytes.Equal(signature.Serialize(), attestation.Signature) {
+		return fmt.Errorf("invalid BLS TLS attestation signature")
+	}
+	digest := blsTLSAuthDigest(attestation.Application, attestation.Identity, attestation.PublicKey, certificate.RawSubjectPublicKeyInfo,
+		attestation.Serial, attestation.NotBefore, attestation.NotAfter)
+	if !signature.VerifyHash(public, digest) {
+		return fmt.Errorf("BLS TLS attestation verification failed")
+	}
+	return nil
 }
 
 func quicPeerAuthDigest(chainID uint64, address string, publicKey, subjectPublicKeyInfo []byte) []byte {
@@ -298,12 +486,16 @@ func parseAndVerifyQUICPeerCertificate(rawCerts [][]byte, expectedChainID uint64
 	if len(expectedPublicKey) > 0 && !bytes.Equal(attestation.PublicKey, expectedPublicKey) {
 		return nil, fmt.Errorf("QUIC peer BLS key does not match the committee identity")
 	}
+	if len(attestation.PublicKey) == 0 || len(attestation.PublicKey) > maxBLSIdentityBytes ||
+		len(attestation.Signature) == 0 || len(attestation.Signature) > maxBLSIdentityBytes {
+		return nil, fmt.Errorf("invalid QUIC peer BLS key or signature length")
+	}
 	public := bls.GetPublicKey(attestation.PublicKey)
 	if public == nil || !bytes.Equal(public.Serialize(), attestation.PublicKey) {
 		return nil, fmt.Errorf("invalid or non-canonical QUIC peer BLS key")
 	}
 	var signature bls.Sign
-	if err := signature.Deserialize(attestation.Signature); err != nil {
+	if err := signature.Deserialize(attestation.Signature); err != nil || !bytes.Equal(signature.Serialize(), attestation.Signature) {
 		return nil, fmt.Errorf("invalid QUIC peer BLS attestation signature")
 	}
 	chainID := binary.BigEndian.Uint64(attestation.ChainID)
@@ -332,11 +524,22 @@ func extractQUICPeerChainID(certificate *x509.Certificate) uint64 {
 	return 0
 }
 
+func rawQUICPeerCertificates(certificates []*x509.Certificate) [][]byte {
+	raw := make([][]byte, 0, len(certificates))
+	for _, certificate := range certificates {
+		if certificate != nil {
+			raw = append(raw, certificate.Raw)
+		}
+	}
+	return raw
+}
+
 func quicServerTLSConfig(auth *quicPeerAuthenticator) *tls.Config {
 	return &tls.Config{
-		MinVersion: tls.VersionTLS13,
-		NextProtos: []string{quicNextProto},
-		ClientAuth: tls.RequireAnyClientCert,
+		MinVersion:             tls.VersionTLS13,
+		NextProtos:             []string{quicNextProto},
+		ClientAuth:             tls.RequireAnyClientCert,
+		SessionTicketsDisabled: true,
 		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 			_, _, _, certificate, err := auth.snapshot()
 			if err != nil {
@@ -344,12 +547,12 @@ func quicServerTLSConfig(auth *quicPeerAuthenticator) *tls.Config {
 			}
 			return &certificate, nil
 		},
-		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		VerifyConnection: func(state tls.ConnectionState) error {
 			chainID, _, _, _, err := auth.snapshot()
 			if err != nil {
 				return err
 			}
-			identity, err := parseAndVerifyQUICPeerCertificate(rawCerts, chainID, "", nil)
+			identity, err := parseAndVerifyQUICPeerCertificate(rawQUICPeerCertificates(state.PeerCertificates), chainID, "", nil)
 			if err != nil {
 				return err
 			}
@@ -367,9 +570,10 @@ func quicClientTLSConfig(auth *quicPeerAuthenticator, expected *ServerIdentity) 
 		return nil, fmt.Errorf("missing expected QUIC peer address or BLS key")
 	}
 	return &tls.Config{
-		MinVersion:         tls.VersionTLS13,
-		NextProtos:         []string{quicNextProto},
-		InsecureSkipVerify: true, // Replaced by the mandatory BLS-attestation verifier below.
+		MinVersion:             tls.VersionTLS13,
+		NextProtos:             []string{quicNextProto},
+		InsecureSkipVerify:     true, // Replaced by the mandatory BLS-attestation verifier below.
+		SessionTicketsDisabled: true,
 		GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
 			_, _, _, certificate, err := auth.snapshot()
 			if err != nil {
@@ -377,8 +581,8 @@ func quicClientTLSConfig(auth *quicPeerAuthenticator, expected *ServerIdentity) 
 			}
 			return &certificate, nil
 		},
-		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-			_, err := parseAndVerifyQUICPeerCertificate(rawCerts, chainID, expected.Address.String(), expected.PublicKey)
+		VerifyConnection: func(state tls.ConnectionState) error {
+			_, err := parseAndVerifyQUICPeerCertificate(rawQUICPeerCertificates(state.PeerCertificates), chainID, expected.Address.String(), expected.PublicKey)
 			return err
 		},
 	}, nil

@@ -261,12 +261,16 @@ func isOverflowProtectedClass(class uint8) bool {
 // Send sends to an ServerIdentity without wrapping the msg into a ProtocolMsg
 func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64, error) {
 	if msg == nil {
-		return 0, errors.New("Can't send nil-packet")
+		return 0, NewPermanentSendError(SendErrorInvalidMessage, errors.New("can't send nil-packet"))
 	}
 
 	class := NetClassBulkGossip
 	if cm, ok := msg.(ClassifiedMessage); ok {
 		class = cm.NetworkClass()
+	}
+	if !validNetworkClass(class) {
+		return 0, NewPermanentSendError(SendErrorInvalidClass,
+			fmt.Errorf("invalid network message class %d", class))
 	}
 
 	r.sendMu.Lock()
@@ -326,6 +330,9 @@ func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64
 	sentLen, err := c.Send(msg)
 	totSentLen += sentLen
 	if err != nil {
+		if IsPermanentSendError(err) || isQUICStreamLocalSendError(err) {
+			return totSentLen, err
+		}
 		log.Warn("Send msg try again", "address", r.address, "Couldn't send to", e, "error", err)
 		// Retire the failed connection before choosing a retry path. A peer can
 		// legitimately have both an inbound and an outbound authenticated
@@ -344,6 +351,9 @@ func (r *Router) Send(e *ServerIdentity, msg Message, bForeConnect bool) (uint64
 		sentLen, err = c.Send(msg)
 		totSentLen += sentLen
 		if err != nil {
+			if IsPermanentSendError(err) || isQUICStreamLocalSendError(err) {
+				return totSentLen, err
+			}
 			_ = c.Close()
 			return totSentLen, err
 		}

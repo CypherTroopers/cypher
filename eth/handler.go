@@ -196,7 +196,6 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 	}
 	manager.txFetcher = fetcher.NewTxFetcher(txpool.Has, txpool.AddRemotes, fetchTx)
 
-	core.SetCommonRPCAdmissionRelay(manager.BroadcastCommonTxAdmissions)
 	manager.chainSync = newChainSyncer(manager)
 
 	return manager, nil
@@ -213,7 +212,7 @@ func (pm *ProtocolManager) makeProtocol(version uint) p2p.Protocol {
 		Version: version,
 		Length:  length,
 		Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
-			return pm.runPeer(pm.newPeer(int(version), p, rw, pm.txpool.Get))
+			return pm.runPeer(pm.newPeer(int(version), p, rw, pm.pooledTransactionForP2P))
 		},
 		NodeInfo: func() interface{} {
 			return pm.NodeInfo()
@@ -225,6 +224,21 @@ func (pm *ProtocolManager) makeProtocol(version uint) p2p.Protocol {
 			return nil
 		},
 	}
+}
+
+// pooledTransactionForP2P is the final tx-only egress gate used by peer write
+// loops. Fair HotStuff transactions are delivered exclusively as authenticated
+// transaction+admission pairs over TxQUIC, so resolving a queued hash for the
+// ordinary eth protocol must fail closed. Rechecking here also closes the race
+// between queueing a hash and the asynchronous peer writer resolving it.
+func (pm *ProtocolManager) pooledTransactionForP2P(hash common.Hash) *types.Transaction {
+	if pm != nil && pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+		return nil
+	}
+	if pm == nil || pm.txpool == nil {
+		return nil
+	}
+	return pm.txpool.Get(hash)
 }
 
 func (pm *ProtocolManager) removePeer(id string) {
@@ -585,22 +599,24 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		// Deliver them all to the downloader for queuing
 		transactions := make([][]*types.Transaction, len(request))
 		uncles := make([][]*types.Header, len(request))
-		commonTxAdmissions := make([][]*types.CommonTxAdmission, len(request))
+		commonTxAdmissionBatches := make([][]*types.CommonTxAdmissionBatch, len(request))
+		commonTxAdmissionRefs := make([][]types.CommonTxAdmissionRef, len(request))
 		commonTxRewards := make([][]*types.CommonTxReward, len(request))
 
 		for i, body := range request {
 			transactions[i] = body.Transactions
 			uncles[i] = body.Uncles
-			commonTxAdmissions[i] = body.CommonTxAdmissions
+			commonTxAdmissionBatches[i] = body.CommonTxAdmissionBatches
+			commonTxAdmissionRefs[i] = body.CommonTxAdmissionRefs
 			commonTxRewards[i] = body.CommonTxRewards
 		}
 		// Filter out any explicitly requested bodies, deliver the rest to the downloader
-		filter := len(transactions) > 0 || len(uncles) > 0 || len(commonTxAdmissions) > 0 || len(commonTxRewards) > 0
+		filter := len(transactions) > 0 || len(uncles) > 0 || len(commonTxAdmissionBatches) > 0 || len(commonTxAdmissionRefs) > 0 || len(commonTxRewards) > 0
 		if filter {
-			transactions, uncles, commonTxAdmissions, commonTxRewards = pm.blockFetcher.FilterBodies(p.id, transactions, uncles, commonTxAdmissions, commonTxRewards, time.Now())
+			transactions, uncles, commonTxAdmissionBatches, commonTxAdmissionRefs, commonTxRewards = pm.blockFetcher.FilterBodies(p.id, transactions, uncles, commonTxAdmissionBatches, commonTxAdmissionRefs, commonTxRewards, time.Now())
 		}
-		if len(transactions) > 0 || len(uncles) > 0 || len(commonTxAdmissions) > 0 || len(commonTxRewards) > 0 || !filter {
-			err := pm.downloader.DeliverBodies(p.id, transactions, uncles, commonTxAdmissions, commonTxRewards)
+		if len(transactions) > 0 || len(uncles) > 0 || len(commonTxAdmissionBatches) > 0 || len(commonTxAdmissionRefs) > 0 || len(commonTxRewards) > 0 || !filter {
+			err := pm.downloader.DeliverBodies(p.id, transactions, uncles, commonTxAdmissionBatches, commonTxAdmissionRefs, commonTxRewards)
 			if err != nil {
 				log.Debug("Failed to deliver bodies", "err", err)
 			}
@@ -759,6 +775,11 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		}
 
 	case msg.Code == NewPooledTransactionHashesMsg && p.version >= eth65:
+		// FHS accepts user transactions only through the authenticated TxQUIC
+		// transaction+admission path. Hash-only eth gossip cannot prove admission.
+		if pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+			return errResp(ErrCommonTxAdmission, "transaction-hash P2P is disabled in Fair HotStuff")
+		}
 		// New transaction announcement arrived, make sure we have
 		// a valid and fresh chain to handle them
 		if atomic.LoadUint32(&pm.acceptTxs) == 0 {
@@ -775,6 +796,11 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		pm.txFetcher.Notify(p.id, hashes)
 
 	case msg.Code == GetPooledTransactionsMsg && p.version >= eth65:
+		// FHS has no transaction-only response path. Reject immediately without
+		// decoding an attacker-controlled hash list whose result must be empty.
+		if pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+			return errResp(ErrCommonTxAdmission, "pooled-transaction P2P is disabled in Fair HotStuff")
+		}
 		// Decode the retrieval message
 		msgStream := rlp.NewStream(msg.Payload, uint64(msg.Size))
 		if _, err := msgStream.List(); err != nil {
@@ -795,7 +821,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 				return errResp(ErrDecode, "msg %v: %v", msg, err)
 			}
 			// Retrieve the requested transaction, skipping if unknown to us
-			tx := pm.txpool.Get(hash)
+			tx := pm.pooledTransactionForP2P(hash)
 			if tx == nil {
 				continue
 			}
@@ -811,6 +837,11 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		return p.SendPooledTransactionsRLP(hashes, txs)
 
 	case msg.Code == TransactionMsg || (msg.Code == PooledTransactionsMsg && p.version >= eth65):
+		// A transaction-only message cannot satisfy the FHS admission invariant.
+		// Disconnect the sender without decoding it; TxQUIC is the sole ingress.
+		if pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+			return errResp(ErrCommonTxAdmission, "transaction-only P2P is disabled in Fair HotStuff")
+		}
 		// Transactions arrived, make sure we have a valid and fresh chain to handle them
 		if atomic.LoadUint32(&pm.acceptTxs) == 0 {
 			break
@@ -842,8 +873,8 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			pm.eventMux.Post(core.RemoteCandidateEvent{Candidate: &candidate})
 		}
 
-	case msg.Code == CommonTxAdmissionMsg:
-		return pm.handleCommonTxAdmissionMsg(p, msg)
+	case msg.Code == DisabledAdmissionOnlyMsg:
+		return errResp(ErrCommonTxAdmission, "admission-only P2P is disabled in Fair HotStuff; use authenticated TxQUIC")
 
 	default:
 		return errResp(ErrInvalidMsgCode, "%v", msg.Code)
@@ -887,6 +918,11 @@ func (pm *ProtocolManager) BroadcastBlock(block *types.Block, propagate bool) {
 // BroadcastTransactions will propagate a batch of transactions to all peers which are not known to
 // already have the given transaction.
 func (pm *ProtocolManager) BroadcastTransactions(txs types.Transactions, propagate bool) {
+	// In Fair HotStuff there is no valid transaction-only wire representation:
+	// every user transaction must remain coupled to its admission in TxQUIC.
+	if pm != nil && pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+		return
+	}
 	var (
 		txset = make(map[*peer][]common.Hash)
 		annos = make(map[*peer][]common.Hash)
@@ -943,8 +979,10 @@ func (pm *ProtocolManager) txBroadcastLoop() {
 	for {
 		select {
 		case event := <-pm.txsCh:
-			if admissions := core.CommonRPCAdmissionsForTransactions(event.Txs); len(admissions) > 0 {
-				pm.BroadcastCommonTxAdmissions(admissions)
+			if pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+				// TxQUIC has already durably accepted or restored the paired item.
+				// Never mirror its transaction onto an admission-less eth path.
+				continue
 			}
 			// For testing purpose only, disable propagation
 			if pm.broadcastTxAnnouncesOnly {

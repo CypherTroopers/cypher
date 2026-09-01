@@ -17,11 +17,42 @@
 package rpc
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
+
+type delayedHTTPTestService struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (s *delayedHTTPTestService) Wait() string {
+	close(s.entered)
+	<-s.release
+	return "ok"
+}
+
+type immediateHTTPTestService struct{}
+
+func (immediateHTTPTestService) Ping() string { return "ok" }
+
+type recordingDeadlineResponseWriter struct {
+	header    http.Header
+	deadlines []time.Time
+}
+
+func (w *recordingDeadlineResponseWriter) Header() http.Header         { return w.header }
+func (w *recordingDeadlineResponseWriter) WriteHeader(int)             {}
+func (w *recordingDeadlineResponseWriter) Write(p []byte) (int, error) { return len(p), nil }
+func (w *recordingDeadlineResponseWriter) SetWriteDeadline(deadline time.Time) error {
+	w.deadlines = append(w.deadlines, deadline)
+	return nil
+}
 
 func confirmStatusCode(t *testing.T, got, want int) {
 	t.Helper()
@@ -97,4 +128,173 @@ func confirmHTTPRequestYieldsStatusCode(t *testing.T, method, contentType, body 
 
 func TestHTTPResponseWithEmptyGet(t *testing.T) {
 	confirmHTTPRequestYieldsStatusCode(t, http.MethodGet, "", "", http.StatusOK)
+}
+
+func TestHTTPResponseWriteDeadlineStartsWhenRPCCompletesHTTP1(t *testing.T) {
+	testHTTPResponseWriteDeadlineStartsWhenRPCCompletes(t, false)
+}
+
+func TestHTTPResponseWriteDeadlineStartsWhenRPCCompletesHTTP2(t *testing.T) {
+	testHTTPResponseWriteDeadlineStartsWhenRPCCompletes(t, true)
+}
+
+func testHTTPResponseWriteDeadlineStartsWhenRPCCompletes(t *testing.T, http2 bool) {
+	t.Helper()
+	service := &delayedHTTPTestService{entered: make(chan struct{}), release: make(chan struct{})}
+	server := NewServer()
+	if err := server.RegisterName("delay", service); err != nil {
+		t.Fatal(err)
+	}
+
+	const writeTimeout = 50 * time.Millisecond
+	protocol := make(chan int, 1)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case protocol <- r.ProtoMajor:
+		default:
+		}
+		server.ServeHTTP(w, r)
+	})
+	httpServer := httptest.NewUnstartedServer(handler)
+	httpServer.Config.WriteTimeout = writeTimeout
+	httpServer.EnableHTTP2 = http2
+	if http2 {
+		httpServer.StartTLS()
+	} else {
+		httpServer.Start()
+	}
+	defer httpServer.Close()
+	released := false
+	defer func() {
+		if !released {
+			close(service.release)
+		}
+	}()
+
+	type response struct {
+		body []byte
+		err  error
+	}
+	result := make(chan response, 1)
+	go func() {
+		request, err := http.NewRequest(http.MethodPost, httpServer.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"delay_wait"}`))
+		if err != nil {
+			result <- response{err: err}
+			return
+		}
+		request.Header.Set("Content-Type", contentType)
+		client := httpServer.Client()
+		client.Timeout = 2 * time.Second
+		resp, err := client.Do(request)
+		if err != nil {
+			result <- response{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		result <- response{body: body, err: err}
+	}()
+
+	select {
+	case <-service.entered:
+	case <-time.After(time.Second):
+		t.Fatal("RPC method did not start")
+	}
+	wantProtocol := 1
+	if http2 {
+		wantProtocol = 2
+	}
+	select {
+	case got := <-protocol:
+		if got != wantProtocol {
+			t.Fatalf("HTTP protocol major = %d, want %d", got, wantProtocol)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for HTTP protocol observation")
+	}
+	// The HTTP server's original write deadline is now expired. JSON-RPC must
+	// establish a fresh bounded deadline when the completed result is encoded.
+	time.Sleep(2 * writeTimeout)
+	close(service.release)
+	released = true
+
+	select {
+	case response := <-result:
+		if response.err != nil {
+			t.Fatalf("delayed RPC response failed after handler timeout: %v", response.err)
+		}
+		if !strings.Contains(string(response.body), `"result":"ok"`) {
+			t.Fatalf("delayed RPC response body = %s", response.body)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for delayed RPC response")
+	}
+}
+
+func TestHTTPResponseUsesConfiguredWriteTimeout(t *testing.T) {
+	tests := []struct {
+		name          string
+		serverTimeout time.Duration
+		wantTimeout   time.Duration
+	}{
+		{name: "shorter than codec fallback", serverTimeout: 2 * time.Second, wantTimeout: 2 * time.Second},
+		{name: "longer than codec fallback", serverTimeout: 20 * time.Second, wantTimeout: 20 * time.Second},
+		{name: "unbounded server uses codec fallback", wantTimeout: defaultWriteTimeout},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := NewServer()
+			if err := server.RegisterName("immediate", immediateHTTPTestService{}); err != nil {
+				t.Fatal(err)
+			}
+			writer := &recordingDeadlineResponseWriter{header: make(http.Header)}
+			httpServer := &http.Server{WriteTimeout: test.serverTimeout}
+			request := httptest.NewRequest(http.MethodPost, "http://example.invalid", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"immediate_ping"}`))
+			request.Header.Set("Content-Type", contentType)
+			request = request.WithContext(context.WithValue(request.Context(), http.ServerContextKey, httpServer))
+
+			before := time.Now()
+			server.ServeHTTP(writer, request)
+			after := time.Now()
+
+			if len(writer.deadlines) != 2 {
+				t.Fatalf("write deadline calls = %d, want clear and response deadline", len(writer.deadlines))
+			}
+			if !writer.deadlines[0].IsZero() {
+				t.Fatalf("initial write deadline = %v, want zero", writer.deadlines[0])
+			}
+			deadline := writer.deadlines[1]
+			if deadline.Before(before.Add(test.wantTimeout)) || deadline.After(after.Add(test.wantTimeout)) {
+				t.Fatalf("response write deadline = %v, want timeout %v after response start", deadline, test.wantTimeout)
+			}
+		})
+	}
+}
+
+func TestHTTPResponsePrefersEarlierRequestDeadline(t *testing.T) {
+	server := NewServer()
+	if err := server.RegisterName("immediate", immediateHTTPTestService{}); err != nil {
+		t.Fatal(err)
+	}
+	writer := &recordingDeadlineResponseWriter{header: make(http.Header)}
+	httpServer := &http.Server{WriteTimeout: 20 * time.Second}
+	request := httptest.NewRequest(http.MethodPost, "http://example.invalid", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"immediate_ping"}`))
+	request.Header.Set("Content-Type", contentType)
+	ctx := context.WithValue(request.Context(), http.ServerContextKey, httpServer)
+	requestDeadline := time.Now().Add(2 * time.Second)
+	ctx, cancel := context.WithDeadline(ctx, requestDeadline)
+	defer cancel()
+	request = request.WithContext(ctx)
+
+	server.ServeHTTP(writer, request)
+
+	if len(writer.deadlines) != 2 {
+		t.Fatalf("write deadline calls = %d, want clear and response deadline", len(writer.deadlines))
+	}
+	if !writer.deadlines[0].IsZero() {
+		t.Fatalf("initial write deadline = %v, want zero", writer.deadlines[0])
+	}
+	if !writer.deadlines[1].Equal(requestDeadline) {
+		t.Fatalf("response write deadline = %v, want request deadline %v", writer.deadlines[1], requestDeadline)
+	}
 }
