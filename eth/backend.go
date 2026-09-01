@@ -98,8 +98,27 @@ type Ethereum struct {
 	p2pServer *p2p.Server
 	extIP     net.IP
 	lock      sync.RWMutex // Protects the variadic fields (e.g. gas price and etherbase)
+	// Serializes the RPC-visible reconfig/PoW-listener/miner state transition.
+	miningLifecycleMu sync.Mutex
 
 	consensusServicePendingLogsFeed *event.Feed
+}
+
+// powResultTransportLifecycle is registered after reconfig so shutdown closes
+// PoW ingress before reconfig tears down committee state and chain databases.
+// The listener itself is started only by miner.start after validator identity
+// and membership have been established.
+type powResultTransportLifecycle struct {
+	pool *core.CandidatePool
+}
+
+func (l *powResultTransportLifecycle) Start() error { return nil }
+
+func (l *powResultTransportLifecycle) Stop() error {
+	if l != nil && l.pool != nil {
+		l.pool.StopPoWResultTransport()
+	}
+	return nil
 }
 
 type txQUICFinalizedStateReader interface {
@@ -365,12 +384,6 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if eth.protocolManager, err = NewProtocolManager(chainConfig, checkpoint, config.SyncMode, config.NetworkId, eth.eventMux, eth.txPool, eth.engine, eth.blockchain, chainDb, cacheLimit, config.Whitelist, eth.candidatePool); err != nil {
 		return nil, err
 	}
-	if chainConfig != nil && (chainConfig.FixedLeader || chainConfig.FixedCommittee) {
-		if err := eth.candidatePool.StartPoWResultUDP(chainConfig.RnetPort); err != nil {
-			return nil, err
-		}
-	}
-
 	eth.miner = miner.New(eth, chainConfig, eth.EventMux(), eth.engine, extIP)
 	// Every TxQUIC bridge packet is authenticated with the node etherbase. Resolve
 	// and publish that address while constructing the service, before discovery
@@ -409,6 +422,18 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	eth.reconfig, err = reconfig.New(stack, chainConfig, eth)
 	if err != nil {
 		return nil, err
+	}
+	if chainConfig != nil && (chainConfig.FixedLeader || chainConfig.FixedCommittee) {
+		if err := eth.candidatePool.ConfigurePoWResultTLS(eth.reconfig.PoWResultTLSPublicKey, func() (common.Hash, error) {
+			keyBlock := eth.keyBlockChain.CurrentBlock()
+			if keyBlock == nil {
+				return common.Hash{}, fmt.Errorf("current key block is unavailable")
+			}
+			return keyBlock.Hash(), nil
+		}, eth.reconfig.SignPoWResultTLS); err != nil {
+			return nil, err
+		}
+		stack.RegisterLifecycle(&powResultTransportLifecycle{pool: eth.candidatePool})
 	}
 	if eth.txQUICIngress != nil && eth.reconfig != nil && chainConfig != nil && chainConfig.FairHotstuff {
 		eth.txQUICIngress.SetFHSRouteProvider(func() (TxQUICFHSRoute, error) {
@@ -567,7 +592,14 @@ func (s *Ethereum) StartMining(threads int, local bool, eb common.Address, pubKe
 		s.lock.RUnlock()
 		s.txPool.SetGasPrice(price)
 		atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
-		go s.miner.Start(pubKey, eb)
+		// Miner.Start only installs worker state and starts its own long-lived
+		// goroutines. Run it synchronously so a concurrent miner.start cannot
+		// observe IsMining=false after the surrounding lifecycle transition has
+		// already installed the PoW listener.
+		s.miner.Start(pubKey, eb)
+		if !s.miner.Mining() {
+			return errors.New("miner worker failed to start")
+		}
 	}
 	return nil
 }
@@ -605,6 +637,28 @@ func (s *Ethereum) Protocols() []p2p.Protocol {
 	return protos
 }
 
+func (s *Ethereum) startPoWResultTransport() error {
+	if s == nil || s.candidatePool == nil || s.blockchain == nil {
+		return nil
+	}
+	chainConfig := s.blockchain.Config()
+	if chainConfig == nil || !(chainConfig.FixedLeader || chainConfig.FixedCommittee) {
+		return nil
+	}
+	// A common miner is a transport client only. Reconfig.MinerStart establishes
+	// the local BLS identity and updates this membership before this method runs.
+	if bftview.IamMember() < 0 {
+		return nil
+	}
+	return s.candidatePool.StartPoWResultTransport(chainConfig.RnetPort)
+}
+
+func (s *Ethereum) stopPoWResultTransport() {
+	if s != nil && s.candidatePool != nil {
+		s.candidatePool.StopPoWResultTransport()
+	}
+}
+
 // Start implements node.Lifecycle, starting all internal goroutines needed by the Ethereum protocol implementation.
 func (s *Ethereum) Start() error {
 	s.startEthEntryUpdate(s.p2pServer.LocalNode())
@@ -628,6 +682,10 @@ func (s *Ethereum) Start() error {
 
 // Stop implements node.Lifecycle, terminating all internal goroutines used by the Ethereum protocol.
 func (s *Ethereum) Stop() error {
+	// Stop ingress before reconfig/chain state can become unavailable. The
+	// dedicated lifecycle also invokes this first during normal node shutdown;
+	// the operation is intentionally idempotent for partial-start cleanup.
+	s.stopPoWResultTransport()
 	if s.txQUICIngress != nil {
 		s.txQUICIngress.Stop()
 	}
@@ -642,7 +700,6 @@ func (s *Ethereum) Stop() error {
 		}
 	}
 	s.protocolManager.Stop()
-	s.candidatePool.StopPoWResultUDP()
 	s.bloomIndexer.Close()
 	close(s.closeBloomHandler)
 	s.txPool.Stop()

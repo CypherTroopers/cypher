@@ -314,16 +314,18 @@ type ExternalIpConfig struct {
 
 // /////////////////////////////////////////////
 type CandidatePool struct {
-	candidates     *candidateLookup
-	mu             sync.Mutex
-	feed           event.Feed
-	scope          event.SubscriptionScope
-	txFeed         event.Feed
-	backend        Backend
-	mux            *event.TypeMux
-	db             ethdb.Database
-	CheckMinerPort func(addr string, blockN uint64, keyblockN uint64)
-	powResultUDP   *powResultUDPServer
+	candidates         *candidateLookup
+	mu                 sync.Mutex
+	feed               event.Feed
+	scope              event.SubscriptionScope
+	txFeed             event.Feed
+	backend            Backend
+	mux                *event.TypeMux
+	db                 ethdb.Database
+	CheckMinerPort     func(addr string, blockN uint64, keyblockN uint64)
+	powResultLifecycle sync.Mutex
+	powResultTLS       *powResultTLSIdentityProvider
+	powResultTransport *powResultTransportServer
 }
 
 // Backend wraps all methods required for candidate pool.

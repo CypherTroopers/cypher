@@ -4492,6 +4492,16 @@ func (s *Service) proposalBuildWorker() {
 	}
 }
 
+// keyProposalPlan derives proposal eligibility from the canonical key-block interval.
+// Fixed mode deliberately ignores NoDone: it is local recovery state and may be
+// reset by an otherwise valid TC/QC transition while the key-block slot is due.
+func keyProposalPlan(fixedMode bool, leaderIndex uint, noDone, intervalElapsed bool) (attempt, isDone bool) {
+	if fixedMode {
+		return intervalElapsed, true
+	}
+	return leaderIndex > 0 && intervalElapsed, !noDone
+}
+
 func (s *Service) stageFHSProposalBuild(job *proposalBuildJob) (*proposalBuildOutput, error) {
 	request := job.request
 	output := &proposalBuildOutput{
@@ -4517,26 +4527,20 @@ func (s *Service) stageFHSProposalBuild(job *proposalBuildJob) (*proposalBuildOu
 	}
 
 	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
-	keyProposal := leaderIndex > 0
-	if fixedMode {
-		keyProposal = !noDone
-	}
 	keyBlockIntervalElapsed := true
 	if curKeyblock := s.kbc.CurrentBlock(); curKeyblock != nil {
 		keyBlockIntervalElapsed = time.Since(time.Unix(int64(curKeyblock.Time()), 0)) >= params.KeyBlockMinInterval
 	}
-	if fixedMode && !keyProposal && keyBlockIntervalElapsed && s.getBestCandidate(true) != nil {
-		keyProposal = true
-	}
-	if keyProposal && s.hasUncommittedFHSKeyBlock() {
-		keyProposal = false
+	keyProposalAttempt, keyProposalIsDone := keyProposalPlan(fixedMode, leaderIndex, noDone, keyBlockIntervalElapsed)
+	if keyProposalAttempt && s.hasUncommittedFHSKeyBlock() {
+		keyProposalAttempt = false
 	}
 	output.fixedMode = fixedMode
-	output.keyProposalAttempt = keyProposal && keyBlockIntervalElapsed
+	output.keyProposalAttempt = keyProposalAttempt
 
 	if output.keyProposalAttempt {
 		txParentNumber := fhsProposalParentNumber(s.bc.CurrentBlockN(), s.highestFHSCertifiedProposal())
-		keyblock, committee, bestCandidate, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone, txParentNumber)
+		keyblock, committee, bestCandidate, err := s.keyService.tryProposalChangeCommittee(leaderIndex, keyProposalIsDone, txParentNumber)
 		if err != nil || keyblock == nil || committee == nil {
 			if err == nil {
 				err = fmt.Errorf("incomplete key block proposal")
@@ -4889,7 +4893,7 @@ func (s *Service) captureProposalWorkStamp(now time.Time, proposalViewNumber uin
 		proposalLeaderID:  leaderID,
 		finality:          finality,
 		keyblockReady:     keyblockReady,
-		keyblockPending:   keyblockReady && s.keyService != nil && s.keyService.fixedModeEnabled() && view.NoDone && !finality,
+		keyblockPending:   keyblockReady && s.keyService != nil && s.keyService.fixedModeEnabled() && !finality,
 	}
 	// Re-read the O(1) generation and consensus identities after the composite
 	// snapshot. A concurrent change may cause an unnecessary retry, but can never
@@ -4930,7 +4934,8 @@ func (s *Service) rememberProposalNoWorkIfCurrent(stamp, current proposalWorkSta
 	// Proposal view ID and leader live in the HotStuff recovery callback. The
 	// current service view and all work-producing inputs are fixed by the stamp.
 	// A ready fixed-mode keyblock is real work even when both transaction lanes
-	// are empty. Let the watchdog flip NoDone and wake that path exactly once.
+	// are empty. Its eligibility is interval-derived and remains pending across
+	// local NoDone changes until the key carrier or its finality child advances.
 	if !valid || current != stamp || stamp.keyblockPending {
 		return false
 	}
@@ -5095,20 +5100,15 @@ func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string
 	s.muCurrentView.Unlock()
 
 	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
-	keyProposal := leaderIndex > 0
-	if fixedMode {
-		// In fixed mode, a fallback leader may be selected from local ack/progress
-		// observations. Do not let that alone force the service into the keyblock
-		// proposal path; otherwise a transient fallback view can starve tx block
-		// proposals. Fixed mode keyblocks should only be proposed after an explicit
-		// keyblock trigger has marked the current view as not done.
-		keyProposal = !noDone
-	}
 	keyBlockIntervalElapsed := true
 	if curKeyblock := s.kbc.CurrentBlock(); curKeyblock != nil {
 		lastKeyTime := time.Unix(int64(curKeyblock.Time()), 0)
 		keyBlockIntervalElapsed = time.Since(lastKeyTime) >= params.KeyBlockMinInterval
-		if keyProposal && !keyBlockIntervalElapsed {
+		legacyKeyProposalSelected := leaderIndex > 0
+		if fixedMode {
+			legacyKeyProposalSelected = !noDone
+		}
+		if legacyKeyProposalSelected && !keyBlockIntervalElapsed {
 			log.Debug("Propose keyblock suppressed by minimum interval",
 				"elapsed", time.Since(lastKeyTime),
 				"minimum", params.KeyBlockMinInterval,
@@ -5116,24 +5116,17 @@ func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string
 		}
 	}
 
-	if fixedMode && !keyProposal && keyBlockIntervalElapsed && s.getBestCandidate(true) != nil {
-		keyProposal = true
-		log.Warn("fixed-mode candidate reward keyblock proposal forced",
-			"noDone", noDone,
-			"leaderIndex", leaderIndex,
-			"currentTx", s.bc.CurrentBlockN(),
-			"currentKey", s.kbc.CurrentBlockN())
-	}
-	if keyProposal && s.hasUncommittedFHSKeyBlock() {
-		keyProposal = false
+	keyProposalAttempt, keyProposalIsDone := keyProposalPlan(fixedMode, leaderIndex, noDone, keyBlockIntervalElapsed)
+	if keyProposalAttempt && s.hasUncommittedFHSKeyBlock() {
+		keyProposalAttempt = false
 		log.Info("FHS keyblock proposal suppressed until certified keyblock finalizes",
 			"currentTx", s.bc.CurrentBlockN(),
 			"currentKey", s.kbc.CurrentBlockN())
 	}
 
-	if keyProposal && keyBlockIntervalElapsed {
+	if keyProposalAttempt {
 		txParentNumber := fhsProposalParentNumber(s.bc.CurrentBlockN(), s.highestFHSCertifiedProposal())
-		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone, txParentNumber)
+		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, keyProposalIsDone, txParentNumber)
 		if err == nil && keyblock != nil && mb != nil {
 			if bestCandi != nil {
 				extra = bestCandi.EncodeToBytes()
@@ -5578,6 +5571,15 @@ func (backend *ReconfigBackend) TxQUICReceiptPublicKey() ([]byte, error) {
 	return backend.service.txQUICReceiptPublicKey()
 }
 
+// PoWResultTLSPublicKey returns the consensus BLS identity used to authenticate
+// the fixed-mode PoW result listener.
+func (backend *ReconfigBackend) PoWResultTLSPublicKey() ([]byte, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("PoW result TLS identity is unavailable")
+	}
+	return backend.service.txQUICReceiptPublicKey()
+}
+
 func (s *Service) txQUICReceiptPublicKey() ([]byte, error) {
 	if s == nil {
 		return nil, fmt.Errorf("Fair HotStuff receipt identity is unavailable")
@@ -5603,6 +5605,44 @@ func (backend *ReconfigBackend) SignTxQUICReceipt(keyNumber uint64, committeeHas
 		return nil, fmt.Errorf("Fair HotStuff receipt signer is unavailable")
 	}
 	return backend.service.signTxQUICReceiptForGeneration(keyNumber, committeeHash, digest)
+}
+
+// SignPoWResultTLS signs a PoW-result transport certificate digest while the
+// local consensus identity belongs to the canonical committee. Unlike a
+// TxQUIC receipt, the TLS host identity is the validator's long-lived BLS key,
+// so this check works for both legacy and Fair HotStuff fixed committees.
+func (backend *ReconfigBackend) SignPoWResultTLS(generation common.Hash, digest []byte) ([]byte, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("PoW result TLS signer is unavailable")
+	}
+	return backend.service.signPoWResultTLS(generation, digest)
+}
+
+func (s *Service) signPoWResultTLS(generation common.Hash, digest []byte) ([]byte, error) {
+	if s == nil || generation == (common.Hash{}) || s.kbc == nil {
+		return nil, fmt.Errorf("PoW result TLS signer is unavailable")
+	}
+	// The BLS implementation is not safe for concurrent use. Share the receipt
+	// signer serialization because both protocols use the isolated receipt key.
+	s.txQUICReceiptSignMu.Lock()
+	defer s.txQUICReceiptSignMu.Unlock()
+	keyBlock := s.kbc.CurrentBlock()
+	if keyBlock == nil || keyBlock.Hash() != generation {
+		return nil, fmt.Errorf("PoW result TLS keyblock generation changed before signing")
+	}
+	committee := bftview.GetCurrentMember()
+	if committee == nil || len(committee.List) == 0 {
+		return nil, fmt.Errorf("canonical PoW result committee is unavailable")
+	}
+	signature, err := s.signTxQUICReceiptLocked(digest, committee.List)
+	if err != nil {
+		return nil, err
+	}
+	keyBlock = s.kbc.CurrentBlock()
+	if keyBlock == nil || keyBlock.Hash() != generation {
+		return nil, fmt.Errorf("PoW result TLS keyblock generation changed while signing")
+	}
+	return signature, nil
 }
 
 func (s *Service) signTxQUICReceiptForGeneration(keyNumber uint64, committeeHash common.Hash, digest []byte) ([]byte, error) {
@@ -5772,7 +5812,14 @@ func (s *Service) fixedModeKeyblockViewStart(now time.Time) time.Time {
 	if block := s.bc.CurrentBlock(); block != nil {
 		start = time.Unix(int64(block.Time()), 0)
 	}
-	if keyBlock := s.kbc.CurrentBlock(); keyBlock != nil {
+	return fixedModeKeyblockViewStartFromHeads(now, start, s.kbc.CurrentBlock())
+}
+
+func fixedModeKeyblockViewStartFromHeads(now, start time.Time, keyBlock *types.KeyBlock) time.Time {
+	if keyBlock != nil {
+		if keyBlock.IsZeroTimeGenesis() {
+			return now
+		}
 		keyReadyAt := time.Unix(int64(keyBlock.Time()), 0).Add(params.KeyBlockMinInterval)
 		if keyReadyAt.After(start) {
 			start = keyReadyAt

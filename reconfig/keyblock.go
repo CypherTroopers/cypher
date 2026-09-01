@@ -194,12 +194,74 @@ func (keyS *keyService) syncPrimaryLeaderLocked(mb *bftview.Committee) {
 	}
 }
 
-func verifyKeyBlockMinInterval(keyblock, curKeyblock *types.KeyBlock) error {
-	minNextKeyTime := curKeyblock.Time() + uint64(params.KeyBlockMinInterval/time.Second)
-	if keyblock.Time() < minNextKeyTime {
-		return fmt.Errorf("verifyKeyBlock,timestamp too early, min:%d, got:%d", minNextKeyTime, keyblock.Time())
+func scheduledKeyBlockTimestamp(parentTime uint64) uint64 {
+	return parentTime + uint64(params.KeyBlockMinInterval/time.Second)
+}
+
+// fixedKeyBlockCadenceApplies leaves a zero-timestamp genesis key block as a
+// one-time bootstrap anchor. Deriving its child from parent+600 would otherwise
+// start the fixed cadence in 1970 and make a freshly reset devnet catch up
+// millions of already elapsed slots. An explicit non-zero genesis timestamp is
+// treated as the configured cadence anchor.
+func fixedKeyBlockCadenceApplies(parent *types.KeyBlock, fixedMode bool) bool {
+	if !fixedMode || parent == nil {
+		return false
+	}
+	return !parent.IsZeroTimeGenesis()
+}
+
+func keyBlockProposalTimestamp(parentTime, proposalTime uint64, exactCadence bool) uint64 {
+	if exactCadence {
+		return scheduledKeyBlockTimestamp(parentTime)
+	}
+	return proposalTime
+}
+
+const fixedKeyBlockFutureClockSkew = 30 * time.Second
+
+func verifyKeyBlockInterval(keyblock, curKeyblock *types.KeyBlock, fixedMode bool) error {
+	return verifyKeyBlockIntervalAt(keyblock, curKeyblock, fixedMode, time.Now())
+}
+
+func verifyKeyBlockIntervalAt(keyblock, curKeyblock *types.KeyBlock, fixedMode bool, now time.Time) error {
+	if fixedMode {
+		latestAccepted := uint64(now.Add(fixedKeyBlockFutureClockSkew).Unix())
+		if keyblock.Time() > latestAccepted {
+			return fmt.Errorf("verifyKeyBlock,fixed cadence timestamp too far in future, max:%d, got:%d", latestAccepted, keyblock.Time())
+		}
+	}
+	nextKeyTime := scheduledKeyBlockTimestamp(curKeyblock.Time())
+	if fixedKeyBlockCadenceApplies(curKeyblock, fixedMode) {
+		if keyblock.Time() != nextKeyTime {
+			return fmt.Errorf("verifyKeyBlock,fixed cadence timestamp mismatch, want:%d, got:%d", nextKeyTime, keyblock.Time())
+		}
+		return nil
+	}
+	if keyblock.Time() < nextKeyTime {
+		return fmt.Errorf("verifyKeyBlock,timestamp too early, min:%d, got:%d", nextKeyTime, keyblock.Time())
 	}
 	return nil
+}
+
+func fixedModeRewardCandidateForSlot(candidate *types.Candidate, slot uint64) *types.Candidate {
+	if candidate == nil || candidate.KeyCandidate == nil || candidate.KeyCandidate.Time != slot {
+		return nil
+	}
+	return candidate
+}
+
+func bestFixedModeRewardCandidateForSlot(candidates []*types.Candidate, parentHash common.Hash, number, slot uint64) *types.Candidate {
+	var best *types.Candidate
+	for _, candidate := range candidates {
+		candidate = fixedModeRewardCandidateForSlot(candidate, slot)
+		if candidate == nil || candidate.KeyCandidate.ParentHash != parentHash || candidate.KeyCandidate.Number == nil || candidate.KeyCandidate.Number.Uint64() != number {
+			continue
+		}
+		if best == nil || candidate.KeyCandidate.Nonce.Uint64() < best.KeyCandidate.Nonce.Uint64() {
+			best = candidate
+		}
+	}
+	return best
 }
 
 // Verify keyblock
@@ -228,7 +290,7 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 			//log.Error("verifyKeyBlock", "Non contiguous consensus prevhash", keyblock.ParentHash(), "currenthash", curKeyblock.Hash())
 			return fmt.Errorf("verifyKeyBlock,Non contiguous key block's hash")
 		}
-		if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
+		if err := verifyKeyBlockInterval(keyblock, curKeyblock, keyS.fixedModeEnabled()); err != nil {
 			return err
 		}
 		return nil
@@ -270,7 +332,7 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 		//log.Error("verifyKeyBlock", "Non contiguous consensus prevhash", keyblock.ParentHash(), "currenthash", curKeyblock.Hash())
 		return fmt.Errorf("verifyKeyBlock,Non contiguous key block's hash")
 	}
-	if err := verifyKeyBlockMinInterval(keyblock, curKeyblock); err != nil {
+	if err := verifyKeyBlockInterval(keyblock, curKeyblock, keyS.fixedModeEnabled()); err != nil {
 		return err
 	}
 	viewleaderIndex := keyS.s.GetCurrentView().LeaderIndex
@@ -398,23 +460,41 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 		return nil, nil, nil, fmt.Errorf("not found committee in keyblock number=%d", curKNumber)
 	}
 	mb = mb.Copy()
+	fixedMode := keyS.fixedModeEnabled()
+	fixedCadence := fixedKeyBlockCadenceApplies(curKeyBlock, fixedMode)
 	header := &types.KeyBlockHeader{
 		Number:     curKNumber.Add(curKNumber, common.Big1),
 		ParentHash: curKHash,
 		Difficulty: curKeyBlock.Difficulty(),
-		Time:       uint64(time.Now().Unix()),
+		Time:       keyBlockProposalTimestamp(curKeyBlock.Time(), uint64(time.Now().Unix()), fixedCadence),
 	}
 
 	var outerPublic, outerCoinBase string
-	best := keyS.getBestCandidate(keyS.fixedModeEnabled())
+	best := keyS.getBestCandidate(false)
+	if fixedMode {
+		best = bestFixedModeRewardCandidateForSlot(
+			keyS.candidatepool.Content(), curKHash, header.Number.Uint64(), header.Time,
+		)
+	}
 	powSubmitter := best
 	log.Info("fixed-mode candidate lookup for reward",
-		"fixedMode", keyS.fixedModeEnabled(),
+		"fixedMode", fixedMode,
 		"hasBest", best != nil,
 		"currentKeyNumber", keyS.kbc.CurrentBlockN(),
 		"expectedCandidateNumber", keyS.kbc.CurrentBlockN()+1)
-	if keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee) {
+	if fixedMode {
 		best = nil
+		if powSubmitter != nil && fixedModeRewardCandidateForSlot(powSubmitter, header.Time) == nil {
+			candidateTime := uint64(0)
+			if powSubmitter.KeyCandidate != nil {
+				candidateTime = powSubmitter.KeyCandidate.Time
+			}
+			log.Warn("fixed-mode reward candidate omitted for wrong cadence slot",
+				"candidateTime", candidateTime,
+				"slot", header.Time,
+				"currentKeyNumber", keyS.kbc.CurrentBlockN())
+			powSubmitter = nil
+		}
 	}
 
 	var reconfigType uint8
@@ -453,7 +533,7 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 		}
 
 	} else { //exchange in internal
-		if keyS.fixedModeEnabled() && powSubmitter != nil {
+		if fixedMode && powSubmitter != nil {
 			ck := powSubmitter.KeyCandidate
 			header.Time, header.Difficulty, header.MixDigest, header.Nonce = ck.Time, ck.Difficulty, ck.MixDigest, ck.Nonce
 			outerPublic, outerCoinBase = powSubmitter.PubKey, powSubmitter.Coinbase
@@ -467,14 +547,14 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 	// canonical yet, so the canonical head is not a valid source here.
 	header.T_Number = txParentNumber
 	log.Info("fixed-mode pow submitter status",
-		"fixedMode", keyS.fixedModeEnabled(),
+		"fixedMode", fixedMode,
 		"hasPowSubmitter", powSubmitter != nil,
 		"outerCoinBase", outerCoinBase)
 
 	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
 	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
-	if keyS.fixedModeEnabled() {
+	if fixedMode {
 		return keyblock, mb, powSubmitter, nil
 	}
 	return keyblock, mb, best, nil

@@ -59,6 +59,7 @@ type currentMemberInfo struct {
 	kNumber uint64
 	hash    common.Hash
 	mIndex  int
+	pubKey  string
 }
 
 type ServerInfoType int
@@ -82,6 +83,7 @@ type CommitteeConfig struct {
 	keyblockchain    KeyBlockChainInterface
 	service          ServiceInterface
 	serverInfo       ServerInfo
+	muServerInfo     sync.RWMutex
 	cacheCommittee   map[common.Hash]*committeeCache
 	muCommitteeCache sync.Mutex
 	currentMember    atomic.Value
@@ -149,11 +151,19 @@ func SetCommitteeConfig(db ethdb.Database, keyblockchain KeyBlockChainInterface,
 }
 
 func SetServerInfo(address, pubKey string) {
+	m_config.muServerInfo.Lock()
 	m_config.serverInfo.address = address
 	m_config.serverInfo.pubKey = pubKey
+	// Membership caching is keyed by the canonical keyblock, but the local
+	// identity can change across miner.stop/miner.start without a keyblock
+	// transition. Force IamMember to evaluate the new public key.
+	m_config.currentMember.Store(&currentMemberInfo{kNumber: 1<<63 - 1, mIndex: -1})
+	m_config.muServerInfo.Unlock()
 }
 
 func SetServerCoinBase(coinbase common.Address) {
+	m_config.muServerInfo.Lock()
+	defer m_config.muServerInfo.Unlock()
 	m_config.serverInfo.coinbase = coinbase
 }
 
@@ -161,13 +171,19 @@ func GetServerCommitteeLen() int {
 	return m_config.commiteeLen
 }
 func GetServerAddress() string {
+	m_config.muServerInfo.RLock()
+	defer m_config.muServerInfo.RUnlock()
 	return m_config.serverInfo.address
 }
 func GetServerCoinBase() common.Address {
+	m_config.muServerInfo.RLock()
+	defer m_config.muServerInfo.RUnlock()
 	return m_config.serverInfo.coinbase
 }
 
 func GetServerInfo(infoType ServerInfoType) string {
+	m_config.muServerInfo.RLock()
+	defer m_config.muServerInfo.RUnlock()
 	s := m_config.serverInfo
 	switch infoType {
 	case PublicKey:
@@ -273,7 +289,7 @@ func IamMember() int {
 	}
 	kNumber := m_config.keyblockchain.CurrentBlockN()
 	m := m_config.currentMember.Load().(*currentMemberInfo)
-	if m != nil && m.kNumber == kNumber {
+	if m != nil && m.kNumber == kNumber && m.pubKey == myPubKey {
 		if m_config.keyblockchain.CurrentBlock().Hash() == m.hash {
 			return m.mIndex
 		}
@@ -281,7 +297,7 @@ func IamMember() int {
 	list := m_config.keyblockchain.CurrentCommittee()
 	for i, r := range list {
 		if r.Public == myPubKey {
-			m_config.currentMember.Store(&currentMemberInfo{kNumber: kNumber, hash: m_config.keyblockchain.CurrentBlock().Hash(), mIndex: i})
+			m_config.currentMember.Store(&currentMemberInfo{kNumber: kNumber, hash: m_config.keyblockchain.CurrentBlock().Hash(), mIndex: i, pubKey: myPubKey})
 			return i
 		}
 	}
