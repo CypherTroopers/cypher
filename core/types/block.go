@@ -52,8 +52,12 @@ const (
 )
 
 const (
-	commonTxAdmissionDomain = "CPH_COMMON_TX_ADMISSION_V2"
-	commonTxRewardDomain    = "CPH_COMMON_TX_REWARD_V1"
+	commonTxAdmissionBatchDomain  = "CPH_COMMON_TX_ADMISSION_BATCH"
+	commonTxAdmissionRefDomain    = "CPH_COMMON_TX_ADMISSION_REF"
+	commonTxAdmissionRootDomain   = "CPH_COMMON_TX_ADMISSION_ROOT"
+	commonTxAdmissionTxDomain     = "CPH_COMMON_TX_ADMISSION_TX"
+	commonTxAdmissionTxRootDomain = "CPH_COMMON_TX_ADMISSION_TX_ROOT"
+	commonTxRewardDomain          = "CPH_COMMON_TX_REWARD_V1"
 )
 
 const (
@@ -173,16 +177,29 @@ type SignInfo struct {
 // header. A SignedState for a committee QC is normally only a few kilobytes.
 const MaxFHSFinalityProofSize = 64 * 1024
 
-// CommonTxAdmission records the common RPC miner that accepted and relayed a tx.
-// It is carried in the block body and committed by CommonTxAdmissionRoot.
-type CommonTxAdmission struct {
+// CommonTxAdmissionBatch is one common-RPC miner's signed admission of an
+// ordered micro-batch. TxHashes is complete consensus evidence: a syncing node
+// can verify a block's partial selection without depending on a local ingress
+// cache or data-availability store.
+type CommonTxAdmissionBatch struct {
 	ChainID        *big.Int
-	TxHash         common.Hash
+	GenesisHash    common.Hash
+	TxRoot         common.Hash
+	AdmissionID    common.Hash
 	Miner          common.Address
 	KeyBlockNumber uint64
-	TxBlockNumber  uint64
 	Timestamp      uint64
+	TxHashes       []common.Hash
 	Signature      []byte
+}
+
+// CommonTxAdmissionRef is aligned with the block transaction at the same
+// index. Batch selects CommonTxAdmissionBatches[Batch], and Item selects the
+// transaction hash inside that signed batch. Value semantics keep the block
+// body compact and avoid nil-reference ambiguity.
+type CommonTxAdmissionRef struct {
+	Batch uint16
+	Item  uint16
 }
 
 // CommonTxReward records the deterministic protocol-level split for one tx.
@@ -600,26 +617,35 @@ func blake3MerkleRoot(leaves []common.Hash) common.Hash {
 	return level[0]
 }
 
-func copyCommonTxAdmissions(in []*CommonTxAdmission) []*CommonTxAdmission {
+func copyCommonTxAdmissionBatches(in []*CommonTxAdmissionBatch) []*CommonTxAdmissionBatch {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]*CommonTxAdmission, len(in))
-	for i, admission := range in {
-		if admission == nil {
+	out := make([]*CommonTxAdmissionBatch, len(in))
+	for i, batch := range in {
+		if batch == nil {
 			continue
 		}
-		cpy := *admission
-		if admission.ChainID != nil {
-			cpy.ChainID = new(big.Int).Set(admission.ChainID)
+		cpy := *batch
+		if batch.ChainID != nil {
+			cpy.ChainID = new(big.Int).Set(batch.ChainID)
 		}
-		if len(admission.Signature) > 0 {
-			cpy.Signature = make([]byte, len(admission.Signature))
-			copy(cpy.Signature, admission.Signature)
+		if len(batch.TxHashes) > 0 {
+			cpy.TxHashes = append([]common.Hash(nil), batch.TxHashes...)
+		}
+		if len(batch.Signature) > 0 {
+			cpy.Signature = append([]byte(nil), batch.Signature...)
 		}
 		out[i] = &cpy
 	}
 	return out
+}
+
+func copyCommonTxAdmissionRefs(in []CommonTxAdmissionRef) []CommonTxAdmissionRef {
+	if len(in) == 0 {
+		return nil
+	}
+	return append([]CommonTxAdmissionRef(nil), in...)
 }
 
 func copyCommonTxRewards(in []*CommonTxReward) []*CommonTxReward {
@@ -643,28 +669,55 @@ func copyCommonTxRewards(in []*CommonTxReward) []*CommonTxReward {
 	return out
 }
 
-// DeriveCommonTxAdmissionRoot derives a BLAKE3 Merkle root over admission leaves.
-func DeriveCommonTxAdmissionRoot(admissions []*CommonTxAdmission) common.Hash {
-	if len(admissions) == 0 {
+// DeriveCommonTxAdmissionTxRoot commits an admission batch's ordered,
+// position-indexed transaction hashes. The explicit count prevents the
+// duplicate-last Merkle rule from making differently sized lists ambiguous.
+func DeriveCommonTxAdmissionTxRoot(txHashes []common.Hash) common.Hash {
+	if len(txHashes) == 0 {
 		return common.Hash{}
 	}
-	leaves := make([]common.Hash, 0, len(admissions))
-	for _, admission := range admissions {
-		if admission == nil {
+	leaves := make([]common.Hash, len(txHashes))
+	for index, txHash := range txHashes {
+		leaves[index] = blake3RLPHash([]interface{}{
+			[]byte(commonTxAdmissionTxDomain), uint32(index), txHash,
+		})
+	}
+	return blake3RLPHash([]interface{}{
+		[]byte(commonTxAdmissionTxRootDomain), uint32(len(txHashes)), blake3MerkleRoot(leaves),
+	})
+}
+
+// DeriveCommonTxAdmissionRoot commits both signed batch certificates and the
+// transaction-aligned references selecting items from them. Counts and
+// positions are explicit, and nil batch entries receive their own leaf instead
+// of being skipped, so no malformed body can alias a valid root.
+func DeriveCommonTxAdmissionRoot(batches []*CommonTxAdmissionBatch, refs []CommonTxAdmissionRef) common.Hash {
+	if len(batches) == 0 && len(refs) == 0 {
+		return common.Hash{}
+	}
+	batchLeaves := make([]common.Hash, len(batches))
+	for index, batch := range batches {
+		if batch == nil {
+			batchLeaves[index] = blake3RLPHash([]interface{}{
+				[]byte(commonTxAdmissionBatchDomain), uint32(index), false,
+			})
 			continue
 		}
-		leaves = append(leaves, blake3RLPHash([]interface{}{
-			[]byte(commonTxAdmissionDomain),
-			admission.ChainID,
-			admission.TxHash,
-			admission.Miner,
-			admission.KeyBlockNumber,
-			admission.TxBlockNumber,
-			admission.Timestamp,
-			admission.Signature,
-		}))
+		batchLeaves[index] = blake3RLPHash([]interface{}{
+			[]byte(commonTxAdmissionBatchDomain), uint32(index), true, batch,
+		})
 	}
-	return blake3MerkleRoot(leaves)
+	refLeaves := make([]common.Hash, len(refs))
+	for index, ref := range refs {
+		refLeaves[index] = blake3RLPHash([]interface{}{
+			[]byte(commonTxAdmissionRefDomain), uint32(index), ref.Batch, ref.Item,
+		})
+	}
+	return blake3RLPHash([]interface{}{
+		[]byte(commonTxAdmissionRootDomain),
+		uint32(len(batches)), blake3MerkleRoot(batchLeaves),
+		uint32(len(refs)), blake3MerkleRoot(refLeaves),
+	})
 }
 
 // DeriveCommonTxRewardRoot derives a BLAKE3 Merkle root over common reward leaves.
@@ -710,19 +763,21 @@ func (h *Header) EmptyReceipts() bool {
 // Body is a simple (mutable, non-safe) data container for storing and moving
 // a block's data contents together.
 type Body struct {
-	Transactions       []*Transaction
-	Uncles             []*Header
-	CommonTxAdmissions []*CommonTxAdmission
-	CommonTxRewards    []*CommonTxReward
+	Transactions             []*Transaction
+	Uncles                   []*Header
+	CommonTxAdmissionBatches []*CommonTxAdmissionBatch
+	CommonTxAdmissionRefs    []CommonTxAdmissionRef
+	CommonTxRewards          []*CommonTxReward
 }
 
 // Block represents an entire block in the Ethereum blockchain.
 type Block struct {
-	header             *Header
-	uncles             []*Header
-	transactions       Transactions
-	commonTxAdmissions []*CommonTxAdmission
-	commonTxRewards    []*CommonTxReward
+	header                   *Header
+	uncles                   []*Header
+	transactions             Transactions
+	commonTxAdmissionBatches []*CommonTxAdmissionBatch
+	commonTxAdmissionRefs    []CommonTxAdmissionRef
+	commonTxRewards          []*CommonTxReward
 
 	// caches
 	hash atomic.Value
@@ -757,22 +812,24 @@ type StorageBlock Block
 
 // "external" block encoding. used for eth protocol, etc.
 type extblock struct {
-	Header             *Header
-	Txs                []*Transaction
-	Uncles             []*Header
-	CommonTxAdmissions []*CommonTxAdmission
-	CommonTxRewards    []*CommonTxReward
+	Header                   *Header
+	Txs                      []*Transaction
+	Uncles                   []*Header
+	CommonTxAdmissionBatches []*CommonTxAdmissionBatch
+	CommonTxAdmissionRefs    []CommonTxAdmissionRef
+	CommonTxRewards          []*CommonTxReward
 }
 
 // [deprecated by eth/63]
 // "storage" block encoding. used for database.
 type storageblock struct {
-	Header             *Header
-	Txs                []*Transaction
-	Uncles             []*Header
-	CommonTxAdmissions []*CommonTxAdmission
-	CommonTxRewards    []*CommonTxReward
-	TD                 *big.Int
+	Header                   *Header
+	Txs                      []*Transaction
+	Uncles                   []*Header
+	CommonTxAdmissionBatches []*CommonTxAdmissionBatch
+	CommonTxAdmissionRefs    []CommonTxAdmissionRef
+	CommonTxRewards          []*CommonTxReward
+	TD                       *big.Int
 }
 
 // NewBlock creates a new block. The input data is copied,
@@ -865,7 +922,8 @@ func (b *Block) DecodeRLP(s *rlp.Stream) error {
 		return err
 	}
 	b.header, b.uncles, b.transactions = eb.Header, eb.Uncles, eb.Txs
-	b.commonTxAdmissions = copyCommonTxAdmissions(eb.CommonTxAdmissions)
+	b.commonTxAdmissionBatches = copyCommonTxAdmissionBatches(eb.CommonTxAdmissionBatches)
+	b.commonTxAdmissionRefs = copyCommonTxAdmissionRefs(eb.CommonTxAdmissionRefs)
 	b.commonTxRewards = copyCommonTxRewards(eb.CommonTxRewards)
 	b.size.Store(common.StorageSize(rlp.ListSize(size)))
 	return nil
@@ -874,11 +932,12 @@ func (b *Block) DecodeRLP(s *rlp.Stream) error {
 // EncodeRLP serializes b into the Ethereum RLP block format.
 func (b *Block) EncodeRLP(w io.Writer) error {
 	return rlp.Encode(w, extblock{
-		Header:             b.header,
-		Txs:                b.transactions,
-		Uncles:             b.uncles,
-		CommonTxAdmissions: b.commonTxAdmissions,
-		CommonTxRewards:    b.commonTxRewards,
+		Header:                   b.header,
+		Txs:                      b.transactions,
+		Uncles:                   b.uncles,
+		CommonTxAdmissionBatches: b.commonTxAdmissionBatches,
+		CommonTxAdmissionRefs:    b.commonTxAdmissionRefs,
+		CommonTxRewards:          b.commonTxRewards,
 	})
 }
 
@@ -889,7 +948,8 @@ func (b *StorageBlock) DecodeRLP(s *rlp.Stream) error {
 		return err
 	}
 	b.header, b.uncles, b.transactions, b.td = sb.Header, sb.Uncles, sb.Txs, sb.TD
-	b.commonTxAdmissions = copyCommonTxAdmissions(sb.CommonTxAdmissions)
+	b.commonTxAdmissionBatches = copyCommonTxAdmissionBatches(sb.CommonTxAdmissionBatches)
+	b.commonTxAdmissionRefs = copyCommonTxAdmissionRefs(sb.CommonTxAdmissionRefs)
 	b.commonTxRewards = copyCommonTxRewards(sb.CommonTxRewards)
 	return nil
 }
@@ -899,8 +959,11 @@ func (b *StorageBlock) DecodeRLP(s *rlp.Stream) error {
 func (b *Block) Uncles() []*Header          { return b.uncles }
 func (b *Block) Transactions() Transactions { return b.transactions }
 
-func (b *Block) CommonTxAdmissions() []*CommonTxAdmission {
-	return copyCommonTxAdmissions(b.commonTxAdmissions)
+func (b *Block) CommonTxAdmissionBatches() []*CommonTxAdmissionBatch {
+	return copyCommonTxAdmissionBatches(b.commonTxAdmissionBatches)
+}
+func (b *Block) CommonTxAdmissionRefs() []CommonTxAdmissionRef {
+	return copyCommonTxAdmissionRefs(b.commonTxAdmissionRefs)
 }
 func (b *Block) CommonTxRewards() []*CommonTxReward { return copyCommonTxRewards(b.commonTxRewards) }
 
@@ -951,12 +1014,18 @@ func (b *Block) Header0() *Header { return b.header }
 
 // Body returns the non-header content of the block.
 func (b *Block) Body() *Body {
-	return &Body{b.transactions, b.uncles, b.commonTxAdmissions, b.commonTxRewards}
+	return &Body{
+		Transactions:             b.transactions,
+		Uncles:                   b.uncles,
+		CommonTxAdmissionBatches: b.commonTxAdmissionBatches,
+		CommonTxAdmissionRefs:    b.commonTxAdmissionRefs,
+		CommonTxRewards:          b.commonTxRewards,
+	}
 }
 
 // SetCommonTxData attaches common RPC admission/reward data and commits their roots into the header.
-func (b *Block) SetCommonTxData(admissions []*CommonTxAdmission, rewards []*CommonTxReward) {
-	b.AttachCommonTxData(admissions, rewards)
+func (b *Block) SetCommonTxData(batches []*CommonTxAdmissionBatch, refs []CommonTxAdmissionRef, rewards []*CommonTxReward) {
+	b.AttachCommonTxData(batches, refs, rewards)
 }
 
 // Size returns the true RLP encoded storage size of the block, either by encoding
@@ -997,22 +1066,24 @@ func (b *Block) WithSeal(header *Header) *Block {
 	cpy := CopyHeader(header)
 
 	return &Block{
-		header:             cpy,
-		transactions:       b.transactions,
-		uncles:             b.uncles,
-		commonTxAdmissions: copyCommonTxAdmissions(b.commonTxAdmissions),
-		commonTxRewards:    copyCommonTxRewards(b.commonTxRewards),
+		header:                   cpy,
+		transactions:             b.transactions,
+		uncles:                   b.uncles,
+		commonTxAdmissionBatches: copyCommonTxAdmissionBatches(b.commonTxAdmissionBatches),
+		commonTxAdmissionRefs:    copyCommonTxAdmissionRefs(b.commonTxAdmissionRefs),
+		commonTxRewards:          copyCommonTxRewards(b.commonTxRewards),
 	}
 }
 
 // WithBody returns a new block with the given transaction and uncle contents.
 func (b *Block) WithBody(transactions []*Transaction, uncles []*Header) *Block {
 	block := &Block{
-		header:             CopyHeader(b.header),
-		transactions:       make([]*Transaction, len(transactions)),
-		uncles:             make([]*Header, len(uncles)),
-		commonTxAdmissions: copyCommonTxAdmissions(b.commonTxAdmissions),
-		commonTxRewards:    copyCommonTxRewards(b.commonTxRewards),
+		header:                   CopyHeader(b.header),
+		transactions:             make([]*Transaction, len(transactions)),
+		uncles:                   make([]*Header, len(uncles)),
+		commonTxAdmissionBatches: copyCommonTxAdmissionBatches(b.commonTxAdmissionBatches),
+		commonTxAdmissionRefs:    copyCommonTxAdmissionRefs(b.commonTxAdmissionRefs),
+		commonTxRewards:          copyCommonTxRewards(b.commonTxRewards),
 	}
 	copy(block.transactions, transactions)
 	for i := range uncles {

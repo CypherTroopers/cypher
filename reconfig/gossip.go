@@ -57,6 +57,7 @@ const (
 	peerQueueProducerWait          = 100 * time.Millisecond
 	peerQueueRetryTTL              = 2 * time.Minute
 	peerQueueMessageOverhead       = 512
+	peerQueueBulkSendWorkers       = 4
 
 	outboundControlMaxEntries = 1024
 	outboundControlMaxBytes   = 64 * 1024 * 1024
@@ -96,7 +97,9 @@ type msgHeadInfo struct {
 type peerQueues struct {
 	input           chan *networkMsg
 	priorityInput   chan *networkMsg
-	next            chan *networkMsg
+	nextHotstuff    chan *networkMsg
+	nextMetadata    chan *networkMsg
+	nextBulk        chan *networkMsg
 	stop            chan struct{}
 	once            sync.Once
 	lifecycleMu     sync.Mutex
@@ -226,7 +229,9 @@ func newPeerQueuesWithBudget(budget *outboundQueueBudget) *peerQueues {
 	q := &peerQueues{
 		input:           make(chan *networkMsg, peerQueueInputCapacity),
 		priorityInput:   make(chan *networkMsg, peerQueueInputCapacity),
-		next:            make(chan *networkMsg),
+		nextHotstuff:    make(chan *networkMsg),
+		nextMetadata:    make(chan *networkMsg),
+		nextBulk:        make(chan *networkMsg),
 		stop:            make(chan struct{}),
 		budget:          budget,
 		controlDigests:  make(map[[32]byte]struct{}),
@@ -248,14 +253,31 @@ func (q *peerQueues) run() {
 		default:
 		}
 
-		var out chan *networkMsg
-		var next *networkMsg
-		for i := range classes {
-			if len(classes[i]) > 0 {
-				out = q.next
-				next = classes[i][0]
+		var hotstuffNext, metadataNext, bulkNext *networkMsg
+		if len(classes[0]) > 0 {
+			hotstuffNext = classes[0][0]
+		}
+		for class := 1; class <= 4; class++ {
+			if len(classes[class]) > 0 {
+				metadataNext = classes[class][0]
 				break
 			}
+		}
+		for class := 5; class <= 6; class++ {
+			if len(classes[class]) > 0 {
+				bulkNext = classes[class][0]
+				break
+			}
+		}
+		var hotstuffOut, metadataOut, bulkOut chan *networkMsg
+		if hotstuffNext != nil {
+			hotstuffOut = q.nextHotstuff
+		}
+		if metadataNext != nil {
+			metadataOut = q.nextMetadata
+		}
+		if bulkNext != nil {
+			bulkOut = q.nextBulk
 		}
 
 		select {
@@ -265,8 +287,16 @@ func (q *peerQueues) run() {
 		case msg := <-q.input:
 			class := peerQueueClass(msg)
 			classes[class] = append(classes[class], msg)
-		case out <- next:
-			class := peerQueueClass(next)
+		case hotstuffOut <- hotstuffNext:
+			class := peerQueueClass(hotstuffNext)
+			classes[class][0] = nil
+			classes[class] = classes[class][1:]
+		case metadataOut <- metadataNext:
+			class := peerQueueClass(metadataNext)
+			classes[class][0] = nil
+			classes[class] = classes[class][1:]
+		case bulkOut <- bulkNext:
+			class := peerQueueClass(bulkNext)
 			classes[class][0] = nil
 			classes[class] = classes[class][1:]
 		case <-q.stop:
@@ -338,8 +368,7 @@ func peerQueueMessageBytes(msg *networkMsg) int {
 		return queuedHotstuffMessageBytes(&hotstuffMsg{hMsg: msg.Hmsg}) + peerQueueMessageOverhead
 	}
 	if msg.Pmsg != nil {
-		return peerQueueMessageOverhead + len(msg.Pmsg.From) + len(msg.Pmsg.LeaderID) +
-			len(msg.Pmsg.EncodedBlock) + len(msg.Pmsg.Extra) + len(msg.Pmsg.ParentQC) + len(msg.Pmsg.AuthSig)
+		return peerQueueMessageOverhead + proposalBodyMsgPayloadBytes(msg.Pmsg)
 	}
 	encoded, err := rlp.EncodeToBytes(msg)
 	if err != nil {
@@ -506,20 +535,6 @@ func (q *peerQueues) pushFrontClass(msg *networkMsg) bool {
 
 func outboundMessageExpired(msg *networkMsg, now time.Time) bool {
 	return msg != nil && !msg.queueSince.IsZero() && now.Sub(msg.queueSince) > peerQueueRetryTTL
-}
-
-func (q *peerQueues) popNext() interface{} {
-	if q == nil {
-		return nil
-	}
-	select {
-	case msg := <-q.next:
-		return msg
-	case <-q.stop:
-		return nil
-	default:
-		return nil
-	}
 }
 
 func (q *peerQueues) close() {
@@ -853,10 +868,11 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 
 func (s *netService) SendRawData(address string, msg *networkMsg) error {
 	if msg == nil {
-		return fmt.Errorf("nil network message")
+		return network.NewPermanentSendError(network.SendErrorInvalidMessage,
+			fmt.Errorf("nil network message"))
 	}
 	if err := validateNetworkMsgShape(msg); err != nil {
-		return err
+		return network.NewPermanentSendError(network.SendErrorInvalidMessage, err)
 	}
 	if address == "" {
 		return fmt.Errorf("empty destination address")
@@ -882,58 +898,86 @@ func (s *netService) SendRawData(address string, msg *networkMsg) error {
 func (s *netService) loop_iddata(address string, queues *peerQueues, isRunning *int32, generation uint64) {
 	log.Debug("loop_iddata start", "address", address)
 
-	for !s.isStoping.Load() && s.generation.Load() == generation && atomic.LoadInt32(isRunning) == 1 {
-		si := s.serverIdentityFor(address)
-		msg := queues.popNext()
-		if msg == nil {
-			time.Sleep(2 * time.Millisecond)
-			continue
+	var lanes sync.WaitGroup
+	launch := func(next <-chan *networkMsg, workers int) {
+		for worker := 0; worker < workers; worker++ {
+			lanes.Add(1)
+			go func() {
+				defer lanes.Done()
+				s.loopPeerSendLane(address, queues, isRunning, generation, next)
+			}()
 		}
+	}
+	launch(queues.nextHotstuff, 1)
+	launch(queues.nextMetadata, 1)
+	launch(queues.nextBulk, peerQueueBulkSendWorkers)
 
-		m, ok := msg.(*networkMsg)
-		if !ok || m == nil {
+	lifecycleTicker := time.NewTicker(10 * time.Millisecond)
+waitForStop:
+	for !s.isStoping.Load() && s.generation.Load() == generation && atomic.LoadInt32(isRunning) == 1 {
+		select {
+		case <-queues.stop:
+			break waitForStop
+		case <-lifecycleTicker.C:
+		}
+	}
+	lifecycleTicker.Stop()
+	queues.close()
+	lanes.Wait()
+
+	atomic.StoreInt32(isRunning, 0)
+
+	s.removePeerWorkerIfOwned(address, queues, isRunning)
+
+	log.Debug("loop_iddata exit", "id", address)
+}
+
+func (s *netService) loopPeerSendLane(address string, queues *peerQueues, isRunning *int32, generation uint64, next <-chan *networkMsg) {
+	for {
+		var msg *networkMsg
+		select {
+		case <-queues.stop:
+			return
+		case msg = <-next:
+		}
+		if msg == nil {
 			continue
 		}
-		if outboundMessageExpired(m, time.Now()) {
-			queues.release(m)
-			log.Warn("drop expired outbound network message before send", "to", address, "class", m.NetworkClass())
+		if s.isStoping.Load() || s.generation.Load() != generation || atomic.LoadInt32(isRunning) != 1 {
+			queues.release(msg)
+			return
+		}
+		if outboundMessageExpired(msg, time.Now()) {
+			queues.release(msg)
+			log.Warn("drop expired outbound network message before send", "to", address, "class", msg.NetworkClass())
 			continue
 		}
-		if s.IgnoreMsg(m) {
-			queues.release(m)
+		if s.IgnoreMsg(msg) {
+			queues.release(msg)
 			continue
 		}
-		if s.GetNetBlocks(si) > 1 && !isHighPriorityNetworkMsg(m) {
-			queues.release(m)
-			if queues != nil && !s.IgnoreMsg(m) {
-				if !queues.pushFrontClass(m) {
-					log.Warn("drop expired or saturated outbound network message", "to", address, "class", m.NetworkClass())
-				}
+		si := s.serverIdentityFor(address)
+		if s.GetNetBlocks(si) >= peerQueueBulkSendWorkers && !isHighPriorityNetworkMsg(msg) {
+			queues.release(msg)
+			if !s.IgnoreMsg(msg) && !queues.pushFrontClass(msg) {
+				log.Warn("drop expired or saturated outbound network message", "to", address, "class", msg.NetworkClass())
 			}
 			time.Sleep(2 * time.Millisecond)
 			continue
 		}
 		sendErr := s.SendRaw(si, msg, false)
-		queues.release(m)
-		if sendErr != nil {
-			log.Warn("SendRawData", "couldn't send to", address, "error", sendErr)
-			if isHighPriorityNetworkMsg(m) && queues != nil && !s.IgnoreMsg(m) {
-				// HotStuff and proposal-body control messages are consensus-critical.
-				// Do not drop them on a transient QUIC/TCP send failure.
-				if !queues.pushFrontClass(m) {
-					log.Warn("drop expired or saturated consensus retry", "to", address, "class", m.NetworkClass())
-				}
-				time.Sleep(5 * time.Millisecond)
+		queues.release(msg)
+		if sendErr == nil {
+			continue
+		}
+		log.Warn("SendRawData", "couldn't send to", address, "error", sendErr)
+		if retryableConsensusSendError(msg, sendErr) && !s.IgnoreMsg(msg) {
+			if !queues.pushFrontClass(msg) {
+				log.Warn("drop expired or saturated consensus retry", "to", address, "class", msg.NetworkClass())
 			}
+			time.Sleep(5 * time.Millisecond)
 		}
 	}
-
-	atomic.StoreInt32(isRunning, 0)
-	queues.close()
-
-	s.removePeerWorkerIfOwned(address, queues, isRunning)
-
-	log.Debug("loop_iddata exit", "id", address)
 }
 
 func (s *netService) removePeerWorkerIfOwned(address string, queues *peerQueues, isRunning *int32) bool {
@@ -1136,6 +1180,17 @@ func isHighPriorityNetworkMsg(msg *networkMsg) bool {
 	default:
 		return false
 	}
+}
+
+func retryableConsensusNetworkMsg(msg *networkMsg) bool {
+	if isHighPriorityNetworkMsg(msg) {
+		return true
+	}
+	return msg != nil && msg.NetworkClass() == network.NetClassProposalBodyBulk
+}
+
+func retryableConsensusSendError(msg *networkMsg, err error) bool {
+	return err != nil && !network.IsPermanentSendError(err) && retryableConsensusNetworkMsg(msg)
 }
 
 func cloneNetworkMsg(msg *networkMsg) *networkMsg {

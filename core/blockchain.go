@@ -85,6 +85,13 @@ var (
 
 	errInsertionInterrupted   = errors.New("insertion is interrupted")
 	ErrFHSCommitProofRequired = errors.New("Fair HotStuff canonical commit requires a direct-child QC proof")
+	// ErrFHSFinalizedSyncPublicationBusy is returned internally when a
+	// proof-aware FHS sync import reaches a key transition while a live
+	// consensus publication owns the epoch barrier. InsertChain consumes this
+	// signal after releasing chainmu and retries the same batch once the live
+	// publication completes; network callers must never classify it as an
+	// invalid block or peer fault.
+	ErrFHSFinalizedSyncPublicationBusy = errors.New("Fair HotStuff validation publication is busy")
 )
 
 const fhsFinalityProofEnvelopeVersion = uint32(1)
@@ -289,8 +296,10 @@ type BlockChain struct {
 	// sync commit. A key-epoch commit additionally rotates committee-scoped
 	// timeout WAL before publishing the new key head. Reconfig installs these
 	// hooks during service construction.
-	fhsSyncBeforeKeyCommit func(*types.Block, *hotstuff.SignedState) error
+	fhsSyncBeforeKeyCommit func(*types.Block, *hotstuff.SignedState) (bool, error)
+	fhsSyncWaitPublication func()
 	fhsSyncAfterCommit     func(*types.Block, *hotstuff.SignedState, *hotstuff.SignedState) error
+	fhsSyncFinishKeyCommit func(*types.Block, FHSFinalizedSyncKeyCommitOutcome)
 }
 
 func signerCount(mask []byte) int {
@@ -932,6 +941,26 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) error {
 		rawdb.WriteHeadHeaderHash(batch, block.Hash())
 		rawdb.WriteHeadFastBlockHash(batch, block.Hash())
 	}
+	// FHS tx lookups become visible only at the finality-aware canonical head
+	// boundary. Delete exactly the admission sidecars consumed by this block in
+	// the same database batch, while holding their store stripes across Write.
+	// This removes the crash window in which the head advanced but admissions
+	// remained, and orders concurrent late TxQUIC replays deterministically.
+	releaseAdmissionStripes := func() {}
+	forgetFinalizedAdmissions := func() {}
+	if bc.chainConfig != nil && bc.chainConfig.FairHotstuff {
+		release, forget, err := stageFinalizedCommonRPCAdmissionDeletes(batch, block.CommonTxAdmissionBatches(), block.CommonTxAdmissionRefs())
+		if err != nil {
+			return err
+		}
+		releaseAdmissionStripes = release
+		forgetFinalizedAdmissions = forget
+	}
+	// Keep the admission stripes through currentBlock publication. A late
+	// replay waiting on a stripe must observe the new finalized head before it
+	// can decide whether to persist; releasing immediately after batch.Write
+	// would allow it to resurrect the admission in that narrow interval.
+	defer releaseAdmissionStripes()
 	// Flush the whole batch into the disk, exit the node if failed
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("failed to update transaction/key chain indexes and markers: %w", err)
@@ -946,6 +975,10 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) error {
 		headFastBlockGauge.Update(int64(block.NumberU64()))
 	}
 	bc.currentBlock.Store(block)
+	// Remove the in-memory winners before their stripes are released. Proposal
+	// selection can therefore never observe a finalized sidecar after the new
+	// head becomes visible, and a waiting replay sees finality and stays absent.
+	forgetFinalizedAdmissions()
 	if bc.blockCache != nil {
 		bc.blockCache.Add(block.Hash(), block)
 	}
@@ -1841,9 +1874,9 @@ func (bc *BlockChain) ValidateBlockForHotstuffWithParent(proposalID common.Hash,
 }
 
 // validateBlockForHotstuffWithParent is also used by the proof-aware full-sync
-// importer. revalidateKnown prevents a raw block written before a crash from
-// bypassing body execution merely because its hash and state are already in DB.
-func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block, parentProposal *VerifiedProposal, revalidateKnown bool) (*VerifiedProposal, error) {
+// importer. proofAwareSync both revalidates known data and permits finalized
+// proof metadata; a live known proposal revalidates without that permission.
+func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block, parentProposal *VerifiedProposal, proofAwareSync bool) (*VerifiedProposal, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal block")
 	}
@@ -1866,7 +1899,8 @@ func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash,
 		bc.reportBlock(block, nil, ErrBlacklistedHash)
 		return nil, ErrBlacklistedHash
 	}
-	if !revalidateKnown && bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
+	knownBlockAndState := bc.HasBlockAndState(block.Hash(), block.NumberU64())
+	if !proofAwareSync && knownBlockAndState && (bc.chainConfig == nil || !bc.chainConfig.FairHotstuff) {
 		log.Info("HOTSTUFF VERIFY already known block", "number", block.NumberU64(), "hash", block.Hash(), "proposalID", proposalID)
 		return &VerifiedProposal{
 			ProposalID:   proposalID,
@@ -1878,6 +1912,14 @@ func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash,
 			ParentNumber: block.NumberU64() - 1,
 			CreatedAt:    time.Now(),
 		}, nil
+	}
+	forceKnownRevalidation := !proofAwareSync && knownBlockAndState
+	if forceKnownRevalidation {
+		// FHS recovery and duplicate proposal paths must re-establish the complete
+		// body/admission/reward/state invariant. A hash-known shortcut is unsafe
+		// because sidecar roots live in the header while malformed in-memory body
+		// data may reuse that header and because commit SanityCheck does not execute
+		// EVM. The service cache absorbs normal duplicate-message traffic.
 	}
 
 	start := time.Now()
@@ -1906,7 +1948,7 @@ func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash,
 		return nil, fmt.Errorf("hotstuff proposal header invalid: %w", err)
 	}
 	var bodyErr error
-	if revalidateKnown {
+	if proofAwareSync {
 		validator, ok := bc.validator.(interface {
 			ValidateBodyForHotstuffSync(*types.Block, bool) error
 		})
@@ -1914,6 +1956,14 @@ func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash,
 			return nil, fmt.Errorf("Fair HotStuff sync body validator is unavailable")
 		}
 		bodyErr = validator.ValidateBodyForHotstuffSync(block, hasHotstuffParent)
+	} else if forceKnownRevalidation {
+		validator, ok := bc.validator.(interface {
+			ValidateBodyRevalidatingKnown(*types.Block, bool) error
+		})
+		if !ok {
+			return nil, fmt.Errorf("Fair HotStuff known body revalidator is unavailable")
+		}
+		bodyErr = validator.ValidateBodyRevalidatingKnown(block, hasHotstuffParent)
 	} else if hasHotstuffParent {
 		bodyErr = bc.validator.ValidateBodyWithHotstuffParent(block)
 	} else {
@@ -2031,14 +2081,30 @@ func (bc *BlockChain) ReconstructFHSQC(block *types.Block) (*types.HotstuffPropo
 // commit path performs the same rotation itself and does not call these hooks.
 // It is configured once while reconfig is being constructed.
 func (bc *BlockChain) SetFHSFinalizedSyncLifecycle(
-	before func(*types.Block, *hotstuff.SignedState) error,
+	before func(*types.Block, *hotstuff.SignedState) (bool, error),
+	wait func(),
 	after func(*types.Block, *hotstuff.SignedState, *hotstuff.SignedState) error,
+	finish func(*types.Block, FHSFinalizedSyncKeyCommitOutcome),
 ) {
 	bc.chainmu.Lock()
 	bc.fhsSyncBeforeKeyCommit = before
+	bc.fhsSyncWaitPublication = wait
 	bc.fhsSyncAfterCommit = after
+	bc.fhsSyncFinishKeyCommit = finish
 	bc.chainmu.Unlock()
 }
+
+// FHSFinalizedSyncKeyCommitOutcome distinguishes a failure before canonical
+// publication from a failure in the application lifecycle after publication.
+// The latter cannot be rolled back and must leave consensus fail-closed until
+// startup recovery reconciles the canonical epoch state.
+type FHSFinalizedSyncKeyCommitOutcome uint8
+
+const (
+	FHSFinalizedSyncPreCommitFailed FHSFinalizedSyncKeyCommitOutcome = iota
+	FHSFinalizedSyncCanonicalAfterFailed
+	FHSFinalizedSyncCompleted
+)
 
 // commitFHSSyncVerifiedProposal commits a proposal reached through the full
 // downloader. A key carrier additionally rotates committee-local timeout WAL
@@ -2049,6 +2115,12 @@ func (bc *BlockChain) commitFHSSyncVerifiedProposal(vp *VerifiedProposal, childQ
 	if vp == nil || vp.Block == nil || childQC == nil {
 		return NonStatTy, fmt.Errorf("incomplete Fair HotStuff finalized sync proposal")
 	}
+	lifecycleConfigured := bc.fhsSyncBeforeKeyCommit != nil || bc.fhsSyncWaitPublication != nil ||
+		bc.fhsSyncAfterCommit != nil || bc.fhsSyncFinishKeyCommit != nil
+	if lifecycleConfigured && (bc.fhsSyncBeforeKeyCommit == nil || bc.fhsSyncWaitPublication == nil ||
+		bc.fhsSyncAfterCommit == nil || bc.fhsSyncFinishKeyCommit == nil) {
+		return NonStatTy, fmt.Errorf("incomplete Fair HotStuff finalized sync key lifecycle")
+	}
 	childQC = hotstuff.CloneSignedState(childQC)
 	if err := bc.VerifyFHS2ChainCommitProof(vp.Block, childQC); err != nil {
 		return NonStatTy, fmt.Errorf("invalid Fair HotStuff finalized sync proof: %w", err)
@@ -2058,19 +2130,46 @@ func (bc *BlockChain) commitFHSSyncVerifiedProposal(vp *VerifiedProposal, childQ
 		return NonStatTy, fmt.Errorf("reconstruct Fair HotStuff finalized sync target QC: %w", err)
 	}
 	keyCarrier := vp.Block.BlockType() == types.Key_Block
+	keyTransitionStarted := false
 	if keyCarrier && bc.fhsSyncBeforeKeyCommit != nil {
-		if err := bc.fhsSyncBeforeKeyCommit(vp.Block, hotstuff.CloneSignedState(childQC)); err != nil {
+		acquired, err := bc.fhsSyncBeforeKeyCommit(vp.Block, hotstuff.CloneSignedState(childQC))
+		if err != nil {
+			// A live HotStuff publication may already own the barrier while
+			// waiting for chainmu. The sync hook must fail fast in that case;
+			// invoking Finish without ownership would corrupt the live owner's
+			// lifecycle state. InsertChain releases chainmu, waits for that
+			// publication, and retries this exact downloaded batch.
+			if acquired && bc.fhsSyncFinishKeyCommit != nil {
+				bc.fhsSyncFinishKeyCommit(vp.Block, FHSFinalizedSyncPreCommitFailed)
+			}
 			return NonStatTy, fmt.Errorf("prepare Fair HotStuff synced key epoch: %w", err)
 		}
+		if !acquired {
+			return NonStatTy, fmt.Errorf("prepare Fair HotStuff synced key epoch returned without publication ownership")
+		}
+		keyTransitionStarted = true
+	}
+	keyTransitionOutcome := FHSFinalizedSyncPreCommitFailed
+	if keyTransitionStarted && bc.fhsSyncFinishKeyCommit != nil {
+		defer func() { bc.fhsSyncFinishKeyCommit(vp.Block, keyTransitionOutcome) }()
 	}
 	status, err := bc.commitVerifiedProposalLocked(vp, childQC, false)
 	if err != nil {
 		return status, err
 	}
+	if keyTransitionStarted && status == CanonStatTy {
+		// Canonical publication is irreversible. Until the post-commit hook has
+		// reconciled the service watermark and view, any failure from here must
+		// keep the service fail-closed instead of reopening the old epoch.
+		keyTransitionOutcome = FHSFinalizedSyncCanonicalAfterFailed
+	}
 	if status == CanonStatTy && bc.fhsSyncAfterCommit != nil {
 		if err := bc.fhsSyncAfterCommit(vp.Block, hotstuff.CloneSignedState(ownQC), hotstuff.CloneSignedState(childQC)); err != nil {
 			return status, fmt.Errorf("complete Fair HotStuff finalized sync commit: %w", err)
 		}
+	}
+	if keyTransitionStarted && status == CanonStatTy {
+		keyTransitionOutcome = FHSFinalizedSyncCompleted
 	}
 	return status, nil
 }
@@ -2281,6 +2380,11 @@ func (bc *BlockChain) backfillCurrentFHSFinalityProof(block *types.Block) error 
 		return fmt.Errorf("invalid Fair HotStuff proof backfill: %w", err)
 	}
 	batch := bc.db.NewBatch()
+	releaseAdmissionStripes, forgetFinalizedAdmissions, err := stageFinalizedCommonRPCAdmissionDeletes(batch, block.CommonTxAdmissionBatches(), block.CommonTxAdmissionRefs())
+	if err != nil {
+		return err
+	}
+	defer releaseAdmissionStripes()
 	rawdb.WriteBlock(batch, block)
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("persist Fair HotStuff proof backfill: %w", err)
@@ -2295,6 +2399,7 @@ func (bc *BlockChain) backfillCurrentFHSFinalityProof(block *types.Block) error 
 		bc.hc.SetCurrentHeader(block.Header())
 	}
 	bc.currentBlock.Store(block)
+	forgetFinalizedAdmissions()
 	if fast := bc.CurrentFastBlock(); fast != nil && fast.Hash() == block.Hash() && fast.NumberU64() == block.NumberU64() {
 		bc.currentFastBlock.Store(block)
 	}
@@ -2816,26 +2921,56 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 				prev.Hash().Bytes()[:4], i, block.NumberU64(), block.Hash().Bytes()[:4], block.ParentHash().Bytes()[:4])
 		}
 	}
-	// Pre-checks passed, start the full block imports
+	// Pre-checks passed, start the full block imports. A live HotStuff
+	// publication can briefly own the epoch barrier while waiting for chainmu.
+	// The retry helper releases chainmu before waiting, preserving the original
+	// downloaded batch instead of leaking a local contention error to fetcher or
+	// downloader as an invalid peer response.
 	bc.wg.Add(1)
-	bc.chainmu.Lock()
-	n, err := bc.insertChain(chain, true, true)
-	bc.chainmu.Unlock()
-	bc.wg.Done()
-
-	return n, err
+	defer bc.wg.Done()
+	return bc.insertChainWithFHSPublicationRetry(func() (int, error) {
+		return bc.insertChain(chain, true, true)
+	})
 }
 
 func (bc *BlockChain) InsertBlock(block *types.Block) (int, error) {
 	bc.blockProcFeed.Send(true)
 	defer bc.blockProcFeed.Send(false)
 	bc.wg.Add(1)
-	bc.chainmu.Lock()
-	// Enforce BFT aggregated-signature verification on the local InsertBlock path too.
-	n, err := bc.insertChain(types.Blocks{block}, true, true)
-	bc.chainmu.Unlock()
-	bc.wg.Done()
-	return n, err
+	defer bc.wg.Done()
+	return bc.insertChainWithFHSPublicationRetry(func() (int, error) {
+		// Enforce BFT aggregated-signature verification on the local InsertBlock path too.
+		return bc.insertChain(types.Blocks{block}, true, true)
+	})
+}
+
+// insertChainWithFHSPublicationRetry serializes one insertion attempt with
+// chainmu. If proof-aware FHS sync finds the live consensus publication
+// barrier busy, it waits only after releasing chainmu and then retries the same
+// input. This lock order lets the live owner finish and prevents fetcher and
+// downloader from discarding a valid block for a node-local scheduling race.
+//
+// insert must call an insertion primitive that requires chainmu.
+func (bc *BlockChain) insertChainWithFHSPublicationRetry(insert func() (int, error)) (int, error) {
+	for {
+		bc.chainmu.Lock()
+		n, err := insert()
+		wait := bc.fhsSyncWaitPublication
+		bc.chainmu.Unlock()
+		if !errors.Is(err, ErrFHSFinalizedSyncPublicationBusy) {
+			return n, err
+		}
+		if wait == nil {
+			return n, fmt.Errorf("Fair HotStuff sync publication wait hook is unavailable: %w", err)
+		}
+		if bc.insertStopped() {
+			return n, ErrAbortBlocksProcessing
+		}
+		wait()
+		if bc.insertStopped() {
+			return n, ErrAbortBlocksProcessing
+		}
+	}
 }
 
 // insertChain is the internal implementation of InsertChain, which assumes that
@@ -3920,6 +4055,29 @@ func (bc *BlockChain) GetTransactionLookup(hash common.Hash) *rawdb.LegacyTxLook
 	lookup := &rawdb.LegacyTxLookupEntry{BlockHash: blockHash, BlockIndex: blockNumber, Index: txIndex}
 	bc.txLookupCache.Add(hash, lookup)
 	return lookup
+}
+
+// IsFinalizedTransaction reports whether hash belongs to the canonical FHS
+// chain at or below the full-state head. Receipt sync may write transaction
+// lookup entries while the header/receipt chain is ahead of 2-chain finality,
+// so lookup presence alone is not a safe admission/WAL deletion boundary.
+func (bc *BlockChain) IsFinalizedTransaction(hash common.Hash) bool {
+	if bc == nil || hash == (common.Hash{}) {
+		return false
+	}
+	number := rawdb.ReadTxLookupEntry(bc.db, hash)
+	if number == nil {
+		return false
+	}
+	head := bc.CurrentBlock()
+	if head == nil || *number > head.NumberU64() {
+		return false
+	}
+	tx, blockHash, blockNumber, _ := rawdb.ReadTransaction(bc.db, hash)
+	if tx == nil || tx.Hash() != hash || blockNumber != *number {
+		return false
+	}
+	return blockHash != (common.Hash{}) && rawdb.ReadCanonicalHash(bc.db, *number) == blockHash
 }
 
 // Config retrieves the chain's fork configuration.

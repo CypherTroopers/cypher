@@ -120,12 +120,13 @@ type headerFilterTask struct {
 
 // bodyFilterTask represents a batch of block bodies needing fetcher filtering.
 type bodyFilterTask struct {
-	peer               string                       // The source peer of block bodies
-	transactions       [][]*types.Transaction       // Collection of transactions per block body
-	uncles             [][]*types.Header            // Collection of uncles per block body
-	commonTxAdmissions [][]*types.CommonTxAdmission // Collection of common transaction admissions per block body
-	commonTxRewards    [][]*types.CommonTxReward    // Collection of common transaction rewards per block body
-	time               time.Time                    // Arrival time of the blocks' contents
+	peer                     string                            // The source peer of block bodies
+	transactions             [][]*types.Transaction            // Collection of transactions per block body
+	uncles                   [][]*types.Header                 // Collection of uncles per block body
+	commonTxAdmissionBatches [][]*types.CommonTxAdmissionBatch // Collection of signed admission batches per block body
+	commonTxAdmissionRefs    [][]types.CommonTxAdmissionRef    // Collection of transaction-aligned admission references
+	commonTxRewards          [][]*types.CommonTxReward         // Collection of common transaction rewards per block body
+	time                     time.Time                         // Arrival time of the blocks' contents
 }
 
 // blockOrHeaderInject represents a schedules import operation.
@@ -302,8 +303,8 @@ func (f *BlockFetcher) FilterHeaders(peer string, headers []*types.Header, time 
 
 // FilterBodies extracts all the block bodies that were explicitly requested by
 // the fetcher, returning those that should be handled differently.
-func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transaction, uncles [][]*types.Header, commonTxAdmissions [][]*types.CommonTxAdmission, commonTxRewards [][]*types.CommonTxReward, time time.Time) ([][]*types.Transaction, [][]*types.Header, [][]*types.CommonTxAdmission, [][]*types.CommonTxReward) {
-	log.Trace("Filtering bodies", "peer", peer, "txs", len(transactions), "uncles", len(uncles), "commonTxAdmissions", len(commonTxAdmissions), "commonTxRewards", len(commonTxRewards))
+func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transaction, uncles [][]*types.Header, commonTxAdmissionBatches [][]*types.CommonTxAdmissionBatch, commonTxAdmissionRefs [][]types.CommonTxAdmissionRef, commonTxRewards [][]*types.CommonTxReward, time time.Time) ([][]*types.Transaction, [][]*types.Header, [][]*types.CommonTxAdmissionBatch, [][]types.CommonTxAdmissionRef, [][]*types.CommonTxReward) {
+	log.Trace("Filtering bodies", "peer", peer, "txs", len(transactions), "uncles", len(uncles), "commonTxAdmissionBatches", len(commonTxAdmissionBatches), "commonTxAdmissionRefs", len(commonTxAdmissionRefs), "commonTxRewards", len(commonTxRewards))
 
 	// Send the filter channel to the fetcher
 	filter := make(chan *bodyFilterTask)
@@ -311,20 +312,20 @@ func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transac
 	select {
 	case f.bodyFilter <- filter:
 	case <-f.quit:
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 	// Request the filtering of the body list
 	select {
-	case filter <- &bodyFilterTask{peer: peer, transactions: transactions, uncles: uncles, commonTxAdmissions: commonTxAdmissions, commonTxRewards: commonTxRewards, time: time}:
+	case filter <- &bodyFilterTask{peer: peer, transactions: transactions, uncles: uncles, commonTxAdmissionBatches: commonTxAdmissionBatches, commonTxAdmissionRefs: commonTxAdmissionRefs, commonTxRewards: commonTxRewards, time: time}:
 	case <-f.quit:
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 	// Retrieve the bodies remaining after filtering
 	select {
 	case task := <-filter:
-		return task.transactions, task.uncles, task.commonTxAdmissions, task.commonTxRewards
+		return task.transactions, task.uncles, task.commonTxAdmissionBatches, task.commonTxAdmissionRefs, task.commonTxRewards
 	case <-f.quit:
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 }
 
@@ -603,7 +604,7 @@ func (f *BlockFetcher) loop() {
 			blocks := []*types.Block{}
 			// abort early if there's nothing explicitly requested
 			if len(f.completing) > 0 {
-				for i := 0; i < len(task.transactions) && i < len(task.uncles) && i < len(task.commonTxAdmissions) && i < len(task.commonTxRewards); i++ {
+				for i := 0; i < len(task.transactions) && i < len(task.uncles) && i < len(task.commonTxAdmissionBatches) && i < len(task.commonTxAdmissionRefs) && i < len(task.commonTxRewards); i++ {
 					// Match up a body to any possible completion request
 					var (
 						matched               = false
@@ -629,7 +630,7 @@ func (f *BlockFetcher) loop() {
 							continue
 						}
 						if commonTxAdmissionRoot == (common.Hash{}) {
-							commonTxAdmissionRoot = types.DeriveCommonTxAdmissionRoot(task.commonTxAdmissions[i])
+							commonTxAdmissionRoot = types.DeriveCommonTxAdmissionRoot(task.commonTxAdmissionBatches[i], task.commonTxAdmissionRefs[i])
 						}
 						if commonTxAdmissionRoot != announce.header.CommonTxAdmissionRoot {
 							continue
@@ -644,7 +645,7 @@ func (f *BlockFetcher) loop() {
 						matched = true
 						if f.getBlock(hash) == nil {
 							block := types.NewBlockWithHeader(announce.header).WithBody(task.transactions[i], task.uncles[i])
-							block.SetCommonTxData(task.commonTxAdmissions[i], task.commonTxRewards[i])
+							block.SetCommonTxData(task.commonTxAdmissionBatches[i], task.commonTxAdmissionRefs[i], task.commonTxRewards[i])
 							block.ReceivedAt = task.time
 							blocks = append(blocks, block)
 						} else {
@@ -655,7 +656,8 @@ func (f *BlockFetcher) loop() {
 					if matched {
 						task.transactions = append(task.transactions[:i], task.transactions[i+1:]...)
 						task.uncles = append(task.uncles[:i], task.uncles[i+1:]...)
-						task.commonTxAdmissions = append(task.commonTxAdmissions[:i], task.commonTxAdmissions[i+1:]...)
+						task.commonTxAdmissionBatches = append(task.commonTxAdmissionBatches[:i], task.commonTxAdmissionBatches[i+1:]...)
+						task.commonTxAdmissionRefs = append(task.commonTxAdmissionRefs[:i], task.commonTxAdmissionRefs[i+1:]...)
 						task.commonTxRewards = append(task.commonTxRewards[:i], task.commonTxRewards[i+1:]...)
 						i--
 						continue

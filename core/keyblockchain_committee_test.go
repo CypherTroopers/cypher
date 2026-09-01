@@ -95,6 +95,35 @@ func TestGetCommitteeByHashUsesExactHistoricalKeyBlock(t *testing.T) {
 	}
 }
 
+func TestCandidateProposalRevisionTracksOnlyVisibleChanges(t *testing.T) {
+	lookup := newCandidateLookup(nil)
+	candidate := types.NewCandidate(common.HexToHash("0xc1"), big.NewInt(1), 2, 10, nil, nil, "candidate-public", "candidate-coinbase", 1)
+
+	if got := lookup.Revision(); got != 0 {
+		t.Fatalf("initial candidate revision = %d, want 0", got)
+	}
+	if exists := lookup.Add(candidate); exists {
+		t.Fatal("new candidate reported as duplicate")
+	}
+	if got := lookup.Revision(); got != 1 {
+		t.Fatalf("candidate revision after add = %d, want 1", got)
+	}
+	if exists := lookup.Add(candidate); !exists {
+		t.Fatal("duplicate candidate reported as new")
+	}
+	if got := lookup.Revision(); got != 1 {
+		t.Fatalf("duplicate add advanced candidate revision to %d", got)
+	}
+	lookup.ClearObsolete(big.NewInt(1))
+	if got := lookup.Revision(); got != 1 {
+		t.Fatalf("no-op obsolete clear advanced candidate revision to %d", got)
+	}
+	lookup.ClearObsolete(big.NewInt(2))
+	if got := lookup.Revision(); got != 2 {
+		t.Fatalf("visible candidate removal revision = %d, want 2", got)
+	}
+}
+
 func TestCanonicalKeyBlockValidationRejectsSibling(t *testing.T) {
 	db := rawdb.NewMemoryDatabase()
 	defer db.Close()

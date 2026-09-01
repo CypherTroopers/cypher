@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
 )
 
@@ -89,5 +91,48 @@ func TestRouteHintJSONRoundTrip(t *testing.T) {
 	}
 	if dec.Hash() != tx.Hash() {
 		t.Fatalf("json roundtrip changed tx hash")
+	}
+}
+
+func TestTransactionsByPriceAndNonceRecomputesSignerForCurrentHead(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainID := big.NewInt(1337)
+	config := *params.TestChainConfig
+	config.ChainID = new(big.Int).Set(chainID)
+	config.EIP155Block = big.NewInt(10)
+
+	to := common.HexToAddress("0x4444444444444444444444444444444444444444")
+	sign := func(tx *Transaction, signer Signer) *Transaction {
+		signed, signErr := SignTx(tx, signer, key)
+		if signErr != nil {
+			t.Fatal(signErr)
+		}
+		return signed
+	}
+	transactions := Transactions{
+		sign(NewTransaction(0, to, big.NewInt(1), 21_000, big.NewInt(3), nil), HomesteadSigner{}),
+		sign(NewTransaction(1, to, big.NewInt(1), 21_000, big.NewInt(3), nil), NewEIP155Signer(chainID)),
+		sign(NewTransaction(2, to, big.NewInt(1), 21_000, big.NewInt(3), nil), NewEIP155Signer(chainID)),
+	}
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	ordered := NewTransactionsByPriceAndNonce(&config, big.NewInt(9), map[common.Address]Transactions{
+		from: transactions,
+	})
+
+	for wantNonce := uint64(0); wantNonce < uint64(len(transactions)); wantNonce++ {
+		tx := ordered.Peek()
+		if tx == nil {
+			t.Fatalf("head is nil, want nonce %d", wantNonce)
+		}
+		if tx.Nonce() != wantNonce {
+			t.Fatalf("head nonce = %d, want %d", tx.Nonce(), wantNonce)
+		}
+		ordered.Shift()
+	}
+	if tx := ordered.Peek(); tx != nil {
+		t.Fatalf("unexpected transaction after account tail: nonce %d", tx.Nonce())
 	}
 }

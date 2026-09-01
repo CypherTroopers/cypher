@@ -3,7 +3,14 @@ package network
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"errors"
+	"math/big"
 	"net"
 	"testing"
 	"time"
@@ -270,6 +277,184 @@ func TestQUICPeerAttestationPinsChainAddressAndBLSKey(t *testing.T) {
 	}
 }
 
+func TestBLSTLSCertificatePinsApplicationIdentityAndKey(t *testing.T) {
+	secret, public := newQUICAuthTestKey(t)
+	identity := []byte("chain/genesis/committee/endpoint")
+	certificate, err := GenerateBLSTLSCertificate("txquic", identity, public.Serialize(), func(digest []byte) ([]byte, error) {
+		return secret.SignHash(digest).Serialize(), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyBLSTLSCertificate(certificate.Certificate, "txquic", identity, public.Serialize()); err != nil {
+		t.Fatalf("valid BLS TLS certificate rejected: %v", err)
+	}
+	if err := VerifyBLSTLSCertificate(certificate.Certificate, "other", identity, public.Serialize()); err == nil {
+		t.Fatal("cross-application BLS TLS certificate accepted")
+	}
+	if err := VerifyBLSTLSCertificate(certificate.Certificate, "txquic", []byte("other identity"), public.Serialize()); err == nil {
+		t.Fatal("wrong BLS TLS identity accepted")
+	}
+	_, otherPublic := newQUICAuthTestKey(t)
+	if err := VerifyBLSTLSCertificate(certificate.Certificate, "txquic", identity, otherPublic.Serialize()); err == nil {
+		t.Fatal("wrong BLS TLS public key accepted")
+	}
+}
+
+func TestBLSTLSCertificateRejectsInvalidSigner(t *testing.T) {
+	_, public := newQUICAuthTestKey(t)
+	otherSecret, _ := newQUICAuthTestKey(t)
+	if _, err := GenerateBLSTLSCertificate("txquic", []byte("identity"), public.Serialize(), func(digest []byte) ([]byte, error) {
+		return otherSecret.SignHash(digest).Serialize(), nil
+	}); err == nil {
+		t.Fatal("BLS TLS certificate accepted a signer outside the declared identity")
+	}
+	for _, signature := range [][]byte{nil, {1}} {
+		if _, err := GenerateBLSTLSCertificate("txquic", []byte("identity"), public.Serialize(), func([]byte) ([]byte, error) {
+			return signature, nil
+		}); err == nil {
+			t.Fatalf("BLS TLS certificate accepted invalid signature length %d", len(signature))
+		}
+	}
+}
+
+func TestBLSTLSCertificateRejectsEmptyAndTruncatedProofWithoutPanic(t *testing.T) {
+	secret, public := newQUICAuthTestKey(t)
+	identity := []byte("committee generation")
+	certificate, err := GenerateBLSTLSCertificate("txquic", identity, public.Serialize(), func(digest []byte) ([]byte, error) {
+		return secret.SignHash(digest).Serialize(), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := certificate.Leaf
+	privateKey := certificate.PrivateKey.(ed25519.PrivateKey)
+	var proof blsTLSAttestation
+	for _, extension := range leaf.Extensions {
+		if extension.Id.Equal(blsTLSAuthOID) {
+			if rest, err := asn1.Unmarshal(extension.Value, &proof); err != nil || len(rest) != 0 {
+				t.Fatal("decode generated BLS TLS proof")
+			}
+		}
+	}
+	if proof.Application == "" {
+		t.Fatal("generated certificate has no BLS TLS proof")
+	}
+	for _, signature := range [][]byte{nil, {1}} {
+		mutated := proof
+		mutated.Signature = signature
+		encoded, err := asn1.Marshal(mutated)
+		if err != nil {
+			t.Fatal(err)
+		}
+		template := &x509.Certificate{
+			SerialNumber:    new(big.Int).Set(leaf.SerialNumber),
+			NotBefore:       leaf.NotBefore,
+			NotAfter:        leaf.NotAfter,
+			KeyUsage:        x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			ExtraExtensions: []pkix.Extension{{Id: blsTLSAuthOID, Critical: true, Value: encoded}},
+		}
+		der, err := x509.CreateCertificate(rand.Reader, template, template, privateKey.Public(), privateKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyBLSTLSCertificate([][]byte{der}, "txquic", identity, public.Serialize()); err == nil {
+			t.Fatalf("BLS TLS verifier accepted invalid proof length %d", len(signature))
+		}
+	}
+}
+
+func TestBLSTLSCertificateRejectsCopiedProofWithAlteredValidity(t *testing.T) {
+	secret, public := newQUICAuthTestKey(t)
+	identity := []byte("committee generation")
+	certificate, err := GenerateBLSTLSCertificate("txquic", identity, public.Serialize(), func(digest []byte) ([]byte, error) {
+		return secret.SignHash(digest).Serialize(), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := certificate.Leaf
+	if leaf == nil {
+		t.Fatal("generated certificate has no parsed leaf")
+	}
+	var attestation pkix.Extension
+	for _, extension := range leaf.Extensions {
+		if extension.Id.Equal(blsTLSAuthOID) {
+			attestation = extension
+			break
+		}
+	}
+	if len(attestation.Value) == 0 {
+		t.Fatal("generated certificate has no BLS proof")
+	}
+	privateKey, ok := certificate.PrivateKey.(ed25519.PrivateKey)
+	if !ok {
+		t.Fatalf("TLS private key type = %T", certificate.PrivateKey)
+	}
+	altered := &x509.Certificate{
+		SerialNumber:    new(big.Int).Set(leaf.SerialNumber),
+		NotBefore:       leaf.NotBefore,
+		NotAfter:        leaf.NotAfter.Add(30 * time.Minute),
+		KeyUsage:        x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		ExtraExtensions: []pkix.Extension{attestation},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, altered, altered, privateKey.Public(), privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyBLSTLSCertificate([][]byte{der}, "txquic", identity, public.Serialize()); err == nil {
+		t.Fatal("copied BLS proof authorized an altered certificate lifetime")
+	}
+}
+
+func TestQUICPeerCertificateRejectsEmptyAndTruncatedProofWithoutPanic(t *testing.T) {
+	const chainID = uint64(10101919)
+	const address = "127.0.0.1:7102"
+	secret, public := newQUICAuthTestKey(t)
+	certificate, err := generateAttestedQUICCertificate(chainID, address, secret, public.Serialize())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := certificate.Leaf
+	privateKey := certificate.PrivateKey.(ed25519.PrivateKey)
+	var proof quicPeerAttestation
+	for _, extension := range leaf.Extensions {
+		if extension.Id.Equal(quicPeerAuthOID) {
+			if rest, err := asn1.Unmarshal(extension.Value, &proof); err != nil || len(rest) != 0 {
+				t.Fatal("decode generated QUIC peer proof")
+			}
+		}
+	}
+	if proof.Address == "" {
+		t.Fatal("generated certificate has no QUIC peer proof")
+	}
+	for _, signature := range [][]byte{nil, {1}} {
+		mutated := proof
+		mutated.Signature = signature
+		encoded, err := asn1.Marshal(mutated)
+		if err != nil {
+			t.Fatal(err)
+		}
+		template := &x509.Certificate{
+			SerialNumber:    new(big.Int).Set(leaf.SerialNumber),
+			NotBefore:       leaf.NotBefore,
+			NotAfter:        leaf.NotAfter,
+			KeyUsage:        x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+			ExtraExtensions: []pkix.Extension{{Id: quicPeerAuthOID, Critical: true, Value: encoded}},
+		}
+		der, err := x509.CreateCertificate(rand.Reader, template, template, privateKey.Public(), privateKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := parseAndVerifyQUICPeerCertificate([][]byte{der}, chainID, address, public.Serialize()); err == nil {
+			t.Fatalf("QUIC peer verifier accepted invalid proof length %d", len(signature))
+		}
+	}
+}
+
 func TestQUICPeerAuthorizationRejectsUnknownAndRotatedKeys(t *testing.T) {
 	const chainID = uint64(10101919)
 	localSecret, localPublic := newQUICAuthTestKey(t)
@@ -296,7 +481,11 @@ func TestQUICPeerAuthorizationRejectsUnknownAndRotatedKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := quicServerTLSConfig(auth).VerifyPeerCertificate(forgedCertificate.Certificate, nil); err == nil {
+	serverTLS := quicServerTLSConfig(auth)
+	if !serverTLS.SessionTicketsDisabled || serverTLS.VerifyConnection == nil {
+		t.Fatal("inbound TLS did not install its mandatory per-connection verifier")
+	}
+	if err := serverTLS.VerifyConnection(tls.ConnectionState{PeerCertificates: []*x509.Certificate{forgedCertificate.Leaf}}); err == nil {
 		t.Fatal("inbound TLS accepted an attacker key for an authorized peer address")
 	}
 	if err := auth.verifyAuthorizedPeer(&quicPeerIdentity{chainID: chainID, address: "127.0.0.1:7999", publicKey: attackerPublic.Serialize()}); err == nil {
@@ -382,8 +571,8 @@ func TestQUICPeerCertificateRenewsBeforeExpiry(t *testing.T) {
 
 func TestQUICReceiveBudgetsSeparateControlFromLargeData(t *testing.T) {
 	limiter := new(quicReceiveLimiter)
-	if !limiter.reserve("byzantine", NetClassProposalBodyBulk, def_MaxPacketSize, 0) {
-		t.Fatal("first maximum proposal body was rejected")
+	if !limiter.reserve("byzantine", NetClassBulkGossip, def_MaxPacketSize, 0) {
+		t.Fatal("first maximum bulk payload was rejected")
 	}
 	if limiter.reserve("byzantine", NetClassBulkGossip, 1, 0) {
 		t.Fatal("one peer reserved a second large-data stream")
@@ -410,7 +599,7 @@ func TestQUICReceiveBudgetsSeparateControlFromLargeData(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	limiter.release("byzantine", NetClassProposalBodyBulk, def_MaxPacketSize)
+	limiter.release("byzantine", NetClassBulkGossip, def_MaxPacketSize)
 	select {
 	case granted := <-honestGranted:
 		if !granted {
@@ -423,6 +612,25 @@ func TestQUICReceiveBudgetsSeparateControlFromLargeData(t *testing.T) {
 		t.Fatal("new Byzantine request bypassed the already-granted honest request")
 	}
 	limiter.release("honest", NetClassProposalBodyBulk, 1)
+}
+
+func TestQUICReceiveLimiterAllowsBoundedProposalParallelism(t *testing.T) {
+	limiter := new(quicReceiveLimiter)
+	for stream := 0; stream < quicProposalPeerStreams; stream++ {
+		if !limiter.reserve("leader", NetClassProposalBodyBulk, quicProposalBodyMaxPacketSize, 0) {
+			t.Fatalf("proposal stream %d was rejected before the peer cap", stream)
+		}
+	}
+	if limiter.reserve("leader", NetClassProposalBodyBulk, 1, 0) {
+		t.Fatal("proposal leader exceeded its bounded stream cap")
+	}
+	if !limiter.reserve("other", NetClassProposalBodyBulk, 1, 0) {
+		t.Fatal("one leader consumed the global proposal receive budget")
+	}
+	limiter.release("other", NetClassProposalBodyBulk, 1)
+	for stream := 0; stream < quicProposalPeerStreams; stream++ {
+		limiter.release("leader", NetClassProposalBodyBulk, quicProposalBodyMaxPacketSize)
+	}
 }
 
 func TestQUICReceiveControlBudgetIsPeerFair(t *testing.T) {
@@ -453,7 +661,7 @@ func TestQUICReceiveControlBudgetIsPeerFair(t *testing.T) {
 
 func TestQUICReceiveLimiterTimeoutGrantsNextFittingWaiter(t *testing.T) {
 	limiter := new(quicReceiveLimiter)
-	if !limiter.reserve("active", NetClassProposalBodyBulk, def_MaxPacketSize-1, 0) {
+	if !limiter.reserve("active", NetClassBulkGossip, def_MaxPacketSize-1, 0) {
 		t.Fatal("active large reservation rejected")
 	}
 	head := make(chan bool, 1)
@@ -494,12 +702,12 @@ func TestQUICReceiveLimiterTimeoutGrantsNextFittingWaiter(t *testing.T) {
 		t.Fatal("timed-out head waiter left the fitting tail asleep")
 	}
 	limiter.release("tail", NetClassProposalBodyBulk, 1)
-	limiter.release("active", NetClassProposalBodyBulk, def_MaxPacketSize-1)
+	limiter.release("active", NetClassBulkGossip, def_MaxPacketSize-1)
 }
 
 func TestQUICReceiveLimiterConnectionCancelClearsPeer(t *testing.T) {
 	limiter := new(quicReceiveLimiter)
-	if !limiter.reserve("active", NetClassProposalBodyBulk, def_MaxPacketSize, 0) {
+	if !limiter.reserve("active", NetClassBulkGossip, def_MaxPacketSize, 0) {
 		t.Fatal("active large reservation rejected")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -524,7 +732,7 @@ func TestQUICReceiveLimiterConnectionCancelClearsPeer(t *testing.T) {
 	if granted := <-result; granted {
 		t.Fatal("canceled connection retained a large reservation")
 	}
-	limiter.release("active", NetClassProposalBodyBulk, def_MaxPacketSize)
+	limiter.release("active", NetClassBulkGossip, def_MaxPacketSize)
 	if !limiter.reserve("reconnecting-peer", NetClassProposalBodyBulk, 1, 0) {
 		t.Fatal("canceled peer remained blocked after reconnect")
 	}
@@ -587,6 +795,39 @@ func TestQUICClassPacketLimits(t *testing.T) {
 	}
 	if _, ok := quicClassPacketLimit(0xff); ok {
 		t.Fatal("unknown QUIC frame class accepted")
+	}
+}
+
+func TestQUICSendLimiterBoundsProposalSlotsAndBytes(t *testing.T) {
+	limiter := newQUICSendLimiter()
+	reservations := make([]*quicSendReservation, 0, quicProposalPeerStreams)
+	for slot := 0; slot < quicProposalPeerStreams; slot++ {
+		reservation, err := limiter.acquireSlot(context.Background(), NetClassProposalBodyBulk)
+		if err != nil {
+			t.Fatalf("proposal slot %d rejected: %v", slot, err)
+		}
+		if err := reservation.reserveBytes(context.Background(), uint64(quicProposalBodyMaxPacketSize)); err != nil {
+			t.Fatalf("proposal bytes %d rejected: %v", slot, err)
+		}
+		reservations = append(reservations, reservation)
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if reservation, err := limiter.acquireSlot(canceled, NetClassProposalBodyBulk); err == nil {
+		reservation.release()
+		t.Fatal("proposal sender exceeded its bounded slot cap")
+	}
+	reservations[0].release()
+	replacement, err := limiter.acquireSlot(context.Background(), NetClassProposalBodyBulk)
+	if err != nil {
+		t.Fatalf("released proposal slot was not reusable: %v", err)
+	}
+	if err := replacement.reserveBytes(context.Background(), uint64(quicProposalBodyMaxPacketSize)); err != nil {
+		t.Fatalf("released proposal bytes were not reusable: %v", err)
+	}
+	replacement.release()
+	for _, reservation := range reservations[1:] {
+		reservation.release()
 	}
 }
 
@@ -673,6 +914,60 @@ func TestRouterSendRetriesExistingConnectionBeforeDial(t *testing.T) {
 	}
 	if alternate.sendCount != 1 || alternate.closed {
 		t.Fatalf("alternate connection was not used exactly once: closed=%v sends=%d", alternate.closed, alternate.sendCount)
+	}
+}
+
+func TestRouterKeepsConnectionOnStreamLocalSendFailure(t *testing.T) {
+	_, peerPublic := newQUICAuthTestKey(t)
+	const peerAddress = "127.0.0.1:7102"
+	remote := NewServerIdentityWithTransport(peerAddress, PlainQUIC)
+	remote.PublicKey = peerPublic.Serialize()
+	streamFailed := &authenticatedQUICStub{
+		peerAddress: peerAddress,
+		peerKey:     peerPublic.Serialize(),
+		sendErr:     &quicStreamLocalSendError{err: ErrTimeout},
+	}
+	router := &Router{
+		ServerIdentity: NewServerIdentityWithTransport("127.0.0.1:7101", PlainQUIC),
+		connections: map[ServerIdentityID][]Conn{
+			remote.ID: {streamFailed},
+		},
+		sendsMap:           make(map[ServerIdentityID]int),
+		peerAuthConfigured: true,
+		authorizedPeers:    map[string][]byte{peerAddress: peerPublic.Serialize()},
+	}
+	if _, err := router.Send(remote, &quicClassifiedTestMessage{Class: uint32(NetClassHotstuffControl)}, false); !isQUICStreamLocalSendError(err) {
+		t.Fatalf("router lost stream-local failure: %v", err)
+	}
+	if streamFailed.closed || streamFailed.sendCount != 1 {
+		t.Fatalf("stream-local failure retired shared connection: closed=%v sends=%d", streamFailed.closed, streamFailed.sendCount)
+	}
+}
+
+func TestRouterDoesNotRetryPermanentMessageFailure(t *testing.T) {
+	_, peerPublic := newQUICAuthTestKey(t)
+	const peerAddress = "127.0.0.1:7102"
+	remote := NewServerIdentityWithTransport(peerAddress, PlainQUIC)
+	remote.PublicKey = peerPublic.Serialize()
+	failed := &authenticatedQUICStub{
+		peerAddress: peerAddress,
+		peerKey:     peerPublic.Serialize(),
+		sendErr:     NewPermanentSendError(SendErrorMarshal, errors.New("invalid wire message")),
+	}
+	router := &Router{
+		ServerIdentity: NewServerIdentityWithTransport("127.0.0.1:7101", PlainQUIC),
+		connections: map[ServerIdentityID][]Conn{
+			remote.ID: {failed},
+		},
+		sendsMap:           make(map[ServerIdentityID]int),
+		peerAuthConfigured: true,
+		authorizedPeers:    map[string][]byte{peerAddress: peerPublic.Serialize()},
+	}
+	if _, err := router.Send(remote, &quicClassifiedTestMessage{Class: uint32(NetClassHotstuffControl)}, false); !IsPermanentSendError(err) {
+		t.Fatalf("router lost permanent message failure: %v", err)
+	}
+	if failed.closed || failed.sendCount != 1 {
+		t.Fatalf("router retried or retired a healthy connection: closed=%v sends=%d", failed.closed, failed.sendCount)
 	}
 }
 

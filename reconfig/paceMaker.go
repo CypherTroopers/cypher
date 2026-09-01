@@ -74,6 +74,9 @@ func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *Reconfig
 
 // Start for time counting of pacemake
 func (t *paceMakerTimer) start() error {
+	if t.service != nil && t.service.hasDeferredFHSRecovery() {
+		return errFHSRecoveryPending
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.beStop { //first
@@ -229,6 +232,7 @@ func (t *paceMakerTimer) triggerTryPropose() {
 		return
 	}
 	if svc, ok := t.service.(*Service); ok {
+		svc.clearProposalNoWork()
 		svc.triggerTryPropose(curView.TxNumber)
 	}
 }

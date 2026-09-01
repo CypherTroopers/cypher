@@ -31,6 +31,7 @@ func testFairHotstuffConfig() *ChainConfig {
 		ChainID:             bigInt(10101919),
 		FairHotstuff:        true,
 		FairHotstuffSeed:    common.HexToHash("0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627"),
+		CommonRPCSigners:    []common.Address{common.HexToAddress("0x1000000000000000000000000000000000000001")},
 		GenCommittee:        committee,
 		HomesteadBlock:      bigInt(0),
 		EIP150Block:         bigInt(0),
@@ -84,6 +85,29 @@ func TestFairHotstuffConfigRejectsInvalidChainAndCommitteeKeys(t *testing.T) {
 	}
 }
 
+func TestFairHotstuffConfigRequiresCanonicalCommonRPCSigners(t *testing.T) {
+	config := testFairHotstuffConfig()
+	config.CommonRPCSigners = nil
+	if err := config.CheckConfigForkOrder(); err == nil {
+		t.Fatal("empty Fair HotStuff common RPC signer set accepted")
+	}
+	config = testFairHotstuffConfig()
+	config.CommonRPCSigners = []common.Address{{}}
+	if err := config.CheckConfigForkOrder(); err == nil {
+		t.Fatal("zero Fair HotStuff common RPC signer accepted")
+	}
+	config = testFairHotstuffConfig()
+	config.CommonRPCSigners = []common.Address{{2}, {1}}
+	if err := config.CheckConfigForkOrder(); err == nil {
+		t.Fatal("unsorted Fair HotStuff common RPC signer set accepted")
+	}
+	config = testFairHotstuffConfig()
+	config.CommonRPCSigners = []common.Address{{1}, {1}}
+	if err := config.CheckConfigForkOrder(); err == nil {
+		t.Fatal("duplicate Fair Hotstuff common RPC signer accepted")
+	}
+}
+
 func TestFairHotstuffConfigForbidsTransportDowngrade(t *testing.T) {
 	config := testFairHotstuffConfig()
 	if fallback := config.EffectiveRnetFallbackTransport(); fallback != "none" {
@@ -114,6 +138,9 @@ func TestFairHotstuffSeedJSONRoundTrip(t *testing.T) {
 	}
 	if decoded.FairHotstuffSeed != config.FairHotstuffSeed {
 		t.Fatalf("seed round trip = %s, want %s", decoded.FairHotstuffSeed, config.FairHotstuffSeed)
+	}
+	if len(decoded.CommonRPCSigners) != len(config.CommonRPCSigners) || decoded.CommonRPCSigners[0] != config.CommonRPCSigners[0] {
+		t.Fatalf("common RPC signer set did not survive JSON round trip: %#v", decoded.CommonRPCSigners)
 	}
 	if decoded.RnetTransport != config.RnetTransport || decoded.RnetFallbackTransport != config.RnetFallbackTransport {
 		t.Fatalf("transport policy did not survive JSON round trip: %#v", decoded)
@@ -148,6 +175,10 @@ func TestFairHotstuffGenesisCommitmentBindsConsensusConfiguration(t *testing.T) 
 	transportChanged := *base
 	transportChanged.RnetFallbackTransport = "tcp"
 	mutations = append(mutations, &transportChanged)
+	signerChanged := *base
+	signerChanged.CommonRPCSigners = append([]common.Address(nil), base.CommonRPCSigners...)
+	signerChanged.CommonRPCSigners[0] = common.HexToAddress("0x2000000000000000000000000000000000000002")
+	mutations = append(mutations, &signerChanged)
 	for index, mutation := range mutations {
 		got, err := FairHotstuffGenesisCommitment(mutation)
 		if err != nil {

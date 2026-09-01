@@ -17,9 +17,12 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
+	"sync"
+	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
@@ -30,6 +33,13 @@ import (
 // errNoActiveJournal is returned if a transaction is attempted to be inserted
 // into the journal, but no such file is currently open.
 var errNoActiveJournal = errors.New("no active journal")
+var errJournalQueueFull = errors.New("transaction journal queue is full")
+
+const (
+	txJournalBatchSize             = 512
+	txJournalFlushInterval         = 2 * time.Millisecond
+	txJournalMaxQueuedTransactions = 1_048_576
+)
 
 // devNull is a WriteCloser that just discards anything written into it. Its
 // goal is to allow the transaction journal to write into a fake journal when
@@ -45,6 +55,236 @@ func (*devNull) Close() error                      { return nil }
 type txJournal struct {
 	path   string         // Filesystem path to store the transactions at
 	writer io.WriteCloser // Output stream to write new transactions into
+}
+
+type txJournalCommandKind uint8
+
+const (
+	txJournalAppend txJournalCommandKind = iota
+	txJournalRotate
+)
+
+type txJournalCommand struct {
+	kind txJournalCommandKind
+	txs  types.Transactions
+	all  map[common.Address]types.Transactions
+	done chan struct{}
+}
+
+// txJournalWriter owns all live journal I/O. TxPool mutations enqueue pointer
+// batches in a non-blocking command queue while holding pool.mu. Rotations use
+// that same queue, so an append can never be truncated behind its snapshot.
+type txJournalWriter struct {
+	journal *txJournal
+
+	queueMu   sync.Mutex
+	queue     []txJournalCommand
+	queued    int
+	maxQueued int
+	notify    chan struct{}
+	closed    bool
+	wg        sync.WaitGroup
+
+	errMu sync.Mutex
+	err   error
+}
+
+func newTxJournalWriter(journal *txJournal) *txJournalWriter {
+	w := &txJournalWriter{
+		journal:   journal,
+		notify:    make(chan struct{}, 1),
+		maxQueued: txJournalMaxQueuedTransactions,
+	}
+	w.wg.Add(1)
+	go w.loop()
+	return w
+}
+
+func (w *txJournalWriter) enqueue(txs types.Transactions, wait bool) (<-chan struct{}, error) {
+	if w == nil || len(txs) == 0 {
+		return nil, nil
+	}
+	batch := append(types.Transactions(nil), txs...)
+	command := txJournalCommand{kind: txJournalAppend, txs: batch}
+	if wait {
+		command.done = make(chan struct{})
+	}
+	if err := w.send(command); err != nil {
+		return nil, err
+	}
+	return command.done, nil
+}
+
+func (w *txJournalWriter) rotate(all map[common.Address]types.Transactions) error {
+	if w == nil {
+		return nil
+	}
+	return w.send(txJournalCommand{kind: txJournalRotate, all: all})
+}
+
+func (w *txJournalWriter) send(command txJournalCommand) error {
+	w.queueMu.Lock()
+	defer w.queueMu.Unlock()
+	if w.closed {
+		return errNoActiveJournal
+	}
+	commandTransactions := len(command.txs)
+	if command.kind == txJournalRotate {
+		for _, txs := range command.all {
+			commandTransactions += len(txs)
+		}
+	}
+	// Keep journal I/O off pool.mu without allowing a disk stall to turn the
+	// pointer queue into an unbounded memory sink. The outbox is the durable
+	// common-ingress boundary; this queue remains a bounded secondary copy.
+	maxQueued := w.maxQueued
+	if maxQueued <= 0 {
+		maxQueued = txJournalMaxQueuedTransactions
+	}
+	if commandTransactions > maxQueued-w.queued {
+		return errJournalQueueFull
+	}
+	const maxCoalescedJournalTransactions = 16 * 1024
+	if command.kind == txJournalAppend && command.done == nil && len(w.queue) > 0 {
+		last := &w.queue[len(w.queue)-1]
+		if last.kind == txJournalAppend && last.done == nil && len(last.txs)+len(command.txs) <= maxCoalescedJournalTransactions {
+			last.txs = append(last.txs, command.txs...)
+			w.queued += commandTransactions
+			w.signal()
+			return nil
+		}
+	}
+	w.queue = append(w.queue, command)
+	w.queued += commandTransactions
+	w.signal()
+	return nil
+}
+
+func (w *txJournalWriter) close() error {
+	if w == nil {
+		return nil
+	}
+	w.queueMu.Lock()
+	if !w.closed {
+		w.closed = true
+	}
+	w.queueMu.Unlock()
+	w.signal()
+	w.wg.Wait()
+	w.errMu.Lock()
+	defer w.errMu.Unlock()
+	return w.err
+}
+
+func (w *txJournalWriter) recordError(err error) {
+	if err == nil {
+		return
+	}
+	w.errMu.Lock()
+	if w.err == nil {
+		w.err = err
+	}
+	w.errMu.Unlock()
+}
+
+func (w *txJournalWriter) loop() {
+	defer w.wg.Done()
+	ticker := time.NewTicker(txJournalFlushInterval)
+	defer ticker.Stop()
+
+	pending := make(types.Transactions, 0, txJournalBatchSize)
+	flush := func() error {
+		if len(pending) == 0 {
+			return nil
+		}
+		err := w.journal.insertBatch(pending)
+		if err != nil {
+			w.recordError(err)
+			log.Warn("Failed to journal local transaction batch", "transactions", len(pending), "err", err)
+		}
+		for i := range pending {
+			pending[i] = nil
+		}
+		pending = pending[:0]
+		return err
+	}
+	appendAsync := func(txs types.Transactions) {
+		for len(txs) > 0 {
+			available := txJournalBatchSize - len(pending)
+			if available > len(txs) {
+				available = len(txs)
+			}
+			pending = append(pending, txs[:available]...)
+			txs = txs[available:]
+			if len(pending) == txJournalBatchSize {
+				flush()
+			}
+		}
+	}
+	writeCommand := func(command txJournalCommand) {
+		switch command.kind {
+		case txJournalAppend:
+			if command.done == nil {
+				appendAsync(command.txs)
+				return
+			}
+			// Preserve AddLocal/AddLocals' historical journal-before-return
+			// behavior. Async/outbox-backed additions still group for 2ms.
+			flush()
+			for len(command.txs) > 0 {
+				count := txJournalBatchSize
+				if count > len(command.txs) {
+					count = len(command.txs)
+				}
+				if err := w.journal.insertBatch(command.txs[:count]); err != nil {
+					w.recordError(err)
+					log.Warn("Failed to journal local transaction batch", "transactions", count, "err", err)
+				}
+				command.txs = command.txs[count:]
+			}
+			close(command.done)
+		case txJournalRotate:
+			flush()
+			if err := w.journal.rotate(command.all); err != nil {
+				w.recordError(err)
+				log.Warn("Failed to rotate local tx journal", "err", err)
+			}
+		}
+	}
+	drain := func() (closed bool) {
+		w.queueMu.Lock()
+		commands := w.queue
+		w.queue = nil
+		w.queued = 0
+		closed = w.closed
+		w.queueMu.Unlock()
+		for _, command := range commands {
+			writeCommand(command)
+		}
+		return closed
+	}
+	for {
+		select {
+		case <-w.notify:
+			if drain() {
+				flush()
+				if err := w.journal.close(); err != nil {
+					w.recordError(err)
+				}
+				return
+			}
+		case <-ticker.C:
+			drain()
+			flush()
+		}
+	}
+}
+
+func (w *txJournalWriter) signal() {
+	select {
+	case w.notify <- struct{}{}:
+	default:
+	}
 }
 
 // newTxJournal creates a new transaction journal to
@@ -118,11 +358,34 @@ func (journal *txJournal) load(add func([]*types.Transaction) []error) error {
 
 // insert adds the specified transaction to the local disk journal.
 func (journal *txJournal) insert(tx *types.Transaction) error {
+	return journal.insertBatch(types.Transactions{tx})
+}
+
+// insertBatch encodes a transaction batch in memory and writes it to the live
+// append-only journal with a single Write call.
+func (journal *txJournal) insertBatch(txs types.Transactions) error {
 	if journal.writer == nil {
 		return errNoActiveJournal
 	}
-	if err := rlp.Encode(journal.writer, tx); err != nil {
-		return err
+	var encoded bytes.Buffer
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		if err := rlp.Encode(&encoded, tx); err != nil {
+			return err
+		}
+	}
+	payload := encoded.Bytes()
+	for len(payload) > 0 {
+		n, err := journal.writer.Write(payload)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		payload = payload[n:]
 	}
 	return nil
 }

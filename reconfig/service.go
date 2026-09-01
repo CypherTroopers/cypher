@@ -18,8 +18,10 @@ package reconfig
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -41,8 +43,6 @@ import (
 )
 
 const failedProposalRetry = 20 * time.Millisecond
-const hotstuffIdleSleep = 1 * time.Millisecond
-const tryProposeDebounce = time.Second
 const fastBlockInterval = 70 * time.Millisecond
 const slowBlockInterval = 1 * time.Second
 const slowFallbackMinPending = 1
@@ -66,6 +66,13 @@ const slowPressureMinPending = 512
 const slowEmergencyForcePending = 8192
 
 const startNewViewDedupWindow = 2 * time.Second
+
+// A leader keeps its durable QC dissemination outbox until a higher QC makes
+// it obsolete. Suppress only the immediate same-process replay caused by the
+// leader consuming its own just-sent QC. The marker is intentionally bounded
+// and memory-only: ordinary delivery recovery resumes after the window, while
+// a restart can replay the durable outbox immediately.
+const fhsQCBroadcastReplaySuppressionWindow = 5 * time.Second
 const fixedModeKeyblockWakeupInterval = 2 * time.Second
 const fixedModeKeyblockWatchdogInterval = 250 * time.Millisecond
 const fixedModeKeyblockViewRoundDuration = 2 * params.CollectVoteInfoTimeout
@@ -79,14 +86,39 @@ const proposalBodyRequestInterval = 250 * time.Millisecond
 const proposalBodyPollInterval = 5 * time.Millisecond
 const proposalBodyControlMaxBytes = 512 * 1024
 const proposalBodySidecarMaxBytes = int(params.MaxBlockSize)
+const proposalRepairMaxHashes = 1024
+const proposalRepairResponseReserve = 64 * 1024
+
+// Leave a bounded response/assembly window after the last distinct repair
+// batch is scheduled; the batch schedule itself is accounted for separately.
+const proposalRepairNetworkMargin = 2 * time.Second
 const proposalBodyCacheMaxEntries = 64
 const proposalBodyCacheMaxBytes = 8 * proposalBodySidecarMaxBytes
-const proposalBodyAuthDomain = "cypher-fhs-proposal-sidecar-v1"
+const proposalBodyAuthDomain = "cypher-fhs-proposal-data"
 const proposalBodyKeyblockLivenessTimeout = time.Second
 
+// Two workers are deliberate: the active view can start while one superseded
+// execution unwinds from the non-interruptible EVM. The latest-wins queue below
+// retains only the newest waiting view, so repeated view changes cannot drop
+// the current Prepare or create unbounded validation CPU/memory pressure.
+const proposalValidationWorkers = 2
+const proposalValidationQueueCapacity = 1
+
+// Proposal construction uses a separate scheduler from validator execution.
+// A superseded EVM run is not immediately interruptible, so two workers let the
+// newest view start while one stale build unwinds. Only one latest waiting job
+// is retained and publication is independently serialized on the HotStuff loop.
+const proposalBuildWorkers = 2
+const proposalBuildQueueCapacity = 1
+const proposalManifestDispatchCapacity = 8
+const proposalManifestDispatchWorkers = 4
+const proposalFailedTxCleanupCapacity = 8
+const fhsDeferredRecoveryRetryDelay = time.Second
+
 const (
-	proposalBodyMsgData uint32 = iota + 1
-	proposalBodyMsgRequest
+	proposalBodyMsgManifest uint32 = iota + 1
+	proposalBodyMsgRepairRequest
+	proposalBodyMsgRepairData
 )
 
 type committeeInfo struct {
@@ -108,17 +140,18 @@ type bestCandidateInfo struct {
 // The route is intentionally expressed in rnet committee coordinates. The eth
 // TxQUIC layer owns the rnet->TxQUIC port mapping and route caching.
 type FHSRoute struct {
-	Enabled       bool          `json:"enabled"`
-	CurrentView   uint64        `json:"currentView"`
-	ProposalView  uint64        `json:"proposalView"`
-	TxNumber      uint64        `json:"txNumber"`
-	TxHash        common.Hash   `json:"txHash"`
-	KeyNumber     uint64        `json:"keyNumber"`
-	KeyHash       common.Hash   `json:"keyHash"`
-	CommitteeHash common.Hash   `json:"committeeHash"`
-	LeaderIndex   uint          `json:"leaderIndex"`
-	LeaderID      string        `json:"leaderId"`
-	Leader        *common.Cnode `json:"leader"`
+	Enabled       bool            `json:"enabled"`
+	CurrentView   uint64          `json:"currentView"`
+	ProposalView  uint64          `json:"proposalView"`
+	TxNumber      uint64          `json:"txNumber"`
+	TxHash        common.Hash     `json:"txHash"`
+	KeyNumber     uint64          `json:"keyNumber"`
+	KeyHash       common.Hash     `json:"keyHash"`
+	CommitteeHash common.Hash     `json:"committeeHash"`
+	LeaderIndex   uint            `json:"leaderIndex"`
+	LeaderID      string          `json:"leaderId"`
+	Leader        *common.Cnode   `json:"leader"`
+	Committee     []*common.Cnode `json:"committee"`
 }
 
 type proposalBodyMsg struct {
@@ -126,17 +159,46 @@ type proposalBodyMsg struct {
 
 	ProposalID common.Hash
 	BodyHash   common.Hash
+	BodySize   uint64
 	Number     uint64
 	ViewNumber uint64
 	ViewID     common.Hash
 	LeaderID   string
 	From       string
+	// ProposalKeyHash identifies the committee generation committed by the
+	// proposal itself; it can differ from SenderKeyHash while a lagging node
+	// requests data across a key-block transition.
+	ProposalKeyHash common.Hash
+	// SenderKeyHash binds AuthSig to the exact committee generation that owns
+	// From. Historical HighQC repair must not reinterpret a valid old/new member
+	// key through whichever committee happens to be current locally.
+	SenderKeyHash common.Hash
 
-	EncodedBlock      []byte
+	EncodedBlock    []byte
+	Manifest        []byte
+	MissingTxHashes []common.Hash
+	// TransactionBytes contains one canonical Transaction.MarshalBinary value
+	// per MissingTxHashes entry. Keeping opaque bytes on the protobuf boundary
+	// avoids reflecting over Transaction's intentionally private fields.
+	TransactionBytes  [][]byte
 	Extra             []byte
 	ParentQC          []byte
 	AuthSig           []byte
 	CreatedAtUnixNano int64
+}
+
+// proposalDataManifest is the compact data-availability description sent for
+// a proposal. Transaction bytes are deliberately absent: TxQUIC/P2P has
+// already placed them in committee TxPools, and this manifest fixes their
+// exact block order. A validator reconstructs the ordinary block encoding and
+// still verifies the signed BodyHash and BodySize before executing it.
+type proposalDataManifest struct {
+	Header                   *types.Header
+	TransactionHashes        []common.Hash
+	Uncles                   []*types.Header
+	CommonTxAdmissionBatches []*types.CommonTxAdmissionBatch
+	CommonTxAdmissionRefs    []types.CommonTxAdmissionRef
+	CommonTxRewards          []*types.CommonTxReward
 }
 
 type fhsCertifiedProposal struct {
@@ -164,6 +226,134 @@ type hotstuffMsg struct {
 	hMsg  *hotstuff.HotstuffMessage
 }
 
+type proposalValidationOutput struct {
+	ref                  *types.HotstuffProposalRef
+	verified             *core.VerifiedProposal
+	extra                []byte
+	parentQC             *hotstuff.SignedState
+	serviceGeneration    uint64
+	validationGeneration uint64
+}
+
+type fhsValidationPublicationOwner int32
+
+const (
+	fhsValidationPublicationNone fhsValidationPublicationOwner = iota
+	fhsValidationPublicationProposal
+	fhsValidationPublicationHighQC
+	fhsValidationPublicationSyncTransition
+)
+
+type proposalValidationJob struct {
+	request              *hotstuff.FHSProposalValidationRequest
+	highQCRequest        *hotstuff.FHSHighQCValidationRequest
+	parentVerified       *core.VerifiedProposal
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	serviceGeneration    uint64
+	validationGeneration uint64
+}
+
+type proposalValidationControl struct {
+	key        hotstuff.FHSProposalValidationKey
+	keyHash    common.Hash
+	generation uint64
+	cancel     context.CancelFunc
+}
+
+// proposalWorkStamp identifies every cheap input that can turn a no-work
+// proposal result into useful work. A Service retains at most one stamp. The
+// Pool, candidate and speculative-exclusion revisions make the steady-state
+// comparison O(1); parent, key, view and finality fields prevent the marker
+// from surviving consensus progress. The nearest exclusion expiry provides a
+// single time-driven wake without rescanning the exclusion map on every tick.
+type proposalWorkStamp struct {
+	fairHotstuff      bool
+	poolRevision      uint64
+	candidateRevision uint64
+	proposedRevision  uint64
+	proposedExpiry    time.Time
+	parentNumber      uint64
+	parentHash        common.Hash
+	keyNumber         uint64
+	keyHash           common.Hash
+	view              bftview.View
+	proposalView      uint64
+	proposalViewID    common.Hash
+	proposalLeaderID  string
+	finality          bool
+	keyblockReady     bool
+	keyblockPending   bool
+}
+
+type proposalBuildOutput struct {
+	key                    hotstuff.FHSProposalBuildKey
+	proposalRef            []byte
+	extra                  []byte
+	body                   *proposalBodyMsg
+	manifest               *proposalBodyMsg
+	destinations           []string
+	txCandidate            *txProposalCandidate
+	keyCandidate           *keyProposalCandidate
+	keyBlock               *types.KeyBlock
+	committee              *bftview.Committee
+	blockType              uint8
+	fixedMode              bool
+	keyProposalAttempt     bool
+	serviceGeneration      uint64
+	constructionGeneration uint64
+	publicationLocksHeld   bool
+	workStamp              proposalWorkStamp
+	workStampValid         bool
+}
+
+type stagedHotstuffProposal struct {
+	proposalRef  []byte
+	body         *proposalBodyMsg
+	manifest     *proposalBodyMsg
+	destinations []string
+}
+
+type proposalBuildJob struct {
+	request                *hotstuff.FHSProposalBuildRequest
+	ctx                    context.Context
+	cancel                 context.CancelFunc
+	serviceGeneration      uint64
+	constructionGeneration uint64
+}
+
+type proposalBuildControl struct {
+	key        hotstuff.FHSProposalBuildKey
+	generation uint64
+	cancel     context.CancelFunc
+}
+
+type proposalManifestDispatch struct {
+	body              *proposalBodyMsg
+	destinations      []string
+	serviceGeneration uint64
+}
+
+type proposalFailedTxCleanup struct {
+	txs               types.Transactions
+	serviceGeneration uint64
+}
+
+type proposalBodyAuthority struct {
+	key     hotstuff.FHSProposalValidationKey
+	keyHash common.Hash
+}
+
+type highQCValidationControl struct {
+	key         hotstuff.FHSHighQCValidationKey
+	qcNumber    uint64
+	generation  uint64
+	resultReady bool
+	applied     bool
+	cancel      context.CancelFunc
+	authorized  map[common.Hash]proposalBodyAuthority
+}
+
 type networkMsg struct {
 	MsgFlag uint32
 	Hmsg    *hotstuff.HotstuffMessage
@@ -184,10 +374,10 @@ func (msg *networkMsg) NetworkClass() uint8 {
 	}
 	if msg.Pmsg != nil {
 		switch msg.Pmsg.Type {
-		case proposalBodyMsgRequest:
+		case proposalBodyMsgRepairRequest:
 			return network.NetClassProposalBodyControl
-		case proposalBodyMsgData:
-			if len(msg.Pmsg.EncodedBlock) <= proposalBodyControlMaxBytes {
+		case proposalBodyMsgManifest, proposalBodyMsgRepairData:
+			if proposalBodyMsgPayloadBytes(msg.Pmsg) <= proposalBodyControlMaxBytes {
 				return network.NetClassProposalBodyControl
 			}
 			return network.NetClassProposalBodyBulk
@@ -217,13 +407,15 @@ func (msg *networkMsg) GetCommittee() *bftview.Committee {
 
 // Service work for protcol
 type Service struct {
-	netService  *netService
-	bc          *core.BlockChain
-	txService   *txService
-	kbc         *core.KeyBlockChain
-	keyService  *keyService
-	txPool      *core.TxPool
-	chainConfig *params.ChainConfig
+	netService               *netService
+	bc                       *core.BlockChain
+	txService                *txService
+	kbc                      *core.KeyBlockChain
+	keyService               *keyService
+	txPool                   *core.TxPool
+	removeFailedProposalTxs  func(types.Transactions)
+	resolveTxQUICTransaction func(common.Hash) (*types.Transaction, error)
+	chainConfig              *params.ChainConfig
 
 	protocolMng *hotstuff.HotstuffProtocolManager
 
@@ -234,34 +426,40 @@ type Service struct {
 	lastReqCmNumber uint64
 	muCurrentView   sync.Mutex
 
-	replicaView               *bftview.View
-	runningState              int32
-	lastProposeTime           time.Time
-	lastSlowBlockTime         time.Time
-	lastFastBlockTime         time.Time
-	serviceStartTime          time.Time
-	lastCadenceWakeup         time.Time
-	lastFixedKeyNewViewWakeup time.Time
-	fixedKeyViewStartedAt     time.Time
-	fixedKeyViewTxNumber      uint64
-	fixedKeyViewKeyNumber     uint64
-	fixedKeyViewTxHash        common.Hash
-	fixedKeyViewKeyHash       common.Hash
-	fixedKeyViewLeader        uint
-	fixedKeyFallbackRound     uint
-	lastCandidateRewardCheck  time.Time
-	lastCandidateRewardReady  bool
-	tryProposeQueuedAt        int64
-	muStartNewView            sync.Mutex
-	lastStartNewViewN         uint64
-	lastStartNewViewHash      common.Hash
-	lastStartNewViewAt        time.Time
-	pacetMakerTimer           *paceMakerTimer
-	muHotstuffProgress        sync.Mutex
-	hotstuffProgressAt        time.Time
-	lastProgressN             uint64
-	lastProgressViewID        common.Hash
-	lastProgressRank          uint8
+	replicaView                  *bftview.View
+	runningState                 int32
+	muLifecycle                  sync.Mutex
+	lifecycleGeneration          uint64
+	proposalValidationGeneration uint64
+	muProposalCadence            sync.RWMutex
+	lastProposeTime              time.Time
+	lastSlowBlockTime            time.Time
+	lastFastBlockTime            time.Time
+	serviceStartTime             time.Time
+	lastCadenceWakeup            time.Time
+	lastFixedKeyNewViewWakeup    time.Time
+	fixedKeyViewStartedAt        time.Time
+	fixedKeyViewTxNumber         uint64
+	fixedKeyViewKeyNumber        uint64
+	fixedKeyViewTxHash           common.Hash
+	fixedKeyViewKeyHash          common.Hash
+	fixedKeyViewLeader           uint
+	fixedKeyFallbackRound        uint
+	lastCandidateRewardCheck     time.Time
+	lastCandidateRewardReady     bool
+	tryProposeQueued             int32
+	muProposalNoWork             sync.Mutex
+	proposalNoWork               *proposalWorkStamp
+	muStartNewView               sync.Mutex
+	lastStartNewViewN            uint64
+	lastStartNewViewHash         common.Hash
+	lastStartNewViewAt           time.Time
+	pacetMakerTimer              *paceMakerTimer
+	muHotstuffProgress           sync.Mutex
+	hotstuffProgressAt           time.Time
+	lastProgressN                uint64
+	lastProgressViewID           common.Hash
+	lastProgressRank             uint8
 
 	muProposalBody       sync.RWMutex
 	proposalBodies       map[common.Hash]*proposalBodyMsg
@@ -270,14 +468,63 @@ type Service struct {
 	fhsCertifiedByID     map[common.Hash]*fhsCertifiedProposal
 	fhsHighest           *fhsCertifiedProposal
 	fhsStore             *fhsSafetyStore
-	consensusSecret      *bls.SecretKey
-	consensusPublic      *bls.PublicKey
+	fhsContentWriter     *fhsContentWriter
+	// These QC broadcast markers are deliberately memory-only. The active
+	// marker brackets every physical send. The completed marker suppresses only
+	// a matching durable-outbox replay for a short period after that send. A
+	// restart loses both markers but retains the durable outbox, so crash
+	// recovery still rebroadcasts immediately.
+	muFHSQCBroadcast               sync.Mutex
+	fhsActiveQCBroadcast           *hotstuff.SignedState
+	fhsActiveQCBroadcastGeneration uint64
+	fhsCompletedQCBroadcast        *hotstuff.SignedState
+	fhsCompletedQCBroadcastExpiry  time.Time
+	muConsensusIdentity            sync.RWMutex
+	consensusSecret                *bls.SecretKey
+	consensusPublic                *bls.PublicKey
+	proposalBodySecret             *bls.SecretKey
+	proposalBodySignMu             sync.Mutex
+	txQUICReceiptSecret            *bls.SecretKey
+	txQUICReceiptPublic            *bls.PublicKey
+	txQUICReceiptSignMu            sync.Mutex
 
-	hotstuffMsgQ *hotstuffMessageQueue
-	feed1        event.Feed
-	msgCh1       chan committeeMsg
-	msgSub1      event.Subscription // Subscription for msg event
+	hotstuffMsgQ              *hotstuffMessageQueue
+	proposalValidationJobs    chan *proposalValidationJob
+	proposalValidationResults chan *hotstuff.FHSProposalValidationResult
+	highQCValidationResults   chan *hotstuff.FHSHighQCValidationResult
+	fhsRecoveryWake           chan struct{}
+	fhsRecoveryRetryQueued    int32
+	muProposalValidation      sync.Mutex
+	activeProposalValidations map[common.Hash]*proposalValidationControl
+	activeHighQCValidation    *highQCValidationControl
+	proposalValidationSeq     uint64
+	// muFHSValidationPublication is transferred from a successful application
+	// Apply callback to its manager Finish callback. It linearizes proposal
+	// vote publication and HighQC installation against proof-aware key sync.
+	// Lock order: muFHSValidationPublication -> muProposalBuild ->
+	// muCurrentView -> txService.mu.
+	muFHSValidationPublication      sync.Mutex
+	fhsValidationPublicationOwner   int32
+	activeProposalValidationPublish *hotstuff.FHSProposalValidationResult
+	activeHighQCValidationPublish   *hotstuff.FHSHighQCValidationResult
+	proposalBuildJobs               chan *proposalBuildJob
+	proposalBuildResults            chan *hotstuff.FHSProposalBuildResult
+	muProposalBuild                 sync.Mutex
+	activeProposalBuild             *proposalBuildControl
+	fhsEpochTransition              int32
+	proposalBuildSeq                uint64
+	proposalManifestSlots           chan struct{}
+	proposalManifestJobs            chan *proposalManifestDispatch
+	proposalFailedTxSlots           chan struct{}
+	proposalFailedTxJobs            chan *proposalFailedTxCleanup
+	feed1                           event.Feed
+	msgCh1                          chan committeeMsg
+	msgSub1                         event.Subscription // Subscription for msg event
 }
+
+var _ hotstuff.FHSProposalValidationApplication = (*Service)(nil)
+var _ hotstuff.FHSHighQCValidationApplication = (*Service)(nil)
+var _ hotstuff.FHSProposalBuildApplication = (*Service)(nil)
 
 func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *ReconfigBackend) *Service {
 	s := new(Service)
@@ -289,6 +536,10 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.bc = backend.BlockChain()
 	s.kbc = backend.KeyBlockChain()
 	s.txPool = backend.TxPool()
+	if s.txPool != nil {
+		s.removeFailedProposalTxs = s.txPool.RemoveBatch
+	}
+	s.resolveTxQUICTransaction = backend.resolveTxQUICTransaction
 	s.chainConfig = chainConfig
 	var chainID uint64
 	if chainConfig != nil && chainConfig.ChainID != nil {
@@ -299,6 +550,7 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 		genesisHash = s.bc.Genesis().Hash()
 	}
 	s.fhsStore = newFHSSafetyStore(backend.ChainDb(), chainID, genesisHash)
+	s.fhsContentWriter = newFHSContentWriter(s.persistFHSProposalData)
 
 	s.lastCmInfoMap = make(map[common.Hash]*cachedCommitteeInfo)
 	s.proposalBodies = make(map[common.Hash]*proposalBodyMsg)
@@ -309,6 +561,17 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.msgCh1 = make(chan committeeMsg, 10)
 	s.msgSub1 = s.feed1.Subscribe(s.msgCh1)
 	s.hotstuffMsgQ = newHotstuffMessageQueue()
+	s.proposalValidationJobs = make(chan *proposalValidationJob, proposalValidationQueueCapacity)
+	s.proposalValidationResults = make(chan *hotstuff.FHSProposalValidationResult, proposalValidationWorkers+1)
+	s.highQCValidationResults = make(chan *hotstuff.FHSHighQCValidationResult, proposalValidationWorkers+1)
+	s.fhsRecoveryWake = make(chan struct{}, 1)
+	s.activeProposalValidations = make(map[common.Hash]*proposalValidationControl)
+	s.proposalBuildJobs = make(chan *proposalBuildJob, proposalBuildQueueCapacity)
+	s.proposalBuildResults = make(chan *hotstuff.FHSProposalBuildResult, proposalBuildWorkers+1)
+	s.proposalManifestSlots = make(chan struct{}, proposalManifestDispatchCapacity)
+	s.proposalManifestJobs = make(chan *proposalManifestDispatch, proposalManifestDispatchCapacity)
+	s.proposalFailedTxSlots = make(chan struct{}, proposalFailedTxCleanupCapacity)
+	s.proposalFailedTxJobs = make(chan *proposalFailedTxCleanup, proposalFailedTxCleanupCapacity)
 	s.hotstuffProgressAt = time.Now()
 
 	s.protocolMng = hotstuff.NewHotstuffProtocolManager(s, nil, nil)
@@ -317,6 +580,16 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	bftview.SetCommitteeConfig(backend.ChainDb(), backend.KeyBlockChain(), s)
 
 	go s.handleHotStuffMsg()
+	for worker := 0; worker < proposalValidationWorkers; worker++ {
+		go s.proposalValidationWorker()
+	}
+	for worker := 0; worker < proposalBuildWorkers; worker++ {
+		go s.proposalBuildWorker()
+	}
+	for worker := 0; worker < proposalManifestDispatchWorkers; worker++ {
+		go s.proposalManifestDispatchWorker()
+	}
+	go s.proposalFailedTxCleanupWorker()
 	go s.handleCommitteeMsg()
 	go s.keyblockLivenessLoop()
 	return s
@@ -349,6 +622,7 @@ func (s *Service) OnNewView(data []byte, extraes [][]byte) error { //buf is snap
 		bestCandidates = append(bestCandidates, cand)
 	}
 	s.keyService.setBestCandidate(bestCandidates)
+	s.clearProposalNoWork()
 	return nil
 }
 
@@ -400,6 +674,163 @@ func (s *Service) loadViewCommittee(view *bftview.View, needIP bool) (*bftview.C
 	return committee, nil
 }
 
+// resolveExactFHSCommittee resolves a committee only from an exact key-block
+// commitment. The normal path uses the key chain. During an epoch handoff a
+// lagging replica may have installed the certified key carrier while the QC
+// for its direct child was dropped by transport backpressure. In that gap the
+// first new-epoch manifest carries the missing child QC. Once that old-epoch
+// QC is verified against the locally certified carrier, it is a complete
+// two-chain activation proof for authenticating the new committee.
+//
+// The generic path below accepts either an installed child certificate or an
+// activation proof retained in an already authenticated proposal manifest.
+// The initial manifest is handled by resolveExactFHSCommitteeWithActivation.
+// Merely receiving/validating a carrier, or finding an arbitrary committee DB
+// entry, remains insufficient.
+func (s *Service) resolveExactFHSCommittee(keyHash common.Hash, needIP bool) (*types.KeyBlock, *bftview.Committee, bool, error) {
+	return s.resolveExactFHSCommitteeWithActivation(keyHash, needIP, nil)
+}
+
+func (s *Service) resolveExactFHSCommitteeWithActivation(keyHash common.Hash, needIP bool, activationQC []byte) (*types.KeyBlock, *bftview.Committee, bool, error) {
+	if s == nil || s.kbc == nil || keyHash == (common.Hash{}) {
+		return nil, nil, false, fmt.Errorf("missing FHS committee generation")
+	}
+	if keyBlock := s.kbc.GetBlockByHash(keyHash); keyBlock != nil {
+		canonical := s.kbc.GetBlockByNumber(keyBlock.NumberU64())
+		if canonical != nil && canonical.Hash() == keyHash {
+			committee := bftview.LoadMember(keyBlock.NumberU64(), keyHash, needIP)
+			if committee == nil || len(committee.List) == 0 {
+				return nil, nil, false, fmt.Errorf("committee unavailable for key block %s", keyHash)
+			}
+			if committee.RlpHash() != keyBlock.CommitteeHash() {
+				return nil, nil, false, fmt.Errorf("committee commitment mismatch for key block %s", keyHash)
+			}
+			return keyBlock, committee, false, nil
+		}
+	}
+
+	keyBlock, err := s.certifiedUncommittedFHSKeyBlock(keyHash, activationQC)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	committee := bftview.LoadMember(keyBlock.NumberU64(), keyHash, needIP)
+	if committee == nil || len(committee.List) == 0 {
+		return nil, nil, false, fmt.Errorf("certified uncommitted committee unavailable for key block %s", keyHash)
+	}
+	if committee.RlpHash() != keyBlock.CommitteeHash() {
+		return nil, nil, false, fmt.Errorf("certified uncommitted committee commitment mismatch for key block %s", keyHash)
+	}
+	return keyBlock, committee, true, nil
+}
+
+type certifiedFHSKeyCarrier struct {
+	keyBlock *types.KeyBlock
+	ref      *types.HotstuffProposalRef
+	qc       *hotstuff.SignedState
+}
+
+func (s *Service) certifiedUncommittedFHSKeyBlock(keyHash common.Hash, encodedActivationQC []byte) (*types.KeyBlock, error) {
+	if s == nil || keyHash == (common.Hash{}) {
+		return nil, fmt.Errorf("invalid certified FHS key generation")
+	}
+	s.muProposalBody.RLock()
+	var (
+		carrier          *certifiedFHSKeyCarrier
+		activationProofs [][]byte
+	)
+	for _, record := range s.fhsCertifiedByHash {
+		if record == nil || record.verified == nil || record.verified.Block == nil || record.verified.Block.BlockType() != types.Key_Block {
+			continue
+		}
+		candidate := types.DecodeToKeyBlock(record.verified.Block.KeyInfo())
+		if candidate == nil || candidate.Hash() != keyHash {
+			continue
+		}
+		artifact := &fhsHighQCValidationItem{ref: record.ref, qc: record.qc, verified: record.verified}
+		if err := validateStagedFHSCertificateArtifact(artifact); err != nil {
+			s.muProposalBody.RUnlock()
+			return nil, fmt.Errorf("invalid certified key carrier for %s: %w", keyHash, err)
+		}
+		if record.verified.Block.KeyHash() != candidate.ParentHash() ||
+			record.verified.Block.NumberU64() == 0 || candidate.T_Number() != record.verified.Block.NumberU64()-1 {
+			s.muProposalBody.RUnlock()
+			return nil, fmt.Errorf("certified key carrier commitment mismatch for %s", keyHash)
+		}
+		refCopy := *record.ref
+		carrier = &certifiedFHSKeyCarrier{
+			keyBlock: candidate,
+			ref:      &refCopy,
+			qc:       hotstuff.CloneSignedState(record.qc),
+		}
+		break
+	}
+	if carrier == nil {
+		s.muProposalBody.RUnlock()
+		return nil, fmt.Errorf("committee %s is unavailable from the key chain and certified pipeline", keyHash)
+	}
+	if len(encodedActivationQC) > 0 {
+		activationProofs = append(activationProofs, append([]byte(nil), encodedActivationQC...))
+	}
+	for _, child := range s.fhsCertifiedByHash {
+		if child == nil || child.ref == nil || child.qc == nil || child.ref.ParentHash != carrier.ref.BlockHash {
+			continue
+		}
+		encoded, err := hotstuff.EncodeSignedState(child.qc)
+		if err == nil {
+			activationProofs = append(activationProofs, encoded)
+		}
+	}
+	// Only authenticated manifests reach proposalBodies. Retaining the proof
+	// there bridges the manifest -> Prepare ordering without publishing the
+	// child certificate or its unverified application state.
+	if len(encodedActivationQC) == 0 {
+		for _, body := range s.proposalBodies {
+			if body != nil && body.ProposalKeyHash == keyHash && len(body.ParentQC) > 0 {
+				activationProofs = append(activationProofs, append([]byte(nil), body.ParentQC...))
+			}
+		}
+	}
+	s.muProposalBody.RUnlock()
+
+	verifiedCarrierRef, err := s.verifyFHSQCCryptographic(carrier.qc)
+	if err != nil {
+		return nil, fmt.Errorf("verify certified key carrier QC for %s: %w", keyHash, err)
+	}
+	if verifiedCarrierRef == nil || verifiedCarrierRef.ProposalID() != carrier.ref.ProposalID() {
+		return nil, fmt.Errorf("certified key carrier QC context mismatch for %s", keyHash)
+	}
+	for _, encoded := range activationProofs {
+		activationQC, err := hotstuff.DecodeSignedState(encoded)
+		if err != nil || activationQC == nil {
+			continue
+		}
+		if _, err := s.verifyCertifiedFHSKeyActivation(carrier, activationQC); err == nil {
+			return carrier.keyBlock, nil
+		}
+	}
+	return nil, fmt.Errorf("certified key block %s has no verified direct-child activation QC", keyHash)
+}
+
+func (s *Service) verifyCertifiedFHSKeyActivation(carrier *certifiedFHSKeyCarrier, activationQC *hotstuff.SignedState) (*types.HotstuffProposalRef, error) {
+	if carrier == nil || carrier.keyBlock == nil || carrier.ref == nil || carrier.qc == nil || activationQC == nil {
+		return nil, fmt.Errorf("incomplete certified key activation proof")
+	}
+	activationRef, err := s.verifyFHSQCCryptographic(activationQC)
+	if err != nil {
+		return nil, fmt.Errorf("verify certified key activation QC: %w", err)
+	}
+	carrierQCID, err := hotstuff.SignedStateID(carrier.qc)
+	if err != nil {
+		return nil, fmt.Errorf("derive certified key carrier QC id: %w", err)
+	}
+	if activationRef.ParentHash != carrier.ref.BlockHash || activationRef.Number != carrier.ref.Number+1 ||
+		activationRef.ViewNumber <= carrier.ref.ViewNumber || activationRef.KeyHash != carrier.keyBlock.ParentHash() ||
+		activationRef.ParentQCID != carrierQCID.Hash() {
+		return nil, fmt.Errorf("certified key activation QC is not the carrier's direct old-epoch child")
+	}
+	return activationRef, nil
+}
+
 // CurrentState call by hotstuff
 func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 	curView := s.GetCurrentView()
@@ -430,6 +861,18 @@ func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
 	return curView.EncodeConsensusToBytes(), leaderID, number
 }
 
+// FHSProposalReadinessSnapshot returns only immutable/copy-on-read consensus
+// identity for the local retry gate. Unlike CurrentState it never loads a
+// committee, logs, requests committee data, or performs network work.
+func (s *Service) FHSProposalReadinessSnapshot() ([]byte, uint64, *hotstuff.SignedState) {
+	s.muCurrentView.Lock()
+	current := s.currentView
+	s.muCurrentView.Unlock()
+	return current.EncodeConsensusToBytes(), current.ViewNumber + 1, s.HighestCertified()
+}
+
+var _ hotstuff.FHSProposalReadinessApplication = (*Service)(nil)
+
 // GetExtra call by hotstuff
 func (s *Service) GetExtra() []byte {
 	best := s.keyService.getBestCandidate(true)
@@ -444,16 +887,9 @@ func (s *Service) GetPublicKey(keyHash common.Hash) ([]*bls.PublicKey, error) {
 	if keyHash == (common.Hash{}) {
 		return nil, fmt.Errorf("empty committee key block hash")
 	}
-	keyblock := s.kbc.GetBlockByHash(keyHash)
-	if keyblock == nil {
-		return nil, fmt.Errorf("unknown committee key block %s", keyHash)
-	}
-	committee := bftview.LoadMember(keyblock.NumberU64(), keyHash, false)
-	if committee == nil {
-		return nil, fmt.Errorf("missing committee for key block %s", keyHash)
-	}
-	if committee.RlpHash() != keyblock.CommitteeHash() {
-		return nil, fmt.Errorf("committee hash mismatch for key block %s", keyHash)
+	_, committee, _, err := s.resolveExactFHSCommittee(keyHash, false)
+	if err != nil {
+		return nil, err
 	}
 	publicKeys := committee.ToBlsPublicKeys(keyHash)
 	if len(publicKeys) == 0 || len(publicKeys) != len(committee.List) {
@@ -467,11 +903,11 @@ func (s *Service) GetPublicKey(keyHash common.Hash) ([]*bls.PublicKey, error) {
 // been lost. Looking up by key hash prevents a later committee from
 // reinterpreting an older certificate.
 func (s *Service) FHSLeaderPublicKey(keyHash common.Hash, leaderID string) (*bls.PublicKey, error) {
-	committee := s.kbc.GetCommitteeByHash(keyHash)
-	if len(committee) == 0 {
-		return nil, fmt.Errorf("missing historical committee for key hash %s", keyHash)
+	_, resolved, _, err := s.resolveExactFHSCommittee(keyHash, false)
+	if err != nil {
+		return nil, err
 	}
-	for _, node := range committee {
+	for _, node := range resolved.List {
 		if node != nil && node.Address == leaderID {
 			public := bftview.StrToBlsPubKey(node.Public)
 			if public == nil {
@@ -569,14 +1005,184 @@ func cloneProposalBodyMsg(in *proposalBodyMsg) *proposalBodyMsg {
 		return nil
 	}
 	out := *in
-	if len(in.EncodedBlock) > 0 {
-		out.EncodedBlock = make([]byte, len(in.EncodedBlock))
-		copy(out.EncodedBlock, in.EncodedBlock)
+	out.EncodedBlock = append([]byte(nil), in.EncodedBlock...)
+	out.Manifest = append([]byte(nil), in.Manifest...)
+	out.MissingTxHashes = append([]common.Hash(nil), in.MissingTxHashes...)
+	out.TransactionBytes = make([][]byte, len(in.TransactionBytes))
+	for index := range in.TransactionBytes {
+		out.TransactionBytes[index] = append([]byte(nil), in.TransactionBytes[index]...)
 	}
 	out.Extra = append([]byte(nil), in.Extra...)
 	out.ParentQC = append([]byte(nil), in.ParentQC...)
 	out.AuthSig = append([]byte(nil), in.AuthSig...)
 	return &out
+}
+
+func encodeProposalDataManifest(block *types.Block) ([]byte, error) {
+	if block == nil {
+		return nil, fmt.Errorf("nil proposal block")
+	}
+	txs := block.Transactions()
+	hashes := make([]common.Hash, len(txs))
+	for index, tx := range txs {
+		if tx == nil {
+			return nil, fmt.Errorf("nil proposal transaction %d", index)
+		}
+		hashes[index] = tx.Hash()
+	}
+	manifest := &proposalDataManifest{
+		Header:                   block.Header(),
+		TransactionHashes:        hashes,
+		Uncles:                   block.Uncles(),
+		CommonTxAdmissionBatches: block.CommonTxAdmissionBatches(),
+		CommonTxAdmissionRefs:    block.CommonTxAdmissionRefs(),
+		CommonTxRewards:          block.CommonTxRewards(),
+	}
+	encoded, err := rlp.EncodeToBytes(manifest)
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) == 0 || len(encoded) > proposalBodySidecarMaxBytes {
+		return nil, fmt.Errorf("proposal manifest too large: bytes=%d limit=%d", len(encoded), proposalBodySidecarMaxBytes)
+	}
+	return encoded, nil
+}
+
+func decodeProposalDataManifest(encoded []byte) (*proposalDataManifest, error) {
+	if len(encoded) == 0 || len(encoded) > proposalBodySidecarMaxBytes {
+		return nil, fmt.Errorf("invalid proposal manifest size: %d", len(encoded))
+	}
+	var manifest proposalDataManifest
+	if err := rlp.DecodeBytes(encoded, &manifest); err != nil {
+		return nil, fmt.Errorf("decode proposal manifest: %w", err)
+	}
+	limits := params.FairHotstuffWorkLimits()
+	if uint64(len(manifest.TransactionHashes)) > limits.Transactions {
+		return nil, fmt.Errorf("proposal manifest transaction count %d exceeds limit %d", len(manifest.TransactionHashes), limits.Transactions)
+	}
+	if uint64(len(manifest.CommonTxAdmissionBatches)) > limits.CommonTxAdmissionBatches {
+		return nil, fmt.Errorf("proposal manifest admission batch count %d exceeds limit %d", len(manifest.CommonTxAdmissionBatches), limits.CommonTxAdmissionBatches)
+	}
+	if uint64(len(manifest.CommonTxAdmissionRefs)) > limits.CommonTxAdmissionRefs {
+		return nil, fmt.Errorf("proposal manifest admission reference count %d exceeds limit %d", len(manifest.CommonTxAdmissionRefs), limits.CommonTxAdmissionRefs)
+	}
+	if uint64(len(manifest.CommonTxRewards)) > limits.CommonTxRewards {
+		return nil, fmt.Errorf("proposal manifest reward count %d exceeds limit %d", len(manifest.CommonTxRewards), limits.CommonTxRewards)
+	}
+	if manifest.Header == nil || manifest.Header.Number == nil || manifest.Header.Number.Sign() <= 0 || manifest.Header.Difficulty == nil {
+		return nil, fmt.Errorf("proposal manifest has invalid header")
+	}
+	seen := make(map[common.Hash]struct{}, len(manifest.TransactionHashes))
+	for index, hash := range manifest.TransactionHashes {
+		if hash == (common.Hash{}) {
+			return nil, fmt.Errorf("proposal manifest transaction %d has an empty hash", index)
+		}
+		if _, duplicate := seen[hash]; duplicate {
+			return nil, fmt.Errorf("proposal manifest repeats transaction %s", hash)
+		}
+		seen[hash] = struct{}{}
+	}
+	for index, uncle := range manifest.Uncles {
+		if uncle == nil {
+			return nil, fmt.Errorf("proposal manifest uncle %d is nil", index)
+		}
+	}
+	for index, batch := range manifest.CommonTxAdmissionBatches {
+		if batch == nil {
+			return nil, fmt.Errorf("proposal manifest admission batch %d is nil", index)
+		}
+	}
+	if len(manifest.CommonTxAdmissionRefs) != len(manifest.TransactionHashes) {
+		return nil, fmt.Errorf("proposal manifest admission reference count %d does not match transaction count %d", len(manifest.CommonTxAdmissionRefs), len(manifest.TransactionHashes))
+	}
+	for index, reward := range manifest.CommonTxRewards {
+		if reward == nil {
+			return nil, fmt.Errorf("proposal manifest reward %d is nil", index)
+		}
+	}
+	return &manifest, nil
+}
+
+func proposalBodyMsgPayloadBytes(body *proposalBodyMsg) int {
+	if body == nil {
+		return 0
+	}
+	total := len(body.From) + len(body.LeaderID) + len(body.EncodedBlock) + len(body.Manifest) +
+		len(body.Extra) + len(body.ParentQC) + len(body.AuthSig) + len(body.MissingTxHashes)*common.HashLength
+	for _, encoded := range body.TransactionBytes {
+		total += len(encoded)
+	}
+	return total
+}
+
+func encodeProposalRepairTransaction(tx *types.Transaction) ([]byte, error) {
+	if tx == nil || !tx.IsInitialized() {
+		return nil, fmt.Errorf("proposal repair transaction is not initialized")
+	}
+	encoded, err := tx.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("encode proposal repair transaction: %w", err)
+	}
+	if len(encoded) == 0 || len(encoded) > proposalBodySidecarMaxBytes {
+		return nil, fmt.Errorf("invalid proposal repair transaction size %d", len(encoded))
+	}
+	return encoded, nil
+}
+
+func decodeCanonicalProposalRepairTransaction(encoded []byte) (*types.Transaction, error) {
+	if len(encoded) == 0 || len(encoded) > proposalBodySidecarMaxBytes {
+		return nil, fmt.Errorf("invalid proposal repair transaction size %d", len(encoded))
+	}
+	tx := new(types.Transaction)
+	if err := tx.UnmarshalBinary(encoded); err != nil {
+		return nil, fmt.Errorf("decode proposal repair transaction: %w", err)
+	}
+	if !tx.IsInitialized() {
+		return nil, fmt.Errorf("decoded proposal repair transaction is not initialized")
+	}
+	canonical, err := tx.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("re-encode proposal repair transaction: %w", err)
+	}
+	if !bytes.Equal(canonical, encoded) {
+		return nil, fmt.Errorf("proposal repair transaction is not canonically encoded")
+	}
+	return tx, nil
+}
+
+func decodeProposalRepairTransactions(hashes []common.Hash, encodedTransactions [][]byte) (types.Transactions, error) {
+	if len(encodedTransactions) == 0 || len(encodedTransactions) != len(hashes) || len(encodedTransactions) > proposalRepairMaxHashes {
+		return nil, fmt.Errorf("invalid proposal repair transaction count")
+	}
+	total := len(hashes) * common.HashLength
+	if total > proposalBodySidecarMaxBytes {
+		return nil, fmt.Errorf("proposal repair transactions exceed %d bytes", proposalBodySidecarMaxBytes)
+	}
+	txs := make(types.Transactions, len(encodedTransactions))
+	seen := make(map[common.Hash]struct{}, len(hashes))
+	for index, encoded := range encodedTransactions {
+		hash := hashes[index]
+		if hash == (common.Hash{}) {
+			return nil, fmt.Errorf("proposal repair transaction %d has an empty hash", index)
+		}
+		if _, duplicate := seen[hash]; duplicate {
+			return nil, fmt.Errorf("proposal repair repeats transaction %s", hash)
+		}
+		seen[hash] = struct{}{}
+		if len(encoded) > proposalBodySidecarMaxBytes-total {
+			return nil, fmt.Errorf("proposal repair transactions exceed %d bytes", proposalBodySidecarMaxBytes)
+		}
+		total += len(encoded)
+		tx, err := decodeCanonicalProposalRepairTransaction(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("proposal repair transaction %d: %w", index, err)
+		}
+		if tx.Hash() != hash {
+			return nil, fmt.Errorf("proposal repair transaction %d does not match its hash", index)
+		}
+		txs[index] = tx
+	}
+	return txs, nil
 }
 
 func proposalBodyParentQCID(encoded []byte) (common.Hash, error) {
@@ -595,10 +1201,16 @@ func proposalBodyAuthDigest(chainID uint64, body *proposalBodyMsg) ([]byte, erro
 	if chainID == 0 || body == nil || body.From == "" || body.ProposalID == (common.Hash{}) {
 		return nil, fmt.Errorf("invalid proposal sidecar authentication context")
 	}
+	encodedTransactions, err := rlp.EncodeToBytes(body.TransactionBytes)
+	if err != nil {
+		return nil, err
+	}
 	payload, err := rlp.EncodeToBytes([]interface{}{
 		[]byte(proposalBodyAuthDomain), chainID, body.Type, body.ProposalID, body.BodyHash,
-		body.Number, body.ViewNumber, body.ViewID, body.LeaderID, body.From,
-		sha256.Sum256(body.EncodedBlock), sha256.Sum256(body.Extra), sha256.Sum256(body.ParentQC),
+		body.BodySize, body.Number, body.ViewNumber, body.ViewID, body.LeaderID, body.From,
+		body.ProposalKeyHash, body.SenderKeyHash,
+		sha256.Sum256(body.EncodedBlock), sha256.Sum256(body.Manifest), body.MissingTxHashes,
+		sha256.Sum256(encodedTransactions), sha256.Sum256(body.Extra), sha256.Sum256(body.ParentQC),
 	})
 	if err != nil {
 		return nil, err
@@ -611,17 +1223,49 @@ func validateProposalBodyWireShape(body *proposalBodyMsg) error {
 	if body == nil || body.From == "" || len(body.From) > 512 || len(body.AuthSig) == 0 || len(body.AuthSig) > 256 {
 		return fmt.Errorf("invalid proposal sidecar identity fields")
 	}
+	if body.ProposalID == (common.Hash{}) || body.BodyHash == (common.Hash{}) || body.BodySize == 0 ||
+		body.ProposalKeyHash == (common.Hash{}) || body.SenderKeyHash == (common.Hash{}) ||
+		body.Number == 0 || body.ViewNumber == 0 || body.ViewID == (common.Hash{}) || body.LeaderID == "" {
+		return fmt.Errorf("incomplete proposal data context")
+	}
+	if len(body.EncodedBlock) != 0 {
+		return fmt.Errorf("full proposal body is forbidden on the wire")
+	}
 	if len(body.Extra)+len(body.ParentQC) > proposalBodyControlMaxBytes {
 		return fmt.Errorf("proposal sidecar proof exceeds %d bytes", proposalBodyControlMaxBytes)
 	}
 	switch body.Type {
-	case proposalBodyMsgData:
-		if len(body.EncodedBlock) == 0 || len(body.EncodedBlock) > proposalBodySidecarMaxBytes {
-			return fmt.Errorf("invalid proposal sidecar body size")
+	case proposalBodyMsgManifest:
+		if len(body.Manifest) == 0 || len(body.Manifest) > proposalBodySidecarMaxBytes ||
+			len(body.MissingTxHashes) != 0 || len(body.TransactionBytes) != 0 {
+			return fmt.Errorf("invalid proposal manifest payload")
 		}
-	case proposalBodyMsgRequest:
-		if len(body.EncodedBlock) != 0 || len(body.Extra) != 0 || len(body.ParentQC) != 0 {
-			return fmt.Errorf("proposal sidecar request contains a data payload")
+		if _, err := decodeProposalDataManifest(body.Manifest); err != nil {
+			return err
+		}
+	case proposalBodyMsgRepairRequest:
+		if len(body.Manifest) != 0 || len(body.TransactionBytes) != 0 || len(body.Extra) != 0 || len(body.ParentQC) != 0 ||
+			len(body.MissingTxHashes) > proposalRepairMaxHashes {
+			return fmt.Errorf("invalid proposal repair request")
+		}
+		seen := make(map[common.Hash]struct{}, len(body.MissingTxHashes))
+		for _, hash := range body.MissingTxHashes {
+			if hash == (common.Hash{}) {
+				return fmt.Errorf("proposal repair request contains an empty hash")
+			}
+			if _, duplicate := seen[hash]; duplicate {
+				return fmt.Errorf("proposal repair request repeats transaction %s", hash)
+			}
+			seen[hash] = struct{}{}
+		}
+	case proposalBodyMsgRepairData:
+		if len(body.Manifest) != 0 || len(body.Extra) != 0 || len(body.ParentQC) != 0 ||
+			len(body.TransactionBytes) == 0 || len(body.TransactionBytes) != len(body.MissingTxHashes) ||
+			len(body.TransactionBytes) > proposalRepairMaxHashes || proposalBodyMsgPayloadBytes(body) > proposalBodySidecarMaxBytes {
+			return fmt.Errorf("invalid proposal repair payload")
+		}
+		if _, err := decodeProposalRepairTransactions(body.MissingTxHashes, body.TransactionBytes); err != nil {
+			return err
 		}
 	default:
 		return fmt.Errorf("unknown proposal sidecar message type")
@@ -630,15 +1274,37 @@ func validateProposalBodyWireShape(body *proposalBodyMsg) error {
 }
 
 func (s *Service) sealProposalBody(body *proposalBodyMsg) error {
-	if body == nil || s.consensusSecret == nil || s.consensusPublic == nil {
+	if body == nil {
+		return fmt.Errorf("proposal sidecar signing key is unavailable")
+	}
+	s.proposalBodySignMu.Lock()
+	defer s.proposalBodySignMu.Unlock()
+	s.muConsensusIdentity.RLock()
+	secret, public := s.proposalBodySecret, s.consensusPublic
+	s.muConsensusIdentity.RUnlock()
+	if secret == nil || public == nil {
 		return fmt.Errorf("proposal sidecar signing key is unavailable")
 	}
 	body.From = s.Self()
+	current := s.GetCurrentView()
+	if current == nil || current.KeyHash == (common.Hash{}) {
+		return fmt.Errorf("proposal sidecar committee generation is unavailable")
+	}
+	body.SenderKeyHash = current.KeyHash
+	// A historical proposal donor signs under that proposal's committee when
+	// possible. Repair requests may legitimately be sent by a lagging member
+	// outside the proposal's later committee, in which case the sender's current
+	// generation remains the authenticated identity.
+	if body.ProposalKeyHash != (common.Hash{}) && s.kbc != nil {
+		if _, err := s.proposalBodySenderKey(body.ProposalKeyHash, body.From); err == nil {
+			body.SenderKeyHash = body.ProposalKeyHash
+		}
+	}
 	digest, err := proposalBodyAuthDigest(s.ChainID(), body)
 	if err != nil {
 		return err
 	}
-	signature := s.consensusSecret.SignHash(digest)
+	signature := secret.SignHash(digest)
 	if signature == nil {
 		return fmt.Errorf("failed to sign proposal sidecar")
 	}
@@ -646,29 +1312,66 @@ func (s *Service) sealProposalBody(body *proposalBodyMsg) error {
 	return nil
 }
 
-func (s *Service) proposalBodySenderKey(from string) (*bls.PublicKey, error) {
-	current := s.GetCurrentView()
-	committee, err := s.loadViewCommittee(current, true)
+func (s *Service) proposalBodySenderKey(keyHash common.Hash, from string) (*bls.PublicKey, error) {
+	if s == nil || s.kbc == nil || keyHash == (common.Hash{}) || from == "" {
+		return nil, fmt.Errorf("proposal sidecar committee identity is incomplete")
+	}
+	_, resolved, _, err := s.resolveExactFHSCommittee(keyHash, false)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("proposal sidecar committee %s is unavailable: %w", keyHash, err)
 	}
-	keys, err := s.GetPublicKey(current.KeyHash)
-	if err != nil || len(keys) != len(committee.List) {
-		return nil, fmt.Errorf("proposal sidecar committee keys unavailable")
-	}
-	for index, node := range committee.List {
-		if node != nil && node.Address == from && keys[index] != nil {
-			return keys[index], nil
+	for _, node := range resolved.List {
+		if node != nil && node.Address == from {
+			public := bftview.StrToBlsPubKey(node.Public)
+			if public == nil {
+				return nil, fmt.Errorf("proposal sidecar sender has an invalid committee key")
+			}
+			return public, nil
 		}
 	}
-	return nil, fmt.Errorf("proposal sidecar sender is not in the active committee")
+	return nil, fmt.Errorf("proposal sidecar sender is not in committee %s", keyHash)
+}
+
+func (s *Service) proposalBodySenderKeyForMessage(body *proposalBodyMsg) (*bls.PublicKey, error) {
+	if body == nil {
+		return nil, fmt.Errorf("proposal sidecar committee identity is incomplete")
+	}
+	public, ordinaryErr := s.proposalBodySenderKey(body.SenderKeyHash, body.From)
+	if ordinaryErr == nil {
+		return public, nil
+	}
+	// The first manifest after a key handoff can arrive before this replica has
+	// received the old committee's direct-child QCBroadcast. Authenticate that
+	// one message using its self-contained activation QC. All later message
+	// types use the generic resolver, which can recover the same proof from the
+	// authenticated manifest cache.
+	if body.Type != proposalBodyMsgManifest || body.ProposalKeyHash == (common.Hash{}) ||
+		body.ProposalKeyHash != body.SenderKeyHash || len(body.ParentQC) == 0 {
+		return nil, ordinaryErr
+	}
+	_, committee, certifiedUncommitted, err := s.resolveExactFHSCommitteeWithActivation(
+		body.SenderKeyHash, false, body.ParentQC,
+	)
+	if err != nil || !certifiedUncommitted {
+		return nil, ordinaryErr
+	}
+	for _, node := range committee.List {
+		if node != nil && node.Address == body.From {
+			public := bftview.StrToBlsPubKey(node.Public)
+			if public == nil {
+				return nil, fmt.Errorf("proposal sidecar sender has an invalid activated committee key")
+			}
+			return public, nil
+		}
+	}
+	return nil, fmt.Errorf("proposal sidecar sender is not in activated committee %s", body.SenderKeyHash)
 }
 
 func (s *Service) verifyProposalBodySender(si *network.ServerIdentity, body *proposalBodyMsg) error {
 	if si == nil || body == nil || body.From == "" || si.Address.String() != body.From {
 		return fmt.Errorf("proposal sidecar transport identity mismatch")
 	}
-	public, err := s.proposalBodySenderKey(body.From)
+	public, err := s.proposalBodySenderKeyForMessage(body)
 	if err != nil {
 		return err
 	}
@@ -683,11 +1386,159 @@ func (s *Service) verifyProposalBodySender(si *network.ServerIdentity, body *pro
 	return nil
 }
 
+// verifyProposalManifestAuthority prevents any committee member from filling
+// the shared manifest cache with proposals it doesn't lead. A non-leader may
+// return a manifest only after the serialized HotStuff loop has accepted the
+// exact Prepare and registered its validation key; this is the repair path for
+// a leader manifest that was lost in transit.
+func (s *Service) verifyProposalManifestAuthority(body *proposalBodyMsg) error {
+	if s == nil || body == nil || body.Type != proposalBodyMsgManifest {
+		return fmt.Errorf("invalid proposal manifest authority context")
+	}
+	s.muProposalValidation.Lock()
+	for _, active := range s.activeProposalValidations {
+		if active == nil {
+			continue
+		}
+		key := active.key
+		if key.ViewNumber == body.ViewNumber && key.ViewID == body.ViewID && key.LeaderID == body.LeaderID && key.ProposalID == body.ProposalID &&
+			active.keyHash == body.ProposalKeyHash && active.keyHash == body.SenderKeyHash {
+			s.muProposalValidation.Unlock()
+			return nil
+		}
+	}
+	if active := s.activeHighQCValidation; active != nil {
+		if authority, ok := active.authorized[body.ProposalID]; ok &&
+			authority.key.ViewNumber == body.ViewNumber && authority.key.ViewID == body.ViewID &&
+			authority.key.LeaderID == body.LeaderID && authority.keyHash == body.ProposalKeyHash &&
+			authority.keyHash == body.SenderKeyHash {
+			s.muProposalValidation.Unlock()
+			return nil
+		}
+	}
+	s.muProposalValidation.Unlock()
+
+	// A manifest is intentionally distributed before its Prepare, so the
+	// serialized validation registry cannot authorize the first copy. Bind
+	// that path to the route derived from the current consensus view. Merely
+	// setting From == LeaderID is not authority: any Byzantine committee
+	// member could otherwise allocate and evict shared manifest-cache entries.
+	if body.From != body.LeaderID {
+		return fmt.Errorf("proposal manifest sender is neither the route leader nor an active Prepare repair peer")
+	}
+	route, routeErr := s.CurrentFHSRoute()
+	if routeErr == nil && proposalManifestMatchesRoute(body, route) &&
+		body.ProposalKeyHash == route.KeyHash && body.SenderKeyHash == route.KeyHash {
+		return nil
+	}
+	if err := s.verifyCertifiedTransitionManifestAuthority(body); err != nil {
+		if routeErr != nil {
+			return fmt.Errorf("resolve proposal manifest route: %v; certified transition: %w", routeErr, err)
+		}
+		return fmt.Errorf("proposal manifest does not match the current deterministic leader route: %w", err)
+	}
+	return nil
+}
+
+func proposalManifestMatchesRoute(body *proposalBodyMsg, route *FHSRoute) bool {
+	return body != nil && route != nil && route.Enabled &&
+		body.Type == proposalBodyMsgManifest && body.From == body.LeaderID &&
+		body.ViewNumber == route.ProposalView && body.LeaderID == route.LeaderID
+}
+
+// verifyCertifiedTransitionManifestAuthority handles only the narrow interval
+// in which this replica has installed a certified key carrier but has not yet
+// received/published its direct-child QC. The first new-epoch manifest is
+// self-contained: its ParentQC must be the old committee's direct-child QC for
+// that carrier. A valid activation QC, exact parent relation and deterministic
+// new-committee leader are required before the bounded manifest cache changes.
+func (s *Service) verifyCertifiedTransitionManifestAuthority(body *proposalBodyMsg) error {
+	if s == nil || s.chainConfig == nil || body == nil || body.From != body.LeaderID || body.ProposalKeyHash == (common.Hash{}) ||
+		body.ProposalKeyHash != body.SenderKeyHash {
+		return fmt.Errorf("invalid certified-transition manifest identity")
+	}
+	keyBlock, committee, certifiedUncommitted, err := s.resolveExactFHSCommitteeWithActivation(
+		body.ProposalKeyHash, true, body.ParentQC,
+	)
+	if err != nil {
+		return err
+	}
+	if !certifiedUncommitted {
+		return fmt.Errorf("manifest key committee is already canonical but is not the current route")
+	}
+	current := s.GetCurrentView()
+	if current == nil || current.KeyHash != keyBlock.ParentHash() {
+		return fmt.Errorf("manifest does not activate directly from the local key epoch")
+	}
+	leaderIndex, err := fairHotstuffLeaderIndex(
+		s.chainConfig.FairHotstuffSeed, s.ChainID(), body.ViewNumber,
+		keyBlock.CommitteeHash(), len(committee.List),
+	)
+	if err != nil {
+		return err
+	}
+	if leaderIndex >= uint(len(committee.List)) || committee.List[leaderIndex] == nil {
+		return fmt.Errorf("certified-transition leader index is invalid")
+	}
+	leader := committee.List[leaderIndex]
+	expectedLeader := bftview.GetNodeID(leader.Address, leader.Public)
+	if expectedLeader == "" || body.LeaderID != expectedLeader || body.From != expectedLeader {
+		return fmt.Errorf("manifest sender is not the certified-transition deterministic leader")
+	}
+
+	manifest, err := decodeProposalDataManifest(body.Manifest)
+	if err != nil {
+		return err
+	}
+	if manifest.Header == nil || manifest.Header.Number == nil || manifest.Header.Number.Uint64() != body.Number ||
+		manifest.Header.KeyHash != body.ProposalKeyHash {
+		return fmt.Errorf("manifest header does not match its certified-transition context")
+	}
+	parentQC, err := hotstuff.DecodeSignedState(body.ParentQC)
+	if err != nil || parentQC == nil {
+		return fmt.Errorf("certified-transition manifest has no valid parent QC")
+	}
+	parentRef, err := s.verifyFHSQCCryptographic(parentQC)
+	if err != nil {
+		return fmt.Errorf("verify certified-transition parent QC: %w", err)
+	}
+	highest := s.HighestCertified()
+	if highest == nil || highest.Number > parentQC.Number ||
+		(highest.Number == parentQC.Number && !hotstuff.SignedStateSemanticEqual(highest, parentQC)) ||
+		parentRef.BlockHash != manifest.Header.ParentHash ||
+		parentRef.KeyHash != keyBlock.ParentHash() || parentRef.Number == ^uint64(0) ||
+		parentRef.ViewNumber == ^uint64(0) || body.Number != parentRef.Number+1 ||
+		body.ViewNumber != parentRef.ViewNumber+1 {
+		return fmt.Errorf("manifest does not extend its verified activation parent")
+	}
+	return nil
+}
+
+// discardIncompletePeerManifest removes only the exact pending candidate
+// installed by a non-leader repair peer. A peer manifest is useful when the
+// receiver already has every transaction and can verify BodyHash immediately;
+// it must not remain authoritative while data is missing, because a Byzantine
+// committee peer could otherwise poison the proposal ID before the leader's
+// valid manifest arrives.
+func (s *Service) discardIncompletePeerManifest(candidate *proposalBodyMsg) {
+	if s == nil || candidate == nil || candidate.From == candidate.LeaderID {
+		return
+	}
+	s.muProposalBody.Lock()
+	existing := s.proposalBodies[candidate.ProposalID]
+	if existing != nil && len(existing.EncodedBlock) == 0 && existing.From == candidate.From &&
+		bytes.Equal(existing.Manifest, candidate.Manifest) {
+		delete(s.proposalBodies, candidate.ProposalID)
+		delete(s.verifiedProposalByID, candidate.ProposalID)
+	}
+	s.muProposalBody.Unlock()
+}
+
 func (s *Service) proposalBodyCacheUsageLocked() (int, int) {
 	bytesUsed := 0
 	for _, body := range s.proposalBodies {
 		if body != nil {
-			bytesUsed += len(body.EncodedBlock) + len(body.Extra) + len(body.ParentQC) + len(body.AuthSig)
+			bytesUsed += proposalBodyMsgPayloadBytes(body)
 		}
 	}
 	return len(s.proposalBodies), bytesUsed
@@ -764,6 +1615,9 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 	if body.BodyHash == (common.Hash{}) {
 		return fmt.Errorf("proposal body missing body hash")
 	}
+	if body.BodySize == 0 || body.BodySize != uint64(len(body.EncodedBlock)) {
+		return fmt.Errorf("proposal body size mismatch: declared=%d actual=%d", body.BodySize, len(body.EncodedBlock))
+	}
 	if len(body.EncodedBlock) == 0 {
 		return fmt.Errorf("proposal body missing encoded block")
 	}
@@ -788,11 +1642,14 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 	if err != nil {
 		return err
 	}
-	if ref.ProposalID() != body.ProposalID || ref.Number != body.Number || ref.BodyHash != body.BodyHash {
+	if ref.ProposalID() != body.ProposalID || ref.Number != body.Number || ref.BodyHash != body.BodyHash || ref.KeyHash != body.ProposalKeyHash {
 		return fmt.Errorf("proposal sidecar does not match its proposal ID")
 	}
 	cpy := cloneProposalBodyMsg(body)
-	cpy.Type = proposalBodyMsgData
+	cpy.Type = proposalBodyMsgManifest
+	cpy.Manifest = nil
+	cpy.MissingTxHashes = nil
+	cpy.TransactionBytes = nil
 	if cpy.From == "" {
 		cpy.From = s.Self()
 	}
@@ -800,27 +1657,282 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 	cpy.CreatedAtUnixNano = time.Now().UnixNano()
 
 	s.muProposalBody.Lock()
-	defer s.muProposalBody.Unlock()
 	s.purgeExpiredProposalCachesLocked(time.Now())
+	var cached *proposalBodyMsg
 	if existing := s.proposalBodies[cpy.ProposalID]; existing != nil {
-		if existing.BodyHash != cpy.BodyHash || !bytes.Equal(existing.EncodedBlock, cpy.EncodedBlock) ||
-			!bytes.Equal(existing.Extra, cpy.Extra) || !bytes.Equal(existing.ParentQC, cpy.ParentQC) {
+		if existing.BodyHash != cpy.BodyHash || existing.BodySize != cpy.BodySize ||
+			existing.ProposalKeyHash != cpy.ProposalKeyHash || !bytes.Equal(existing.Extra, cpy.Extra) ||
+			!bytes.Equal(existing.ParentQC, cpy.ParentQC) {
+			s.muProposalBody.Unlock()
 			return fmt.Errorf("conflicting proposal sidecar for %s", cpy.ProposalID)
+		}
+		if len(existing.EncodedBlock) == 0 {
+			s.proposalBodies[cpy.ProposalID] = cpy
+			cached = cpy
+		} else {
+			if !bytes.Equal(existing.EncodedBlock, cpy.EncodedBlock) {
+				s.muProposalBody.Unlock()
+				return fmt.Errorf("conflicting proposal sidecar for %s", cpy.ProposalID)
+			}
+			cached = existing
+		}
+	} else {
+		entryBytes := proposalBodyMsgPayloadBytes(cpy)
+		for {
+			entries, bytesUsed := s.proposalBodyCacheUsageLocked()
+			if entries < proposalBodyCacheMaxEntries && bytesUsed+entryBytes <= proposalBodyCacheMaxBytes {
+				break
+			}
+			if !s.evictOldestProposalBodyLocked() {
+				s.muProposalBody.Unlock()
+				return fmt.Errorf("proposal sidecar cache capacity exhausted")
+			}
+		}
+		s.proposalBodies[cpy.ProposalID] = cpy
+		cached = cpy
+	}
+	s.muProposalBody.Unlock()
+
+	// Cache publication is the validation boundary. The fixed single writer is
+	// best effort and bounded: queue pressure or a disk failure cannot put an
+	// 8 MiB write back on the Vote path. Missing content remains recoverable by
+	// ProposalID/BodyHash after restart.
+	if s.fhsContentWriter != nil {
+		if !s.fhsContentWriter.enqueue(ref, cached) {
+			log.Warn("FHS proposal content persistence queue is full; retaining repairable cache entry",
+				"proposalID", ref.ProposalID(), "bodyHash", ref.BodyHash, "bytes", ref.BodySize)
 		}
 		return nil
 	}
-	entryBytes := len(cpy.EncodedBlock) + len(cpy.Extra) + len(cpy.ParentQC) + len(cpy.AuthSig)
+	// Isolated tests and lightweight Service fixtures do not own a lifecycle
+	// writer; preserve deterministic synchronous persistence for those callers.
+	if err := s.persistFHSProposalData(ref, cached); err != nil {
+		return fmt.Errorf("persist proposal data: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) storeProposalManifest(body *proposalBodyMsg) ([]common.Hash, error) {
+	if body == nil || body.Type != proposalBodyMsgManifest || len(body.Manifest) == 0 {
+		return nil, fmt.Errorf("invalid proposal manifest")
+	}
+	if body.BodySize == 0 || body.BodySize > uint64(proposalBodySidecarMaxBytes) {
+		return nil, fmt.Errorf("invalid proposal body size %d", body.BodySize)
+	}
+	manifest, err := decodeProposalDataManifest(body.Manifest)
+	if err != nil {
+		return nil, err
+	}
+	if manifest.Header.Number.Uint64() != body.Number {
+		return nil, fmt.Errorf("proposal manifest block number mismatch")
+	}
+	if manifest.Header.KeyHash != body.ProposalKeyHash {
+		return nil, fmt.Errorf("proposal manifest committee generation mismatch")
+	}
+	if manifest.Header.UncleHash != types.CalcUncleHash(manifest.Uncles) {
+		return nil, fmt.Errorf("proposal manifest uncle root mismatch")
+	}
+	if manifest.Header.CommonTxAdmissionRoot != types.DeriveCommonTxAdmissionRoot(manifest.CommonTxAdmissionBatches, manifest.CommonTxAdmissionRefs) ||
+		manifest.Header.CommonTxRewardRoot != types.DeriveCommonTxRewardRoot(manifest.CommonTxRewards) {
+		return nil, fmt.Errorf("proposal manifest common transaction root mismatch")
+	}
+	if _, err := proposalBodyParentQCID(body.ParentQC); err != nil {
+		return nil, fmt.Errorf("proposal manifest parent QC: %w", err)
+	}
+	cpy := cloneProposalBodyMsg(body)
+	cpy.EncodedBlock = nil
+	cpy.MissingTxHashes = nil
+	cpy.TransactionBytes = nil
+	cpy.CreatedAtUnixNano = time.Now().UnixNano()
+
+	s.muProposalBody.Lock()
+	s.purgeExpiredProposalCachesLocked(time.Now())
+	if existing := s.proposalBodies[cpy.ProposalID]; existing != nil {
+		if existing.BodyHash != cpy.BodyHash || existing.BodySize != cpy.BodySize || existing.Number != cpy.Number ||
+			existing.ViewNumber != cpy.ViewNumber || existing.ViewID != cpy.ViewID || existing.LeaderID != cpy.LeaderID ||
+			existing.ProposalKeyHash != cpy.ProposalKeyHash ||
+			!bytes.Equal(existing.Extra, cpy.Extra) || !bytes.Equal(existing.ParentQC, cpy.ParentQC) {
+			s.muProposalBody.Unlock()
+			return nil, fmt.Errorf("conflicting proposal manifest for %s", cpy.ProposalID)
+		}
+		if len(existing.EncodedBlock) > 0 {
+			s.muProposalBody.Unlock()
+			return nil, nil
+		}
+		if !bytes.Equal(existing.Manifest, cpy.Manifest) {
+			s.muProposalBody.Unlock()
+			return nil, fmt.Errorf("conflicting proposal manifest for %s", cpy.ProposalID)
+		}
+		s.muProposalBody.Unlock()
+		return s.tryAssembleProposalBody(cpy.ProposalID)
+	}
+	entryBytes := proposalBodyMsgPayloadBytes(cpy)
 	for {
 		entries, bytesUsed := s.proposalBodyCacheUsageLocked()
 		if entries < proposalBodyCacheMaxEntries && bytesUsed+entryBytes <= proposalBodyCacheMaxBytes {
 			break
 		}
 		if !s.evictOldestProposalBodyLocked() {
-			return fmt.Errorf("proposal sidecar cache capacity exhausted")
+			s.muProposalBody.Unlock()
+			return nil, fmt.Errorf("proposal manifest cache capacity exhausted")
 		}
 	}
 	s.proposalBodies[cpy.ProposalID] = cpy
-	return nil
+	s.muProposalBody.Unlock()
+	return s.tryAssembleProposalBody(cpy.ProposalID)
+}
+
+func (s *Service) mergeProposalRepair(body *proposalBodyMsg) ([]common.Hash, error) {
+	if body == nil || body.Type != proposalBodyMsgRepairData {
+		return nil, fmt.Errorf("invalid proposal repair")
+	}
+	txs, err := decodeProposalRepairTransactions(body.MissingTxHashes, body.TransactionBytes)
+	if err != nil {
+		return nil, err
+	}
+	s.muProposalBody.Lock()
+	existing := s.proposalBodies[body.ProposalID]
+	if existing == nil || len(existing.Manifest) == 0 || len(existing.EncodedBlock) > 0 {
+		s.muProposalBody.Unlock()
+		return nil, fmt.Errorf("proposal repair has no pending manifest")
+	}
+	if existing.BodyHash != body.BodyHash || existing.BodySize != body.BodySize || existing.Number != body.Number ||
+		existing.ViewNumber != body.ViewNumber || existing.ViewID != body.ViewID || existing.LeaderID != body.LeaderID ||
+		existing.ProposalKeyHash != body.ProposalKeyHash {
+		s.muProposalBody.Unlock()
+		return nil, fmt.Errorf("proposal repair context mismatch")
+	}
+	manifest, err := decodeProposalDataManifest(existing.Manifest)
+	if err != nil {
+		s.muProposalBody.Unlock()
+		return nil, err
+	}
+	allowed := make(map[common.Hash]struct{}, len(manifest.TransactionHashes))
+	for _, hash := range manifest.TransactionHashes {
+		allowed[hash] = struct{}{}
+	}
+	present := make(map[common.Hash]struct{}, len(existing.TransactionBytes))
+	for index, encoded := range existing.TransactionBytes {
+		tx, err := decodeCanonicalProposalRepairTransaction(encoded)
+		if err != nil {
+			s.muProposalBody.Unlock()
+			return nil, fmt.Errorf("cached proposal repair transaction %d: %w", index, err)
+		}
+		hash := tx.Hash()
+		if _, duplicate := present[hash]; duplicate {
+			s.muProposalBody.Unlock()
+			return nil, fmt.Errorf("cached proposal repair repeats transaction %s", hash)
+		}
+		present[hash] = struct{}{}
+	}
+	additionalBytes := 0
+	additions := make([][]byte, 0, len(body.TransactionBytes))
+	for index := range txs {
+		hash := body.MissingTxHashes[index]
+		if _, ok := allowed[hash]; !ok {
+			s.muProposalBody.Unlock()
+			return nil, fmt.Errorf("proposal repair transaction %s is outside the manifest", hash)
+		}
+		if _, duplicate := present[hash]; duplicate {
+			continue
+		}
+		present[hash] = struct{}{}
+		additions = append(additions, append([]byte(nil), body.TransactionBytes[index]...))
+		additionalBytes += len(body.TransactionBytes[index])
+	}
+	_, bytesUsed := s.proposalBodyCacheUsageLocked()
+	if bytesUsed+additionalBytes > proposalBodyCacheMaxBytes {
+		s.muProposalBody.Unlock()
+		return nil, fmt.Errorf("proposal repair exceeds cache capacity")
+	}
+	existing.TransactionBytes = append(existing.TransactionBytes, additions...)
+	existing.CreatedAtUnixNano = time.Now().UnixNano()
+	s.muProposalBody.Unlock()
+	return s.tryAssembleProposalBody(body.ProposalID)
+}
+
+func (s *Service) tryAssembleProposalBody(proposalID common.Hash) ([]common.Hash, error) {
+	body := s.getProposalBody(proposalID)
+	if body == nil {
+		return nil, nil
+	}
+	if len(body.EncodedBlock) > 0 {
+		return nil, nil
+	}
+	manifest, err := decodeProposalDataManifest(body.Manifest)
+	if err != nil {
+		return nil, err
+	}
+	repaired := make(map[common.Hash]*types.Transaction, len(body.TransactionBytes))
+	for index, encoded := range body.TransactionBytes {
+		tx, err := decodeCanonicalProposalRepairTransaction(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("cached proposal repair transaction %d: %w", index, err)
+		}
+		hash := tx.Hash()
+		if _, duplicate := repaired[hash]; duplicate {
+			return nil, fmt.Errorf("cached proposal repair repeats transaction %s", hash)
+		}
+		repaired[hash] = tx
+	}
+	txs := make(types.Transactions, len(manifest.TransactionHashes))
+	missing := make([]common.Hash, 0)
+	for index, hash := range manifest.TransactionHashes {
+		tx := repaired[hash]
+		if tx == nil && s.txPool != nil {
+			tx = s.txPool.Get(hash)
+		}
+		if tx == nil && s.resolveTxQUICTransaction != nil {
+			tx, err = s.resolveTxQUICTransaction(hash)
+			if err != nil {
+				return nil, fmt.Errorf("resolve durable proposal transaction %s: %w", hash, err)
+			}
+		}
+		if tx == nil {
+			missing = append(missing, hash)
+			continue
+		}
+		if !tx.IsInitialized() {
+			return nil, fmt.Errorf("proposal transaction lookup returned an uninitialized transaction for %s", hash)
+		}
+		if tx.Hash() != hash {
+			return nil, fmt.Errorf("proposal transaction lookup mismatch for %s", hash)
+		}
+		txs[index] = tx
+	}
+	if len(missing) > 0 {
+		return missing, nil
+	}
+	block := types.NewBlockWithHeader(manifest.Header).WithBody(txs, manifest.Uncles)
+	block.SetCommonTxData(manifest.CommonTxAdmissionBatches, manifest.CommonTxAdmissionRefs, manifest.CommonTxRewards)
+	encodedBlock := block.EncodeToBytes()
+	if uint64(len(encodedBlock)) != body.BodySize {
+		return nil, fmt.Errorf("reconstructed proposal body size mismatch: have=%d want=%d", len(encodedBlock), body.BodySize)
+	}
+	if hash := types.HotstuffProposalBodyHash(encodedBlock); hash != body.BodyHash {
+		return nil, fmt.Errorf("reconstructed proposal body hash mismatch: have=%s want=%s", hash, body.BodyHash)
+	}
+	parentQCID, err := proposalBodyParentQCID(body.ParentQC)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := types.NewHotstuffProposalRefWithProof(s.ChainID(), body.ViewNumber, body.ViewID, body.LeaderID, block, encodedBlock, body.Extra, parentQCID)
+	if err != nil {
+		return nil, err
+	}
+	if ref.ProposalID() != body.ProposalID || ref.Number != body.Number || ref.BodyHash != body.BodyHash ||
+		ref.BodySize != body.BodySize || ref.KeyHash != body.ProposalKeyHash {
+		return nil, fmt.Errorf("reconstructed proposal does not match its signed reference")
+	}
+	complete := cloneProposalBodyMsg(body)
+	complete.EncodedBlock = encodedBlock
+	complete.Manifest = nil
+	complete.MissingTxHashes = nil
+	complete.TransactionBytes = nil
+	if err := s.storeProposalBody(complete); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 func (s *Service) getProposalBody(proposalID common.Hash) *proposalBodyMsg {
@@ -867,6 +1979,112 @@ func (s *Service) HighestCertified() *hotstuff.SignedState {
 	return hotstuff.CloneSignedState(s.fhsHighest.qc)
 }
 
+// fhsCertifiedFrontierAboveCanonical returns the only in-memory certificate
+// that is allowed to act as an execution base. A proof-aware block import can
+// advance the canonical chain while an asynchronous HighQC worker still sees
+// the old certified cache. Such a record is historical state, not a parent
+// overlay: feeding it back to ValidateBlockForHotstuff would replay an already
+// canonical block against the current StateDB.
+func fhsCertifiedFrontierAboveCanonical(highest *fhsCertifiedProposal, canonicalNumber uint64) *fhsCertifiedProposal {
+	if highest == nil || highest.ref == nil || highest.ref.Number <= canonicalNumber {
+		return nil
+	}
+	return highest
+}
+
+// reconcileFHSCertifiedFrontierLocked reduces the volatile certified cache to
+// the unique contiguous suffix rooted at the exact canonical head. The caller
+// must hold muProposalBody. Canonical import is finality-proof aware, so cached
+// records at/below that head and records on an unanchored old fork are obsolete.
+// If two certified children claim the same canonical parent, do not choose one
+// by map order: that is a safety-invariant violation and must fail closed.
+func (s *Service) reconcileFHSCertifiedFrontierLocked(canonical *types.Block) error {
+	if s == nil || canonical == nil {
+		return fmt.Errorf("cannot reconcile FHS certified frontier without canonical head")
+	}
+	if s.fhsCertifiedByHash == nil {
+		s.fhsCertifiedByHash = make(map[common.Hash]*fhsCertifiedProposal)
+	}
+	if s.fhsCertifiedByID == nil {
+		s.fhsCertifiedByID = make(map[common.Hash]*fhsCertifiedProposal)
+	}
+
+	kept := make(map[common.Hash]struct{})
+	parentHash := canonical.Hash()
+	parentNumber := canonical.NumberU64()
+	var (
+		frontier      *fhsCertifiedProposal
+		previousQCNum uint64
+	)
+	for depth := 0; ; depth++ {
+		if depth > fhsMaxCertifiedChainDepth {
+			return fmt.Errorf("FHS certified suffix exceeds bounded cache depth")
+		}
+		var child *fhsCertifiedProposal
+		for hash, record := range s.fhsCertifiedByHash {
+			if record == nil || record.ref == nil || record.ref.Number != parentNumber+1 || record.ref.ParentHash != parentHash {
+				continue
+			}
+			if record.ref.BlockHash != hash {
+				return fmt.Errorf("FHS certified cache key mismatch for %s", hash)
+			}
+			if err := validateStagedFHSCertificateArtifact(&fhsHighQCValidationItem{
+				ref: record.ref, qc: record.qc, verified: record.verified,
+			}); err != nil {
+				return fmt.Errorf("invalid FHS certified suffix record %s: %w", hash, err)
+			}
+			if child != nil && child.ref.BlockHash != record.ref.BlockHash {
+				return fmt.Errorf("ambiguous FHS certified children of %s", parentHash)
+			}
+			child = record
+		}
+		if child == nil {
+			break
+		}
+		if frontier != nil && child.qc.Number <= previousQCNum {
+			return fmt.Errorf("non-increasing FHS certified suffix view at %s", child.ref.BlockHash)
+		}
+		kept[child.ref.BlockHash] = struct{}{}
+		frontier = child
+		previousQCNum = child.qc.Number
+		parentHash = child.ref.BlockHash
+		parentNumber = child.ref.Number
+	}
+
+	for hash, record := range s.fhsCertifiedByHash {
+		if _, ok := kept[hash]; ok {
+			continue
+		}
+		delete(s.fhsCertifiedByHash, hash)
+		if record == nil || record.ref == nil {
+			continue
+		}
+		proposalID := record.ref.ProposalID()
+		if s.fhsCertifiedByID[proposalID] == record {
+			delete(s.fhsCertifiedByID, proposalID)
+		}
+		delete(s.proposalBodies, proposalID)
+		delete(s.verifiedProposalByID, proposalID)
+	}
+	for proposalID, record := range s.fhsCertifiedByID {
+		if record == nil || record.ref == nil {
+			delete(s.fhsCertifiedByID, proposalID)
+			continue
+		}
+		if _, ok := kept[record.ref.BlockHash]; !ok || s.fhsCertifiedByHash[record.ref.BlockHash] != record {
+			delete(s.fhsCertifiedByID, proposalID)
+		}
+	}
+	s.fhsHighest = frontier
+	return nil
+}
+
+func (s *Service) reconcileFHSCertifiedFrontier(canonical *types.Block) error {
+	s.muProposalBody.Lock()
+	defer s.muProposalBody.Unlock()
+	return s.reconcileFHSCertifiedFrontierLocked(canonical)
+}
+
 func (s *Service) highestFHSCertifiedProposal() *core.VerifiedProposal {
 	s.muProposalBody.RLock()
 	defer s.muProposalBody.RUnlock()
@@ -890,6 +2108,24 @@ func (s *Service) getFHSCertifiedVerified(hash common.Hash) *core.VerifiedPropos
 		return certified.verified
 	}
 	return nil
+}
+
+// snapshotFHSCertifiedVerified is called by the serialized HotStuff loop when
+// dispatching a worker. The private StateDB copy prevents a later 2-chain
+// commit from consuming the mutable parent state while child validation is in
+// flight.
+func (s *Service) snapshotFHSCertifiedVerified(hash common.Hash) *core.VerifiedProposal {
+	s.muProposalBody.RLock()
+	defer s.muProposalBody.RUnlock()
+	certified := s.fhsCertifiedByHash[hash]
+	if certified == nil || certified.verified == nil {
+		return nil
+	}
+	snapshot := *certified.verified
+	if certified.verified.StateDB != nil {
+		snapshot.StateDB = certified.verified.StateDB.Copy()
+	}
+	return &snapshot
 }
 
 func (s *Service) validateFHSProposalParent(ref *types.HotstuffProposalRef, parentQC *hotstuff.SignedState) error {
@@ -936,29 +2172,324 @@ func (s *Service) validateFHSProposalParent(ref *types.HotstuffProposalRef, pare
 }
 
 func (s *Service) OnCertified(cert *hotstuff.SignedState) error {
+	if s == nil {
+		return types.ErrNotRunning
+	}
+	s.muLifecycle.Lock()
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		s.muLifecycle.Unlock()
+		return types.ErrNotRunning
+	}
+	generation := s.lifecycleGenerationLocked()
+
+	// Async HighQC completion replays the authenticated QCBroadcast after Apply
+	// has already installed and committed this exact QC. Keep that continuation
+	// on the control loop small; it only advances the pacemaker/outbound NewView
+	// and must not enter body retrieval or historical EVM execution again.
+	if highest := s.HighestCertified(); highest != nil && hotstuff.SignedStateSemanticEqual(highest, cert) {
+		s.muLifecycle.Unlock()
+		return s.finishFHSCertificationForGeneration(cert, generation)
+	}
 	// Replica path: the originating leader owns the durable dissemination
 	// outbox. A receiver persists/adopts the QC, but must not claim it as a
-	// locally replayable leader broadcast.
+	// locally replayable leader broadcast. Keep adoption inside the lifecycle
+	// boundary so Backend.Stop cannot close its DB underneath the callback.
 	if err := s.adoptFHSHighQC(cert, false, false); err != nil {
+		s.muLifecycle.Unlock()
 		return err
 	}
-	return s.finishFHSCertification(cert)
+	s.muLifecycle.Unlock()
+	return s.finishFHSCertificationForGeneration(cert, generation)
 }
 
-func (s *Service) OnFHSLeaderCertifiedBeforeBroadcast(cert *hotstuff.SignedState) error {
-	return s.adoptFHSHighQC(cert, false, true)
+func (s *Service) beginFHSQCBroadcast(cert *hotstuff.SignedState) error {
+	return s.beginFHSQCBroadcastForGeneration(cert, 0)
 }
 
-func (s *Service) OnFHSLeaderCertifiedAfterBroadcast(cert *hotstuff.SignedState) error {
-	return s.finishFHSCertification(cert)
+func (s *Service) beginFHSQCBroadcastForGeneration(cert *hotstuff.SignedState, generation uint64) error {
+	if s == nil || cert == nil {
+		return fmt.Errorf("cannot begin an empty FHS certification broadcast")
+	}
+	s.muFHSQCBroadcast.Lock()
+	defer s.muFHSQCBroadcast.Unlock()
+	if s.fhsActiveQCBroadcast != nil {
+		if !hotstuff.SignedStateSemanticEqual(s.fhsActiveQCBroadcast, cert) {
+			return fmt.Errorf("another FHS certification broadcast is already active")
+		}
+		if s.fhsActiveQCBroadcastGeneration != generation {
+			return fmt.Errorf("FHS certification broadcast belongs to another service generation")
+		}
+		return nil
+	}
+	// A direct protocol retry must not be blocked by the post-send replay
+	// suppression marker. Only replayPendingFHSQCBroadcast consults that marker.
+	s.fhsActiveQCBroadcast = hotstuff.CloneSignedState(cert)
+	s.fhsActiveQCBroadcastGeneration = generation
+	return nil
+}
+
+// abortFHSQCBroadcast clears an active attempt which did not achieve complete
+// committee queue admission. It must not create a post-send suppression marker.
+func (s *Service) abortFHSQCBroadcast(cert *hotstuff.SignedState) error {
+	if s == nil || cert == nil {
+		return fmt.Errorf("cannot abort an empty FHS certification broadcast")
+	}
+	s.muFHSQCBroadcast.Lock()
+	defer s.muFHSQCBroadcast.Unlock()
+	if s.fhsActiveQCBroadcast == nil {
+		return nil
+	}
+	if !hotstuff.SignedStateSemanticEqual(s.fhsActiveQCBroadcast, cert) {
+		return fmt.Errorf("FHS certification broadcast abort mismatch")
+	}
+	s.fhsActiveQCBroadcast = nil
+	s.fhsActiveQCBroadcastGeneration = 0
+	return nil
+}
+
+// completeFHSQCBroadcast records that the physical broadcast happened.
+// The completed marker is a single bounded entry and is never persisted.
+func (s *Service) completeFHSQCBroadcast(cert *hotstuff.SignedState, now time.Time) error {
+	if s == nil || cert == nil {
+		return fmt.Errorf("cannot complete an empty FHS certification broadcast")
+	}
+	s.muFHSQCBroadcast.Lock()
+	defer s.muFHSQCBroadcast.Unlock()
+	if s.fhsActiveQCBroadcast == nil {
+		return fmt.Errorf("cannot complete an FHS certification broadcast that is not active")
+	}
+	if !hotstuff.SignedStateSemanticEqual(s.fhsActiveQCBroadcast, cert) {
+		return fmt.Errorf("FHS certification broadcast completion mismatch")
+	}
+	s.fhsActiveQCBroadcast = nil
+	s.fhsActiveQCBroadcastGeneration = 0
+	s.fhsCompletedQCBroadcast = hotstuff.CloneSignedState(cert)
+	s.fhsCompletedQCBroadcastExpiry = now.Add(fhsQCBroadcastReplaySuppressionWindow)
+	return nil
+}
+
+func (s *Service) fhsQCBroadcastReplaySuppressed(cert *hotstuff.SignedState, now time.Time) bool {
+	if s == nil || cert == nil {
+		return false
+	}
+	s.muFHSQCBroadcast.Lock()
+	defer s.muFHSQCBroadcast.Unlock()
+	if hotstuff.SignedStateSemanticEqual(s.fhsActiveQCBroadcast, cert) {
+		return true
+	}
+	if s.fhsCompletedQCBroadcast == nil {
+		return false
+	}
+	if !now.Before(s.fhsCompletedQCBroadcastExpiry) {
+		s.fhsCompletedQCBroadcast = nil
+		s.fhsCompletedQCBroadcastExpiry = time.Time{}
+		return false
+	}
+	return hotstuff.SignedStateSemanticEqual(s.fhsCompletedQCBroadcast, cert)
+}
+
+func (s *Service) fhsQCBroadcastActive(cert *hotstuff.SignedState) bool {
+	_, active := s.fhsQCBroadcastActiveGeneration(cert)
+	return active
+}
+
+func (s *Service) fhsQCBroadcastActiveGeneration(cert *hotstuff.SignedState) (uint64, bool) {
+	if s == nil || cert == nil {
+		return 0, false
+	}
+	s.muFHSQCBroadcast.Lock()
+	defer s.muFHSQCBroadcast.Unlock()
+	if !hotstuff.SignedStateSemanticEqual(s.fhsActiveQCBroadcast, cert) {
+		return 0, false
+	}
+	return s.fhsActiveQCBroadcastGeneration, true
+}
+
+func (s *Service) clearFHSQCBroadcastMarkers() {
+	if s == nil {
+		return
+	}
+	s.muFHSQCBroadcast.Lock()
+	s.fhsActiveQCBroadcast = nil
+	s.fhsActiveQCBroadcastGeneration = 0
+	s.fhsCompletedQCBroadcast = nil
+	s.fhsCompletedQCBroadcastExpiry = time.Time{}
+	s.muFHSQCBroadcast.Unlock()
+}
+
+// lifecycleGenerationLocked returns the currently active process-local service
+// generation. The caller must hold muLifecycle. Zero is reserved for tests and
+// direct marker helpers that do not participate in MinerStart/MinerStop.
+func (s *Service) lifecycleGenerationLocked() uint64 {
+	if s.lifecycleGeneration == 0 {
+		s.lifecycleGeneration = 1
+	}
+	return s.lifecycleGeneration
+}
+
+// advanceLifecycleGenerationLocked invalidates every in-flight callback from a
+// previous MinerStart/MinerStop boundary. The caller must hold muLifecycle.
+func (s *Service) advanceLifecycleGenerationLocked() uint64 {
+	s.lifecycleGeneration++
+	if s.lifecycleGeneration == 0 {
+		s.lifecycleGeneration = 1
+	}
+	return s.lifecycleGeneration
+}
+
+func (s *Service) lifecycleGenerationActiveLocked(generation uint64) bool {
+	return generation != 0 && s.lifecycleGeneration == generation && atomic.LoadInt32(&s.runningState) == 1
+}
+
+func (s *Service) lifecycleGenerationActive(generation uint64) bool {
+	if s == nil {
+		return false
+	}
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+	return s.lifecycleGenerationActiveLocked(generation)
+}
+
+func (s *Service) OnFHSLeaderCertifiedBeforeBroadcast(cert *hotstuff.SignedState) (err error) {
+	if s == nil {
+		return fmt.Errorf("cannot begin an FHS certification broadcast on a nil service")
+	}
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		return types.ErrNotRunning
+	}
+	generation := s.lifecycleGenerationLocked()
+	if err := s.beginFHSQCBroadcastForGeneration(cert, generation); err != nil {
+		return err
+	}
+	ready := false
+	defer func() {
+		if !ready {
+			if cleanupErr := s.abortFHSQCBroadcast(cert); cleanupErr != nil {
+				log.Error("failed to clear aborted FHS certification broadcast", "number", cert.Number, "err", cleanupErr)
+			}
+		}
+	}()
+	if err := s.adoptFHSHighQC(cert, false, true); err != nil {
+		return err
+	}
+	if err := s.refreshFHSCertifiedCommitteePeerAuthorization(); err != nil {
+		return err
+	}
+	activeGeneration, active := s.fhsQCBroadcastActiveGeneration(cert)
+	generationCurrent := s.lifecycleGenerationActiveLocked(generation) && active && activeGeneration == generation
+	if !generationCurrent {
+		return types.ErrNotRunning
+	}
+	ready = true
+	return nil
+}
+
+func (s *Service) OnFHSLeaderCertifiedAfterBroadcast(cert *hotstuff.SignedState, broadcastSucceeded bool) (err error) {
+	// Before has bracketed this physical send attempt, including retries. Mark
+	// a successful queue admission completed even when canonical adoption below
+	// fails. If any committee delivery was rejected, clear the active marker
+	// before finishing so sendNewViewMsg can immediately replay the durable outbox.
+	// Calling After without a successful Before is rejected rather than pretending
+	// that a send occurred.
+	generation, active := s.fhsQCBroadcastActiveGeneration(cert)
+	if !active || generation == 0 {
+		return fmt.Errorf("cannot complete an FHS certification broadcast that is not active")
+	}
+	if !s.lifecycleGenerationActive(generation) {
+		return types.ErrNotRunning
+	}
+	if !broadcastSucceeded {
+		if err := s.abortFHSQCBroadcast(cert); err != nil {
+			return err
+		}
+		return s.finishFHSCertificationForGeneration(cert, generation)
+	}
+	defer func() {
+		if cleanupErr := s.completeFHSQCBroadcast(cert, time.Now()); cleanupErr != nil {
+			if err == nil {
+				err = cleanupErr
+			} else {
+				log.Error("failed to clear completed FHS certification broadcast", "number", cert.Number, "err", cleanupErr)
+			}
+		}
+	}()
+	return s.finishFHSCertificationForGeneration(cert, generation)
 }
 
 func (s *Service) finishFHSCertification(cert *hotstuff.SignedState) error {
+	if s == nil {
+		return types.ErrNotRunning
+	}
+	s.muLifecycle.Lock()
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		s.muLifecycle.Unlock()
+		return types.ErrNotRunning
+	}
+	generation := s.lifecycleGenerationLocked()
+	s.muLifecycle.Unlock()
+	return s.finishFHSCertificationForGeneration(cert, generation)
+}
+
+func (s *Service) finishFHSCertificationState(cert *hotstuff.SignedState) error {
+	if err := s.refreshFHSCertifiedCommitteePeerAuthorization(); err != nil {
+		return fmt.Errorf("authorize certified FHS committee handoff peers: %w", err)
+	}
 	if err := s.commitFHS2ChainForCertified(cert); err != nil {
 		return err
 	}
-	s.pacetMakerTimer.start()
-	s.sendNewViewMsg(cert.Number)
+	return nil
+}
+
+func (s *Service) finishFHSCertificationForGeneration(cert *hotstuff.SignedState, generation uint64) error {
+	var (
+		pendingReplay *hotstuff.SignedState
+		replayMessage *hotstuff.HotstuffMessage
+		replayErr     error
+	)
+
+	// Keep every local persistence and activation step inside the MinerStop
+	// boundary. Preparing a durable replay can read the safety DB, so it belongs
+	// here too; only the already-built network message is sent after unlocking.
+	s.muLifecycle.Lock()
+	if !s.lifecycleGenerationActiveLocked(generation) {
+		s.muLifecycle.Unlock()
+		return types.ErrNotRunning
+	}
+	if err := s.finishFHSCertificationState(cert); err != nil {
+		s.muLifecycle.Unlock()
+		return err
+	}
+	// Canonical insertion invokes ProcInsertDone synchronously. Reconciliation
+	// may stop this service without taking muLifecycle, so fail closed before
+	// rearming the pacemaker even though the outer lifecycle lock is still held.
+	if !s.lifecycleGenerationActiveLocked(generation) {
+		s.muLifecycle.Unlock()
+		return types.ErrNotRunning
+	}
+	_ = s.pacetMakerTimer.start()
+	if s.fairHotstuffEnabled() && !s.hasDeferredFHSRecovery() {
+		pendingReplay, replayMessage, replayErr = s.preparePendingFHSQCBroadcastReplay()
+	}
+	s.muLifecycle.Unlock()
+
+	// A physical send may wait on bounded transport backpressure. Do not make
+	// MinerStop wait for it. No database or consensus state is touched here.
+	if replayErr != nil {
+		log.Error("cannot replay durable FHS QC broadcast", "err", replayErr)
+	} else {
+		s.broadcastPreparedFHSQCBroadcast(pendingReplay, replayMessage)
+	}
+
+	// Stop, or a Stop/Start pair, may have happened while the prepared message
+	// was sent. Revalidate the exact generation before admitting NewView.
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+	if !s.lifecycleGenerationActiveLocked(generation) {
+		return types.ErrNotRunning
+	}
+	s.sendNewViewMsgAfterReplay(cert.Number)
 	return nil
 }
 
@@ -1222,29 +2753,155 @@ func (s *Service) normalizeFHSEpochView(qc *hotstuff.SignedState, keyBlock *type
 	return nil
 }
 
+func (s *Service) acquireFHSValidationPublication(owner fhsValidationPublicationOwner) error {
+	if s == nil || owner == fhsValidationPublicationNone {
+		return fmt.Errorf("invalid FHS validation publication owner")
+	}
+	s.muFHSValidationPublication.Lock()
+	if !atomic.CompareAndSwapInt32(&s.fhsValidationPublicationOwner,
+		int32(fhsValidationPublicationNone), int32(owner)) {
+		s.muFHSValidationPublication.Unlock()
+		return fmt.Errorf("FHS validation publication ownership invariant failed")
+	}
+	return nil
+}
+
+var errFHSValidationPublicationBusy = core.ErrFHSFinalizedSyncPublicationBusy
+
+// tryAcquireFHSValidationPublication is used only by proof-aware P2P sync,
+// whose caller already holds BlockChain.chainmu. Waiting here would invert the
+// live path's publication-barrier -> chainmu order and deadlock both commits.
+// A failed try is deliberately retryable: InsertChain releases chainmu, after
+// which the live HotStuff publication can finish. That owner may only be
+// publishing a proposal vote and need not canonicalize the synced block, so
+// InsertChain must retain and retry the exact downloaded batch itself.
+func (s *Service) tryAcquireFHSValidationPublication(owner fhsValidationPublicationOwner) error {
+	if s == nil || owner == fhsValidationPublicationNone {
+		return fmt.Errorf("invalid FHS validation publication owner")
+	}
+	if !s.muFHSValidationPublication.TryLock() {
+		return errFHSValidationPublicationBusy
+	}
+	if !atomic.CompareAndSwapInt32(&s.fhsValidationPublicationOwner,
+		int32(fhsValidationPublicationNone), int32(owner)) {
+		s.muFHSValidationPublication.Unlock()
+		return fmt.Errorf("FHS validation publication ownership invariant failed")
+	}
+	return nil
+}
+
+// waitFHSValidationPublication waits for the current publication owner without
+// holding BlockChain.chainmu. The sync importer calls this only after a failed
+// TryLock attempt has unwound through InsertChain and released chainmu, so a
+// live HighQC publication that is waiting to commit can make progress.
+func (s *Service) waitFHSValidationPublication() {
+	if s == nil {
+		return
+	}
+	s.muFHSValidationPublication.Lock()
+	s.muFHSValidationPublication.Unlock()
+}
+
+func (s *Service) releaseFHSValidationPublication(owner fhsValidationPublicationOwner) bool {
+	if s == nil || owner == fhsValidationPublicationNone ||
+		!atomic.CompareAndSwapInt32(&s.fhsValidationPublicationOwner, int32(owner), int32(fhsValidationPublicationNone)) {
+		return false
+	}
+	s.muFHSValidationPublication.Unlock()
+	return true
+}
+
 // beforeFHSFinalizedSyncKeyCommit rotates only committee-scoped timeout data
 // after core has verified the complete direct-child finality proof, but before
 // the synced key carrier becomes canonical. LastVote and HighestQC remain as
 // global safety watermarks.
-func (s *Service) beforeFHSFinalizedSyncKeyCommit(block *types.Block, childQC *hotstuff.SignedState) error {
+func (s *Service) beforeFHSFinalizedSyncKeyCommit(block *types.Block, childQC *hotstuff.SignedState) (bool, error) {
+	// The barrier remains held until core invokes the paired finish callback.
+	// This hook is called with BlockChain.chainmu held, so it must never wait
+	// behind an Apply that owns this barrier and is itself waiting for chainmu.
+	// Returning acquired=false tells core not to run the paired finish callback.
+	if err := s.tryAcquireFHSValidationPublication(fhsValidationPublicationSyncTransition); err != nil {
+		return false, err
+	}
 	if block == nil || block.BlockType() != types.Key_Block || childQC == nil {
-		return fmt.Errorf("incomplete Fair HotStuff synced key transition")
+		return true, fmt.Errorf("incomplete Fair HotStuff synced key transition")
 	}
 	keyBlock := types.DecodeToKeyBlock(block.KeyInfo())
 	if keyBlock == nil {
-		return fmt.Errorf("invalid Fair HotStuff synced key carrier")
+		return true, fmt.Errorf("invalid Fair HotStuff synced key carrier")
 	}
 	current := s.kbc.CurrentBlock()
 	if current == nil {
-		return fmt.Errorf("missing canonical key head before Fair HotStuff sync transition")
+		return true, fmt.Errorf("missing canonical key head before Fair HotStuff sync transition")
 	}
 	if current.Hash() != keyBlock.Hash() || current.NumberU64() != keyBlock.NumberU64() {
 		if keyBlock.NumberU64() != current.NumberU64()+1 || keyBlock.ParentHash() != current.Hash() {
-			return fmt.Errorf("non-contiguous Fair HotStuff synced key transition: current=%d/%s next=%d/%s parent=%s",
+			return true, fmt.Errorf("non-contiguous Fair HotStuff synced key transition: current=%d/%s next=%d/%s parent=%s",
 				current.NumberU64(), current.Hash(), keyBlock.NumberU64(), keyBlock.Hash(), keyBlock.ParentHash())
 		}
 	}
-	return s.rotateFHSEpochSafety(keyBlock.Hash())
+	// Invalidate speculative work before the canonical key head can change. This
+	// mutex is also the successful Apply-to-Broadcast publication barrier: if an
+	// old-epoch Prepare is already being published, the sync commit waits for its
+	// exact-committee broadcast; otherwise its worker/result can no longer apply.
+	s.invalidateProposalBuildsForEpochTransition()
+	if err := s.rotateFHSEpochSafety(keyBlock.Hash()); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (s *Service) invalidateProposalBuildsForEpochTransition() {
+	// The sync caller owns muFHSValidationPublication before entering here.
+	// This is the global publication lock order used by HighQC continuation
+	// paths that may subsequently schedule a proposal build.
+	s.muProposalBuild.Lock()
+	atomic.StoreInt32(&s.fhsEpochTransition, 1)
+	atomic.AddUint64(&s.proposalValidationGeneration, 1)
+	s.cancelAllProposalBuildsLocked()
+	s.muProposalBuild.Unlock()
+	s.cancelAllProposalValidations()
+	if s.protocolMng != nil {
+		s.protocolMng.ScheduleFHSEpochReset()
+	}
+}
+
+func (s *Service) finishFHSFinalizedSyncKeyCommit(block *types.Block, outcome core.FHSFinalizedSyncKeyCommitOutcome) {
+	if atomic.LoadInt32(&s.fhsValidationPublicationOwner) != int32(fhsValidationPublicationSyncTransition) {
+		atomic.StoreInt32(&s.fhsEpochTransition, 1)
+		s.setRunState(0)
+		log.Error("Fair HotStuff synced key commit lost its validation publication barrier")
+		return
+	}
+	defer func() {
+		if !s.releaseFHSValidationPublication(fhsValidationPublicationSyncTransition) {
+			atomic.StoreInt32(&s.fhsEpochTransition, 1)
+			s.setRunState(0)
+			log.Error("Fair HotStuff synced key commit failed to release its validation publication barrier")
+		}
+	}()
+	switch outcome {
+	case core.FHSFinalizedSyncPreCommitFailed, core.FHSFinalizedSyncCompleted:
+		s.muProposalBuild.Lock()
+		atomic.StoreInt32(&s.fhsEpochTransition, 0)
+		s.muProposalBuild.Unlock()
+	case core.FHSFinalizedSyncCanonicalAfterFailed:
+		// The canonical transaction/key heads have already moved and cannot be
+		// rolled back here. Keep the epoch gate closed and stop consensus until
+		// startup recovery reconciles the watermark and normalized view.
+		s.setRunState(0)
+		if block != nil {
+			log.Error("Fair HotStuff synced key commit post-processing failed; consensus stopped",
+				"number", block.NumberU64(), "hash", block.Hash())
+		} else {
+			log.Error("Fair HotStuff synced key commit post-processing failed; consensus stopped")
+		}
+	default:
+		// Unknown lifecycle values are internal corruption. Fail closed using
+		// the same stopped state while retaining the transition gate.
+		s.setRunState(0)
+		log.Error("Fair HotStuff synced key commit returned an unknown lifecycle outcome", "outcome", outcome)
+	}
 }
 
 // afterFHSFinalizedSyncCommit runs after every proof-aware full-sync commit.
@@ -1258,6 +2915,73 @@ func (s *Service) afterFHSFinalizedSyncCommit(block *types.Block, ownQC, childQC
 	if err := s.reconcileFHSCanonicalQCWatermark(block, ownQC); err != nil {
 		return fmt.Errorf("reconcile canonical Fair HotStuff QC watermark: %w", err)
 	}
+	// ProcInsertDone performs the same volatile reconciliation for a newly
+	// inserted canonical block. Repeat it here because the proof-aware importer
+	// can also backfill finality metadata onto an already-known canonical head,
+	// a path which deliberately does not emit another insertion callback.
+	if err := s.reconcileFHSCertifiedFrontier(block); err != nil {
+		return fmt.Errorf("reconcile canonical Fair HotStuff runtime frontier: %w", err)
+	}
+	s.muProposalBody.RLock()
+	frontier := s.fhsHighest
+	var frontierRef *types.HotstuffProposalRef
+	var frontierQCNumber uint64
+	if frontier != nil && frontier.ref != nil && frontier.qc != nil {
+		refCopy := *frontier.ref
+		frontierRef = &refCopy
+		frontierQCNumber = frontier.qc.Number
+	}
+	s.muProposalBody.RUnlock()
+	// Publish the new canonical route before the downloader releases chainmu.
+	// Restore the unique retained suffix as the proposal parent. Numeric
+	// pacemaker progress is monotonic: a locally known higher TC is not discarded
+	// merely because sync advanced block state.
+	currentKey := s.kbc.CurrentBlock()
+	if currentKey == nil {
+		return fmt.Errorf("refresh canonical Fair HotStuff runtime route: missing key head")
+	}
+	routeNumber, routeHash, routeView := block.NumberU64(), block.Hash(), ownQC.Number
+	if frontierRef != nil {
+		routeNumber, routeHash = frontierRef.Number, frontierRef.BlockHash
+		if frontierQCNumber > routeView {
+			routeView = frontierQCNumber
+		}
+	}
+	s.muCurrentView.Lock()
+	s.currentView.TxNumber = routeNumber
+	s.currentView.TxHash = routeHash
+	s.currentView.KeyNumber = currentKey.NumberU64()
+	s.currentView.KeyHash = currentKey.Hash()
+	s.currentView.CommitteeHash = currentKey.CommitteeHash()
+	if routeView > s.currentView.ViewNumber {
+		s.currentView.ViewNumber = routeView
+	}
+	s.currentView.Round = 0
+	s.currentView.NoDone = true
+	if s.currentView.ViewNumber == ^uint64(0) {
+		s.muCurrentView.Unlock()
+		return fmt.Errorf("refresh canonical Fair HotStuff runtime route: view overflow")
+	}
+	committee, err := s.loadViewCommittee(&s.currentView, false)
+	if err != nil {
+		s.muCurrentView.Unlock()
+		return fmt.Errorf("refresh canonical Fair HotStuff runtime route: %w", err)
+	}
+	leaderIndex, err := fairHotstuffLeaderIndex(
+		s.chainConfig.FairHotstuffSeed,
+		s.ChainID(),
+		s.currentView.ViewNumber+1,
+		s.currentView.CommitteeHash,
+		len(committee.List),
+	)
+	if err != nil {
+		s.muCurrentView.Unlock()
+		return fmt.Errorf("refresh canonical Fair HotStuff runtime leader: %w", err)
+	}
+	s.currentView.LeaderIndex = leaderIndex
+	s.waittingView.TxNumber = routeNumber
+	s.waittingView.KeyNumber = currentKey.NumberU64()
+	s.muCurrentView.Unlock()
 	if block.BlockType() != types.Key_Block {
 		return nil
 	}
@@ -1269,7 +2993,7 @@ func (s *Service) afterFHSFinalizedSyncCommit(block *types.Block, ownQC, childQC
 	return s.normalizeFHSEpochView(childQC, current)
 }
 
-func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash, leaderID string, encodedBlock, extra []byte) ([]byte, error) {
+func (s *Service) stageHotstuffProposal(viewNumber uint64, viewID common.Hash, leaderID string, encodedBlock, extra []byte, parentQC *hotstuff.SignedState) (*stagedHotstuffProposal, error) {
 	if len(encodedBlock) == 0 {
 		return nil, fmt.Errorf("empty encoded block proposal")
 	}
@@ -1289,7 +3013,6 @@ func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash,
 			return nil, fmt.Errorf("FHS proposal does not extend highest certified block: parent=%s highest=%s", block.ParentHash(), current.TxHash)
 		}
 	}
-	parentQC := s.HighestCertified()
 	var parentQCID common.Hash
 	if parentQC != nil {
 		id, err := hotstuff.SignedStateID(parentQC)
@@ -1308,14 +3031,16 @@ func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash,
 	}
 	proposalID := ref.ProposalID()
 	body := &proposalBodyMsg{
-		Type:              proposalBodyMsgData,
+		Type:              proposalBodyMsgManifest,
 		ProposalID:        proposalID,
 		BodyHash:          ref.BodyHash,
+		BodySize:          ref.BodySize,
 		Number:            ref.Number,
 		ViewNumber:        ref.ViewNumber,
 		ViewID:            ref.ViewID,
 		LeaderID:          ref.LeaderID,
 		From:              s.Self(),
+		ProposalKeyHash:   ref.KeyHash,
 		EncodedBlock:      encodedBlock,
 		Extra:             append([]byte(nil), extra...),
 		ParentQC:          encodedParentQC,
@@ -1324,7 +3049,10 @@ func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash,
 	if err := s.storeProposalBody(body); err != nil {
 		return nil, err
 	}
-	s.broadcastProposalBodyToCommittee(body)
+	manifest, err := encodeProposalDataManifest(block)
+	if err != nil {
+		return nil, err
+	}
 	refBytes := ref.EncodeToBytes()
 	if len(refBytes) == 0 {
 		return nil, fmt.Errorf("failed to encode hotstuff proposal ref")
@@ -1337,21 +3065,61 @@ func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash,
 		"bodyHash", ref.BodyHash,
 		"bodySize", ref.BodySize,
 		"refBytes", len(refBytes))
-	return refBytes, nil
+	wireBody := cloneProposalBodyMsg(body)
+	wireBody.Type = proposalBodyMsgManifest
+	wireBody.From = s.Self()
+	wireBody.EncodedBlock = nil
+	wireBody.Manifest = append([]byte(nil), manifest...)
+	wireBody.MissingTxHashes = nil
+	wireBody.TransactionBytes = nil
+	if err := s.sealProposalBody(wireBody); err != nil {
+		return nil, fmt.Errorf("sign proposal manifest: %w", err)
+	}
+	_, committee, _, err := s.resolveExactFHSCommittee(ref.KeyHash, true)
+	if err != nil || committee == nil || len(committee.List) == 0 {
+		return nil, fmt.Errorf("proposal committee unavailable %s: %w", ref.KeyHash, err)
+	}
+	destinations := make([]string, 0, len(committee.List)-1)
+	for _, node := range committee.List {
+		if node == nil || node.Address == "" || IsSelf(node.Address) {
+			continue
+		}
+		destinations = append(destinations, node.Address)
+	}
+	return &stagedHotstuffProposal{
+		proposalRef:  refBytes,
+		body:         body,
+		manifest:     wireBody,
+		destinations: destinations,
+	}, nil
 }
 
-func (s *Service) broadcastProposalBodyToCommittee(body *proposalBodyMsg) {
+func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash, leaderID string, encodedBlock, extra []byte) ([]byte, error) {
+	staged, err := s.stageHotstuffProposal(viewNumber, viewID, leaderID, encodedBlock, extra, s.HighestCertified())
+	if err != nil {
+		return nil, err
+	}
+	s.broadcastProposalManifestToCommittee(staged.body, staged.manifest.Manifest)
+	return staged.proposalRef, nil
+}
+
+func (s *Service) broadcastProposalManifestToCommittee(body *proposalBodyMsg, manifest []byte) {
 	if body == nil {
 		return
 	}
-	mb := bftview.GetCurrentMember()
-	if mb == nil {
-		log.Warn("HOTSTUFF PROPOSAL BODY broadcast skipped; missing committee", "number", body.Number, "proposalID", body.ProposalID)
+	_, mb, _, err := s.resolveExactFHSCommittee(body.ProposalKeyHash, true)
+	if err != nil || mb == nil {
+		log.Warn("HOTSTUFF PROPOSAL BODY broadcast skipped; missing committee", "number", body.Number, "proposalID", body.ProposalID, "err", err)
 		return
 	}
 	wireBody := cloneProposalBodyMsg(body)
 	if wireBody != nil {
+		wireBody.Type = proposalBodyMsgManifest
 		wireBody.From = s.Self()
+		wireBody.EncodedBlock = nil
+		wireBody.Manifest = append([]byte(nil), manifest...)
+		wireBody.MissingTxHashes = nil
+		wireBody.TransactionBytes = nil
 	}
 	if err := s.sealProposalBody(wireBody); err != nil {
 		log.Warn("HOTSTUFF PROPOSAL BODY signing failed", "number", body.Number, "err", err)
@@ -1361,31 +3129,108 @@ func (s *Service) broadcastProposalBodyToCommittee(body *proposalBodyMsg) {
 		if node == nil || node.Address == "" || IsSelf(node.Address) {
 			continue
 		}
-		log.Info("HOTSTUFF PROPOSAL BODY SEND",
+		log.Info("HOTSTUFF PROPOSAL MANIFEST SEND",
 			"to", node.Address,
 			"number", body.Number,
 			"proposalID", body.ProposalID,
 			"bodyHash", body.BodyHash,
-			"bytes", len(body.EncodedBlock))
+			"manifestBytes", len(wireBody.Manifest),
+			"bodyBytes", body.BodySize)
 		if err := s.netService.SendRawData(node.Address, &networkMsg{Pmsg: wireBody}); err != nil {
 			log.Warn("HOTSTUFF PROPOSAL BODY send failed", "to", node.Address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
 		}
 	}
 }
 
-func (s *Service) sendProposalBodyRequest(ref *types.HotstuffProposalRef) {
+func (s *Service) proposalRepairTarget(ref *types.HotstuffProposalRef, attempt uint64) *common.Cnode {
+	if s == nil || s.kbc == nil || ref == nil || ref.KeyHash == (common.Hash{}) {
+		return nil
+	}
+	// Repair follows the committee generation committed by the certified
+	// proposal, not the receiver's current committee. A catch-up chain may cross
+	// a key-block transition before the local application publishes that view.
+	_, mb, _, err := s.resolveExactFHSCommittee(ref.KeyHash, true)
+	if err != nil || mb == nil || len(mb.List) == 0 {
+		return nil
+	}
+	if attempt == 0 {
+		if leader, _ := mb.Get(ref.LeaderID, bftview.ID); leader != nil && leader.Address != "" && !IsSelf(leader.Address) {
+			return leader
+		}
+	}
+	proposalID := ref.ProposalID()
+	seed := binary.BigEndian.Uint64(proposalID[:8]) + attempt
+	committeeSize := uint64(len(mb.List))
+	base := seed % committeeSize
+	for offset := 0; offset < len(mb.List); offset++ {
+		index := int((base + uint64(offset)) % committeeSize)
+		node := mb.List[index]
+		if node != nil && node.Address != "" && !IsSelf(node.Address) {
+			return node
+		}
+	}
+	return nil
+}
+
+// proposalRepairRequestTracker keeps one waiter's outstanding repair requests
+// disjoint until every currently missing transaction has been covered. Only
+// then does it begin another pass, so a delayed response cannot pin retries to
+// the first proposalRepairMaxHashes entries forever.
+type proposalRepairRequestTracker struct {
+	requested map[common.Hash]struct{}
+}
+
+func (tracker *proposalRepairRequestTracker) nextWindow(missing []common.Hash) []common.Hash {
+	if len(missing) == 0 {
+		return nil
+	}
+	if tracker.requested == nil {
+		tracker.requested = make(map[common.Hash]struct{}, len(missing))
+	}
+	windowCapacity := len(missing)
+	if windowCapacity > proposalRepairMaxHashes {
+		windowCapacity = proposalRepairMaxHashes
+	}
+	next := make([]common.Hash, 0, windowCapacity)
+	appendUnrequested := func() {
+		for _, hash := range missing {
+			if _, requested := tracker.requested[hash]; requested {
+				continue
+			}
+			tracker.requested[hash] = struct{}{}
+			next = append(next, hash)
+			if len(next) == proposalRepairMaxHashes {
+				return
+			}
+		}
+	}
+	appendUnrequested()
+	if len(next) == 0 {
+		clear(tracker.requested)
+		appendUnrequested()
+	}
+	return next
+}
+
+func (s *Service) sendProposalRepairRequest(ref *types.HotstuffProposalRef, missing []common.Hash, attempt uint64) {
 	if ref == nil {
 		return
 	}
+	if len(missing) > proposalRepairMaxHashes {
+		missing = missing[:proposalRepairMaxHashes]
+	}
 	req := &proposalBodyMsg{
-		Type:              proposalBodyMsgRequest,
+		Type:              proposalBodyMsgRepairRequest,
 		ProposalID:        ref.ProposalID(),
 		BodyHash:          ref.BodyHash,
+		BodySize:          ref.BodySize,
 		Number:            ref.Number,
 		ViewNumber:        ref.ViewNumber,
 		ViewID:            ref.ViewID,
 		LeaderID:          ref.LeaderID,
 		From:              s.Self(),
+		ProposalKeyHash:   ref.KeyHash,
+		MissingTxHashes:   append([]common.Hash(nil), missing...),
 		CreatedAtUnixNano: time.Now().UnixNano(),
 	}
 	if err := s.sealProposalBody(req); err != nil {
@@ -1393,28 +3238,35 @@ func (s *Service) sendProposalBodyRequest(ref *types.HotstuffProposalRef) {
 		return
 	}
 
-	mb := bftview.GetCurrentMember()
-	if mb == nil {
+	node := s.proposalRepairTarget(ref, attempt)
+	if node == nil {
 		return
 	}
-	for _, node := range mb.List {
-		if node == nil || node.Address == "" || IsSelf(node.Address) {
-			continue
-		}
-		log.Info("HOTSTUFF PROPOSAL BODY REQUEST",
-			"to", node.Address,
-			"number", ref.Number,
-			"proposalID", req.ProposalID,
-			"bodyHash", req.BodyHash)
-		if err := s.netService.SendRawData(node.Address, &networkMsg{Pmsg: req}); err != nil {
-			log.Warn("HOTSTUFF PROPOSAL BODY request failed", "to", node.Address, "number", ref.Number, "proposalID", req.ProposalID, "err", err)
-		}
+	log.Info("HOTSTUFF PROPOSAL REPAIR REQUEST",
+		"to", node.Address,
+		"number", ref.Number,
+		"proposalID", req.ProposalID,
+		"missing", len(req.MissingTxHashes),
+		"attempt", attempt)
+	if err := s.netService.SendRawData(node.Address, &networkMsg{Pmsg: req}); err != nil {
+		log.Warn("HOTSTUFF PROPOSAL REPAIR request failed", "to", node.Address, "number", ref.Number, "proposalID", req.ProposalID, "err", err)
 	}
 }
 
 func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBodyMsg, error) {
+	return s.waitProposalBodyForValidation(context.Background(), ref, 0)
+}
+
+func (s *Service) waitProposalBodyForGeneration(ref *types.HotstuffProposalRef, generation uint64) (*proposalBodyMsg, error) {
+	return s.waitProposalBodyForValidation(context.Background(), ref, generation)
+}
+
+func (s *Service) waitProposalBodyForValidation(ctx context.Context, ref *types.HotstuffProposalRef, serviceGeneration uint64) (*proposalBodyMsg, error) {
 	if ref == nil {
 		return nil, fmt.Errorf("nil proposal ref")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	proposalID := ref.ProposalID()
 	start := time.Now()
@@ -1425,9 +3277,18 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 		shortenedForKeyblock = true
 	}
 	nextRequestAt := time.Now().Add(proposalBodyRequestAfter)
+	var requestAttempt uint64
+	var repairStartedAt time.Time
+	var repairRequests proposalRepairRequestTracker
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, hotstuff.ErrOldState
+		}
+		if serviceGeneration != 0 && (atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != serviceGeneration) {
+			return nil, hotstuff.ErrOldState
+		}
 		body := s.getProposalBody(proposalID)
-		if body != nil {
+		if body != nil && len(body.EncodedBlock) > 0 {
 			if body.BodyHash != ref.BodyHash {
 				return nil, fmt.Errorf("proposal body hash mismatch for %s: have %s want %s", proposalID, body.BodyHash, ref.BodyHash)
 			}
@@ -1436,7 +3297,26 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 			}
 			return body, nil
 		}
+		missing, assembleErr := s.tryAssembleProposalBody(proposalID)
+		if assembleErr != nil {
+			return nil, assembleErr
+		}
+		body = s.getProposalBody(proposalID)
+		if body != nil && len(body.EncodedBlock) > 0 {
+			continue
+		}
 		now := time.Now()
+		if len(missing) > 0 {
+			if repairStartedAt.IsZero() {
+				repairStartedAt = now
+			}
+			if !shortenedForKeyblock {
+				repairDeadline := repairStartedAt.Add(proposalRepairWaitTimeout(len(missing)))
+				if repairDeadline.After(deadline) {
+					deadline = repairDeadline
+				}
+			}
+		}
 		if !shortenedForKeyblock && s.fixedModeKeyblockIntervalElapsed(now) {
 			keyblockDeadline := now.Add(proposalBodyKeyblockLivenessTimeout)
 			if keyblockDeadline.Before(deadline) {
@@ -1451,13 +3331,25 @@ func (s *Service) waitProposalBody(ref *types.HotstuffProposalRef) (*proposalBod
 			}
 		}
 		if !now.Before(nextRequestAt) {
-			s.sendProposalBodyRequest(ref)
+			s.sendProposalRepairRequest(ref, repairRequests.nextWindow(missing), requestAttempt)
+			requestAttempt++
 			nextRequestAt = now.Add(proposalBodyRequestInterval)
 		}
 		if now.After(deadline) {
 			return nil, fmt.Errorf("proposal body timeout: number=%d proposalID=%s bodyHash=%s", ref.Number, proposalID, ref.BodyHash)
 		}
-		time.Sleep(proposalBodyPollInterval)
+		poll := time.NewTimer(proposalBodyPollInterval)
+		select {
+		case <-poll.C:
+		case <-ctx.Done():
+			if !poll.Stop() {
+				select {
+				case <-poll.C:
+				default:
+				}
+			}
+			return nil, hotstuff.ErrOldState
+		}
 	}
 }
 
@@ -1473,6 +3365,149 @@ func proposalBodyWaitTimeout(bodySize uint64) time.Duration {
 	return timeout
 }
 
+func proposalRepairWaitTimeout(missingCount int) time.Duration {
+	if missingCount <= 0 {
+		return 0
+	}
+	count := uint64(missingCount)
+	if limit := params.FairHotstuffWorkLimits().Transactions; count > limit {
+		count = limit
+	}
+	if count == 0 {
+		return 0
+	}
+	batchSize := uint64(proposalRepairMaxHashes)
+	batches := (count + batchSize - 1) / batchSize
+	timeout := proposalBodyRequestAfter + time.Duration(batches-1)*proposalBodyRequestInterval + proposalRepairNetworkMargin
+	if timeout > proposalBodyWaitMaxTimeout {
+		return proposalBodyWaitMaxTimeout
+	}
+	return timeout
+}
+
+func (s *Service) proposalRepairTransactions(body *proposalBodyMsg, requested []common.Hash) ([]common.Hash, [][]byte, error) {
+	if body == nil || len(requested) == 0 {
+		return nil, nil, nil
+	}
+	available := make(map[common.Hash]*types.Transaction, len(body.TransactionBytes))
+	allowed := make(map[common.Hash]struct{})
+	for index, encoded := range body.TransactionBytes {
+		tx, err := decodeCanonicalProposalRepairTransaction(encoded)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cached proposal repair transaction %d: %w", index, err)
+		}
+		hash := tx.Hash()
+		if _, duplicate := available[hash]; duplicate {
+			return nil, nil, fmt.Errorf("cached proposal repair repeats transaction %s", hash)
+		}
+		available[hash] = tx
+	}
+	if len(body.Manifest) > 0 {
+		if manifest, err := decodeProposalDataManifest(body.Manifest); err == nil {
+			allowed = make(map[common.Hash]struct{}, len(manifest.TransactionHashes))
+			for _, hash := range manifest.TransactionHashes {
+				allowed[hash] = struct{}{}
+			}
+		}
+	}
+	if len(body.EncodedBlock) > 0 {
+		if block := types.DecodeToBlock(body.EncodedBlock); block != nil {
+			allowed = make(map[common.Hash]struct{}, len(block.Transactions()))
+			for index, tx := range block.Transactions() {
+				if tx == nil || !tx.IsInitialized() {
+					return nil, nil, fmt.Errorf("proposal repair block transaction %d is not initialized", index)
+				}
+				hash := tx.Hash()
+				available[hash] = tx
+				allowed[hash] = struct{}{}
+			}
+		}
+	}
+	if len(allowed) == 0 {
+		return nil, nil, nil
+	}
+	hashes := make([]common.Hash, 0, len(requested))
+	encodedTransactions := make([][]byte, 0, len(requested))
+	seen := make(map[common.Hash]struct{}, len(requested))
+	payloadBytes := 0
+	for _, hash := range requested {
+		if _, included := allowed[hash]; !included {
+			continue
+		}
+		if _, duplicate := seen[hash]; duplicate {
+			continue
+		}
+		seen[hash] = struct{}{}
+		tx := available[hash]
+		if tx == nil && s.txPool != nil {
+			tx = s.txPool.Get(hash)
+		}
+		if tx == nil && s.resolveTxQUICTransaction != nil {
+			var err error
+			tx, err = s.resolveTxQUICTransaction(hash)
+			if err != nil {
+				return nil, nil, fmt.Errorf("resolve durable repair transaction %s: %w", hash, err)
+			}
+		}
+		if tx == nil {
+			continue
+		}
+		encoded, err := encodeProposalRepairTransaction(tx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode repair transaction %s: %w", hash, err)
+		}
+		if tx.Hash() != hash {
+			continue
+		}
+		nextBytes := len(encoded) + common.HashLength
+		payloadLimit := proposalBodySidecarMaxBytes - proposalRepairResponseReserve
+		if len(encodedTransactions) > 0 && payloadBytes+nextBytes > payloadLimit {
+			break
+		}
+		if nextBytes > payloadLimit {
+			continue
+		}
+		hashes = append(hashes, hash)
+		encodedTransactions = append(encodedTransactions, encoded)
+		payloadBytes += nextBytes
+	}
+	return hashes, encodedTransactions, nil
+}
+
+// proposalBodyForRepairRequest first checks the volatile hot cache, then falls
+// back to the content-addressed recovery store. A restarted validator may have
+// certified proposal data on disk without having repopulated proposalBodies;
+// it must still be able to act as a DA repair donor. The durable loader fully
+// revalidates the ProposalRef and body/proof commitments before this exact
+// request context is matched.
+func (s *Service) proposalBodyForRepairRequest(request *proposalBodyMsg) (*proposalBodyMsg, bool, error) {
+	if request == nil || request.ProposalID == (common.Hash{}) {
+		return nil, false, fmt.Errorf("invalid proposal repair request")
+	}
+	body := s.getProposalBody(request.ProposalID)
+	fromDurable := false
+	if body == nil {
+		if s.fhsStore == nil || s.fhsStore.db == nil {
+			return nil, false, nil
+		}
+		_, durableBody, found, err := s.readFHSDurableProposalBody(request.ProposalID)
+		if err != nil {
+			return nil, true, err
+		}
+		if !found || durableBody == nil {
+			return nil, false, nil
+		}
+		body = durableBody
+		fromDurable = true
+	}
+	if body.ProposalID != request.ProposalID || body.BodyHash != request.BodyHash || body.BodySize != request.BodySize ||
+		body.Number != request.Number || body.ViewNumber != request.ViewNumber || body.ViewID != request.ViewID ||
+		body.LeaderID != request.LeaderID || body.ProposalKeyHash != request.ProposalKeyHash {
+		return nil, fromDurable, fmt.Errorf("proposal repair request context mismatch")
+	}
+	return body, fromDurable, nil
+}
+
 func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposalBodyMsg) {
 	if msg == nil {
 		return
@@ -1485,17 +3520,37 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 		log.Warn("HOTSTUFF PROPOSAL BODY sender rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
 		return
 	}
-	switch msg.Type {
-	case proposalBodyMsgData:
-		if err := s.storeProposalBody(msg); err != nil {
-			log.Warn("HOTSTUFF PROPOSAL BODY rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+	if msg.Type == proposalBodyMsgManifest {
+		if err := s.verifyProposalManifestAuthority(msg); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL MANIFEST authority rejected", "from", msg.From, "leader", msg.LeaderID, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
 			return
 		}
-		log.Info("HOTSTUFF PROPOSAL BODY stored", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "bytes", len(msg.EncodedBlock))
-	case proposalBodyMsgRequest:
-		body := s.getProposalBody(msg.ProposalID)
+	}
+	switch msg.Type {
+	case proposalBodyMsgManifest:
+		missing, err := s.storeProposalManifest(msg)
+		if err != nil {
+			s.discardIncompletePeerManifest(msg)
+			log.Warn("HOTSTUFF PROPOSAL MANIFEST rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+			return
+		}
+		if msg.From != msg.LeaderID && len(missing) > 0 {
+			s.discardIncompletePeerManifest(msg)
+			log.Warn("HOTSTUFF PROPOSAL MANIFEST peer repair is not immediately verifiable",
+				"from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "missing", len(missing))
+			return
+		}
+		log.Info("HOTSTUFF PROPOSAL MANIFEST stored", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID,
+			"manifestBytes", len(msg.Manifest), "missing", len(missing), "bodyBytes", msg.BodySize)
+	case proposalBodyMsgRepairRequest:
+		body, fromDurable, err := s.proposalBodyForRepairRequest(msg)
+		if err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR request rejected", "from", msg.From, "number", msg.Number,
+				"proposalID", msg.ProposalID, "durable", fromDurable, "err", err)
+			return
+		}
 		if body == nil {
-			log.Debug("HOTSTUFF PROPOSAL BODY request miss", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID)
+			log.Debug("HOTSTUFF PROPOSAL REPAIR request miss", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID)
 			return
 		}
 		if si == nil {
@@ -1505,63 +3560,135 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 		if address == "" {
 			return
 		}
-		cpy := cloneProposalBodyMsg(body)
-		if cpy != nil {
-			cpy.From = s.Self()
-		}
-		if err := s.sealProposalBody(cpy); err != nil {
-			log.Warn("HOTSTUFF PROPOSAL BODY RESPONSE signing failed", "to", address, "number", body.Number, "err", err)
+		if len(msg.MissingTxHashes) == 0 {
+			manifest := append([]byte(nil), body.Manifest...)
+			if len(manifest) == 0 && len(body.EncodedBlock) > 0 {
+				block := types.DecodeToBlock(body.EncodedBlock)
+				var err error
+				manifest, err = encodeProposalDataManifest(block)
+				if err != nil {
+					log.Warn("HOTSTUFF PROPOSAL MANIFEST response assembly failed", "to", address, "proposalID", body.ProposalID, "err", err)
+					return
+				}
+			}
+			response := cloneProposalBodyMsg(body)
+			response.Type = proposalBodyMsgManifest
+			response.From = s.Self()
+			response.EncodedBlock = nil
+			response.Manifest = manifest
+			response.MissingTxHashes = nil
+			response.TransactionBytes = nil
+			if err := s.sealProposalBody(response); err != nil {
+				log.Warn("HOTSTUFF PROPOSAL MANIFEST RESPONSE signing failed", "to", address, "number", body.Number, "err", err)
+				return
+			}
+			if err := s.netService.SendRawData(address, &networkMsg{Pmsg: response}); err != nil {
+				log.Warn("HOTSTUFF PROPOSAL MANIFEST response failed", "to", address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
+			}
 			return
 		}
-		log.Info("HOTSTUFF PROPOSAL BODY RESPONSE", "to", address, "number", body.Number, "proposalID", body.ProposalID, "bytes", len(body.EncodedBlock))
-		if err := s.netService.SendRawData(address, &networkMsg{Pmsg: cpy}); err != nil {
-			log.Warn("HOTSTUFF PROPOSAL BODY response failed", "to", address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
+		hashes, encodedTransactions, err := s.proposalRepairTransactions(body, msg.MissingTxHashes)
+		if err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR lookup failed", "to", address, "proposalID", body.ProposalID, "err", err)
+			return
 		}
+		if len(encodedTransactions) == 0 {
+			return
+		}
+		response := &proposalBodyMsg{
+			Type:              proposalBodyMsgRepairData,
+			ProposalID:        body.ProposalID,
+			BodyHash:          body.BodyHash,
+			BodySize:          body.BodySize,
+			Number:            body.Number,
+			ViewNumber:        body.ViewNumber,
+			ViewID:            body.ViewID,
+			LeaderID:          body.LeaderID,
+			From:              s.Self(),
+			ProposalKeyHash:   body.ProposalKeyHash,
+			MissingTxHashes:   hashes,
+			TransactionBytes:  encodedTransactions,
+			CreatedAtUnixNano: time.Now().UnixNano(),
+		}
+		if err := s.sealProposalBody(response); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR RESPONSE signing failed", "to", address, "number", body.Number, "err", err)
+			return
+		}
+		if err := validateProposalBodyWireShape(response); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR RESPONSE invalid", "to", address, "number", body.Number, "err", err)
+			return
+		}
+		if err := s.netService.SendRawData(address, &networkMsg{Pmsg: response}); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR response failed", "to", address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
+		}
+	case proposalBodyMsgRepairData:
+		missing, err := s.mergeProposalRepair(msg)
+		if err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+			return
+		}
+		log.Info("HOTSTUFF PROPOSAL REPAIR stored", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID,
+			"transactions", len(msg.TransactionBytes), "remaining", len(missing))
 	default:
 		log.Warn("HOTSTUFF PROPOSAL BODY unknown type", "type", msg.Type, "number", msg.Number, "proposalID", msg.ProposalID)
 	}
 }
 
-// OnPropose call by hotstuff
-func (s *Service) OnPropose(state []byte, extra []byte, viewNumber uint64, parentQC *hotstuff.SignedState) error { // verify new proposal ref and full sidecar body before voting
-	log.Debug("OnPropose..")
+// OnPropose is retained for non-FHS callers. Production FHS nodes schedule the
+// same validation on the bounded worker pool below and install its result on
+// the serialized HotStuff control loop.
+func (s *Service) OnPropose(state []byte, extra []byte, viewNumber uint64, parentQC *hotstuff.SignedState) error {
+	output, err := s.validateHotstuffProposalApplication(context.Background(), state, extra, viewNumber, parentQC, nil, 0, 0)
+	if err != nil {
+		return err
+	}
+	return s.installHotstuffProposalValidation(output)
+}
+
+func (s *Service) validateHotstuffProposalApplication(ctx context.Context, state []byte, extra []byte, viewNumber uint64, parentQC *hotstuff.SignedState, parentVerified *core.VerifiedProposal, serviceGeneration, validationGeneration uint64) (*proposalValidationOutput, error) {
 	if !s.isRunning() {
-		return types.ErrNotRunning
+		return nil, types.ErrNotRunning
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, hotstuff.ErrOldState
 	}
 	if len(state) == 0 {
 		err := fmt.Errorf("empty hotstuff proposal ref")
 		log.Error("OnPropose", "error", err)
-		return err
+		return nil, err
 	}
 
 	ref, err := types.DecodeHotstuffProposalRef(state)
 	if err != nil {
 		log.Error("OnPropose decode proposal ref", "err", err)
-		return err
+		return nil, err
 	}
 	if ref.ChainID != s.ChainID() {
-		return fmt.Errorf("hotstuff proposal chain id mismatch: have %d want %d", ref.ChainID, s.ChainID())
+		return nil, fmt.Errorf("hotstuff proposal chain id mismatch: have %d want %d", ref.ChainID, s.ChainID())
 	}
 	if ref.ViewNumber != viewNumber {
-		return fmt.Errorf("hotstuff proposal view number mismatch: have %d want %d", ref.ViewNumber, viewNumber)
+		return nil, fmt.Errorf("hotstuff proposal view number mismatch: have %d want %d", ref.ViewNumber, viewNumber)
 	}
 	if s.fairHotstuffEnabled() {
 		if ref.ExtraHash != types.HotstuffProposalExtraHash(extra) {
-			return fmt.Errorf("hotstuff proposal extra proof is not bound to the signed reference")
+			return nil, fmt.Errorf("hotstuff proposal extra proof is not bound to the signed reference")
 		}
 		var parentQCID common.Hash
 		if parentQC != nil {
 			id, err := hotstuff.SignedStateID(parentQC)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			parentQCID = id.Hash()
 		}
 		if ref.ParentQCID != parentQCID {
-			return fmt.Errorf("hotstuff proposal parent QC is not bound to the signed reference")
+			return nil, fmt.Errorf("hotstuff proposal parent QC is not bound to the signed reference")
 		}
 		if err := s.validateFHSProposalParent(ref, parentQC); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	proposalID := ref.ProposalID()
@@ -1572,58 +3699,1368 @@ func (s *Service) OnPropose(state []byte, extra []byte, viewNumber uint64, paren
 		"bodyHash", ref.BodyHash,
 		"bodySize", ref.BodySize)
 
-	body, err := s.waitProposalBody(ref)
+	body, err := s.waitProposalBodyForValidation(ctx, ref, serviceGeneration)
 	if err != nil {
 		log.Error("OnPropose wait proposal body", "number", ref.Number, "proposalID", proposalID, "err", err)
-		return err
+		return nil, err
 	}
 	block := types.DecodeToBlock(body.EncodedBlock)
 	if block == nil {
 		err := fmt.Errorf("DecodeToBlock(proposal body) error")
 		log.Error("OnPropose", "proposalID", proposalID, "error", err)
-		return err
+		return nil, err
 	}
 	if err := ref.VerifyAgainstBlock(block, body.EncodedBlock); err != nil {
 		log.Error("OnPropose proposal ref mismatch", "number", ref.Number, "proposalID", proposalID, "err", err)
-		return err
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, hotstuff.ErrOldState
 	}
 
-	verified, err := s.txService.verifyHotstuffProposal(ref, block, extra)
+	var verified *core.VerifiedProposal
+	if parentVerified != nil {
+		verified, err = s.txService.verifyHotstuffProposalWithParent(ref, block, extra, parentVerified)
+	} else {
+		verified, err = s.txService.verifyHotstuffProposal(ref, block, extra)
+	}
 	if err != nil {
 		log.Error("verify hotstuff proposal", "number", block.NumberU64(), "proposalID", proposalID, "err", err)
-		return err
+		return nil, err
 	}
-	if err := s.updateProposalBodyProof(proposalID, extra, parentQC); err != nil {
-		return err
+	if err := ctx.Err(); err != nil {
+		return nil, hotstuff.ErrOldState
 	}
 	if block.BlockType() == types.Key_Block {
 		kblock := types.DecodeToKeyBlock(block.KeyInfo())
 		if kblock == nil {
-			return fmt.Errorf("Block's extra (keyblock) is error format!")
+			return nil, fmt.Errorf("Block's extra (keyblock) is error format!")
 		}
 		if s.hasConflictingUncommittedFHSKeyBlock(block) {
-			return fmt.Errorf("reject competing key block while a certified key transition is uncommitted: proposal=%s", block.Hash())
+			return nil, fmt.Errorf("reject competing key block while a certified key transition is uncommitted: proposal=%s", block.Hash())
 		}
 		if block.NumberU64() == 0 {
-			return fmt.Errorf("key block carrier cannot be transaction genesis")
+			return nil, fmt.Errorf("key block carrier cannot be transaction genesis")
 		}
-		if err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(extra), block.NumberU64()-1); err != nil {
-			log.Error("verify keyblock", "number", kblock.NumberU64(), "proposalID", proposalID, "err", err)
+	}
+	return &proposalValidationOutput{
+		ref:                  ref,
+		verified:             verified,
+		extra:                append([]byte(nil), extra...),
+		parentQC:             hotstuff.CloneSignedState(parentQC),
+		serviceGeneration:    serviceGeneration,
+		validationGeneration: validationGeneration,
+	}, nil
+}
+
+func (s *Service) installHotstuffProposalValidation(output *proposalValidationOutput) error {
+	if output == nil || output.ref == nil || output.verified == nil || output.verified.ProposalID != output.ref.ProposalID() {
+		return fmt.Errorf("invalid hotstuff proposal validation output")
+	}
+	if output.serviceGeneration != 0 && (atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != output.serviceGeneration) {
+		return hotstuff.ErrOldState
+	}
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return hotstuff.ErrOldState
+	}
+	if output.validationGeneration != 0 && !s.isProposalValidationOutputActive(output) {
+		return hotstuff.ErrOldState
+	}
+	if err := output.verified.SanityCheck(); err != nil || output.verified.BlockHash() != output.ref.BlockHash ||
+		output.verified.ViewNumber != output.ref.ViewNumber || output.verified.ViewID != output.ref.ViewID || output.verified.LeaderID != output.ref.LeaderID ||
+		output.verified.ParentHash != output.ref.ParentHash {
+		return fmt.Errorf("invalid verified proposal artifact: %v", err)
+	}
+	if output.ref.ExtraHash != types.HotstuffProposalExtraHash(output.extra) {
+		return fmt.Errorf("validated proposal extra commitment changed")
+	}
+	var parentQCID common.Hash
+	if output.parentQC != nil {
+		id, err := hotstuff.SignedStateID(output.parentQC)
+		if err != nil {
+			return err
+		}
+		parentQCID = id.Hash()
+	}
+	if output.ref.ParentQCID != parentQCID {
+		return fmt.Errorf("validated proposal parent QC commitment changed")
+	}
+	if s.fairHotstuffEnabled() {
+		if err := s.validateFHSProposalParent(output.ref, output.parentQC); err != nil {
 			return err
 		}
 	}
-	s.storeVerifiedProposal(proposalID, verified)
+	if output.verified.Block != nil && output.verified.Block.BlockType() == types.Key_Block {
+		block := output.verified.Block
+		kblock := types.DecodeToKeyBlock(block.KeyInfo())
+		if kblock == nil || block.NumberU64() == 0 || s.hasConflictingUncommittedFHSKeyBlock(block) {
+			return fmt.Errorf("validated key block is no longer admissible")
+		}
+		if err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(output.extra), block.NumberU64()-1); err != nil {
+			return err
+		}
+	}
+	if err := s.updateProposalBodyProof(output.ref.ProposalID(), output.extra, output.parentQC); err != nil {
+		return err
+	}
+	s.storeVerifiedProposal(output.ref.ProposalID(), output.verified)
 	s.pacetMakerTimer.start()
 	return nil
 }
 
+func (s *Service) ScheduleFHSProposalValidation(request *hotstuff.FHSProposalValidationRequest) error {
+	if request == nil || request.Key.ProposalID == (common.Hash{}) || len(request.ProposalRef) == 0 || s.proposalValidationJobs == nil {
+		return fmt.Errorf("invalid FHS proposal validation request")
+	}
+	cloned := &hotstuff.FHSProposalValidationRequest{
+		Key:         request.Key,
+		ProposalRef: append([]byte(nil), request.ProposalRef...),
+		Extra:       append([]byte(nil), request.Extra...),
+		ParentQC:    hotstuff.CloneSignedState(request.ParentQC),
+	}
+	ref, err := types.DecodeHotstuffProposalRef(cloned.ProposalRef)
+	if err != nil || ref.ProposalID() != cloned.Key.ProposalID {
+		return fmt.Errorf("invalid FHS proposal validation reference")
+	}
+	serviceGeneration := atomic.LoadUint64(&s.proposalValidationGeneration)
+	if atomic.LoadInt32(&s.runningState) != 1 || serviceGeneration == 0 {
+		return types.ErrNotRunning
+	}
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return hotstuff.ErrOldState
+	}
+	parentVerified := s.snapshotFHSCertifiedVerified(ref.ParentHash)
+
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	if atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != serviceGeneration {
+		return types.ErrNotRunning
+	}
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return hotstuff.ErrOldState
+	}
+	// A manager-owned HighQC worker must outlive ordinary view cleanup. The
+	// Prepare that depends on it is already retained as a manager continuation;
+	// reject this direct scheduling attempt without cancelling or draining the
+	// shared queue, then let the HighQC result replay the exact Prepare.
+	activeHighQC := s.activeHighQCValidation
+	if active := activeHighQC; active != nil && !active.applied {
+		return hotstuff.ErrProposalValidationPending
+	}
+	for _, active := range s.activeProposalValidations {
+		if active != nil && active.key.ViewNumber > cloned.Key.ViewNumber {
+			return hotstuff.ErrOldState
+		}
+		if active != nil && active.key == cloned.Key {
+			return nil
+		}
+	}
+	for viewID, active := range s.activeProposalValidations {
+		if active != nil && active.cancel != nil {
+			active.cancel()
+		}
+		delete(s.activeProposalValidations, viewID)
+	}
+	for {
+		select {
+		case stale := <-s.proposalValidationJobs:
+			if stale != nil && stale.highQCRequest != nil {
+				// An applied HighQC normally has no queued worker, but preserve the
+				// manager-owned job if result publication and queue observation race.
+				select {
+				case s.proposalValidationJobs <- stale:
+					return hotstuff.ErrProposalValidationPending
+				default:
+					return fmt.Errorf("FHS proposal scheduler could not preserve HighQC work")
+				}
+			}
+			if stale != nil && stale.cancel != nil {
+				stale.cancel()
+			}
+		default:
+			goto queueDrained
+		}
+	}
+
+queueDrained:
+	s.proposalValidationSeq++
+	if s.proposalValidationSeq == 0 {
+		s.proposalValidationSeq++
+	}
+	validationGeneration := s.proposalValidationSeq
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &proposalValidationJob{
+		request:              cloned,
+		parentVerified:       parentVerified,
+		ctx:                  ctx,
+		cancel:               cancel,
+		serviceGeneration:    serviceGeneration,
+		validationGeneration: validationGeneration,
+	}
+	s.activeProposalValidations[cloned.Key.ViewID] = &proposalValidationControl{
+		key:        cloned.Key,
+		keyHash:    ref.KeyHash,
+		generation: validationGeneration,
+		cancel:     cancel,
+	}
+	select {
+	case s.proposalValidationJobs <- job:
+		return nil
+	default:
+		delete(s.activeProposalValidations, cloned.Key.ViewID)
+		cancel()
+		return fmt.Errorf("FHS proposal validation scheduler invariant failed")
+	}
+}
+
+func (s *Service) ScheduleFHSHighQCValidation(request *hotstuff.FHSHighQCValidationRequest) error {
+	if request == nil || request.QC == nil || request.Key.RequestID == 0 || request.Key.QCID == (common.Hash{}) ||
+		request.Key.TargetView == 0 || s.proposalValidationJobs == nil {
+		return fmt.Errorf("invalid FHS HighQC validation request")
+	}
+	id, err := hotstuff.SignedStateID(request.QC)
+	if err != nil || id.Hash() != request.Key.QCID || request.Key.TargetView <= request.QC.Number {
+		return fmt.Errorf("invalid FHS HighQC validation identity")
+	}
+	cloned := &hotstuff.FHSHighQCValidationRequest{Key: request.Key, QC: hotstuff.CloneSignedState(request.QC)}
+	serviceGeneration := atomic.LoadUint64(&s.proposalValidationGeneration)
+	if atomic.LoadInt32(&s.runningState) != 1 || serviceGeneration == 0 {
+		return types.ErrNotRunning
+	}
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return hotstuff.ErrOldState
+	}
+
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	if atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != serviceGeneration {
+		return types.ErrNotRunning
+	}
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return hotstuff.ErrOldState
+	}
+	// Preflight semantic certificate order before touching the running worker.
+	// TargetView is only continuation metadata and must never make the same QC
+	// cancel/restart identical body and EVM validation work.
+	previousHighQC := s.activeHighQCValidation
+	if active := previousHighQC; active != nil {
+		if active.key == cloned.Key {
+			return nil
+		}
+		if active.key.QCID == cloned.Key.QCID {
+			if !active.resultReady {
+				return hotstuff.ErrProposalValidationPending
+			}
+		} else if active.qcNumber >= cloned.QC.Number {
+			return hotstuff.ErrOldState
+		}
+	}
+	for _, active := range s.activeProposalValidations {
+		if active != nil && active.key.ViewNumber > cloned.Key.TargetView {
+			return hotstuff.ErrOldState
+		}
+	}
+	// Temporarily remove queued jobs without cancelling them. The new semantic
+	// QC must be enqueued successfully before any manager-owned work is stopped.
+	var displaced []*proposalValidationJob
+	for {
+		select {
+		case stale := <-s.proposalValidationJobs:
+			if stale != nil {
+				displaced = append(displaced, stale)
+			}
+		default:
+			goto highQCQueueDrained
+		}
+	}
+
+highQCQueueDrained:
+	s.proposalValidationSeq++
+	if s.proposalValidationSeq == 0 {
+		s.proposalValidationSeq++
+	}
+	validationGeneration := s.proposalValidationSeq
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &proposalValidationJob{
+		highQCRequest:        cloned,
+		ctx:                  ctx,
+		cancel:               cancel,
+		serviceGeneration:    serviceGeneration,
+		validationGeneration: validationGeneration,
+	}
+	newControl := &highQCValidationControl{
+		key: cloned.Key, qcNumber: cloned.QC.Number, generation: validationGeneration, cancel: cancel,
+		authorized: make(map[common.Hash]proposalBodyAuthority),
+	}
+	select {
+	case s.proposalValidationJobs <- job:
+		// Publication into the bounded queue is the replacement linearization
+		// point. Only now may the previous semantic QC and proposal jobs stop.
+		s.activeHighQCValidation = newControl
+		if previousHighQC != nil && previousHighQC.cancel != nil {
+			previousHighQC.cancel()
+		}
+		for viewID, active := range s.activeProposalValidations {
+			if active != nil && active.cancel != nil {
+				active.cancel()
+			}
+			delete(s.activeProposalValidations, viewID)
+		}
+		for _, stale := range displaced {
+			if stale.cancel != nil {
+				stale.cancel()
+			}
+		}
+		return nil
+	default:
+		cancel()
+		for _, stale := range displaced {
+			select {
+			case s.proposalValidationJobs <- stale:
+			default:
+				return fmt.Errorf("FHS HighQC validation scheduler could not restore displaced work")
+			}
+		}
+		// The old registry and queued work remain authoritative. ErrOldState is
+		// the manager contract that restores its previous pending request.
+		return hotstuff.ErrOldState
+	}
+}
+
+func (s *Service) isProposalValidationJobActive(job *proposalValidationJob) bool {
+	if s == nil || job == nil || job.ctx == nil || job.ctx.Err() != nil ||
+		atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != job.serviceGeneration {
+		return false
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	if job.highQCRequest != nil {
+		active := s.activeHighQCValidation
+		return active != nil && active.key == job.highQCRequest.Key && active.generation == job.validationGeneration
+	}
+	if job.request == nil {
+		return false
+	}
+	active := s.activeProposalValidations[job.request.Key.ViewID]
+	return active != nil && active.key == job.request.Key && active.generation == job.validationGeneration
+}
+
+func (s *Service) markHighQCValidationResultReady(key hotstuff.FHSHighQCValidationKey, generation uint64) bool {
+	if s == nil || generation == 0 {
+		return false
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	active := s.activeHighQCValidation
+	if active == nil || active.key != key || active.generation != generation {
+		return false
+	}
+	active.resultReady = true
+	return true
+}
+
+func (s *Service) markHighQCValidationApplied(key hotstuff.FHSHighQCValidationKey, generation uint64) bool {
+	if s == nil || generation == 0 {
+		return false
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	active := s.activeHighQCValidation
+	if active == nil || active.key != key || active.generation != generation || !active.resultReady {
+		return false
+	}
+	active.applied = true
+	return true
+}
+
+func (s *Service) isProposalValidationOutputActive(output *proposalValidationOutput) bool {
+	if s == nil || output == nil || output.ref == nil {
+		return false
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	active := s.activeProposalValidations[output.ref.ViewID]
+	return active != nil && active.generation == output.validationGeneration &&
+		active.key.ViewNumber == output.ref.ViewNumber && active.key.ViewID == output.ref.ViewID &&
+		active.key.LeaderID == output.ref.LeaderID && active.key.ProposalID == output.ref.ProposalID()
+}
+
+func (s *Service) isHighQCValidationOutputActive(output *fhsHighQCValidationOutput) bool {
+	if s == nil || output == nil {
+		return false
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	active := s.activeHighQCValidation
+	return active != nil && active.key == output.key && active.generation == output.validationGeneration
+}
+
+func (s *Service) authorizeHighQCProposalBody(key hotstuff.FHSHighQCValidationKey, generation uint64, ref *types.HotstuffProposalRef) error {
+	if s == nil || ref == nil || key.RequestID == 0 || generation == 0 {
+		return hotstuff.ErrOldState
+	}
+	s.muProposalValidation.Lock()
+	active := s.activeHighQCValidation
+	if active == nil || active.key != key || active.generation != generation {
+		s.muProposalValidation.Unlock()
+		return hotstuff.ErrOldState
+	}
+	active.authorized[ref.ProposalID()] = proposalBodyAuthority{
+		key: hotstuff.FHSProposalValidationKey{
+			ViewNumber: ref.ViewNumber,
+			ViewID:     ref.ViewID,
+			LeaderID:   ref.LeaderID,
+			ProposalID: ref.ProposalID(),
+		},
+		keyHash: ref.KeyHash,
+	}
+	s.muProposalValidation.Unlock()
+	if err := s.extendDeferredFHSRecoveryPeers(ref.KeyHash); err != nil {
+		return fmt.Errorf("authorize deferred FHS repair committee: %w", err)
+	}
+	return nil
+}
+
+// activeHighQCProposalBodyIDs snapshots the cryptographically verified repair
+// set without exposing the validation registry. Durable proposal GC treats
+// these entries as temporarily live until the exact HighQC worker completes;
+// otherwise a catch-up longer than the ordinary unsolicited cache budget can
+// collect its own oldest bodies before the serialized install begins.
+func (s *Service) activeHighQCProposalBodyIDs() map[common.Hash]struct{} {
+	protected := make(map[common.Hash]struct{})
+	if s == nil {
+		return protected
+	}
+	s.muProposalValidation.Lock()
+	if active := s.activeHighQCValidation; active != nil {
+		for proposalID := range active.authorized {
+			protected[proposalID] = struct{}{}
+		}
+	}
+	s.muProposalValidation.Unlock()
+	return protected
+}
+
+func (s *Service) finishProposalValidation(key hotstuff.FHSProposalValidationKey) {
+	if s == nil {
+		return
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	active := s.activeProposalValidations[key.ViewID]
+	if active == nil || active.key != key {
+		return
+	}
+	if active.cancel != nil {
+		active.cancel()
+	}
+	delete(s.activeProposalValidations, key.ViewID)
+}
+
+func (s *Service) finishHighQCValidation(key hotstuff.FHSHighQCValidationKey) {
+	if s == nil {
+		return
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	active := s.activeHighQCValidation
+	if active == nil || active.key != key {
+		return
+	}
+	if active.cancel != nil {
+		active.cancel()
+	}
+	s.activeHighQCValidation = nil
+}
+
+func (s *Service) cancelInactiveProposalValidations(activeView uint64) {
+	if s == nil {
+		return
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	for viewID, active := range s.activeProposalValidations {
+		if active != nil && active.key.ViewNumber == activeView {
+			continue
+		}
+		if active != nil && active.cancel != nil {
+			active.cancel()
+		}
+		delete(s.activeProposalValidations, viewID)
+	}
+	// HighQC work is owned by the manager's semantic QC continuation, not by an
+	// individual active view. It ends only on semantic replacement, completion,
+	// epoch transition or shutdown.
+}
+
+func (s *Service) cancelProposalValidationsBefore(viewNumber uint64) {
+	if s == nil || viewNumber == 0 {
+		return
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	for viewID, active := range s.activeProposalValidations {
+		if active != nil && active.key.ViewNumber >= viewNumber {
+			continue
+		}
+		if active != nil && active.cancel != nil {
+			active.cancel()
+		}
+		delete(s.activeProposalValidations, viewID)
+	}
+}
+
+func (s *Service) cancelAllProposalValidations() {
+	if s == nil {
+		return
+	}
+	s.muProposalValidation.Lock()
+	defer s.muProposalValidation.Unlock()
+	for viewID, active := range s.activeProposalValidations {
+		if active != nil && active.cancel != nil {
+			active.cancel()
+		}
+		delete(s.activeProposalValidations, viewID)
+	}
+	if active := s.activeHighQCValidation; active != nil {
+		if active.cancel != nil {
+			active.cancel()
+		}
+		s.activeHighQCValidation = nil
+	}
+	for {
+		select {
+		case stale := <-s.proposalValidationJobs:
+			if stale != nil && stale.cancel != nil {
+				stale.cancel()
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (s *Service) proposalValidationWorker() {
+	for job := range s.proposalValidationJobs {
+		if !s.isProposalValidationJobActive(job) {
+			continue
+		}
+		if request := job.highQCRequest; request != nil {
+			output, err := s.stageFHSHighQC(job.ctx, request.Key, request.QC, job.serviceGeneration, job.validationGeneration)
+			if !s.isProposalValidationJobActive(job) {
+				continue
+			}
+			result := &hotstuff.FHSHighQCValidationResult{Key: request.Key, Err: err, ApplicationData: output}
+			if !s.markHighQCValidationResultReady(request.Key, job.validationGeneration) {
+				continue
+			}
+			select {
+			case s.highQCValidationResults <- result:
+			case <-job.ctx.Done():
+			}
+			continue
+		}
+		request := job.request
+		output, err := s.validateHotstuffProposalApplication(job.ctx, request.ProposalRef, request.Extra, request.Key.ViewNumber, request.ParentQC, job.parentVerified, job.serviceGeneration, job.validationGeneration)
+		if !s.isProposalValidationJobActive(job) {
+			continue
+		}
+		result := &hotstuff.FHSProposalValidationResult{Key: request.Key, Err: err, ApplicationData: output}
+		select {
+		case s.proposalValidationResults <- result:
+		case <-job.ctx.Done():
+		}
+	}
+}
+
+func (s *Service) ApplyFHSProposalValidation(result *hotstuff.FHSProposalValidationResult) error {
+	if result == nil || result.Err != nil {
+		return fmt.Errorf("invalid FHS proposal validation result")
+	}
+	output, ok := result.ApplicationData.(*proposalValidationOutput)
+	if !ok || output == nil || output.ref == nil || output.ref.ViewNumber != result.Key.ViewNumber ||
+		output.ref.ViewID != result.Key.ViewID || output.ref.LeaderID != result.Key.LeaderID || output.ref.ProposalID() != result.Key.ProposalID {
+		return fmt.Errorf("FHS proposal validation result context mismatch")
+	}
+	if err := s.acquireFHSValidationPublication(fhsValidationPublicationProposal); err != nil {
+		return err
+	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			s.releaseFHSValidationPublication(fhsValidationPublicationProposal)
+		}
+	}()
+	if err := s.installHotstuffProposalValidation(output); err != nil {
+		return err
+	}
+	s.activeProposalValidationPublish = result
+	transferred = true
+	return nil
+}
+
+// FinishFHSProposalValidation releases the publication barrier only after the
+// manager has durably persisted, signed and sent (or rejected) the vote.
+func (s *Service) FinishFHSProposalValidation(result *hotstuff.FHSProposalValidationResult) {
+	if s == nil || result == nil ||
+		atomic.LoadInt32(&s.fhsValidationPublicationOwner) != int32(fhsValidationPublicationProposal) ||
+		s.activeProposalValidationPublish != result {
+		return
+	}
+	s.activeProposalValidationPublish = nil
+	if !s.releaseFHSValidationPublication(fhsValidationPublicationProposal) {
+		atomic.StoreInt32(&s.fhsEpochTransition, 1)
+		s.setRunState(0)
+		log.Error("Fair HotStuff proposal validation failed to release its publication barrier")
+	}
+}
+
+func (s *Service) ApplyFHSHighQCValidation(result *hotstuff.FHSHighQCValidationResult) error {
+	if result == nil || result.Err != nil {
+		return fmt.Errorf("invalid FHS HighQC validation result")
+	}
+	output, ok := result.ApplicationData.(*fhsHighQCValidationOutput)
+	if !ok || output == nil || output.key != result.Key {
+		return fmt.Errorf("FHS HighQC validation result context mismatch")
+	}
+	if err := s.acquireFHSValidationPublication(fhsValidationPublicationHighQC); err != nil {
+		return err
+	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			s.releaseFHSValidationPublication(fhsValidationPublicationHighQC)
+		}
+	}()
+	if output.serviceGeneration != 0 && (atomic.LoadInt32(&s.runningState) != 1 ||
+		atomic.LoadUint64(&s.proposalValidationGeneration) != output.serviceGeneration) {
+		return hotstuff.ErrOldState
+	}
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return hotstuff.ErrOldState
+	}
+	if output.validationGeneration != 0 && !s.isHighQCValidationOutputActive(output) {
+		return hotstuff.ErrOldState
+	}
+	if err := s.installStagedFHSHighQC(output, false, false); err != nil {
+		return err
+	}
+	if err := s.commitFHS2ChainForCertified(output.targetQC); err != nil {
+		return err
+	}
+	if _, err := s.completeDeferredFHSRecovery(output.targetQC); err != nil {
+		return err
+	}
+	if output.validationGeneration != 0 && !s.markHighQCValidationApplied(result.Key, output.validationGeneration) {
+		return hotstuff.ErrOldState
+	}
+	s.activeHighQCValidationPublish = result
+	transferred = true
+	return nil
+}
+
+// FinishFHSHighQCValidation retains the same barrier through manager state
+// cleanup and exact continuation replay, not merely through application install.
+func (s *Service) FinishFHSHighQCValidation(result *hotstuff.FHSHighQCValidationResult) {
+	if s == nil || result == nil ||
+		atomic.LoadInt32(&s.fhsValidationPublicationOwner) != int32(fhsValidationPublicationHighQC) ||
+		s.activeHighQCValidationPublish != result {
+		return
+	}
+	s.activeHighQCValidationPublish = nil
+	if !s.releaseFHSValidationPublication(fhsValidationPublicationHighQC) {
+		atomic.StoreInt32(&s.fhsEpochTransition, 1)
+		s.setRunState(0)
+		log.Error("Fair HotStuff HighQC validation failed to release its publication barrier")
+	}
+}
+
+func (s *Service) ScheduleFHSProposalBuild(request *hotstuff.FHSProposalBuildRequest) error {
+	if request == nil || request.Key.RequestID == 0 || request.Key.ViewNumber == 0 || request.Key.ViewID == (common.Hash{}) ||
+		request.Key.LeaderID == "" || len(request.CurrentState) == 0 || s.proposalBuildJobs == nil {
+		return fmt.Errorf("invalid FHS proposal construction request")
+	}
+	cloned := &hotstuff.FHSProposalBuildRequest{
+		Key:          request.Key,
+		CurrentState: append([]byte(nil), request.CurrentState...),
+		ParentQC:     hotstuff.CloneSignedState(request.ParentQC),
+	}
+	if hotstuff.StateDigest(cloned.CurrentState) != cloned.Key.CurrentStateDigest {
+		return fmt.Errorf("FHS proposal construction state mismatch")
+	}
+	var parentQCID common.Hash
+	if cloned.ParentQC != nil {
+		id, err := hotstuff.SignedStateID(cloned.ParentQC)
+		if err != nil {
+			return err
+		}
+		parentQCID = id.Hash()
+	}
+	if parentQCID != cloned.Key.ParentQCID {
+		return fmt.Errorf("FHS proposal construction parent QC mismatch")
+	}
+	serviceGeneration := atomic.LoadUint64(&s.proposalValidationGeneration)
+	if atomic.LoadInt32(&s.runningState) != 1 || serviceGeneration == 0 {
+		return types.ErrNotRunning
+	}
+
+	s.muProposalBuild.Lock()
+	defer s.muProposalBuild.Unlock()
+	if atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != serviceGeneration {
+		return types.ErrNotRunning
+	}
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return hotstuff.ErrOldState
+	}
+	if active := s.activeProposalBuild; active != nil {
+		if active.key == cloned.Key {
+			return nil
+		}
+		if active.key.ViewNumber > cloned.Key.ViewNumber {
+			return hotstuff.ErrOldState
+		}
+		if active.cancel != nil {
+			active.cancel()
+		}
+		s.activeProposalBuild = nil
+	}
+	for {
+		select {
+		case stale := <-s.proposalBuildJobs:
+			if stale != nil && stale.cancel != nil {
+				stale.cancel()
+			}
+		default:
+			goto proposalBuildQueueDrained
+		}
+	}
+
+proposalBuildQueueDrained:
+	s.proposalBuildSeq++
+	if s.proposalBuildSeq == 0 {
+		s.proposalBuildSeq++
+	}
+	constructionGeneration := s.proposalBuildSeq
+	ctx, cancel := context.WithCancel(context.Background())
+	job := &proposalBuildJob{
+		request:                cloned,
+		ctx:                    ctx,
+		cancel:                 cancel,
+		serviceGeneration:      serviceGeneration,
+		constructionGeneration: constructionGeneration,
+	}
+	s.activeProposalBuild = &proposalBuildControl{key: cloned.Key, generation: constructionGeneration, cancel: cancel}
+	select {
+	case s.proposalBuildJobs <- job:
+		return nil
+	default:
+		s.activeProposalBuild = nil
+		cancel()
+		return fmt.Errorf("FHS proposal construction scheduler invariant failed")
+	}
+}
+
+func (s *Service) isProposalBuildJobActive(job *proposalBuildJob) bool {
+	if s == nil || job == nil || job.request == nil || job.ctx == nil || job.ctx.Err() != nil ||
+		atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != job.serviceGeneration {
+		return false
+	}
+	s.muProposalBuild.Lock()
+	defer s.muProposalBuild.Unlock()
+	active := s.activeProposalBuild
+	return active != nil && active.key == job.request.Key && active.generation == job.constructionGeneration
+}
+
+func (s *Service) proposalBuildWorker() {
+	for job := range s.proposalBuildJobs {
+		if !s.isProposalBuildJobActive(job) {
+			continue
+		}
+		output, err := s.stageFHSProposalBuild(job)
+		if !s.isProposalBuildJobActive(job) {
+			continue
+		}
+		result := &hotstuff.FHSProposalBuildResult{Key: job.request.Key, Err: err, ApplicationData: output}
+		if output != nil {
+			result.TProposal = append([]byte(nil), output.proposalRef...)
+			result.Extra = append([]byte(nil), output.extra...)
+		}
+		select {
+		case s.proposalBuildResults <- result:
+		case <-job.ctx.Done():
+		}
+	}
+}
+
+func (s *Service) stageFHSProposalBuild(job *proposalBuildJob) (*proposalBuildOutput, error) {
+	request := job.request
+	output := &proposalBuildOutput{
+		key:                    request.Key,
+		serviceGeneration:      job.serviceGeneration,
+		constructionGeneration: job.constructionGeneration,
+	}
+	if !s.isProposalBuildJobActive(job) {
+		return output, hotstuff.ErrOldState
+	}
+	state, leaderID, number := s.CurrentState()
+	if number != request.Key.ViewNumber || leaderID != request.Key.LeaderID || !bytes.Equal(state, request.CurrentState) {
+		return output, hotstuff.ErrOldState
+	}
+
+	s.muCurrentView.Lock()
+	leaderIndex := s.currentView.LeaderIndex
+	noDone := s.currentView.NoDone
+	replicaMatches := s.replicaView != nil && s.replicaView.EqualConsensus(&s.currentView)
+	s.muCurrentView.Unlock()
+	if !replicaMatches || !bftview.IamLeader(leaderIndex) {
+		return output, hotstuff.ErrOldState
+	}
+
+	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
+	keyProposal := leaderIndex > 0
+	if fixedMode {
+		keyProposal = !noDone
+	}
+	keyBlockIntervalElapsed := true
+	if curKeyblock := s.kbc.CurrentBlock(); curKeyblock != nil {
+		keyBlockIntervalElapsed = time.Since(time.Unix(int64(curKeyblock.Time()), 0)) >= params.KeyBlockMinInterval
+	}
+	if fixedMode && !keyProposal && keyBlockIntervalElapsed && s.getBestCandidate(true) != nil {
+		keyProposal = true
+	}
+	if keyProposal && s.hasUncommittedFHSKeyBlock() {
+		keyProposal = false
+	}
+	output.fixedMode = fixedMode
+	output.keyProposalAttempt = keyProposal && keyBlockIntervalElapsed
+
+	if output.keyProposalAttempt {
+		txParentNumber := fhsProposalParentNumber(s.bc.CurrentBlockN(), s.highestFHSCertifiedProposal())
+		keyblock, committee, bestCandidate, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone, txParentNumber)
+		if err != nil || keyblock == nil || committee == nil {
+			if err == nil {
+				err = fmt.Errorf("incomplete key block proposal")
+			}
+			return output, err
+		}
+		if bestCandidate != nil {
+			output.extra = bestCandidate.EncodeToBytes()
+		}
+		candidate, err := s.txService.buildProposalNewKeyBlock(keyblock)
+		if err != nil {
+			return output, err
+		}
+		staged, err := s.stageHotstuffProposal(request.Key.ViewNumber, request.Key.ViewID, request.Key.LeaderID,
+			candidate.encoded, output.extra, request.ParentQC)
+		if err != nil {
+			return output, err
+		}
+		output.proposalRef = staged.proposalRef
+		output.body = staged.body
+		output.manifest = staged.manifest
+		output.destinations = staged.destinations
+		output.keyCandidate = candidate
+		output.keyBlock = keyblock
+		output.committee = committee
+		output.blockType = types.Key_Block
+		return output, nil
+	}
+
+	output.workStamp, output.workStampValid = s.captureProposalWorkStamp(
+		time.Now(), request.Key.ViewNumber, request.Key.ViewID, request.Key.LeaderID,
+	)
+	blockType := s.chooseTxBlockType()
+	candidate, err := s.txService.buildProposalNewBlock(blockType)
+	if err != nil {
+		primaryErr := err
+		fallbackType := uint8(types.FastTx_Block)
+		if blockType == types.FastTx_Block {
+			fallbackType = types.SlowTx_Block
+		}
+		fallbackCandidate, fallbackErr := s.txService.buildProposalNewBlock(fallbackType)
+		if fallbackErr == nil {
+			candidate = fallbackCandidate
+			err = nil
+			blockType = fallbackType
+		} else {
+			err = proposalLaneBuildError(primaryErr, fallbackErr)
+		}
+	}
+	if err != nil {
+		return output, err
+	}
+	staged, err := s.stageHotstuffProposal(request.Key.ViewNumber, request.Key.ViewID, request.Key.LeaderID,
+		candidate.encoded, nil, request.ParentQC)
+	if err != nil {
+		return output, err
+	}
+	output.proposalRef = staged.proposalRef
+	output.body = staged.body
+	output.manifest = staged.manifest
+	output.destinations = staged.destinations
+	output.txCandidate = candidate
+	output.blockType = blockType
+	return output, nil
+}
+
+func (s *Service) reserveProposalManifestDispatch() error {
+	select {
+	case s.proposalManifestSlots <- struct{}{}:
+		return nil
+	default:
+		return fmt.Errorf("proposal manifest dispatch queue saturated")
+	}
+}
+
+func (s *Service) releaseProposalManifestDispatch() {
+	select {
+	case <-s.proposalManifestSlots:
+	default:
+		panic("proposal manifest dispatch reservation underflow")
+	}
+}
+
+func (s *Service) reserveProposalFailedTxCleanup() error {
+	select {
+	case s.proposalFailedTxSlots <- struct{}{}:
+		return nil
+	default:
+		return fmt.Errorf("proposal failed-TX cleanup queue saturated")
+	}
+}
+
+func (s *Service) releaseProposalFailedTxCleanup() {
+	select {
+	case <-s.proposalFailedTxSlots:
+	default:
+		panic("proposal failed-TX cleanup reservation underflow")
+	}
+}
+
+func (s *Service) proposalManifestDispatchWorker() {
+	for job := range s.proposalManifestJobs {
+		if job != nil && job.body != nil && atomic.LoadInt32(&s.runningState) == 1 &&
+			atomic.LoadUint64(&s.proposalValidationGeneration) == job.serviceGeneration {
+			for _, address := range job.destinations {
+				if atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != job.serviceGeneration {
+					break
+				}
+				if err := s.netService.SendRawData(address, &networkMsg{Pmsg: job.body}); err != nil {
+					log.Warn("HOTSTUFF PROPOSAL MANIFEST dispatch failed", "to", address,
+						"number", job.body.Number, "proposalID", job.body.ProposalID, "err", err)
+				}
+			}
+		}
+		s.releaseProposalManifestDispatch()
+	}
+}
+
+func (s *Service) proposalFailedTxCleanupWorker() {
+	for job := range s.proposalFailedTxJobs {
+		if job != nil && len(job.txs) > 0 && s.removeFailedProposalTxs != nil && atomic.LoadInt32(&s.runningState) == 1 &&
+			atomic.LoadUint64(&s.proposalValidationGeneration) == job.serviceGeneration {
+			s.removeFailedProposalTxs(job.txs)
+			log.Warn("Removed failed proposal txs from txpool", "count", len(job.txs))
+		}
+		s.releaseProposalFailedTxCleanup()
+	}
+}
+
+// proposalBuildRouteMatchesLocked requires muCurrentView. It binds the manager
+// request to the exact service route and to the block/key generation captured by
+// the worker. Apply keeps this lock until candidate publication completes, so a
+// timeout-only route change cannot slip between this check and install.
+func (s *Service) proposalBuildRouteMatchesLocked(output *proposalBuildOutput) bool {
+	if output == nil || output.key.ViewNumber != s.currentView.ViewNumber+1 ||
+		hotstuff.StateDigest(s.currentView.EncodeConsensusToBytes()) != output.key.CurrentStateDigest ||
+		s.replicaView == nil || !s.replicaView.EqualConsensus(&s.currentView) {
+		return false
+	}
+	committee, err := s.loadViewCommittee(&s.currentView, true)
+	if err != nil || s.currentView.LeaderIndex >= uint(len(committee.List)) || committee.List[s.currentView.LeaderIndex] == nil {
+		return false
+	}
+	leader := committee.List[s.currentView.LeaderIndex]
+	if bftview.GetNodeID(leader.Address, leader.Public) != output.key.LeaderID || output.key.LeaderID != s.Self() {
+		return false
+	}
+	var generation proposalGeneration
+	switch {
+	case output.txCandidate != nil && output.keyCandidate == nil:
+		generation = output.txCandidate.generation
+	case output.keyCandidate != nil && output.txCandidate == nil:
+		generation = output.keyCandidate.generation
+	default:
+		return false
+	}
+	return generation.parentHash == s.currentView.TxHash && generation.parentNumber == s.currentView.TxNumber &&
+		generation.keyHash == s.currentView.KeyHash && generation.keyNumber == s.currentView.KeyNumber
+}
+
+func (s *Service) ApplyFHSProposalBuild(result *hotstuff.FHSProposalBuildResult) error {
+	if result == nil || result.Err != nil {
+		return fmt.Errorf("invalid FHS proposal construction result")
+	}
+	output, ok := result.ApplicationData.(*proposalBuildOutput)
+	if !ok || output == nil || output.key != result.Key || !bytes.Equal(output.proposalRef, result.TProposal) ||
+		!bytes.Equal(output.extra, result.Extra) || output.manifest == nil || output.body == nil {
+		return fmt.Errorf("FHS proposal construction result context mismatch")
+	}
+	s.muProposalBuild.Lock()
+	buildLockTransferred := false
+	defer func() {
+		if !buildLockTransferred {
+			s.muProposalBuild.Unlock()
+		}
+	}()
+	active := s.activeProposalBuild
+	activeMatch := active != nil && active.key == result.Key && active.generation == output.constructionGeneration
+	if !activeMatch || atomic.LoadInt32(&s.runningState) != 1 ||
+		atomic.LoadUint64(&s.proposalValidationGeneration) != output.serviceGeneration {
+		return hotstuff.ErrOldState
+	}
+	if err := s.reserveProposalManifestDispatch(); err != nil {
+		return err
+	}
+	manifestReserved := true
+	defer func() {
+		if manifestReserved {
+			s.releaseProposalManifestDispatch()
+		}
+	}()
+	cleanupReserved := false
+	if output.txCandidate != nil && len(output.txCandidate.failedTxes) > 0 {
+		if err := s.reserveProposalFailedTxCleanup(); err != nil {
+			return err
+		}
+		cleanupReserved = true
+		defer func() {
+			if cleanupReserved {
+				s.releaseProposalFailedTxCleanup()
+			}
+		}()
+	}
+
+	// Lock order is muProposalBuild -> muCurrentView -> txService.mu. No
+	// txService publication path acquires muCurrentView while holding txService.mu.
+	s.muCurrentView.Lock()
+	currentViewLockTransferred := false
+	defer func() {
+		if !currentViewLockTransferred {
+			s.muCurrentView.Unlock()
+		}
+	}()
+	if !s.proposalBuildRouteMatchesLocked(output) || atomic.LoadInt32(&s.runningState) != 1 ||
+		atomic.LoadUint64(&s.proposalValidationGeneration) != output.serviceGeneration {
+		return hotstuff.ErrOldState
+	}
+
+	switch {
+	case output.txCandidate != nil && output.keyCandidate == nil:
+		if err := s.txService.installProposalCandidate(output.txCandidate, nil); err != nil {
+			return err
+		}
+	case output.keyCandidate != nil && output.txCandidate == nil && output.keyBlock != nil && output.committee != nil:
+		if err := s.txService.installKeyProposalCandidate(output.keyCandidate, func() error {
+			if output.committee.RlpHash() != output.keyBlock.CommitteeHash() {
+				return fmt.Errorf("key proposal committee commitment changed")
+			}
+			// A proposed (not committed) committee must be available for proposal
+			// verification/recovery, but Committee_OnStored only adjusts live peer
+			// connections for an already-canonical key block. Defer that callback to
+			// the normal commit/verification path.
+			if !output.committee.StoreWithoutCallback(output.keyBlock) {
+				return fmt.Errorf("failed to persist proposed committee for key block %d/%s", output.keyBlock.NumberU64(), output.keyBlock.Hash())
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("FHS proposal construction result has ambiguous candidate")
+	}
+
+	s.proposalManifestJobs <- &proposalManifestDispatch{
+		body:              cloneProposalBodyMsg(output.manifest),
+		destinations:      append([]string(nil), output.destinations...),
+		serviceGeneration: output.serviceGeneration,
+	}
+	manifestReserved = false
+	if cleanupReserved {
+		s.proposalFailedTxJobs <- &proposalFailedTxCleanup{
+			txs:               append(types.Transactions(nil), output.txCandidate.failedTxes...),
+			serviceGeneration: output.serviceGeneration,
+		}
+		cleanupReserved = false
+	}
+	now := time.Now()
+	s.muProposalCadence.Lock()
+	s.lastProposeTime = now
+	if output.blockType == types.SlowTx_Block {
+		s.lastSlowBlockTime = now
+	} else if output.blockType == types.FastTx_Block {
+		s.lastFastBlockTime = now
+	}
+	s.muProposalCadence.Unlock()
+	output.publicationLocksHeld = true
+	currentViewLockTransferred = true
+	buildLockTransferred = true
+	return nil
+}
+
+// FinishFHSProposalBuild releases the publication barrier after the manager has
+// cached, phase-transitioned and submitted the sealed Prepare. Apply transfers
+// these locks only on success, and the manager defers this callback immediately,
+// so Stop cannot linearize in the Apply-to-Broadcast gap.
+func (s *Service) FinishFHSProposalBuild(result *hotstuff.FHSProposalBuildResult) {
+	if result == nil {
+		return
+	}
+	output, _ := result.ApplicationData.(*proposalBuildOutput)
+	if output == nil || !output.publicationLocksHeld {
+		return
+	}
+	output.publicationLocksHeld = false
+	s.muCurrentView.Unlock()
+	s.muProposalBuild.Unlock()
+}
+
+func (s *Service) finishProposalBuild(key hotstuff.FHSProposalBuildKey) {
+	s.muProposalBuild.Lock()
+	defer s.muProposalBuild.Unlock()
+	active := s.activeProposalBuild
+	if active == nil || active.key != key {
+		return
+	}
+	if active.cancel != nil {
+		active.cancel()
+	}
+	s.activeProposalBuild = nil
+}
+
+func (s *Service) captureProposalWorkStamp(now time.Time, proposalViewNumber uint64, proposalViewID common.Hash, leaderID string) (proposalWorkStamp, bool) {
+	var stamp proposalWorkStamp
+	if s == nil || s.txPool == nil || s.txService == nil || s.bc == nil || s.kbc == nil {
+		return stamp, false
+	}
+	poolRevision := s.txPool.PendingRevision()
+	proposedRevision, proposedExpiry, ok := s.txService.proposalExclusionState()
+	if !ok {
+		return stamp, false
+	}
+	candidateRevision := uint64(0)
+	if s.keyService != nil && s.keyService.candidatepool != nil {
+		candidateRevision = s.keyService.candidatepool.Revision()
+	}
+	view := s.GetCurrentView()
+	parent := s.bc.CurrentBlock()
+	if s.fairHotstuffEnabled() {
+		if highest := s.highestFHSCertifiedProposal(); highest != nil && highest.Block != nil {
+			parent = highest.Block
+		}
+	}
+	keyBlock := s.kbc.CurrentBlock()
+	if view == nil || parent == nil || keyBlock == nil {
+		return stamp, false
+	}
+	if s.fairHotstuffEnabled() && (view.TxNumber != parent.NumberU64() || view.TxHash != parent.Hash()) {
+		// An asynchronous certificate/view transition is between its publication
+		// steps. Do not suppress anything from this mixed snapshot.
+		return stamp, false
+	}
+	if s.fairHotstuffEnabled() && (view.KeyNumber != keyBlock.NumberU64() || view.KeyHash != keyBlock.Hash()) {
+		return stamp, false
+	}
+	finality := s.needsFHSFinalityBlock()
+	keyblockReady := s.fixedModeKeyblockIntervalElapsed(now)
+	stamp = proposalWorkStamp{
+		fairHotstuff:      s.fairHotstuffEnabled(),
+		poolRevision:      poolRevision,
+		candidateRevision: candidateRevision,
+		proposedRevision:  proposedRevision,
+		proposedExpiry:    proposedExpiry,
+		parentNumber:      parent.NumberU64(),
+		parentHash:        parent.Hash(),
+		keyNumber:         keyBlock.NumberU64(),
+		keyHash:           keyBlock.Hash(),
+		view:              *view,
+		proposalView:      proposalViewNumber,
+		proposalViewID:    proposalViewID,
+		proposalLeaderID:  leaderID,
+		finality:          finality,
+		keyblockReady:     keyblockReady,
+		keyblockPending:   keyblockReady && s.keyService != nil && s.keyService.fixedModeEnabled() && view.NoDone && !finality,
+	}
+	// Re-read the O(1) generation and consensus identities after the composite
+	// snapshot. A concurrent change may cause an unnecessary retry, but can never
+	// install a stale marker that suppresses new work.
+	if poolRevision != s.txPool.PendingRevision() || !view.EqualAll(s.GetCurrentView()) {
+		return proposalWorkStamp{}, false
+	}
+	currentProposedRevision, currentProposedExpiry, ok := s.txService.proposalExclusionState()
+	if !ok || proposedRevision != currentProposedRevision || proposedExpiry != currentProposedExpiry {
+		return proposalWorkStamp{}, false
+	}
+	if s.keyService != nil && s.keyService.candidatepool != nil && candidateRevision != s.keyService.candidatepool.Revision() {
+		return proposalWorkStamp{}, false
+	}
+	currentParent := s.bc.CurrentBlock()
+	if s.fairHotstuffEnabled() {
+		if highest := s.highestFHSCertifiedProposal(); highest != nil && highest.Block != nil {
+			currentParent = highest.Block
+		}
+	}
+	currentKey := s.kbc.CurrentBlock()
+	if currentParent == nil || currentKey == nil || currentParent.NumberU64() != stamp.parentNumber || currentParent.Hash() != stamp.parentHash ||
+		currentKey.NumberU64() != stamp.keyNumber || currentKey.Hash() != stamp.keyHash {
+		return proposalWorkStamp{}, false
+	}
+	return stamp, true
+}
+
+func (s *Service) rememberProposalNoWork(stamp proposalWorkStamp, valid bool) {
+	if !valid {
+		return
+	}
+	current, ok := s.captureProposalWorkStamp(time.Now(), stamp.proposalView, stamp.proposalViewID, stamp.proposalLeaderID)
+	s.rememberProposalNoWorkIfCurrent(stamp, current, ok)
+}
+
+func (s *Service) rememberProposalNoWorkIfCurrent(stamp, current proposalWorkStamp, valid bool) bool {
+	// Proposal view ID and leader live in the HotStuff recovery callback. The
+	// current service view and all work-producing inputs are fixed by the stamp.
+	// A ready fixed-mode keyblock is real work even when both transaction lanes
+	// are empty. Let the watchdog flip NoDone and wake that path exactly once.
+	if !valid || current != stamp || stamp.keyblockPending {
+		return false
+	}
+	s.muProposalNoWork.Lock()
+	copy := stamp
+	s.proposalNoWork = &copy
+	s.muProposalNoWork.Unlock()
+	return true
+}
+
+func (s *Service) clearProposalNoWork() {
+	if s == nil {
+		return
+	}
+	s.muProposalNoWork.Lock()
+	s.proposalNoWork = nil
+	s.muProposalNoWork.Unlock()
+}
+
+func (s *Service) proposalNoWorkUnchanged(now time.Time) bool {
+	if s == nil {
+		return false
+	}
+	s.muProposalNoWork.Lock()
+	if s.proposalNoWork == nil {
+		s.muProposalNoWork.Unlock()
+		return false
+	}
+	remembered := *s.proposalNoWork
+	s.muProposalNoWork.Unlock()
+
+	if proposalNoWorkExpiryElapsed(remembered, now) {
+		return s.proposalNoWorkMatchesCurrent(remembered, proposalWorkStamp{}, false)
+	}
+	current, ok := s.captureProposalWorkStamp(now, remembered.proposalView, remembered.proposalViewID, remembered.proposalLeaderID)
+	return s.proposalNoWorkMatchesCurrent(remembered, current, ok)
+}
+
+func proposalNoWorkExpiryElapsed(stamp proposalWorkStamp, now time.Time) bool {
+	return !stamp.proposedExpiry.IsZero() && now.After(stamp.proposedExpiry)
+}
+
+func (s *Service) proposalNoWorkMatchesCurrent(remembered, current proposalWorkStamp, valid bool) bool {
+	s.muProposalNoWork.Lock()
+	defer s.muProposalNoWork.Unlock()
+	if s.proposalNoWork == nil || *s.proposalNoWork != remembered {
+		return false
+	}
+	if valid && current == remembered {
+		return true
+	}
+	s.proposalNoWork = nil
+	return false
+}
+
+// ProposalRecoveryReady prevents HotStuff's generic five-second recovery loop
+// from defeating an application-level no-work result. Ordinary transient
+// failures never install the watermark and therefore remain retryable.
+func (s *Service) ProposalRecoveryReady(viewNumber uint64, viewID common.Hash, leaderID string) bool {
+	s.muProposalNoWork.Lock()
+	remembered := s.proposalNoWork
+	exactView := remembered != nil && remembered.proposalView == viewNumber && remembered.proposalViewID == viewID && remembered.proposalLeaderID == leaderID
+	s.muProposalNoWork.Unlock()
+	if !exactView {
+		return true
+	}
+	if !s.proposalNoWorkUnchanged(time.Now()) {
+		return true
+	}
+	return false
+}
+
+func (s *Service) scheduleProposalBuildRetry(key hotstuff.FHSProposalBuildKey) {
+	go func() {
+		time.Sleep(failedProposalRetry)
+		if atomic.LoadInt32(&s.runningState) != 1 {
+			return
+		}
+		state, leaderID, number := s.CurrentState()
+		if number != key.ViewNumber || leaderID != key.LeaderID || hotstuff.StateDigest(state) != key.CurrentStateDigest || leaderID != s.Self() {
+			return
+		}
+		s.triggerTryPropose(s.bc.CurrentBlockN())
+	}()
+}
+
+func shouldRetryFHSProposalBuild(err error) bool {
+	return err != nil && !errors.Is(err, hotstuff.ErrOldState) && !errors.Is(err, errProposalNoWork)
+}
+
+func (s *Service) cancelAllProposalBuilds() {
+	s.muProposalBuild.Lock()
+	defer s.muProposalBuild.Unlock()
+	s.cancelAllProposalBuildsLocked()
+}
+
+// cancelAllProposalBuildsLocked requires muProposalBuild.
+func (s *Service) cancelAllProposalBuildsLocked() {
+	if active := s.activeProposalBuild; active != nil {
+		if active.cancel != nil {
+			active.cancel()
+		}
+		s.activeProposalBuild = nil
+	}
+	for {
+		select {
+		case stale := <-s.proposalBuildJobs:
+			if stale != nil && stale.cancel != nil {
+				stale.cancel()
+			}
+		default:
+			return
+		}
+	}
+}
+
 // Propose call by hotstuff
 func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
+	if s.fairHotstuffEnabled() {
+		return fmt.Errorf("Fair HotStuff proposal construction is asynchronous"), nil, nil, nil
+	}
 	log.Debug("Propose..", "number", s.GetCurrentView().TxNumber)
 
 	proposeOK := false
 	defer func() {
-		if !proposeOK {
+		if proposeOK {
+			s.muProposalCadence.Lock()
+			s.lastProposeTime = time.Now()
+			s.muProposalCadence.Unlock()
+		} else if !errors.Is(e, errProposalNoWork) {
 			go func() {
 				time.Sleep(failedProposalRetry)
 				curView := s.GetCurrentView()
@@ -1631,8 +5068,6 @@ func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string
 					s.triggerTryPropose(s.bc.CurrentBlockN())
 				}
 			}()
-		} else {
-			s.lastProposeTime = time.Now()
 		}
 	}()
 
@@ -1719,6 +5154,9 @@ func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string
 				}
 				return err, nil, nil, nil
 			}
+			if !mb.Store(keyblock) {
+				return fmt.Errorf("failed to persist proposed committee for key block %d/%s", keyblock.NumberU64(), keyblock.Hash()), nil, nil, nil
+			}
 			proposeOK = true
 			return nil, nil, proposalRef, extra
 		} else {
@@ -1729,37 +5167,54 @@ func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string
 			return fmt.Errorf("tryProposalChangeCommittee failed"), nil, nil, nil
 		}
 	}
+	workStamp, workStampValid := s.captureProposalWorkStamp(time.Now(), viewNumber, viewID, leaderID)
 	blockType := s.chooseTxBlockType()
 	data, err := s.txService.tryProposalNewBlock(blockType)
 	if err != nil {
+		primaryErr := err
 		fallbackType := uint8(types.FastTx_Block)
 		if blockType == types.FastTx_Block {
 			fallbackType = types.SlowTx_Block
 		}
-		log.Warn("Primary tx block proposal failed, trying fallback lane",
-			"primary", readableTxBlockType(blockType),
-			"fallback", readableTxBlockType(fallbackType),
-			"err", err)
-		data, err = s.txService.tryProposalNewBlock(fallbackType)
-		if err == nil {
+		if !errors.Is(primaryErr, errProposalNoWork) {
+			log.Warn("Primary tx block proposal failed, trying fallback lane",
+				"primary", readableTxBlockType(blockType),
+				"fallback", readableTxBlockType(fallbackType),
+				"err", primaryErr)
+		}
+		fallbackData, fallbackErr := s.txService.tryProposalNewBlock(fallbackType)
+		if fallbackErr == nil {
+			data = fallbackData
+			err = nil
 			blockType = fallbackType
+		} else {
+			err = proposalLaneBuildError(primaryErr, fallbackErr)
 		}
 	}
 	if err != nil {
-		log.Warn("tryProposalNewBlock", "error", err)
+		if errors.Is(err, errProposalNoWork) {
+			s.rememberProposalNoWork(workStamp, workStampValid)
+		} else {
+			s.clearProposalNoWork()
+			log.Warn("tryProposalNewBlock", "error", err)
+		}
 		return err, nil, nil, nil
 	}
 	proposalRef, err := s.prepareHotstuffProposal(viewNumber, viewID, leaderID, data, nil)
 	if err != nil {
+		s.clearProposalNoWork()
 		log.Warn("prepare txblock hotstuff proposal", "error", err)
 		return err, nil, nil, nil
 	}
 	now := time.Now()
+	s.muProposalCadence.Lock()
 	if blockType == types.SlowTx_Block {
 		s.lastSlowBlockTime = now
 	} else if blockType == types.FastTx_Block {
 		s.lastFastBlockTime = now
 	}
+	s.muProposalCadence.Unlock()
+	s.clearProposalNoWork()
 	proposeOK = true
 	return nil, nil, proposalRef, nil
 }
@@ -1845,10 +5300,12 @@ func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
 	// The proposal may still be in HotStuff consensus. Touching currentView /
 	// waittingView while a tx block is in-flight can make the next view wait
 	// for the wrong watermark.
+	s.muProposalCadence.RLock()
 	lastTxProposal := s.lastFastBlockTime
 	if s.lastSlowBlockTime.After(lastTxProposal) {
 		lastTxProposal = s.lastSlowBlockTime
 	}
+	s.muProposalCadence.RUnlock()
 	if !lastTxProposal.IsZero() && now.Sub(lastTxProposal) < 2*time.Second {
 		s.muCurrentView.Lock()
 		txNumber := s.currentView.TxNumber
@@ -2076,6 +5533,14 @@ func (s *Service) CurrentFHSRoute() (*FHSRoute, error) {
 		if leaderID == "" {
 			return nil, fmt.Errorf("Fair HotStuff leader identity is empty")
 		}
+		committeeCopy := make([]*common.Cnode, len(committee.List))
+		for index, member := range committee.List {
+			if member == nil {
+				return nil, fmt.Errorf("Fair HotStuff committee member %d is nil", index)
+			}
+			memberCopy := *member
+			committeeCopy[index] = &memberCopy
+		}
 		return &FHSRoute{
 			Enabled:       true,
 			CurrentView:   view.ViewNumber,
@@ -2088,6 +5553,7 @@ func (s *Service) CurrentFHSRoute() (*FHSRoute, error) {
 			LeaderIndex:   view.LeaderIndex,
 			LeaderID:      leaderID,
 			Leader:        &leaderCopy,
+			Committee:     committeeCopy,
 		}, nil
 	}
 	return nil, fmt.Errorf("Fair HotStuff route changed repeatedly while resolving")
@@ -2100,6 +5566,108 @@ func (backend *ReconfigBackend) CurrentFHSRoute() (*FHSRoute, error) {
 		return nil, fmt.Errorf("reconfig service is unavailable")
 	}
 	return backend.service.CurrentFHSRoute()
+}
+
+// TxQUICReceiptPublicKey returns the validator identity that signs durable
+// ingress acknowledgements. It is the same BLS identity committed in the FHS
+// committee, not a replaceable TLS certificate key.
+func (backend *ReconfigBackend) TxQUICReceiptPublicKey() ([]byte, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt identity is unavailable")
+	}
+	return backend.service.txQUICReceiptPublicKey()
+}
+
+func (s *Service) txQUICReceiptPublicKey() ([]byte, error) {
+	if s == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt identity is unavailable")
+	}
+	s.muConsensusIdentity.RLock()
+	secret, public := s.txQUICReceiptSecret, s.txQUICReceiptPublic
+	s.muConsensusIdentity.RUnlock()
+	if secret == nil || public == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt identity is unavailable")
+	}
+	derived := secret.GetPublicKey()
+	if derived == nil || !derived.IsEqual(public) {
+		return nil, fmt.Errorf("Fair HotStuff receipt key pair is inconsistent")
+	}
+	return append([]byte(nil), public.Serialize()...), nil
+}
+
+// SignTxQUICReceipt signs one domain-separated TxQUIC acknowledgement digest
+// only while this node's BLS key is a member of the exact canonical committee
+// generation carried by the packet and acknowledgement.
+func (backend *ReconfigBackend) SignTxQUICReceipt(keyNumber uint64, committeeHash common.Hash, digest []byte) ([]byte, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt signer is unavailable")
+	}
+	return backend.service.signTxQUICReceiptForGeneration(keyNumber, committeeHash, digest)
+}
+
+func (s *Service) signTxQUICReceiptForGeneration(keyNumber uint64, committeeHash common.Hash, digest []byte) ([]byte, error) {
+	if s == nil || committeeHash == (common.Hash{}) {
+		return nil, fmt.Errorf("invalid Fair HotStuff receipt generation")
+	}
+	// Serialize the non-thread-safe BLS secret before taking the view lock. ACK
+	// bursts then wait without blocking HotStuff view/QC transitions.
+	s.txQUICReceiptSignMu.Lock()
+	defer s.txQUICReceiptSignMu.Unlock()
+	// Hold the authoritative view lock through the short membership check and
+	// BLS operation. A key-block transition cannot move the committee between
+	// validation and signing.
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+	if err := s.refreshFHSRouteBaseLocked(); err != nil {
+		return nil, err
+	}
+	view := s.currentView
+	if view.KeyNumber != keyNumber || view.CommitteeHash != committeeHash {
+		return nil, fmt.Errorf("Fair HotStuff committee changed before TxQUIC receipt signing")
+	}
+	committee, err := s.loadViewCommittee(&view, true)
+	if err != nil {
+		return nil, err
+	}
+	if committee == nil || len(committee.List) == 0 || committee.RlpHash() != committeeHash {
+		return nil, fmt.Errorf("Fair HotStuff receipt committee is unavailable")
+	}
+	return s.signTxQUICReceiptLocked(digest, committee.List)
+}
+
+func (s *Service) signTxQUICReceiptLocked(digest []byte, committee []*common.Cnode) ([]byte, error) {
+	publicKey, err := s.txQUICReceiptPublicKey()
+	if err != nil {
+		return nil, err
+	}
+	if len(digest) != sha256.Size {
+		return nil, fmt.Errorf("invalid TxQUIC receipt digest length")
+	}
+	authorized := false
+	for _, member := range committee {
+		if member == nil {
+			continue
+		}
+		candidate := bls.GetPublicKey(common.FromHex(member.Public))
+		if candidate != nil && bytes.Equal(candidate.Serialize(), publicKey) {
+			authorized = true
+			break
+		}
+	}
+	if !authorized {
+		return nil, fmt.Errorf("local TxQUIC receipt signer is outside the active committee")
+	}
+	s.muConsensusIdentity.RLock()
+	secret := s.txQUICReceiptSecret
+	s.muConsensusIdentity.RUnlock()
+	if secret == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt signing key is unavailable")
+	}
+	signature := secret.SignHash(digest)
+	if signature == nil {
+		return nil, fmt.Errorf("failed to sign TxQUIC receipt")
+	}
+	return append([]byte(nil), signature.Serialize()...), nil
 }
 
 func (s *Service) fairHotstuffLeaderIndexForTargetLocked(targetView uint64, committeeHash common.Hash) uint {
@@ -2293,9 +5861,9 @@ func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.V
 	return oldView, curView, fallbackRound, viewAge
 }
 
-func (s *Service) enqueueHotstuffPriority(msg *hotstuffMsg) {
+func (s *Service) enqueueHotstuffPriority(msg *hotstuffMsg) bool {
 	if s == nil || s.hotstuffMsgQ == nil || msg == nil {
-		return
+		return false
 	}
 	if !s.hotstuffMsgQ.pushPriority(msg) {
 		code := uint32(0)
@@ -2303,7 +5871,9 @@ func (s *Service) enqueueHotstuffPriority(msg *hotstuffMsg) {
 			code = msg.hMsg.Code
 		}
 		log.Debug("drop hotstuff priority message after bounded queue backpressure", "code", hotstuff.ReadableMsgType(code))
+		return false
 	}
+	return true
 }
 
 func (s *Service) enqueueHotstuff(msg *hotstuffMsg) {
@@ -2326,17 +5896,16 @@ func (s *Service) triggerTryPropose(lastN uint64) {
 	if s.fairHotstuffEnabled() {
 		lastN = s.GetCurrentView().ViewNumber
 	}
-	now := time.Now().UnixNano()
-	prev := atomic.LoadInt64(&s.tryProposeQueuedAt)
-	if prev != 0 && time.Duration(now-prev) < tryProposeDebounce {
+	if !atomic.CompareAndSwapInt32(&s.tryProposeQueued, 0, 1) {
 		return
 	}
-	atomic.StoreInt64(&s.tryProposeQueuedAt, now)
-	s.enqueueHotstuffPriority(&hotstuffMsg{
+	if !s.enqueueHotstuffPriority(&hotstuffMsg{
 		sid:   nil,
 		lastN: lastN,
 		hMsg:  &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose},
-	})
+	}) {
+		atomic.StoreInt32(&s.tryProposeQueued, 0)
+	}
 }
 
 func (s *Service) enqueueTimerPriority(curN uint64) {
@@ -2357,6 +5926,7 @@ func (s *Service) wakeFixedModeKeyblock(now time.Time, reason string, candidateR
 	if !s.fixedModeKeyblockIntervalElapsed(now) {
 		return false
 	}
+	s.clearProposalNoWork()
 
 	s.muCurrentView.Lock()
 	if !s.lastFixedKeyNewViewWakeup.IsZero() && now.Sub(s.lastFixedKeyNewViewWakeup) < fixedModeKeyblockWakeupInterval {
@@ -2400,6 +5970,9 @@ func (s *Service) keyblockLivenessLoop() {
 		if !s.fixedModeKeyblockIntervalElapsed(now) {
 			continue
 		}
+		if s.proposalNoWorkUnchanged(now) {
+			continue
+		}
 		fastPending, slowPending := s.lanePendingCounts()
 		pendingTotal := 0
 		if s.txPool != nil {
@@ -2424,6 +5997,8 @@ func readableTxBlockType(blockType uint8) string {
 }
 
 func (s *Service) shouldEmitFastBlock(now time.Time) bool {
+	s.muProposalCadence.RLock()
+	defer s.muProposalCadence.RUnlock()
 	if s.lastFastBlockTime.IsZero() {
 		return true
 	}
@@ -2444,6 +6019,8 @@ func adaptiveSlowBlockInterval(slowPending int) time.Duration {
 }
 
 func (s *Service) shouldEmitSlowBlock(now time.Time, slowPending int) bool {
+	s.muProposalCadence.RLock()
+	defer s.muProposalCadence.RUnlock()
 	if s.lastSlowBlockTime.IsZero() {
 		return true
 	}
@@ -2553,6 +6130,9 @@ func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
 
 // Write call by hotstuff------------------------------------------------------------------------------------------------
 func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		return types.ErrNotRunning
+	}
 	log.Info("Write", "to id", id, "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
 
 	if id == s.Self() {
@@ -2579,6 +6159,9 @@ func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
 
 // Broadcast call by hotstuff
 func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		return []error{types.ErrNotRunning}
+	}
 	if data == nil {
 		return []error{fmt.Errorf("nil hotstuff message")}
 	}
@@ -2612,7 +6195,10 @@ func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
 }
 
 func (s *Service) broadcastHotstuffToCommittee(data *hotstuff.HotstuffMessage) []error {
-	mb := bftview.GetCurrentMember()
+	mb, err := s.hotstuffBroadcastCommittee(data)
+	if err != nil {
+		return []error{err}
+	}
 	if mb == nil {
 		return []error{fmt.Errorf("can't find current committee")}
 	}
@@ -2633,6 +6219,30 @@ func (s *Service) broadcastHotstuffToCommittee(data *hotstuff.HotstuffMessage) [
 		}
 	}
 	return errs
+}
+
+// hotstuffBroadcastCommittee pins Prepare delivery to the committee generation
+// committed by its proposal reference. A concurrent finalized-sync key change
+// must never redirect an old-epoch Prepare to the newly current committee.
+func (s *Service) hotstuffBroadcastCommittee(data *hotstuff.HotstuffMessage) (*bftview.Committee, error) {
+	if data == nil {
+		return nil, fmt.Errorf("nil hotstuff broadcast")
+	}
+	if data.Code != hotstuff.MsgPrepare {
+		return bftview.GetCurrentMember(), nil
+	}
+	ref, err := types.DecodeHotstuffProposalRef(data.DataB)
+	if err != nil || ref == nil {
+		return nil, fmt.Errorf("decode Prepare proposal committee: %w", err)
+	}
+	if s.kbc == nil || ref.KeyHash == (common.Hash{}) {
+		return nil, fmt.Errorf("missing Prepare proposal committee %s", ref.KeyHash)
+	}
+	_, committee, _, err := s.resolveExactFHSCommittee(ref.KeyHash, true)
+	if err != nil || committee == nil || len(committee.List) == 0 {
+		return nil, fmt.Errorf("can't find Prepare committee %s: %w", ref.KeyHash, err)
+	}
+	return committee, nil
 }
 
 func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
@@ -2677,92 +6287,138 @@ func (s *Service) validateHotstuffTransportSender(si *network.ServerIdentity, ms
 	return nil
 }
 
+func (s *Service) handleHotstuffPoolMaintenance(now time.Time) {
+	if s.proposalNoWorkUnchanged(now) {
+		return
+	}
+	fastPending, slowPending := s.lanePendingCounts()
+	pendingTotal := 0
+	if s.txPool != nil {
+		pendingTotal, _ = s.txPool.Stats()
+	}
+	candidateRewardReady := s.fixedModeCandidateRewardReady(now)
+	if s.fixedModeKeyblockIntervalElapsed(now) {
+		s.wakeFixedModeKeyblock(now, "hotstuff-maintenance", candidateRewardReady, pendingTotal, fastPending, slowPending)
+		return
+	}
+	s.repairFixedModeTxProposalViewIfPending(pendingTotal)
+	if !bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
+		return
+	}
+	cadenceReady := candidateRewardReady || pendingTotal > 0 ||
+		(fastPending > 0 && s.shouldEmitFastBlock(now)) ||
+		(slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending))
+	if !cadenceReady || (!s.lastCadenceWakeup.IsZero() && now.Sub(s.lastCadenceWakeup) < 50*time.Millisecond) {
+		return
+	}
+	s.lastCadenceWakeup = now
+	// FHS new-view activation schedules the first proposal directly. Run this
+	// side-effect-free canonical snapshot check only after cadence admits a
+	// retry, and account for the attempt above even when the view is stale.
+	if s.fairHotstuffEnabled() && (s.protocolMng == nil || !s.protocolMng.CanTryPropose()) {
+		return
+	}
+	if pendingTotal > 0 && fastPending == 0 && slowPending == 0 {
+		log.Warn("tx proposal liveness fallback wakeup",
+			"pendingTotal", pendingTotal, "fastPending", fastPending, "slowPending", slowPending, "currentBlock", s.bc.CurrentBlockN())
+	}
+	if candidateRewardReady && pendingTotal == 0 {
+		log.Warn("fixed-mode candidate reward new-view wakeup",
+			"currentBlock", s.bc.CurrentBlockN(), "currentKey", s.kbc.CurrentBlockN(),
+			"pendingTotal", pendingTotal, "fastPending", fastPending, "slowPending", slowPending)
+	} else if candidateRewardReady {
+		log.Warn("fixed-mode candidate reward delayed because txpool has pending txs",
+			"currentBlock", s.bc.CurrentBlockN(), "currentKey", s.kbc.CurrentBlockN(),
+			"pendingTotal", pendingTotal, "fastPending", fastPending, "slowPending", slowPending)
+	}
+	s.triggerTryPropose(s.bc.CurrentBlockN())
+}
+
 func (s *Service) handleHotStuffMsg() {
+	poolTicker := time.NewTicker(25 * time.Millisecond)
+	defer poolTicker.Stop()
+	timerTicker := time.NewTicker(10 * time.Millisecond)
+	defer timerTicker.Stop()
+
 	for {
-		data := s.hotstuffMsgQ.pop()
-		if data == nil {
-			time.Sleep(hotstuffIdleSleep)
-			now := time.Now()
-
-			fastPending, slowPending := s.lanePendingCounts()
-			pendingTotal := 0
-			if s.txPool != nil {
-				pendingTotal, _ = s.txPool.Stats()
-			}
-			candidateRewardReady := s.fixedModeCandidateRewardReady(now)
-			keyblockIntervalElapsed := s.fixedModeKeyblockIntervalElapsed(now)
-
-			// Fixed-mode keyblock liveness:
-			// This must run on every committee member, not only the leader.
-			// Every member must first switch to the same keyblock view (NoDone=false)
-			// before sending MsgNewView. If only the leader flips NoDone, replicas vote
-			// for a different view hash and the leader never reaches the new-view quorum.
-			if keyblockIntervalElapsed {
-				s.wakeFixedModeKeyblock(now, "hotstuff-idle", candidateRewardReady, pendingTotal, fastPending, slowPending)
-
-				// Keyblock interval has priority over tx/candidate liveness wakeups.
-				// Let MsgStartNewView drive HotStuff to PhaseTryPropose instead of
-				// enqueueing MsgTryPropose against a stale or nil leader view.
-				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.currentHotstuffBaseNumber()})
+		var data *hotstuffMsg
+		select {
+		case result := <-s.proposalBuildResults:
+			if atomic.LoadInt32(&s.runningState) != 1 || s.hasDeferredFHSRecovery() {
+				s.finishProposalBuild(result.Key)
 				continue
 			}
-
-			// Fixed-mode liveness repair must run before IamLeader check.
-			// If currentView is stuck in keyblock-wait state, IamLeader may be false
-			// or tx proposal may be suppressed until the next 10-minute keyblock.
-			s.repairFixedModeTxProposalViewIfPending(pendingTotal)
-
-			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
-				cadenceReady := false
-
-				if candidateRewardReady {
-					// Candidate-only liveness:
-					// If txpool is empty but a common-miner PoW candidate is ready
-					// after KeyBlockMinInterval, wake keyblock proposal.
-					cadenceReady = true
-				} else if pendingTotal > 0 {
-					// Strong liveness fallback:
-					// If txpool has pending txs, always wake proposal periodically.
-					cadenceReady = true
-
-					if fastPending == 0 && slowPending == 0 {
-						log.Warn("tx proposal liveness fallback wakeup",
-							"pendingTotal", pendingTotal,
-							"fastPending", fastPending,
-							"slowPending", slowPending,
-							"currentBlock", s.bc.CurrentBlockN())
-					}
+			err := s.protocolMng.HandleFHSProposalBuildResult(result)
+			output, _ := result.ApplicationData.(*proposalBuildOutput)
+			if errors.Is(err, errProposalNoWork) && output != nil {
+				s.rememberProposalNoWork(output.workStamp, output.workStampValid)
+			} else if !errors.Is(err, hotstuff.ErrOldState) {
+				// Success and real failures both remain immediately actionable. Only
+				// an accepted no-work result may quiesce this exact input generation.
+				s.clearProposalNoWork()
+			}
+			if err != hotstuff.ErrOldState && result.Err != nil && output != nil && output.fixedMode && output.keyProposalAttempt {
+				s.abortFixedModeKeyProposal("asynchronous proposal construction failed", result.Err)
+			}
+			s.finishProposalBuild(result.Key)
+			if shouldRetryFHSProposalBuild(err) {
+				log.Warn("FHS proposal construction completion rejected",
+					"view", result.Key.ViewNumber, "viewID", result.Key.ViewID, "err", err)
+				s.scheduleProposalBuildRetry(result.Key)
+			}
+			continue
+		case result := <-s.proposalValidationResults:
+			if atomic.LoadInt32(&s.runningState) != 1 || s.hasDeferredFHSRecovery() {
+				s.finishProposalValidation(result.Key)
+				continue
+			}
+			err := s.protocolMng.HandleFHSProposalValidationResult(result)
+			s.finishProposalValidation(result.Key)
+			s.cancelInactiveProposalValidations(s.GetCurrentView().ViewNumber + 1)
+			if err == nil {
+				s.observeHotstuffProgress(&hotstuff.HotstuffMessage{
+					Code: hotstuff.MsgPrepare, Number: result.Key.ViewNumber, ViewId: result.Key.ViewID, Id: result.Key.LeaderID,
+				})
+			} else if err != hotstuff.ErrOldState {
+				log.Warn("FHS proposal validation completion rejected",
+					"view", result.Key.ViewNumber, "viewID", result.Key.ViewID,
+					"proposalID", result.Key.ProposalID, "err", err)
+			}
+			continue
+		case result := <-s.highQCValidationResults:
+			recovering := s.hasDeferredFHSRecovery()
+			if atomic.LoadInt32(&s.runningState) != 1 {
+				s.finishHighQCValidation(result.Key)
+				continue
+			}
+			err := s.protocolMng.HandleFHSHighQCValidationResult(result)
+			s.finishHighQCValidation(result.Key)
+			s.cancelInactiveProposalValidations(s.GetCurrentView().ViewNumber + 1)
+			if err != nil && err != hotstuff.ErrOldState && err != hotstuff.ErrProposalValidationPending && err != hotstuff.ErrInsufficientQC {
+				log.Warn("FHS HighQC validation completion rejected",
+					"targetView", result.Key.TargetView, "qcID", result.Key.QCID, "err", err)
+			}
+			if recovering {
+				if s.hasDeferredFHSRecovery() {
+					s.retryDeferredFHSRecovery()
 				} else {
-					cadenceReady = (fastPending > 0 && s.shouldEmitFastBlock(now)) ||
-						(slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending))
-				}
-
-				if cadenceReady {
-					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
-						s.lastCadenceWakeup = now
-						if candidateRewardReady && pendingTotal == 0 {
-							log.Warn("fixed-mode candidate reward new-view wakeup",
-								"currentBlock", s.bc.CurrentBlockN(),
-								"currentKey", s.kbc.CurrentBlockN(),
-								"pendingTotal", pendingTotal,
-								"fastPending", fastPending,
-								"slowPending", slowPending)
-							s.triggerTryPropose(s.bc.CurrentBlockN())
-						} else {
-							if candidateRewardReady && pendingTotal > 0 {
-								log.Warn("fixed-mode candidate reward delayed because txpool has pending txs",
-									"currentBlock", s.bc.CurrentBlockN(),
-									"currentKey", s.kbc.CurrentBlockN(),
-									"pendingTotal", pendingTotal,
-									"fastPending", fastPending,
-									"slowPending", slowPending)
-							}
-							s.triggerTryPropose(s.bc.CurrentBlockN())
-						}
-					}
+					s.resumeAfterDeferredFHSRecovery()
 				}
 			}
-			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.currentHotstuffBaseNumber()})
+			continue
+		case <-s.fhsRecoveryWake:
+			s.attemptDeferredFHSRecovery()
+			continue
+		case data = <-s.hotstuffMsgQ.next:
+		case now := <-poolTicker.C:
+			if atomic.LoadInt32(&s.runningState) == 1 && !s.hasDeferredFHSRecovery() {
+				s.handleHotstuffPoolMaintenance(now)
+			}
+			continue
+		case <-timerTicker.C:
+			if atomic.LoadInt32(&s.runningState) == 1 && !s.hasDeferredFHSRecovery() {
+				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.currentHotstuffBaseNumber()})
+			}
 			continue
 		}
 		msg := data
@@ -2771,6 +6427,15 @@ func (s *Service) handleHotStuffMsg() {
 			continue
 		}
 		msgCode := msg.hMsg.Code
+		if msgCode == hotstuff.MsgTryPropose {
+			atomic.StoreInt32(&s.tryProposeQueued, 0)
+		}
+		if atomic.LoadInt32(&s.runningState) != 1 {
+			continue
+		}
+		if s.hasDeferredFHSRecovery() {
+			continue
+		}
 		if err := s.validateHotstuffTransportSender(msg.sid, msg.hMsg); err != nil {
 			log.Warn("drop hotstuff message after transport revalidation", "from", msg.hMsg.Id, "code", hotstuff.ReadableMsgType(msgCode), "err", err)
 			continue
@@ -2796,10 +6461,14 @@ func (s *Service) handleHotStuffMsg() {
 		}
 
 		err := s.protocolMng.HandleMessage(msg.hMsg)
+		// Cleanup is deliberately based on the canonical view after full protocol
+		// verification. A transport-authenticated peer's raw Number is not proof
+		// that the view advanced and must never cancel a valid proposal worker.
+		s.cancelInactiveProposalValidations(s.GetCurrentView().ViewNumber + 1)
 		if err == nil || (err == hotstuff.ErrInsufficientQC && msgCode != hotstuff.MsgTimeout) {
 			s.observeHotstuffProgress(msg.hMsg)
 		}
-		if err != nil && err != hotstuff.ErrInsufficientQC && err != hotstuff.ErrUnhandledMsg && err != hotstuff.ErrOldState {
+		if err != nil && err != hotstuff.ErrInsufficientQC && err != hotstuff.ErrUnhandledMsg && err != hotstuff.ErrOldState && err != hotstuff.ErrProposalValidationPending {
 			log.Warn("HotStuff message rejected",
 				"from", msg.hMsg.Id,
 				"code", hotstuff.ReadableMsgType(msgCode),
@@ -3104,7 +6773,7 @@ func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.Ke
 
 	// sendNewViewMsg snapshots currentView through GetCurrentView, so it must run
 	// after releasing muCurrentView.
-	if sendNewView {
+	if sendNewView && atomic.LoadInt32(&s.runningState) == 1 {
 		s.sendNewViewMsg(newViewNumber)
 	}
 }
@@ -3130,14 +6799,29 @@ func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
 
 // Send new view when new block done
 func (s *Service) sendNewViewMsg(curN uint64) {
-	now := time.Now()
-	curView := s.GetCurrentView()
+	if s.hasDeferredFHSRecovery() {
+		return
+	}
 	if s.fairHotstuffEnabled() {
-		curN = curView.ViewNumber
 		// A leader-created QC remains in a durable outbox until a higher QC
 		// proves quorum dissemination. Replay it before every new-view attempt;
 		// outbound coalescing prevents duplicate queue growth.
 		s.replayPendingFHSQCBroadcast()
+	}
+	s.sendNewViewMsgAfterReplay(curN)
+}
+
+// sendNewViewMsgAfterReplay performs only the process-local NewView admission.
+// Generation-aware QC completion calls this while holding muLifecycle, after
+// any durable network replay has completed without that lock.
+func (s *Service) sendNewViewMsgAfterReplay(curN uint64) {
+	if s.hasDeferredFHSRecovery() {
+		return
+	}
+	now := time.Now()
+	curView := s.GetCurrentView()
+	if s.fairHotstuffEnabled() {
+		curN = curView.ViewNumber
 	}
 	viewHash := curView.ConsensusHash()
 
@@ -3164,6 +6848,9 @@ func (s *Service) sendNewViewMsg(curN uint64) {
 }
 
 func (s *Service) enqueueFHSTimeout() {
+	if s.hasDeferredFHSRecovery() {
+		return
+	}
 	s.enqueueHotstuffPriority(&hotstuffMsg{sid: nil, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgLocalTimeout}})
 }
 
@@ -3235,6 +6922,18 @@ func (s *Service) shouldRestorePrimaryLeader() bool {
 }
 
 func (s *Service) procBlockDone(block *types.Block) {
+	s.clearProposalNoWork()
+	if s.fairHotstuffEnabled() {
+		if err := s.reconcileFHSCertifiedFrontier(block); err != nil {
+			log.Error("stop Fair HotStuff after certified frontier reconciliation failure",
+				"number", block.NumberU64(), "hash", block.Hash(), "err", err)
+			s.setRunState(0)
+			if s.pacetMakerTimer != nil {
+				s.pacetMakerTimer.stop()
+			}
+			return
+		}
+	}
 	var keyblock *types.KeyBlock
 	beKeyBlock := false
 	if block.BlockType() == types.Key_Block {
@@ -3334,8 +7033,29 @@ func (s *Service) configureConsensusIdentity(config *common.NodeConfig) error {
 	if public == nil || expected == nil || !public.IsEqual(expected) {
 		return fmt.Errorf("consensus BLS private/public key mismatch")
 	}
+	receiptSecret := new(bls.SecretKey)
+	if err := receiptSecret.Deserialize(secret.Serialize()); err != nil {
+		return fmt.Errorf("clone TxQUIC receipt BLS private key: %w", err)
+	}
+	receiptPublic := receiptSecret.GetPublicKey()
+	if receiptPublic == nil || !receiptPublic.IsEqual(public) {
+		return fmt.Errorf("TxQUIC receipt BLS key clone mismatch")
+	}
+	proposalBodySecret := new(bls.SecretKey)
+	if err := proposalBodySecret.Deserialize(secret.Serialize()); err != nil {
+		return fmt.Errorf("clone proposal sidecar BLS private key: %w", err)
+	}
+	proposalBodyPublic := proposalBodySecret.GetPublicKey()
+	if proposalBodyPublic == nil || !proposalBodyPublic.IsEqual(public) {
+		return fmt.Errorf("proposal sidecar BLS key clone mismatch")
+	}
+	s.muConsensusIdentity.Lock()
 	s.consensusSecret = secret
 	s.consensusPublic = public
+	s.proposalBodySecret = proposalBodySecret
+	s.txQUICReceiptSecret = receiptSecret
+	s.txQUICReceiptPublic = receiptPublic
+	s.muConsensusIdentity.Unlock()
 	s.protocolMng.UpdateKeyPair(secret)
 	return nil
 }
@@ -3364,9 +7084,301 @@ func activeFHSAuthorizedPeers(committee *bftview.Committee) (map[string][]byte, 
 	return peers, nil
 }
 
+// fhsPeerAuthorizationWithCertifiedCarriers widens only the transport-level
+// allow-list during a key handoff. The pending committee obtains no consensus
+// authority here: proposal sidecars still require a verified activation QC,
+// and HotStuff messages remain bound to their exact committee/view proofs.
+// This union merely lets a newly added member deliver that self-contained
+// proof before procBlockDone atomically narrows authorization to the committed
+// committee.
+func (s *Service) fhsPeerAuthorizationWithCertifiedCarriers(active *bftview.Committee) (map[string][]byte, error) {
+	peers, err := activeFHSAuthorizedPeers(active)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, fmt.Errorf("missing FHS service")
+	}
+
+	s.muProposalBody.RLock()
+	carriers := make([]*certifiedFHSKeyCarrier, 0, 1)
+	for _, record := range s.fhsCertifiedByHash {
+		if record == nil || record.verified == nil || record.verified.Block == nil || record.verified.Block.BlockType() != types.Key_Block {
+			continue
+		}
+		candidate := types.DecodeToKeyBlock(record.verified.Block.KeyInfo())
+		artifact := &fhsHighQCValidationItem{ref: record.ref, qc: record.qc, verified: record.verified}
+		if candidate == nil || validateStagedFHSCertificateArtifact(artifact) != nil ||
+			record.verified.Block.KeyHash() != candidate.ParentHash() || record.verified.Block.NumberU64() == 0 ||
+			candidate.T_Number() != record.verified.Block.NumberU64()-1 {
+			s.muProposalBody.RUnlock()
+			return nil, fmt.Errorf("invalid certified FHS key carrier in peer authorization pipeline")
+		}
+		refCopy := *record.ref
+		carriers = append(carriers, &certifiedFHSKeyCarrier{
+			keyBlock: candidate,
+			ref:      &refCopy,
+			qc:       hotstuff.CloneSignedState(record.qc),
+		})
+	}
+	s.muProposalBody.RUnlock()
+
+	for _, carrier := range carriers {
+		verifiedRef, err := s.verifyFHSQCCryptographic(carrier.qc)
+		if err != nil {
+			return nil, fmt.Errorf("verify certified FHS key carrier for peer authorization: %w", err)
+		}
+		if verifiedRef == nil || verifiedRef.ProposalID() != carrier.ref.ProposalID() {
+			return nil, fmt.Errorf("certified FHS key carrier peer authorization context mismatch")
+		}
+		committee := bftview.LoadMember(carrier.keyBlock.NumberU64(), carrier.keyBlock.Hash(), true)
+		if committee == nil || len(committee.List) == 0 || committee.RlpHash() != carrier.keyBlock.CommitteeHash() {
+			return nil, fmt.Errorf("certified FHS key carrier committee commitment mismatch")
+		}
+		generationPeers, err := activeFHSAuthorizedPeers(committee)
+		if err != nil {
+			return nil, err
+		}
+		for address, publicKey := range generationPeers {
+			if existing := peers[address]; len(existing) > 0 && !bytes.Equal(existing, publicKey) {
+				return nil, fmt.Errorf("conflicting FHS peer key for %q across committee handoff", address)
+			}
+			peers[address] = append([]byte(nil), publicKey...)
+		}
+	}
+	return peers, nil
+}
+
+func (s *Service) refreshFHSCertifiedCommitteePeerAuthorization() error {
+	if s == nil || !s.fairHotstuffEnabled() || !s.isRunning() || s.netService == nil || s.netService.server == nil {
+		return nil
+	}
+	peers, err := s.fhsPeerAuthorizationWithCertifiedCarriers(bftview.GetCurrentMember())
+	if err != nil {
+		return err
+	}
+	if err := s.netService.server.UpdatePeerAuthorization(peers); err != nil {
+		return err
+	}
+	s.netService.setAuthenticatedPeerKeys(peers)
+	return nil
+}
+
+func (s *Service) addFHSCommitteePeers(peers map[string][]byte, keyHash common.Hash) error {
+	if s == nil || s.kbc == nil || peers == nil || keyHash == (common.Hash{}) {
+		return fmt.Errorf("missing FHS committee generation")
+	}
+	_, committee, _, err := s.resolveExactFHSCommittee(keyHash, true)
+	if err != nil {
+		return fmt.Errorf("load FHS committee %s: %w", keyHash, err)
+	}
+	generationPeers, err := activeFHSAuthorizedPeers(committee)
+	if err != nil {
+		return fmt.Errorf("load FHS committee %s: %w", keyHash, err)
+	}
+	for address, publicKey := range generationPeers {
+		if existing := peers[address]; len(existing) > 0 && !bytes.Equal(existing, publicKey) {
+			return fmt.Errorf("conflicting FHS peer key for %q across committee generations", address)
+		}
+		peers[address] = append([]byte(nil), publicKey...)
+	}
+	return nil
+}
+
+func (s *Service) addDeferredFHSRecoveryPeers(peers map[string][]byte, recovery *fhsDeferredRecovery) error {
+	if recovery == nil {
+		return nil
+	}
+	if s == nil || s.kbc == nil || recovery.HighestQC == nil {
+		return fmt.Errorf("missing deferred FHS recovery committee")
+	}
+	ref, err := types.DecodeHotstuffProposalRef(recovery.HighestQC.State)
+	if err != nil || ref == nil || ref.KeyHash == (common.Hash{}) {
+		return fmt.Errorf("decode deferred FHS recovery committee: %w", err)
+	}
+	return s.addFHSCommitteePeers(peers, ref.KeyHash)
+}
+
+// extendDeferredFHSRecoveryPeers admits an older proposal generation only
+// after its QC has been cryptographically verified and authorized by the
+// active HighQC worker. This is needed when a repaired parent crosses more
+// than one key-block boundary; completion narrows the transport back to the
+// current committee before the consensus gate opens.
+func (s *Service) extendDeferredFHSRecoveryPeers(keyHash common.Hash) error {
+	if s == nil || !s.hasDeferredFHSRecovery() || s.netService == nil || s.netService.server == nil {
+		return nil
+	}
+	peers, err := activeFHSAuthorizedPeers(bftview.GetCurrentMember())
+	if err != nil {
+		return err
+	}
+	if err := s.addDeferredFHSRecoveryPeers(peers, s.fhsStore.deferredRecoverySnapshot()); err != nil {
+		return err
+	}
+	if err := s.addFHSCommitteePeers(peers, keyHash); err != nil {
+		return err
+	}
+	if err := s.netService.server.UpdatePeerAuthorization(peers); err != nil {
+		return err
+	}
+	s.netService.setAuthenticatedPeerKeys(peers)
+	return nil
+}
+
+func (s *Service) wakeDeferredFHSRecovery() {
+	if s == nil || s.fhsRecoveryWake == nil {
+		return
+	}
+	select {
+	case s.fhsRecoveryWake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Service) retryDeferredFHSRecovery() {
+	if s == nil || !s.hasDeferredFHSRecovery() || !atomic.CompareAndSwapInt32(&s.fhsRecoveryRetryQueued, 0, 1) {
+		return
+	}
+	time.AfterFunc(fhsDeferredRecoveryRetryDelay, func() {
+		atomic.StoreInt32(&s.fhsRecoveryRetryQueued, 0)
+		if atomic.LoadInt32(&s.runningState) == 1 && s.hasDeferredFHSRecovery() {
+			s.wakeDeferredFHSRecovery()
+		}
+	})
+}
+
+// attemptDeferredFHSRecovery runs only on the serialized HotStuff control
+// loop. The network is live for authenticated DA repair, while all ordinary
+// consensus messages and pacemaker activity remain gated.
+func (s *Service) attemptDeferredFHSRecovery() {
+	if s == nil || atomic.LoadInt32(&s.runningState) != 1 || s.fhsStore == nil {
+		return
+	}
+	recovery := s.fhsStore.deferredRecoverySnapshot()
+	if recovery == nil || recovery.HighestQC == nil {
+		return
+	}
+	if highest := s.HighestCertified(); highest != nil && hotstuff.SignedStateSemanticEqual(highest, recovery.HighestQC) {
+		if err := s.commitFHS2ChainForCertified(recovery.HighestQC); err != nil {
+			log.Warn("Deferred FHS recovery commit retry failed", "view", recovery.HighestQC.Number, "err", err)
+			s.retryDeferredFHSRecovery()
+			return
+		}
+		completed, err := s.completeDeferredFHSRecovery(recovery.HighestQC)
+		if err != nil {
+			log.Warn("Deferred FHS recovery completion retry failed", "view", recovery.HighestQC.Number, "err", err)
+			s.retryDeferredFHSRecovery()
+			return
+		}
+		if completed {
+			s.resumeAfterDeferredFHSRecovery()
+		}
+		return
+	}
+	targetView := recovery.RecoveredView
+	if targetView <= recovery.HighestQC.Number {
+		targetView = recovery.HighestQC.Number + 1
+	}
+	err := s.protocolMng.RecoverFHSHighQC(recovery.HighestQC, targetView)
+	if err == nil || err == hotstuff.ErrProposalValidationPending {
+		return
+	}
+	log.Warn("Deferred FHS recovery scheduling failed", "view", recovery.HighestQC.Number, "err", err)
+	s.retryDeferredFHSRecovery()
+}
+
+func (s *Service) resumeAfterDeferredFHSRecovery() {
+	if s == nil {
+		return
+	}
+	s.muLifecycle.Lock()
+	if atomic.LoadInt32(&s.runningState) != 1 || s.hasDeferredFHSRecovery() {
+		s.muLifecycle.Unlock()
+		return
+	}
+	generation := s.lifecycleGenerationLocked()
+	if bftview.IamMember() < 0 {
+		log.Info("Fair HotStuff recovery completed for a non-committee node; stopping consensus service")
+		s.setRunState(0)
+		s.netService.StartStop(false)
+		s.muLifecycle.Unlock()
+		return
+	}
+	_ = s.pacetMakerTimer.start()
+	current := s.currentHotstuffBaseNumber()
+	pendingTimeout := s.hasPendingFHSTimeoutVote()
+	s.muLifecycle.Unlock()
+	s.resumeFHSConsensusMessagingForGeneration(generation, current, pendingTimeout)
+}
+
+// fhsConsensusResumeTarget keeps restart/deferred-recovery message selection
+// in one place. sendNewViewMsg owns the normal-path durable QC replay; a
+// pending timeout resumes without NewView and therefore needs one explicit
+// replay before the timeout vote is queued.
+type fhsConsensusResumeTarget interface {
+	replayPendingFHSQCBroadcast()
+	sendNewViewMsg(uint64)
+	enqueueFHSTimeout()
+}
+
+func resumeFHSConsensusMessaging(target fhsConsensusResumeTarget, current uint64, pendingTimeout bool) {
+	if pendingTimeout {
+		target.replayPendingFHSQCBroadcast()
+		target.enqueueFHSTimeout()
+		return
+	}
+	target.sendNewViewMsg(current)
+}
+
+// resumeFHSConsensusMessagingForGeneration keeps durable DB access and local
+// consensus activation on the service lifecycle boundary, but sends the
+// already-built replay message without holding that lock.
+func (s *Service) resumeFHSConsensusMessagingForGeneration(generation, current uint64, pendingTimeout bool) {
+	var (
+		pendingReplay *hotstuff.SignedState
+		replayMessage *hotstuff.HotstuffMessage
+		replayErr     error
+	)
+	s.muLifecycle.Lock()
+	if !s.lifecycleGenerationActiveLocked(generation) {
+		s.muLifecycle.Unlock()
+		return
+	}
+	pendingReplay, replayMessage, replayErr = s.preparePendingFHSQCBroadcastReplay()
+	s.muLifecycle.Unlock()
+
+	if replayErr != nil {
+		log.Error("cannot replay durable FHS QC broadcast", "err", replayErr)
+	} else {
+		s.broadcastPreparedFHSQCBroadcast(pendingReplay, replayMessage)
+	}
+
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+	if !s.lifecycleGenerationActiveLocked(generation) {
+		return
+	}
+	if pendingTimeout {
+		s.enqueueFHSTimeout()
+		return
+	}
+	s.sendNewViewMsgAfterReplay(current)
+}
+
 // call by miner.start
 func (s *Service) start(config *common.NodeConfig) error {
+	s.muLifecycle.Lock()
+	lifecycleLocked := true
+	defer func() {
+		if lifecycleLocked {
+			s.muLifecycle.Unlock()
+		}
+	}()
 	if !s.isRunning() {
+		generation := s.advanceLifecycleGenerationLocked()
+		// MinerStop/MinerStart reuses this Service. Process-local replay suppression
+		// must never survive that restart boundary; the durable outbox is authoritative.
+		s.clearFHSQCBroadcastMarkers()
 		if err := s.configureConsensusIdentity(config); err != nil {
 			return err
 		}
@@ -3381,20 +7393,37 @@ func (s *Service) start(config *common.NodeConfig) error {
 		if err := s.loadFHSWAL(); err != nil {
 			return fmt.Errorf("restore Fair HotStuff safety state: %w", err)
 		}
+		var deferredRecovery *fhsDeferredRecovery
+		if s.fairHotstuffEnabled() && s.fhsStore != nil {
+			deferredRecovery = s.fhsStore.deferredRecoverySnapshot()
+		}
+		if err := s.pruneFHSPersistenceAtCurrentHead(); err != nil {
+			// GC is maintenance, not safety state. A corrupt stale record must not
+			// prevent the validated WAL from bringing consensus back online.
+			log.Warn("Failed to prune durable FHS recovery cache at startup", "err", err)
+		}
 		if s.fairHotstuffEnabled() {
 			// WAL replay can complete a certified key-block parent and therefore
 			// change the active committee. Determine the local role and configure
 			// peer authentication only after that recovery is complete.
 			isCommitteeMember := bftview.IamMember() >= 0
 			if !isCommitteeMember {
+				if deferredRecovery != nil {
+					log.Warn("Fair HotStuff content recovery remains deferred for non-committee miner",
+						"view", deferredRecovery.HighestQC.Number,
+						"blockHash", deferredRecovery.HighestBlockHash)
+				}
 				log.Info("Fair HotStuff service remains stopped for non-committee miner",
 					"address", s.netService.serverAddress,
 					"coinbase", config.Coinbase)
 				return nil
 			}
 			s.updateCommittee(nil)
-			peers, err := activeFHSAuthorizedPeers(bftview.GetCurrentMember())
+			peers, err := s.fhsPeerAuthorizationWithCertifiedCarriers(bftview.GetCurrentMember())
 			if err != nil {
+				return err
+			}
+			if err := s.addDeferredFHSRecoveryPeers(peers, deferredRecovery); err != nil {
 				return err
 			}
 			if err := s.netService.server.ConfigurePeerAuthentication(s.ChainID(), s.netService.serverAddress, config.Private, config.Public, peers); err != nil {
@@ -3404,13 +7433,21 @@ func (s *Service) start(config *common.NodeConfig) error {
 		}
 		s.setRunState(1)
 		s.netService.StartStop(true)
-		s.replayPendingFHSQCBroadcast()
+		if deferredRecovery != nil {
+			_ = s.pacetMakerTimer.stop()
+			s.wakeDeferredFHSRecovery()
+			return nil
+		}
 		if bftview.IamMember() >= 0 {
 			s.pacetMakerTimer.start()
-			if s.fairHotstuffEnabled() && s.hasPendingFHSTimeoutVote() {
-				s.enqueueFHSTimeout()
+			if s.fairHotstuffEnabled() {
+				current := s.currentHotstuffBaseNumber()
+				pendingTimeout := s.hasPendingFHSTimeoutVote()
+				s.muLifecycle.Unlock()
+				lifecycleLocked = false
+				s.resumeFHSConsensusMessagingForGeneration(generation, current, pendingTimeout)
 			} else {
-				s.sendNewViewMsg(s.currentHotstuffBaseNumber())
+				s.sendNewViewMsgAfterReplay(s.currentHotstuffBaseNumber())
 			}
 		}
 	}
@@ -3418,15 +7455,20 @@ func (s *Service) start(config *common.NodeConfig) error {
 }
 
 func (s *Service) stop() {
-	if s.isRunning() {
-		s.netService.StartStop(false)
-		s.pacetMakerTimer.stop()
-		s.setRunState(0)
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+	s.advanceLifecycleGenerationLocked()
+	if !s.isRunning() {
+		s.clearFHSQCBroadcastMarkers()
+		return
 	}
+	s.setRunState(0)
+	s.clearFHSQCBroadcastMarkers()
+	s.netService.StartStop(false)
+	s.pacetMakerTimer.stop()
 }
 
 func (s *Service) isRunning() bool {
-	log.Info("service isRunning check")
 	return atomic.LoadInt32(&s.runningState) == 1
 }
 
@@ -3442,7 +7484,24 @@ func (s *Service) printAllStatus() {
 }
 
 func (s *Service) setRunState(state int32) {
-	atomic.StoreInt32(&s.runningState, state)
+	s.muProposalBuild.Lock()
+	changed := atomic.SwapInt32(&s.runningState, state) != state
+	if changed {
+		atomic.AddUint64(&s.proposalValidationGeneration, 1)
+		if state != 1 {
+			s.cancelAllProposalBuildsLocked()
+		}
+	}
+	s.muProposalBuild.Unlock()
+	if changed {
+		s.clearProposalNoWork()
+	}
+	if changed && state != 1 {
+		s.cancelAllProposalValidations()
+		if s.protocolMng != nil {
+			s.protocolMng.ScheduleFHSEpochReset()
+		}
+	}
 }
 
 func (s *Service) LeaderAckTime() time.Time {

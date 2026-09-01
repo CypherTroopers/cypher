@@ -2,6 +2,7 @@ package hotstuff
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,66 @@ type recoveryTestApp struct {
 	validateLeader      string
 	validateNumber      uint64
 	certificationEvents []string
+	broadcastErrors     []error
+	broadcastSucceeded  []bool
+	proposalCalls       int
+	proposalRecovery    func(uint64, common.Hash, string) bool
+}
+
+// retryBroadcastWindowTestApp models the process-local replay-suppression
+// window owned by the production FHS application. Every physical QC send must
+// be bracketed by Before/After, including a retry after the first After hook
+// fails. Broadcast checks the window from another goroutine so the regression
+// also exercises the synchronization boundary under the race detector.
+type retryBroadcastWindowTestApp struct {
+	*recoveryTestApp
+
+	mu                   sync.Mutex
+	active               bool
+	beforeCalls          int
+	afterCalls           int
+	unbracketedBroadcast int
+}
+
+func (a *retryBroadcastWindowTestApp) OnFHSLeaderCertifiedBeforeBroadcast(state *SignedState) error {
+	a.mu.Lock()
+	if a.active {
+		a.unbracketedBroadcast++
+	}
+	a.active = true
+	a.beforeCalls++
+	a.certificationEvents = append(a.certificationEvents, "before")
+	a.mu.Unlock()
+	return a.OnCertified(state)
+}
+
+func (a *retryBroadcastWindowTestApp) Broadcast(msg *HotstuffMessage) []error {
+	checked := make(chan bool, 1)
+	go func() {
+		a.mu.Lock()
+		active := a.active
+		a.mu.Unlock()
+		checked <- active
+	}()
+	if !<-checked {
+		a.mu.Lock()
+		a.unbracketedBroadcast++
+		a.mu.Unlock()
+	}
+	return a.recoveryTestApp.Broadcast(msg)
+}
+
+func (a *retryBroadcastWindowTestApp) OnFHSLeaderCertifiedAfterBroadcast(*SignedState, bool) error {
+	a.mu.Lock()
+	a.afterCalls++
+	call := a.afterCalls
+	a.certificationEvents = append(a.certificationEvents, "after")
+	a.active = false
+	a.mu.Unlock()
+	if call == 1 {
+		return errors.New("injected post-broadcast completion failure")
+	}
+	return nil
 }
 
 func (a *recoveryTestApp) Self() string { return a.self }
@@ -35,7 +96,7 @@ func (a *recoveryTestApp) Write(_ string, msg *HotstuffMessage) error {
 func (a *recoveryTestApp) Broadcast(msg *HotstuffMessage) []error {
 	a.certificationEvents = append(a.certificationEvents, "broadcast")
 	a.broadcasts = append(a.broadcasts, msg)
-	return nil
+	return a.broadcastErrors
 }
 func (a *recoveryTestApp) GetPublicKey(keyHash common.Hash) ([]*bls.PublicKey, error) {
 	a.keyLookups = append(a.keyLookups, keyHash)
@@ -68,8 +129,9 @@ func (a *recoveryTestApp) OnFHSLeaderCertifiedBeforeBroadcast(state *SignedState
 	a.certificationEvents = append(a.certificationEvents, "before")
 	return a.OnCertified(state)
 }
-func (a *recoveryTestApp) OnFHSLeaderCertifiedAfterBroadcast(*SignedState) error {
+func (a *recoveryTestApp) OnFHSLeaderCertifiedAfterBroadcast(_ *SignedState, broadcastSucceeded bool) error {
 	a.certificationEvents = append(a.certificationEvents, "after")
+	a.broadcastSucceeded = append(a.broadcastSucceeded, broadcastSucceeded)
 	return nil
 }
 func (a *recoveryTestApp) OnViewDone(state *SignedState) error {
@@ -83,7 +145,14 @@ func (a *recoveryTestApp) ValidateView([]byte) ([]byte, string, uint64, error) {
 }
 func (a *recoveryTestApp) HighestCertified() *SignedState { return CloneSignedState(a.highest) }
 func (a *recoveryTestApp) Propose(uint64, common.Hash, string) (error, []byte, []byte, []byte) {
+	a.proposalCalls++
 	return nil, nil, nil, nil
+}
+func (a *recoveryTestApp) ProposalRecoveryReady(number uint64, viewID common.Hash, leaderID string) bool {
+	if a.proposalRecovery != nil {
+		return a.proposalRecovery(number, viewID, leaderID)
+	}
+	return true
 }
 func (a *recoveryTestApp) CurrentState() ([]byte, string, uint64) { return nil, "", 0 }
 func (a *recoveryTestApp) CurrentN() uint64                       { return 0 }
@@ -91,6 +160,108 @@ func (a *recoveryTestApp) GetExtra() []byte                       { return nil }
 func (a *recoveryTestApp) ChainID() uint64                        { return 1 }
 func (a *recoveryTestApp) UseContextSignatures() bool             { return true }
 func (a *recoveryTestApp) UseFHS2Chain() bool                     { return a.fhs }
+
+type proposalReadinessSnapshotTestApp struct {
+	*fhsFutureJumpApp
+	currentStateCalls int
+	snapshotCalls     int
+}
+
+func (a *proposalReadinessSnapshotTestApp) CurrentState() ([]byte, string, uint64) {
+	a.currentStateCalls++
+	return a.fhsFutureJumpApp.CurrentState()
+}
+
+func (a *proposalReadinessSnapshotTestApp) FHSProposalReadinessSnapshot() ([]byte, uint64, *SignedState) {
+	a.snapshotCalls++
+	state, _, number := a.fhsFutureJumpApp.CurrentState()
+	return state, number, CloneSignedState(a.highest)
+}
+
+func TestCanTryProposeRequiresReadyLeaderView(t *testing.T) {
+	legacy := NewHotstuffProtocolManager(&recoveryTestApp{}, nil, nil)
+	if legacy.CanTryPropose() {
+		t.Fatal("manager without a leader view reported proposal readiness")
+	}
+	legacy.leaderView = &View{phaseAsLeader: PhasePrepare}
+	if legacy.CanTryPropose() {
+		t.Fatal("prepare-phase leader view reported proposal readiness")
+	}
+	legacy.leaderView.phaseAsLeader = PhaseTryPropose
+	if !legacy.CanTryPropose() {
+		t.Fatal("ready legacy leader view did not report proposal readiness")
+	}
+
+	fhsApp := &proposalReadinessSnapshotTestApp{
+		fhsFutureJumpApp: &fhsFutureJumpApp{
+			recoveryTestApp: &recoveryTestApp{fhs: true},
+			current:         7,
+			keyNumber:       3,
+			keyHash:         common.HexToHash("0x300"),
+			committeeHash:   common.HexToHash("0x301"),
+			leaderID:        "leader",
+		},
+	}
+	fhs := NewHotstuffProtocolManager(fhsApp, nil, nil)
+	state, leaderID, number := fhsApp.CurrentState()
+	fhsApp.currentStateCalls = 0
+	context, _, err := fhs.makeFHSContext(state, leaderID, number)
+	if err != nil {
+		t.Fatalf("make FHS context: %v", err)
+	}
+	fhs.leaderView = &View{
+		phaseAsLeader: PhaseTryPropose,
+		hash:          context.ID(),
+		number:        number,
+		leaderId:      leaderID,
+		currentState:  append([]byte(nil), state...),
+		fhsContext:    context,
+	}
+	if fhs.CanTryPropose() {
+		t.Fatal("FHS leader view without an aggregate quorum reported proposal readiness")
+	}
+	fhs.leaderView.fhsAggregate = &AggregateQC{Context: *context}
+	if !fhs.CanTryPropose() {
+		t.Fatal("ready FHS leader view did not report proposal readiness")
+	}
+	fhs.leaderView.fhsBuild = &FHSProposalBuildKey{RequestID: 1}
+	if fhs.CanTryPropose() {
+		t.Fatal("FHS leader view with an active build reported proposal readiness")
+	}
+	fhs.leaderView.fhsBuild = nil
+
+	fhsApp.current++
+	if fhs.CanTryPropose() {
+		t.Fatal("FHS leader view from an obsolete canonical state reported proposal readiness")
+	}
+	fhsApp.current--
+
+	parent := &SignedState{
+		State:    []byte("new canonical parent"),
+		ViewID:   common.HexToHash("0x701"),
+		LeaderID: "parent-leader",
+		Number:   7,
+	}
+	fhsApp.highest = parent
+	if fhs.CanTryPropose() {
+		t.Fatal("FHS leader view with an obsolete highest certificate reported proposal readiness")
+	}
+	fhs.leaderView.fhsHighest = CloneSignedState(parent)
+	if !fhs.CanTryPropose() {
+		t.Fatal("FHS leader view matching canonical state and highest certificate did not report proposal readiness")
+	}
+
+	fhs.leaderView.fhsContext.TargetView++
+	if fhs.CanTryPropose() {
+		t.Fatal("FHS leader view inconsistent with its signed context reported proposal readiness")
+	}
+	if fhsApp.currentStateCalls != 0 {
+		t.Fatalf("proposal readiness used side-effecting CurrentState %d times", fhsApp.currentStateCalls)
+	}
+	if fhsApp.snapshotCalls == 0 {
+		t.Fatal("proposal readiness did not use the side-effect-free application snapshot")
+	}
+}
 
 func TestRecoveryResendsReplicaMessages(t *testing.T) {
 	app := &recoveryTestApp{self: "replica"}
@@ -208,9 +379,13 @@ func TestRecoveryRebroadcastsFinalizedMessages(t *testing.T) {
 	}
 }
 
-func TestFHSFinalizedRecoveryRetainsOnlySelfContainedQC(t *testing.T) {
-	app := &recoveryTestApp{self: "leader", fhs: true}
-	manager := NewHotstuffProtocolManager(app, nil, nil)
+func TestFHSNonDurableFinalizedRecoveryRetainsOnlySelfContainedQC(t *testing.T) {
+	base := &recoveryTestApp{self: "leader", fhs: true}
+	// Embedding the base application behind the HotStuffApplication interface
+	// deliberately hides its durable leader-certification hooks. This exercises
+	// the fallback used by FHS applications without a durable QC outbox.
+	app := struct{ HotStuffApplication }{HotStuffApplication: base}
+	manager := NewHotstuffProtocolManager(&app, nil, nil)
 	viewID := common.HexToHash("0xf102")
 	prepare := &HotstuffMessage{Code: MsgPrepare, Number: 2, ViewId: viewID}
 	qcBroadcast := &HotstuffMessage{Code: MsgQCBroadcast, Number: 2, ViewId: viewID}
@@ -236,8 +411,8 @@ func TestFHSFinalizedRecoveryRetainsOnlySelfContainedQC(t *testing.T) {
 	if err := manager.handleTimerMsg(1); err != nil {
 		t.Fatal(err)
 	}
-	if len(app.broadcasts) != 1 || app.broadcasts[0] != qcBroadcast {
-		t.Fatalf("FHS finalized recovery broadcasts = %v, want only QCBroadcast", app.broadcasts)
+	if len(base.broadcasts) != 1 || base.broadcasts[0] != qcBroadcast {
+		t.Fatalf("FHS finalized recovery broadcasts = %v, want only QCBroadcast", base.broadcasts)
 	}
 }
 
@@ -294,6 +469,60 @@ func TestRecoveryRetriesProposal(t *testing.T) {
 	}
 	if view.lastLeaderRecoveryAt.IsZero() {
 		t.Fatal("proposal recovery did not advance its retry timestamp")
+	}
+	if app.proposalCalls != 1 {
+		t.Fatalf("proposal recovery calls = %d, want 1", app.proposalCalls)
+	}
+}
+
+func TestRecoveryQuiescesNoWorkUntilInputChanges(t *testing.T) {
+	ready := false
+	viewID := common.HexToHash("0x31")
+	app := &recoveryTestApp{
+		self: "leader",
+		proposalRecovery: func(number uint64, gotViewID common.Hash, leaderID string) bool {
+			if number != 2 || gotViewID != viewID || leaderID != "leader" {
+				t.Fatalf("recovery context = %d/%s/%q, want 2/%s/leader", number, gotViewID, leaderID, viewID)
+			}
+			return ready
+		},
+	}
+	manager := NewHotstuffProtocolManager(app, nil, nil)
+	view := &View{
+		hash:                 viewID,
+		number:               2,
+		leaderId:             "leader",
+		phaseAsLeader:        PhaseTryPropose,
+		lastLeaderRecoveryAt: time.Now().Add(-hotstuffRecoveryInterval),
+	}
+	manager.views[viewID] = view
+
+	if err := manager.handleTimerMsg(1); err != nil {
+		t.Fatal(err)
+	}
+	if app.proposalCalls != 0 {
+		t.Fatalf("unchanged no-work input retried %d proposals", app.proposalCalls)
+	}
+	firstSuppression := view.lastLeaderRecoveryAt
+	if firstSuppression.IsZero() {
+		t.Fatal("suppressed recovery did not advance its bounded retry timestamp")
+	}
+
+	view.lastLeaderRecoveryAt = time.Now().Add(-hotstuffRecoveryInterval)
+	if err := manager.handleTimerMsg(1); err != nil {
+		t.Fatal(err)
+	}
+	if app.proposalCalls != 0 {
+		t.Fatalf("second unchanged recovery retried %d proposals", app.proposalCalls)
+	}
+
+	ready = true
+	view.lastLeaderRecoveryAt = time.Now().Add(-hotstuffRecoveryInterval)
+	if err := manager.handleTimerMsg(1); err != nil {
+		t.Fatal(err)
+	}
+	if app.proposalCalls != 1 {
+		t.Fatalf("changed proposal input recovery calls = %d, want 1", app.proposalCalls)
 	}
 }
 
@@ -530,9 +759,146 @@ func TestFHSLeaderBroadcastsPrepareQCWithoutDecide(t *testing.T) {
 	if got := app.certificationEvents; len(got) < 3 || got[len(got)-3] != "before" || got[len(got)-2] != "broadcast" || got[len(got)-1] != "after" {
 		t.Fatalf("leader QC lifecycle order = %v, want before/broadcast/after", got)
 	}
+	if len(app.broadcastSucceeded) != 1 || !app.broadcastSucceeded[0] {
+		t.Fatalf("leader QC delivery result = %v, want [true]", app.broadcastSucceeded)
+	}
+	if len(manager.finalized) != 0 {
+		t.Fatalf("durably persisted FHS QC retained %d duplicate volatile recovery entries", len(manager.finalized))
+	}
+	broadcastsAfterCertification := len(app.broadcasts)
+	if err := manager.handleTimerMsg(view.number); err != nil {
+		t.Fatal(err)
+	}
+	if len(app.broadcasts) != broadcastsAfterCertification {
+		t.Fatalf("durably persisted FHS QC was redundantly rebroadcast by timer: before=%d after=%d",
+			broadcastsAfterCertification, len(app.broadcasts))
+	}
 	for _, msg := range app.broadcasts {
 		if msg.Code == MsgDecide {
 			t.Fatal("leader broadcast same-view MsgDecide in FHS mode")
+		}
+	}
+}
+
+func TestFHSLeaderBroadcastDeliveryErrorsReachLifecycle(t *testing.T) {
+	tests := []struct {
+		name string
+		errs []error
+	}{
+		{name: "partial committee failure", errs: []error{errors.New("peer unavailable")}},
+		{name: "all committee sends fail", errs: []error{errors.New("peer one unavailable"), errors.New("peer two unavailable")}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var secret bls.SecretKey
+			secret.SetByCSPRNG()
+			public := secret.GetPublicKey()
+			app := &recoveryTestApp{
+				self:            "leader",
+				fhs:             true,
+				publicKeys:      []*bls.PublicKey{public},
+				broadcastErrors: test.errs,
+			}
+			manager := NewHotstuffProtocolManager(app, &secret, public)
+			viewID := common.HexToHash("0x102")
+			state := []byte("delivery-error-proposal-ref")
+			view := &View{
+				hash:            viewID,
+				number:          12,
+				leaderId:        "leader",
+				phaseAsLeader:   PhasePreCommit,
+				proposedTState:  state,
+				groupPublicKey:  []*bls.PublicKey{public},
+				threshold:       1,
+				replicaIndex:    buildReplicaIndex([]*bls.PublicKey{public}),
+				prepareVoteInfo: make([]*VoteInfo, 0, 1),
+				qc:              make(map[string]*QC),
+				leaderMsg:       make(map[uint64]*HotstuffMessage),
+			}
+			manager.views[viewID] = view
+			vote := &HotstuffMessage{
+				Code:   MsgVotePrepare,
+				Number: view.number,
+				ViewId: viewID,
+				Id:     "leader",
+				PubKey: public.Serialize(),
+				DataC:  manager.SignHashByMessage(MsgVotePrepare, viewID, "leader", state),
+			}
+
+			if err := manager.handlePrepareVoteMsg(vote); err != nil {
+				t.Fatalf("QC lifecycle stopped on delivery errors: %v", err)
+			}
+			if view.phaseAsLeader != PhaseFinal {
+				t.Fatalf("leader phase = %d, want PhaseFinal", view.phaseAsLeader)
+			}
+			if len(app.broadcastSucceeded) != 1 || app.broadcastSucceeded[0] {
+				t.Fatalf("leader QC delivery result = %v, want [false]", app.broadcastSucceeded)
+			}
+		})
+	}
+}
+
+func TestFHSLeaderRetryBracketsEveryPhysicalQCBroadcast(t *testing.T) {
+	var secret bls.SecretKey
+	secret.SetByCSPRNG()
+	public := secret.GetPublicKey()
+	base := &recoveryTestApp{self: "leader", fhs: true, publicKeys: []*bls.PublicKey{public}}
+	app := &retryBroadcastWindowTestApp{recoveryTestApp: base}
+	manager := NewHotstuffProtocolManager(app, &secret, public)
+	viewID := common.HexToHash("0x101")
+	state := []byte("retry-proposal-ref")
+	view := &View{
+		hash:            viewID,
+		number:          11,
+		leaderId:        "leader",
+		phaseAsLeader:   PhasePreCommit,
+		proposedTState:  state,
+		groupPublicKey:  []*bls.PublicKey{public},
+		threshold:       1,
+		replicaIndex:    buildReplicaIndex([]*bls.PublicKey{public}),
+		prepareVoteInfo: make([]*VoteInfo, 0, 1),
+		qc:              make(map[string]*QC),
+		leaderMsg:       make(map[uint64]*HotstuffMessage),
+	}
+	manager.views[viewID] = view
+	vote := &HotstuffMessage{
+		Code:   MsgVotePrepare,
+		Number: view.number,
+		ViewId: viewID,
+		Id:     "leader",
+		PubKey: public.Serialize(),
+		DataC:  manager.SignHashByMessage(MsgVotePrepare, viewID, "leader", state),
+	}
+
+	if err := manager.handlePrepareVoteMsg(vote); err == nil || err.Error() != "injected post-broadcast completion failure" {
+		t.Fatalf("first QC broadcast error = %v, want injected completion failure", err)
+	}
+	if !view.certified {
+		t.Fatal("durably certified view lost its retry watermark")
+	}
+	if _, err := manager.broadcastPrepareQC(view); err != nil {
+		t.Fatalf("retry QC broadcast failed: %v", err)
+	}
+
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	if app.beforeCalls != 2 || app.afterCalls != 2 || len(app.broadcasts) != 2 {
+		t.Fatalf("QC retry lifecycle calls = before:%d broadcast:%d after:%d, want 2/2/2",
+			app.beforeCalls, len(app.broadcasts), app.afterCalls)
+	}
+	if app.unbracketedBroadcast != 0 {
+		t.Fatalf("observed %d physical QC broadcasts outside the replay-suppression window", app.unbracketedBroadcast)
+	}
+	if app.active {
+		t.Fatal("retry completion left the replay-suppression window active")
+	}
+	want := []string{"before", "broadcast", "after", "before", "broadcast", "after"}
+	if len(app.certificationEvents) != len(want) {
+		t.Fatalf("QC retry lifecycle = %v, want %v", app.certificationEvents, want)
+	}
+	for index := range want {
+		if app.certificationEvents[index] != want[index] {
+			t.Fatalf("QC retry lifecycle = %v, want %v", app.certificationEvents, want)
 		}
 	}
 }

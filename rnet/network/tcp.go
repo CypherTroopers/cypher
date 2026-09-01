@@ -149,14 +149,15 @@ func (c *TCPConn) Send(msg Message) (uint64, error) {
 
 	b, err := Marshal(msg)
 	if err != nil {
-		return 0, fmt.Errorf("Error marshaling  message: %s", err.Error())
+		return 0, fmt.Errorf("error marshaling message: %w", err)
 	}
 	return c.sendRaw(b)
 }
 
 func (c *TCPConn) sendRaw(b []byte) (uint64, error) {
 	if uint64(len(b)) > uint64(def_MaxPacketSize) {
-		return 0, fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize)
+		return 0, NewPermanentSendError(SendErrorPacketTooLarge,
+			fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize))
 	}
 	_ = c.conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
 	defer c.conn.SetWriteDeadline(time.Time{})

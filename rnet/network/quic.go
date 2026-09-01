@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -39,6 +40,10 @@ const (
 	quicMetadataReceiveBudget     = 32 * 1024 * 1024
 	quicMetadataPeerBudget        = 4 * 1024 * 1024
 	quicLargeDataReceiveBudget    = uint64(def_MaxPacketSize)
+	quicProposalPeerStreams       = 4
+	quicProposalPeerBudget        = 4 * quicProposalBodyMaxPacketSize
+	quicBulkPeerStreams           = 1
+	quicBulkPeerBudget            = def_MaxPacketSize
 )
 
 type quicReceiveLimiter struct {
@@ -48,14 +53,85 @@ type quicReceiveLimiter struct {
 	metadataUsed  uint64
 	metadataPeers map[string]uint64
 	largeUsed     uint64
-	largePeers    map[string]bool
+	largePeers    map[string]*quicLargePeerUsage
 	largeQueue    []*quicReceiveWaiter
 }
 
 type quicReceiveWaiter struct {
 	peer  string
+	class uint8
 	size  uint64
 	ready chan struct{}
+}
+
+type quicLargePeerUsage struct {
+	proposalStreams int
+	proposalBytes   uint64
+	bulkStreams     int
+	bulkBytes       uint64
+}
+
+func (l *quicReceiveLimiter) reserveLargePeerLocked(peer string, class uint8, amount uint64) bool {
+	if peer == "" {
+		return false
+	}
+	if l.largePeers == nil {
+		l.largePeers = make(map[string]*quicLargePeerUsage)
+	}
+	usage := l.largePeers[peer]
+	if usage == nil {
+		usage = new(quicLargePeerUsage)
+		l.largePeers[peer] = usage
+	}
+	switch class {
+	case NetClassProposalBodyBulk:
+		if usage.proposalStreams >= quicProposalPeerStreams || amount > uint64(quicProposalPeerBudget) ||
+			usage.proposalBytes > uint64(quicProposalPeerBudget)-amount {
+			return false
+		}
+		usage.proposalStreams++
+		usage.proposalBytes += amount
+	case NetClassBulkGossip:
+		if usage.bulkStreams >= quicBulkPeerStreams || amount > uint64(quicBulkPeerBudget) ||
+			usage.bulkBytes > uint64(quicBulkPeerBudget)-amount {
+			return false
+		}
+		usage.bulkStreams++
+		usage.bulkBytes += amount
+	default:
+		return false
+	}
+	return true
+}
+
+func (l *quicReceiveLimiter) releaseLargePeerLocked(peer string, class uint8, amount uint64) {
+	usage := l.largePeers[peer]
+	if usage == nil {
+		return
+	}
+	switch class {
+	case NetClassProposalBodyBulk:
+		if usage.proposalStreams > 0 {
+			usage.proposalStreams--
+		}
+		if amount >= usage.proposalBytes {
+			usage.proposalBytes = 0
+		} else {
+			usage.proposalBytes -= amount
+		}
+	case NetClassBulkGossip:
+		if usage.bulkStreams > 0 {
+			usage.bulkStreams--
+		}
+		if amount >= usage.bulkBytes {
+			usage.bulkBytes = 0
+		} else {
+			usage.bulkBytes -= amount
+		}
+	}
+	if usage.proposalStreams == 0 && usage.proposalBytes == 0 && usage.bulkStreams == 0 && usage.bulkBytes == 0 {
+		delete(l.largePeers, peer)
+	}
 }
 
 func (l *quicReceiveLimiter) reserve(peer string, class uint8, size uint32, wait time.Duration) bool {
@@ -75,18 +151,12 @@ func (l *quicReceiveLimiter) reserveContext(ctx context.Context, peer string, cl
 	l.mu.Lock()
 	amount := uint64(size)
 	if isQUICLargeDataClass(class) {
-		if peer == "" || amount > quicLargeDataReceiveBudget {
+		classLimit, validClass := quicClassPacketLimit(class)
+		if !validClass || amount > uint64(classLimit) || amount > quicLargeDataReceiveBudget ||
+			!l.reserveLargePeerLocked(peer, class, amount) {
 			l.mu.Unlock()
 			return false
 		}
-		if l.largePeers == nil {
-			l.largePeers = make(map[string]bool)
-		}
-		if l.largePeers[peer] {
-			l.mu.Unlock()
-			return false
-		}
-		l.largePeers[peer] = true
 		if len(l.largeQueue) == 0 && l.largeUsed+amount <= quicLargeDataReceiveBudget {
 			l.largeUsed += amount
 			l.mu.Unlock()
@@ -97,11 +167,11 @@ func (l *quicReceiveLimiter) reserveContext(ctx context.Context, peer string, cl
 			return true
 		}
 		if wait <= 0 {
-			delete(l.largePeers, peer)
+			l.releaseLargePeerLocked(peer, class, amount)
 			l.mu.Unlock()
 			return false
 		}
-		pending := &quicReceiveWaiter{peer: peer, size: amount, ready: make(chan struct{})}
+		pending := &quicReceiveWaiter{peer: peer, class: class, size: amount, ready: make(chan struct{})}
 		l.largeQueue = append(l.largeQueue, pending)
 		l.mu.Unlock()
 
@@ -165,7 +235,7 @@ func (l *quicReceiveLimiter) cancelLargeWaiter(pending *quicReceiveWaiter) bool 
 	for index, candidate := range l.largeQueue {
 		if candidate == pending {
 			l.largeQueue = append(l.largeQueue[:index], l.largeQueue[index+1:]...)
-			delete(l.largePeers, pending.peer)
+			l.releaseLargePeerLocked(pending.peer, pending.class, pending.size)
 			l.grantLargeWaitersLocked()
 			l.mu.Unlock()
 			return false
@@ -201,7 +271,7 @@ func (l *quicReceiveLimiter) release(peer string, class uint8, size uint32) {
 		} else {
 			l.largeUsed -= amount
 		}
-		delete(l.largePeers, peer)
+		l.releaseLargePeerLocked(peer, class, amount)
 		l.grantLargeWaitersLocked()
 		return
 	}
@@ -323,6 +393,183 @@ func (reservation *quicReceiveReservation) release() {
 	reservation.limiter = nil
 }
 
+type quicSendGate struct {
+	mu        sync.Mutex
+	usedSlots int
+	usedBytes uint64
+	maxSlots  int
+	maxBytes  uint64
+	changed   chan struct{}
+}
+
+func newQUICSendGate(maxSlots int, maxBytes uint64) *quicSendGate {
+	return &quicSendGate{maxSlots: maxSlots, maxBytes: maxBytes, changed: make(chan struct{})}
+}
+
+func (gate *quicSendGate) signalLocked() {
+	close(gate.changed)
+	gate.changed = make(chan struct{})
+}
+
+func (gate *quicSendGate) acquireSlot(ctx context.Context) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		gate.mu.Lock()
+		if gate.usedSlots < gate.maxSlots {
+			gate.usedSlots++
+			gate.mu.Unlock()
+			return nil
+		}
+		changed := gate.changed
+		gate.mu.Unlock()
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (gate *quicSendGate) reserveBytes(ctx context.Context, amount uint64) error {
+	if amount > gate.maxBytes {
+		return NewPermanentSendError(SendErrorPacketTooLarge,
+			fmt.Errorf("QUIC send payload exceeds in-flight byte budget: %d>%d", amount, gate.maxBytes))
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		gate.mu.Lock()
+		if gate.usedBytes <= gate.maxBytes-amount {
+			gate.usedBytes += amount
+			gate.mu.Unlock()
+			return nil
+		}
+		changed := gate.changed
+		gate.mu.Unlock()
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (gate *quicSendGate) releaseBytes(amount uint64) {
+	gate.mu.Lock()
+	if amount >= gate.usedBytes {
+		gate.usedBytes = 0
+	} else {
+		gate.usedBytes -= amount
+	}
+	gate.signalLocked()
+	gate.mu.Unlock()
+}
+
+func (gate *quicSendGate) releaseSlot() {
+	gate.mu.Lock()
+	if gate.usedSlots > 0 {
+		gate.usedSlots--
+	}
+	gate.signalLocked()
+	gate.mu.Unlock()
+}
+
+type quicSendLimiter struct {
+	classes  [NetClassBulkGossip + 1]*quicSendGate
+	metadata *quicSendGate
+	large    *quicSendGate
+}
+
+func newQUICSendLimiter() *quicSendLimiter {
+	limiter := &quicSendLimiter{
+		metadata: newQUICSendGate(4, uint64(quicMetadataPeerBudget)),
+		large:    newQUICSendGate(quicProposalPeerStreams, uint64(quicLargeDataReceiveBudget)),
+	}
+	limiter.classes[NetClassHandshake] = newQUICSendGate(1, uint64(quicHandshakeMaxPacketSize))
+	limiter.classes[NetClassHotstuffControl] = newQUICSendGate(2, uint64(quicControlPeerBudget))
+	limiter.classes[NetClassProposalBodyControl] = newQUICSendGate(4, uint64(quicMetadataPeerBudget))
+	limiter.classes[NetClassProposalBodyBulk] = newQUICSendGate(quicProposalPeerStreams, uint64(quicProposalPeerBudget))
+	limiter.classes[NetClassCommitteeControl] = newQUICSendGate(2, uint64(quicMetadataPeerBudget))
+	limiter.classes[NetClassCandidateMiner] = newQUICSendGate(1, uint64(quicMetadataPeerBudget))
+	limiter.classes[NetClassHeartbeat] = newQUICSendGate(1, uint64(quicHandshakeMaxPacketSize))
+	limiter.classes[NetClassBulkGossip] = newQUICSendGate(quicBulkPeerStreams, uint64(quicBulkPeerBudget))
+	return limiter
+}
+
+func (limiter *quicSendLimiter) group(class uint8) *quicSendGate {
+	switch class {
+	case NetClassProposalBodyControl, NetClassCommitteeControl, NetClassCandidateMiner, NetClassHeartbeat:
+		return limiter.metadata
+	case NetClassProposalBodyBulk, NetClassBulkGossip:
+		return limiter.large
+	default:
+		return nil
+	}
+}
+
+type quicSendReservation struct {
+	classGate *quicSendGate
+	groupGate *quicSendGate
+	bytes     uint64
+}
+
+func (limiter *quicSendLimiter) acquireSlot(ctx context.Context, class uint8) (*quicSendReservation, error) {
+	if limiter == nil || int(class) >= len(limiter.classes) || limiter.classes[class] == nil {
+		return nil, NewPermanentSendError(SendErrorInvalidClass,
+			fmt.Errorf("invalid QUIC send class %d", class))
+	}
+	reservation := &quicSendReservation{classGate: limiter.classes[class], groupGate: limiter.group(class)}
+	if reservation.groupGate != nil {
+		if err := reservation.groupGate.acquireSlot(ctx); err != nil {
+			return nil, err
+		}
+	}
+	if err := reservation.classGate.acquireSlot(ctx); err != nil {
+		if reservation.groupGate != nil {
+			reservation.groupGate.releaseSlot()
+		}
+		return nil, err
+	}
+	return reservation, nil
+}
+
+func (reservation *quicSendReservation) reserveBytes(ctx context.Context, amount uint64) error {
+	if reservation.groupGate != nil {
+		if err := reservation.groupGate.reserveBytes(ctx, amount); err != nil {
+			return err
+		}
+	}
+	if err := reservation.classGate.reserveBytes(ctx, amount); err != nil {
+		if reservation.groupGate != nil {
+			reservation.groupGate.releaseBytes(amount)
+		}
+		return err
+	}
+	reservation.bytes = amount
+	return nil
+}
+
+func (reservation *quicSendReservation) release() {
+	if reservation == nil || reservation.classGate == nil {
+		return
+	}
+	if reservation.bytes > 0 {
+		reservation.classGate.releaseBytes(reservation.bytes)
+		if reservation.groupGate != nil {
+			reservation.groupGate.releaseBytes(reservation.bytes)
+		}
+	}
+	reservation.classGate.releaseSlot()
+	if reservation.groupGate != nil {
+		reservation.groupGate.releaseSlot()
+	}
+	reservation.classGate = nil
+	reservation.groupGate = nil
+}
+
 // QUICConn implements the Conn interface using QUIC. Each outbound message is
 // sent on its own QUIC stream, and inbound streams are decoded concurrently so a
 // large proposal-body stream cannot block HotStuff control messages behind it.
@@ -332,8 +579,7 @@ type QUICConn struct {
 	closed    bool
 	closedMut sync.Mutex
 
-	sendLocks  map[uint8]*sync.Mutex
-	sendLockMu sync.Mutex
+	sendLimiter *quicSendLimiter
 
 	recvOnce sync.Once
 
@@ -365,7 +611,7 @@ func newQUICConn(c *quic.Conn, limiter *quicReceiveLimiter, expectHandshake bool
 	}
 	return &QUICConn{
 		conn:            c,
-		sendLocks:       make(map[uint8]*sync.Mutex),
+		sendLimiter:     newQUICSendLimiter(),
 		recvHandshake:   make(chan quicEnvelopeResult, quicMaxIncomingStreams),
 		recvControl:     make(chan quicEnvelopeResult, quicMaxIncomingStreams),
 		recvMeta:        make(chan quicEnvelopeResult, quicMaxIncomingStreams),
@@ -641,51 +887,104 @@ func (c *QUICConn) receiveRaw(stream *quic.Stream, expectHandshake bool) ([]byte
 	return payload, class, reservation, nil
 }
 
-func (c *QUICConn) classLock(class uint8) *sync.Mutex {
-	c.sendLockMu.Lock()
-	defer c.sendLockMu.Unlock()
-	lock := c.sendLocks[class]
-	if lock == nil {
-		lock = new(sync.Mutex)
-		c.sendLocks[class] = lock
-	}
-	return lock
-}
-
 func (c *QUICConn) Send(msg Message) (uint64, error) {
 	class := NetClassBulkGossip
 	if cm, ok := msg.(ClassifiedMessage); ok {
 		class = cm.NetworkClass()
 	}
-
-	lock := c.classLock(class)
-	lock.Lock()
-	defer lock.Unlock()
-
+	if _, validClass := quicClassPacketLimit(class); !validClass {
+		return 0, NewPermanentSendError(SendErrorInvalidClass,
+			fmt.Errorf("invalid QUIC frame class %d", class))
+	}
 	b, err := Marshal(msg)
 	if err != nil {
-		return 0, fmt.Errorf("Error marshaling  message: %s", err.Error())
+		return 0, fmt.Errorf("error marshaling message: %w", err)
+	}
+	classLimit, validClass := quicClassPacketLimit(class)
+	if !validClass || uint64(len(b)) > uint64(classLimit) {
+		return 0, NewPermanentSendError(SendErrorPacketTooLarge,
+			fmt.Errorf("class-%d packet too large: %d>%d", class, len(b), classLimit))
+	}
+	ctx, cancel := context.WithTimeout(c.conn.Context(), quicStreamOpenTimeout)
+	reservation, err := c.sendLimiter.acquireSlot(ctx, class)
+	cancel()
+	if err != nil {
+		return 0, c.classifySendError(fmt.Errorf("acquire QUIC class-%d send slot: %w", class, err))
+	}
+	defer reservation.release()
+
+	ctx, cancel = context.WithTimeout(c.conn.Context(), quicFrameReadTimeout(class, uint32(len(b))))
+	err = reservation.reserveBytes(ctx, uint64(len(b)))
+	cancel()
+	if err != nil {
+		return 0, c.classifySendError(fmt.Errorf("reserve QUIC class-%d send bytes: %w", class, err))
 	}
 	return c.sendRaw(b, class)
+}
+
+type quicStreamLocalSendError struct {
+	err error
+}
+
+func (err *quicStreamLocalSendError) Error() string {
+	return err.err.Error()
+}
+
+func (err *quicStreamLocalSendError) Unwrap() error {
+	return err.err
+}
+
+func isQUICStreamLocalSendError(err error) bool {
+	var streamErr *quicStreamLocalSendError
+	return errors.As(err, &streamErr)
+}
+
+func (c *QUICConn) classifySendError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if IsPermanentSendError(err) {
+		return err
+	}
+	if c == nil || c.conn == nil || c.conn.Context().Err() != nil {
+		return handleError(err)
+	}
+	var streamErr *quic.StreamError
+	if errors.As(err, &streamErr) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return &quicStreamLocalSendError{err: handleError(err)}
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return &quicStreamLocalSendError{err: handleError(err)}
+	}
+	return handleError(err)
 }
 
 func (c *QUICConn) sendRaw(b []byte, class uint8) (uint64, error) {
 	classLimit, validClass := quicClassPacketLimit(class)
 	if !validClass {
-		return 0, fmt.Errorf("invalid QUIC frame class %d", class)
+		return 0, NewPermanentSendError(SendErrorInvalidClass,
+			fmt.Errorf("invalid QUIC frame class %d", class))
 	}
 	if uint64(len(b)) > uint64(classLimit) {
-		return 0, fmt.Errorf("class-%d packet too large: %d>%d", class, len(b), classLimit)
+		return 0, NewPermanentSendError(SendErrorPacketTooLarge,
+			fmt.Errorf("class-%d packet too large: %d>%d", class, len(b), classLimit))
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), quicStreamOpenTimeout)
+	ctx, cancel := context.WithTimeout(c.conn.Context(), quicStreamOpenTimeout)
 	defer cancel()
 
 	stream, err := c.conn.OpenStreamSync(ctx)
 	if err != nil {
-		return 0, handleError(err)
+		return 0, c.classifySendError(err)
 	}
-	defer stream.Close()
+	completed := false
+	defer func() {
+		stream.CancelRead(0)
+		if !completed {
+			stream.CancelWrite(1)
+		}
+	}()
 
 	packetSize := uint32(len(b))
 	_ = stream.SetWriteDeadline(time.Now().Add(quicFrameReadTimeout(class, packetSize)))
@@ -693,10 +992,10 @@ func (c *QUICConn) sendRaw(b []byte, class uint8) (uint64, error) {
 	headBuf := encodePacketHeader(packetSize)
 
 	if _, err := stream.Write(headBuf); err != nil {
-		return 0, handleError(err)
+		return 0, c.classifySendError(err)
 	}
 	if _, err := stream.Write([]byte{class}); err != nil {
-		return uint64(len(headBuf)), handleError(err)
+		return uint64(len(headBuf)), c.classifySendError(err)
 	}
 
 	var sent uint32
@@ -705,13 +1004,17 @@ func (c *QUICConn) sendRaw(b []byte, class uint8) (uint64, error) {
 		if err != nil {
 			sentLen := uint64(len(headBuf)) + 1 + uint64(sent)
 			c.updateTx(sentLen)
-			return sentLen, handleError(err)
+			return sentLen, c.classifySendError(err)
 		}
 		sent += uint32(n)
 	}
 
 	sentLen := uint64(len(headBuf)) + 1 + uint64(sent)
 	c.updateTx(sentLen)
+	if err := stream.Close(); err != nil {
+		return sentLen, c.classifySendError(err)
+	}
+	completed = true
 	return sentLen, nil
 }
 

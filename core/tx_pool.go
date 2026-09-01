@@ -234,11 +234,11 @@ func IsFastLaneEligible(tx *types.Transaction) bool {
 	if tx == nil {
 		return false
 	}
-	switch tx.RouteHint() {
-	case types.TxRouteSlow:
-		return false
-	case types.TxRouteFast:
-	}
+	// RouteHint is local JSON-RPC metadata. It is neither part of the signed
+	// transaction nor preserved by the canonical wire encoding, so using it
+	// here would let different nodes assign the same transaction to different
+	// proposal lanes. Derive the lane exclusively from signed transaction
+	// fields instead.
 	if tx.To() == nil {
 		return false
 	}
@@ -391,8 +391,9 @@ type TxPool struct {
 	pendingNonces *txNoncer
 	currentMaxGas uint64
 
-	locals  *accountSet
-	journal *txJournal
+	locals        *accountSet
+	journal       *txJournal
+	journalWriter *txJournalWriter
 
 	pending map[common.Address]*txList
 	queue   map[common.Address]*txList
@@ -408,9 +409,7 @@ type TxPool struct {
 	chainHeadCh       chan ChainHeadEvent
 	chainHeadSub      event.Subscription
 	reqResetCh        chan *txpoolResetRequest
-	reqPromoteCh      chan *accountSet
-	queueTxEventCh    chan *types.Transaction
-	reorgDoneCh       chan chan struct{}
+	reqPromoteCh      chan *txpoolPromoteRequest
 	reorgShutdownCh   chan struct{}
 	wg                sync.WaitGroup
 	changesSinceReorg int
@@ -418,6 +417,13 @@ type TxPool struct {
 
 type txpoolResetRequest struct {
 	oldHead, newHead *types.Header
+	reply            chan chan struct{}
+}
+
+type txpoolPromoteRequest struct {
+	accounts *accountSet
+	events   types.Transactions
+	reply    chan chan struct{}
 }
 
 func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain blockChain) *TxPool {
@@ -435,9 +441,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		seen:            make(map[common.Hash]time.Time),
 		chainHeadCh:     make(chan ChainHeadEvent, chainHeadChanSize),
 		reqResetCh:      make(chan *txpoolResetRequest),
-		reqPromoteCh:    make(chan *accountSet),
-		queueTxEventCh:  make(chan *types.Transaction),
-		reorgDoneCh:     make(chan chan struct{}),
+		reqPromoteCh:    make(chan *txpoolPromoteRequest),
 		reorgShutdownCh: make(chan struct{}),
 		gasPrice:        new(big.Int).SetUint64(config.PriceLimit),
 	}
@@ -458,6 +462,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		if err := pool.journal.rotate(pool.local()); err != nil {
 			log.Warn("Failed to rotate transaction journal", "err", err)
 		}
+		pool.journalWriter = newTxJournalWriter(pool.journal)
 	}
 	pool.chainHeadSub = pool.chain.SubscribeChainHeadEvent(pool.chainHeadCh)
 	pool.wg.Add(1)
@@ -513,10 +518,14 @@ func (pool *TxPool) loop() {
 			pool.evictStaleTransactionsLocked(time.Now())
 			pool.mu.Unlock()
 		case <-journal.C:
-			if pool.journal != nil {
+			if pool.journalWriter != nil {
 				pool.mu.Lock()
-				if err := pool.journal.rotate(pool.local()); err != nil {
-					log.Warn("Failed to rotate local tx journal", "err", err)
+				all := pool.local()
+				// Queue the rotation while pool.mu excludes new additions. This
+				// orders the snapshot before every later append without holding the
+				// pool lock during filesystem I/O.
+				if err := pool.journalWriter.rotate(all); err != nil {
+					log.Warn("Failed to queue local tx journal rotation", "err", err)
 				}
 				pool.mu.Unlock()
 			}
@@ -528,7 +537,11 @@ func (pool *TxPool) Stop() {
 	pool.scope.Close()
 	pool.chainHeadSub.Unsubscribe()
 	pool.wg.Wait()
-	if pool.journal != nil {
+	if pool.journalWriter != nil {
+		if err := pool.journalWriter.close(); err != nil {
+			log.Warn("Failed to close transaction journal writer", "err", err)
+		}
+	} else if pool.journal != nil {
 		pool.journal.close()
 	}
 	log.Info("Transaction pool stopped")
@@ -588,6 +601,19 @@ func (pool *TxPool) Stats() (int, int) {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
 	return pool.stats()
+}
+
+// PendingRevision returns an O(1) generation for the proposal-visible pending
+// set. It changes whenever the pending index is invalidated, allowing proposal
+// schedulers to remain quiescent after a no-work result without rescanning the
+// entire pool merely to discover whether the same input is still present.
+func (pool *TxPool) PendingRevision() uint64 {
+	if pool == nil {
+		return 0
+	}
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	return pool.pendingIndexVersion
 }
 
 func (pool *TxPool) stats() (int, int) {
@@ -1135,28 +1161,28 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	return nil
 }
 
-func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err error) {
+func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, journal bool, event bool, err error) {
 	hash := tx.Hash()
 	if pool.all.Get(hash) != nil {
 		log.Trace("Discarding already known transaction", "hash", hash)
 		knownTxMeter.Mark(1)
-		return false, ErrAlreadyKnown
+		return false, false, false, ErrAlreadyKnown
 	}
 	isLocal := local || pool.locals.containsTx(tx)
 	if err := pool.validateTx(tx, isLocal); err != nil {
 		log.Trace("Discarding invalid transaction", "hash", hash, "err", err)
 		invalidTxMeter.Mark(1)
-		return false, err
+		return false, false, false, err
 	}
 	from, _ := types.Sender(pool.signer, tx)
 	if uint64(pool.all.Slots()+numSlots(tx)) > pool.config.GlobalSlots+pool.config.GlobalQueue {
 		if !isLocal && pool.priced.Underpriced(tx, pool.locals) {
 			log.Trace("Discarding underpriced transaction", "hash", hash, "price", tx.GasPrice())
 			underpricedTxMeter.Mark(1)
-			return false, ErrUnderpriced
+			return false, false, false, ErrUnderpriced
 		}
 		if pool.changesSinceReorg > int(pool.config.GlobalSlots/4) {
-			return false, ErrTxPoolOverflow
+			return false, false, false, ErrTxPoolOverflow
 		}
 		drop := pool.priced.Discard(pool.all.Slots()-int(pool.config.GlobalSlots+pool.config.GlobalQueue)+numSlots(tx), pool.locals)
 		pool.changesSinceReorg += len(drop)
@@ -1170,7 +1196,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		inserted, old := list.Add(tx, pool.config.PriceBump)
 		if !inserted {
 			pendingDiscardMeter.Mark(1)
-			return false, ErrReplaceUnderpriced
+			return false, false, false, ErrReplaceUnderpriced
 		}
 		if old != nil {
 			pool.all.Remove(old.Hash())
@@ -1181,15 +1207,13 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 		pool.priced.Put(tx)
 		pool.noteSeen(hash)
 		pool.markPendingIndexDirty()
-		pool.journalTx(from, tx)
-		pool.queueTxEvent(tx)
 		log.Trace("Pooled new executable transaction", "hash", hash, "from", from, "to", tx.To())
 		pool.beats[from] = time.Now()
-		return old != nil, nil
+		return old != nil, pool.shouldJournalTx(from), true, nil
 	}
 	replaced, err = pool.enqueueTx(hash, tx, isLocal, true)
 	if err != nil {
-		return false, err
+		return false, false, false, err
 	}
 	if local && !pool.locals.contains(from) {
 		log.Info("Setting new local account", "address", from)
@@ -1199,9 +1223,8 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, err e
 	if isLocal {
 		localGauge.Inc(1)
 	}
-	pool.journalTx(from, tx)
 	log.Trace("Pooled new future transaction", "hash", hash, "from", from, "to", tx.To(), "nonce", tx.Nonce())
-	return replaced, nil
+	return replaced, pool.shouldJournalTx(from), false, nil
 }
 
 func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local bool, addAll bool) (bool, error) {
@@ -1235,13 +1258,8 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 	return old != nil, nil
 }
 
-func (pool *TxPool) journalTx(from common.Address, tx *types.Transaction) {
-	if pool.journal == nil || !pool.locals.contains(from) {
-		return
-	}
-	if err := pool.journal.insert(tx); err != nil {
-		log.Warn("Failed to journal local transaction", "err", err)
-	}
+func (pool *TxPool) shouldJournalTx(from common.Address) bool {
+	return pool.journalWriter != nil && pool.locals.contains(from)
 }
 
 func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.Transaction) bool {
@@ -1271,6 +1289,42 @@ func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.T
 
 func (pool *TxPool) AddLocals(txs []*types.Transaction) []error {
 	return pool.addTxs(txs, !pool.config.NoLocals, true)
+}
+
+// AddLocalsAsync validates and inserts a local transaction batch with normal
+// local/journal semantics, but does not wait for the asynchronous promotion
+// pass. Callers receive one result per input transaction.
+func (pool *TxPool) AddLocalsAsync(txs []*types.Transaction) []error {
+	return pool.addTxs(txs, !pool.config.NoLocals, false)
+}
+
+// ValidateLocals performs the state-dependent, non-mutating portion of local
+// admission before an external durable sidecar is created. Results are aligned
+// with txs; ErrAlreadyKnown is returned for an idempotent pool hit. The actual
+// AddLocalsAsync call must still revalidate because the head or pool may change.
+func (pool *TxPool) ValidateLocals(txs []*types.Transaction) []error {
+	errs := make([]error, len(txs))
+	if pool == nil {
+		for i := range errs {
+			errs[i] = errors.New("transaction pool is unavailable")
+		}
+		return errs
+	}
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	local := !pool.config.NoLocals
+	for i, tx := range txs {
+		if tx == nil {
+			errs[i] = ErrInvalidSender
+			continue
+		}
+		if pool.all.Get(tx.Hash()) != nil {
+			errs[i] = ErrAlreadyKnown
+			continue
+		}
+		errs[i] = pool.validateTx(tx, local || pool.locals.containsTx(tx))
+	}
+	return errs
 }
 
 func (pool *TxPool) AddLocal(tx *types.Transaction) error {
@@ -1303,13 +1357,17 @@ func (pool *TxPool) AddRemote(tx *types.Transaction) error {
 
 func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 	var (
-		errs = make([]error, len(txs))
-		news = make([]*types.Transaction, 0, len(txs))
+		errs        = make([]error, len(txs))
+		news        = make([]*types.Transaction, 0, len(txs))
+		knownLocals = make([]*types.Transaction, 0)
 	)
 	for i, tx := range txs {
 		if pool.all.Get(tx.Hash()) != nil {
 			errs[i] = ErrAlreadyKnown
 			knownTxMeter.Mark(1)
+			if local {
+				knownLocals = append(knownLocals, tx)
+			}
 			continue
 		}
 		_, err := types.Sender(pool.signer, tx)
@@ -1320,12 +1378,23 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		}
 		news = append(news, tx)
 	}
-	if len(news) == 0 {
+	if len(news) == 0 && len(knownLocals) == 0 {
 		return errs
 	}
 	pool.mu.Lock()
-	newErrs, dirtyAddrs := pool.addTxsLocked(news, local)
+	knownJournalTxs := pool.localizeKnownTransactionsLocked(knownLocals)
+	newErrs, dirtyAddrs, newJournalTxs, queuedEvents := pool.addTxsLocked(news, local)
+	journalTxs := append(knownJournalTxs, newJournalTxs...)
+	// Preserve append-before-rotate ordering by queueing the journal command
+	// while pool.mu still excludes a rotation snapshot and later additions.
+	journalDone := pool.queueJournalTxs(journalTxs, sync)
 	pool.mu.Unlock()
+	if journalDone != nil {
+		<-journalDone
+	}
+	if len(news) == 0 {
+		return errs
+	}
 	var nilSlot = 0
 	for _, err := range newErrs {
 		for errs[nilSlot] != nil {
@@ -1334,25 +1403,70 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		errs[nilSlot] = err
 		nilSlot++
 	}
-	done := pool.requestPromoteExecutables(dirtyAddrs)
+	done := pool.requestPromoteExecutables(dirtyAddrs, queuedEvents)
 	if sync {
 		<-done
 	}
 	return errs
 }
 
-func (pool *TxPool) addTxsLocked(txs []*types.Transaction, local bool) ([]error, *accountSet) {
+// localizeKnownTransactionsLocked upgrades transactions first seen through a
+// remote path when a trusted/local ingress later claims them. Without this,
+// ErrAlreadyKnown could be ACKed while the only committee copy remained
+// non-journaled and volatile. pool.mu must be held.
+func (pool *TxPool) localizeKnownTransactionsLocked(txs types.Transactions) types.Transactions {
+	newAccounts := make(map[common.Address]struct{})
+	for _, requested := range txs {
+		if requested == nil {
+			continue
+		}
+		known := pool.all.Get(requested.Hash())
+		if known == nil {
+			continue
+		}
+		from, err := types.Sender(pool.signer, known)
+		if err != nil || pool.locals.contains(from) {
+			continue
+		}
+		pool.locals.add(from)
+		newAccounts[from] = struct{}{}
+		log.Info("Setting known transaction account local", "address", from)
+	}
+	journalTxs := make(types.Transactions, 0, len(txs))
+	for addr := range newAccounts {
+		if pending := pool.pending[addr]; pending != nil {
+			journalTxs = append(journalTxs, pending.Flatten()...)
+		}
+		if queued := pool.queue[addr]; queued != nil {
+			journalTxs = append(journalTxs, queued.Flatten()...)
+		}
+	}
+	if len(journalTxs) > 0 {
+		localGauge.Inc(int64(len(journalTxs)))
+	}
+	return journalTxs
+}
+
+func (pool *TxPool) addTxsLocked(txs []*types.Transaction, local bool) ([]error, *accountSet, types.Transactions, types.Transactions) {
 	dirty := newAccountSet(pool.signer)
 	errs := make([]error, len(txs))
+	journalTxs := make(types.Transactions, 0, len(txs))
+	queuedEvents := make(types.Transactions, 0, len(txs))
 	for i, tx := range txs {
-		replaced, err := pool.add(tx, local)
+		replaced, journal, event, err := pool.add(tx, local)
 		errs[i] = err
 		if err == nil && !replaced {
 			dirty.addTx(tx)
 		}
+		if err == nil && journal {
+			journalTxs = append(journalTxs, tx)
+		}
+		if err == nil && event {
+			queuedEvents = append(queuedEvents, tx)
+		}
 	}
 	validTxMeter.Mark(int64(len(dirty.accounts)))
-	return errs, dirty
+	return errs, dirty, journalTxs, queuedEvents
 }
 
 func (pool *TxPool) Status(hashes []common.Hash) []TxStatus {
@@ -1422,9 +1536,19 @@ func (pool *TxPool) removeTx(hash common.Hash, outofbound bool) {
 }
 
 func (pool *TxPool) requestReset(oldHead *types.Header, newHead *types.Header) chan struct{} {
+	reply := make(chan chan struct{}, 1)
 	select {
-	case pool.reqResetCh <- &txpoolResetRequest{oldHead, newHead}:
-		return <-pool.reorgDoneCh
+	case pool.reqResetCh <- &txpoolResetRequest{oldHead: oldHead, newHead: newHead, reply: reply}:
+	case <-pool.reorgShutdownCh:
+		return pool.reorgShutdownCh
+	case <-time.After(reqWaitTimeout):
+		ch := make(chan struct{})
+		close(ch)
+		return ch
+	}
+	select {
+	case done := <-reply:
+		return done
 	case <-pool.reorgShutdownCh:
 		return pool.reorgShutdownCh
 	case <-time.After(reqWaitTimeout):
@@ -1434,10 +1558,20 @@ func (pool *TxPool) requestReset(oldHead *types.Header, newHead *types.Header) c
 	}
 }
 
-func (pool *TxPool) requestPromoteExecutables(set *accountSet) chan struct{} {
+func (pool *TxPool) requestPromoteExecutables(set *accountSet, events types.Transactions) chan struct{} {
+	reply := make(chan chan struct{}, 1)
 	select {
-	case pool.reqPromoteCh <- set:
-		return <-pool.reorgDoneCh
+	case pool.reqPromoteCh <- &txpoolPromoteRequest{accounts: set, events: events, reply: reply}:
+	case <-pool.reorgShutdownCh:
+		return pool.reorgShutdownCh
+	case <-time.After(reqWaitTimeout):
+		ch := make(chan struct{})
+		close(ch)
+		return ch
+	}
+	select {
+	case done := <-reply:
+		return done
 	case <-pool.reorgShutdownCh:
 		return pool.reorgShutdownCh
 	case <-time.After(reqWaitTimeout):
@@ -1447,12 +1581,16 @@ func (pool *TxPool) requestPromoteExecutables(set *accountSet) chan struct{} {
 	}
 }
 
-func (pool *TxPool) queueTxEvent(tx *types.Transaction) {
-	select {
-	case pool.queueTxEventCh <- tx:
-	case <-pool.reorgShutdownCh:
-	case <-time.After(reqWaitTimeout):
+func (pool *TxPool) queueJournalTxs(txs types.Transactions, wait bool) <-chan struct{} {
+	if pool.journalWriter == nil || len(txs) == 0 {
+		return nil
 	}
+	done, err := pool.journalWriter.enqueue(txs, wait)
+	if err != nil {
+		log.Warn("Failed to queue local transaction journal batch", "transactions", len(txs), "err", err)
+		return nil
+	}
+	return done
 }
 
 func (pool *TxPool) scheduleReorgLoop() {
@@ -1481,21 +1619,16 @@ func (pool *TxPool) scheduleReorgLoop() {
 				reset.newHead = req.newHead
 			}
 			launchNextRun = true
-			pool.reorgDoneCh <- nextDone
+			req.reply <- nextDone
 		case req := <-pool.reqPromoteCh:
 			if dirtyAccounts == nil {
-				dirtyAccounts = req
+				dirtyAccounts = req.accounts
 			} else {
-				dirtyAccounts.merge(req)
+				dirtyAccounts.merge(req.accounts)
 			}
+			pool.mergeQueuedTxEvents(queuedEvents, req.events)
 			launchNextRun = true
-			pool.reorgDoneCh <- nextDone
-		case tx := <-pool.queueTxEventCh:
-			addr, _ := types.Sender(pool.signer, tx)
-			if _, ok := queuedEvents[addr]; !ok {
-				queuedEvents[addr] = newTxSortedMap()
-			}
-			queuedEvents[addr].Put(tx)
+			req.reply <- nextDone
 		case <-curDone:
 			curDone = nil
 		case <-pool.reorgShutdownCh:
@@ -1508,15 +1641,33 @@ func (pool *TxPool) scheduleReorgLoop() {
 	}
 }
 
+func (pool *TxPool) mergeQueuedTxEvents(events map[common.Address]*txSortedMap, txs types.Transactions) {
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		addr, err := types.Sender(pool.signer, tx)
+		if err != nil {
+			continue
+		}
+		if _, ok := events[addr]; !ok {
+			events[addr] = newTxSortedMap()
+		}
+		events[addr].Put(tx)
+	}
+}
+
 func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirtyAccounts *accountSet, events map[common.Address]*txSortedMap) {
 	defer close(done)
 	var promoteAddrs []common.Address
+	var resetJournal types.Transactions
+	var resetEvents types.Transactions
 	if dirtyAccounts != nil && reset == nil {
 		promoteAddrs = dirtyAccounts.flatten()
 	}
 	pool.mu.Lock()
 	if reset != nil {
-		pool.Reset(reset.oldHead, reset.newHead)
+		resetJournal, resetEvents = pool.Reset(reset.oldHead, reset.newHead)
 		for addr := range events {
 			events[addr].Forward(pool.pendingNonces.get(addr))
 			if events[addr].Len() == 0 {
@@ -1541,8 +1692,9 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 	pool.truncatePending()
 	pool.truncateQueue()
 	pool.changesSinceReorg = 0
+	pool.queueJournalTxs(resetJournal, false)
 	pool.mu.Unlock()
-	for _, tx := range promoted {
+	for _, tx := range append(resetEvents, promoted...) {
 		addr, _ := types.Sender(pool.signer, tx)
 		if _, ok := events[addr]; !ok {
 			events[addr] = newTxSortedMap()
@@ -1558,7 +1710,7 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 	}
 }
 
-func (pool *TxPool) Reset(oldHead, newHead *types.Header) {
+func (pool *TxPool) Reset(oldHead, newHead *types.Header) (journalTxs types.Transactions, queuedEvents types.Transactions) {
 	var reinject types.Transactions
 	if oldHead != nil && oldHead.Hash() != newHead.ParentHash {
 		oldNum := oldHead.Number.Uint64()
@@ -1621,10 +1773,11 @@ func (pool *TxPool) Reset(oldHead, newHead *types.Header) {
 	pool.currentMaxGas = newHead.GasLimit
 	log.Debug("Reinjecting stale transactions", "count", len(reinject))
 	senderCacher.recover(pool.signer, reinject)
-	pool.addTxsLocked(reinject, false)
+	_, _, journalTxs, queuedEvents = pool.addTxsLocked(reinject, false)
 	pool.markPendingIndexDirty()
 	next := new(big.Int).Add(newHead.Number, big.NewInt(1))
 	pool.istanbul = pool.chainconfig.IsIstanbul(next)
+	return journalTxs, queuedEvents
 }
 
 func (pool *TxPool) ResetHead(newHead *types.Header) {

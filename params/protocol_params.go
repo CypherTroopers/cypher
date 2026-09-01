@@ -22,16 +22,47 @@ import (
 )
 
 const (
-	DisableGAS             = false
-	MaxTxCountPerBlock     = 1024
-	AckTimeout             = 20 * time.Second
-	HeatBeatTimeout        = 10 * time.Second
-	PaceMakerTimeout       = 30 * time.Second
-	KeyBlockTimeout        = 20 * time.Minute
-	KeyBlockMinInterval    = 10 * time.Minute
-	KeyBlock_Reward        = 1e+18 // Block reward in wei for successfully mining a block
-	CheckBackNumber        = 10
-	CollectVoteInfoTimeout = 5 * time.Second
+	DisableGAS = false
+	// Fair HotStuff work limits are consensus rules, not proposer tuning. The
+	// global limit still allows a wide block assembled from independent
+	// accounts, while a single account is bounded because its nonce chain must
+	// execute serially on every validator.
+	MaxTxCountPerBlock          = 16384
+	MaxTxCountPerSenderPerBlock = 512
+	// In addition to transaction count, cap every cheap-to-measure input which
+	// can multiply pre-EVM validation or serial EVM setup work. A full block of
+	// 16,384 native transfers consumes 344,064,000 declared gas and 16,384
+	// transaction signatures, so it remains comfortably inside this envelope.
+	MaxFHSDeclaredGasPerBlock                 uint64 = GenesisGasLimit
+	MaxFHSSetCodeAuthorizationsPerTransaction uint64 = 64
+	// EIP-7702 authority recovery still runs in transaction order. Limit it to
+	// half a full block without making normal 16,384-transfer blocks smaller.
+	MaxFHSSetCodeAuthorizationsPerBlock       uint64 = MaxTxCountPerBlock / 2
+	MaxFHSAccessListAddressesPerTransaction   uint64 = 4 * 1024
+	MaxFHSAccessListAddressesPerBlock         uint64 = 64 * 1024
+	MaxFHSAccessListStorageKeysPerTransaction uint64 = 4 * 1024
+	MaxFHSAccessListStorageKeysPerBlock       uint64 = 128 * 1024
+	// A normal ingress certificate covers up to 512 transactions, so 128
+	// certificates can authorize four full transaction blocks. Keeping this
+	// independent from the transaction limit prevents deliberately fragmented
+	// one-item certificates from turning pre-EVM signature recovery into an
+	// unbounded serial validation stage.
+	MaxFHSCommonTxAdmissionBatchesPerBlock      uint64 = 128
+	MaxFHSSignatureOperationsPerBlock           uint64 = MaxTxCountPerBlock + MaxFHSSetCodeAuthorizationsPerBlock + MaxFHSCommonTxAdmissionBatchesPerBlock
+	MaxFHSCommonTxAdmissionBytesPerBatch        uint64 = 32 * 1024
+	MaxFHSCommonTxAdmissionPayloadBytesPerBlock uint64 = 4 * 1024 * 1024
+	MaxFHSCommonTxAdmissionRefsPerBlock         uint64 = MaxTxCountPerBlock
+	MaxFHSCommonTxRewardsPerBlock               uint64 = MaxTxCountPerBlock
+	MaxFHSCommonTxRewardBytesPerReward          uint64 = 256
+	MaxFHSCommonTxRewardPayloadBytesPerBlock    uint64 = 2 * 1024 * 1024
+	AckTimeout                                         = 20 * time.Second
+	HeatBeatTimeout                                    = 10 * time.Second
+	PaceMakerTimeout                                   = 30 * time.Second
+	KeyBlockTimeout                                    = 20 * time.Minute
+	KeyBlockMinInterval                                = 10 * time.Minute
+	KeyBlock_Reward                                    = 1e+18 // Block reward in wei for successfully mining a block
+	CheckBackNumber                                    = 10
+	CollectVoteInfoTimeout                             = 5 * time.Second
 	// these are original values from upstream Geth, used in colossusX consensus
 	OriginalMinGasLimit          uint64 = 3374454134 // The bound divisor of the gas limit, used in update calculations.
 	OriginalGasLimitBoundDivisor uint64 = 1024       // Minimum the gas limit may ever be.
@@ -184,6 +215,62 @@ const (
 	// payload for a transaction, the size of the buffer to 128kb to match the maximum allowed in chain config
 	CypherMaxPayloadBufferSize uint64 = 128
 )
+
+// FHSBlockWorkLimits is the immutable-by-construction consensus work envelope
+// shared by proposal construction and proposal validation. The accessor below
+// returns a value so callers cannot mutate process-global consensus state.
+type FHSBlockWorkLimits struct {
+	Transactions                   uint64
+	TransactionsPerSender          uint64
+	DeclaredGas                    uint64
+	SignatureOperations            uint64
+	SetCodeAuthorizationsPerTx     uint64
+	SetCodeAuthorizations          uint64
+	AccessListAddressesPerTx       uint64
+	AccessListAddresses            uint64
+	AccessListStorageKeysPerTx     uint64
+	AccessListStorageKeys          uint64
+	CommonTxAdmissionBatches       uint64
+	CommonTxAdmissionBytesPerBatch uint64
+	CommonTxAdmissionPayloadBytes  uint64
+	CommonTxAdmissionRefs          uint64
+	CommonTxRewards                uint64
+	CommonTxRewardBytesPerEntry    uint64
+	CommonTxRewardPayloadBytes     uint64
+}
+
+// FairHotstuffWorkLimits returns the single consensus source for bounded FHS
+// proposal work. Genesis-only deployments use these limits from block zero.
+func FairHotstuffWorkLimits() FHSBlockWorkLimits {
+	return FHSBlockWorkLimits{
+		Transactions:                   MaxTxCountPerBlock,
+		TransactionsPerSender:          MaxTxCountPerSenderPerBlock,
+		DeclaredGas:                    MaxFHSDeclaredGasPerBlock,
+		SignatureOperations:            MaxFHSSignatureOperationsPerBlock,
+		SetCodeAuthorizationsPerTx:     MaxFHSSetCodeAuthorizationsPerTransaction,
+		SetCodeAuthorizations:          MaxFHSSetCodeAuthorizationsPerBlock,
+		AccessListAddressesPerTx:       MaxFHSAccessListAddressesPerTransaction,
+		AccessListAddresses:            MaxFHSAccessListAddressesPerBlock,
+		AccessListStorageKeysPerTx:     MaxFHSAccessListStorageKeysPerTransaction,
+		AccessListStorageKeys:          MaxFHSAccessListStorageKeysPerBlock,
+		CommonTxAdmissionBatches:       MaxFHSCommonTxAdmissionBatchesPerBlock,
+		CommonTxAdmissionBytesPerBatch: MaxFHSCommonTxAdmissionBytesPerBatch,
+		CommonTxAdmissionPayloadBytes:  MaxFHSCommonTxAdmissionPayloadBytesPerBlock,
+		CommonTxAdmissionRefs:          MaxFHSCommonTxAdmissionRefsPerBlock,
+		CommonTxRewards:                MaxFHSCommonTxRewardsPerBlock,
+		CommonTxRewardBytesPerEntry:    MaxFHSCommonTxRewardBytesPerReward,
+		CommonTxRewardPayloadBytes:     MaxFHSCommonTxRewardPayloadBytesPerBlock,
+	}
+}
+
+// AddFHSWork adds one dimension without permitting uint64 wraparound or a
+// limit crossing. The returned total is unchanged when ok is false.
+func AddFHSWork(current, delta, limit uint64) (total uint64, ok bool) {
+	if current > limit || delta > limit-current {
+		return current, false
+	}
+	return current + delta, true
+}
 
 // Gas discount tables for the final EIP-2537 multi-exponentiation precompiles.
 var Bls12381G1MultiExpDiscountTable = [128]uint64{1000, 949, 848, 797, 764, 750, 738, 728, 719, 712, 705, 698, 692, 687, 682, 677, 673, 669, 665, 661, 658, 654, 651, 648, 645, 642, 640, 637, 635, 632, 630, 627, 625, 623, 621, 619, 617, 615, 613, 611, 609, 608, 606, 604, 603, 601, 599, 598, 596, 595, 593, 592, 591, 589, 588, 586, 585, 584, 582, 581, 580, 579, 577, 576, 575, 574, 573, 572, 570, 569, 568, 567, 566, 565, 564, 563, 562, 561, 560, 559, 558, 557, 556, 555, 554, 553, 552, 551, 550, 549, 548, 547, 547, 546, 545, 544, 543, 542, 541, 540, 540, 539, 538, 537, 536, 536, 535, 534, 533, 532, 532, 531, 530, 529, 528, 528, 527, 526, 525, 525, 524, 523, 522, 522, 521, 520, 520, 519}

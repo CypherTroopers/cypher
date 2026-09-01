@@ -32,21 +32,22 @@ const finalizedRecoveryRetention = 2 * time.Minute
 const maxFinalizedRecoveryViews = 16
 
 var (
-	ErrNewViewFail            = fmt.Errorf("hotstuff new view fail")
-	ErrUnhandledMsg           = fmt.Errorf("hotstuff unhandled message")
-	ErrViewTimeout            = fmt.Errorf("hotstuff view timeout")
-	ErrQCVerification         = fmt.Errorf("hotstuff QC not valid")
-	ErrInvalidReplica         = fmt.Errorf("hotstuff replica not valid")
-	ErrInvalidVoteInfoMessage = fmt.Errorf("hotstuff voteInfo message not valid")
-	ErrInsufficientQC         = fmt.Errorf("hotstuff QC insufficient")
-	ErrInvalidHighQC          = fmt.Errorf("hotstuff highQC invalid")
-	ErrInvalidPrepareQC       = fmt.Errorf("hotstuff prepareQC invalid")
-	ErrInvalidPreCommitQC     = fmt.Errorf("hotstuff preCommitQC invalid")
-	ErrInvalidCommitQC        = fmt.Errorf("hotstuff commitQC invalid")
-	ErrInvalidProposal        = fmt.Errorf("hotstuff proposal invalid")
-	ErrInvalidPublicKey       = fmt.Errorf("invalid public key for bls deserialize")
-	ErrViewPhaseNotMatch      = fmt.Errorf("hotstuff view phase not match")
-	ErrViewOldPhase           = fmt.Errorf("hotstuff old phase ")
+	ErrNewViewFail               = fmt.Errorf("hotstuff new view fail")
+	ErrUnhandledMsg              = fmt.Errorf("hotstuff unhandled message")
+	ErrViewTimeout               = fmt.Errorf("hotstuff view timeout")
+	ErrQCVerification            = fmt.Errorf("hotstuff QC not valid")
+	ErrInvalidReplica            = fmt.Errorf("hotstuff replica not valid")
+	ErrInvalidVoteInfoMessage    = fmt.Errorf("hotstuff voteInfo message not valid")
+	ErrInsufficientQC            = fmt.Errorf("hotstuff QC insufficient")
+	ErrInvalidHighQC             = fmt.Errorf("hotstuff highQC invalid")
+	ErrInvalidPrepareQC          = fmt.Errorf("hotstuff prepareQC invalid")
+	ErrInvalidPreCommitQC        = fmt.Errorf("hotstuff preCommitQC invalid")
+	ErrInvalidCommitQC           = fmt.Errorf("hotstuff commitQC invalid")
+	ErrInvalidProposal           = fmt.Errorf("hotstuff proposal invalid")
+	ErrProposalValidationPending = fmt.Errorf("hotstuff proposal validation pending")
+	ErrInvalidPublicKey          = fmt.Errorf("invalid public key for bls deserialize")
+	ErrViewPhaseNotMatch         = fmt.Errorf("hotstuff view phase not match")
+	ErrViewOldPhase              = fmt.Errorf("hotstuff old phase ")
 
 	ErrMissingView       = fmt.Errorf("hotstuff view missing")
 	ErrInvalidLeaderView = fmt.Errorf("hotstuff invalid leader view")
@@ -258,13 +259,31 @@ type HotStuffApplication interface {
 	UseFHS2Chain() bool
 }
 
+// ProposalRecoveryApplication is an optional liveness hint for applications
+// that can prove a proposal attempt had no publishable work for an unchanged
+// input generation. It suppresses only the generic recovery retry; explicit
+// NewTx, new-view, certificate and keyblock triggers still call TryPropose.
+type ProposalRecoveryApplication interface {
+	ProposalRecoveryReady(viewNumber uint64, viewID common.Hash, leaderID string) bool
+}
+
+// FHSProposalReadinessApplication exposes the canonical fields required by the
+// local proposal retry gate without resolving a committee or emitting recovery
+// traffic. CurrentState remains the authoritative view-construction callback;
+// this snapshot is only a side-effect-free equality check for an already
+// authenticated leader view. The encoded consensus state binds LeaderIndex and
+// CommitteeHash, so an exact byte match preserves the original leader binding.
+type FHSProposalReadinessApplication interface {
+	FHSProposalReadinessSnapshot() (currentState []byte, viewNumber uint64, highest *SignedState)
+}
+
 // FHSLeaderCertificationApplication lets a production application durably
 // adopt a leader-created QC before dissemination, while deferring any committee
 // transition and two-chain commit until the QC has been sent to the committee
 // that certified it.
 type FHSLeaderCertificationApplication interface {
 	OnFHSLeaderCertifiedBeforeBroadcast(*SignedState) error
-	OnFHSLeaderCertifiedAfterBroadcast(*SignedState) error
+	OnFHSLeaderCertifiedAfterBroadcast(*SignedState, bool) error
 }
 
 // FHSLeaderKeyApplication resolves the BLS key bound to a historical
@@ -359,6 +378,8 @@ type View struct {
 	fhsAggregate   *AggregateQC
 	fhsHighest     *SignedState
 	fhsTimeout     *TimeoutCertificate
+	fhsValidation  *FHSProposalValidationKey
+	fhsBuild       *FHSProposalBuildKey
 }
 
 func (v *View) hasKState() bool {
@@ -370,22 +391,31 @@ func (v *View) hasTState() bool {
 }
 
 type HotstuffProtocolManager struct {
-	secretKey      *bls.SecretKey
-	publicKey      *bls.PublicKey
-	views          map[common.Hash]*View
-	leaderView     *View
-	app            HotStuffApplication
-	unhandledMsg   map[common.Hash]*HotstuffMessage // messages which is not handled(which phase is ahead of local's)
-	unhandledSize  map[common.Hash]int
-	unhandledBytes int
-	pendingNewView map[common.Hash]map[string]*HotstuffMessage
-	finalized      map[common.Hash]*finalizedRecovery
-	timeoutVotes   map[common.Hash]map[int]*bls.Sign
-	timeoutEchoed  map[common.Hash]bool
-	timeoutQC      map[common.Hash]*TimeoutCertificate
-	timeoutSeen    map[common.Hash]time.Time
-	timeoutView    map[common.Hash]uint64
-	epochReset     uint32
+	secretKey          *bls.SecretKey
+	publicKey          *bls.PublicKey
+	views              map[common.Hash]*View
+	leaderView         *View
+	app                HotStuffApplication
+	unhandledMsg       map[common.Hash]*HotstuffMessage // messages which is not handled(which phase is ahead of local's)
+	unhandledSize      map[common.Hash]int
+	unhandledBytes     int
+	pendingNewView     map[common.Hash]map[string]*HotstuffMessage
+	finalized          map[common.Hash]*finalizedRecovery
+	timeoutVotes       map[common.Hash]map[int]*bls.Sign
+	timeoutEchoed      map[common.Hash]bool
+	timeoutQC          map[common.Hash]*TimeoutCertificate
+	timeoutSeen        map[common.Hash]time.Time
+	timeoutView        map[common.Hash]uint64
+	validationSequence uint64
+	pendingHighQC      *pendingFHSHighQCValidation
+	epochReset         uint32
+}
+
+type pendingFHSHighQCValidation struct {
+	key         FHSHighQCValidationKey
+	qc          *SignedState
+	messages    []*HotstuffMessage
+	leaderViews map[common.Hash]struct{}
 }
 
 type finalizedRecovery struct {
@@ -459,6 +489,7 @@ func (hsm *HotstuffProtocolManager) applyScheduledFHSEpochReset() bool {
 	hsm.timeoutQC = make(map[common.Hash]*TimeoutCertificate)
 	hsm.timeoutSeen = make(map[common.Hash]time.Time)
 	hsm.timeoutView = make(map[common.Hash]uint64)
+	hsm.pendingHighQC = nil
 	log.Info("reset Fair HotStuff volatile state for new key epoch")
 	return true
 }
@@ -920,6 +951,14 @@ func (hsm *HotstuffProtocolManager) cacheFinalizedRecovery(v *View, decide *Hots
 	if v == nil {
 		return
 	}
+	if hsm.app.UseFHS2Chain() {
+		if _, durable := hsm.app.(FHSLeaderCertificationApplication); durable {
+			// The durable leader lifecycle fsyncs the QC before its first broadcast.
+			// Its single persisted outbox owns retry and restart recovery, so retaining
+			// the same QCBroadcast here would create a second timer-driven replay loop.
+			return
+		}
+	}
 	entry := &finalizedRecovery{
 		number:      v.number,
 		decide:      decide,
@@ -1286,6 +1325,51 @@ func (hsm *HotstuffProtocolManager) TryPropose() error {
 
 	hsm.DumpView(v, true)
 	return nil
+}
+
+// CanTryPropose reports whether a local maintenance wake-up can make progress.
+// It is intended for the serialized HotStuff control loop only. New-view
+// activation invokes TryPropose directly, so polling before the leader has a
+// quorum merely crowds authenticated network control traffic with local
+// MsgTryPropose messages.
+func (hsm *HotstuffProtocolManager) CanTryPropose() bool {
+	if hsm == nil || hsm.leaderView == nil || hsm.leaderView.phaseAsLeader != PhaseTryPropose {
+		return false
+	}
+	if !hsm.usesFHSProtocolV2() {
+		return true
+	}
+	v := hsm.leaderView
+	ctx := v.fhsContext
+	if ctx == nil || v.fhsAggregate == nil || v.fhsBuild != nil || ctx.Validate() != nil ||
+		ctx.ChainID != hsm.app.ChainID() || ctx.TargetView != v.number || ctx.LeaderID != v.leaderId ||
+		ctx.ID() != v.hash || v.fhsAggregate.Context != *ctx {
+		return false
+	}
+	var (
+		state   []byte
+		number  uint64
+		highest *SignedState
+	)
+	if readiness, ok := hsm.app.(FHSProposalReadinessApplication); ok {
+		state, number, highest = readiness.FHSProposalReadinessSnapshot()
+	} else {
+		var leaderID string
+		state, leaderID, number = hsm.app.CurrentState()
+		if leaderID != v.leaderId {
+			return false
+		}
+		highest = hsm.app.HighestCertified()
+	}
+	if number != v.number || !bytes.Equal(state, v.currentState) {
+		return false
+	}
+	stateView := bftview.DecodeToView(state)
+	if stateView == nil || stateView.KeyNumber != ctx.KeyNumber || stateView.KeyHash != ctx.KeyHash ||
+		stateView.CommitteeHash != ctx.CommitteeHash {
+		return false
+	}
+	return SignedStateSemanticEqual(highest, v.fhsHighest)
 }
 
 func VerifySignature(bSign []byte, bMask []byte, data []byte, groupPublicKey []*bls.PublicKey, threshold int) bool {
@@ -1673,14 +1757,17 @@ func (hsm *HotstuffProtocolManager) broadcastPrepareQC(v *View) (*HotstuffMessag
 				markRetryable()
 				return nil, ErrInvalidProposal
 			}
-			if !v.certified {
-				if err := lifecycle.OnFHSLeaderCertifiedBeforeBroadcast(certified); err != nil {
-					delete(v.leaderMsg, MsgQCBroadcast)
-					markRetryable()
-					return nil, err
-				}
-				v.certified = true
+			// Before/After bracket every physical send attempt, not only the
+			// first durable certification. The application uses this window to
+			// suppress a concurrent durable-outbox replay. On a retry the QC is
+			// already certified, but re-entering the idempotent Before hook is
+			// still required before Broadcast exposes the same wire message.
+			if err := lifecycle.OnFHSLeaderCertifiedBeforeBroadcast(certified); err != nil {
+				delete(v.leaderMsg, MsgQCBroadcast)
+				markRetryable()
+				return nil, err
 			}
+			v.certified = true
 		} else if err := hsm.certifyView(v, msg); err != nil {
 			delete(v.leaderMsg, MsgQCBroadcast)
 			markRetryable()
@@ -1693,9 +1780,9 @@ func (hsm *HotstuffProtocolManager) broadcastPrepareQC(v *View) (*HotstuffMessag
 		"viewID", v.hash,
 		"votes", len(v.prepareVoteInfo),
 		"threshold", v.threshold)
-	hsm.app.Broadcast(msg)
+	broadcastSucceeded := len(hsm.app.Broadcast(msg)) == 0
 	if lifecycle != nil {
-		if err := lifecycle.OnFHSLeaderCertifiedAfterBroadcast(certified); err != nil {
+		if err := lifecycle.OnFHSLeaderCertifiedAfterBroadcast(certified, broadcastSucceeded); err != nil {
 			markRetryable()
 			return msg, err
 		}
@@ -1733,7 +1820,7 @@ func (hsm *HotstuffProtocolManager) certifyView(v *View, m *HotstuffMessage) err
 	if certified == nil {
 		return ErrInvalidProposal
 	}
-	if err := hsm.app.OnCertified(certified); err != nil {
+	if err := hsm.certifyFHSQC(certified, m); err != nil {
 		return err
 	}
 	v.certified = true
@@ -1988,7 +2075,7 @@ func (hsm *HotstuffProtocolManager) handleStandaloneFHSQCBroadcast(m *HotstuffMe
 			return err
 		}
 	}
-	if err := hsm.app.OnCertified(qc); err != nil {
+	if err := hsm.certifyFHSQC(qc, m); err != nil {
 		return err
 	}
 	log.Info("HOTSTUFF STANDALONE PREPARE QC VERIFIED",
@@ -2323,6 +2410,12 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 			}
 
 		case PhaseTryPropose:
+			if recovery, ok := hsm.app.(ProposalRecoveryApplication); ok && !recovery.ProposalRecoveryReady(v.number, v.hash, v.leaderId) {
+				// Avoid checking the same dormant input on every control-loop tick.
+				// Work-producing events bypass this recovery path and wake immediately.
+				v.lastLeaderRecoveryAt = now
+				continue
+			}
 			v.lastLeaderRecoveryAt = now
 			log.Warn("HOTSTUFF RECOVERY retry proposal",
 				"number", v.number,

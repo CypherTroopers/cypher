@@ -33,6 +33,32 @@ func TestValidateViewUsesCurrentViewSnapshot(t *testing.T) {
 	}
 }
 
+func TestFHSProposalReadinessSnapshotUsesCachedConsensusState(t *testing.T) {
+	current := bftview.View{
+		TxNumber:      301,
+		TxHash:        common.HexToHash("0x301"),
+		KeyNumber:     7,
+		KeyHash:       common.HexToHash("0x700"),
+		CommitteeHash: common.HexToHash("0x701"),
+		LeaderIndex:   2,
+		ViewNumber:    41,
+	}
+	// Deliberately omit the blockchain, committee store and network service.
+	// The readiness snapshot must be a cached-state read; CurrentState would
+	// attempt committee resolution and recovery side effects on this fixture.
+	s := &Service{currentView: current}
+	state, number, highest := s.FHSProposalReadinessSnapshot()
+	if string(state) != string(current.EncodeConsensusToBytes()) {
+		t.Fatal("proposal readiness snapshot returned different consensus state")
+	}
+	if number != current.ViewNumber+1 {
+		t.Fatalf("proposal readiness view = %d, want %d", number, current.ViewNumber+1)
+	}
+	if highest != nil {
+		t.Fatal("proposal readiness snapshot invented a highest certificate")
+	}
+}
+
 func TestObserveHotstuffProgressAcceptsDifferentCanonicalView(t *testing.T) {
 	s := &Service{
 		lastProgressN:      10,

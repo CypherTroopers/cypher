@@ -655,11 +655,17 @@ func ReadBlock(db ethdb.Reader, hash common.Hash, number uint64) *types.Block {
 	if body == nil {
 		return nil
 	}
+	if derived := types.DeriveCommonTxAdmissionRoot(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs); derived != header.CommonTxAdmissionRoot {
+		log.Error("Stored block body has mismatched common transaction admission root", "number", number, "hash", hash, "have", derived, "want", header.CommonTxAdmissionRoot)
+		return nil
+	}
+	if derived := types.DeriveCommonTxRewardRoot(body.CommonTxRewards); derived != header.CommonTxRewardRoot {
+		log.Error("Stored block body has mismatched common transaction reward root", "number", number, "hash", hash, "have", derived, "want", header.CommonTxRewardRoot)
+		return nil
+	}
 
 	block := types.NewBlockWithHeader(header).WithBody(body.Transactions, body.Uncles)
-	if len(body.CommonTxAdmissions) > 0 || len(body.CommonTxRewards) > 0 {
-		block.AttachCommonTxData(body.CommonTxAdmissions, body.CommonTxRewards)
-	}
+	block.AttachCommonTxData(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.CommonTxRewards)
 	return block
 }
 

@@ -107,20 +107,21 @@ func MessageType(msg Message) MessageTypeID {
 func Marshal(msg Message) ([]byte, error) {
 	var msgType MessageTypeID
 	if msgType = MessageType(msg); msgType == ErrorType {
-		return nil, fmt.Errorf("type of message %s not registered to the network library", reflect.TypeOf(msg))
+		return nil, NewPermanentSendError(SendErrorMarshal,
+			fmt.Errorf("type of message %s not registered to the network library", reflect.TypeOf(msg)))
 	}
 	b := new(bytes.Buffer)
 	if err := binary.Write(b, globalOrder, msgType); err != nil {
-		return nil, err
+		return nil, NewPermanentSendError(SendErrorMarshal, err)
 	}
 	var buf []byte
 	var err error
 	if buf, err = protobuf.Encode(msg); err != nil {
 		log.Error("Error for protobuf encoding", "error", err, "msg", msg)
-		return nil, err
+		return nil, NewPermanentSendError(SendErrorMarshal, err)
 	}
 	_, err = b.Write(buf)
-	return b.Bytes(), err
+	return b.Bytes(), NewPermanentSendError(SendErrorMarshal, err)
 }
 
 // Unmarshal returns the type and the message out of a buffer. One can cast the

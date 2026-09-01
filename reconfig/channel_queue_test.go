@@ -1,6 +1,7 @@
 package reconfig
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -92,6 +93,24 @@ func TestHotstuffMessageQueuePreservesCapacityForOtherSenders(t *testing.T) {
 	}
 }
 
+func TestHotstuffMessageQueueAcceptsBoundedCertifiedCatchupBurst(t *testing.T) {
+	q := newHotstuffMessageQueue()
+	leader := &network.ServerIdentity{Address: network.Address("leader:7100")}
+	for i := 0; i < hotstuffQueuePerSenderEntries; i++ {
+		msg := &hotstuffMsg{sid: leader, hMsg: &hotstuff.HotstuffMessage{
+			Code: hotstuff.MsgQCBroadcast, Number: uint64(i + 1), Id: leader.Address.String(), AuthSig: []byte{byte(i + 1)},
+		}}
+		if !q.push(msg) {
+			t.Fatalf("certified catch-up burst rejected message %d before sender bound", i)
+		}
+	}
+	if q.push(&hotstuffMsg{sid: leader, hMsg: &hotstuff.HotstuffMessage{
+		Code: hotstuff.MsgQCBroadcast, Number: 10_000, Id: leader.Address.String(), AuthSig: []byte("over-bound"),
+	}}) {
+		t.Fatal("certified catch-up burst exceeded sender bound")
+	}
+}
+
 func TestHotstuffMessageQueuePriorityBypassesNormalBacklog(t *testing.T) {
 	q := newHotstuffMessageQueue()
 
@@ -156,7 +175,7 @@ func TestPeerQueuesConcurrentProducers(t *testing.T) {
 
 	for count := 0; count < producers*perProducer; count++ {
 		select {
-		case <-q.next:
+		case <-q.nextHotstuff:
 		case <-time.After(3 * time.Second):
 			t.Fatalf("timed out after receiving %d messages", count)
 		}
@@ -169,7 +188,7 @@ func TestPeerQueuesHotstuffControlBypassesBulkBacklog(t *testing.T) {
 
 	largeBody := make([]byte, proposalBodyControlMaxBytes+1)
 	for i := 0; i < 8; i++ {
-		if !q.push(&networkMsg{Pmsg: &proposalBodyMsg{Type: proposalBodyMsgData, Number: 1, EncodedBlock: largeBody}}) {
+		if !q.push(&networkMsg{Pmsg: &proposalBodyMsg{Type: proposalBodyMsgManifest, Number: 1, Manifest: largeBody}}) {
 			t.Fatal("queue closed while adding bulk backlog")
 		}
 	}
@@ -178,7 +197,7 @@ func TestPeerQueuesHotstuffControlBypassesBulkBacklog(t *testing.T) {
 	}
 
 	select {
-	case msg := <-q.next:
+	case msg := <-q.nextHotstuff:
 		if msg == nil || msg.Hmsg == nil || msg.Hmsg.Code != hotstuff.MsgPrepare {
 			t.Fatalf("first peer message = %v, want hotstuff control", msg)
 		}
@@ -214,7 +233,10 @@ func TestPeerQueuesBoundControlBacklogAndExpireRetries(t *testing.T) {
 	var queued *networkMsg
 	deadline := time.Now().Add(time.Second)
 	for queued == nil && time.Now().Before(deadline) {
-		queued, _ = q2.popNext().(*networkMsg)
+		select {
+		case queued = <-q2.nextHotstuff:
+		default:
+		}
 		if queued == nil {
 			time.Sleep(time.Millisecond)
 		}
@@ -231,7 +253,7 @@ func TestPeerQueuesBoundControlBacklogAndExpireRetries(t *testing.T) {
 
 func TestOutboundBudgetSharesImmutableProposalAcrossPeers(t *testing.T) {
 	budget := newOutboundQueueBudget()
-	body := &proposalBodyMsg{Type: proposalBodyMsgData, EncodedBlock: make([]byte, proposalBodyControlMaxBytes+1)}
+	body := &proposalBodyMsg{Type: proposalBodyMsgManifest, Manifest: make([]byte, proposalBodyControlMaxBytes+1)}
 	msg := &networkMsg{Pmsg: body}
 	q1 := newPeerQueuesWithBudget(budget)
 	q2 := newPeerQueuesWithBudget(budget)
@@ -249,7 +271,7 @@ func TestOutboundBudgetSharesImmutableProposalAcrossPeers(t *testing.T) {
 
 	for _, q := range []*peerQueues{q1, q2} {
 		select {
-		case queued := <-q.next:
+		case queued := <-q.nextBulk:
 			q.release(queued)
 		case <-time.After(time.Second):
 			t.Fatal("timed out draining shared proposal body")
@@ -305,7 +327,7 @@ func TestPeerQueueCoalescesIdenticalCriticalMessage(t *testing.T) {
 		t.Fatalf("coalesced critical message consumed %d global slots", globalCount)
 	}
 	select {
-	case queued := <-q.next:
+	case queued := <-q.nextHotstuff:
 		q.release(queued)
 	case <-time.After(time.Second):
 		t.Fatal("timed out draining coalesced critical message")
@@ -354,7 +376,7 @@ func TestPeerQueueOwnsHotstuffWireSnapshot(t *testing.T) {
 	original.Hmsg.DataA[0] = 9
 	original.Hmsg.ReceivedAt = time.Now().Add(time.Hour)
 	select {
-	case queued := <-q.next:
+	case queued := <-q.nextHotstuff:
 		defer q.release(queued)
 		if queued.Hmsg.DataA[0] != 1 {
 			t.Fatal("outbound queue shared mutable HotStuff payload bytes")
@@ -369,7 +391,7 @@ func TestPeerQueueOwnsHotstuffWireSnapshot(t *testing.T) {
 
 func TestNetworkMessageRequiresExactlyOnePayload(t *testing.T) {
 	hotstuffPayload := &hotstuff.HotstuffMessage{Code: hotstuff.MsgPrepare}
-	proposalPayload := &proposalBodyMsg{Type: proposalBodyMsgRequest}
+	proposalPayload := &proposalBodyMsg{Type: proposalBodyMsgRepairRequest}
 	for name, msg := range map[string]*networkMsg{
 		"empty":             {},
 		"hotstuff+proposal": {Hmsg: hotstuffPayload, Pmsg: proposalPayload},
@@ -387,6 +409,33 @@ func TestNetworkMessageRequiresExactlyOnePayload(t *testing.T) {
 	defer q.close()
 	if q.push(&networkMsg{Hmsg: hotstuffPayload, Pmsg: proposalPayload}) {
 		t.Fatal("queue admitted a multi-payload message with undercounted bytes")
+	}
+}
+
+func TestInvalidNetworkMessageShapeIsPermanentAndNotRetryable(t *testing.T) {
+	hotstuffPayload := &hotstuff.HotstuffMessage{Code: hotstuff.MsgPrepare}
+	malformed := &networkMsg{
+		Hmsg: hotstuffPayload,
+		Pmsg: &proposalBodyMsg{Type: proposalBodyMsgRepairRequest},
+	}
+	err := new(netService).SendRawData("peer", malformed)
+	if !network.IsPermanentSendError(err) {
+		t.Fatalf("invalid message shape was not classified as permanent: %v", err)
+	}
+	var permanent *network.PermanentSendError
+	if !errors.As(err, &permanent) || permanent.Kind != network.SendErrorInvalidMessage {
+		t.Fatalf("invalid message shape kind = %v, want %v", permanent, network.SendErrorInvalidMessage)
+	}
+	validConsensusMessage := &networkMsg{Hmsg: hotstuffPayload}
+	if retryableConsensusSendError(validConsensusMessage, err) {
+		t.Fatal("permanent local send error would be requeued")
+	}
+}
+
+func TestTransientConsensusSendErrorRemainsRetryable(t *testing.T) {
+	msg := &networkMsg{Hmsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgPrepare}}
+	if !retryableConsensusSendError(msg, network.ErrTimeout) {
+		t.Fatal("transient consensus stream timeout would not be requeued")
 	}
 }
 
@@ -429,7 +478,7 @@ func TestOutboundMessageExpiresBeforeFirstSend(t *testing.T) {
 func TestPeerQueueCloseReleasesAggregateBudget(t *testing.T) {
 	budget := newOutboundQueueBudget()
 	q := newPeerQueuesWithBudget(budget)
-	body := &proposalBodyMsg{Type: proposalBodyMsgData, EncodedBlock: make([]byte, proposalBodyControlMaxBytes+1)}
+	body := &proposalBodyMsg{Type: proposalBodyMsgManifest, Manifest: make([]byte, proposalBodyControlMaxBytes+1)}
 	if !q.push(&networkMsg{Pmsg: body}) {
 		t.Fatal("failed to enqueue close fixture")
 	}
@@ -451,13 +500,13 @@ func TestPeerQueueCloseReleasesAggregateBudget(t *testing.T) {
 
 func TestProposalBodyBulkIsNotHighPriorityNetworkMsg(t *testing.T) {
 	largeBody := make([]byte, proposalBodyControlMaxBytes+1)
-	if isHighPriorityNetworkMsg(&networkMsg{Pmsg: &proposalBodyMsg{Type: proposalBodyMsgData, EncodedBlock: largeBody}}) {
+	if isHighPriorityNetworkMsg(&networkMsg{Pmsg: &proposalBodyMsg{Type: proposalBodyMsgManifest, Manifest: largeBody}}) {
 		t.Fatal("proposal body bulk must not be high priority")
 	}
-	if !isHighPriorityNetworkMsg(&networkMsg{Pmsg: &proposalBodyMsg{Type: proposalBodyMsgData, EncodedBlock: make([]byte, proposalBodyControlMaxBytes)}}) {
+	if !isHighPriorityNetworkMsg(&networkMsg{Pmsg: &proposalBodyMsg{Type: proposalBodyMsgManifest, Manifest: make([]byte, proposalBodyControlMaxBytes)}}) {
 		t.Fatal("small proposal body data should be high priority")
 	}
-	if !isHighPriorityNetworkMsg(&networkMsg{Pmsg: &proposalBodyMsg{Type: proposalBodyMsgRequest}}) {
+	if !isHighPriorityNetworkMsg(&networkMsg{Pmsg: &proposalBodyMsg{Type: proposalBodyMsgRepairRequest}}) {
 		t.Fatal("proposal body request should remain high priority")
 	}
 	if !isHighPriorityNetworkMsg(&networkMsg{Hmsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgPrepare}}) {

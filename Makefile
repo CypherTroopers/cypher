@@ -12,6 +12,12 @@ BINDIR ?= ./build/bin
 STAGE_ROOT ?= ./build/stage
 TARGET_OS ?=
 TARGET_ARCH ?=
+# `make cypher` is the local developer entry point. Allow it to build from a
+# modified worktree, while build-cypher.sh still stamps the binary/manifest as
+# dirty or unmerged. Direct helper invocations and publishing remain strict by
+# default, and callers can request the strict behavior here with
+# ALLOW_DIRTY_BUILD=0.
+ALLOW_DIRTY_BUILD ?= 1
 BUILD_HELPER := ./build/build-cypher.sh
 
 cypher:
@@ -20,6 +26,7 @@ cypher:
 		STAGE_ROOT="$(STAGE_ROOT)" \
 		TARGET_OS="$(TARGET_OS)" \
 		TARGET_ARCH="$(TARGET_ARCH)" \
+		ALLOW_DIRTY_BUILD="$(ALLOW_DIRTY_BUILD)" \
 		$(BUILD_HELPER)
 
 cypher-linux-amd64:

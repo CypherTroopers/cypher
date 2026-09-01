@@ -17,12 +17,15 @@
 package eth
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/big"
+	"sort"
+	"sync"
 	"time"
 
 	"github.com/cypherium/cypher/accounts"
@@ -290,10 +293,17 @@ func (b *EthAPIBackend) shouldRecordCommonRPCAdmission() bool {
 	if miner == (common.Address{}) {
 		return false
 	}
+	if b.ChainConfig().FairHotstuff && !b.ChainConfig().IsCommonRPCSigner(miner) {
+		return false
+	}
 	if bftview.IamMember() >= 0 {
 		return false
 	}
 	return true
+}
+
+func (b *EthAPIBackend) fairHotstuffRequiresCommonRPCAdmission() bool {
+	return b != nil && b.eth != nil && b.ChainConfig() != nil && b.ChainConfig().FairHotstuff
 }
 
 func (b *EthAPIBackend) currentCommonRPCAdmissionKeyBlockNumber() (uint64, error) {
@@ -307,80 +317,206 @@ func (b *EthAPIBackend) currentCommonRPCAdmissionKeyBlockNumber() (uint64, error
 	return currentKey.NumberU64(), nil
 }
 
-type commonRPCLocalTxPool interface {
-	AddLocal(*types.Transaction) error
+type commonRPCBatchTxPool interface {
+	AddLocals([]*types.Transaction) []error
+	AddLocalsAsync([]*types.Transaction) []error
 }
 
-func acceptCommonRPCTransactionLocally(pool commonRPCLocalTxPool, tx *types.Transaction) error {
+type commonRPCTxQUICTransport interface {
+	enqueueVerifiedLocalTxsWithAdmissions(context.Context, []*types.Transaction, []core.CommonRPCAdmissionResult, *accounts.Manager) error
+}
+
+type commonRPCAdmissionTxPool interface {
+	AddLocalsAsync([]*types.Transaction) []error
+	Get(common.Hash) *types.Transaction
+}
+
+type commonRPCSubmissionLease struct {
+	mu    sync.Mutex
+	users uint32
+}
+
+var commonRPCSubmissionLeases = struct {
+	sync.Mutex
+	entries map[common.Hash]*commonRPCSubmissionLease
+}{entries: make(map[common.Hash]*commonRPCSubmissionLease)}
+
+// lockCommonRPCSubmissionHashes serializes only submissions which contain the
+// same exact transaction hash. Registry ownership is ref-counted and released
+// when the last holder/waiter leaves, so hostile unique hashes cannot grow it
+// without bound. Full-hash ordering makes overlapping multi-hash batches
+// deadlock-free while disjoint batches remain concurrent.
+func lockCommonRPCSubmissionHashes(hashes []common.Hash) func() {
+	unique := make(map[common.Hash]struct{}, len(hashes))
+	ordered := make([]common.Hash, 0, len(hashes))
+	for _, hash := range hashes {
+		if hash == (common.Hash{}) {
+			continue
+		}
+		if _, exists := unique[hash]; exists {
+			continue
+		}
+		unique[hash] = struct{}{}
+		ordered = append(ordered, hash)
+	}
+	sort.Slice(ordered, func(i, j int) bool { return bytes.Compare(ordered[i][:], ordered[j][:]) < 0 })
+	leases := make([]*commonRPCSubmissionLease, len(ordered))
+	commonRPCSubmissionLeases.Lock()
+	for i, hash := range ordered {
+		lease := commonRPCSubmissionLeases.entries[hash]
+		if lease == nil {
+			lease = new(commonRPCSubmissionLease)
+			commonRPCSubmissionLeases.entries[hash] = lease
+		}
+		lease.users++
+		leases[i] = lease
+	}
+	commonRPCSubmissionLeases.Unlock()
+	for _, lease := range leases {
+		lease.mu.Lock()
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			for i := len(leases) - 1; i >= 0; i-- {
+				leases[i].mu.Unlock()
+			}
+			commonRPCSubmissionLeases.Lock()
+			for i, hash := range ordered {
+				lease := leases[i]
+				if lease.users > 0 {
+					lease.users--
+				}
+				if lease.users == 0 && commonRPCSubmissionLeases.entries[hash] == lease {
+					delete(commonRPCSubmissionLeases.entries, hash)
+				}
+			}
+			commonRPCSubmissionLeases.Unlock()
+		})
+	}
+}
+
+// addCommonRPCAdmittedTransactions crosses the admission-before-pool boundary
+// while the caller holds exact-hash submission leases. Only a definitive pool
+// rejection whose just-created index is still current and whose transaction is
+// absent from the pool is eligible for compensating cleanup.
+func addCommonRPCAdmittedTransactions(
+	pool commonRPCAdmissionTxPool,
+	txs types.Transactions,
+	admissions []core.CommonRPCAdmissionResult,
+	indexes []int,
+	results []error,
+) (types.Transactions, []core.CommonRPCAdmissionResult, []int, error) {
+	if len(admissions) != len(txs) || len(indexes) != len(txs) {
+		err := fmt.Errorf("common RPC admission/pool batch alignment mismatch: txs=%d admissions=%d indexes=%d", len(txs), len(admissions), len(indexes))
+		for _, index := range indexes {
+			if index >= 0 && index < len(results) {
+				results[index] = err
+			}
+		}
+		return nil, nil, nil, err
+	}
+	for i, tx := range txs {
+		index := indexes[i]
+		admission := admissions[i]
+		if index < 0 || index >= len(results) || tx == nil || admission.Batch == nil || int(admission.Item) >= len(admission.Batch.TxHashes) || admission.Batch.TxHashes[admission.Item] != tx.Hash() {
+			err := fmt.Errorf("invalid common RPC admission/pool batch item %d", i)
+			for _, resultIndex := range indexes {
+				if resultIndex >= 0 && resultIndex < len(results) {
+					results[resultIndex] = err
+				}
+			}
+			return nil, nil, nil, err
+		}
+	}
+	poolResults := pool.AddLocalsAsync(txs)
+	forwardTxs := make(types.Transactions, 0, len(txs))
+	forwardAdmissions := make([]core.CommonRPCAdmissionResult, 0, len(txs))
+	forwardIndexes := make([]int, 0, len(txs))
+	rejectedAdmissions := make([]core.CommonRPCAdmissionResult, 0)
+	for i, tx := range txs {
+		index := indexes[i]
+		if i >= len(poolResults) {
+			results[index] = fmt.Errorf("transaction pool omitted batch result")
+			continue
+		}
+		if poolResults[i] != nil && !errors.Is(poolResults[i], core.ErrAlreadyKnown) {
+			results[index] = poolResults[i]
+			if admissions[i].Updated && admissions[i].Inserted && pool.Get(tx.Hash()) == nil {
+				rejectedAdmissions = append(rejectedAdmissions, admissions[i])
+			}
+			continue
+		}
+		forwardTxs = append(forwardTxs, tx)
+		forwardAdmissions = append(forwardAdmissions, admissions[i])
+		forwardIndexes = append(forwardIndexes, index)
+	}
+	cleanupErr := core.DropRejectedCommonRPCAdmissions(rejectedAdmissions)
+	return forwardTxs, forwardAdmissions, forwardIndexes, cleanupErr
+}
+
+func addLocalTransactionBatch(pool commonRPCBatchTxPool, txs types.Transactions, async bool) []error {
 	if pool == nil {
-		return fmt.Errorf("common RPC local transaction pool is unavailable")
+		errs := make([]error, len(txs))
+		for i := range errs {
+			errs[i] = fmt.Errorf("common RPC local transaction pool is unavailable")
+		}
+		return errs
 	}
-	if tx == nil {
-		return fmt.Errorf("nil common RPC transaction")
+	if async {
+		return pool.AddLocalsAsync(txs)
 	}
-	err := pool.AddLocal(tx)
-	if errors.Is(err, core.ErrAlreadyKnown) {
-		return nil
+	return pool.AddLocals(txs)
+}
+
+func forwardCommonRPCTransaction(
+	_ context.Context,
+	transport commonRPCTxQUICTransport,
+	txs []*types.Transaction,
+	admissions []core.CommonRPCAdmissionResult,
+	am *accounts.Manager,
+	enqueueTimeout time.Duration,
+) error {
+	if transport == nil {
+		return fmt.Errorf("common RPC TxQUIC transport is unavailable")
 	}
-	return err
+	var txHash common.Hash
+	if len(txs) > 0 && txs[0] != nil {
+		txHash = txs[0].Hash()
+	}
+	if enqueueTimeout <= 0 {
+		enqueueTimeout = 15 * time.Second
+	}
+	enqueueCtx, cancel := context.WithTimeout(context.Background(), enqueueTimeout)
+	err := transport.enqueueVerifiedLocalTxsWithAdmissions(enqueueCtx, txs, admissions, am)
+	cancel()
+	if err != nil {
+		// The tx is already local, so a client retry is idempotent. Do not
+		// report full ingress success until the durable outbox accepts it.
+		return fmt.Errorf("transaction %s accepted locally but TxQUIC enqueue failed: %w", txHash, err)
+	}
+	return nil
+}
+
+func (b *EthAPIBackend) commonRPCGenesisHash() (common.Hash, error) {
+	if b == nil || b.eth == nil || b.eth.blockchain == nil || b.eth.blockchain.Genesis() == nil {
+		return common.Hash{}, fmt.Errorf("genesis block is not available")
+	}
+	hash := b.eth.blockchain.Genesis().Hash()
+	if hash == (common.Hash{}) {
+		return common.Hash{}, fmt.Errorf("genesis block has an empty hash")
+	}
+	return hash, nil
 }
 
 func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction, sync bool) error {
-	if b.shouldRecordCommonRPCAdmission() && b.eth.txQUICIngress != nil {
-		if signedTx == nil {
-			return fmt.Errorf("nil transaction")
+	recordAdmission := b.shouldRecordCommonRPCAdmission()
+	if b.fairHotstuffRequiresCommonRPCAdmission() || recordAdmission {
+		results := b.SendTxBatch(ctx, types.Transactions{signedTx})
+		if len(results) != 1 {
+			return fmt.Errorf("common RPC transaction batch omitted result")
 		}
-		timestamp := uint64(time.Now().Unix())
-		keyBlockNumber, err := b.currentCommonRPCAdmissionKeyBlockNumber()
-		if err != nil {
-			log.Error("Failed to bind common RPC admission to key block", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
-			return err
-		}
-		admission, err := core.SignAndRecordCommonRPCAdmission(
-			signedTx.Hash(),
-			bftview.GetServerCoinBase(),
-			b.ChainConfig().ChainID,
-			keyBlockNumber,
-			timestamp,
-		)
-		if err != nil {
-			log.Error("Failed to sign common RPC admission", "tx", signedTx.Hash(), "miner", bftview.GetServerCoinBase(), "err", err)
-			return err
-		}
-
-		// Durable local acceptance is the RPC success boundary. The local TxPool
-		// validates the transaction, journals it, and re-announces it after a
-		// restart. TxQUIC and ordinary eth/p2p are independent delivery paths.
-		if err := acceptCommonRPCTransactionLocally(b.eth.txPool, signedTx); err != nil {
-			core.DropCommonRPCAdmissions(types.Transactions{signedTx})
-			log.Error("Failed to retain common RPC transaction locally", "tx", signedTx.Hash(), "err", err)
-			return err
-		}
-
-		// Admission metadata is committee-wide state, not leader-local state.
-		// The existing relay uses dedicated KCP fanout with committee-restricted
-		// eth/p2p fallback and is independent of the current proposal view.
-		core.RelayCommonRPCAdmissions([]*types.CommonTxAdmission{admission})
-
-		txs := []*types.Transaction{signedTx}
-		admissions := []*types.CommonTxAdmission{admission}
-		if sync {
-			if err := b.eth.txQUICIngress.SendLocalTxsWithAdmissionsSync(ctx, txs, admissions, b.eth.accountManager); err == nil {
-				return nil
-			} else {
-				log.Warn("Immediate TxQUIC committee delivery failed; transaction remains locally journaled",
-					"tx", signedTx.Hash(),
-					"err", err)
-			}
-		}
-		if err := b.eth.txQUICIngress.EnqueueLocalTxsWithAdmissions(ctx, txs, admissions, b.eth.accountManager); err != nil {
-			// This is not an RPC failure: the transaction is already validated,
-			// journaled, and being propagated by the ordinary txpool gossip path.
-			log.Warn("TxQUIC retry queue unavailable; relying on durable txpool gossip",
-				"tx", signedTx.Hash(),
-				"err", err)
-		}
-		return nil
+		return results[0]
 	}
 
 	var err error
@@ -393,10 +529,201 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction,
 		return err
 	}
 
-	if b.eth.txQUICIngress != nil {
-		b.eth.txQUICIngress.ForwardLocalTxs([]*types.Transaction{signedTx}, b.eth.accountManager)
-	}
 	return nil
+}
+
+// SendTxBatch validates and inserts a transaction batch with one TxPool lock
+// acquisition and, on a common Fair HotStuff bridge, one durable TxQUIC outbox
+// write. Results are aligned with signedTxs.
+func (b *EthAPIBackend) SendTxBatch(ctx context.Context, signedTxs types.Transactions) []error {
+	results := make([]error, len(signedTxs))
+	if len(signedTxs) == 0 {
+		return results
+	}
+	if b == nil || b.eth == nil || b.eth.txPool == nil {
+		for i := range results {
+			results[i] = fmt.Errorf("transaction pool is unavailable")
+		}
+		return results
+	}
+	validTxs := make(types.Transactions, 0, len(signedTxs))
+	validIndexes := make([]int, 0, len(signedTxs))
+	for i, tx := range signedTxs {
+		if tx == nil {
+			results[i] = fmt.Errorf("nil transaction")
+			continue
+		}
+		validTxs = append(validTxs, tx)
+		validIndexes = append(validIndexes, i)
+	}
+	if len(validTxs) == 0 {
+		return results
+	}
+
+	recordAdmission := b.shouldRecordCommonRPCAdmission()
+	if b.fairHotstuffRequiresCommonRPCAdmission() && (!recordAdmission || b.eth.txQUICIngress == nil) {
+		err := fmt.Errorf("Fair HotStuff transactions must be submitted through an admission-enabled common RPC node")
+		for _, index := range validIndexes {
+			results[index] = err
+		}
+		return results
+	}
+	if recordAdmission && b.eth.txQUICIngress != nil {
+		return b.sendCommonRPCTransactionBatch(ctx, validTxs, validIndexes, results)
+	}
+
+	// TxQUIC accepts only transaction+admission-certificate units. Generic and
+	// committee RPC endpoints therefore retain the synchronous local TxPool
+	// durability boundary and never put a naked transaction on TxQUIC.
+	poolResults := addLocalTransactionBatch(b.eth.txPool, validTxs, false)
+	for i := range validTxs {
+		index := validIndexes[i]
+		if i >= len(poolResults) {
+			results[index] = fmt.Errorf("transaction pool omitted batch result")
+			continue
+		}
+		if poolResults[i] != nil {
+			results[index] = poolResults[i]
+		}
+	}
+	return results
+}
+
+func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs types.Transactions, indexes []int, results []error) []error {
+	started := time.Now()
+	var (
+		keyBlockElapsed  time.Duration
+		preflightElapsed time.Duration
+		admissionElapsed time.Duration
+		poolElapsed      time.Duration
+		outboxElapsed    time.Duration
+		eligibleCount    int
+		admittedCount    int
+		forwardedCount   int
+	)
+	defer func() {
+		log.Debug("Processed common RPC transaction backend batch",
+			"requested", len(txs), "eligible", eligibleCount, "admitted", admittedCount, "forwarded", forwardedCount,
+			"keyBlock", keyBlockElapsed, "preflight", preflightElapsed, "admission", admissionElapsed,
+			"txpool", poolElapsed, "outbox", outboxElapsed, "total", time.Since(started))
+	}()
+	keyBlockStarted := time.Now()
+	keyBlockNumber, err := b.currentCommonRPCAdmissionKeyBlockNumber()
+	keyBlockElapsed = time.Since(keyBlockStarted)
+	if err != nil {
+		for _, index := range indexes {
+			results[index] = err
+		}
+		return results
+	}
+	genesisHash, err := b.commonRPCGenesisHash()
+	if err != nil {
+		for _, index := range indexes {
+			results[index] = err
+		}
+		return results
+	}
+	preflightStarted := time.Now()
+	preflightResults := b.eth.txPool.ValidateLocals(txs)
+	preflightElapsed = time.Since(preflightStarted)
+	eligibleTxs := make(types.Transactions, 0, len(txs))
+	eligibleIndexes := make([]int, 0, len(txs))
+	for i, tx := range txs {
+		index := indexes[i]
+		if i >= len(preflightResults) {
+			results[index] = fmt.Errorf("transaction pool omitted preflight result")
+			continue
+		}
+		if preflightResults[i] != nil && !errors.Is(preflightResults[i], core.ErrAlreadyKnown) {
+			results[index] = preflightResults[i]
+			continue
+		}
+		eligibleTxs = append(eligibleTxs, tx)
+		eligibleIndexes = append(eligibleIndexes, index)
+	}
+	if len(eligibleTxs) == 0 {
+		return results
+	}
+	eligibleCount = len(eligibleTxs)
+	// Admissions are durable before AddLocalsAsync can append a transaction to
+	// the journal. Pool mutations are never rolled back: replacements and
+	// capacity evictions are not transactionally reversible, and an RPC/outbox
+	// timeout is an ambiguous result that clients may safely retry.
+	hashes := make([]common.Hash, len(eligibleTxs))
+	for i, tx := range eligibleTxs {
+		hashes[i] = tx.Hash()
+	}
+	releaseSubmissions := lockCommonRPCSubmissionHashes(hashes)
+	defer releaseSubmissions()
+	admissionStarted := time.Now()
+	admissionResults, err := core.SignAndRecordCommonRPCAdmissions(
+		hashes,
+		bftview.GetServerCoinBase(),
+		b.ChainConfig().ChainID,
+		genesisHash,
+		keyBlockNumber,
+		uint64(time.Now().Unix()),
+	)
+	admissionElapsed = time.Since(admissionStarted)
+	if err != nil {
+		for _, index := range eligibleIndexes {
+			results[index] = err
+		}
+		return results
+	}
+	admittedTxs := make(types.Transactions, 0, len(eligibleTxs))
+	admittedAdmissions := make([]core.CommonRPCAdmissionResult, 0, len(eligibleTxs))
+	admittedIndexes := make([]int, 0, len(eligibleTxs))
+	for i, tx := range eligibleTxs {
+		index := eligibleIndexes[i]
+		if i >= len(admissionResults) {
+			results[index] = fmt.Errorf("common RPC admission batch omitted result")
+			continue
+		}
+		admission := admissionResults[i]
+		if admission.Batch == nil || int(admission.Item) >= len(admission.Batch.TxHashes) || admission.Batch.TxHashes[admission.Item] != tx.Hash() {
+			results[index] = fmt.Errorf("common RPC admission batch returned an invalid transaction reference")
+			continue
+		}
+		admittedTxs = append(admittedTxs, tx)
+		admittedAdmissions = append(admittedAdmissions, admission)
+		admittedIndexes = append(admittedIndexes, index)
+	}
+	if len(admittedTxs) == 0 {
+		return results
+	}
+	admittedCount = len(admittedTxs)
+	poolStarted := time.Now()
+	forwardTxs, forwardAdmissions, forwardIndexes, admissionPoolErr := addCommonRPCAdmittedTransactions(
+		b.eth.txPool,
+		admittedTxs,
+		admittedAdmissions,
+		admittedIndexes,
+		results,
+	)
+	poolElapsed = time.Since(poolStarted)
+	if admissionPoolErr != nil {
+		// Boundary/cleanup failures deliberately retain admission state. A
+		// compensating cleanup error must not mask the definitive TxPool result.
+		log.Warn("Failed to finalize common RPC admission/pool boundary", "err", admissionPoolErr)
+	}
+	// Once TxPool acceptance or conservative retention is decided for every
+	// hash, later outbox work cannot create an orphan admission and should not
+	// block idempotent same-hash RPC retries.
+	releaseSubmissions()
+	if len(forwardTxs) == 0 {
+		return results
+	}
+	forwardedCount = len(forwardTxs)
+	outboxStarted := time.Now()
+	err = forwardCommonRPCTransaction(ctx, b.eth.txQUICIngress, forwardTxs, forwardAdmissions, b.eth.accountManager, b.eth.txQUICIngress.config.ForwardTimeout)
+	outboxElapsed = time.Since(outboxStarted)
+	if err != nil {
+		for _, index := range forwardIndexes {
+			results[index] = err
+		}
+	}
+	return results
 }
 
 func (b *EthAPIBackend) GetPoolTransactions() (types.Transactions, error) {

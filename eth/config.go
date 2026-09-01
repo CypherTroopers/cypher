@@ -68,29 +68,45 @@ var DefaultConfig = Config{
 	GPO:         DefaultFullGPOConfig,
 	RPCTxFeeCap: 100,
 	TxQUIC: TxQUICConfig{
-		Enabled:                      false,
-		AutoRole:                     true,
-		BridgeEnabled:                false,
-		BridgeQueueSize:              3000000,
-		BridgeWorkers:                8,
-		BridgeBatchInterval:          10 * time.Millisecond,
-		HTTP3Enabled:                 false,
-		Addr:                         "0.0.0.0",
-		Port:                         4444,
-		PortOffset:                   2000,
-		MaxPayload:                   64 * 1024 * 1024,
-		MaxTxsPerBatch:               16384,
-		MaxIncomingStreams:           65536,
-		MaxIncomingConns:             32768,
-		ReadTimeout:                  10 * time.Second,
-		WriteTimeout:                 10 * time.Second,
-		ForwardTimeout:               15 * time.Second,
-		MaxTxsPerIPPerSecond:         500000,
-		BurstTxsPerIP:                1000000,
-		RequireAuth:                  true,
-		Ack:                          true,
-		RoutingMode:                  "leader-only",
-		ForwardTLSInsecureSkipVerify: true,
+		Enabled:                  false,
+		AutoRole:                 true,
+		BridgeEnabled:            false,
+		BridgeQueueSize:          65536,
+		BridgeQueueMaxBytes:      defaultTxQUICBridgeQueueMaxBytes,
+		BridgeWorkers:            8,
+		BridgeBatchInterval:      10 * time.Millisecond,
+		OutboxMaxRecords:         defaultTxOutboxMaxRecords,
+		OutboxMaxBytes:           defaultTxOutboxMaxBytes,
+		OutboxWorkers:            8,
+		OutboxRetryMin:           defaultTxOutboxRetryMin,
+		OutboxRetryMax:           defaultTxOutboxRetryMax,
+		IngressWorkers:           64,
+		MaxInflightPayloadBytes:  256 * 1024 * 1024,
+		ReplayWindow:             65536,
+		MaxClockSkew:             30 * time.Second,
+		MaxPacketAge:             10 * time.Minute,
+		NonceReservation:         4096,
+		IngressCommitInterval:    time.Millisecond,
+		IngressCommitMaxRequests: 64,
+		IngressCommitMaxBytes:    16 * 1024 * 1024,
+		// Keep duplicate ACKs for the full accepted packet-age window without
+		// retaining burst manifests for a day. Replay nonces remain durable after
+		// the ACK body is collected.
+		IngressAckRetention:  10 * time.Minute,
+		HTTP3Enabled:         false,
+		Addr:                 "0.0.0.0",
+		Port:                 4444,
+		PortOffset:           2000,
+		MaxIncomingStreams:   64,
+		MaxIncomingConns:     64,
+		ReadTimeout:          10 * time.Second,
+		WriteTimeout:         10 * time.Second,
+		ForwardTimeout:       15 * time.Second,
+		ForwardHedgeDelay:    100 * time.Millisecond,
+		MaxTxsPerIPPerSecond: 500000,
+		BurstTxsPerIP:        1000000,
+		RateBucketMaxEntries: 65536,
+		RateBucketIdleTTL:    10 * time.Minute,
 	},
 }
 
@@ -120,13 +136,34 @@ func (c *Config) ColossusX() *colossusX.Config { return &c.colossusX }
 //go:generate gencodec -type Config -formats toml -out gen_config.go
 
 type TxQUICConfig struct {
+	ChainID      uint64      `toml:"-"`
+	GenesisHash  common.Hash `toml:"-"`
+	FairHotstuff bool        `toml:"-"`
+
 	Enabled       bool `toml:",omitempty"`
 	AutoRole      bool `toml:",omitempty"`
 	BridgeEnabled bool `toml:",omitempty"`
 
-	BridgeQueueSize     int           `toml:",omitempty"`
-	BridgeWorkers       int           `toml:",omitempty"`
-	BridgeBatchInterval time.Duration `toml:",omitempty"`
+	BridgeQueueSize         int           `toml:",omitempty"`
+	BridgeQueueMaxBytes     int64         `toml:",omitempty"`
+	BridgeWorkers           int           `toml:",omitempty"`
+	BridgeBatchInterval     time.Duration `toml:",omitempty"`
+	OutboxMaxRecords        int           `toml:",omitempty"`
+	OutboxMaxBytes          int64         `toml:",omitempty"`
+	OutboxWorkers           int           `toml:",omitempty"`
+	OutboxRetryMin          time.Duration `toml:",omitempty"`
+	OutboxRetryMax          time.Duration `toml:",omitempty"`
+	IngressWorkers          int           `toml:",omitempty"`
+	MaxInflightPayloadBytes int64         `toml:",omitempty"`
+	ReplayWindow            uint64        `toml:",omitempty"`
+	MaxClockSkew            time.Duration `toml:",omitempty"`
+	MaxPacketAge            time.Duration `toml:",omitempty"`
+	NonceReservation        uint64        `toml:",omitempty"`
+
+	IngressCommitInterval    time.Duration `toml:",omitempty"`
+	IngressCommitMaxRequests int           `toml:",omitempty"`
+	IngressCommitMaxBytes    int64         `toml:",omitempty"`
+	IngressAckRetention      time.Duration `toml:",omitempty"`
 
 	HTTP3Enabled  bool   `toml:",omitempty"`
 	HTTP3Addr     string `toml:",omitempty"`
@@ -138,34 +175,38 @@ type TxQUICConfig struct {
 	Port       int    `toml:",omitempty"`
 	PortOffset int    `toml:",omitempty"`
 
-	MaxPayload         int64 `toml:",omitempty"`
-	MaxTxsPerBatch     int   `toml:",omitempty"`
 	MaxIncomingStreams int64 `toml:",omitempty"`
 	MaxIncomingConns   int   `toml:",omitempty"`
 
 	ReadTimeout    time.Duration `toml:",omitempty"`
 	WriteTimeout   time.Duration `toml:",omitempty"`
 	ForwardTimeout time.Duration `toml:",omitempty"`
+	// ForwardHedgeDelay staggers one additional committee request when the
+	// quorum-sized initial window is blocked by a straggler.
+	ForwardHedgeDelay time.Duration `toml:",omitempty"`
 
-	MaxTxsPerIPPerSecond int `toml:",omitempty"`
-	BurstTxsPerIP        int `toml:",omitempty"`
+	MaxTxsPerIPPerSecond int           `toml:",omitempty"`
+	BurstTxsPerIP        int           `toml:",omitempty"`
+	RateBucketMaxEntries int           `toml:",omitempty"`
+	RateBucketIdleTTL    time.Duration `toml:",omitempty"`
 
 	AllowIPs []string `toml:",omitempty"`
 
-	TLSCertFile string `toml:",omitempty"`
-	TLSKeyFile  string `toml:",omitempty"`
-
-	RequireAuth    bool             `toml:",omitempty"`
 	AllowedSigners []common.Address `toml:",omitempty"`
-	Ack            bool             `toml:",omitempty"`
+}
 
-	RoutingMode     string   `toml:",omitempty"`
-	LeaderEndpoints []string `toml:",omitempty"`
-	BackupEndpoints []string `toml:",omitempty"`
-
-	ForwardServerName            string `toml:",omitempty"`
-	ForwardTLSCAFile             string `toml:",omitempty"`
-	ForwardTLSInsecureSkipVerify bool   `toml:",omitempty"`
+// UnmarshalTOML preserves security-sensitive defaults when an operator sets
+// only part of [Eth.TxQUIC]. Without this merge, omitted booleans such as
+// AutoRole silently become false because the generated parent decoder replaces
+// the complete nested struct.
+func (c *TxQUICConfig) UnmarshalTOML(unmarshal func(interface{}) error) error {
+	type plain TxQUICConfig
+	decoded := plain(DefaultConfig.TxQUIC)
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	*c = TxQUICConfig(decoded)
+	return nil
 }
 
 type Config struct {

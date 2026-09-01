@@ -1,6 +1,7 @@
 package reconfig
 
 import (
+	"context"
 	"net"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ type Backend interface {
 	AccountManager() *accounts.Manager
 	GetCalcGasLimit() func(block *types.Block) uint64
 	ConsensusServicePendingLogsFeed() *event.Feed
+	ResolveTxQUICTransaction(common.Hash) (*types.Transaction, error)
 
 	CandidatePool() *core.CandidatePool
 	Engine() consensus.Engine
@@ -48,9 +50,10 @@ type ReconfigBackend struct {
 	eventMux         *event.TypeMux
 	calcGasLimitFunc func(block *types.Block) uint64
 
-	pendingLogsFeed *event.Feed
-	candidatePool   *core.CandidatePool
-	engine          consensus.Engine
+	pendingLogsFeed          *event.Feed
+	candidatePool            *core.CandidatePool
+	engine                   consensus.Engine
+	resolveTxQUICTransaction func(common.Hash) (*types.Transaction, error)
 	//-----------------------------------------------
 	service *Service
 }
@@ -58,6 +61,7 @@ type ReconfigBackend struct {
 // Public interface of service class
 type serviceI interface {
 	isRunning() bool
+	hasDeferredFHSRecovery() bool
 	updateCommittee(keyBlock *types.KeyBlock) bool
 	procBlockDone(block *types.Block)
 	GetCurrentView() *bftview.View
@@ -71,7 +75,7 @@ type serviceI interface {
 	SwitchOK() bool
 }
 
-func signCommonRPCAdmission(am *accounts.Manager, admission *types.CommonTxAdmission) error {
+func signCommonRPCAdmission(am *accounts.Manager, admission *types.CommonTxAdmissionBatch) error {
 	if am == nil || admission == nil {
 		return accounts.ErrUnknownAccount
 	}
@@ -89,7 +93,7 @@ func signCommonRPCAdmission(am *accounts.Manager, admission *types.CommonTxAdmis
 		return err
 	}
 	admission.Signature = sig
-	return types.VerifyCommonTxAdmissionSignature(admission)
+	return nil
 }
 
 type RescueConfig struct {
@@ -103,18 +107,19 @@ type RescueCommitteeArgs struct {
 
 func New(stack *node.Node, chainConfig *params.ChainConfig, e Backend) (*ReconfigBackend, error) {
 	backend := &ReconfigBackend{
-		eventMux:         stack.EventMux(),
-		chainDb:          e.ChainDb(),
-		blockchain:       e.BlockChain(),
-		keyBlockchain:    e.KeyBlockChain(),
-		txPool:           e.TxPool(),
-		accountManager:   e.AccountManager(),
-		calcGasLimitFunc: e.GetCalcGasLimit(),
-		pendingLogsFeed:  e.ConsensusServicePendingLogsFeed(),
-		candidatePool:    e.CandidatePool(),
-		engine:           e.Engine(),
+		eventMux:                 stack.EventMux(),
+		chainDb:                  e.ChainDb(),
+		blockchain:               e.BlockChain(),
+		keyBlockchain:            e.KeyBlockChain(),
+		txPool:                   e.TxPool(),
+		accountManager:           e.AccountManager(),
+		calcGasLimitFunc:         e.GetCalcGasLimit(),
+		pendingLogsFeed:          e.ConsensusServicePendingLogsFeed(),
+		candidatePool:            e.CandidatePool(),
+		engine:                   e.Engine(),
+		resolveTxQUICTransaction: e.ResolveTxQUICTransaction,
 	}
-	core.SetCommonRPCAdmissionSigner(func(admission *types.CommonTxAdmission) error {
+	core.SetCommonRPCAdmissionSigner(func(admission *types.CommonTxAdmissionBatch) error {
 		return signCommonRPCAdmission(backend.accountManager, admission)
 	})
 	sIp := net.JoinHostPort(e.ExtIP().String(), chainConfig.RnetPort)
@@ -163,6 +168,11 @@ func (backend *ReconfigBackend) Start() error {
 
 func (backend *ReconfigBackend) Stop() error {
 	backend.service.stop()
+	drainCtx, cancelDrain := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := backend.service.shutdownFHSContentWriter(drainCtx); err != nil {
+		log.Warn("FHS proposal content writer did not drain before shutdown deadline", "err", err)
+	}
+	cancelDrain()
 	backend.blockchain.Stop()
 	backend.eventMux.Stop()
 
