@@ -16,4 +16,3 @@ start-cyphermine.sh
 unlock.sh
 # Ephemeral native-build staging
 build/stage/
-build/bin/
