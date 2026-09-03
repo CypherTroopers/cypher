@@ -56,13 +56,14 @@ const (
 	peerQueueBulkMaxBytes          = proposalBodySidecarMaxBytes + 1024*1024
 	peerQueueProducerWait          = 100 * time.Millisecond
 	peerQueueRetryTTL              = 2 * time.Minute
+	peerQueueBulkRetryTTL          = 10 * time.Minute
 	peerQueueMessageOverhead       = 512
 	peerQueueBulkSendWorkers       = 4
 
 	outboundControlMaxEntries = 1024
 	outboundControlMaxBytes   = 64 * 1024 * 1024
-	outboundBulkMaxReferences = 256
-	outboundBulkMaxBytes      = 2 * peerQueueBulkMaxBytes
+	outboundBulkMaxReferences = 400
+	outboundBulkMaxBytes      = 3 * peerQueueBulkMaxBytes
 )
 
 type heartBeatMsg struct {
@@ -113,6 +114,22 @@ type peerQueues struct {
 	controlDigests  map[[32]byte]struct{}
 	controlMaxCount int
 	controlMaxBytes int
+	bulkMaxCount    int
+	bulkMaxBytes    int
+}
+
+func (q *peerQueues) effectiveBulkMaxCount() int {
+	if q != nil && q.bulkMaxCount > 0 {
+		return q.bulkMaxCount
+	}
+	return peerQueueBulkMaxEntries
+}
+
+func (q *peerQueues) effectiveBulkMaxBytes() int {
+	if q != nil && q.bulkMaxBytes > 0 {
+		return q.bulkMaxBytes
+	}
+	return peerQueueBulkMaxBytes
 }
 
 type outboundBulkRef struct {
@@ -132,10 +149,21 @@ type outboundQueueBudget struct {
 	bulkRefs     int
 	bulkBytes    int
 	bulkPayloads map[*proposalBodyMsg]*outboundBulkRef
+	bulkMaxRefs  int
+	bulkMaxBytes int
 }
 
 func newOutboundQueueBudget() *outboundQueueBudget {
-	return &outboundQueueBudget{bulkPayloads: make(map[*proposalBodyMsg]*outboundBulkRef)}
+	return newOutboundQueueBudgetForConfig(nil)
+}
+
+func newOutboundQueueBudgetForConfig(config *params.ChainConfig) *outboundQueueBudget {
+	peerLimit := proposalPeerQueueBulkLimitForConfig(config)
+	return &outboundQueueBudget{
+		bulkPayloads: make(map[*proposalBodyMsg]*outboundBulkRef),
+		bulkMaxRefs:  outboundBulkMaxReferences,
+		bulkMaxBytes: saturatingMulInt(peerLimit, 3),
+	}
 }
 
 func (budget *outboundQueueBudget) reserve(msg *networkMsg) bool {
@@ -153,7 +181,7 @@ func (budget *outboundQueueBudget) reserve(msg *networkMsg) bool {
 		budget.controlBytes += size
 		return true
 	}
-	if budget.bulkRefs >= outboundBulkMaxReferences {
+	if budget.bulkRefs >= budget.effectiveBulkMaxRefs() {
 		return false
 	}
 	if msg.Pmsg != nil {
@@ -163,7 +191,8 @@ func (budget *outboundQueueBudget) reserve(msg *networkMsg) bool {
 			return true
 		}
 	}
-	if size > outboundBulkMaxBytes || budget.bulkBytes > outboundBulkMaxBytes-size {
+	bulkMaxBytes := budget.effectiveBulkMaxBytes()
+	if size > bulkMaxBytes || budget.bulkBytes > bulkMaxBytes-size {
 		return false
 	}
 	budget.bulkRefs++
@@ -172,6 +201,20 @@ func (budget *outboundQueueBudget) reserve(msg *networkMsg) bool {
 		budget.bulkPayloads[msg.Pmsg] = &outboundBulkRef{refs: 1, size: size}
 	}
 	return true
+}
+
+func (budget *outboundQueueBudget) effectiveBulkMaxRefs() int {
+	if budget != nil && budget.bulkMaxRefs > 0 {
+		return budget.bulkMaxRefs
+	}
+	return outboundBulkMaxReferences
+}
+
+func (budget *outboundQueueBudget) effectiveBulkMaxBytes() int {
+	if budget != nil && budget.bulkMaxBytes > 0 {
+		return budget.bulkMaxBytes
+	}
+	return outboundBulkMaxBytes
 }
 
 func (budget *outboundQueueBudget) release(msg *networkMsg) {
@@ -222,6 +265,10 @@ func newPeerQueues() *peerQueues {
 }
 
 func newPeerQueuesWithBudget(budget *outboundQueueBudget) *peerQueues {
+	return newPeerQueuesWithBudgetAndLimit(budget, peerQueueBulkMaxBytes)
+}
+
+func newPeerQueuesWithBudgetAndLimit(budget *outboundQueueBudget, bulkMaxBytes int) *peerQueues {
 	maxCount, maxBytes := peerQueueControlMaxEntries, peerQueueControlMaxBytes
 	if budget != nil {
 		maxCount, maxBytes = peerQueueFairControlMaxEntries, peerQueueFairControlMaxBytes
@@ -237,6 +284,8 @@ func newPeerQueuesWithBudget(budget *outboundQueueBudget) *peerQueues {
 		controlDigests:  make(map[[32]byte]struct{}),
 		controlMaxCount: maxCount,
 		controlMaxBytes: maxBytes,
+		bulkMaxCount:    peerQueueBulkMaxEntries,
+		bulkMaxBytes:    bulkMaxBytes,
 	}
 	go q.run()
 	return q
@@ -431,7 +480,8 @@ func (q *peerQueues) reserve(msg *networkMsg) (bool, bool) {
 		q.controlBytes -= size
 		return false, false
 	}
-	if size > peerQueueBulkMaxBytes || q.bulkCount >= peerQueueBulkMaxEntries || q.bulkBytes > peerQueueBulkMaxBytes-size {
+	bulkMaxBytes := q.effectiveBulkMaxBytes()
+	if size > bulkMaxBytes || q.bulkCount >= q.effectiveBulkMaxCount() || q.bulkBytes > bulkMaxBytes-size {
 		return false, false
 	}
 	q.bulkCount++
@@ -526,7 +576,7 @@ func (q *peerQueues) pushMessage(msg *networkMsg, clone bool) bool {
 func (q *peerQueues) pushFrontClass(msg *networkMsg) bool {
 	// Requeue at the tail of the same priority class to preserve FIFO and avoid
 	// retrying a failed send in a tight loop.
-	if msg == nil || msg.queueSince.IsZero() || time.Since(msg.queueSince) > peerQueueRetryTTL {
+	if msg == nil || msg.queueSince.IsZero() || time.Since(msg.queueSince) > outboundMessageRetryTTL(msg) {
 		return false
 	}
 	msg.queueAttempts++
@@ -534,7 +584,14 @@ func (q *peerQueues) pushFrontClass(msg *networkMsg) bool {
 }
 
 func outboundMessageExpired(msg *networkMsg, now time.Time) bool {
-	return msg != nil && !msg.queueSince.IsZero() && now.Sub(msg.queueSince) > peerQueueRetryTTL
+	return msg != nil && !msg.queueSince.IsZero() && now.Sub(msg.queueSince) > outboundMessageRetryTTL(msg)
+}
+
+func outboundMessageRetryTTL(msg *networkMsg) time.Duration {
+	if msg != nil && msg.Pmsg != nil && !isHighPriorityNetworkMsg(msg) {
+		return peerQueueBulkRetryTTL
+	}
+	return peerQueueRetryTTL
 }
 
 func (q *peerQueues) close() {
@@ -566,6 +623,8 @@ type netService struct {
 	peerAuthMu     sync.RWMutex
 	peerAuthKeys   map[string][]byte
 	outboundBudget *outboundQueueBudget
+	chainConfig    *params.ChainConfig
+	bulkMaxBytes   int
 
 	lifecycleMu     sync.Mutex
 	workerWG        sync.WaitGroup
@@ -580,6 +639,13 @@ type netService struct {
 	candidatepool *core.CandidatePool
 	bc            *core.BlockChain
 	kbc           *core.KeyBlockChain
+}
+
+func (s *netService) effectiveBulkMaxBytes() int {
+	if s != nil && s.bulkMaxBytes > 0 {
+		return s.bulkMaxBytes
+	}
+	return peerQueueBulkMaxBytes
 }
 
 func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *ReconfigBackend, callback serviceCallback) *netService {
@@ -609,7 +675,9 @@ func newNetService(sName, sIp string, chainConfig *params.ChainConfig, backend *
 	s.idQueues = make(map[string]*peerQueues)
 	s.ackMap = make(map[string]*ackInfo)
 	s.peerAuthKeys = make(map[string][]byte)
-	s.outboundBudget = newOutboundQueueBudget()
+	s.chainConfig = chainConfig
+	s.bulkMaxBytes = proposalPeerQueueBulkLimitForConfig(chainConfig)
+	s.outboundBudget = newOutboundQueueBudgetForConfig(chainConfig)
 	s.backend = callback
 	s.candidatepool = backend.CandidatePool()
 	s.bc = backend.BlockChain()
@@ -765,7 +833,7 @@ func (s *netService) handleNetworkMsgAck(env *network.Envelope) {
 		log.Error("handleNetworkMsgReq failed to cast to ")
 		return
 	}
-	if err := validateNetworkMsgShape(msg); err != nil {
+	if err := validateNetworkMsgShapeForConfig(s.chainConfig, msg); err != nil {
 		log.Warn("reject malformed network message", "err", err)
 		return
 	}
@@ -798,7 +866,7 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 		log.Error("broadcast", "error", "nil network message")
 		return
 	}
-	if err := validateNetworkMsgShape(msg); err != nil {
+	if err := validateNetworkMsgShapeForConfig(s.chainConfig, msg); err != nil {
 		log.Warn("refusing to broadcast malformed network message", "err", err)
 		return
 	}
@@ -860,7 +928,10 @@ func (s *netService) broadcast(fromAddr string, msg *networkMsg) {
 		if IsSelf(node.Address) {
 			continue
 		}
-		if err := s.SendRawData(node.Address, cloneNetworkMsg(gossipMsg)); err != nil {
+		// gossipMsg is an owned immutable snapshot. Per-peer queues clone only the
+		// retry metadata and intentionally share its sealed proposal payload, so a
+		// maximum body is charged once by the aggregate byte budget.
+		if err := s.SendRawData(node.Address, gossipMsg); err != nil {
 			log.Warn("Gossip_MSG send failed", "to", node.Address, "hash", hash, "err", err)
 		}
 	}
@@ -871,7 +942,7 @@ func (s *netService) SendRawData(address string, msg *networkMsg) error {
 		return network.NewPermanentSendError(network.SendErrorInvalidMessage,
 			fmt.Errorf("nil network message"))
 	}
-	if err := validateNetworkMsgShape(msg); err != nil {
+	if err := validateNetworkMsgShapeForConfig(s.chainConfig, msg); err != nil {
 		return network.NewPermanentSendError(network.SendErrorInvalidMessage, err)
 	}
 	if address == "" {
@@ -1071,7 +1142,7 @@ func (s *netService) setIsRunning(id string, isStart bool) {
 	// cannot delete a later replacement.
 	isRunning = new(int32)
 	atomic.StoreInt32(isRunning, 1)
-	queues := newPeerQueuesWithBudget(s.outboundBudget)
+	queues := newPeerQueuesWithBudgetAndLimit(s.outboundBudget, s.effectiveBulkMaxBytes())
 	s.goMap[id] = isRunning
 	s.idQueues[id] = queues
 	s.muIdMap.Unlock()
@@ -1186,7 +1257,9 @@ func retryableConsensusNetworkMsg(msg *networkMsg) bool {
 	if isHighPriorityNetworkMsg(msg) {
 		return true
 	}
-	return msg != nil && msg.NetworkClass() == network.NetClassProposalBodyBulk
+	// Genesis-native proposal manifests above the dedicated 9 MiB lane use
+	// BulkGossip. They are still consensus data and need the same retry path.
+	return msg != nil && msg.Pmsg != nil
 }
 
 func retryableConsensusSendError(msg *networkMsg, err error) bool {
@@ -1254,6 +1327,16 @@ func validateNetworkMsgShape(msg *networkMsg) error {
 	}
 	if (msg.Hmsg != nil || msg.Pmsg != nil) && msg.MsgFlag&Gossip_MSG != 0 {
 		return fmt.Errorf("authenticated consensus messages cannot use gossip delivery")
+	}
+	return nil
+}
+
+func validateNetworkMsgShapeForConfig(config *params.ChainConfig, msg *networkMsg) error {
+	if err := validateNetworkMsgShape(msg); err != nil {
+		return err
+	}
+	if msg.Pmsg != nil {
+		return validateProposalBodyWireShapeForConfig(config, msg.Pmsg)
 	}
 	return nil
 }

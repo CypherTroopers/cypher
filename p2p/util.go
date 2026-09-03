@@ -51,6 +51,18 @@ func (h expHeap) contains(item string) bool {
 	return false
 }
 
+// count returns the number of unexpired entries for item. Callers are expected
+// to expire the heap first when they need a current rate-limit count.
+func (h expHeap) count(item string) int {
+	count := 0
+	for _, v := range h {
+		if v.item == item {
+			count++
+		}
+	}
+	return count
+}
+
 // expire removes items with expiry time before 'now'.
 func (h *expHeap) expire(now mclock.AbsTime, onExp func(string)) {
 	for h.Len() > 0 && h.nextExpiry() < now {

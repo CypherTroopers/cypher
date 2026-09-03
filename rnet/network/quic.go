@@ -21,7 +21,6 @@ const (
 	quicStreamOpenTimeout      = 5 * time.Second
 	quicHandshakeReadTimeout   = 5 * time.Second
 	quicFrameHeaderReadTimeout = 5 * time.Second
-	quicLargeReservationWait   = 35 * time.Second
 	quicFirstStreamTimeout     = 10 * time.Second
 	quicMaxIncomingStreams     = 64
 	quicMaxInboundPerPeer      = 2
@@ -29,21 +28,31 @@ const (
 	quicMaxPendingPerSource    = 32
 	quicHandshakeIdleTimeout   = 3 * time.Second
 	quicHandshakeMaxPacketSize = 64 * 1024
-	quicControlMaxPacketSize   = 512 * 1024
-	quicMetadataMaxPacketSize  = 4 * 1024 * 1024
+	// The HotStuff semantic payload cap is 512 KiB. Transport framing also
+	// carries protobuf fields and the 16-byte registered type ID.
+	quicControlMaxPacketSize  = 640 * 1024
+	quicMetadataMaxPacketSize = 4 * 1024 * 1024
 	// An Osaka block is capped at 8 MiB. Proposal sidecars add bounded proof,
 	// identity and RLP framing fields, so 9 MiB leaves deterministic envelope
 	// headroom without allocating the generic 257 MiB bulk-gossip ceiling.
 	quicProposalBodyMaxPacketSize = 9 * 1024 * 1024
 	quicControlReceiveBudget      = 64 * 1024 * 1024
-	quicControlPeerBudget         = 1 * 1024 * 1024
+	quicControlPeerBudget         = 2 * 1024 * 1024
 	quicMetadataReceiveBudget     = 32 * 1024 * 1024
 	quicMetadataPeerBudget        = 4 * 1024 * 1024
-	quicLargeDataReceiveBudget    = uint64(def_MaxPacketSize)
-	quicProposalPeerStreams       = 4
-	quicProposalPeerBudget        = 4 * quicProposalBodyMaxPacketSize
-	quicBulkPeerStreams           = 1
-	quicBulkPeerBudget            = def_MaxPacketSize
+	// Keep two maximum-size frames in flight globally. Per-peer stream and byte
+	// quotas remain unchanged, so one peer cannot occupy both frame slots.
+	quicLargeDataReceiveBudget = 2 * uint64(def_MaxPacketSize)
+	quicProposalPeerStreams    = 4
+	quicProposalPeerBudget     = 4 * quicProposalBodyMaxPacketSize
+	quicBulkPeerStreams        = 1
+	quicBulkPeerBudget         = def_MaxPacketSize
+	// Genesis-native proposal manifests use BulkGossip above the 9 MiB
+	// proposal-body lane. Match the service liveness model of 2 MiB/s and
+	// retain the existing five-second allowance for framing and scheduling.
+	quicBulkGossipBytesPerSecond = 2 * 1024 * 1024
+	quicBulkGossipTimeoutSlack   = 5 * time.Second
+	quicLargeReservationWait     = quicBulkGossipTimeoutSlack + time.Duration(def_MaxPacketSize)*time.Second/quicBulkGossipBytesPerSecond
 )
 
 type quicReceiveLimiter struct {
@@ -311,6 +320,14 @@ func isQUICLargeDataClass(class uint8) bool {
 func quicFrameReadTimeout(class uint8, size uint32) time.Duration {
 	if class == NetClassHandshake {
 		return quicHandshakeReadTimeout
+	}
+	if class == NetClassBulkGossip {
+		// Callers validate the class limit before reaching I/O. Clamp here too so
+		// this deadline calculation remains bounded if a future caller does not.
+		if size > def_MaxPacketSize {
+			size = def_MaxPacketSize
+		}
+		return quicBulkGossipTimeoutSlack + time.Duration(size)*time.Second/quicBulkGossipBytesPerSecond
 	}
 	if !isQUICLargeDataClass(class) {
 		timeout := 5*time.Second + time.Duration(size)*time.Second/(2*1024*1024)

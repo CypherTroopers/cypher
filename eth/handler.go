@@ -55,6 +55,21 @@ var (
 	syncChallengeTimeout = 15 * time.Second // Time allowance for a node to reply to the sync progress challenge
 )
 
+// responseItemFits keeps the encoded payload below the soft envelope before
+// append. Checking only at the top of the loop can place two near-limit Native
+// bodies in one RLPx message and cross the protocol's hard frame cap. A first
+// item is still permitted up to the envelope so maximum-size blocks remain
+// synchronizable.
+func responseItemFits(bytesUsed, itemCount, itemBytes int) bool {
+	if bytesUsed < 0 || itemCount < 0 || itemBytes < 0 || itemBytes > softResponseLimit {
+		return false
+	}
+	if itemCount == 0 {
+		return true
+	}
+	return bytesUsed <= softResponseLimit-itemBytes
+}
+
 func errResp(code errCode, format string, v ...interface{}) error {
 	return fmt.Errorf("%v - %v", code, fmt.Sprintf(format, v...))
 }
@@ -584,6 +599,9 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			}
 			// Retrieve the requested block body, stopping if enough was found
 			if data := pm.blockchain.GetBodyRLP(hash); len(data) != 0 {
+				if !responseItemFits(bytes, len(bodies), len(data)) {
+					break
+				}
 				bodies = append(bodies, data)
 				bytes += len(data)
 			}
@@ -596,27 +614,13 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		if err := msg.Decode(&request); err != nil {
 			return errResp(ErrDecode, "msg %v: %v", msg, err)
 		}
-		// Deliver them all to the downloader for queuing
-		transactions := make([][]*types.Transaction, len(request))
-		uncles := make([][]*types.Header, len(request))
-		commonTxAdmissionBatches := make([][]*types.CommonTxAdmissionBatch, len(request))
-		commonTxAdmissionRefs := make([][]types.CommonTxAdmissionRef, len(request))
-		commonTxRewards := make([][]*types.CommonTxReward, len(request))
-
-		for i, body := range request {
-			transactions[i] = body.Transactions
-			uncles[i] = body.Uncles
-			commonTxAdmissionBatches[i] = body.CommonTxAdmissionBatches
-			commonTxAdmissionRefs[i] = body.CommonTxAdmissionRefs
-			commonTxRewards[i] = body.CommonTxRewards
-		}
 		// Filter out any explicitly requested bodies, deliver the rest to the downloader
-		filter := len(transactions) > 0 || len(uncles) > 0 || len(commonTxAdmissionBatches) > 0 || len(commonTxAdmissionRefs) > 0 || len(commonTxRewards) > 0
+		filter := len(request) > 0
 		if filter {
-			transactions, uncles, commonTxAdmissionBatches, commonTxAdmissionRefs, commonTxRewards = pm.blockFetcher.FilterBodies(p.id, transactions, uncles, commonTxAdmissionBatches, commonTxAdmissionRefs, commonTxRewards, time.Now())
+			request = pm.blockFetcher.FilterBodies(p.id, request, time.Now())
 		}
-		if len(transactions) > 0 || len(uncles) > 0 || len(commonTxAdmissionBatches) > 0 || len(commonTxAdmissionRefs) > 0 || len(commonTxRewards) > 0 || !filter {
-			err := pm.downloader.DeliverBodies(p.id, transactions, uncles, commonTxAdmissionBatches, commonTxAdmissionRefs, commonTxRewards)
+		if len(request) > 0 || !filter {
+			err := pm.downloader.DeliverBodies(p.id, request)
 			if err != nil {
 				log.Debug("Failed to deliver bodies", "err", err)
 			}
@@ -701,6 +705,9 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			if encoded, err := rlp.EncodeToBytes(results); err != nil {
 				log.Error("Failed to encode receipt", "err", err)
 			} else {
+				if !responseItemFits(bytes, len(receipts), len(encoded)) {
+					break
+				}
 				receipts = append(receipts, encoded)
 				bytes += len(encoded)
 			}

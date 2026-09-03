@@ -54,6 +54,22 @@ type Trie struct {
 	unhashed int
 }
 
+// BatchMutation describes one atomic trie mutation. A mutation deletes the key
+// when Delete is set or Value is empty, matching TryDelete and TryUpdate.
+// Otherwise it associates Key with Value. Callers must not modify Key or Value
+// while TryUpdateBatch is running.
+type BatchMutation struct {
+	Key    []byte
+	Value  []byte
+	Delete bool
+}
+
+type hexBatchMutation struct {
+	key    []byte
+	value  []byte
+	delete bool
+}
+
 // newFlag returns the cache flag value for a newly created node.
 func (t *Trie) newFlag() nodeFlag {
 	return nodeFlag{dirty: true}
@@ -183,6 +199,547 @@ func (t *Trie) TryUpdate(key, value []byte) error {
 		t.root = n
 	}
 	return nil
+}
+
+// TryUpdateBatch atomically applies mutations to the trie. Mutations whose
+// keys have different first nibbles are applied to independent subtries by a
+// bounded worker pool. The resulting root uses the same short/full-node
+// canonicalisation rules as serial TryUpdate/TryDelete calls.
+//
+// If any subtrie cannot be resolved, the original trie is left unchanged.
+// Mutations for the same key retain their input order.
+func (t *Trie) TryUpdateBatch(mutations []BatchMutation, workers int) error {
+	if len(mutations) == 0 {
+		return nil
+	}
+	hexMutations := make([]hexBatchMutation, len(mutations))
+	for i, mutation := range mutations {
+		hexMutations[i] = hexBatchMutation{
+			key:    keybytesToHex(mutation.Key),
+			value:  mutation.Value,
+			delete: mutation.Delete || len(mutation.Value) == 0,
+		}
+	}
+	return t.tryUpdateHexBatch(hexMutations, workers)
+}
+
+// TryUpdateKeyValueBatch adapts already encoded key/value leaves to the atomic
+// batch mutation API. It exists as a dependency-neutral optional capability for
+// consensus list hashing: core/types cannot import trie without creating an
+// import cycle through rawdb.
+func (t *Trie) TryUpdateKeyValueBatch(keys, values [][]byte, workers int) error {
+	if len(keys) != len(values) {
+		return fmt.Errorf("trie batch key/value count mismatch: %d != %d", len(keys), len(values))
+	}
+	mutations := make([]BatchMutation, len(keys))
+	for index := range keys {
+		mutations[index] = BatchMutation{Key: keys[index], Value: values[index]}
+	}
+	return t.TryUpdateBatch(mutations, workers)
+}
+
+// tryUpdateHexBatch partitions the trie at the first nibble. A Merkle Patricia
+// trie has at most 17 root branches (16 nibbles and the terminator), so this
+// bounds both the number of goroutines and the merge cost independent of batch
+// size.
+func (t *Trie) tryUpdateHexBatch(mutations []hexBatchMutation, workers int) error {
+	// Adaptively descend through common prefixes until enough independent COW
+	// subtries exist. Fixed one/two-nibble sharding is not adversarially robust:
+	// account owners can offline-grind secure keys into one chosen prefix.
+	if workers > 1 && len(mutations) > 1 {
+		return t.tryUpdateHexBatchAdaptive(mutations, workers)
+	}
+	branches, err := t.splitRootBranches()
+	if err != nil {
+		return err
+	}
+	groups := make([][]hexBatchMutation, len(branches))
+	for _, mutation := range mutations {
+		if len(mutation.key) == 0 || int(mutation.key[0]) >= len(groups) {
+			return fmt.Errorf("invalid hex trie key %x", mutation.key)
+		}
+		index := int(mutation.key[0])
+		groups[index] = append(groups[index], mutation)
+	}
+	type batchJob struct {
+		index int
+		group []hexBatchMutation
+	}
+	jobs := make([]batchJob, 0, len(groups))
+	for index, group := range groups {
+		if len(group) != 0 {
+			jobs = append(jobs, batchJob{index: index, group: group})
+		}
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(jobs) {
+		workers = len(jobs)
+	}
+	errs := make([]error, len(branches))
+	apply := func(job batchJob) {
+		root := branches[job.index]
+		prefix := []byte{byte(job.index)}
+		for _, mutation := range job.group {
+			var (
+				dirty bool
+				next  node
+				err   error
+			)
+			if mutation.delete {
+				dirty, next, err = t.delete(root, prefix, mutation.key[1:])
+			} else {
+				dirty, next, err = t.insert(root, prefix, mutation.key[1:], valueNode(mutation.value))
+			}
+			if err != nil {
+				errs[job.index] = err
+				return
+			}
+			if dirty {
+				root = next
+			}
+		}
+		branches[job.index] = root
+	}
+	if workers <= 1 {
+		for _, job := range jobs {
+			apply(job)
+		}
+	} else {
+		queue := make(chan batchJob, len(jobs))
+		var group sync.WaitGroup
+		group.Add(workers)
+		for i := 0; i < workers; i++ {
+			go func() {
+				defer group.Done()
+				for job := range queue {
+					apply(job)
+				}
+			}()
+		}
+		for _, job := range jobs {
+			queue <- job
+		}
+		close(queue)
+		group.Wait()
+	}
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	root, err := t.joinRootBranches(branches)
+	if err != nil {
+		return err
+	}
+	t.root = root
+	t.unhashed += len(mutations)
+	return nil
+}
+
+type adaptiveBatchPartition struct {
+	prefix    []byte
+	root      node
+	mutations []hexBatchMutation
+	split     bool
+	branches  [17]node
+	children  [17]*adaptiveBatchPartition
+	result    node
+	err       error
+}
+
+// tryUpdateHexBatchAdaptive recursively partitions hot secure-key prefixes.
+// Unique keys eventually diverge even if an adversary grinds several leading
+// nibbles; exact duplicate keys remain in one ordered leaf, preserving serial
+// last-write semantics. Every mutation job is copy-on-write and t.root is only
+// replaced after all jobs and deterministic bottom-up joins succeed.
+func (t *Trie) tryUpdateHexBatchAdaptive(mutations []hexBatchMutation, workers int) error {
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 64 {
+		workers = 64
+	}
+	if workers > len(mutations) {
+		workers = len(mutations)
+	}
+	// Aim for at least two leaves per worker while avoiding tiny jobs on very
+	// large blocks. Prefix skew is handled recursively rather than assumed away.
+	target := (len(mutations) + workers*2 - 1) / (workers * 2)
+	if target < 8 {
+		target = 8
+	}
+	leaves := make([]*adaptiveBatchPartition, 0, workers*2)
+	var build func(root node, prefix []byte, group []hexBatchMutation) (*adaptiveBatchPartition, error)
+	build = func(root node, prefix []byte, group []hexBatchMutation) (*adaptiveBatchPartition, error) {
+		partition := &adaptiveBatchPartition{prefix: prefix, root: root, mutations: group}
+		if len(group) <= target {
+			leaves = append(leaves, partition)
+			return partition, nil
+		}
+		depth := len(prefix)
+		var groups [17][]hexBatchMutation
+		canSplit := false
+		terminal := false
+		for _, mutation := range group {
+			if depth >= len(mutation.key) {
+				// Only exact duplicate keys reach this point. They must retain input
+				// order in one leaf because no independent subtree remains.
+				terminal = true
+				break
+			}
+			nibble := mutation.key[depth]
+			if nibble > 16 {
+				return nil, fmt.Errorf("invalid hex trie key %x", mutation.key)
+			}
+			groups[nibble] = append(groups[nibble], mutation)
+			canSplit = true
+		}
+		if terminal || !canSplit {
+			leaves = append(leaves, partition)
+			return partition, nil
+		}
+		branches, err := t.splitNodeBranches(root, prefix)
+		if err != nil {
+			return nil, err
+		}
+		partition.split = true
+		partition.branches = branches
+		for nibble := 0; nibble < len(groups); nibble++ {
+			if len(groups[nibble]) == 0 {
+				continue
+			}
+			childPrefix := make([]byte, len(prefix)+1)
+			copy(childPrefix, prefix)
+			childPrefix[len(prefix)] = byte(nibble)
+			child, err := build(branches[nibble], childPrefix, groups[nibble])
+			if err != nil {
+				return nil, err
+			}
+			partition.children[nibble] = child
+		}
+		return partition, nil
+	}
+	rootPartition, err := build(t.root, nil, mutations)
+	if err != nil {
+		return err
+	}
+	apply := func(partition *adaptiveBatchPartition) {
+		root := partition.root
+		depth := len(partition.prefix)
+		for _, mutation := range partition.mutations {
+			var (
+				dirty bool
+				next  node
+				err   error
+			)
+			if mutation.delete {
+				dirty, next, err = t.delete(root, partition.prefix, mutation.key[depth:])
+			} else {
+				dirty, next, err = t.insert(root, partition.prefix, mutation.key[depth:], valueNode(mutation.value))
+			}
+			if err != nil {
+				partition.err = err
+				return
+			}
+			if dirty {
+				root = next
+			}
+		}
+		partition.result = root
+	}
+	if workers <= 1 || len(leaves) <= 1 {
+		for _, leaf := range leaves {
+			apply(leaf)
+		}
+	} else {
+		if workers > len(leaves) {
+			workers = len(leaves)
+		}
+		queue := make(chan *adaptiveBatchPartition, len(leaves))
+		var group sync.WaitGroup
+		group.Add(workers)
+		for worker := 0; worker < workers; worker++ {
+			go func() {
+				defer group.Done()
+				for leaf := range queue {
+					apply(leaf)
+				}
+			}()
+		}
+		for _, leaf := range leaves {
+			queue <- leaf
+		}
+		close(queue)
+		group.Wait()
+	}
+	for _, leaf := range leaves {
+		if leaf.err != nil {
+			return leaf.err
+		}
+	}
+	var join func(*adaptiveBatchPartition) (node, error)
+	join = func(partition *adaptiveBatchPartition) (node, error) {
+		if !partition.split {
+			return partition.result, nil
+		}
+		branches := partition.branches
+		for nibble, child := range partition.children {
+			if child == nil {
+				continue
+			}
+			result, err := join(child)
+			if err != nil {
+				return nil, err
+			}
+			branches[nibble] = result
+		}
+		return t.joinNodeBranches(branches, partition.prefix)
+	}
+	root, err := join(rootPartition)
+	if err != nil {
+		return err
+	}
+	t.root = root
+	t.unhashed += len(mutations)
+	return nil
+}
+
+// tryUpdateHexBatchTwoLevels applies mutations to up to 256 independent
+// two-nibble subtries. All exposed roots are resolved before workers start and
+// every job uses copy-on-write insert/delete, so an error leaves t.root
+// unchanged. Joins run in deterministic nibble order and perform the same
+// single-child compression as serial mutation.
+func (t *Trie) tryUpdateHexBatchTwoLevels(mutations []hexBatchMutation, workers int) error {
+	rootBranches, err := t.splitRootBranches()
+	if err != nil {
+		return err
+	}
+	type secondPartition struct {
+		active   bool
+		branches [17]node
+	}
+	var partitions [16]secondPartition
+	groups := make([][]hexBatchMutation, 17*17)
+	for _, mutation := range mutations {
+		if len(mutation.key) == 0 || mutation.key[0] > 16 {
+			return fmt.Errorf("invalid hex trie key %x", mutation.key)
+		}
+		first := int(mutation.key[0])
+		if first == 16 {
+			groups[16*17+16] = append(groups[16*17+16], mutation)
+			continue
+		}
+		if len(mutation.key) < 2 || mutation.key[1] > 16 {
+			return fmt.Errorf("invalid second-level hex trie key %x", mutation.key)
+		}
+		groups[first*17+int(mutation.key[1])] = append(groups[first*17+int(mutation.key[1])], mutation)
+	}
+	for first := 0; first < 16; first++ {
+		hasMutations := false
+		for second := 0; second < 17; second++ {
+			if len(groups[first*17+second]) != 0 {
+				hasMutations = true
+				break
+			}
+		}
+		if !hasMutations {
+			continue
+		}
+		branches, err := t.splitNodeBranches(rootBranches[first], []byte{byte(first)})
+		if err != nil {
+			return err
+		}
+		partitions[first] = secondPartition{active: true, branches: branches}
+	}
+	type batchJob struct {
+		first, second int
+		depth         int
+		group         []hexBatchMutation
+		root          node
+		result        node
+		err           error
+	}
+	jobs := make([]batchJob, 0, 16*16+1)
+	for first := 0; first < 16; first++ {
+		if !partitions[first].active {
+			continue
+		}
+		for second := 0; second < 17; second++ {
+			group := groups[first*17+second]
+			if len(group) == 0 {
+				continue
+			}
+			jobs = append(jobs, batchJob{
+				first: first, second: second, depth: 2, group: group,
+				root: partitions[first].branches[second],
+			})
+		}
+	}
+	if group := groups[16*17+16]; len(group) != 0 {
+		jobs = append(jobs, batchJob{first: 16, second: 16, depth: 1, group: group, root: rootBranches[16]})
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(jobs) {
+		workers = len(jobs)
+	}
+	apply := func(job *batchJob) {
+		root := job.root
+		prefix := make([]byte, job.depth)
+		prefix[0] = byte(job.first)
+		if job.depth == 2 {
+			prefix[1] = byte(job.second)
+		}
+		for _, mutation := range job.group {
+			var (
+				dirty bool
+				next  node
+				err   error
+			)
+			if mutation.delete {
+				dirty, next, err = t.delete(root, prefix, mutation.key[job.depth:])
+			} else {
+				dirty, next, err = t.insert(root, prefix, mutation.key[job.depth:], valueNode(mutation.value))
+			}
+			if err != nil {
+				job.err = err
+				return
+			}
+			if dirty {
+				root = next
+			}
+		}
+		job.result = root
+	}
+	if workers <= 1 {
+		for index := range jobs {
+			apply(&jobs[index])
+		}
+	} else {
+		queue := make(chan int, len(jobs))
+		var group sync.WaitGroup
+		group.Add(workers)
+		for index := 0; index < workers; index++ {
+			go func() {
+				defer group.Done()
+				for jobIndex := range queue {
+					apply(&jobs[jobIndex])
+				}
+			}()
+		}
+		for index := range jobs {
+			queue <- index
+		}
+		close(queue)
+		group.Wait()
+	}
+	for index := range jobs {
+		if jobs[index].err != nil {
+			return jobs[index].err
+		}
+		if jobs[index].depth == 1 {
+			rootBranches[16] = jobs[index].result
+		} else {
+			partitions[jobs[index].first].branches[jobs[index].second] = jobs[index].result
+		}
+	}
+	for first := 0; first < 16; first++ {
+		if !partitions[first].active {
+			continue
+		}
+		joined, err := t.joinNodeBranches(partitions[first].branches, []byte{byte(first)})
+		if err != nil {
+			return err
+		}
+		rootBranches[first] = joined
+	}
+	root, err := t.joinRootBranches(rootBranches)
+	if err != nil {
+		return err
+	}
+	t.root = root
+	t.unhashed += len(mutations)
+	return nil
+}
+
+// splitRootBranches removes the first nibble from the current root and returns
+// its 17 possible branches. Newly exposed short nodes are marked dirty because
+// their compact key changed; their consensus encoding is otherwise unchanged.
+func (t *Trie) splitRootBranches() ([17]node, error) {
+	return t.splitNodeBranches(t.root, nil)
+}
+
+func (t *Trie) splitNodeBranches(root node, prefix []byte) ([17]node, error) {
+	var branches [17]node
+	if hashed, ok := root.(hashNode); ok {
+		resolved, err := t.resolveHash(hashed, prefix)
+		if err != nil {
+			return branches, err
+		}
+		root = resolved
+	}
+	switch root := root.(type) {
+	case nil:
+		return branches, nil
+	case *fullNode:
+		copy(branches[:], root.Children[:])
+		return branches, nil
+	case *shortNode:
+		if len(root.Key) == 0 || int(root.Key[0]) >= len(branches) {
+			return branches, fmt.Errorf("invalid short trie root key %x", root.Key)
+		}
+		if len(root.Key) == 1 {
+			branches[root.Key[0]] = root.Val
+		} else {
+			branches[root.Key[0]] = &shortNode{Key: root.Key[1:], Val: root.Val, flags: t.newFlag()}
+		}
+		return branches, nil
+	case valueNode:
+		// A public Trie key always includes the terminator and therefore
+		// normally represents this as shortNode{16, value}. Accepting a bare
+		// value node here keeps the batch operation robust for internal tries.
+		branches[16] = root
+		return branches, nil
+	default:
+		return branches, fmt.Errorf("invalid trie root type %T", root)
+	}
+}
+
+// joinRootBranches performs the same single-child collapse as delete. This is
+// the only serial merge point after the independent first-nibble updates.
+func (t *Trie) joinRootBranches(branches [17]node) (node, error) {
+	return t.joinNodeBranches(branches, nil)
+}
+
+func (t *Trie) joinNodeBranches(branches [17]node, prefix []byte) (node, error) {
+	count, position := 0, -1
+	for index, child := range branches {
+		if child != nil {
+			count++
+			position = index
+		}
+	}
+	switch count {
+	case 0:
+		return nil, nil
+	case 1:
+		child := branches[position]
+		if position != 16 {
+			resolved, err := t.resolve(child, append(prefix, byte(position)))
+			if err != nil {
+				return nil, err
+			}
+			if short, ok := resolved.(*shortNode); ok {
+				return &shortNode{Key: concat([]byte{byte(position)}, short.Key...), Val: short.Val, flags: t.newFlag()}, nil
+			}
+		}
+		return &shortNode{Key: []byte{byte(position)}, Val: child, flags: t.newFlag()}, nil
+	default:
+		return &fullNode{Children: branches, flags: t.newFlag()}, nil
+	}
 }
 
 func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error) {

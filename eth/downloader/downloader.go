@@ -45,11 +45,12 @@ var (
 	MaxReceiptFetch = 256 // Amount of transaction receipts to allow fetching per request
 	MaxStateFetch   = 384 // Amount of node state values to allow fetching per request
 
-	rttMinEstimate   = 2 * time.Second  // Minimum round-trip time to target for download requests
-	rttMaxEstimate   = 20 * time.Second // Maximum round-trip time to target for download requests
-	rttMinConfidence = 0.1              // Worse confidence factor in our estimated RTT value
-	ttlScaling       = 3                // Constant scaling factor for RTT -> TTL conversion
-	ttlLimit         = time.Minute      // Maximum TTL allowance to prevent reaching crazy timeouts
+	rttMinEstimate   = 2 * time.Second   // Minimum round-trip time to target for download requests
+	rttMaxEstimate   = 20 * time.Second  // Maximum round-trip time to target for download requests
+	rttMinConfidence = 0.1               // Worse confidence factor in our estimated RTT value
+	ttlScaling       = 3                 // Constant scaling factor for RTT -> TTL conversion
+	ttlLimit         = time.Minute       // Maximum TTL allowance to prevent reaching crazy timeouts
+	largeDataTTL     = 150 * time.Second // Body/receipt allowance above the 257 MiB frame's 2 MiB/s service time
 
 	qosTuningPeers   = 5    // Number of peers to tune based on (best peers)
 	qosConfidenceCap = 10   // Number of peers above which not to modify RTT confidence
@@ -1205,9 +1206,9 @@ func (d *Downloader) fetchBodies(from uint64) error {
 	var (
 		deliver = func(packet dataPack) (int, error) {
 			pack := packet.(*bodyPack)
-			return d.queue.DeliverBodies(pack.peerID, pack.transactions, pack.uncles, pack.commonTxAdmissionBatches, pack.commonTxAdmissionRefs, pack.commonTxRewards)
+			return d.queue.DeliverBodies(pack.peerID, pack.bodies)
 		}
-		expire   = func() map[string]int { return d.queue.ExpireBodies(d.requestTTL()) }
+		expire   = func() map[string]int { return d.queue.ExpireBodies(d.requestLargeDataTTL()) }
 		fetch    = func(p *peerConnection, req *fetchRequest) error { return p.FetchBodies(req) }
 		capacity = func(p *peerConnection) int { return p.BlockCapacity(d.requestRTT()) }
 		setIdle  = func(p *peerConnection, accepted int, deliveryTime time.Time) { p.SetBodiesIdle(accepted, deliveryTime) }
@@ -1231,7 +1232,7 @@ func (d *Downloader) fetchReceipts(from uint64) error {
 			pack := packet.(*receiptPack)
 			return d.queue.DeliverReceipts(pack.peerID, pack.receipts)
 		}
-		expire   = func() map[string]int { return d.queue.ExpireReceipts(d.requestTTL()) }
+		expire   = func() map[string]int { return d.queue.ExpireReceipts(d.requestLargeDataTTL()) }
 		fetch    = func(p *peerConnection, req *fetchRequest) error { return p.FetchReceipts(req) }
 		capacity = func(p *peerConnection) int { return p.ReceiptCapacity(d.requestRTT()) }
 		setIdle  = func(p *peerConnection, accepted int, deliveryTime time.Time) {
@@ -1626,6 +1627,24 @@ func (d *Downloader) processFullSyncContent() error {
 	}
 }
 
+// blockFromFetchResult reconstructs the canonical six-field body without
+// dropping authenticated EIP-4844 sidecars on full or fast sync paths.
+func blockFromFetchResult(result *fetchResult) (*types.Block, error) {
+	if result == nil || result.Header == nil {
+		return nil, errors.New("missing downloaded block header")
+	}
+	body := result.Body
+	if body == nil {
+		body = new(types.Body)
+	}
+	block, err := types.NewBlockWithHeader(result.Header).WithBodyAndBlobSidecars(body.Transactions, body.Uncles, body.BlobSidecars)
+	if err != nil {
+		return nil, err
+	}
+	block.SetCommonTxData(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.CommonTxRewards)
+	return block, nil
+}
+
 func (d *Downloader) importBlockResults(results []*fetchResult) error {
 	// Check for any early termination requests
 	if len(results) == 0 {
@@ -1644,8 +1663,11 @@ func (d *Downloader) importBlockResults(results []*fetchResult) error {
 	)
 	blocks := make([]*types.Block, len(results))
 	for i, result := range results {
-		blocks[i] = types.NewBlockWithHeader(result.Header).WithBody(result.Transactions, result.Uncles)
-		blocks[i].SetCommonTxData(result.CommonTxAdmissionBatches, result.CommonTxAdmissionRefs, result.CommonTxRewards)
+		block, err := blockFromFetchResult(result)
+		if err != nil {
+			return fmt.Errorf("%w: reconstruct downloaded block %d: %v", errInvalidChain, result.Header.Number.Uint64(), err)
+		}
+		blocks[i] = block
 	}
 	if index, err := d.blockchain.InsertChain(blocks); err != nil {
 		if index < len(results) {
@@ -1806,8 +1828,11 @@ func (d *Downloader) commitFastSyncData(results []*fetchResult, stateSync *state
 	blocks := make([]*types.Block, len(results))
 	receipts := make([]types.Receipts, len(results))
 	for i, result := range results {
-		blocks[i] = types.NewBlockWithHeader(result.Header).WithBody(result.Transactions, result.Uncles)
-		blocks[i].SetCommonTxData(result.CommonTxAdmissionBatches, result.CommonTxAdmissionRefs, result.CommonTxRewards)
+		block, err := blockFromFetchResult(result)
+		if err != nil {
+			return fmt.Errorf("%w: reconstruct fast-sync block %d: %v", errInvalidChain, result.Header.Number.Uint64(), err)
+		}
+		blocks[i] = block
 		receipts[i] = result.Receipts
 	}
 	if index, err := d.blockchain.InsertReceiptChain(blocks, receipts, d.ancientLimit); err != nil {
@@ -1818,8 +1843,10 @@ func (d *Downloader) commitFastSyncData(results []*fetchResult, stateSync *state
 }
 
 func (d *Downloader) commitPivotBlock(result *fetchResult) error {
-	block := types.NewBlockWithHeader(result.Header).WithBody(result.Transactions, result.Uncles)
-	block.SetCommonTxData(result.CommonTxAdmissionBatches, result.CommonTxAdmissionRefs, result.CommonTxRewards)
+	block, err := blockFromFetchResult(result)
+	if err != nil {
+		return fmt.Errorf("%w: reconstruct fast-sync pivot: %v", errInvalidChain, err)
+	}
 	log.Debug("Committing fast sync pivot as new head", "number", block.Number(), "hash", block.Hash())
 
 	// Commit the pivot block as the new head, will require full sync from here on
@@ -1849,8 +1876,8 @@ func (d *Downloader) DeliverHeaders(id string, headers []*types.Header) (err err
 }
 
 // DeliverBodies injects a new batch of block bodies received from a remote node.
-func (d *Downloader) DeliverBodies(id string, transactions [][]*types.Transaction, uncles [][]*types.Header, commonTxAdmissionBatches [][]*types.CommonTxAdmissionBatch, commonTxAdmissionRefs [][]types.CommonTxAdmissionRef, commonTxRewards [][]*types.CommonTxReward) (err error) {
-	return d.deliver(id, d.bodyCh, &bodyPack{id, transactions, uncles, commonTxAdmissionBatches, commonTxAdmissionRefs, commonTxRewards}, bodyInMeter, bodyDropMeter)
+func (d *Downloader) DeliverBodies(id string, bodies []*types.Body) (err error) {
+	return d.deliver(id, d.bodyCh, &bodyPack{peerID: id, bodies: bodies}, bodyInMeter, bodyDropMeter)
 }
 
 // DeliverReceipts injects a new batch of receipts received from a remote node.
@@ -1958,6 +1985,18 @@ func (d *Downloader) requestTTL() time.Duration {
 	ttl := time.Duration(ttlScaling) * time.Duration(float64(rtt)/conf)
 	if ttl > ttlLimit {
 		ttl = ttlLimit
+	}
+	return ttl
+}
+
+// requestLargeDataTTL keeps adaptive RTT behavior but never expires a valid
+// maximum-size block body or receipt response before the transport's bounded
+// 2 MiB/s service allowance. Header and state-control requests continue using
+// requestTTL and its one-minute cap.
+func (d *Downloader) requestLargeDataTTL() time.Duration {
+	ttl := d.requestTTL()
+	if ttl < largeDataTTL {
+		return largeDataTTL
 	}
 	return ttl
 }

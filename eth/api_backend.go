@@ -407,6 +407,16 @@ func addCommonRPCAdmittedTransactions(
 	indexes []int,
 	results []error,
 ) (types.Transactions, []core.CommonRPCAdmissionResult, []int, error) {
+	if pool == nil {
+		return nil, nil, nil, errors.New("common RPC transaction pool is unavailable")
+	}
+	if err := validateCommonRPCAdmissionPoolBatch(txs, admissions, indexes, results); err != nil {
+		return nil, nil, nil, err
+	}
+	return applyCommonRPCAdmittedTransactionResults(pool, txs, admissions, indexes, results, pool.AddLocalsAsync(txs))
+}
+
+func validateCommonRPCAdmissionPoolBatch(txs types.Transactions, admissions []core.CommonRPCAdmissionResult, indexes []int, results []error) error {
 	if len(admissions) != len(txs) || len(indexes) != len(txs) {
 		err := fmt.Errorf("common RPC admission/pool batch alignment mismatch: txs=%d admissions=%d indexes=%d", len(txs), len(admissions), len(indexes))
 		for _, index := range indexes {
@@ -414,7 +424,7 @@ func addCommonRPCAdmittedTransactions(
 				results[index] = err
 			}
 		}
-		return nil, nil, nil, err
+		return err
 	}
 	for i, tx := range txs {
 		index := indexes[i]
@@ -426,10 +436,27 @@ func addCommonRPCAdmittedTransactions(
 					results[resultIndex] = err
 				}
 			}
-			return nil, nil, nil, err
+			return err
 		}
 	}
-	poolResults := pool.AddLocalsAsync(txs)
+	return nil
+}
+
+// applyCommonRPCAdmittedTransactionResults keeps result alignment and
+// admission cleanup independent from the publication mechanism. Production
+// supplies results from the node-global RPC/QUIC scheduler; focused boundary
+// tests may continue using addCommonRPCAdmittedTransactions directly.
+func applyCommonRPCAdmittedTransactionResults(
+	pool commonRPCAdmissionTxPool,
+	txs types.Transactions,
+	admissions []core.CommonRPCAdmissionResult,
+	indexes []int,
+	results []error,
+	poolResults []error,
+) (types.Transactions, []core.CommonRPCAdmissionResult, []int, error) {
+	if err := validateCommonRPCAdmissionPoolBatch(txs, admissions, indexes, results); err != nil {
+		return nil, nil, nil, err
+	}
 	forwardTxs := make(types.Transactions, 0, len(txs))
 	forwardAdmissions := make([]core.CommonRPCAdmissionResult, 0, len(txs))
 	forwardIndexes := make([]int, 0, len(txs))
@@ -592,6 +619,7 @@ func (b *EthAPIBackend) SendTxBatch(ctx context.Context, signedTxs types.Transac
 func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs types.Transactions, indexes []int, results []error) []error {
 	started := time.Now()
 	var (
+		schedulerElapsed time.Duration
 		keyBlockElapsed  time.Duration
 		preflightElapsed time.Duration
 		admissionElapsed time.Duration
@@ -604,9 +632,46 @@ func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs t
 	defer func() {
 		log.Debug("Processed common RPC transaction backend batch",
 			"requested", len(txs), "eligible", eligibleCount, "admitted", admittedCount, "forwarded", forwardedCount,
-			"keyBlock", keyBlockElapsed, "preflight", preflightElapsed, "admission", admissionElapsed,
+			"scheduler", schedulerElapsed, "keyBlock", keyBlockElapsed, "preflight", preflightElapsed, "admission", admissionElapsed,
 			"txpool", poolElapsed, "outbox", outboxElapsed, "total", time.Since(started))
 	}()
+	// Reserve a node-global RPC lane before key-chain lookup, StateDB preflight,
+	// admission signing, WAL ownership, TxPool publication, or outbox work. This
+	// is separate from the downstream pool scheduler to avoid self-deadlock.
+	schedulerStarted := time.Now()
+	if b == nil || b.eth == nil || b.eth.txQUICIngress == nil || b.eth.txQUICIngress.liveIngress == nil {
+		err := errors.New("node-global live transaction ingress scheduler is unavailable")
+		for _, index := range indexes {
+			results[index] = err
+		}
+		return results
+	}
+	batchBytes, err := txPoolIngressJobBytes(txs)
+	if err != nil {
+		for _, index := range indexes {
+			results[index] = err
+		}
+		return results
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	liveTimeout := b.eth.txQUICIngress.config.ForwardTimeout
+	if liveTimeout <= 0 {
+		liveTimeout = 15 * time.Second
+	}
+	liveCtx, cancelLive := context.WithTimeout(ctx, liveTimeout)
+	releaseLive, err := b.eth.txQUICIngress.liveIngress.Acquire(liveCtx, txPoolIngressRPC, len(txs), batchBytes)
+	cancelLive()
+	schedulerElapsed = time.Since(schedulerStarted)
+	if err != nil {
+		wrapped := fmt.Errorf("schedule common RPC live admission: %w", err)
+		for _, index := range indexes {
+			results[index] = wrapped
+		}
+		return results
+	}
+	defer releaseLive()
 	keyBlockStarted := time.Now()
 	keyBlockNumber, err := b.currentCommonRPCAdmissionKeyBlockNumber()
 	keyBlockElapsed = time.Since(keyBlockStarted)
@@ -645,10 +710,11 @@ func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs t
 		return results
 	}
 	eligibleCount = len(eligibleTxs)
-	// Admissions are durable before AddLocalsAsync can append a transaction to
-	// the journal. Pool mutations are never rolled back: replacements and
-	// capacity evictions are not transactionally reversible, and an RPC/outbox
-	// timeout is an ambiguous result that clients may safely retry.
+	// Serialize exact-hash ownership while admission, the unified WAL intent,
+	// and the pool outcome are established. Pool mutations are never rolled
+	// back: replacements and capacity evictions are not transactionally
+	// reversible, and a WAL/outbox timeout is an ambiguous result clients may
+	// safely retry.
 	hashes := make([]common.Hash, len(eligibleTxs))
 	for i, tx := range eligibleTxs {
 		hashes[i] = tx.Hash()
@@ -656,7 +722,7 @@ func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs t
 	releaseSubmissions := lockCommonRPCSubmissionHashes(hashes)
 	defer releaseSubmissions()
 	admissionStarted := time.Now()
-	admissionResults, err := core.SignAndRecordCommonRPCAdmissions(
+	admissionResults, err := core.SignCommonRPCAdmissions(
 		hashes,
 		bftview.GetServerCoinBase(),
 		b.ChainConfig().ChainID,
@@ -693,13 +759,90 @@ func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs t
 		return results
 	}
 	admittedCount = len(admittedTxs)
+	// Transfer ownership to the node-global WAL before any pool mutation. The
+	// request context is deliberately detached once validation and signing have
+	// completed: a disconnected client may retry, while the node must finish or
+	// replay the accepted durability operation exactly once.
+	intentStarted := time.Now()
+	intentTimeout := b.eth.txQUICIngress.config.ForwardTimeout
+	if intentTimeout <= 0 {
+		intentTimeout = 15 * time.Second
+	}
+	intentCtx, cancelIntent := context.WithTimeout(context.Background(), intentTimeout)
+	intentSet, err := b.eth.txQUICIngress.persistVerifiedLocalTxsIntent(intentCtx, admittedTxs, admittedAdmissions, b.eth.accountManager)
+	cancelIntent()
+	outboxElapsed += time.Since(intentStarted)
+	if err != nil {
+		for _, index := range admittedIndexes {
+			results[index] = fmt.Errorf("persist common RPC ingress intent: %w", err)
+		}
+		return results
+	}
+	// The signed certificate is now owned by the WAL. Only after that fsync may
+	// its rebuildable admission index become visible in chaindata.
+	materializeStarted := time.Now()
+	materializedAdmissions, err := core.VerifyAndStoreCommonRPCAdmissionBatch(
+		admittedAdmissions[0].Batch,
+		b.ChainConfig().ChainID,
+		genesisHash,
+	)
+	admissionElapsed += time.Since(materializeStarted)
+	if err != nil {
+		for _, index := range admittedIndexes {
+			results[index] = fmt.Errorf("materialize WAL-owned common RPC admission: %w", err)
+		}
+		return results
+	}
+	if len(materializedAdmissions) != len(admittedTxs) {
+		err := fmt.Errorf("materialized common RPC admission result count %d does not match %d transactions", len(materializedAdmissions), len(admittedTxs))
+		for _, index := range admittedIndexes {
+			results[index] = err
+		}
+		return results
+	}
+	for index, tx := range admittedTxs {
+		admission := materializedAdmissions[index]
+		if admission.Batch == nil || int(admission.Item) >= len(admission.Batch.TxHashes) || admission.Batch.TxHashes[admission.Item] != tx.Hash() {
+			err := fmt.Errorf("materialized common RPC admission result %d is not aligned", index)
+			for _, resultIndex := range admittedIndexes {
+				results[resultIndex] = err
+			}
+			return results
+		}
+	}
+	admittedAdmissions = materializedAdmissions
 	poolStarted := time.Now()
-	forwardTxs, forwardAdmissions, forwardIndexes, admissionPoolErr := addCommonRPCAdmittedTransactions(
+	if err := validateCommonRPCAdmissionPoolBatch(admittedTxs, admittedAdmissions, admittedIndexes, results); err != nil {
+		return results
+	}
+	if b.eth.txQUICIngress.poolIngress == nil {
+		err := errors.New("node-global transaction ingress scheduler is unavailable")
+		for _, index := range admittedIndexes {
+			results[index] = err
+		}
+		return results
+	}
+	publicationCtx, cancelPublication := context.WithTimeout(context.Background(), intentTimeout)
+	poolResults, publicationErr := b.eth.txQUICIngress.poolIngress.Submit(publicationCtx, txPoolIngressRPC, admittedTxs)
+	cancelPublication()
+	if publicationErr != nil {
+		poolElapsed = time.Since(poolStarted)
+		wrapped := fmt.Errorf("schedule common RPC pool publication: %w", publicationErr)
+		// The intent remains deliberately incomplete. If the job crossed enqueue,
+		// it may still publish after this timeout; a retry or startup replay resolves
+		// that ambiguity through the same EventID and TxPool hash semantics.
+		for _, index := range admittedIndexes {
+			results[index] = wrapped
+		}
+		return results
+	}
+	forwardTxs, _, _, admissionPoolErr := applyCommonRPCAdmittedTransactionResults(
 		b.eth.txPool,
 		admittedTxs,
 		admittedAdmissions,
 		admittedIndexes,
 		results,
+		poolResults,
 	)
 	poolElapsed = time.Since(poolStarted)
 	if admissionPoolErr != nil {
@@ -707,20 +850,29 @@ func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs t
 		// compensating cleanup error must not mask the definitive TxPool result.
 		log.Warn("Failed to finalize common RPC admission/pool boundary", "err", admissionPoolErr)
 	}
-	// Once TxPool acceptance or conservative retention is decided for every
-	// hash, later outbox work cannot create an orphan admission and should not
-	// block idempotent same-hash RPC retries.
-	releaseSubmissions()
-	if len(forwardTxs) == 0 {
-		return results
+	accepted := make(map[common.Hash]struct{}, len(forwardTxs))
+	for _, tx := range forwardTxs {
+		if tx != nil {
+			accepted[tx.Hash()] = struct{}{}
+		}
 	}
 	forwardedCount = len(forwardTxs)
 	outboxStarted := time.Now()
-	err = forwardCommonRPCTransaction(ctx, b.eth.txQUICIngress, forwardTxs, forwardAdmissions, b.eth.accountManager, b.eth.txQUICIngress.config.ForwardTimeout)
-	outboxElapsed = time.Since(outboxStarted)
+	completionCtx, cancelCompletion := context.WithTimeout(context.Background(), intentTimeout)
+	err = b.eth.txQUICIngress.completeVerifiedLocalTxsIntent(completionCtx, intentSet, accepted, b.eth.accountManager)
+	cancelCompletion()
+	outboxElapsed += time.Since(outboxStarted)
+	// The outcome is now fsynced and every accepted subset is materialized in
+	// the outbox. Same-hash retries can observe either the complete outcome or
+	// the durable intent that startup will finish.
+	releaseSubmissions()
 	if err != nil {
-		for _, index := range forwardIndexes {
-			results[index] = err
+		wrapped := fmt.Errorf("complete common RPC ingress intent: %w", err)
+		// Failure after intent ownership is ambiguous for every item, including a
+		// locally rejected one: startup replay is authoritative and may observe a
+		// changed pool state. Never return a definitive rejection in that window.
+		for _, index := range admittedIndexes {
+			results[index] = wrapped
 		}
 	}
 	return results

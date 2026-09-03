@@ -18,10 +18,13 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/cypherium/cypher/common"
@@ -36,8 +39,11 @@ import (
 )
 
 type revision struct {
-	id           int
-	journalIndex int
+	id                       int
+	journalIndex             int
+	nativeBlockHashes        map[uint64]common.Hash
+	nativeReplayTransactions map[common.Hash]struct{}
+	nativeMVCCVersion        uint64
 }
 
 var (
@@ -103,6 +109,46 @@ type StateDB struct {
 	validRevisions []revision
 	nextRevisionId int
 
+	// parallelRootMu protects process-local metrics and the outer snapshot
+	// storage map while independent account storage tries are hashed in
+	// parallel. It is never held across trie hashing.
+	parallelRootMu sync.Mutex
+
+	// nativeStorageWrites is enabled only on transaction-local CopyDeclared
+	// branches. It records slots actually written by execution so the native
+	// MVCC merge never expands every signed write declaration into an artificial
+	// state mutation. Values are read from the finalized branch at capture time.
+	nativeStorageWrites map[common.Address]map[common.Hash]struct{}
+
+	// nativeMVCCVersion identifies the immutable block-local base from which a
+	// declared transaction branch was created. Native DAG deltas may only merge
+	// into the exact same version; the base advances once per published
+	// microbatch. This is process-local concurrency metadata, never trie state.
+	nativeMVCCVersion uint64
+
+	// nativeBlockHashes is a proposal-local, immutable BLOCKHASH view populated
+	// from the state-rooted EIP-2935 history before native execution starts. It
+	// is deliberately process-local (and therefore excluded from the trie/root),
+	// but Copy and CopyDeclared retain the same immutable view so every DAG
+	// branch observes the certified parent ancestry even when that parent is not
+	// present in the node's canonical header database yet. A nil map means the
+	// view has not been prepared; a non-nil empty map is valid for genesis.
+	nativeBlockHashes map[uint64]common.Hash
+
+	// nativeReplayTransactions is the immutable set of NativeTxV1 hashes whose
+	// signed payer sequence was validated and consumed by the block prepass.
+	// The map is process-local execution metadata, not trie state; the replay
+	// base/bitmap values themselves live in reserved state storage. Copies and
+	// MVCC branches share this map read-only while executing one block.
+	nativeReplayTransactions map[common.Hash]struct{}
+
+	// runtimeMVCCAccounts is a read-only seed table owned by one immutable
+	// RuntimeMVCCSnapshot. It contains canonical objects whose code/storage trie
+	// changes are not committed to the backing database yet. A standard-EVM
+	// branch deep-copies only a seed it actually touches, avoiding both stale DB
+	// reads and O(all block writes) memory per speculative transaction.
+	runtimeMVCCAccounts map[common.Address]*stateObject
+
 	// Measurements gathered during execution for debugging purposes
 	AccountReads         time.Duration
 	AccountHashes        time.Duration
@@ -158,6 +204,83 @@ func (s *StateDB) Error() error {
 	return s.dbErr
 }
 
+// RuntimeMVCCError surfaces database errors memoized by the StateDB or by the
+// exact account objects touched by a standard-EVM execution branch. The EVM
+// StateDB interface cannot return read errors directly, so optimistic execution
+// must check this before publishing a speculative delta. Supplying addresses
+// keeps serial conflict fallback proportional to that transaction's observed
+// working set; an empty list checks every materialized object in a sparse branch.
+func (s *StateDB) RuntimeMVCCError(addresses ...common.Address) error {
+	if s == nil {
+		return errors.New("cannot inspect runtime MVCC error on nil state")
+	}
+	if s.dbErr != nil {
+		return s.dbErr
+	}
+	if len(addresses) == 0 {
+		addresses = make([]common.Address, 0, len(s.stateObjects))
+		for address := range s.stateObjects {
+			addresses = append(addresses, address)
+		}
+	} else {
+		unique := make(map[common.Address]struct{}, len(addresses))
+		filtered := make([]common.Address, 0, len(addresses))
+		for _, address := range addresses {
+			if _, duplicate := unique[address]; duplicate {
+				continue
+			}
+			unique[address] = struct{}{}
+			filtered = append(filtered, address)
+		}
+		addresses = filtered
+	}
+	sort.Slice(addresses, func(i, j int) bool { return bytes.Compare(addresses[i][:], addresses[j][:]) < 0 })
+	for _, address := range addresses {
+		if object := s.stateObjects[address]; object != nil && object.dbErr != nil {
+			return fmt.Errorf("runtime MVCC account %s: %w", address, object.dbErr)
+		}
+	}
+	return nil
+}
+
+// PruneRuntimeMVCCOrigins releases exact storage values cached by a serial EVM
+// execution after its transaction boundary. Slots still dirty or pending are
+// retained because updateTrieWithWorkers needs their original values to detect
+// no-op writes before publication. The boundary check prevents callers from
+// dropping values that an open EVM snapshot could still revert or reuse.
+func (s *StateDB) PruneRuntimeMVCCOrigins(slots map[common.Address][]common.Hash) error {
+	if s == nil {
+		return errors.New("cannot prune runtime MVCC origins on nil state")
+	}
+	if s.journal == nil || s.journal.length() != 0 || len(s.validRevisions) != 0 {
+		return errors.New("runtime MVCC origins may only be pruned at a finalized transaction boundary")
+	}
+	for address, keys := range slots {
+		object := s.stateObjects[address]
+		if object == nil {
+			continue
+		}
+		for _, key := range keys {
+			if _, pending := object.pendingStorage[key]; pending {
+				continue
+			}
+			if dirty, exists := object.dirtyStorage[key]; exists {
+				origin, loaded := object.originStorage[key]
+				if !loaded || dirty != origin {
+					continue
+				}
+				// StateDB journal reversion restores the old value in dirtyStorage.
+				// If the account has no surviving journal dirties, Finalise does not
+				// visit it. At a closed transaction boundary this exact no-op is safe
+				// to discard together with its cached origin.
+				delete(object.dirtyStorage, key)
+			}
+			delete(object.originStorage, key)
+		}
+	}
+	return nil
+}
+
 // Reset clears out all ephemeral state objects from the state db, but keeps
 // the underlying state trie to avoid reloading data for the next operations.
 func (s *StateDB) Reset(root common.Hash) error {
@@ -178,6 +301,9 @@ func (s *StateDB) Reset(root common.Hash) error {
 	s.transientStorage = newTransientStorage()
 	s.createdContracts = make(map[common.Address]struct{})
 	s.accessList = newAccessListState()
+	s.nativeMVCCVersion = 0
+	s.nativeBlockHashes = nil
+	s.nativeReplayTransactions = nil
 	s.clearJournalAndRefund()
 
 	if s.snaps != nil {
@@ -331,6 +457,96 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 	return common.Hash{}
 }
 
+// SetNativeBlockHashes publishes a proposal-local immutable BLOCKHASH view.
+// The input is cloned so callers cannot mutate a view concurrently with native
+// DAG workers. Subsequent StateDB copies may safely share the cloned map.
+func (s *StateDB) SetNativeBlockHashes(hashes map[uint64]common.Hash) {
+	if s == nil {
+		return
+	}
+	view := make(map[uint64]common.Hash, len(hashes))
+	for number, hash := range hashes {
+		view[number] = hash
+	}
+	if !equalNativeBlockHashViews(s.nativeBlockHashes, view) {
+		// A different ancestry view marks a new proposal/block execution. An
+		// exact transaction batch from the preceding block must be checked
+		// against its now-consumed state instead of being mistaken for an
+		// idempotent retry of the current block prepass.
+		s.nativeReplayTransactions = nil
+	}
+	s.nativeBlockHashes = view
+}
+
+func equalNativeBlockHashViews(left, right map[uint64]common.Hash) bool {
+	if left == nil || right == nil || len(left) != len(right) {
+		return false
+	}
+	for number, hash := range left {
+		if right[number] != hash {
+			return false
+		}
+	}
+	return true
+}
+
+// NativeBlockHashesPrepared reports whether the proposal-local BLOCKHASH view
+// has been installed. It distinguishes an unprepared StateDB from the valid
+// empty view used while executing genesis.
+func (s *StateDB) NativeBlockHashesPrepared() bool {
+	return s != nil && s.nativeBlockHashes != nil
+}
+
+// NativeBlockHash resolves one hash from the immutable proposal-local view.
+// Numbers outside the EVM's retained window return the zero hash.
+func (s *StateDB) NativeBlockHash(number uint64) common.Hash {
+	if s == nil {
+		return common.Hash{}
+	}
+	return s.nativeBlockHashes[number]
+}
+
+// SetNativeReplayTransactions publishes the immutable set validated by the
+// block-level replay prepass. The input is copied before publication so native
+// DAG workers can query it concurrently without synchronization.
+func (s *StateDB) SetNativeReplayTransactions(hashes []common.Hash) {
+	if s == nil {
+		return
+	}
+	prepared := make(map[common.Hash]struct{}, len(hashes))
+	for _, hash := range hashes {
+		prepared[hash] = struct{}{}
+	}
+	s.nativeReplayTransactions = prepared
+}
+
+// NativeReplayTransactionPrepared reports whether the exact transaction was
+// consumed by the current block prepass. A nil map is deliberately distinct
+// from an empty prepared block.
+func (s *StateDB) NativeReplayTransactionPrepared(hash common.Hash) bool {
+	if s == nil || s.nativeReplayTransactions == nil {
+		return false
+	}
+	_, prepared := s.nativeReplayTransactions[hash]
+	return prepared
+}
+
+// NativeReplayTransactionsPrepared reports whether hashes are exactly the
+// batch already consumed on this StateDB. It makes retrying the same immutable
+// proposal idempotent without permitting a partially overlapping or extended
+// batch to bypass canonical sequence validation.
+func (s *StateDB) NativeReplayTransactionsPrepared(hashes []common.Hash) bool {
+	if s == nil || s.nativeReplayTransactions == nil || len(s.nativeReplayTransactions) != len(hashes) {
+		return false
+	}
+	for _, hash := range hashes {
+		if _, prepared := s.nativeReplayTransactions[hash]; !prepared {
+			return false
+		}
+	}
+	return true
+}
+
 // GetProof returns the MerkleProof for a given Account
 func (s *StateDB) GetProof(a common.Address) ([][]byte, error) {
 	var proof proofList
@@ -427,8 +643,104 @@ func (s *StateDB) SetCode(addr common.Address, code []byte) {
 func (s *StateDB) SetState(addr common.Address, key, value common.Hash) {
 	stateObject := s.GetOrNewStateObject(addr)
 	if stateObject != nil {
-		stateObject.SetState(s.db, key, value)
+		if changed := stateObject.SetState(s.db, key, value); changed && s.nativeStorageWrites != nil {
+			if s.nativeStorageWrites[addr] == nil {
+				s.nativeStorageWrites[addr] = make(map[common.Hash]struct{})
+			}
+			s.nativeStorageWrites[addr][key] = struct{}{}
+		}
 	}
+}
+
+// NativeProtocolStorageMutation is one state-rooted system metadata update.
+// Before comes from an immutable prevalidation view; ApplyNativeProtocolStorageBatch
+// verifies any already-cached value against it and seeds uncached origins so
+// publishing does not repeat hundreds of thousands of trie reads serially.
+type NativeProtocolStorageMutation struct {
+	Key    common.Hash
+	Before common.Hash
+	After  common.Hash
+}
+
+// NativeProtocolState reads one system metadata slot and surfaces both account
+// trie and storage trie errors immediately. The ordinary VM StateDB interface
+// memoizes storage errors until commit because its GetState method cannot
+// return an error; consensus prevalidation must fail before publishing.
+func (s *StateDB) NativeProtocolState(addr common.Address, key common.Hash) (common.Hash, error) {
+	if s == nil {
+		return common.Hash{}, errors.New("cannot read native protocol storage from nil state")
+	}
+	object := s.getStateObject(addr)
+	if s.dbErr != nil {
+		return common.Hash{}, s.dbErr
+	}
+	if object == nil {
+		return common.Hash{}, nil
+	}
+	value := object.GetState(s.db, key)
+	if object.dbErr != nil {
+		return common.Hash{}, object.dbErr
+	}
+	return value, nil
+}
+
+// ApplyNativeProtocolStorageBatch publishes validated system storage changes
+// into one reserved account. The caller must ensure no state mutation occurs
+// between creation of the immutable read views and this call. Updates retain
+// normal StateDB journaling/revert semantics.
+func (s *StateDB) ApplyNativeProtocolStorageBatch(addr common.Address, nonce uint64, mutations []NativeProtocolStorageMutation) error {
+	if s == nil {
+		return errors.New("cannot publish native protocol storage into nil state")
+	}
+	object := s.getStateObject(addr)
+	if object == nil {
+		for _, mutation := range mutations {
+			if mutation.Before != (common.Hash{}) {
+				return fmt.Errorf("native protocol account %s is absent with non-zero prior storage %s", addr, mutation.Key)
+			}
+		}
+		s.CreateAccount(addr)
+		s.SetNonce(addr, nonce)
+		object = s.getStateObject(addr)
+	} else if object.Nonce() != nonce {
+		return fmt.Errorf("native protocol account %s has nonce %d, want %d", addr, object.Nonce(), nonce)
+	}
+	if object == nil {
+		return fmt.Errorf("native protocol account %s could not be created", addr)
+	}
+	if object.dbErr != nil {
+		return object.dbErr
+	}
+	if object.fakeStorage != nil {
+		return fmt.Errorf("native protocol account %s uses debug-only fake storage", addr)
+	}
+	for index, mutation := range mutations {
+		if mutation.Before == mutation.After {
+			continue
+		}
+		if current, ok := object.dirtyStorage[mutation.Key]; ok {
+			if current != mutation.Before {
+				return fmt.Errorf("native protocol mutation %d for %s/%s has stale dirty value %s, want %s", index, addr, mutation.Key, current, mutation.Before)
+			}
+		} else if current, ok := object.pendingStorage[mutation.Key]; ok {
+			if current != mutation.Before {
+				return fmt.Errorf("native protocol mutation %d for %s/%s has stale pending value %s, want %s", index, addr, mutation.Key, current, mutation.Before)
+			}
+		} else if current, ok := object.originStorage[mutation.Key]; ok {
+			if current != mutation.Before {
+				return fmt.Errorf("native protocol mutation %d for %s/%s has stale cached value %s, want %s", index, addr, mutation.Key, current, mutation.Before)
+			}
+		} else {
+			object.originStorage[mutation.Key] = mutation.Before
+		}
+		if !object.SetState(s.db, mutation.Key, mutation.After) {
+			return fmt.Errorf("native protocol mutation %d for %s/%s did not change validated state", index, addr, mutation.Key)
+		}
+	}
+	if s.dbErr != nil {
+		return s.dbErr
+	}
+	return nil
 }
 
 // SetStorage replaces the entire storage for the specified account with given
@@ -521,6 +833,15 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 	// Prefer live objects if any is available
 	if obj := s.stateObjects[addr]; obj != nil {
+		return obj
+	}
+	// Runtime MVCC snapshots publish pending account/storage changes into the
+	// copied trie, but newly created code and uncommitted storage trie nodes may
+	// not exist in the backing database yet. Seed those objects from the frozen
+	// canonical version and immediately detach them before any branch mutation.
+	if seed, ok := s.runtimeMVCCAccounts[addr]; ok && seed != nil {
+		obj := seed.deepCopyRuntimeMVCC(s)
+		s.setStateObject(obj)
 		return obj
 	}
 	// If no live objects are available, attempt to use snapshots
@@ -677,19 +998,22 @@ func (db *StateDB) ForEachStorage(addr common.Address, cb func(key, value common
 func (s *StateDB) Copy() *StateDB {
 	// Copy all the basic fields, initialize the memory ones
 	state := &StateDB{
-		db:                  s.db,
-		trie:                s.db.CopyTrie(s.trie),
-		stateObjects:        make(map[common.Address]*stateObject, len(s.journal.dirties)),
-		stateObjectsPending: make(map[common.Address]struct{}, len(s.stateObjectsPending)),
-		stateObjectsDirty:   make(map[common.Address]struct{}, len(s.journal.dirties)),
-		refund:              s.refund,
-		logs:                make(map[common.Hash][]*types.Log, len(s.logs)),
-		logSize:             s.logSize,
-		preimages:           make(map[common.Hash][]byte, len(s.preimages)),
-		transientStorage:    newTransientStorage(),
-		createdContracts:    make(map[common.Address]struct{}, len(s.createdContracts)),
-		accessList:          s.accessList.copy(),
-		journal:             newJournal(),
+		db:                       s.db,
+		trie:                     s.db.CopyTrie(s.trie),
+		stateObjects:             make(map[common.Address]*stateObject, len(s.journal.dirties)),
+		stateObjectsPending:      make(map[common.Address]struct{}, len(s.stateObjectsPending)),
+		stateObjectsDirty:        make(map[common.Address]struct{}, len(s.journal.dirties)),
+		refund:                   s.refund,
+		logs:                     make(map[common.Hash][]*types.Log, len(s.logs)),
+		logSize:                  s.logSize,
+		preimages:                make(map[common.Hash][]byte, len(s.preimages)),
+		transientStorage:         newTransientStorage(),
+		createdContracts:         make(map[common.Address]struct{}, len(s.createdContracts)),
+		accessList:               s.accessList.copy(),
+		journal:                  newJournal(),
+		nativeBlockHashes:        s.nativeBlockHashes,
+		nativeReplayTransactions: s.nativeReplayTransactions,
+		nativeMVCCVersion:        s.nativeMVCCVersion,
 	}
 	// Copy the dirty states, logs, and preimages
 	for addr := range s.journal.dirties {
@@ -745,11 +1069,315 @@ func (s *StateDB) Copy() *StateDB {
 	return state
 }
 
+// CopyDeclared creates a transaction-local copy containing only the account
+// objects named by a signed native access manifest. The account trie itself is
+// copied as an immutable fallback, while live/pending objects are copied on
+// write at account granularity. Callers must build these forks before starting
+// parallel execution; getDeletedStateObject may populate the base read cache.
+//
+// This is the production block-local MVCC fork used by the native DAG executor.
+// Unlike Copy, its cost is proportional to one transaction's declared account
+// footprint instead of every account touched earlier in the block. An object
+// tombstone is copied too, preventing an account deleted in the current base
+// version from being resurrected through the older trie snapshot.
+func (s *StateDB) CopyDeclared(addresses []common.Address, declaredSlots ...map[common.Address][]common.Hash) *StateDB {
+	if s == nil {
+		return nil
+	}
+	state := &StateDB{
+		db:                       s.db,
+		trie:                     s.db.CopyTrie(s.trie),
+		stateObjects:             make(map[common.Address]*stateObject, len(addresses)),
+		stateObjectsPending:      make(map[common.Address]struct{}),
+		stateObjectsDirty:        make(map[common.Address]struct{}),
+		logs:                     make(map[common.Hash][]*types.Log),
+		preimages:                make(map[common.Hash][]byte),
+		transientStorage:         newTransientStorage(),
+		createdContracts:         make(map[common.Address]struct{}),
+		accessList:               newAccessListState(),
+		journal:                  newJournal(),
+		dbErr:                    s.dbErr,
+		nativeStorageWrites:      make(map[common.Address]map[common.Hash]struct{}),
+		nativeBlockHashes:        s.nativeBlockHashes,
+		nativeReplayTransactions: s.nativeReplayTransactions,
+		nativeMVCCVersion:        s.nativeMVCCVersion,
+	}
+	seen := make(map[common.Address]struct{}, len(addresses))
+	var slotsByAddress map[common.Address][]common.Hash
+	if len(declaredSlots) > 0 {
+		slotsByAddress = declaredSlots[0]
+	}
+	for _, address := range addresses {
+		if _, duplicate := seen[address]; duplicate {
+			continue
+		}
+		seen[address] = struct{}{}
+		if object := s.getDeletedStateObject(address); object != nil {
+			seeded := make(map[common.Hash]common.Hash, len(slotsByAddress[address]))
+			for _, slot := range slotsByAddress[address] {
+				seeded[slot] = s.GetState(address, slot)
+			}
+			state.stateObjects[address] = object.deepCopyDeclared(state, seeded)
+		}
+	}
+	return state
+}
+
+// NativeMVCCVersion returns the block-local version represented by this state
+// or declared branch.
+func (s *StateDB) NativeMVCCVersion() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.nativeMVCCVersion
+}
+
+// AdvanceNativeMVCCVersion publishes one completed microbatch. It deliberately
+// advances only after Finalise, making the next snapshot observe all prior
+// writes and preventing stale speculative deltas from being merged.
+func (s *StateDB) AdvanceNativeMVCCVersion() error {
+	if s == nil {
+		return errors.New("cannot advance a nil native MVCC state")
+	}
+	if s.nativeMVCCVersion == ^uint64(0) {
+		return errors.New("native MVCC version overflow")
+	}
+	s.nativeMVCCVersion++
+	return nil
+}
+
+type nativeDeclaredSeed struct {
+	object *stateObject
+	slots  map[common.Hash]common.Hash
+}
+
+// NativeDeclaredSnapshot is an immutable, prefetched StateDB version shared by
+// every transaction branch in one DAG microbatch. Construction performs all
+// lazy account/storage reads serially once; Branch is then read-only and safe
+// to call concurrently.
+type NativeDeclaredSnapshot struct {
+	db                       Database
+	trie                     Trie
+	dbErr                    error
+	nativeBlockHashes        map[uint64]common.Hash
+	nativeReplayTransactions map[common.Hash]struct{}
+	version                  uint64
+	accounts                 map[common.Address]nativeDeclaredSeed
+}
+
+// RuntimeMVCCSnapshot is an immutable block-local state version used by the
+// standard-EVM optimistic executor. Unlike NativeDeclaredSnapshot it does not
+// require a signed access manifest: each branch starts with an empty object
+// cache over an independent copy of the already-updated account trie and
+// records the resources it actually observes while executing.
+//
+// The snapshot must be prepared before workers start. PrepareRuntimeMVCCSnapshot
+// first publishes all pending objects into the in-memory trie, then borrows the
+// canonical object table for the read-only worker phase. Branches detach that
+// table before canonical merging resumes, avoiding an O(all block accounts)
+// map copy at every fixed-size microbatch.
+type RuntimeMVCCSnapshot struct {
+	db                       Database
+	trie                     Trie
+	dbErr                    error
+	nativeBlockHashes        map[uint64]common.Hash
+	nativeReplayTransactions map[common.Hash]struct{}
+	version                  uint64
+	accounts                 map[common.Address]*stateObject
+}
+
+// PrepareRuntimeMVCCSnapshot freezes the current canonical state into an
+// immutable trie view. IntermediateRoot is a process-local publication step;
+// it does not commit a block or alter consensus state, and its deterministic
+// root is computed from the same finalized transaction boundary as the serial
+// executor.
+func (s *StateDB) PrepareRuntimeMVCCSnapshot(deleteEmptyObjects bool) (*RuntimeMVCCSnapshot, error) {
+	if s == nil {
+		return nil, errors.New("cannot snapshot a nil runtime MVCC state")
+	}
+	s.IntermediateRoot(deleteEmptyObjects)
+	if s.dbErr != nil {
+		return nil, s.dbErr
+	}
+	return &RuntimeMVCCSnapshot{
+		db:                       s.db,
+		trie:                     s.db.CopyTrie(s.trie),
+		dbErr:                    s.dbErr,
+		nativeBlockHashes:        s.nativeBlockHashes,
+		nativeReplayTransactions: s.nativeReplayTransactions,
+		version:                  s.nativeMVCCVersion,
+		accounts:                 s.stateObjects,
+	}, nil
+}
+
+// ReleaseRuntimeMVCCSnapshot drops a branch's borrowed read-only seed table.
+// The optimistic executor calls this before it resumes canonical StateDB
+// mutation. Objects already touched by the branch were deep-copied into its
+// private stateObjects map and remain available for delta capture.
+func (s *StateDB) ReleaseRuntimeMVCCSnapshot() {
+	if s != nil {
+		s.runtimeMVCCAccounts = nil
+	}
+}
+
+// Branch creates an isolated standard-EVM transaction view. Branches share
+// only immutable snapshot metadata; their tries, object caches, journals,
+// transient storage, logs and preimages are independent and may be mutated by
+// separate workers concurrently.
+func (snapshot *RuntimeMVCCSnapshot) Branch() (*StateDB, error) {
+	if snapshot == nil || snapshot.db == nil || snapshot.trie == nil {
+		return nil, errors.New("runtime MVCC snapshot is unavailable")
+	}
+	return &StateDB{
+		db:                       snapshot.db,
+		trie:                     snapshot.db.CopyTrie(snapshot.trie),
+		stateObjects:             make(map[common.Address]*stateObject),
+		stateObjectsPending:      make(map[common.Address]struct{}),
+		stateObjectsDirty:        make(map[common.Address]struct{}),
+		logs:                     make(map[common.Hash][]*types.Log),
+		preimages:                make(map[common.Hash][]byte),
+		transientStorage:         newTransientStorage(),
+		createdContracts:         make(map[common.Address]struct{}),
+		accessList:               newAccessListState(),
+		journal:                  newJournal(),
+		dbErr:                    snapshot.dbErr,
+		nativeBlockHashes:        snapshot.nativeBlockHashes,
+		nativeReplayTransactions: snapshot.nativeReplayTransactions,
+		nativeMVCCVersion:        snapshot.version,
+		runtimeMVCCAccounts:      snapshot.accounts,
+	}, nil
+}
+
+// PrepareNativeDeclaredSnapshot prefetches the union of exact declared
+// resources for a microbatch. Missing accounts are recorded explicitly so a
+// concurrent branch never falls back to the mutable base StateDB cache.
+func (s *StateDB) PrepareNativeDeclaredSnapshot(addresses []common.Address, slots map[common.Address][]common.Hash) (*NativeDeclaredSnapshot, error) {
+	if s == nil {
+		return nil, errors.New("cannot snapshot a nil native MVCC state")
+	}
+	snapshot := &NativeDeclaredSnapshot{
+		db:                       s.db,
+		trie:                     s.db.CopyTrie(s.trie),
+		dbErr:                    s.dbErr,
+		nativeBlockHashes:        s.nativeBlockHashes,
+		nativeReplayTransactions: s.nativeReplayTransactions,
+		version:                  s.nativeMVCCVersion,
+		accounts:                 make(map[common.Address]nativeDeclaredSeed, len(addresses)),
+	}
+	template := &StateDB{db: s.db, trie: s.db.CopyTrie(s.trie), journal: newJournal()}
+	for _, address := range addresses {
+		if _, prepared := snapshot.accounts[address]; prepared {
+			continue
+		}
+		object := s.getDeletedStateObject(address)
+		seed := nativeDeclaredSeed{slots: make(map[common.Hash]common.Hash, len(slots[address]))}
+		if object != nil && !object.deleted {
+			for _, slot := range slots[address] {
+				seed.slots[slot] = object.GetState(s.db, slot)
+			}
+		}
+		if object != nil && object.dbErr != nil {
+			return nil, fmt.Errorf("prefetch native MVCC account %s: %w", address, object.dbErr)
+		}
+		if object != nil {
+			// Detach account metadata/code/trie handles from the mutable base.
+			// Branch creation can now proceed concurrently even if a caller
+			// retains the snapshot beyond the immediate execution phase.
+			seed.object = object.deepCopyDeclared(template, seed.slots)
+		}
+		snapshot.accounts[address] = seed
+	}
+	if s.dbErr != nil {
+		return nil, s.dbErr
+	}
+	return snapshot, nil
+}
+
+// Branch creates one transaction-local COW view from a prepared version. It
+// performs no reads or writes against the base StateDB and is safe for parallel
+// branch construction.
+func (snapshot *NativeDeclaredSnapshot) Branch(addresses []common.Address, slots map[common.Address][]common.Hash) (*StateDB, error) {
+	if snapshot == nil || snapshot.db == nil || snapshot.trie == nil {
+		return nil, errors.New("native MVCC snapshot is unavailable")
+	}
+	state := &StateDB{
+		db:                       snapshot.db,
+		trie:                     snapshot.db.CopyTrie(snapshot.trie),
+		stateObjects:             make(map[common.Address]*stateObject, len(addresses)),
+		stateObjectsPending:      make(map[common.Address]struct{}),
+		stateObjectsDirty:        make(map[common.Address]struct{}),
+		logs:                     make(map[common.Hash][]*types.Log),
+		preimages:                make(map[common.Hash][]byte),
+		transientStorage:         newTransientStorage(),
+		createdContracts:         make(map[common.Address]struct{}),
+		accessList:               newAccessListState(),
+		journal:                  newJournal(),
+		dbErr:                    snapshot.dbErr,
+		nativeStorageWrites:      make(map[common.Address]map[common.Hash]struct{}),
+		nativeBlockHashes:        snapshot.nativeBlockHashes,
+		nativeReplayTransactions: snapshot.nativeReplayTransactions,
+		nativeMVCCVersion:        snapshot.version,
+	}
+	seen := make(map[common.Address]struct{}, len(addresses))
+	for _, address := range addresses {
+		if _, duplicate := seen[address]; duplicate {
+			continue
+		}
+		seen[address] = struct{}{}
+		seed, prepared := snapshot.accounts[address]
+		if !prepared {
+			return nil, fmt.Errorf("native MVCC account %s was not prefetched", address)
+		}
+		if seed.object == nil {
+			continue
+		}
+		values := make(map[common.Hash]common.Hash, len(slots[address]))
+		for _, slot := range slots[address] {
+			value, prepared := seed.slots[slot]
+			if !prepared && !seed.object.deleted {
+				return nil, fmt.Errorf("native MVCC storage %s/%s was not prefetched", address, slot)
+			}
+			values[slot] = value
+		}
+		state.stateObjects[address] = seed.object.deepCopyDeclared(state, values)
+	}
+	return state, nil
+}
+
+// NativeAccountChanged reports whether the current transaction-local branch
+// finalized a persistent change for address. It is meaningful only on a
+// CopyDeclared branch after transaction execution.
+func (s *StateDB) NativeAccountChanged(address common.Address) bool {
+	if s == nil || s.nativeStorageWrites == nil {
+		return false
+	}
+	_, changed := s.stateObjectsDirty[address]
+	return changed
+}
+
+// NativeStorageChanged reports whether execution actually attempted a value
+// change for one slot. A reverted write may conservatively return true; capture
+// then reads the final branch value and merge is a no-op, preserving serial
+// semantics without letting unused manifest declarations amplify work.
+func (s *StateDB) NativeStorageChanged(address common.Address, slot common.Hash) bool {
+	if s == nil || s.nativeStorageWrites == nil {
+		return false
+	}
+	_, changed := s.nativeStorageWrites[address][slot]
+	return changed
+}
+
 // Snapshot returns an identifier for the current revision of the state.
 func (s *StateDB) Snapshot() int {
 	id := s.nextRevisionId
 	s.nextRevisionId++
-	s.validRevisions = append(s.validRevisions, revision{id, s.journal.length()})
+	s.validRevisions = append(s.validRevisions, revision{
+		id:                       id,
+		journalIndex:             s.journal.length(),
+		nativeBlockHashes:        s.nativeBlockHashes,
+		nativeReplayTransactions: s.nativeReplayTransactions,
+		nativeMVCCVersion:        s.nativeMVCCVersion,
+	})
 	return id
 }
 
@@ -762,10 +1390,13 @@ func (s *StateDB) RevertToSnapshot(revid int) {
 	if idx == len(s.validRevisions) || s.validRevisions[idx].id != revid {
 		panic(fmt.Errorf("revision id %v cannot be reverted", revid))
 	}
-	snapshot := s.validRevisions[idx].journalIndex
+	revision := s.validRevisions[idx]
 
 	// Replay the journal to undo changes and remove invalidated snapshots
-	s.journal.revert(s, snapshot)
+	s.journal.revert(s, revision.journalIndex)
+	s.nativeBlockHashes = revision.nativeBlockHashes
+	s.nativeReplayTransactions = revision.nativeReplayTransactions
+	s.nativeMVCCVersion = revision.nativeMVCCVersion
 	s.validRevisions = s.validRevisions[:idx]
 }
 
@@ -815,18 +1446,95 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 // It is called in between transactions to get the root hash that
 // goes into transaction receipts.
 func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 64 {
+		workers = 64
+	}
+	return s.intermediateRootWithWorkers(deleteEmptyObjects, workers)
+}
+
+// intermediateRootWithWorkers computes independent account storage roots and
+// account RLPs in bounded worker pools, then atomically updates independent
+// first-nibble account-trie subtrees. Worker count is a local choice and cannot
+// affect consensus output.
+func (s *StateDB) intermediateRootWithWorkers(deleteEmptyObjects bool, workers int) common.Hash {
 	// Finalise all the dirty storage states and write them into the tries
 	s.Finalise(deleteEmptyObjects)
 
+	addresses := make([]common.Address, 0, len(s.stateObjectsPending))
 	for addr := range s.stateObjectsPending {
-		obj := s.stateObjects[addr]
-		if obj.deleted {
-			s.deleteStateObject(obj)
-		} else {
-			obj.updateRoot(s.db)
-			s.updateStateObject(obj)
+		addresses = append(addresses, addr)
+	}
+	sort.Slice(addresses, func(i, j int) bool { return bytes.Compare(addresses[i][:], addresses[j][:]) < 0 })
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 64 {
+		workers = 64
+	}
+	// Split one process-local worker budget between account-level jobs and the
+	// storage batches inside hot accounts. Without this split, a single contract
+	// remains serial; naively giving every account its own full pool oversubscribes
+	// validators by O(accounts*GOMAXPROCS).
+	storageAccounts := 0
+	for _, addr := range addresses {
+		if obj := s.stateObjects[addr]; obj != nil && !obj.deleted && len(obj.pendingStorage) > 1 {
+			storageAccounts++
 		}
 	}
+	outerWorkers := workers
+	storageWorkers := 1
+	if storageAccounts > 0 && workers > 1 {
+		outerWorkers = workers / 2
+		if outerWorkers < 1 {
+			outerWorkers = 1
+		}
+		if outerWorkers > len(addresses) {
+			outerWorkers = len(addresses)
+		}
+		innerBudget := workers - outerWorkers
+		if innerBudget > 0 {
+			storageWorkers = innerBudget / storageAccounts
+			if storageWorkers < 1 {
+				storageWorkers = 1
+			}
+		}
+	}
+	if outerWorkers > len(addresses) {
+		outerWorkers = len(addresses)
+	}
+	updateRoot := func(addr common.Address) {
+		if obj := s.stateObjects[addr]; obj != nil && !obj.deleted {
+			innerWorkers := 1
+			if len(obj.pendingStorage) > 1 {
+				innerWorkers = storageWorkers
+			}
+			obj.updateRootWithWorkers(s.db, innerWorkers)
+		}
+	}
+	if outerWorkers <= 1 {
+		for _, addr := range addresses {
+			updateRoot(addr)
+		}
+	} else {
+		jobs := make(chan common.Address, outerWorkers)
+		var group sync.WaitGroup
+		group.Add(outerWorkers)
+		for worker := 0; worker < outerWorkers; worker++ {
+			go func() {
+				defer group.Done()
+				for addr := range jobs {
+					updateRoot(addr)
+				}
+			}()
+		}
+		for _, addr := range addresses {
+			jobs <- addr
+		}
+		close(jobs)
+		group.Wait()
+	}
+	s.updateAccountTrieBatch(addresses, workers)
 	if len(s.stateObjectsPending) > 0 {
 		s.stateObjectsPending = make(map[common.Address]struct{})
 	}
@@ -835,6 +1543,92 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 		defer func(start time.Time) { s.AccountHashes += time.Since(start) }(time.Now())
 	}
 	return s.trie.Hash()
+}
+
+// updateAccountTrieBatch prepares consensus account encodings in parallel and
+// applies them through SecureTrie's deterministic first-nibble batch API. The
+// mutation list remains address-sorted for reproducible diagnostics and
+// duplicate-free state-object semantics.
+func (s *StateDB) updateAccountTrieBatch(addresses []common.Address, workers int) {
+	objects := make([]*stateObject, 0, len(addresses))
+	for _, address := range addresses {
+		if obj := s.stateObjects[address]; obj != nil {
+			objects = append(objects, obj)
+		}
+	}
+	if len(objects) == 0 {
+		return
+	}
+	if metrics.EnabledExpensive {
+		defer func(start time.Time) { s.AccountUpdates += time.Since(start) }(time.Now())
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 64 {
+		workers = 64
+	}
+	if workers > len(objects) {
+		workers = len(objects)
+	}
+	mutations := make([]trie.BatchMutation, len(objects))
+	encodeErrors := make([]error, len(objects))
+	slimAccounts := make([][]byte, len(objects))
+	prepare := func(index int) {
+		obj := objects[index]
+		key := make([]byte, len(obj.address))
+		copy(key, obj.address[:])
+		if obj.deleted {
+			mutations[index] = trie.BatchMutation{Key: key, Delete: true}
+			return
+		}
+		encoded, err := rlp.EncodeToBytes(obj)
+		if err != nil {
+			encodeErrors[index] = err
+			return
+		}
+		mutations[index] = trie.BatchMutation{Key: key, Value: encoded}
+		if s.snap != nil {
+			slimAccounts[index] = snapshot.SlimAccountRLP(obj.data.Nonce, obj.data.Balance, obj.data.Root, obj.data.CodeHash)
+		}
+	}
+	if workers <= 1 {
+		for index := range objects {
+			prepare(index)
+		}
+	} else {
+		jobs := make(chan int, workers)
+		var group sync.WaitGroup
+		group.Add(workers)
+		for worker := 0; worker < workers; worker++ {
+			go func() {
+				defer group.Done()
+				for index := range jobs {
+					prepare(index)
+				}
+			}()
+		}
+		for index := range objects {
+			jobs <- index
+		}
+		close(jobs)
+		group.Wait()
+	}
+	for index, err := range encodeErrors {
+		if err != nil {
+			panic(fmt.Errorf("can't encode object at %x: %v", objects[index].address[:], err))
+		}
+	}
+	if err := s.trie.TryUpdateBatch(mutations, workers); err != nil {
+		s.setError(fmt.Errorf("update account trie batch: %v", err))
+	}
+	if s.snap != nil {
+		for index, obj := range objects {
+			if !obj.deleted {
+				s.snapAccounts[obj.addrHash] = slimAccounts[index]
+			}
+		}
+	}
 }
 
 // Prepare sets the current transaction hash and index and block hash which is
@@ -882,17 +1676,64 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 
 	// Commit objects to the trie, measuring the elapsed time
 	codeWriter := s.db.TrieDB().DiskDB().NewBatch()
+	dirtyAddresses := make([]common.Address, 0, len(s.stateObjectsDirty))
 	for addr := range s.stateObjectsDirty {
-		if obj := s.stateObjects[addr]; !obj.deleted {
+		dirtyAddresses = append(dirtyAddresses, addr)
+	}
+	sort.Slice(dirtyAddresses, func(i, j int) bool { return bytes.Compare(dirtyAddresses[i][:], dirtyAddresses[j][:]) < 0 })
+	dirtyObjects := make([]*stateObject, 0, len(dirtyAddresses))
+	committedAddresses := make([]common.Address, 0, len(dirtyAddresses))
+	for _, addr := range dirtyAddresses {
+		if obj := s.stateObjects[addr]; obj != nil && !obj.deleted {
 			// Write any contract code associated with the state object
 			if obj.code != nil && obj.dirtyCode {
 				rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)
 				obj.dirtyCode = false
 			}
-			// Write any storage changes in the state object to its storage trie
-			if err := obj.CommitTrie(s.db); err != nil {
-				return common.Hash{}, err
-			}
+			dirtyObjects = append(dirtyObjects, obj)
+			committedAddresses = append(committedAddresses, addr)
+		}
+	}
+	// Storage tries are independent after IntermediateRoot has finalized every
+	// mutation. Trie.Database serializes its node-cache insertions internally,
+	// while hashing/collapsing each account trie can proceed in parallel. Errors
+	// are consumed in sorted account order so worker timing is never observable.
+	commitErrors := make([]error, len(dirtyObjects))
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 64 {
+		workers = 64
+	}
+	if workers > len(dirtyObjects) {
+		workers = len(dirtyObjects)
+	}
+	commitStorage := func(index int) {
+		commitErrors[index] = dirtyObjects[index].CommitTrie(s.db)
+	}
+	if workers <= 1 {
+		for index := range dirtyObjects {
+			commitStorage(index)
+		}
+	} else {
+		jobs := make(chan int, workers)
+		var group sync.WaitGroup
+		group.Add(workers)
+		for worker := 0; worker < workers; worker++ {
+			go func() {
+				defer group.Done()
+				for index := range jobs {
+					commitStorage(index)
+				}
+			}()
+		}
+		for index := range dirtyObjects {
+			jobs <- index
+		}
+		close(jobs)
+		group.Wait()
+	}
+	for index, err := range commitErrors {
+		if err != nil {
+			return common.Hash{}, fmt.Errorf("commit storage trie for %s: %w", committedAddresses[index], err)
 		}
 	}
 	if len(s.stateObjectsDirty) > 0 {

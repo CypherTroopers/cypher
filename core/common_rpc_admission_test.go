@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"errors"
 	"math/big"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,13 +19,39 @@ import (
 	"github.com/cypherium/cypher/rlp"
 )
 
+func TestCommonRPCAdmissionStripeUsesTwelveHashBits(t *testing.T) {
+	var first, second, same common.Hash
+	first[0], first[1] = 0x7a, 0x10
+	second[0], second[1] = 0x7a, 0x20
+	same[0], same[1] = 0x7a, 0x1f
+	if commonRPCAdmissionStripe(first) == commonRPCAdmissionStripe(second) {
+		t.Fatal("admission hashes with different second-byte nibbles share a stripe")
+	}
+	if commonRPCAdmissionStripe(first) != commonRPCAdmissionStripe(same) {
+		t.Fatal("admission stripe used more than the documented twelve hash bits")
+	}
+	var maximum common.Hash
+	maximum[0], maximum[1] = 0xff, 0xf0
+	if got := commonRPCAdmissionStripe(maximum); got != commonRPCAdmissionStoreStripeCount-1 {
+		t.Fatalf("maximum admission stripe = %d, want %d", got, commonRPCAdmissionStoreStripeCount-1)
+	}
+}
+
 type countingAdmissionDB struct {
 	ethdb.KeyValueStore
 	mu           sync.Mutex
+	gets         int
 	batchPuts    int
 	batchDeletes int
 	batchWrites  int
 	writeErr     error
+}
+
+func (db *countingAdmissionDB) Get(key []byte) ([]byte, error) {
+	db.mu.Lock()
+	db.gets++
+	db.mu.Unlock()
+	return db.KeyValueStore.Get(key)
 }
 
 func (db *countingAdmissionDB) NewBatch() ethdb.Batch {
@@ -33,8 +60,14 @@ func (db *countingAdmissionDB) NewBatch() ethdb.Batch {
 
 func (db *countingAdmissionDB) reset() {
 	db.mu.Lock()
-	db.batchPuts, db.batchDeletes, db.batchWrites = 0, 0, 0
+	db.gets, db.batchPuts, db.batchDeletes, db.batchWrites = 0, 0, 0, 0
 	db.mu.Unlock()
+}
+
+func (db *countingAdmissionDB) readCount() int {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	return db.gets
 }
 
 func (db *countingAdmissionDB) counts() (int, int, int) {
@@ -162,6 +195,41 @@ func TestCommonRPCAdmissionSigns512OnceAndGroupCommits(t *testing.T) {
 	}
 }
 
+func TestSignCommonRPCAdmissionsDoesNotPublishBeforeWALBoundary(t *testing.T) {
+	db, miner, chainID, genesis, signs := resetAdmissionTestState(t)
+	hashes := []common.Hash{{1}, {2}, {3}}
+	db.reset()
+	results, err := SignCommonRPCAdmissions(hashes, miner, chainID, genesis, 7, uint64(time.Now().Unix()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt64(signs); got != 1 {
+		t.Fatalf("signed %d times, want one batch signature", got)
+	}
+	if len(results) != len(hashes) || results[0].Batch == nil {
+		t.Fatalf("sign-only results=%d batch=%v", len(results), results[0].Batch)
+	}
+	for index, hash := range hashes {
+		if results[index].Batch != results[0].Batch || results[index].Item != uint16(index) || results[index].Updated || results[index].Inserted {
+			t.Fatalf("sign-only result %d=%+v", index, results[index])
+		}
+		if HasCommonRPCAdmission(hash) {
+			t.Fatalf("sign-only admission %s became process-visible", hash)
+		}
+	}
+	puts, _, writes := db.counts()
+	if puts != 0 || writes != 0 {
+		t.Fatalf("sign-only admission changed DB: puts=%d writes=%d", puts, writes)
+	}
+	stored, err := VerifyAndStoreCommonRPCAdmissionBatch(results[0].Batch, chainID, genesis)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != len(hashes) || !stored[0].Updated || !HasCommonRPCAdmission(hashes[0]) {
+		t.Fatalf("post-WAL materialization failed: %+v", stored)
+	}
+}
+
 func TestCommonRPCAdmissionRejectsWrongIdentityBeforeStore(t *testing.T) {
 	db, _, chainID, genesis, _ := resetAdmissionTestState(t)
 	batch := signedAdmissionBatch(t, []common.Hash{{1}}, chainID, genesis, 1, uint64(time.Now().Unix()))
@@ -280,6 +348,156 @@ func TestBuildCommonTxAdmissionsSortsUniqueBatchesAndRefs(t *testing.T) {
 	}
 	if first[0].Batch == nil || second[0].Batch == nil {
 		t.Fatal("missing stored certificates")
+	}
+}
+
+func TestCommonRPCAdmissionMillionMemoryHitsDoNotReadDBOrFinality(t *testing.T) {
+	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
+	tx := testTransaction(44)
+	now := uint64(time.Now().Unix())
+	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 1, now); err != nil {
+		t.Fatal(err)
+	}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	var finalityCalls atomic.Int64
+	SetCommonRPCAdmissionFinalizedLookup(func(common.Hash) bool {
+		finalityCalls.Add(1)
+		return false
+	})
+	t.Cleanup(func() { SetCommonRPCAdmissionFinalizedLookup(nil) })
+	db.reset()
+	for i := 0; i < params.NativeParallelHardMaxTransactions; i++ {
+		selection, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 1, 2, now)
+		if err != nil || selection.Batch == nil {
+			t.Fatalf("memory-hit admission %d failed: selection=%+v err=%v", i, selection, err)
+		}
+	}
+	if got := db.readCount(); got != 0 {
+		t.Fatalf("memory-hit proposal filtering performed %d DB reads", got)
+	}
+	if got := finalityCalls.Load(); got != 0 {
+		t.Fatalf("memory-hit proposal filtering performed %d external finality lookups", got)
+	}
+}
+
+func TestBuildCommonTxAdmissionsReusesFilteredResultsWithoutLookup(t *testing.T) {
+	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
+	txs := types.Transactions{testTransaction(51), testTransaction(52), testTransaction(53)}
+	hashes := make([]common.Hash, len(txs))
+	for i, tx := range txs {
+		hashes[i] = tx.Hash()
+	}
+	now := uint64(time.Now().Unix())
+	if _, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 4, now); err != nil {
+		t.Fatal(err)
+	}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	selections := make([]CommonRPCAdmissionResult, len(txs))
+	for i, tx := range txs {
+		selection, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 4, 5, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		selections[i] = selection
+	}
+	var finalityCalls atomic.Int64
+	SetCommonRPCAdmissionFinalizedLookup(func(common.Hash) bool {
+		finalityCalls.Add(1)
+		return false
+	})
+	t.Cleanup(func() { SetCommonRPCAdmissionFinalizedLookup(nil) })
+	db.reset()
+	batches, refs, err := BuildCommonTxAdmissionsFromResults(txs, selections, config, genesis, 4, 5, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batches) != 1 || len(refs) != len(txs) {
+		t.Fatalf("reused sidecars = %d batches/%d refs", len(batches), len(refs))
+	}
+	if got := db.readCount(); got != 0 {
+		t.Fatalf("reused selected admissions performed %d DB reads", got)
+	}
+	if got := finalityCalls.Load(); got != 0 {
+		t.Fatalf("reused selected admissions performed %d finality lookups", got)
+	}
+
+	writeBatch := db.NewBatch()
+	release, forget, err := stageFinalizedCommonRPCAdmissionDeletes(writeBatch, batches, []types.CommonTxAdmissionRef{refs[0]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeBatch.Write(); err != nil {
+		release()
+		t.Fatal(err)
+	}
+	forget()
+	release()
+	if _, _, err := BuildCommonTxAdmissionsFromResults(txs, selections, config, genesis, 4, 5, now); err == nil {
+		t.Fatal("atomic finalized entry was reusable after cache forget")
+	}
+}
+
+func TestCommonRPCAdmissionConcurrentFinalizationTombstonesMemoryReaders(t *testing.T) {
+	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
+	tx := testTransaction(54)
+	now := uint64(time.Now().Unix())
+	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 4, now); err != nil {
+		t.Fatal(err)
+	}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	initial, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 4, 5, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 33)
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			selection, lookupErr := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 4, 5, now)
+			if lookupErr == nil && (selection.Batch == nil || int(selection.Item) >= len(selection.Batch.TxHashes) || selection.Batch.TxHashes[selection.Item] != tx.Hash()) {
+				lookupErr = errors.New("concurrent lookup returned a malformed admission")
+			}
+			errs <- lookupErr
+		}()
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		writeBatch := db.NewBatch()
+		release, forget, stageErr := stageFinalizedCommonRPCAdmissionDeletes(writeBatch, []*types.CommonTxAdmissionBatch{initial.Batch}, []types.CommonTxAdmissionRef{{Batch: 0, Item: initial.Item}})
+		if stageErr != nil {
+			errs <- stageErr
+			return
+		}
+		defer release()
+		if writeErr := writeBatch.Write(); writeErr != nil {
+			errs <- writeErr
+			return
+		}
+		forget()
+		errs <- nil
+	}()
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		// A reader may linearize on either side of finalization. Missing admission
+		// on the latter side is therefore expected; malformed success is not.
+		if err != nil && !strings.Contains(err.Error(), "no common RPC admission") && !strings.Contains(err.Error(), "already finalized") {
+			t.Fatal(err)
+		}
+	}
+	if _, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 4, 5, now); err == nil {
+		t.Fatal("finalized admission remained visible after concurrent cache forget")
+	}
+	if _, _, err := BuildCommonTxAdmissionsFromResults(types.Transactions{tx}, []CommonRPCAdmissionResult{initial}, config, genesis, 4, 5, now); err == nil {
+		t.Fatal("pre-finalization selection remained reusable after concurrent cache forget")
 	}
 }
 

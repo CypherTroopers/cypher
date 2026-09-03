@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strings"
 	"sync"
 
 	"github.com/cypherium/cypher/common"
@@ -23,6 +24,11 @@ type BlobScheduleConfig struct {
 	Cancun *BlobConfig `json:"cancun,omitempty"`
 	Prague *BlobConfig `json:"prague,omitempty"`
 	Osaka  *BlobConfig `json:"osaka,omitempty"`
+	BPO1   *BlobConfig `json:"bpo1,omitempty"`
+	BPO2   *BlobConfig `json:"bpo2,omitempty"`
+	BPO3   *BlobConfig `json:"bpo3,omitempty"`
+	BPO4   *BlobConfig `json:"bpo4,omitempty"`
+	BPO5   *BlobConfig `json:"bpo5,omitempty"`
 }
 
 // ModernForkConfig holds fork fields that do not exist in the original
@@ -39,6 +45,11 @@ type ModernForkConfig struct {
 	CancunTime        *uint64             `json:"cancunTime,omitempty"`
 	PragueTime        *uint64             `json:"pragueTime,omitempty"`
 	OsakaTime         *uint64             `json:"osakaTime,omitempty"`
+	BPO1Time          *uint64             `json:"bpo1Time,omitempty"`
+	BPO2Time          *uint64             `json:"bpo2Time,omitempty"`
+	BPO3Time          *uint64             `json:"bpo3Time,omitempty"`
+	BPO4Time          *uint64             `json:"bpo4Time,omitempty"`
+	BPO5Time          *uint64             `json:"bpo5Time,omitempty"`
 	BlobSchedule      *BlobScheduleConfig `json:"blobSchedule,omitempty"`
 }
 
@@ -107,6 +118,41 @@ func (c *ChainConfig) IsOsaka(num *big.Int, timestamp uint64) bool {
 	return false
 }
 
+func (c *ChainConfig) IsBPO1(num *big.Int, timestamp uint64) bool {
+	if cfg := c.ModernForkConfig(); cfg != nil {
+		return c.IsLondon(num) && isTimestampForked(cfg.BPO1Time, timestamp)
+	}
+	return false
+}
+
+func (c *ChainConfig) IsBPO2(num *big.Int, timestamp uint64) bool {
+	if cfg := c.ModernForkConfig(); cfg != nil {
+		return c.IsLondon(num) && isTimestampForked(cfg.BPO2Time, timestamp)
+	}
+	return false
+}
+
+func (c *ChainConfig) IsBPO3(num *big.Int, timestamp uint64) bool {
+	if cfg := c.ModernForkConfig(); cfg != nil {
+		return c.IsLondon(num) && isTimestampForked(cfg.BPO3Time, timestamp)
+	}
+	return false
+}
+
+func (c *ChainConfig) IsBPO4(num *big.Int, timestamp uint64) bool {
+	if cfg := c.ModernForkConfig(); cfg != nil {
+		return c.IsLondon(num) && isTimestampForked(cfg.BPO4Time, timestamp)
+	}
+	return false
+}
+
+func (c *ChainConfig) IsBPO5(num *big.Int, timestamp uint64) bool {
+	if cfg := c.ModernForkConfig(); cfg != nil {
+		return c.IsLondon(num) && isTimestampForked(cfg.BPO5Time, timestamp)
+	}
+	return false
+}
+
 func isTimestampForked(s *uint64, timestamp uint64) bool {
 	return s != nil && timestamp >= *s
 }
@@ -143,6 +189,31 @@ func (c *ChainConfig) checkModernForkOrder() error {
 			return fmt.Errorf("unsupported fork ordering: %s enabled at %d, but %s enabled at %d", previous.name, *previous.at, current.name, *current.at)
 		}
 	}
+	// BPO forks are optional parameter-only forks. A later numbered BPO may be
+	// configured without filling every earlier slot, but every configured BPO
+	// must follow Osaka and the preceding configured timestamp.
+	lastName, lastTime := "osakaTime", modern.OsakaTime
+	for _, fork := range []struct {
+		name string
+		at   *uint64
+	}{
+		{name: "bpo1Time", at: modern.BPO1Time},
+		{name: "bpo2Time", at: modern.BPO2Time},
+		{name: "bpo3Time", at: modern.BPO3Time},
+		{name: "bpo4Time", at: modern.BPO4Time},
+		{name: "bpo5Time", at: modern.BPO5Time},
+	} {
+		if fork.at == nil {
+			continue
+		}
+		if lastTime == nil {
+			return fmt.Errorf("unsupported fork ordering: %s not enabled, but %s enabled at %d", lastName, fork.name, *fork.at)
+		}
+		if *lastTime > *fork.at {
+			return fmt.Errorf("unsupported fork ordering: %s enabled at %d, but %s enabled at %d", lastName, *lastTime, fork.name, *fork.at)
+		}
+		lastName, lastTime = fork.name, fork.at
+	}
 	if modern.CancunTime != nil {
 		if modern.BlobSchedule == nil {
 			return fmt.Errorf("Cancun requires blobSchedule")
@@ -155,11 +226,16 @@ func (c *ChainConfig) checkModernForkOrder() error {
 			{name: "cancun", active: modern.CancunTime != nil, config: modern.BlobSchedule.Cancun},
 			{name: "prague", active: modern.PragueTime != nil, config: modern.BlobSchedule.Prague},
 			{name: "osaka", active: modern.OsakaTime != nil, config: modern.BlobSchedule.Osaka},
+			{name: "bpo1", active: modern.BPO1Time != nil, config: modern.BlobSchedule.BPO1},
+			{name: "bpo2", active: modern.BPO2Time != nil, config: modern.BlobSchedule.BPO2},
+			{name: "bpo3", active: modern.BPO3Time != nil, config: modern.BlobSchedule.BPO3},
+			{name: "bpo4", active: modern.BPO4Time != nil, config: modern.BlobSchedule.BPO4},
+			{name: "bpo5", active: modern.BPO5Time != nil, config: modern.BlobSchedule.BPO5},
 		} {
 			if !fork.active {
 				continue
 			}
-			if fork.config == nil || fork.config.Target <= 0 || fork.config.Max < fork.config.Target || fork.config.BaseFeeUpdateFraction <= 0 {
+			if fork.config == nil || fork.config.Target <= 0 || fork.config.Max < fork.config.Target || fork.config.BaseFeeUpdateFraction <= 0 || uint64(fork.config.Max) > ^uint64(0)/BlobTxBlobGasPerBlob {
 				return fmt.Errorf("invalid %s blob schedule", fork.name)
 			}
 		}
@@ -217,6 +293,11 @@ type chainConfigJSON struct {
 	CancunTime        *uint64             `json:"cancunTime,omitempty"`
 	PragueTime        *uint64             `json:"pragueTime,omitempty"`
 	OsakaTime         *uint64             `json:"osakaTime,omitempty"`
+	BPO1Time          *uint64             `json:"bpo1Time,omitempty"`
+	BPO2Time          *uint64             `json:"bpo2Time,omitempty"`
+	BPO3Time          *uint64             `json:"bpo3Time,omitempty"`
+	BPO4Time          *uint64             `json:"bpo4Time,omitempty"`
+	BPO5Time          *uint64             `json:"bpo5Time,omitempty"`
 	BlobSchedule      *BlobScheduleConfig `json:"blobSchedule,omitempty"`
 
 	ColossusX *colossusXConfig `json:"colossusX,omitempty"`
@@ -237,13 +318,54 @@ type chainConfigJSON struct {
 	FairHotstuff           bool                  `json:"fairHotstuff,omitempty"`
 	FairHotstuffSeed       common.Hash           `json:"fairHotstuffSeed,omitempty"`
 	CommonRPCSigners       []common.Address      `json:"commonRPCSigners,omitempty"`
+	NativeParallel         *NativeParallelConfig `json:"nativeParallel,omitempty"`
 	EnabledTPS             bool                  `json:"enabledTPS,omitempty"`
 }
 
 func (c *ChainConfig) UnmarshalJSON(input []byte) error {
+	// The public genesis schema is deliberately EVM-only. Reject the former
+	// spelling even when its value is null: silently ignoring an old genesis is
+	// dangerous because it can make otherwise identical nodes disagree about
+	// which transaction envelope is valid.
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(input, &fields); err != nil {
+		return err
+	}
+	var evmParallel json.RawMessage
+	for key, value := range fields {
+		switch {
+		case strings.EqualFold(key, "nativeParallel"):
+			return fmt.Errorf("chain config field %q is unsupported; use evmParallel", key)
+		case strings.EqualFold(key, "evmParallel"):
+			if key != "evmParallel" {
+				return fmt.Errorf("chain config field %q is unsupported; use evmParallel", key)
+			}
+			evmParallel = value
+		}
+	}
+	if len(evmParallel) != 0 && string(evmParallel) != "null" {
+		var parallelFields map[string]json.RawMessage
+		if err := json.Unmarshal(evmParallel, &parallelFields); err != nil {
+			return fmt.Errorf("decode evmParallel: %w", err)
+		}
+		for key := range parallelFields {
+			if strings.EqualFold(key, "version") {
+				return fmt.Errorf("evmParallel field %q is unsupported; this genesis defines the execution profile directly", key)
+			}
+			if strings.EqualFold(key, "requireNativeTransactions") {
+				return fmt.Errorf("evmParallel field %q is unsupported; public consensus accepts only Ethereum transaction types 0 through 4", key)
+			}
+		}
+	}
+
 	var dec chainConfigJSON
 	if err := json.Unmarshal(input, &dec); err != nil {
 		return err
+	}
+	if len(evmParallel) != 0 {
+		if err := json.Unmarshal(evmParallel, &dec.NativeParallel); err != nil {
+			return fmt.Errorf("decode evmParallel: %w", err)
+		}
 	}
 	c.ChainID = dec.ChainID
 	c.HomesteadBlock = dec.HomesteadBlock
@@ -277,6 +399,7 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 	c.FairHotstuff = dec.FairHotstuff
 	c.FairHotstuffSeed = dec.FairHotstuffSeed
 	c.CommonRPCSigners = append([]common.Address(nil), dec.CommonRPCSigners...)
+	c.NativeParallel = dec.NativeParallel
 	c.EnabledTPS = dec.EnabledTPS
 	c.SetModernForkConfig(&ModernForkConfig{
 		BerlinBlock:       dec.BerlinBlock,
@@ -287,12 +410,54 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 		CancunTime:        dec.CancunTime,
 		PragueTime:        dec.PragueTime,
 		OsakaTime:         dec.OsakaTime,
+		BPO1Time:          dec.BPO1Time,
+		BPO2Time:          dec.BPO2Time,
+		BPO3Time:          dec.BPO3Time,
+		BPO4Time:          dec.BPO4Time,
+		BPO5Time:          dec.BPO5Time,
 		BlobSchedule:      dec.BlobSchedule,
 	})
 	return nil
 }
 
 func (c *ChainConfig) MarshalJSON() ([]byte, error) {
+	if c == nil {
+		return []byte("null"), nil
+	}
+	if c.NativeParallel != nil && c.NativeParallel.RequireNativeTransactions {
+		return nil, fmt.Errorf("evmParallel supports only Ethereum transaction types 0 through 4")
+	}
+	enc := chainConfigJSONFromConfig(c)
+	parallel := enc.NativeParallel
+	enc.NativeParallel = nil
+	encoded, err := json.Marshal(&enc)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		return nil, err
+	}
+	if parallel != nil {
+		parallelJSON, err := json.Marshal(parallel)
+		if err != nil {
+			return nil, err
+		}
+		var parallelFields map[string]json.RawMessage
+		if err := json.Unmarshal(parallelJSON, &parallelFields); err != nil {
+			return nil, err
+		}
+		delete(parallelFields, "requireNativeTransactions")
+		parallelJSON, err = json.Marshal(parallelFields)
+		if err != nil {
+			return nil, err
+		}
+		fields["evmParallel"] = parallelJSON
+	}
+	return json.Marshal(fields)
+}
+
+func chainConfigJSONFromConfig(c *ChainConfig) chainConfigJSON {
 	enc := chainConfigJSON{
 		ChainID:                c.ChainID,
 		HomesteadBlock:         c.HomesteadBlock,
@@ -326,6 +491,7 @@ func (c *ChainConfig) MarshalJSON() ([]byte, error) {
 		FairHotstuff:           c.FairHotstuff,
 		FairHotstuffSeed:       c.FairHotstuffSeed,
 		CommonRPCSigners:       append([]common.Address(nil), c.CommonRPCSigners...),
+		NativeParallel:         c.NativeParallel,
 		EnabledTPS:             c.EnabledTPS,
 	}
 	if cfg := c.ModernForkConfig(); cfg != nil {
@@ -337,9 +503,14 @@ func (c *ChainConfig) MarshalJSON() ([]byte, error) {
 		enc.CancunTime = cfg.CancunTime
 		enc.PragueTime = cfg.PragueTime
 		enc.OsakaTime = cfg.OsakaTime
+		enc.BPO1Time = cfg.BPO1Time
+		enc.BPO2Time = cfg.BPO2Time
+		enc.BPO3Time = cfg.BPO3Time
+		enc.BPO4Time = cfg.BPO4Time
+		enc.BPO5Time = cfg.BPO5Time
 		enc.BlobSchedule = cfg.BlobSchedule
 	}
-	return json.Marshal(&enc)
+	return enc
 }
 
 // CypheriumRules returns the execution-layer rules for Cypherium.

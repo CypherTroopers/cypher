@@ -113,12 +113,22 @@ type ChainSyncReader interface {
 
 // CallMsg contains parameters for contract calls.
 type CallMsg struct {
-	From     common.Address  // the sender of the 'transaction'
-	To       *common.Address // the destination contract (nil for contract creation)
-	Gas      uint64          // if 0, the call executes with near-infinite gas
-	GasPrice *big.Int        // wei <-> gas exchange ratio
-	Value    *big.Int        // amount of wei sent along with the call
-	Data     []byte          // input data, usually an ABI-encoded contract method invocation
+	From       common.Address   // the sender of the 'transaction'
+	To         *common.Address  // the destination contract (nil for contract creation)
+	Gas        uint64           // if 0, the call executes with near-infinite gas
+	GasPrice   *big.Int         // wei <-> gas exchange ratio
+	GasFeeCap  *big.Int         // EIP-1559 fee cap per gas
+	GasTipCap  *big.Int         // EIP-1559 priority fee per gas
+	Value      *big.Int         // amount of wei sent along with the call
+	Data       []byte           // input data, usually an ABI-encoded contract method invocation
+	AccessList types.AccessList // EIP-2930 access list
+
+	// EIP-4844 blob-call fields.
+	BlobGasFeeCap *big.Int
+	BlobHashes    []common.Hash
+
+	// EIP-7702 authorization tuples applied for the simulated call.
+	AuthorizationList []types.SetCodeAuthorization
 }
 
 // A ContractCaller provides contract calls, essentially transactions that are executed by

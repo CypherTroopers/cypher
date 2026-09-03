@@ -102,13 +102,22 @@ func (t *rlpx) ReadMsg() (Msg, error) {
 	t.rmu.Lock()
 	defer t.rmu.Unlock()
 	t.fd.SetReadDeadline(time.Now().Add(frameReadTimeout))
+	// Keep the legacy idle/header deadline until the authenticated frame size
+	// is known. ReadMsg refreshes it for the payload only, preventing a maximum
+	// native block from being disconnected mid-frame on a healthy 2 MiB/s link.
+	t.rw.setFrameReadDeadline = func(size uint32) {
+		if timeout := frameTransferTimeout(size, frameReadTimeout); timeout > frameReadTimeout {
+			t.fd.SetReadDeadline(time.Now().Add(timeout))
+		}
+	}
+	defer func() { t.rw.setFrameReadDeadline = nil }()
 	return t.rw.ReadMsg()
 }
 
 func (t *rlpx) WriteMsg(msg Msg) error {
 	t.wmu.Lock()
 	defer t.wmu.Unlock()
-	t.fd.SetWriteDeadline(time.Now().Add(frameWriteTimeout))
+	t.fd.SetWriteDeadline(time.Now().Add(frameTransferTimeout(msg.Size, frameWriteTimeout)))
 	return t.rw.WriteMsg(msg)
 }
 
@@ -560,6 +569,10 @@ type rlpxFrameRW struct {
 	enc  cipher.Stream
 	dec  cipher.Stream
 
+	// Set only by rlpx.ReadMsg after the handshake. Keeping this callback out
+	// of the constructor preserves the five-second handshake deadline.
+	setFrameReadDeadline func(uint32)
+
 	macCipher  cipher.Block
 	egressMAC  hash.Hash
 	ingressMAC hash.Hash
@@ -663,6 +676,9 @@ func (rw *rlpxFrameRW) ReadMsg() (msg Msg, err error) {
 	fsize, err := readFrameSize(headbuf)
 	if err != nil {
 		return msg, err
+	}
+	if rw.setFrameReadDeadline != nil {
+		rw.setFrameReadDeadline(fsize)
 	}
 	// ignore protocol type for now
 

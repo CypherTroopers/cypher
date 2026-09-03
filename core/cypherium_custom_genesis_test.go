@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"encoding/json"
 	"math/big"
 	"os"
@@ -18,6 +19,9 @@ func TestCypheriumCustomGenesisConfigPinsUpgradeSurface(t *testing.T) {
 	blob, err := os.ReadFile("../genesis.json")
 	if err != nil {
 		t.Fatalf("failed to read genesis.json: %v", err)
+	}
+	if !bytes.Contains(blob, []byte(`"evmParallel"`)) || bytes.Contains(blob, []byte(`"nativeParallel"`)) || bytes.Contains(blob, []byte(`"requireNativeTransactions"`)) {
+		t.Fatal("genesis.json must use only the EVM transaction capacity schema")
 	}
 
 	var genesis Genesis
@@ -38,6 +42,18 @@ func TestCypheriumCustomGenesisConfigPinsUpgradeSurface(t *testing.T) {
 	}
 	if !genesis.Config.FairHotstuff {
 		t.Fatal("fairHotstuff must remain enabled for this test genesis")
+	}
+	if !genesis.Config.NativeParallelEnabled() || genesis.Config.NativeParallel == nil {
+		t.Fatal("genesis.json must enable the genesis-native EVM parallel profile")
+	}
+	if err := genesis.Config.NativeParallel.Validate(); err != nil {
+		t.Fatalf("invalid evmParallel genesis profile: %v", err)
+	}
+	if genesis.Config.NativeParallel.RequireNativeTransactions {
+		t.Fatal("genesis.json must be EVM-only and reject NativeTxV1 envelopes")
+	}
+	if genesis.GasLimit < genesis.Config.NativeParallel.MaxComputePerBlock {
+		t.Fatalf("genesis gas limit %d is below native block compute ceiling %d", genesis.GasLimit, genesis.Config.NativeParallel.MaxComputePerBlock)
 	}
 	commitment, err := params.FairHotstuffGenesisCommitment(genesis.Config)
 	if err != nil {
@@ -89,6 +105,16 @@ func TestCypheriumModernForkConfigDecoding(t *testing.T) {
 	modern := cfg.ModernForkConfig()
 	if modern == nil || modern.BlobSchedule == nil || modern.BlobSchedule.Cancun == nil || modern.BlobSchedule.Prague == nil || modern.BlobSchedule.Osaka == nil {
 		t.Fatal("Cancun, Prague and Osaka blob schedules must be decoded and preserved")
+	}
+	activeBlobs := cfg.ActiveBlobConfig(0)
+	if activeBlobs.Target != 192 || activeBlobs.Max != 288 || activeBlobs.BaseFeeUpdateFraction != 160246912 {
+		t.Fatalf("genesis high-capacity Osaka blob schedule = %+v", activeBlobs)
+	}
+	if got := params.MaxBlobsPerTransaction(cfg, 0); got != params.BlobTxMaxBlobs {
+		t.Fatalf("Osaka per-transaction blob limit = %d, want standard limit %d", got, params.BlobTxMaxBlobs)
+	}
+	if rawBlobBytes := uint64(activeBlobs.Max) * params.BlobTxBlobGasPerBlob; rawBlobBytes >= cfg.EffectiveMaxBlockBytes()-params.FairHotstuffFinalityProofReserveBytes {
+		t.Fatalf("maximum blob payload %d leaves no room in block envelope %d", rawBlobBytes, cfg.EffectiveMaxBlockBytes())
 	}
 	block := genesis.ToBlock(nil)
 	if block.Header().WithdrawalsHash != types.EmptyWithdrawalsHash {

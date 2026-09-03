@@ -127,6 +127,9 @@ func isProtectedV(V *big.Int) bool {
 }
 
 func (tx *Transaction) EncodeRLP(w io.Writer) error {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return err
+	}
 	if tx.Type() == LegacyTxType {
 		return rlp.Encode(w, tx.data)
 	}
@@ -141,7 +144,7 @@ func (tx *Transaction) EncodeRLP(w io.Writer) error {
 }
 
 func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
-	kind, _, err := s.Kind()
+	kind, size, err := s.Kind()
 	if err != nil {
 		return err
 	}
@@ -158,61 +161,83 @@ func (tx *Transaction) DecodeRLP(s *rlp.Stream) error {
 		return err
 	}
 
-	raw, err := s.Raw()
-	if err != nil {
-		return err
-	}
 	var dec txdata
-	err = rlp.DecodeBytes(raw, &dec)
+	err = dec.DecodeRLP(s)
 	if err == nil {
 		tx.data = &dec
 		tx.setDecodedDefaults()
-		tx.size.Store(common.StorageSize(len(raw)))
+		tx.size.Store(common.StorageSize(rlp.ListSize(size)))
 	}
 	return err
 }
 
 type txJSON struct {
-	Type       *hexutil.Uint64        `json:"type,omitempty"`
-	ChainID    *hexutil.Big           `json:"chainId,omitempty"`
-	Nonce      hexutil.Uint64         `json:"nonce"`
-	GasPrice   *hexutil.Big           `json:"gasPrice,omitempty"`
-	GasTipCap  *hexutil.Big           `json:"maxPriorityFeePerGas,omitempty"`
-	GasFeeCap  *hexutil.Big           `json:"maxFeePerGas,omitempty"`
-	BlobFeeCap *hexutil.Big           `json:"maxFeePerBlobGas,omitempty"`
-	Gas        hexutil.Uint64         `json:"gas"`
-	To         *common.Address        `json:"to"`
-	Value      *hexutil.Big           `json:"value"`
-	Input      hexutil.Bytes          `json:"input"`
-	AccessList AccessList             `json:"accessList,omitempty"`
-	BlobHashes []common.Hash          `json:"blobVersionedHashes,omitempty"`
-	AuthList   []SetCodeAuthorization `json:"authorizationList,omitempty"`
-	RouteHint  TxRouteHint            `json:"routeHint,omitempty"`
-	V          *hexutil.Big           `json:"v"`
-	R          *hexutil.Big           `json:"r"`
-	S          *hexutil.Big           `json:"s"`
-	Hash       *common.Hash           `json:"hash,omitempty"`
+	Type                  *hexutil.Uint64        `json:"type,omitempty"`
+	ChainID               *hexutil.Big           `json:"chainId,omitempty"`
+	Nonce                 hexutil.Uint64         `json:"nonce"`
+	GasPrice              *hexutil.Big           `json:"gasPrice,omitempty"`
+	GasTipCap             *hexutil.Big           `json:"maxPriorityFeePerGas,omitempty"`
+	GasFeeCap             *hexutil.Big           `json:"maxFeePerGas,omitempty"`
+	BlobFeeCap            *hexutil.Big           `json:"maxFeePerBlobGas,omitempty"`
+	Gas                   hexutil.Uint64         `json:"gas"`
+	To                    *common.Address        `json:"to"`
+	Value                 *hexutil.Big           `json:"value"`
+	Input                 hexutil.Bytes          `json:"input"`
+	AccessList            *AccessList            `json:"accessList,omitempty"`
+	BlobHashes            []common.Hash          `json:"blobVersionedHashes,omitempty"`
+	AuthList              []SetCodeAuthorization `json:"authorizationList,omitempty"`
+	RecentBlockHash       *common.Hash           `json:"recentBlockHash,omitempty"`
+	RecentBlockNumber     *hexutil.Uint64        `json:"recentBlockNumber,omitempty"`
+	ValidUntil            *hexutil.Uint64        `json:"validUntil,omitempty"`
+	Payer                 *common.Address        `json:"payer,omitempty"`
+	ReplaySequence        *hexutil.Uint64        `json:"replaySequence,omitempty"`
+	MaxFeePerCompute      *hexutil.Big           `json:"maxFeePerCompute,omitempty"`
+	PriorityFeePerCompute *hexutil.Big           `json:"maxPriorityFeePerCompute,omitempty"`
+	ComputeLimit          *hexutil.Uint64        `json:"computeLimit,omitempty"`
+	MemoryLimit           *hexutil.Uint64        `json:"memoryLimit,omitempty"`
+	LogLimit              *hexutil.Uint64        `json:"logLimit,omitempty"`
+	OutputLimit           *hexutil.Uint64        `json:"outputLimit,omitempty"`
+	NativeAccesses        []NativeAccess         `json:"accesses,omitempty"`
+	RouteHint             TxRouteHint            `json:"routeHint,omitempty"`
+	YParity               *hexutil.Uint64        `json:"yParity,omitempty"`
+	V                     *hexutil.Big           `json:"v"`
+	R                     *hexutil.Big           `json:"r"`
+	S                     *hexutil.Big           `json:"s"`
+	Hash                  *common.Hash           `json:"hash,omitempty"`
 }
 
 type txJSONUnmarshal struct {
-	Type       *hexutil.Uint64        `json:"type"`
-	ChainID    *hexutil.Big           `json:"chainId"`
-	Nonce      *hexutil.Uint64        `json:"nonce"`
-	GasPrice   *hexutil.Big           `json:"gasPrice"`
-	GasTipCap  *hexutil.Big           `json:"maxPriorityFeePerGas"`
-	GasFeeCap  *hexutil.Big           `json:"maxFeePerGas"`
-	BlobFeeCap *hexutil.Big           `json:"maxFeePerBlobGas"`
-	Gas        *hexutil.Uint64        `json:"gas"`
-	To         *common.Address        `json:"to"`
-	Value      *hexutil.Big           `json:"value"`
-	Input      *hexutil.Bytes         `json:"input"`
-	AccessList *AccessList            `json:"accessList"`
-	BlobHashes []common.Hash          `json:"blobVersionedHashes"`
-	AuthList   []SetCodeAuthorization `json:"authorizationList"`
-	RouteHint  *TxRouteHint           `json:"routeHint"`
-	V          *hexutil.Big           `json:"v"`
-	R          *hexutil.Big           `json:"r"`
-	S          *hexutil.Big           `json:"s"`
+	Type                  *hexutil.Uint64        `json:"type"`
+	ChainID               *hexutil.Big           `json:"chainId"`
+	Nonce                 *hexutil.Uint64        `json:"nonce"`
+	GasPrice              *hexutil.Big           `json:"gasPrice"`
+	GasTipCap             *hexutil.Big           `json:"maxPriorityFeePerGas"`
+	GasFeeCap             *hexutil.Big           `json:"maxFeePerGas"`
+	BlobFeeCap            *hexutil.Big           `json:"maxFeePerBlobGas"`
+	Gas                   *hexutil.Uint64        `json:"gas"`
+	To                    *common.Address        `json:"to"`
+	Value                 *hexutil.Big           `json:"value"`
+	Input                 *hexutil.Bytes         `json:"input"`
+	AccessList            *AccessList            `json:"accessList"`
+	BlobHashes            []common.Hash          `json:"blobVersionedHashes"`
+	AuthList              []SetCodeAuthorization `json:"authorizationList"`
+	RecentBlockHash       *common.Hash           `json:"recentBlockHash"`
+	RecentBlockNumber     *hexutil.Uint64        `json:"recentBlockNumber"`
+	ValidUntil            *hexutil.Uint64        `json:"validUntil"`
+	Payer                 *common.Address        `json:"payer"`
+	ReplaySequence        *hexutil.Uint64        `json:"replaySequence"`
+	MaxFeePerCompute      *hexutil.Big           `json:"maxFeePerCompute"`
+	PriorityFeePerCompute *hexutil.Big           `json:"maxPriorityFeePerCompute"`
+	ComputeLimit          *hexutil.Uint64        `json:"computeLimit"`
+	MemoryLimit           *hexutil.Uint64        `json:"memoryLimit"`
+	LogLimit              *hexutil.Uint64        `json:"logLimit"`
+	OutputLimit           *hexutil.Uint64        `json:"outputLimit"`
+	NativeAccesses        *[]NativeAccess        `json:"accesses"`
+	RouteHint             *TxRouteHint           `json:"routeHint"`
+	YParity               *hexutil.Uint64        `json:"yParity"`
+	V                     *hexutil.Big           `json:"v"`
+	R                     *hexutil.Big           `json:"r"`
+	S                     *hexutil.Big           `json:"s"`
 }
 
 func jsonBig(x *big.Int) *hexutil.Big {
@@ -224,11 +249,36 @@ func jsonBig(x *big.Int) *hexutil.Big {
 
 func jsonUint64(x uint64) hexutil.Uint64 { return hexutil.Uint64(x) }
 
+func jsonUint64Ptr(x uint64) *hexutil.Uint64 {
+	value := jsonUint64(x)
+	return &value
+}
+
 func (tx *Transaction) MarshalJSON() ([]byte, error) {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return nil, err
+	}
+	if inner, ok := tx.data.(*NativeTxV1); ok {
+		if err := ValidateNativeManifest(inner); err != nil {
+			return nil, err
+		}
+	}
 	v, r, s := tx.RawSignatureValues()
 	hash := tx.Hash()
 	typ := hexutil.Uint64(tx.Type())
-	enc := txJSON{Type: &typ, ChainID: jsonBig(tx.ChainId()), Nonce: jsonUint64(tx.Nonce()), GasPrice: jsonBig(tx.GasPrice()), Gas: jsonUint64(tx.Gas()), To: tx.To(), Value: jsonBig(tx.Value()), Input: tx.Data(), AccessList: tx.AccessList(), RouteHint: tx.routeHint, V: jsonBig(v), R: jsonBig(r), S: jsonBig(s), Hash: &hash}
+	enc := txJSON{Type: &typ, ChainID: jsonBig(tx.ChainId()), Nonce: jsonUint64(tx.Nonce()), GasPrice: jsonBig(tx.GasPrice()), Gas: jsonUint64(tx.Gas()), To: tx.To(), Value: jsonBig(tx.Value()), Input: tx.Data(), RouteHint: tx.routeHint, V: jsonBig(v), R: jsonBig(r), S: jsonBig(s), Hash: &hash}
+	if tx.Type() >= AccessListTxType && tx.Type() <= SetCodeTxType {
+		if v == nil || v.Sign() < 0 || v.BitLen() > 1 {
+			return nil, ErrInvalidSig
+		}
+		parity := hexutil.Uint64(v.Uint64())
+		enc.YParity = &parity
+		accessList := tx.AccessList()
+		if accessList == nil {
+			accessList = AccessList{}
+		}
+		enc.AccessList = &accessList
+	}
 	switch inner := tx.data.(type) {
 	case *DynamicFeeTx:
 		enc.GasTipCap = jsonBig(inner.GasTipCap)
@@ -242,6 +292,22 @@ func (tx *Transaction) MarshalJSON() ([]byte, error) {
 		enc.GasTipCap = jsonBig(inner.GasTipCap)
 		enc.GasFeeCap = jsonBig(inner.GasFeeCap)
 		enc.AuthList = copyAuthorizationList(inner.AuthList)
+	case *NativeTxV1:
+		recentBlockHash := inner.RecentBlockHash
+		payer := inner.Payer
+		enc.GasPrice = nil
+		enc.RecentBlockHash = &recentBlockHash
+		enc.RecentBlockNumber = jsonUint64Ptr(inner.RecentBlockNumber)
+		enc.ValidUntil = jsonUint64Ptr(inner.ValidUntil)
+		enc.Payer = &payer
+		enc.ReplaySequence = jsonUint64Ptr(inner.ReplaySequence)
+		enc.MaxFeePerCompute = jsonBig(inner.MaxFeePerCompute)
+		enc.PriorityFeePerCompute = jsonBig(inner.PriorityFeePerCompute)
+		enc.ComputeLimit = jsonUint64Ptr(inner.ComputeLimit)
+		enc.MemoryLimit = jsonUint64Ptr(inner.MemoryLimit)
+		enc.LogLimit = jsonUint64Ptr(inner.LogLimit)
+		enc.OutputLimit = jsonUint64Ptr(inner.OutputLimit)
+		enc.NativeAccesses = copyNativeAccesses(inner.Accesses)
 	}
 	return json.Marshal(enc)
 }
@@ -270,6 +336,13 @@ func requiredBytes(x *hexutil.Bytes) []byte {
 func requiredAddress(x *common.Address) common.Address {
 	if x == nil {
 		return common.Address{}
+	}
+	return *x
+}
+
+func requiredHash(x *common.Hash) common.Hash {
+	if x == nil {
+		return common.Hash{}
 	}
 	return *x
 }
@@ -303,6 +376,26 @@ func validateJSONSignature(v, r, s *big.Int, typed bool) error {
 	return nil
 }
 
+// resolveTypedJSONParity accepts the Execution API's yParity field while
+// retaining v as a deprecated compatibility alias. If a peer supplies both,
+// they must describe the same recovery identifier.
+func resolveTypedJSONParity(v *hexutil.Big, yParity *hexutil.Uint64) (*big.Int, error) {
+	if yParity == nil {
+		if v == nil {
+			return nil, errors.New("missing 'yParity' or 'v' field in transaction")
+		}
+		return requiredBig(v), nil
+	}
+	if uint64(*yParity) > 1 {
+		return nil, ErrInvalidSig
+	}
+	parity := new(big.Int).SetUint64(uint64(*yParity))
+	if v != nil && (*big.Int)(v).Cmp(parity) != 0 {
+		return nil, errors.New("transaction v and yParity fields disagree")
+	}
+	return parity, nil
+}
+
 func (tx *Transaction) UnmarshalJSON(input []byte) error {
 	var dec txJSONUnmarshal
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -313,12 +406,19 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 		if err := legacy.UnmarshalJSON(input); err != nil {
 			return err
 		}
+		if err := validateTypedIntegerBounds(&legacy); err != nil {
+			return err
+		}
 		if err := validateJSONSignature(legacy.V, legacy.R, legacy.S, false); err != nil {
 			return err
 		}
 		*tx = Transaction{data: &legacy, time: time.Now()}
 	} else {
-		v, r, sigs := requiredBig(dec.V), requiredBig(dec.R), requiredBig(dec.S)
+		v, err := resolveTypedJSONParity(dec.V, dec.YParity)
+		if err != nil {
+			return err
+		}
+		r, sigs := requiredBig(dec.R), requiredBig(dec.S)
 		if err := validateJSONSignature(v, r, sigs, true); err != nil {
 			return err
 		}
@@ -340,7 +440,7 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 			inner := &SetCodeTx{ChainID: requiredBig(dec.ChainID), Nonce: requiredUint64(dec.Nonce), GasTipCap: requiredBig(dec.GasTipCap), GasFeeCap: requiredBig(dec.GasFeeCap), Gas: requiredUint64(dec.Gas), To: requiredAddress(dec.To), Value: requiredBig(dec.Value), Data: requiredBytes(dec.Input), AccessList: accessList, AuthList: copyAuthorizationList(dec.AuthList), V: v, R: r, S: sigs}
 			*tx = Transaction{data: inner, time: time.Now()}
 		default:
-			return errors.New("unsupported transaction type in JSON")
+			return errors.New("unsupported transaction type in JSON; EVM consensus accepts only types 0 through 4")
 		}
 		if err := validateTypedIntegerBounds(tx.data); err != nil {
 			return err
@@ -371,10 +471,17 @@ func (tx *Transaction) GasPriceCmp(other *Transaction) int {
 func (tx *Transaction) GasPriceIntCmp(other *big.Int) int { return tx.GasPrice().Cmp(other) }
 func (tx *Transaction) Value() *big.Int                   { return tx.data.value() }
 func (tx *Transaction) Nonce() uint64                     { return tx.data.nonce() }
-func (tx *Transaction) CheckNonce() bool                  { return true }
-func (tx *Transaction) To() *common.Address               { return tx.data.to() }
+
+// CheckNonce is false for NativeTxV1 because its replay domain is the signed
+// payer sequence and recent-block validity window. Native transactions require
+// a dedicated pool and must not enter legacy sender/nonce admission.
+func (tx *Transaction) CheckNonce() bool    { return tx.Type() != NativeTxType }
+func (tx *Transaction) To() *common.Address { return tx.data.to() }
 
 func (tx *Transaction) Hash() common.Hash {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return common.Hash{}
+	}
 	if hash := tx.hash.Load(); hash != nil {
 		return hash.(common.Hash)
 	}
@@ -389,6 +496,9 @@ func (tx *Transaction) Hash() common.Hash {
 }
 
 func (tx *Transaction) Size() common.StorageSize {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return 0
+	}
 	if size := tx.size.Load(); size != nil {
 		return size.(common.StorageSize)
 	}
@@ -421,6 +531,21 @@ func (tx *Transaction) AccessListEntryCounts() (addresses, storageKeys uint64, o
 		accessList = inner.AccessList
 	case *SetCodeTx:
 		accessList = inner.AccessList
+	case *NativeTxV1:
+		// Use the manifest resource count as a conservative address-work bound
+		// without allocating a map before manifest validation. It is exact or an
+		// overestimate and never rejects a valid transaction below the native
+		// per-transaction resource ceiling.
+		addresses = uint64(len(inner.Accesses))
+		for _, access := range inner.Accesses {
+			if access.Resource.Kind == NativeResourceStorage {
+				if storageKeys == ^uint64(0) {
+					return addresses, storageKeys, true
+				}
+				storageKeys++
+			}
+		}
+		return addresses, storageKeys, false
 	default:
 		return 0, 0, false
 	}
@@ -449,19 +574,39 @@ func (tx *Transaction) SetCodeAuthorizationCount() uint64 {
 }
 
 func (tx *Transaction) AsMessage(s Signer) (Message, error) {
-	msg := Message{txType: tx.Type(), nonce: tx.Nonce(), gasLimit: tx.Gas(), gasPrice: tx.GasPrice(), gasFeeCap: tx.GasFeeCap(), gasTipCap: tx.GasTipCap(), blobGasFeeCap: tx.BlobGasFeeCap(), blobGas: tx.BlobGas(), to: tx.To(), amount: tx.Value(), data: tx.Data(), accessList: tx.AccessList(), blobHashes: tx.BlobHashes(), authList: tx.SetCodeAuthorizations(), checkNonce: true}
+	msg := Message{txType: tx.Type(), nonce: tx.Nonce(), gasLimit: tx.Gas(), gasPrice: tx.GasPrice(), gasFeeCap: tx.GasFeeCap(), gasTipCap: tx.GasTipCap(), blobGasFeeCap: tx.BlobGasFeeCap(), blobGas: tx.BlobGas(), to: tx.To(), amount: tx.Value(), data: tx.Data(), accessList: tx.AccessList(), blobHashes: tx.BlobHashes(), authList: tx.SetCodeAuthorizations(), checkNonce: tx.CheckNonce()}
+	if inner, ok := tx.data.(*NativeTxV1); ok {
+		msg.recentBlockHash = inner.RecentBlockHash
+		msg.recentBlockNumber = inner.RecentBlockNumber
+		msg.validUntil = inner.ValidUntil
+		msg.payer = inner.Payer
+		msg.replaySequence = inner.ReplaySequence
+		msg.memoryLimit = inner.MemoryLimit
+		msg.logLimit = inner.LogLimit
+		msg.outputLimit = inner.OutputLimit
+		// NativeTxV1 data is immutable after Transaction construction. Message's
+		// public accessor remains defensive, so sharing this internal slice avoids
+		// another full-manifest allocation on every execution.
+		msg.nativeAccesses = inner.Accesses
+	}
 	var err error
 	msg.from, err = Sender(s, tx)
 	return msg, err
 }
 
 func (tx *Transaction) WithSignature(signer Signer, sig []byte) (*Transaction, error) {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return nil, err
+	}
 	r, s, v, err := signer.SignatureValues(tx, sig)
 	if err != nil {
 		return nil, err
 	}
 	cpy := &Transaction{data: tx.data.copy(), time: tx.time}
 	cpy.data.setSignatureValues(v, r, s)
+	if err := cpy.ValidateIntegerBounds(); err != nil {
+		return nil, err
+	}
 	return cpy, nil
 }
 
@@ -567,6 +712,34 @@ func (t *TransactionsByPriceAndNonce) Peek() *Transaction {
 	}
 	return t.heads[0]
 }
+
+// Copy returns an independent proposal cursor over the same immutable
+// transactions. Proposal builders use it to perform a speculative selection
+// pass without exposing partially consumed ordering state when execution is
+// retried from the same parent.
+// The transaction objects themselves are intentionally shared: neither heap
+// ordering nor Shift/Pop mutates a transaction.
+func (t *TransactionsByPriceAndNonce) Copy() *TransactionsByPriceAndNonce {
+	if t == nil {
+		return nil
+	}
+	txs := make(map[common.Address]Transactions, len(t.txs))
+	for address, transactions := range t.txs {
+		txs[address] = append(Transactions(nil), transactions...)
+	}
+	heads := append(TxByPriceAndTime(nil), t.heads...)
+	number := new(big.Int)
+	if t.blockNumber != nil {
+		number.Set(t.blockNumber)
+	}
+	return &TransactionsByPriceAndNonce{
+		txs:         txs,
+		heads:       heads,
+		config:      t.config,
+		blockNumber: number,
+	}
+}
+
 func (t *TransactionsByPriceAndNonce) Shift() {
 	if len(t.heads) == 0 {
 		return
@@ -587,22 +760,31 @@ func (t *TransactionsByPriceAndNonce) Shift() {
 func (t *TransactionsByPriceAndNonce) Pop() { heap.Pop(&t.heads) }
 
 type Message struct {
-	txType        uint8
-	to            *common.Address
-	from          common.Address
-	nonce         uint64
-	amount        *big.Int
-	gasLimit      uint64
-	gasPrice      *big.Int
-	gasFeeCap     *big.Int
-	gasTipCap     *big.Int
-	blobGasFeeCap *big.Int
-	blobGas       uint64
-	data          []byte
-	accessList    AccessList
-	blobHashes    []common.Hash
-	authList      []SetCodeAuthorization
-	checkNonce    bool
+	txType            uint8
+	to                *common.Address
+	from              common.Address
+	nonce             uint64
+	amount            *big.Int
+	gasLimit          uint64
+	gasPrice          *big.Int
+	gasFeeCap         *big.Int
+	gasTipCap         *big.Int
+	blobGasFeeCap     *big.Int
+	blobGas           uint64
+	data              []byte
+	accessList        AccessList
+	blobHashes        []common.Hash
+	authList          []SetCodeAuthorization
+	recentBlockHash   common.Hash
+	recentBlockNumber uint64
+	validUntil        uint64
+	payer             common.Address
+	replaySequence    uint64
+	memoryLimit       uint64
+	logLimit          uint64
+	outputLimit       uint64
+	nativeAccesses    []NativeAccess
+	checkNonce        bool
 }
 
 func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice *big.Int, data []byte, checkNonce bool) Message {
@@ -689,8 +871,17 @@ func (m Message) Type() uint8               { return m.txType }
 func (m Message) SetCodeAuthorizations() []SetCodeAuthorization {
 	return copyAuthorizationList(m.authList)
 }
-func (m Message) Value() *big.Int  { return m.amount }
-func (m Message) Gas() uint64      { return m.gasLimit }
-func (m Message) Nonce() uint64    { return m.nonce }
-func (m Message) Data() []byte     { return m.data }
-func (m Message) CheckNonce() bool { return m.checkNonce }
+func (m Message) RecentBlockHash() common.Hash   { return m.recentBlockHash }
+func (m Message) RecentBlockNumber() uint64      { return m.recentBlockNumber }
+func (m Message) ValidUntil() uint64             { return m.validUntil }
+func (m Message) Payer() common.Address          { return m.payer }
+func (m Message) ReplaySequence() uint64         { return m.replaySequence }
+func (m Message) MemoryLimit() uint64            { return m.memoryLimit }
+func (m Message) LogLimit() uint64               { return m.logLimit }
+func (m Message) OutputLimit() uint64            { return m.outputLimit }
+func (m Message) NativeAccesses() []NativeAccess { return copyNativeAccesses(m.nativeAccesses) }
+func (m Message) Value() *big.Int                { return m.amount }
+func (m Message) Gas() uint64                    { return m.gasLimit }
+func (m Message) Nonce() uint64                  { return m.nonce }
+func (m Message) Data() []byte                   { return m.data }
+func (m Message) CheckNonce() bool               { return m.checkNonce }

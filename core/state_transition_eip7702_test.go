@@ -169,16 +169,18 @@ func TestPragueFloorDataGasForkBoundary(t *testing.T) {
 func TestOsakaTransactionGasCapBoundary(t *testing.T) {
 	from := common.HexToAddress("0xca01")
 	to := common.HexToAddress("0xca02")
-	msg := types.NewMessage(from, &to, 0, new(big.Int), params.MaxTxGas+1, new(big.Int), nil, true)
 	for _, tc := range []struct {
-		name    string
-		osaka   bool
-		wantErr error
+		name       string
+		osaka      bool
+		checkNonce bool
+		wantErr    error
 	}{
-		{name: "pre-Osaka"},
-		{name: "Osaka", osaka: true, wantErr: ErrTxGasLimitExceeded},
+		{name: "pre-Osaka", checkNonce: true},
+		{name: "Osaka transaction", osaka: true, checkNonce: true, wantErr: ErrTxGasLimitExceeded},
+		{name: "Osaka eth_call simulation", osaka: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			msg := types.NewMessage(from, &to, 0, new(big.Int), params.MaxTxGas+1, new(big.Int), nil, tc.checkNonce)
 			statedb := newModernTestState(t)
 			statedb.CreateAccount(from)
 			evm := vm.NewEVM(vm.Context{BlockNumber: big.NewInt(0), Time: big.NewInt(0)}, statedb, modernExecutionTestConfig(true, tc.osaka), vm.Config{})
@@ -248,6 +250,7 @@ func TestTypedTransactionForkGates(t *testing.T) {
 		{"blob at Cancun", types.BlobTxType, params.Rules{IsCancun: true}, true},
 		{"set-code before Prague", types.SetCodeTxType, params.Rules{IsCancun: true}, false},
 		{"set-code at Prague", types.SetCodeTxType, params.Rules{IsPrague: true}, true},
+		{"retired native type", types.NativeTxType, params.Rules{IsOsaka: true}, false},
 		{"unknown", 0x7f, params.Rules{IsPrague: true}, false},
 	}
 	for _, test := range tests {

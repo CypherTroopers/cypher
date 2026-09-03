@@ -39,6 +39,22 @@ func TestValidateOsakaBlockSize(t *testing.T) {
 	}
 }
 
+func TestValidateOsakaBlockSizeUsesGenesisNativeLimit(t *testing.T) {
+	osaka := uint64(0)
+	config := &params.ChainConfig{NativeParallel: params.SolanaScaleNativeParallelConfig()}
+	config.SetModernForkConfig(&params.ModernForkConfig{BerlinBlock: big.NewInt(0), LondonBlock: big.NewInt(0), OsakaTime: &osaka})
+
+	block := types.NewBlockWithHeader(&types.Header{
+		Number:     big.NewInt(1),
+		Time:       osaka,
+		Difficulty: big.NewInt(1),
+		Extra:      make([]byte, params.MaxBlockSize+1024),
+	})
+	if err := validateOsakaBlockSize(config, block); err != nil {
+		t.Fatalf("native block above legacy 8 MiB ceiling rejected: %v", err)
+	}
+}
+
 func TestValidateOsakaBlockSizeIncludesFinalityProof(t *testing.T) {
 	osaka := uint64(0)
 	config := new(params.ChainConfig)
@@ -201,6 +217,39 @@ func TestValidateFHSBlockWorkBoundsSerialSender(t *testing.T) {
 	}
 }
 
+func TestValidateFHSEVMCapacityProfileDoesNotRetainLegacySenderCap(t *testing.T) {
+	config := *params.AllcolossusXProtocolChanges
+	config.FairHotstuff = true
+	config.NativeParallel = params.SolanaScaleNativeParallelConfig()
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := types.SignTx(
+		types.NewTransaction(0, common.Address{1}, new(big.Int), params.TxGas, big.NewInt(params.FixedTransferGasPricePerGas), nil),
+		types.LatestSignerForChainID(config.ChainID), key,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialLimit := params.FairHotstuffEVMWorkLimitsForConfig(&config).TransactionsPerSender
+	if serialLimit != config.NativeParallel.MaxDependencyDepth {
+		t.Fatalf("EVM serial sender limit = %d, want configured dependency depth %d", serialLimit, config.NativeParallel.MaxDependencyDepth)
+	}
+	header := &types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(1), BlockType: types.FastTx_Block}
+	allowed := make(types.Transactions, serialLimit)
+	for index := range allowed {
+		allowed[index] = tx
+	}
+	if err := validateFHSSenderWork(&config, types.NewBlockWithHeader(header).WithBody(allowed, nil)); err != nil {
+		t.Fatalf("EVM capacity profile retained the legacy %d-transaction sender cap: %v", params.MaxTxCountPerSenderPerBlock, err)
+	}
+	over := append(append(types.Transactions(nil), allowed...), tx)
+	if err := validateFHSSenderWork(&config, types.NewBlockWithHeader(header).WithBody(over, nil)); err == nil {
+		t.Fatalf("EVM capacity profile accepted %d transactions from one serial sender, want maximum %d", len(over), serialLimit)
+	}
+}
+
 func TestValidateFHSBlockWorkAcceptsFullSimpleTransferBlock(t *testing.T) {
 	config := *params.AllcolossusXProtocolChanges
 	config.FairHotstuff = true
@@ -261,7 +310,7 @@ func TestFHSFullSimpleTransferSidecarsFitOsakaEnvelope(t *testing.T) {
 			txHash := common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
 			txs[index] = tx
 			hashes[index-start] = txHash
-			refs[index] = types.CommonTxAdmissionRef{Batch: uint16(len(batches)), Item: uint16(index - start)}
+			refs[index] = types.CommonTxAdmissionRef{Batch: uint32(len(batches)), Item: uint16(index - start)}
 			rewards[index] = &types.CommonTxReward{
 				TxHash: txHash, Approver: miner, ApproverReward: approverReward, Burn: new(big.Int).Sub(actualFee, approverReward),
 			}

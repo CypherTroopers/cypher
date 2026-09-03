@@ -9,17 +9,33 @@ func validateBlobTxWithVerifier(w *types.BlobTxWithSidecar, verifier types.BlobV
 	return w.Verify(verifier)
 }
 
+func blobTxWithAttachedSidecar(w *types.BlobTxWithSidecar) (*types.Transaction, error) {
+	if w == nil || w.Tx == nil || w.Tx.Type() != types.BlobTxType {
+		return nil, types.ErrBlobTxSidecarOnNonBlobTx
+	}
+	sidecar := w.Sidecar
+	if sidecar == nil {
+		sidecar = w.Tx.BlobSidecar()
+	}
+	if err := w.Tx.ValidateBlobSidecar(sidecar); err != nil {
+		return nil, err
+	}
+	return w.Tx.WithBlobSidecar(sidecar), nil
+}
+
 // AddLocalBlobTx verifies a BlobTx sidecar bundle and then submits the
 // transaction through the existing local txpool path.
 func (pool *TxPool) AddLocalBlobTx(w *types.BlobTxWithSidecar, verifier types.BlobVerifier) error {
 	if err := validateBlobTxWithVerifier(w, verifier); err != nil {
 		return err
 	}
-	if err := pool.AddLocal(w.Tx); err != nil {
+	tx, err := blobTxWithAttachedSidecar(w)
+	if err != nil {
 		return err
 	}
-	pool.storeBlobSidecar(w.Tx, w.Sidecar)
-	return nil
+	// AddLocal applies the mandatory real-KZG admission gate and publishes the
+	// sidecar only after the transaction itself is inserted successfully.
+	return pool.AddLocal(tx)
 }
 
 // AddRemoteBlobTx verifies a BlobTx sidecar bundle and then submits the
@@ -28,11 +44,11 @@ func (pool *TxPool) AddRemoteBlobTx(w *types.BlobTxWithSidecar, verifier types.B
 	if err := validateBlobTxWithVerifier(w, verifier); err != nil {
 		return err
 	}
-	if err := pool.AddRemote(w.Tx); err != nil {
+	tx, err := blobTxWithAttachedSidecar(w)
+	if err != nil {
 		return err
 	}
-	pool.storeBlobSidecar(w.Tx, w.Sidecar)
-	return nil
+	return pool.AddRemote(tx)
 }
 
 // AddRemoteBlobTxSync verifies a BlobTx sidecar bundle and then submits the
@@ -41,9 +57,9 @@ func (pool *TxPool) AddRemoteBlobTxSync(w *types.BlobTxWithSidecar, verifier typ
 	if err := validateBlobTxWithVerifier(w, verifier); err != nil {
 		return err
 	}
-	if err := pool.addRemoteSync(w.Tx); err != nil {
+	tx, err := blobTxWithAttachedSidecar(w)
+	if err != nil {
 		return err
 	}
-	pool.storeBlobSidecar(w.Tx, w.Sidecar)
-	return nil
+	return pool.addRemoteSync(tx)
 }

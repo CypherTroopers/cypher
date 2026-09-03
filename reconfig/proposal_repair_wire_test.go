@@ -225,6 +225,152 @@ func TestProposalRepairRequestTrackerCoversMaxCountWithDelayedResponses(t *testi
 	}
 }
 
+func TestProposalRepairRequestTrackerRequeuesPartialResponseRemainder(t *testing.T) {
+	missing := make([]common.Hash, 2*proposalRepairMaxHashes)
+	for index := range missing {
+		missing[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
+	}
+
+	tracker := new(proposalRepairRequestTracker)
+	first := tracker.nextWindow(missing)
+	if len(first) != proposalRepairMaxHashes {
+		t.Fatalf("first repair window size = %d, want %d", len(first), proposalRepairMaxHashes)
+	}
+
+	// Model a byte-capped response which can return only the first transaction
+	// from a full hash window. The rest of that same request must become eligible
+	// immediately instead of waiting for a pass over every later manifest hash.
+	remaining := append([]common.Hash(nil), missing[1:]...)
+	second := tracker.nextWindow(remaining)
+	if len(second) != proposalRepairMaxHashes {
+		t.Fatalf("second repair window size = %d, want %d", len(second), proposalRepairMaxHashes)
+	}
+	for index := 0; index < proposalRepairMaxHashes-1; index++ {
+		if second[index] != missing[index+1] {
+			t.Fatalf("second repair window[%d] = %s, want partial remainder %s", index, second[index], missing[index+1])
+		}
+	}
+	if second[len(second)-1] != missing[proposalRepairMaxHashes] {
+		t.Fatalf("second repair window tail = %s, want next unrequested hash %s", second[len(second)-1], missing[proposalRepairMaxHashes])
+	}
+}
+
+func TestProposalRepairAssemblyTrackerPipelinesDisjointWindows(t *testing.T) {
+	transactionLimit := proposalRepairNativeRequestBurst*proposalRepairMaxHashes + 1
+	hashes := make([]common.Hash, transactionLimit)
+	for index := range hashes {
+		hashes[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
+	}
+	state := &proposalAssemblyState{
+		manifest:     &proposalDataManifest{TransactionHashes: hashes},
+		positions:    make(map[common.Hash]int, len(hashes)),
+		transactions: make(types.Transactions, len(hashes)),
+		missingCount: len(hashes),
+	}
+	for index, hash := range hashes {
+		state.positions[hash] = index
+	}
+	tracker := new(proposalRepairRequestTracker)
+	seen := make(map[common.Hash]struct{}, proposalRepairNativeRequestBurst*proposalRepairMaxHashes)
+	for request := 0; request < proposalRepairNativeRequestBurst; request++ {
+		window := tracker.nextAssemblyWindow(state)
+		if len(window) != proposalRepairMaxHashes {
+			t.Fatalf("window %d size = %d, want %d", request, len(window), proposalRepairMaxHashes)
+		}
+		for _, hash := range window {
+			if _, duplicate := seen[hash]; duplicate {
+				t.Fatalf("window %d repeated in-flight hash %s", request, hash)
+			}
+			seen[hash] = struct{}{}
+		}
+	}
+	if len(seen) != proposalRepairNativeRequestBurst*proposalRepairMaxHashes {
+		t.Fatalf("pipelined windows covered %d hashes", len(seen))
+	}
+	if got := proposalRepairRequestBurstForConfig(nativeProposalLimitTestConfig()); got != proposalRepairNativeRequestBurst {
+		t.Fatalf("native request burst = %d, want %d", got, proposalRepairNativeRequestBurst)
+	}
+	if got := proposalRepairRequestBurstForConfig(nil); got != 1 {
+		t.Fatalf("legacy request burst = %d, want 1", got)
+	}
+}
+
+func TestProposalRepairAssemblyTrackerImmediatelyRetriesPartialWindow(t *testing.T) {
+	hashes := make([]common.Hash, 2*proposalRepairMaxHashes)
+	state := &proposalAssemblyState{
+		manifest:     &proposalDataManifest{TransactionHashes: hashes},
+		positions:    make(map[common.Hash]int, len(hashes)),
+		transactions: make(types.Transactions, len(hashes)),
+		missingCount: len(hashes),
+	}
+	for index := range hashes {
+		hashes[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
+		state.positions[hashes[index]] = index
+	}
+	tracker := new(proposalRepairRequestTracker)
+	first := tracker.nextAssemblyWindow(state)
+	if len(first) != proposalRepairMaxHashes {
+		t.Fatalf("first window size = %d", len(first))
+	}
+	state.transactions[0] = testSignedProposalRepairTransaction(t)
+	state.missingCount--
+	state.resolved = append(state.resolved, hashes[0])
+	second := tracker.nextAssemblyWindow(state)
+	if len(second) != proposalRepairMaxHashes {
+		t.Fatalf("retry window size = %d", len(second))
+	}
+	for index := 0; index < proposalRepairMaxHashes-1; index++ {
+		if second[index] != hashes[index+1] {
+			t.Fatalf("retry[%d] = %s, want %s", index, second[index], hashes[index+1])
+		}
+	}
+	if second[len(second)-1] != hashes[proposalRepairMaxHashes] {
+		t.Fatalf("retry tail = %s, want %s", second[len(second)-1], hashes[proposalRepairMaxHashes])
+	}
+}
+
+func TestMergeProposalRepairRejectsOutsideHashAtomically(t *testing.T) {
+	valid := testSignedProposalRepairTransaction(t)
+	outside := testSignedProposalRepairTransaction(t)
+	validBytes, err := encodeProposalRepairTransaction(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outsideBytes, err := encodeProposalRepairTransaction(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposalID := common.HexToHash("0x101")
+	bodyHash := common.HexToHash("0x102")
+	viewID := common.HexToHash("0x103")
+	service := &Service{
+		chainConfig: &params.ChainConfig{ChainID: big.NewInt(99)},
+		proposalBodies: map[common.Hash]*proposalBodyMsg{proposalID: {
+			ProposalID: proposalID, BodyHash: bodyHash, BodySize: 1, Number: 1,
+			ViewNumber: 1, ViewID: viewID, LeaderID: "leader", Manifest: []byte{1},
+		}},
+		proposalAssemblies: map[common.Hash]*proposalAssemblyState{proposalID: {
+			manifest:     &proposalDataManifest{TransactionHashes: []common.Hash{valid.Hash()}},
+			positions:    map[common.Hash]int{valid.Hash(): 0},
+			transactions: make(types.Transactions, 1),
+			missingCount: 1,
+		}},
+	}
+	_, err = service.mergeProposalRepair(&proposalBodyMsg{
+		Type: proposalBodyMsgRepairData, ProposalID: proposalID, BodyHash: bodyHash,
+		BodySize: 1, Number: 1, ViewNumber: 1, ViewID: viewID, LeaderID: "leader",
+		MissingTxHashes:  []common.Hash{valid.Hash(), outside.Hash()},
+		TransactionBytes: [][]byte{validBytes, outsideBytes},
+	})
+	if err == nil {
+		t.Fatal("repair containing an out-of-manifest hash was accepted")
+	}
+	state := service.proposalAssemblies[proposalID]
+	if state.missingCount != 1 || state.transactions[0] != nil || len(service.proposalBodies[proposalID].TransactionBytes) != 0 {
+		t.Fatal("rejected repair partially mutated the proposal assembly")
+	}
+}
+
 func TestProposalRepairWaitTimeoutCoversMaxCountRequestSchedule(t *testing.T) {
 	transactionLimit := int(params.FairHotstuffWorkLimits().Transactions)
 	windowCount := (transactionLimit + proposalRepairMaxHashes - 1) / proposalRepairMaxHashes

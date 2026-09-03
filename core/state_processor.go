@@ -18,10 +18,12 @@ package core
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"runtime"
+	"sort"
 	"sync"
 
 	"github.com/cypherium/cypher/common"
@@ -69,10 +71,24 @@ func parallelValidationWorkerBudget() int {
 var parallelValidationSlots = make(chan struct{}, parallelValidationWorkerBudget())
 
 func runBoundedParallelValidation(count int, validate func(int)) {
+	runBoundedParallelValidationWithLimit(count, cap(parallelValidationSlots), validate)
+}
+
+// runBoundedParallelValidationWithLimit shares the process-wide CPU slots while
+// allowing callers with a tighter memory budget to cap their own concurrency.
+// The limit is node-local scheduling policy: callers still store and consume
+// results in canonical input order.
+func runBoundedParallelValidationWithLimit(count, workerLimit int, validate func(int)) {
 	if count <= 0 || validate == nil {
 		return
 	}
 	maxWorkers := cap(parallelValidationSlots)
+	if workerLimit < 1 {
+		workerLimit = 1
+	}
+	if maxWorkers > workerLimit {
+		maxWorkers = workerLimit
+	}
 	if maxWorkers > count {
 		maxWorkers = count
 	}
@@ -369,7 +385,7 @@ func validateCommonTxAdmissionLayout(config *params.ChainConfig, batches []*type
 
 	miners := make([]common.Address, len(refs))
 	referencedBatches := make([]bool, len(batches))
-	selectedItems := make(map[uint32]struct{}, len(refs))
+	selectedItems := make(map[uint64]struct{}, len(refs))
 	for index, ref := range refs {
 		tx := includedTransactions[index]
 		if tx == nil || !tx.IsInitialized() {
@@ -382,7 +398,7 @@ func validateCommonTxAdmissionLayout(config *params.ChainConfig, batches []*type
 		if int(ref.Item) >= len(batch.TxHashes) {
 			return nil, fmt.Errorf("common tx admission reference %d selects item %d outside batch %d size %d", index, ref.Item, ref.Batch, len(batch.TxHashes))
 		}
-		selectedKey := uint32(ref.Batch)<<16 | uint32(ref.Item)
+		selectedKey := uint64(ref.Batch)<<16 | uint64(ref.Item)
 		if _, duplicate := selectedItems[selectedKey]; duplicate {
 			return nil, fmt.Errorf("common tx admission reference %d duplicates batch %d item %d", index, ref.Batch, ref.Item)
 		}
@@ -412,27 +428,13 @@ func buildCommonAdmissionApprovers(config *params.ChainConfig, batches []*types.
 			return nil, err
 		}
 	}
-
-	validationErrors := make([]error, len(batches))
-	for start := 0; start < len(batches); start += parallelValidationMicroBatch {
-		end := start + parallelValidationMicroBatch
-		if end > len(batches) {
-			end = len(batches)
-		}
-		runBoundedParallelValidation(end-start, func(offset int) {
-			index := start + offset
-			validationErrors[index] = types.VerifyCommonTxAdmissionSignature(batches[index])
-		})
-		for index := start; index < end; index++ {
-			if validationErrors[index] != nil {
-				return nil, validationErrors[index]
-			}
-		}
+	if err := verifyCommonTxAdmissionSignatures(batches); err != nil {
+		return nil, err
 	}
 	return miners, nil
 }
 
-func buildCommonRewardIndex(rewards []*types.CommonTxReward, includedTransactions types.Transactions) (map[common.Hash]*types.CommonTxReward, error) {
+func buildCommonRewardIndex(rewards []*types.CommonTxReward, includedTransactions types.Transactions) (map[common.Hash]uint32, error) {
 	var included map[common.Hash]struct{}
 	if includedTransactions != nil {
 		included = make(map[common.Hash]struct{}, len(includedTransactions))
@@ -442,10 +444,13 @@ func buildCommonRewardIndex(rewards []*types.CommonTxReward, includedTransaction
 			}
 		}
 	}
-	indexed := make(map[common.Hash]*types.CommonTxReward, len(rewards))
-	for _, reward := range rewards {
+	indexed := make(map[common.Hash]uint32, len(rewards))
+	for position, reward := range rewards {
 		if reward == nil {
 			continue
+		}
+		if uint64(position) >= uint64(fhsRewardPositionMissing) {
+			return nil, fmt.Errorf("common tx reward position %d exceeds supported range", position)
 		}
 		if reward.TxHash == (common.Hash{}) {
 			return nil, fmt.Errorf("invalid common tx reward: empty tx hash")
@@ -464,7 +469,7 @@ func buildCommonRewardIndex(rewards []*types.CommonTxReward, includedTransaction
 		if _, exists := indexed[reward.TxHash]; exists {
 			return nil, fmt.Errorf("duplicate common tx reward for %s", reward.TxHash)
 		}
-		indexed[reward.TxHash] = reward
+		indexed[reward.TxHash] = uint32(position)
 	}
 	return indexed, nil
 }
@@ -495,11 +500,34 @@ func validateCommonRPCReward(reward *types.CommonTxReward, expectedApprover comm
 }
 
 func applyCommonRPCRewards(statedb *state.StateDB, rewards []*types.CommonTxReward) {
+	if statedb == nil || len(rewards) == 0 {
+		return
+	}
+	// Rewards become visible only after every transaction has executed, so
+	// additions for one approver are commutative. Collapse a maximum native
+	// block's 262,144 sidecars to at most the committee's distinct approvers
+	// before touching StateDB. Sorting keeps diagnostics and journal order
+	// deterministic even though the resulting trie root is order-independent.
+	totals := make(map[common.Address]*big.Int)
 	for _, reward := range rewards {
 		if reward == nil || reward.Approver == (common.Address{}) || reward.ApproverReward == nil || reward.ApproverReward.Sign() <= 0 {
 			continue
 		}
-		statedb.AddBalance(reward.Approver, reward.ApproverReward)
+		if total := totals[reward.Approver]; total != nil {
+			total.Add(total, reward.ApproverReward)
+		} else {
+			totals[reward.Approver] = new(big.Int).Set(reward.ApproverReward)
+		}
+	}
+	approvers := make([]common.Address, 0, len(totals))
+	for approver := range totals {
+		approvers = append(approvers, approver)
+	}
+	sort.Slice(approvers, func(i, j int) bool {
+		return bytes.Compare(approvers[i][:], approvers[j][:]) < 0
+	})
+	for _, approver := range approvers {
+		statedb.AddBalance(approver, totals[approver])
 	}
 	// Burn is represented by intentionally not crediting the remaining fee to any account.
 }
@@ -519,22 +547,17 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		allLogs  []*types.Log
 		gp       = new(GasPool).AddGas(block.GasLimit())
 	)
-	if err := validateFHSCommonRPCSidecarCoverage(p.config, block); err != nil {
+	blockMode, err := ValidateNativeParallelBlockMode(p.config, block.BlockType(), block.Transactions())
+	if err != nil {
 		return nil, nil, 0, err
 	}
 	if err := ValidateBlockBlobGas(p.config, header, block.Transactions()); err != nil {
 		return nil, nil, 0, err
 	}
-	if root := types.DeriveCommonTxAdmissionRoot(block.CommonTxAdmissionBatches(), block.CommonTxAdmissionRefs()); root != header.CommonTxAdmissionRoot {
-		return nil, nil, 0, fmt.Errorf("common tx admission root mismatch: have %s want %s", root, header.CommonTxAdmissionRoot)
-	}
-	if root := types.DeriveCommonTxRewardRoot(block.CommonTxRewards()); root != header.CommonTxRewardRoot {
-		return nil, nil, 0, fmt.Errorf("common tx reward root mismatch: have %s want %s", root, header.CommonTxRewardRoot)
-	}
-	commonTxAdmissionBatches := block.CommonTxAdmissionBatches()
-	commonTxAdmissionRefs := block.CommonTxAdmissionRefs()
-	var admissionApprovers []common.Address
-	if len(commonTxAdmissionBatches) != 0 || len(commonTxAdmissionRefs) != 0 {
+	body := block.Body()
+	var sidecarContext fhsSidecarValidationContext
+	var sidecarHandoff *fhsSidecarHandoff
+	if isFHSSidecarHandoffCandidate(p.config, block, body) {
 		genesisHash, err := commonRPCAdmissionGenesisHash(p.bc)
 		if err != nil {
 			return nil, nil, 0, err
@@ -543,15 +566,16 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		if err != nil {
 			return nil, nil, 0, err
 		}
-		admissionApprovers, err = buildCommonAdmissionApprovers(p.config, commonTxAdmissionBatches, commonTxAdmissionRefs, block.Transactions(), genesisHash, keyBlockNumber, header.Time)
-		if err != nil {
-			return nil, nil, 0, err
+		sidecarContext = fhsSidecarValidationContext{genesisHash: genesisHash, keyBlockNumber: keyBlockNumber}
+		if p.bc != nil {
+			sidecarHandoff = p.bc.validatedFHSSidecars
 		}
 	}
-	rewardByTx, err := buildCommonRewardIndex(block.CommonTxRewards(), block.Transactions())
+	validatedSidecars, err := takeOrValidateFHSSidecars(p.config, block, sidecarContext, sidecarHandoff)
 	if err != nil {
 		return nil, nil, 0, err
 	}
+	admissionApprovers := validatedSidecars.approvers
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
@@ -559,20 +583,37 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if err := ProcessParentBlockHash(p.config, header, statedb); err != nil {
 		return nil, nil, 0, err
 	}
+	if err := PrepareNativeBlockHashes(p.config, header, statedb); err != nil {
+		return nil, nil, 0, err
+	}
+	if blockMode == NativeParallelBlockModeNative {
+		replayAnchors, err := NewNativeReplayAnchorSet(p.config, statedb, block.NumberU64())
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		for index, tx := range block.Transactions() {
+			if tx == nil || tx.Type() != types.NativeTxType {
+				continue
+			}
+			if err := replayAnchors.Validate(tx); err != nil {
+				return nil, nil, 0, fmt.Errorf("native transaction %d replay anchor: %w", index, err)
+			}
+		}
+	}
 	var totalGas uint64
+	outputMeter := newBlockExecutionOutputMeter(p.config)
 
 	recordReceipt := func(index int, tx *types.Transaction, receipt *types.Receipt) error {
-		receipts = append(receipts, receipt)
-		allLogs = append(allLogs, receipt.Logs...)
-		totalGas += receipt.GasUsed
-
+		if tx == nil || receipt == nil {
+			return fmt.Errorf("transaction %d has nil transaction or receipt", index)
+		}
 		txHash := tx.Hash()
 		var admissionMiner common.Address
 		hasAdmission := index >= 0 && index < len(admissionApprovers)
 		if hasAdmission {
 			admissionMiner = admissionApprovers[index]
 		}
-		reward, hasReward := rewardByTx[txHash]
+		reward, hasReward := validatedSidecars.rewardForTransaction(body, index)
 		switch {
 		case hasAdmission:
 			if !hasReward {
@@ -581,7 +622,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			if err := validateCommonRPCReward(reward, admissionMiner, tx, receipt.GasUsed, header.BaseFee); err != nil {
 				return err
 			}
-			delete(rewardByTx, txHash)
 		case hasReward:
 			return fmt.Errorf("common tx reward without admission for included tx: %s", txHash)
 		default:
@@ -589,6 +629,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				return fmt.Errorf("Fair HotStuff transaction has no common RPC admission or reward: %s", txHash)
 			}
 		}
+		if err := outputMeter.Add(index, receipt); err != nil {
+			return err
+		}
+		receipts = append(receipts, receipt)
+		allLogs = append(allLogs, receipt.Logs...)
+		totalGas += receipt.GasUsed
 		return nil
 	}
 
@@ -598,49 +644,66 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	txs := block.Transactions()
 	rules := p.config.CypheriumRules(header.Number, header.Time)
 	var nativeExecutor *nativeTransferExecutor
+	evmWorkMeter := newEVMRuntimeWorkMeter(p.config)
 	defer func() {
 		nativeExecutor.close()
 	}()
-	for i := 0; i < len(txs); {
-		jobs := p.collectParallelNativeJobs(txs, i, block, statedb, gp, cfg, rules)
-		if len(jobs) >= 2 {
-			if nativeExecutor == nil {
-				nativeExecutor = newNativeTransferExecutor(block, runtime.GOMAXPROCS(0))
-			}
-			results := nativeExecutor.execute(jobs)
-			for offset, result := range results {
-				job := jobs[offset]
-				receipt, err := mergeParallelNativeResult(statedb, gp, usedGas, block, header, rules, job, result)
-				if err != nil {
-					return nil, nil, 0, err
-				}
-				if err := recordReceipt(job.index, job.tx, receipt); err != nil {
-					return nil, nil, 0, err
-				}
-			}
-			i += len(jobs)
-			continue
+	if blockMode == NativeParallelBlockModeNative && len(txs) > 0 {
+		if err := p.processNativeTransactions(block, statedb, gp, usedGas, cfg, recordReceipt); err != nil {
+			return nil, nil, 0, err
 		}
+	} else if len(txs) > 1 && evmOptimisticParallelEnabled(p.config, cfg) {
+		if err := p.processEVMOptimistic(block, statedb, gp, usedGas, cfg, recordReceipt); err != nil {
+			return nil, nil, 0, err
+		}
+	} else {
+		for i := 0; i < len(txs); {
+			jobs := p.collectParallelNativeJobs(txs, i, block, statedb, gp, cfg, rules)
+			if len(jobs) >= 2 {
+				if nativeExecutor == nil {
+					nativeExecutor = newNativeTransferExecutor(block, runtime.GOMAXPROCS(0))
+				}
+				results := nativeExecutor.execute(jobs)
+				for offset, result := range results {
+					job := jobs[offset]
+					receipt, err := mergeParallelNativeResult(statedb, gp, usedGas, block, header, rules, job, result)
+					if err != nil {
+						return nil, nil, 0, err
+					}
+					if err := recordReceipt(job.index, job.tx, receipt); err != nil {
+						return nil, nil, 0, err
+					}
+				}
+				i += len(jobs)
+				continue
+			}
 
-		tx := txs[i]
-		statedb.Prepare(tx.Hash(), block.Hash(), i)
-		receipt, err := ApplyTransaction(p.config, p.bc, nil, gp, statedb, header, tx, usedGas, cfg)
-		if err != nil {
-			return nil, nil, 0, err
+			tx := txs[i]
+			var receipt *types.Receipt
+			if evmWorkMeter != nil {
+				var access evmMVCCAccessSet
+				receipt, access, err = executeRecordedEVMSerial(p.config, p.bc, block, statedb, gp, usedGas, tx, i, cfg)
+				if err == nil {
+					err = evmWorkMeter.Add(p.config, header, i, tx, receipt, access)
+				}
+			} else {
+				statedb.Prepare(tx.Hash(), block.Hash(), i)
+				receipt, err = ApplyTransaction(p.config, p.bc, nil, gp, statedb, header, tx, usedGas, cfg)
+			}
+			if err != nil {
+				return nil, nil, 0, err
+			}
+			if err := recordReceipt(i, tx, receipt); err != nil {
+				return nil, nil, 0, err
+			}
+			i++
 		}
-		if err := recordReceipt(i, tx, receipt); err != nil {
-			return nil, nil, 0, err
-		}
-		i++
-	}
-	if len(rewardByTx) > 0 {
-		return nil, nil, 0, fmt.Errorf("%d common tx rewards were not consumed by block transactions", len(rewardByTx))
 	}
 	// The proposer derives and applies Common RPC rewards only after executing
 	// every transaction. Apply them at the same boundary during import so a
 	// later transaction cannot observe rewards from an earlier transaction and
 	// produce a different state root.
-	applyCommonRPCRewards(statedb, block.CommonTxRewards())
+	applyCommonRPCRewards(statedb, body.CommonTxRewards)
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), totalGas)
 
@@ -649,7 +712,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 func (p *StateProcessor) collectParallelNativeJobs(txs types.Transactions, start int, block *types.Block, statedb *state.StateDB, gp *GasPool, cfg vm.Config, rules params.Rules) []nativeTransferJob {
 	if p == nil || p.config == nil || block == nil || statedb == nil || gp == nil || !rules.IsByzantium ||
-		cfg.Debug || cfg.Tracer != nil || cfg.EnablePreimageRecording || cfg.EVMInterpreter != "" || cfg.EWASMInterpreter != "" || len(cfg.ExtraEips) != 0 {
+		!nativeParallelVMConfigSupported(cfg) {
+		return nil
+	}
+	// EVM-only high-capacity genesis execution is metered from actual runtime
+	// observations. The legacy transfer shortcut bypasses that StateDB recorder.
+	if p.config.NativeParallelEnabled() && !p.config.NativeParallel.RequireNativeTransactions {
 		return nil
 	}
 	maxJobs := int(gp.Gas() / params.TxGas)
@@ -720,11 +788,11 @@ func parallelNativeTransferCandidate(tx *types.Transaction, config *params.Chain
 	if err != nil {
 		return zero, zero, false
 	}
-	to, ok := parallelNativeTransferStateCandidate(tx, from, statedb, rules, precompiles)
+	to, ok := parallelNativeTransferStateCandidate(tx, from, config, statedb, rules, precompiles)
 	return from, to, ok
 }
 
-func parallelNativeTransferStateCandidate(tx *types.Transaction, from common.Address, statedb *state.StateDB, rules params.Rules, precompiles map[common.Address]struct{}) (common.Address, bool) {
+func parallelNativeTransferStateCandidate(tx *types.Transaction, from common.Address, config *params.ChainConfig, statedb *state.StateDB, rules params.Rules, precompiles map[common.Address]struct{}) (common.Address, bool) {
 	var zero common.Address
 	if tx == nil || statedb == nil || tx.To() == nil || len(tx.Data()) != 0 || tx.Gas() != params.TxGas || tx.Value() == nil || tx.Value().Sign() <= 0 ||
 		len(tx.AccessList()) != 0 || len(tx.BlobHashes()) != 0 || len(tx.SetCodeAuthorizations()) != 0 {
@@ -744,16 +812,19 @@ func parallelNativeTransferStateCandidate(tx *types.Transaction, from common.Add
 		len(statedb.GetCode(from)) != 0 || len(statedb.GetCode(to)) != 0 || statedb.GetBalance(from).Cmp(tx.Cost()) < 0 {
 		return zero, false
 	}
-	if nativeTransferReservedAddress(from, rules, precompiles) {
+	if nativeTransferReservedAddress(from, config, rules, precompiles) {
 		return zero, false
 	}
-	if nativeTransferReservedAddress(to, rules, precompiles) {
+	if nativeTransferReservedAddress(to, config, rules, precompiles) {
 		return zero, false
 	}
 	return to, true
 }
 
-func nativeTransferReservedAddress(address common.Address, rules params.Rules, precompiles map[common.Address]struct{}) bool {
+func nativeTransferReservedAddress(address common.Address, config *params.ChainConfig, rules params.Rules, precompiles map[common.Address]struct{}) bool {
+	if config != nil && config.NativeParallelEnabled() && config.NativeParallel.RequireNativeTransactions && params.IsNativeReplayRegistryAddress(address) {
+		return true
+	}
 	if precompiles != nil {
 		_, reserved := precompiles[address]
 		return reserved
@@ -835,7 +906,7 @@ func tryApplyNativeTransfer(config *params.ChainConfig, gp *GasPool, statedb *st
 	if !rules.IsByzantium {
 		return nil, false, nil
 	}
-	to, ok := parallelNativeTransferStateCandidate(tx, msg.From(), statedb, rules, nil)
+	to, ok := parallelNativeTransferStateCandidate(tx, msg.From(), config, statedb, rules, nil)
 	if !ok {
 		return nil, false, nil
 	}
@@ -859,28 +930,163 @@ func tryApplyNativeTransfer(config *params.ChainConfig, gp *GasPool, statedb *st
 	return receipt, true, err
 }
 
+// ApplyNativeTransactionReference is the canonical serial execution oracle for
+// NativeTxV1. Parallel executors must produce byte-identical receipt, logs,
+// gas and state changes to this path before their deltas may be merged.
+func ApplyNativeTransactionReference(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, error) {
+	if tx == nil || tx.Type() != types.NativeTxType {
+		return nil, fmt.Errorf("serial native reference executor requires NativeTxV1")
+	}
+	if err := validateNativeTransactionExecutionMode(config, tx); err != nil {
+		return nil, err
+	}
+	// Standalone oracle callers prepare a singleton replay batch here. Normal
+	// block execution has already consumed every sequence in one payer-grouped
+	// prepass, and DAG branches inherit that immutable prepared set.
+	standaloneReplayBatch := false
+	if statedb == nil || !statedb.NativeReplayTransactionPrepared(tx.Hash()) {
+		if err := PrepareNativeReplaySequences(config, statedb, types.Transactions{tx}); err != nil {
+			return nil, err
+		}
+		standaloneReplayBatch = true
+	}
+	if standaloneReplayBatch {
+		// Do not leave the singleton marker installed after execution. The
+		// sequence state itself remains consumed, so accidentally applying the
+		// same transaction again to this StateDB must run the replay prepass and
+		// fail instead of treating the first call's marker as block preparation.
+		defer statedb.SetNativeReplayTransactions(nil)
+	}
+	return ApplyTransaction(config, bc, author, gp, statedb, header, tx, usedGas, cfg)
+}
+
 // ApplyTransaction attempts to apply a transaction to the given state database
 // and uses the input parameters for its environment. It returns the receipt
 // for the transaction, gas used and an error if the transaction failed,
 // indicating the block was invalid.
 func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, error) {
+	return applyTransactionWithEVMState(config, bc, author, gp, statedb, nil, header, tx, usedGas, cfg)
+}
+
+// applyTransactionWithEVMState is the shared serial oracle used by the
+// standard-EVM optimistic executor. An override observes the complete vm.StateDB
+// boundary while finalisation, receipts and trie ownership remain on statedb.
+// Public callers pass nil and retain the historical fast paths unchanged.
+func applyTransactionWithEVMState(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, executionState vm.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, error) {
+	if err := validateNativeTransactionExecutionMode(config, tx); err != nil {
+		return nil, err
+	}
 	msg, err := tx.AsMessage(types.MakeSignerAutoJudgement(config, header.Number, tx.V()))
 	if err != nil {
 		return nil, err
 	}
-	if receipt, handled, err := tryApplyNativeTransfer(config, gp, statedb, header, tx, msg, usedGas, cfg); handled {
-		return receipt, err
+	if executionState == nil {
+		if config == nil || !config.NativeParallelEnabled() {
+			if receipt, handled, err := tryApplyNativeTransfer(config, gp, statedb, header, tx, msg, usedGas, cfg); handled {
+				return receipt, err
+			}
+		}
+		executionState = statedb
 	}
 	log.Trace("ApplyTransaction", "msg.from", msg.From(), "msg.To()", msg.To())
 	// Create a new context to be used in the EVM environment
 	context := NewEVMContextWithConfig(config, msg, header, bc, author)
+	if config != nil && config.NativeParallelEnabled() && statedb.NativeBlockHashesPrepared() {
+		context.GetHash = statedb.NativeBlockHash
+	}
+	var nativeGuard *nativeStateGuard
+	var evmGuard *evmResourceGuard
+	var accessRecorder *evmMVCCRecorder
+	var protocolGuard *protocolNamespaceGuard
+	standardSnapshot := -1
+	standardGas := uint64(0)
+	if tx.Type() == types.NativeTxType {
+		// Native consensus entry points prepare this immutable view before any
+		// transaction branches are created. Prefer it over the node-local header
+		// index so BLOCKHASH remains deterministic for an uncommitted certified
+		// HotStuff parent. Direct reference-executor tests which intentionally do
+		// not model EIP-2935 retain the legacy context as a test-only fallback.
+		if !statedb.NativeReplayTransactionPrepared(tx.Hash()) {
+			return nil, errors.New("native transaction sequence was not consumed by the block replay prepass")
+		}
+		if executionState != statedb {
+			return nil, errors.New("native transaction cannot use the standard EVM MVCC state override")
+		}
+		nativeGuard = newNativeStateGuardForTransaction(statedb, tx)
+		executionState = nativeGuard
+		cfg.MaxMemoryBytes = tx.MemoryLimit()
+		cfg.MaxReturnDataBytes = tx.OutputLimit()
+	} else if config != nil && config.NativeParallelEnabled() {
+		standardSnapshot = statedb.Snapshot()
+		standardGas = gp.Gas()
+		if recorder, ok := executionState.(*evmMVCCRecorder); ok {
+			accessRecorder = recorder
+		} else {
+			accessRecorder = newEVMMVCCRecorder(executionState)
+			executionState = accessRecorder
+		}
+		accessRecorder.setAccessLimit(config.NativeParallel.MaxAccessesPerTransaction)
+		if config.NativeParallel.RequireNativeTransactions {
+			protocolGuard = newProtocolNamespaceGuard(executionState)
+			executionState = protocolGuard
+		}
+		evmGuard = newEVMResourceGuard(executionState, config.NativeParallel.MaxLogBytesPerTransaction)
+		executionState = evmGuard
+		cfg.MaxMemoryBytes = config.NativeParallel.MaxMemoryBytesPerTransaction
+		cfg.MaxReturnDataBytes = config.NativeParallel.MaxOutputBytesPerTransaction
+	}
 	// Create a new environment which holds all relevant information
 	// about the transaction and calling mechanisms.
-	vmenv := vm.NewEVM(context, statedb, config, cfg)
+	vmenv := vm.NewEVM(context, executionState, config, cfg)
 	// Apply the transaction to the current state (included in the env)
 	result, err := ApplyMessage(vmenv, msg, gp)
+	if accessRecorder != nil && accessRecorder.Error() != nil {
+		statedb.RevertToSnapshot(standardSnapshot)
+		*gp = GasPool(standardGas)
+		return nil, accessRecorder.Error()
+	}
+	if protocolGuard != nil && protocolGuard.Error() != nil {
+		statedb.RevertToSnapshot(standardSnapshot)
+		*gp = GasPool(standardGas)
+		return nil, protocolGuard.Error()
+	}
+	if evmGuard != nil && evmGuard.Error() != nil {
+		statedb.RevertToSnapshot(standardSnapshot)
+		*gp = GasPool(standardGas)
+		return nil, evmGuard.Error()
+	}
 	if err != nil {
+		if standardSnapshot >= 0 {
+			statedb.RevertToSnapshot(standardSnapshot)
+			*gp = GasPool(standardGas)
+		}
 		return nil, err
+	}
+	if evmGuard != nil && (errors.Is(result.Err, vm.ErrMemoryLimitExceeded) || errors.Is(result.Err, vm.ErrReturnDataLimitExceeded)) {
+		statedb.RevertToSnapshot(standardSnapshot)
+		*gp = GasPool(standardGas)
+		return nil, result.Err
+	}
+	if nativeGuard != nil {
+		if err := nativeGuard.Error(); err != nil {
+			return nil, err
+		}
+		if errors.Is(result.Err, vm.ErrMemoryLimitExceeded) {
+			return nil, result.Err
+		}
+		if errors.Is(result.Err, vm.ErrReturnDataLimitExceeded) {
+			return nil, result.Err
+		}
+		if uint64(len(result.ReturnData)) > tx.OutputLimit() {
+			return nil, fmt.Errorf("native transaction output bytes %d exceed declared limit %d", len(result.ReturnData), tx.OutputLimit())
+		}
+		encodedLogs, err := consensusLogListRLPSize(statedb.GetLogs(tx.Hash()))
+		if err != nil {
+			return nil, fmt.Errorf("encode native transaction logs: %w", err)
+		}
+		if encodedLogs > tx.LogLimit() {
+			return nil, fmt.Errorf("native transaction log bytes %d exceed declared limit %d", encodedLogs, tx.LogLimit())
+		}
 	}
 	// Update the state with pending changes
 	var root []byte

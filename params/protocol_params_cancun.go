@@ -1,20 +1,46 @@
 package params
 
-import "math/big"
+import (
+	"math/big"
+	"math/bits"
+)
 
 const (
 	BlobTxBlobGasPerBlob uint64 = 1 << 17
+	BlobTxBlobBytes      uint64 = 1 << 17
 	BlobTxMaxBlobs              = 6 // EIP-7594/Osaka per-transaction limit.
 	MinBlobGasPrice      uint64 = 1
 	BlobBaseCost         uint64 = 1 << 13 // EIP-7918 calldata-equivalent execution gas per blob.
 )
 
-var minBlobGasPriceBig = new(big.Int).SetUint64(MinBlobGasPrice)
+var (
+	minBlobGasPriceBig = new(big.Int).SetUint64(MinBlobGasPrice)
+	// Blob fee caps and the BLOBBASEFEE opcode are uint256 values. One past
+	// their representable range is a useful saturation sentinel: it rejects
+	// every possible transaction fee cap while the opcode safely returns all
+	// ones. Bounding the series also prevents malformed near-uint64 excess gas
+	// from forcing trillions of FakeExponential iterations.
+	maxBlobBaseFeeSentinel = new(big.Int).Lsh(big.NewInt(1), 256)
+)
 
 func (c *ChainConfig) ActiveBlobConfig(timestamp uint64) *BlobConfig {
 	cfg := c.ModernForkConfig()
 	if cfg == nil || cfg.BlobSchedule == nil {
 		return DefaultCancunBlobConfig()
+	}
+	for _, fork := range []struct {
+		at     *uint64
+		config *BlobConfig
+	}{
+		{at: cfg.BPO5Time, config: cfg.BlobSchedule.BPO5},
+		{at: cfg.BPO4Time, config: cfg.BlobSchedule.BPO4},
+		{at: cfg.BPO3Time, config: cfg.BlobSchedule.BPO3},
+		{at: cfg.BPO2Time, config: cfg.BlobSchedule.BPO2},
+		{at: cfg.BPO1Time, config: cfg.BlobSchedule.BPO1},
+	} {
+		if isTimestampForked(fork.at, timestamp) && fork.config != nil {
+			return fork.config
+		}
 	}
 	if isTimestampForked(cfg.OsakaTime, timestamp) && cfg.BlobSchedule.Osaka != nil {
 		return cfg.BlobSchedule.Osaka
@@ -36,7 +62,7 @@ func MaxBlobGasPerBlock(blobCfg *BlobConfig) uint64 {
 	if blobCfg == nil || blobCfg.Max <= 0 {
 		blobCfg = DefaultCancunBlobConfig()
 	}
-	return uint64(blobCfg.Max) * BlobTxBlobGasPerBlob
+	return blobGasForCount(blobCfg.Max)
 }
 
 // MaxBlobsPerTransaction returns the fork-specific transaction limit. Before
@@ -58,7 +84,18 @@ func TargetBlobGasPerBlock(blobCfg *BlobConfig) uint64 {
 	if blobCfg == nil || blobCfg.Target <= 0 {
 		blobCfg = DefaultCancunBlobConfig()
 	}
-	return uint64(blobCfg.Target) * BlobTxBlobGasPerBlob
+	return blobGasForCount(blobCfg.Target)
+}
+
+func blobGasForCount(count int) uint64 {
+	if count <= 0 {
+		return 0
+	}
+	value := uint64(count)
+	if value > ^uint64(0)/BlobTxBlobGasPerBlob {
+		return ^uint64(0)
+	}
+	return value * BlobTxBlobGasPerBlob
 }
 
 func BlobBaseFeeUpdateFraction(blobCfg *BlobConfig) uint64 {
@@ -69,11 +106,48 @@ func BlobBaseFeeUpdateFraction(blobCfg *BlobConfig) uint64 {
 }
 
 func CalcExcessBlobGas(parentExcessBlobGas, parentBlobGasUsed uint64, blobCfg *BlobConfig) uint64 {
-	target := TargetBlobGasPerBlock(blobCfg)
-	if parentExcessBlobGas+parentBlobGasUsed < target {
+	return excessBlobGasAfterTarget(parentExcessBlobGas, parentBlobGasUsed, TargetBlobGasPerBlock(blobCfg))
+}
+
+// excessBlobGasAfterTarget computes max(a+b-target, 0) without permitting a
+// malformed near-uint64 parent header to wrap into a small, apparently valid
+// excess value. Results outside the header's uint64 domain saturate.
+func excessBlobGasAfterTarget(a, b, target uint64) uint64 {
+	sum, carry := bits.Add64(a, b, 0)
+	if carry == 0 {
+		if sum < target {
+			return 0
+		}
+		return sum - target
+	}
+	// The mathematical sum is 2^64+sum. If subtracting target brings it back
+	// into range, unsigned subtraction produces that exact value. Otherwise
+	// the result cannot be represented by the header and is saturated.
+	if sum < target {
+		return 0 - (target - sum)
+	}
+	return ^uint64(0)
+}
+
+func saturatingAddUint64(a, b uint64) uint64 {
+	result, carry := bits.Add64(a, b, 0)
+	if carry != 0 {
+		return ^uint64(0)
+	}
+	return result
+}
+
+// mulDivFloor computes floor(value*numerator/denominator). EIP-7918 always
+// supplies numerator <= denominator, so the result is bounded by value even
+// when the intermediate product needs 128 bits.
+func mulDivFloor(value, numerator, denominator uint64) uint64 {
+	if value == 0 || numerator == 0 || denominator == 0 {
 		return 0
 	}
-	return parentExcessBlobGas + parentBlobGasUsed - target
+	quotient, remainder := value/denominator, value%denominator
+	hi, lo := bits.Mul64(remainder, numerator)
+	remainderPart, _ := bits.Div64(hi, lo, denominator)
+	return quotient*numerator + remainderPart
 }
 
 // CalcExcessBlobGasForFork calculates the child excess blob gas using the
@@ -89,7 +163,8 @@ func CalcExcessBlobGasForFork(isOsaka bool, parentExcessBlobGas, parentBlobGasUs
 		blobCfg = DefaultCancunBlobConfig()
 	}
 	target := TargetBlobGasPerBlock(blobCfg)
-	if parentExcessBlobGas < target && parentBlobGasUsed < target-parentExcessBlobGas {
+	total, carry := bits.Add64(parentExcessBlobGas, parentBlobGasUsed, 0)
+	if carry == 0 && total < target {
 		return 0
 	}
 	// The EIP-7918 reserve is the execution-gas cost of one blob. Compare
@@ -100,8 +175,8 @@ func CalcExcessBlobGasForFork(isOsaka bool, parentExcessBlobGas, parentBlobGasUs
 		new(big.Int).SetUint64(BlobTxBlobGasPerBlob),
 	)
 	if reservePrice.Cmp(blobPrice) > 0 {
-		scaled := parentBlobGasUsed * uint64(blobCfg.Max-blobCfg.Target) / uint64(blobCfg.Max)
-		return parentExcessBlobGas + scaled
+		scaled := mulDivFloor(parentBlobGasUsed, uint64(blobCfg.Max-blobCfg.Target), uint64(blobCfg.Max))
+		return saturatingAddUint64(parentExcessBlobGas, scaled)
 	}
 	return CalcExcessBlobGas(parentExcessBlobGas, parentBlobGasUsed, blobCfg)
 }
@@ -112,8 +187,12 @@ func FakeExponential(factor, numerator, denominator *big.Int) *big.Int {
 	}
 	output := new(big.Int)
 	accum := new(big.Int).Mul(factor, denominator)
+	capScaled := new(big.Int).Mul(maxBlobBaseFeeSentinel, denominator)
 	for i := int64(1); accum.Sign() > 0; i++ {
 		output.Add(output, accum)
+		if output.Cmp(capScaled) >= 0 {
+			return new(big.Int).Set(maxBlobBaseFeeSentinel)
+		}
 		accum.Mul(accum, numerator)
 		accum.Div(accum, denominator)
 		accum.Div(accum, big.NewInt(i))

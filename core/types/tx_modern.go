@@ -12,6 +12,10 @@ const (
 	DynamicFeeTxType = 0x02
 	BlobTxType       = 0x03
 	SetCodeTxType    = 0x04
+	// NativeTxType is the retired type-5 marker retained only for fail-closed
+	// boundary checks and old test fixtures. Public decoding and consensus admit
+	// only the standard EVM transaction types 0 through 4.
+	NativeTxType = 0x05
 )
 
 type AccessTuple struct {

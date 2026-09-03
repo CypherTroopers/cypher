@@ -71,6 +71,19 @@ func NewPublicEthereumAPI(e *Ethereum) *PublicEthereumAPI {
 	return &PublicEthereumAPI{e}
 }
 
+// addRPCTransactionYParity exposes the EIP-2718 recovery identifier expected
+// by standard Ethereum wallets for typed transactions. Legacy V may also carry
+// EIP-155's chain-id encoding, so type 0 intentionally omits yParity.
+func addRPCTransactionYParity(fields map[string]interface{}, tx *types.Transaction, v *big.Int) {
+	if fields == nil || tx == nil || v == nil {
+		return
+	}
+	switch tx.Type() {
+	case types.AccessListTxType, types.DynamicFeeTxType, types.BlobTxType, types.SetCodeTxType:
+		fields["yParity"] = hexutil.Uint64(v.Uint64())
+	}
+}
+
 // Etherbase is the address that mining rewards will be send to
 func (api *PublicEthereumAPI) Etherbase() (common.Address, error) {
 	return api.e.Etherbase()
@@ -92,7 +105,7 @@ func (api *PublicEthereumAPI) ChainId() hexutil.Uint64 {
 	return (hexutil.Uint64)(chainID.Uint64())
 }
 
-func commonRPCAdmissionForBlockTransaction(block *types.Block, hash common.Hash) (*types.CommonTxAdmissionBatch, uint16, uint16, bool) {
+func commonRPCAdmissionForBlockTransaction(block *types.Block, hash common.Hash) (*types.CommonTxAdmissionBatch, uint32, uint16, bool) {
 	if block == nil {
 		return nil, 0, 0, false
 	}
@@ -196,6 +209,7 @@ func (api *PublicEthereumAPI) rpcTransactionFields(tx *types.Transaction, block 
 		"r": (*hexutil.Big)(r),
 		"s": (*hexutil.Big)(s),
 	}
+	addRPCTransactionYParity(fields, tx, v)
 
 	if chainID := tx.ChainId(); chainID != nil && (tx.Type() != types.LegacyTxType || tx.Protected()) {
 		fields["chainId"] = (*hexutil.Big)(new(big.Int).Set(chainID))

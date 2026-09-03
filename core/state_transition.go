@@ -274,7 +274,9 @@ func messageGasTipCap(msg Message) *big.Int {
 
 func messageBlobGasFeeCap(msg Message) *big.Int {
 	if m, ok := msg.(blobFeeMessage); ok {
-		return new(big.Int).Set(m.BlobGasFeeCap())
+		if cap := m.BlobGasFeeCap(); cap != nil {
+			return new(big.Int).Set(cap)
+		}
 	}
 	return new(big.Int)
 }
@@ -337,6 +339,11 @@ func ValidateTxTypeForRules(txType uint8, rules params.Rules) error {
 		if rules.IsPrague {
 			return nil
 		}
+	case types.NativeTxType:
+		// Type 5 is not part of the EVM transaction protocol. Keep this shared
+		// trust-boundary check closed even when a caller has no ChainConfig; the
+		// public network accepts only Ethereum transaction types 0 through 4.
+		return ErrNativeTxDisabled
 	}
 	return ErrTxTypeNotSupported
 }
@@ -462,20 +469,43 @@ func (st *StateTransition) buyGas() error {
 }
 
 func (st *StateTransition) preCheck() error {
+	if err := validateNativeTransactionTypeExecutionMode(st.evm.ChainConfig(), st.txType); err != nil {
+		return err
+	}
 	rules := st.rules()
 	transactionChecks := st.msg.CheckNonce()
 	if err := ValidateTxTypeForRules(st.txType, rules); err != nil {
 		return err
 	}
-	if transactionChecks {
-		if st.txType == types.BlobTxType {
-			return ErrBlobDAUnavailable
+	if st.txType == types.BlobTxType {
+		hashes := messageBlobHashes(st.msg)
+		if len(hashes) == 0 {
+			return types.ErrBlobTxMissingBlobHashes
 		}
+		timestamp := uint64(0)
+		if st.evm.Context.Time != nil {
+			timestamp = st.evm.Context.Time.Uint64()
+		}
+		maxBlobs := params.MaxBlobsPerTransaction(st.evm.ChainConfig(), timestamp)
+		if maxBlobs > 0 && len(hashes) > maxBlobs {
+			return types.ErrBlobTxTooManyBlobs
+		}
+		for _, hash := range hashes {
+			if hash[0] != types.BlobCommitmentVersionKZG {
+				return types.ErrBlobTxInvalidBlobHashVersion
+			}
+		}
+		if st.blobGasFeeCap == nil || st.blobGasFeeCap.Sign() <= 0 {
+			return types.ErrBlobTxInvalidFeeCap
+		}
+		if uint64(len(hashes)) > math.MaxUint64/params.BlobTxBlobGasPerBlob ||
+			st.blobGas != uint64(len(hashes))*params.BlobTxBlobGasPerBlob {
+			return ErrBlobGasUsedMismatch
+		}
+	}
+	if transactionChecks {
 		if rules.IsOsaka && st.msg.Gas() > params.MaxTxGas {
 			return ErrTxGasLimitExceeded
-		}
-		if rules.IsOsaka && len(messageBlobHashes(st.msg)) > params.BlobTxMaxBlobs {
-			return types.ErrBlobTxTooManyBlobs
 		}
 	}
 	if st.txType == types.SetCodeTxType {
@@ -496,7 +526,12 @@ func (st *StateTransition) preCheck() error {
 			return ErrNonceMax
 		}
 	}
-	if transactionChecks && rules.IsLondon {
+	// NativeTxV1 deliberately omits an account nonce, but its fee payer still
+	// follows the same EOA/delegated-account rule as a nonce-bearing sender.
+	// Tying this check to CheckNonce would make pool admission stricter than
+	// consensus execution and allow a Byzantine proposer to include a native
+	// transaction from arbitrary contract code.
+	if (transactionChecks || st.txType == types.NativeTxType) && rules.IsLondon {
 		code := st.state.GetCode(st.msg.From())
 		_, delegated := types.ParseDelegation(code)
 		if len(code) != 0 && !(rules.IsPrague && delegated) {
@@ -563,7 +598,12 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if contractCreation {
 		ret, _, st.gas, vmerr = st.evm.Create(sender, st.data, st.gas, st.value)
 	} else {
-		st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
+		// NativeTxV1 has no account nonce. Its replay domain is the signed recent
+		// block plus expiry window, so mutating an unrelated legacy account nonce
+		// would make otherwise independent native transactions conflict.
+		if st.txType != types.NativeTxType {
+			st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
+		}
 		if rules.IsPrague && st.txType == types.SetCodeTxType {
 			for i := range st.authList {
 				// Invalid tuples are ignored as required by EIP-7702. Stateless

@@ -122,23 +122,12 @@ func (p *FakePeer) RequestHeadersByNumber(number uint64, amount int, skip int, r
 // RequestBodies implements downloader.Peer, returning a batch of block bodies
 // corresponding to the specified block hashes.
 func (p *FakePeer) RequestBodies(hashes []common.Hash) error {
-	var (
-		txs                      [][]*types.Transaction
-		uncles                   [][]*types.Header
-		commonTxAdmissionBatches [][]*types.CommonTxAdmissionBatch
-		commonTxAdmissionRefs    [][]types.CommonTxAdmissionRef
-		commonTxRewards          [][]*types.CommonTxReward
-	)
+	bodies := make([]*types.Body, 0, len(hashes))
 	for _, hash := range hashes {
 		block := rawdb.ReadBlock(p.db, hash, *p.hc.GetBlockNumber(hash))
-
-		txs = append(txs, block.Transactions())
-		uncles = append(uncles, block.Uncles())
-		commonTxAdmissionBatches = append(commonTxAdmissionBatches, block.CommonTxAdmissionBatches())
-		commonTxAdmissionRefs = append(commonTxAdmissionRefs, block.CommonTxAdmissionRefs())
-		commonTxRewards = append(commonTxRewards, block.CommonTxRewards())
+		bodies = append(bodies, block.Body())
 	}
-	p.dl.DeliverBodies(p.id, txs, uncles, commonTxAdmissionBatches, commonTxAdmissionRefs, commonTxRewards)
+	p.dl.DeliverBodies(p.id, bodies)
 	return nil
 }
 

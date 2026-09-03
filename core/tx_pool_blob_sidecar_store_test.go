@@ -1,6 +1,8 @@
 package core
 
 import (
+	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/cypherium/cypher/common"
@@ -29,8 +31,16 @@ func TestTxPoolBlobSidecarStore(t *testing.T) {
 		t.Fatalf("unexpected sidecar before store")
 	}
 	pool.storeBlobSidecar(tx, sidecar)
-	if got := pool.getBlobSidecar(tx.Hash(), false); got != sidecar {
-		t.Fatalf("sidecar pointer mismatch")
+	got := pool.getBlobSidecar(tx.Hash(), false)
+	if !reflect.DeepEqual(got, sidecar) {
+		t.Fatalf("stored sidecar mismatch")
+	}
+	if got == sidecar {
+		t.Fatalf("store returned caller-owned sidecar pointer")
+	}
+	got.Proofs[0][0] = 0xff
+	if again := pool.getBlobSidecar(tx.Hash(), false); again.Proofs[0][0] != 0 {
+		t.Fatalf("mutating a returned sidecar changed the verified store")
 	}
 	pool.RemoveBlobSidecar(tx.Hash())
 	if pool.getBlobSidecar(tx.Hash(), false) != nil {
@@ -59,5 +69,23 @@ func TestTxPoolPruneBlobSidecars(t *testing.T) {
 	}
 	if got := pool.getBlobSidecar(tx.Hash(), false); got != nil {
 		t.Fatalf("expected sidecar removed after prune")
+	}
+}
+
+func TestTxPoolBlobSidecarStoreHasExplicitByteLimit(t *testing.T) {
+	pool := &TxPool{config: TxPoolConfig{GlobalSlots: 1, GlobalQueue: 1}}
+	tx, sidecar := testTxPoolSidecar(t, 4)
+	sidecar.Blobs[0] = make(types.Blob, 2*txSlotSize)
+	if err := pool.storeBlobSidecar(tx, sidecar); !errors.Is(err, ErrBlobSidecarStoreFull) {
+		t.Fatalf("store error = %v, want %v", err, ErrBlobSidecarStoreFull)
+	}
+	store := loadBlobSidecarStore(pool)
+	if store == nil {
+		t.Fatal("expected initialized bounded sidecar store")
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	if store.bytes != 0 || len(store.sidecars) != 0 {
+		t.Fatalf("failed quota reservation changed store: bytes=%d entries=%d", store.bytes, len(store.sidecars))
 	}
 }

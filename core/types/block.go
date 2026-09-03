@@ -24,6 +24,7 @@ import (
 	"io"
 	"math/big"
 	"reflect"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
 	"github.com/zeebo/blake3"
 	"golang.org/x/crypto/sha3"
@@ -175,7 +177,7 @@ type SignInfo struct {
 
 // MaxFHSFinalityProofSize bounds untrusted finality metadata carried by a
 // header. A SignedState for a committee QC is normally only a few kilobytes.
-const MaxFHSFinalityProofSize = 64 * 1024
+const MaxFHSFinalityProofSize = params.FairHotstuffMaxFinalityProofBytes
 
 // CommonTxAdmissionBatch is one common-RPC miner's signed admission of an
 // ordered micro-batch. TxHashes is complete consensus evidence: a syncing node
@@ -198,7 +200,7 @@ type CommonTxAdmissionBatch struct {
 // transaction hash inside that signed batch. Value semantics keep the block
 // body compact and avoid nil-reference ambiguity.
 type CommonTxAdmissionRef struct {
-	Batch uint16
+	Batch uint32
 	Item  uint16
 }
 
@@ -290,6 +292,50 @@ func NewHotstuffProposalRefWithProof(chainID uint64, viewNumber uint64, viewID c
 // NewHotstuffProposalRefWithCommitments reconstructs the exact proposal
 // reference from commitments persisted alongside an FHS quorum certificate.
 func NewHotstuffProposalRefWithCommitments(chainID uint64, viewNumber uint64, viewID common.Hash, leaderID string, block *Block, encodedBlock []byte, extraHash, parentQCID common.Hash) (*HotstuffProposalRef, error) {
+	if block == nil || block.header == nil {
+		return nil, fmt.Errorf("nil hotstuff proposal block")
+	}
+	if len(encodedBlock) == 0 {
+		encodedBlock = block.EncodeToBytes()
+	}
+	if len(encodedBlock) == 0 {
+		return nil, fmt.Errorf("empty hotstuff proposal body")
+	}
+	return newHotstuffProposalRefWithBodyCommitment(
+		chainID, viewNumber, viewID, leaderID, block,
+		HotstuffProposalBodyHash(encodedBlock), uint64(len(encodedBlock)), extraHash, parentQCID,
+	)
+}
+
+// NewHotstuffProposalRefFromUnsignedBlock reconstructs a proposal reference
+// from a block which may already carry signature/finality metadata. Only the
+// header's SignInfo is omitted from the body commitment. The body and sidecar
+// backing arrays are read synchronously without being copied or exposed.
+func NewHotstuffProposalRefFromUnsignedBlock(chainID uint64, viewNumber uint64, viewID common.Hash, leaderID string, block *Block) (*HotstuffProposalRef, error) {
+	return NewHotstuffProposalRefFromUnsignedBlockWithCommitments(
+		chainID, viewNumber, viewID, leaderID, block,
+		HotstuffProposalExtraHash(nil), common.Hash{},
+	)
+}
+
+// NewHotstuffProposalRefFromUnsignedBlockWithCommitments is the FHS variant of
+// NewHotstuffProposalRefFromUnsignedBlock. It computes body hash and exact RLP
+// size in one encoding pass and binds the persisted proof commitments.
+func NewHotstuffProposalRefFromUnsignedBlockWithCommitments(chainID uint64, viewNumber uint64, viewID common.Hash, leaderID string, block *Block, extraHash, parentQCID common.Hash) (*HotstuffProposalRef, error) {
+	if block == nil || block.header == nil {
+		return nil, fmt.Errorf("nil hotstuff proposal block")
+	}
+	bodyHash, bodySize, err := block.unsignedHotstuffProposalBodyCommitment()
+	if err != nil {
+		return nil, err
+	}
+	return newHotstuffProposalRefWithBodyCommitment(
+		chainID, viewNumber, viewID, leaderID, block,
+		bodyHash, bodySize, extraHash, parentQCID,
+	)
+}
+
+func newHotstuffProposalRefWithBodyCommitment(chainID uint64, viewNumber uint64, viewID common.Hash, leaderID string, block *Block, bodyHash common.Hash, bodySize uint64, extraHash, parentQCID common.Hash) (*HotstuffProposalRef, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal block")
 	}
@@ -299,10 +345,7 @@ func NewHotstuffProposalRefWithCommitments(chainID uint64, viewNumber uint64, vi
 	if viewNumber == 0 {
 		return nil, fmt.Errorf("empty hotstuff proposal view number")
 	}
-	if len(encodedBlock) == 0 {
-		encodedBlock = block.EncodeToBytes()
-	}
-	if len(encodedBlock) == 0 {
+	if bodyHash == (common.Hash{}) || bodySize == 0 {
 		return nil, fmt.Errorf("empty hotstuff proposal body")
 	}
 
@@ -318,10 +361,10 @@ func NewHotstuffProposalRefWithCommitments(chainID uint64, viewNumber uint64, vi
 		StateRoot:             block.Root(),
 		TxHash:                block.TxHash(),
 		ReceiptHash:           block.ReceiptHash(),
-		CommonTxAdmissionRoot: block.Header().CommonTxAdmissionRoot,
-		CommonTxRewardRoot:    block.Header().CommonTxRewardRoot,
-		BodyHash:              HotstuffProposalBodyHash(encodedBlock),
-		BodySize:              uint64(len(encodedBlock)),
+		CommonTxAdmissionRoot: block.header.CommonTxAdmissionRoot,
+		CommonTxRewardRoot:    block.header.CommonTxRewardRoot,
+		BodyHash:              bodyHash,
+		BodySize:              bodySize,
 		ExtraHash:             extraHash,
 		ParentQCID:            parentQCID,
 		BlockType:             block.BlockType(),
@@ -590,6 +633,47 @@ func blake3RLPHash(x interface{}) (h common.Hash) {
 	return h
 }
 
+const (
+	commonRootParallelThreshold = 256
+	commonRootMaxWorkers        = 32
+)
+
+// runCommonRootParallel uses static, bounded shards. Every output position is
+// owned by exactly one worker, so changing GOMAXPROCS cannot change a
+// consensus commitment. Small inputs stay serial to avoid scheduler overhead.
+func runCommonRootParallel(count int, fn func(int)) {
+	workers := runtime.GOMAXPROCS(0)
+	if workers > commonRootMaxWorkers {
+		workers = commonRootMaxWorkers
+	}
+	if workers > count {
+		workers = count
+	}
+	if count < commonRootParallelThreshold || workers <= 1 {
+		for index := 0; index < count; index++ {
+			fn(index)
+		}
+		return
+	}
+	var group sync.WaitGroup
+	group.Add(workers - 1)
+	work := func(worker int) {
+		start := count * worker / workers
+		end := count * (worker + 1) / workers
+		for index := start; index < end; index++ {
+			fn(index)
+		}
+	}
+	for worker := 1; worker < workers; worker++ {
+		go func(worker int) {
+			defer group.Done()
+			work(worker)
+		}(worker)
+	}
+	work(0)
+	group.Wait()
+}
+
 func blake3MerkleRoot(leaves []common.Hash) common.Hash {
 	if len(leaves) == 0 {
 		return common.Hash{}
@@ -597,21 +681,22 @@ func blake3MerkleRoot(leaves []common.Hash) common.Hash {
 	level := make([]common.Hash, len(leaves))
 	copy(level, leaves)
 	for len(level) > 1 {
-		next := make([]common.Hash, 0, (len(level)+1)/2)
-		for i := 0; i < len(level); i += 2 {
+		next := make([]common.Hash, (len(level)+1)/2)
+		runCommonRootParallel(len(next), func(index int) {
+			i := index * 2
 			left := level[i]
 			right := left
 			if i+1 < len(level) {
 				right = level[i+1]
 			}
-			buf := make([]byte, 0, common.HashLength*2)
-			buf = append(buf, left[:]...)
-			buf = append(buf, right[:]...)
-			sum := blake3.Sum256(buf)
+			var pair [common.HashLength * 2]byte
+			copy(pair[:common.HashLength], left[:])
+			copy(pair[common.HashLength:], right[:])
+			sum := blake3.Sum256(pair[:])
 			var out common.Hash
 			copy(out[:], sum[:])
-			next = append(next, out)
-		}
+			next[index] = out
+		})
 		level = next
 	}
 	return level[0]
@@ -677,11 +762,12 @@ func DeriveCommonTxAdmissionTxRoot(txHashes []common.Hash) common.Hash {
 		return common.Hash{}
 	}
 	leaves := make([]common.Hash, len(txHashes))
-	for index, txHash := range txHashes {
+	runCommonRootParallel(len(txHashes), func(index int) {
+		txHash := txHashes[index]
 		leaves[index] = blake3RLPHash([]interface{}{
 			[]byte(commonTxAdmissionTxDomain), uint32(index), txHash,
 		})
-	}
+	})
 	return blake3RLPHash([]interface{}{
 		[]byte(commonTxAdmissionTxRootDomain), uint32(len(txHashes)), blake3MerkleRoot(leaves),
 	})
@@ -696,23 +782,25 @@ func DeriveCommonTxAdmissionRoot(batches []*CommonTxAdmissionBatch, refs []Commo
 		return common.Hash{}
 	}
 	batchLeaves := make([]common.Hash, len(batches))
-	for index, batch := range batches {
+	runCommonRootParallel(len(batches), func(index int) {
+		batch := batches[index]
 		if batch == nil {
 			batchLeaves[index] = blake3RLPHash([]interface{}{
 				[]byte(commonTxAdmissionBatchDomain), uint32(index), false,
 			})
-			continue
+			return
 		}
 		batchLeaves[index] = blake3RLPHash([]interface{}{
 			[]byte(commonTxAdmissionBatchDomain), uint32(index), true, batch,
 		})
-	}
+	})
 	refLeaves := make([]common.Hash, len(refs))
-	for index, ref := range refs {
+	runCommonRootParallel(len(refs), func(index int) {
+		ref := refs[index]
 		refLeaves[index] = blake3RLPHash([]interface{}{
 			[]byte(commonTxAdmissionRefDomain), uint32(index), ref.Batch, ref.Item,
 		})
-	}
+	})
 	return blake3RLPHash([]interface{}{
 		[]byte(commonTxAdmissionRootDomain),
 		uint32(len(batches)), blake3MerkleRoot(batchLeaves),
@@ -725,11 +813,15 @@ func DeriveCommonTxRewardRoot(rewards []*CommonTxReward) common.Hash {
 	if len(rewards) == 0 {
 		return common.Hash{}
 	}
-	leaves := make([]common.Hash, 0, len(rewards))
+	nonNil := make([]*CommonTxReward, 0, len(rewards))
 	for _, reward := range rewards {
-		if reward == nil {
-			continue
+		if reward != nil {
+			nonNil = append(nonNil, reward)
 		}
+	}
+	leaves := make([]common.Hash, len(nonNil))
+	runCommonRootParallel(len(nonNil), func(index int) {
+		reward := nonNil[index]
 		rewardAmount := new(big.Int)
 		burnAmount := new(big.Int)
 		if reward.ApproverReward != nil {
@@ -738,14 +830,14 @@ func DeriveCommonTxRewardRoot(rewards []*CommonTxReward) common.Hash {
 		if reward.Burn != nil {
 			burnAmount.Set(reward.Burn)
 		}
-		leaves = append(leaves, blake3RLPHash([]interface{}{
+		leaves[index] = blake3RLPHash([]interface{}{
 			[]byte(commonTxRewardDomain),
 			reward.TxHash,
 			reward.Approver,
 			rewardAmount,
 			burnAmount,
-		}))
-	}
+		})
+	})
 	return blake3MerkleRoot(leaves)
 }
 
@@ -764,6 +856,7 @@ func (h *Header) EmptyReceipts() bool {
 // a block's data contents together.
 type Body struct {
 	Transactions             []*Transaction
+	BlobSidecars             []*BlobTxSidecar
 	Uncles                   []*Header
 	CommonTxAdmissionBatches []*CommonTxAdmissionBatch
 	CommonTxAdmissionRefs    []CommonTxAdmissionRef
@@ -775,6 +868,7 @@ type Block struct {
 	header                   *Header
 	uncles                   []*Header
 	transactions             Transactions
+	blobSidecars             []*BlobTxSidecar
 	commonTxAdmissionBatches []*CommonTxAdmissionBatch
 	commonTxAdmissionRefs    []CommonTxAdmissionRef
 	commonTxRewards          []*CommonTxReward
@@ -814,6 +908,7 @@ type StorageBlock Block
 type extblock struct {
 	Header                   *Header
 	Txs                      []*Transaction
+	BlobSidecars             []*BlobTxSidecar
 	Uncles                   []*Header
 	CommonTxAdmissionBatches []*CommonTxAdmissionBatch
 	CommonTxAdmissionRefs    []CommonTxAdmissionRef
@@ -825,6 +920,7 @@ type extblock struct {
 type storageblock struct {
 	Header                   *Header
 	Txs                      []*Transaction
+	BlobSidecars             []*BlobTxSidecar
 	Uncles                   []*Header
 	CommonTxAdmissionBatches []*CommonTxAdmissionBatch
 	CommonTxAdmissionRefs    []CommonTxAdmissionRef
@@ -847,8 +943,7 @@ func NewBlock(header *Header, txs []*Transaction, uncles []*Header, receipts []*
 		b.header.TxHash = EmptyRootHash
 	} else {
 		b.header.TxHash = DeriveSha(Transactions(txs), hasher)
-		b.transactions = make(Transactions, len(txs))
-		copy(b.transactions, txs)
+		b.transactions, b.blobSidecars = cloneTransactionsWithBlobSidecars(txs)
 	}
 
 	if len(receipts) == 0 {
@@ -921,7 +1016,11 @@ func (b *Block) DecodeRLP(s *rlp.Stream) error {
 	if err := s.Decode(&eb); err != nil {
 		return err
 	}
-	b.header, b.uncles, b.transactions = eb.Header, eb.Uncles, eb.Txs
+	txs, sidecars, err := attachBlockBlobSidecars(eb.Txs, eb.BlobSidecars, true)
+	if err != nil {
+		return err
+	}
+	b.header, b.uncles, b.transactions, b.blobSidecars = eb.Header, eb.Uncles, txs, sidecars
 	b.commonTxAdmissionBatches = copyCommonTxAdmissionBatches(eb.CommonTxAdmissionBatches)
 	b.commonTxAdmissionRefs = copyCommonTxAdmissionRefs(eb.CommonTxAdmissionRefs)
 	b.commonTxRewards = copyCommonTxRewards(eb.CommonTxRewards)
@@ -931,13 +1030,80 @@ func (b *Block) DecodeRLP(s *rlp.Stream) error {
 
 // EncodeRLP serializes b into the Ethereum RLP block format.
 func (b *Block) EncodeRLP(w io.Writer) error {
+	if err := validateBlockBlobSidecars(b.transactions, b.blobSidecars, false); err != nil {
+		return err
+	}
 	return rlp.Encode(w, extblock{
 		Header:                   b.header,
 		Txs:                      b.transactions,
+		BlobSidecars:             b.blobSidecars,
 		Uncles:                   b.uncles,
 		CommonTxAdmissionBatches: b.commonTxAdmissionBatches,
 		CommonTxAdmissionRefs:    b.commonTxAdmissionRefs,
 		CommonTxRewards:          b.commonTxRewards,
+	})
+}
+
+type hotstuffProposalBodyCommitmentWriter struct {
+	hasher *blake3.Hasher
+	size   uint64
+}
+
+func (w *hotstuffProposalBodyCommitmentWriter) Write(data []byte) (int, error) {
+	written, err := w.hasher.Write(data)
+	w.size += uint64(written)
+	return written, err
+}
+
+// unsignedHotstuffProposalBodyCommitment returns the BLAKE3 hash and exact size
+// of the historical CopyOrg RLP without constructing a second Block or a full
+// encoded byte slice. The shallow header value is private to this call, so only
+// its SignInfo can be cleared; all body backing remains immutable and shared for
+// the duration of the synchronous RLP encode.
+func (b *Block) unsignedHotstuffProposalBodyCommitment() (common.Hash, uint64, error) {
+	if b == nil || b.header == nil {
+		return common.Hash{}, 0, fmt.Errorf("nil hotstuff proposal block")
+	}
+	if err := validateBlockBlobSidecars(b.transactions, b.blobSidecars, false); err != nil {
+		return common.Hash{}, 0, err
+	}
+	unsignedHeader := *b.header
+	unsignedHeader.SetSignInfoNull()
+	writer := &hotstuffProposalBodyCommitmentWriter{hasher: blake3.New()}
+	if err := rlp.Encode(writer, extblock{
+		Header:                   &unsignedHeader,
+		Txs:                      b.transactions,
+		BlobSidecars:             b.blobSidecars,
+		Uncles:                   b.uncles,
+		CommonTxAdmissionBatches: b.commonTxAdmissionBatches,
+		CommonTxAdmissionRefs:    b.commonTxAdmissionRefs,
+		CommonTxRewards:          b.commonTxRewards,
+	}); err != nil {
+		return common.Hash{}, 0, fmt.Errorf("encode unsigned hotstuff proposal body: %w", err)
+	}
+	if writer.size == 0 {
+		return common.Hash{}, 0, fmt.Errorf("empty hotstuff proposal body")
+	}
+	var bodyHash common.Hash
+	copy(bodyHash[:], writer.hasher.Sum(nil))
+	return bodyHash, writer.size, nil
+}
+
+// [deprecated by eth/63]
+func (b *StorageBlock) EncodeRLP(w io.Writer) error {
+	block := (*Block)(b)
+	if err := validateBlockBlobSidecars(block.transactions, block.blobSidecars, false); err != nil {
+		return err
+	}
+	return rlp.Encode(w, storageblock{
+		Header:                   block.header,
+		Txs:                      block.transactions,
+		BlobSidecars:             block.blobSidecars,
+		Uncles:                   block.uncles,
+		CommonTxAdmissionBatches: block.commonTxAdmissionBatches,
+		CommonTxAdmissionRefs:    block.commonTxAdmissionRefs,
+		CommonTxRewards:          block.commonTxRewards,
+		TD:                       block.td,
 	})
 }
 
@@ -947,7 +1113,11 @@ func (b *StorageBlock) DecodeRLP(s *rlp.Stream) error {
 	if err := s.Decode(&sb); err != nil {
 		return err
 	}
-	b.header, b.uncles, b.transactions, b.td = sb.Header, sb.Uncles, sb.Txs, sb.TD
+	txs, sidecars, err := attachBlockBlobSidecars(sb.Txs, sb.BlobSidecars, true)
+	if err != nil {
+		return err
+	}
+	b.header, b.uncles, b.transactions, b.blobSidecars, b.td = sb.Header, sb.Uncles, txs, sidecars, sb.TD
 	b.commonTxAdmissionBatches = copyCommonTxAdmissionBatches(sb.CommonTxAdmissionBatches)
 	b.commonTxAdmissionRefs = copyCommonTxAdmissionRefs(sb.CommonTxAdmissionRefs)
 	b.commonTxRewards = copyCommonTxRewards(sb.CommonTxRewards)
@@ -958,6 +1128,10 @@ func (b *StorageBlock) DecodeRLP(s *rlp.Stream) error {
 
 func (b *Block) Uncles() []*Header          { return b.uncles }
 func (b *Block) Transactions() Transactions { return b.transactions }
+
+// BlobSidecars returns defensive copies ordered one-for-one with BlobTxs in
+// Transactions. Non-blob transactions have no entry in this slice.
+func (b *Block) BlobSidecars() []*BlobTxSidecar { return copyBlobSidecars(b.blobSidecars) }
 
 func (b *Block) CommonTxAdmissionBatches() []*CommonTxAdmissionBatch {
 	return copyCommonTxAdmissionBatches(b.commonTxAdmissionBatches)
@@ -1014,8 +1188,10 @@ func (b *Block) Header0() *Header { return b.header }
 
 // Body returns the non-header content of the block.
 func (b *Block) Body() *Body {
+	txs, sidecars := cloneTransactionsWithBlobSidecars(b.transactions)
 	return &Body{
-		Transactions:             b.transactions,
+		Transactions:             txs,
+		BlobSidecars:             sidecars,
 		Uncles:                   b.uncles,
 		CommonTxAdmissionBatches: b.commonTxAdmissionBatches,
 		CommonTxAdmissionRefs:    b.commonTxAdmissionRefs,
@@ -1035,7 +1211,9 @@ func (b *Block) Size() common.StorageSize {
 		return size.(common.StorageSize)
 	}
 	c := writeCounter(0)
-	rlp.Encode(&c, b)
+	if err := rlp.Encode(&c, b); err != nil {
+		return 0
+	}
 	b.size.Store(common.StorageSize(c))
 	return common.StorageSize(c)
 }
@@ -1064,10 +1242,12 @@ func CalcUncleHash(uncles []*Header) common.Hash {
 // the sealed one.
 func (b *Block) WithSeal(header *Header) *Block {
 	cpy := CopyHeader(header)
+	txs, sidecars := cloneTransactionsWithBlobSidecars(b.transactions)
 
 	return &Block{
 		header:                   cpy,
-		transactions:             b.transactions,
+		transactions:             txs,
+		blobSidecars:             sidecars,
 		uncles:                   b.uncles,
 		commonTxAdmissionBatches: copyCommonTxAdmissionBatches(b.commonTxAdmissionBatches),
 		commonTxAdmissionRefs:    copyCommonTxAdmissionRefs(b.commonTxAdmissionRefs),
@@ -1077,15 +1257,16 @@ func (b *Block) WithSeal(header *Header) *Block {
 
 // WithBody returns a new block with the given transaction and uncle contents.
 func (b *Block) WithBody(transactions []*Transaction, uncles []*Header) *Block {
+	txs, sidecars := cloneTransactionsWithBlobSidecars(transactions)
 	block := &Block{
 		header:                   CopyHeader(b.header),
-		transactions:             make([]*Transaction, len(transactions)),
+		transactions:             txs,
+		blobSidecars:             sidecars,
 		uncles:                   make([]*Header, len(uncles)),
 		commonTxAdmissionBatches: copyCommonTxAdmissionBatches(b.commonTxAdmissionBatches),
 		commonTxAdmissionRefs:    copyCommonTxAdmissionRefs(b.commonTxAdmissionRefs),
 		commonTxRewards:          copyCommonTxRewards(b.commonTxRewards),
 	}
-	copy(block.transactions, transactions)
 	for i := range uncles {
 		block.uncles[i] = CopyHeader(uncles[i])
 	}
@@ -1110,8 +1291,11 @@ func (b *Block) Hash() common.Hash {
 }
 
 func (b *Block) SetSignature(sig []byte, exceptions []byte, viewID common.Hash, leaderID string, viewNumber uint64) {
-	b.header.SignInfo.Signature = sig
-	b.header.SignInfo.Exceptions = exceptions
+	// Signature metadata is small compared with the proposal body and must remain
+	// block-owned. In particular, callers often reuse aggregation buffers after
+	// staging a QC; retaining those slices could silently change persisted bytes.
+	b.header.SignInfo.Signature = common.CopyBytes(sig)
+	b.header.SignInfo.Exceptions = common.CopyBytes(exceptions)
 	b.header.SignInfo.ViewID = viewID
 	b.header.SignInfo.LeaderID = leaderID
 	b.header.SignInfo.ViewNumber = viewNumber

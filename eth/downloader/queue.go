@@ -63,13 +63,9 @@ type fetchRequest struct {
 type fetchResult struct {
 	pending int32 // Flag telling what deliveries are outstanding
 
-	Header                   *types.Header
-	Uncles                   []*types.Header
-	Transactions             types.Transactions
-	CommonTxAdmissionBatches []*types.CommonTxAdmissionBatch
-	CommonTxAdmissionRefs    []types.CommonTxAdmissionRef
-	CommonTxRewards          []*types.CommonTxReward
-	Receipts                 types.Receipts
+	Header   *types.Header
+	Body     *types.Body
+	Receipts types.Receipts
 }
 
 func newFetchResult(header *types.Header, fastSync bool) *fetchResult {
@@ -367,14 +363,27 @@ func (q *queue) Results(block bool) []*fetchResult {
 	for _, result := range results {
 		// Recalculate the result item weights to prevent memory exhaustion
 		size := result.Header.Size()
-		for _, uncle := range result.Uncles {
-			size += uncle.Size()
+		if result.Body != nil {
+			for _, uncle := range result.Body.Uncles {
+				size += uncle.Size()
+			}
+			for _, tx := range result.Body.Transactions {
+				size += tx.Size()
+			}
+			for _, sidecar := range result.Body.BlobSidecars {
+				if sidecar == nil {
+					continue
+				}
+				size++ // Sidecar version byte; slice/RLP overhead is intentionally approximate.
+				for _, blob := range sidecar.Blobs {
+					size += common.StorageSize(len(blob))
+				}
+				size += common.StorageSize(len(sidecar.Commitments)) * common.StorageSize(len(types.KZGCommitment{}))
+				size += common.StorageSize(len(sidecar.Proofs)) * common.StorageSize(len(types.KZGProof{}))
+			}
 		}
 		for _, receipt := range result.Receipts {
 			size += receipt.Size()
-		}
-		for _, tx := range result.Transactions {
-			size += tx.Size()
 		}
 		q.resultSize = common.StorageSize(blockCacheSizeWeight)*size +
 			(1-common.StorageSize(blockCacheSizeWeight))*q.resultSize
@@ -772,35 +781,35 @@ func (q *queue) DeliverHeaders(id string, headers []*types.Header, headerProcCh 
 // DeliverBodies injects a block body retrieval response into the results queue.
 // The method returns the number of blocks bodies accepted from the delivery and
 // also wakes any threads waiting for data delivery.
-func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, uncleLists [][]*types.Header, commonTxAdmissionBatchLists [][]*types.CommonTxAdmissionBatch, commonTxAdmissionRefLists [][]types.CommonTxAdmissionRef, commonTxRewardLists [][]*types.CommonTxReward) (int, error) {
+func (q *queue) DeliverBodies(id string, bodies []*types.Body) (int, error) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 	validate := func(index int, header *types.Header) error {
-		if types.DeriveSha(types.Transactions(txLists[index]), new(trie.Trie)) != header.TxHash {
+		body := bodies[index]
+		if body == nil || body.ValidateBlobSidecars() != nil {
 			return errInvalidBody
 		}
-		if types.CalcUncleHash(uncleLists[index]) != header.UncleHash {
+		if types.DeriveSha(types.Transactions(body.Transactions), new(trie.Trie)) != header.TxHash {
 			return errInvalidBody
 		}
-		if types.DeriveCommonTxAdmissionRoot(commonTxAdmissionBatchLists[index], commonTxAdmissionRefLists[index]) != header.CommonTxAdmissionRoot {
+		if types.CalcUncleHash(body.Uncles) != header.UncleHash {
 			return errInvalidBody
 		}
-		if types.DeriveCommonTxRewardRoot(commonTxRewardLists[index]) != header.CommonTxRewardRoot {
+		if types.DeriveCommonTxAdmissionRoot(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs) != header.CommonTxAdmissionRoot {
+			return errInvalidBody
+		}
+		if types.DeriveCommonTxRewardRoot(body.CommonTxRewards) != header.CommonTxRewardRoot {
 			return errInvalidBody
 		}
 		return nil
 	}
 
 	reconstruct := func(index int, result *fetchResult) {
-		result.Transactions = txLists[index]
-		result.Uncles = uncleLists[index]
-		result.CommonTxAdmissionBatches = commonTxAdmissionBatchLists[index]
-		result.CommonTxAdmissionRefs = commonTxAdmissionRefLists[index]
-		result.CommonTxRewards = commonTxRewardLists[index]
+		result.Body = bodies[index]
 		result.SetBodyDone()
 	}
 	return q.deliver(id, q.blockTaskPool, q.blockTaskQueue, q.blockPendPool,
-		bodyReqTimer, len(txLists), validate, reconstruct)
+		bodyReqTimer, len(bodies), validate, reconstruct)
 }
 
 // DeliverReceipts injects a receipt retrieval response into the results queue.

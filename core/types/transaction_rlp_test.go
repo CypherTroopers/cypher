@@ -136,3 +136,42 @@ func TestTransactionsByPriceAndNonceRecomputesSignerForCurrentHead(t *testing.T)
 		t.Fatalf("unexpected transaction after account tail: nonce %d", tx.Nonce())
 	}
 }
+
+func TestTransactionsByPriceAndNonceCopyHasIndependentCursor(t *testing.T) {
+	chainID := big.NewInt(1337)
+	config := *params.TestChainConfig
+	config.ChainID = new(big.Int).Set(chainID)
+	config.EIP155Block = big.NewInt(0)
+	to := common.HexToAddress("0x5555555555555555555555555555555555555555")
+	accounts := make(map[common.Address]Transactions)
+	for account := 0; account < 2; account++ {
+		key, err := crypto.GenerateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		transactions := make(Transactions, 2)
+		for nonce := range transactions {
+			unsigned := NewTransaction(uint64(nonce), to, new(big.Int), params.TxGas, big.NewInt(int64(10-account)), nil)
+			transactions[nonce], err = SignTx(unsigned, NewEIP155Signer(chainID), key)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		accounts[crypto.PubkeyToAddress(key.PublicKey)] = transactions
+	}
+	original := NewTransactionsByPriceAndNonce(&config, big.NewInt(1), accounts)
+	clone := original.Copy()
+	first := original.Peek()
+	if first == nil || clone.Peek() != first {
+		t.Fatal("copied cursor did not preserve the original head")
+	}
+	clone.Shift()
+	clone.Pop()
+	if original.Peek() != first {
+		t.Fatal("mutating copied cursor consumed the original head")
+	}
+	original.Shift()
+	if clone.Peek() == original.Peek() {
+		t.Fatal("cursor mutations unexpectedly shared heap state")
+	}
+}

@@ -19,14 +19,17 @@ func blobBlockValidationHeader(txs types.Transactions, excessBlobGas uint64) *ty
 	}
 }
 
-func TestValidateBlockBlobBodyRejectsBlobTxWithoutDA(t *testing.T) {
+func TestValidateBlockBlobExecutionRejectsBlobTxWithoutDA(t *testing.T) {
 	cfg := blobGasTestConfig(0)
 	tx := newTxpoolBlobTx(t, []common.Hash{txpoolBlobTestHash(1)}, big.NewInt(2))
 	txs := types.Transactions{tx}
 	header := blobBlockValidationHeader(txs, 0)
 
-	if err := ValidateBlockBlobBody(cfg, header, txs); !errors.Is(err, ErrBlobDAUnavailable) {
-		t.Fatalf("error = %v, want %v", err, ErrBlobDAUnavailable)
+	if err := ValidateBlockBlobBody(cfg, header, txs); err != nil {
+		t.Fatalf("cheap execution-envelope validation failed: %v", err)
+	}
+	if err := ValidateBlockBlobExecution(cfg, header, txs, types.KZGBlobVerifier{}); !errors.Is(err, types.ErrBlobSidecarMissing) {
+		t.Fatalf("error = %v, want %v", err, types.ErrBlobSidecarMissing)
 	}
 }
 

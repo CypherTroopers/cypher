@@ -173,12 +173,10 @@ func (backend *ReconfigBackend) Stop() error {
 		log.Warn("FHS proposal content writer did not drain before shutdown deadline", "err", err)
 	}
 	cancelDrain()
-	backend.blockchain.Stop()
-	backend.eventMux.Stop()
-
-	// handles gracefully if freezedb processes are already stopped
-	backend.chainDb.Close()
-
+	// blockchain, eventMux and chainDb are borrowed from eth.Ethereum. Their
+	// owner stops them after this lifecycle has quiesced consensus and drained
+	// the FHS writer; closing shared state here used to race the later ingress
+	// WAL/outbox shutdown because node lifecycles stop in reverse order.
 	log.Info("Raft stopped")
 	return nil
 }

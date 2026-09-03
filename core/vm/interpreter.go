@@ -31,6 +31,16 @@ type Config struct {
 	Tracer                  Tracer // Opcode logger
 	NoRecursion             bool   // Disables call, callcode, delegate call and create
 	EnablePreimageRecording bool   // Enables recording of SHA3/keccak preimages
+	// MaxMemoryBytes bounds the aggregate live EVM memory across every nested
+	// call frame and the deterministic work-memory charge of any precompile in
+	// this execution. Zero preserves legacy unlimited-by-config behavior;
+	// NativeTxV1 supplies a non-zero signed consensus limit.
+	MaxMemoryBytes uint64
+	// MaxReturnDataBytes bounds every RETURN/REVERT, precompile output and nested
+	// call result before the interpreter allocates its RETURNDATA copy.
+	// NativeTxV1 maps its signed output declaration here; zero preserves legacy
+	// behavior.
+	MaxReturnDataBytes uint64
 
 	JumpTable [256]*operation // EVM instruction table, automatically populated if unset
 
@@ -89,6 +99,10 @@ type EVMInterpreter struct {
 
 	readOnly   bool   // Whether to throw on stateful modifications
 	returnData []byte // Last CALL's return data for subsequent reuse
+	// memoryUsed is shared by recursive Run calls on this interpreter. Counting
+	// only each frame's largest image would let a deep CALL tree multiply the
+	// signed NativeTxV1 memory limit.
+	memoryUsed uint64
 }
 
 // NewEVMInterpreter returns a new instance of the Interpreter.
@@ -202,6 +216,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		returnStack(stack)
 		returnRStack(returns)
 	}()
+	if in.cfg.MaxMemoryBytes != 0 {
+		defer func() { in.memoryUsed -= uint64(mem.Len()) }()
+	}
 	contract.Input = input
 
 	if in.cfg.Debug {
@@ -275,6 +292,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			if memorySize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
 				return nil, ErrGasUintOverflow
 			}
+			if in.cfg.MaxMemoryBytes != 0 && memorySize > uint64(mem.Len()) {
+				growth := memorySize - uint64(mem.Len())
+				if in.memoryUsed > in.cfg.MaxMemoryBytes || growth > in.cfg.MaxMemoryBytes-in.memoryUsed {
+					return nil, ErrMemoryLimitExceeded
+				}
+			}
 		}
 		// Dynamic portion of gas
 		// consume the gas and return an error if not enough gas is available.
@@ -288,6 +311,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			}
 		}
 		if memorySize > 0 {
+			if in.cfg.MaxMemoryBytes != 0 && memorySize > uint64(mem.Len()) {
+				in.memoryUsed += memorySize - uint64(mem.Len())
+			}
 			mem.Resize(memorySize)
 		}
 
@@ -298,6 +324,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
 		// execute the operation
 		res, err = operation.execute(&pc, in, callContext)
+		if in.cfg.MaxReturnDataBytes != 0 && (operation.returns || operation.reverts || operation.halts) && uint64(len(res)) > in.cfg.MaxReturnDataBytes {
+			return nil, ErrReturnDataLimitExceeded
+		}
 		// if the operation clears the return data (e.g. it has returning data)
 		// set the last return to the result of the operation.
 		if operation.returns {

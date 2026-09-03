@@ -32,14 +32,15 @@ func ValidateBlockBlobSidecars(config *params.ChainConfig, header *types.Header,
 	if !modern.IsCancun {
 		return ErrBlobTxBeforeCancun
 	}
-	return types.VerifyBlobSidecars(txs, verifier)
+	version := types.BlobSidecarVersionForOsaka(modern.IsOsaka)
+	return types.VerifyBlobSidecarsForVersion(txs, version, verifier)
 }
 
 // ValidateBlockBlobExecution validates the block-level Cancun BlobTx execution
 // surface in one place: blob gas accounting plus sidecar/KZG verification. The
 // verifier is only required when the block contains BlobTxs.
 func ValidateBlockBlobExecution(config *params.ChainConfig, header *types.Header, txs types.Transactions, verifier types.BlobVerifier) error {
-	if err := ValidateBlockBlobGas(config, header, txs); err != nil {
+	if err := ValidateBlockBlobBody(config, header, txs); err != nil {
 		return err
 	}
 	return ValidateBlockBlobSidecars(config, header, txs, verifier)

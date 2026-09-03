@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -677,9 +679,15 @@ func TestProposalManifestRepairReconstructsExactBody(t *testing.T) {
 	if complete := durableService.getProposalBody(ref.ProposalID()); complete == nil || !bytes.Equal(complete.EncodedBlock, encodedBlock) {
 		t.Fatal("durable ingress resolver did not reconstruct the proposal")
 	}
+	beforeManifest := service.proposalBodySnapshotForWait(ref.ProposalID())
 	missing, err := service.storeProposalManifest(body)
 	if err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-beforeManifest.wake:
+	default:
+		t.Fatal("manifest installation did not wake proposal waiters")
 	}
 	if len(missing) != 1 || missing[0] != tx.Hash() {
 		t.Fatalf("missing = %v, want only %s", missing, tx.Hash())
@@ -696,7 +704,8 @@ func TestProposalManifestRepairReconstructsExactBody(t *testing.T) {
 	if len(repairHashes) != 1 || repairHashes[0] != tx.Hash() || len(repairBytes) != 1 {
 		t.Fatalf("repair response hashes=%v transactions=%d", repairHashes, len(repairBytes))
 	}
-	missing, err = service.mergeProposalRepair(&proposalBodyMsg{
+	beforeRepair := service.proposalBodySnapshotForWait(ref.ProposalID())
+	remaining, err := service.mergeProposalRepair(&proposalBodyMsg{
 		Type:             proposalBodyMsgRepairData,
 		ProposalID:       ref.ProposalID(),
 		BodyHash:         ref.BodyHash,
@@ -711,12 +720,29 @@ func TestProposalManifestRepairReconstructsExactBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(missing) != 0 {
-		t.Fatalf("repair left missing transactions: %v", missing)
+	if remaining != 0 {
+		t.Fatalf("repair left %d missing transactions", remaining)
+	}
+	select {
+	case <-beforeRepair.wake:
+	default:
+		t.Fatal("incremental repair did not wake proposal waiters")
 	}
 	complete := service.getProposalBody(ref.ProposalID())
 	if complete == nil || !bytes.Equal(complete.EncodedBlock, encodedBlock) {
 		t.Fatal("repair did not reconstruct the exact committed block encoding")
+	}
+	request := cloneProposalBodyEnvelope(complete)
+	indexedBody, fromDurable, err := service.proposalBodyForRepairRequest(request)
+	if err != nil || fromDurable || indexedBody == nil {
+		t.Fatalf("indexed repair source unavailable: durable=%t body=%v err=%v", fromDurable, indexedBody != nil, err)
+	}
+	if len(indexedBody.EncodedBlock) != 0 || len(indexedBody.Manifest) != 0 || len(indexedBody.TransactionBytes) != 0 {
+		t.Fatal("indexed repair source cloned a block-sized payload")
+	}
+	indexedHashes, indexedTransactions, err := service.proposalRepairTransactions(indexedBody, []common.Hash{tx.Hash()})
+	if err != nil || len(indexedHashes) != 1 || len(indexedTransactions) != 1 {
+		t.Fatalf("indexed repair lookup hashes=%d transactions=%d err=%v", len(indexedHashes), len(indexedTransactions), err)
 	}
 }
 
@@ -739,6 +765,171 @@ func TestProposalRepairCannotExportTransactionOutsideManifest(t *testing.T) {
 	}
 	if len(hashes) != 0 || len(txs) != 0 || lookups != 0 {
 		t.Fatalf("out-of-manifest repair hashes=%d txs=%d lookups=%d", len(hashes), len(txs), lookups)
+	}
+}
+
+func TestProposalRepairLazilyIndexesRestoredBodyWithoutClone(t *testing.T) {
+	service, body := testProposalSidecar(t)
+	// Startup restoration installs already validated complete bodies directly
+	// from the safety store; the transient donor index is intentionally rebuilt
+	// on first use.
+	service.proposalBodies[body.ProposalID] = cloneProposalBodyMsg(body)
+	request := cloneProposalBodyEnvelope(body)
+	indexed, fromDurable, err := service.proposalBodyForRepairRequest(request)
+	if err != nil || fromDurable || indexed == nil {
+		t.Fatalf("lazy restored-body index failed: durable=%t body=%v err=%v", fromDurable, indexed != nil, err)
+	}
+	if len(indexed.EncodedBlock) != 0 || len(indexed.Manifest) != 0 {
+		t.Fatal("lazy restored-body lookup returned a block-sized payload copy")
+	}
+	service.muProposalBody.RLock()
+	assembly := service.proposalAssemblies[body.ProposalID]
+	service.muProposalBody.RUnlock()
+	if assembly == nil || assembly.manifest == nil {
+		t.Fatal("restored body did not publish its donor index")
+	}
+	manifest, err := service.proposalManifestForRepair(body.ProposalID, indexed)
+	if err != nil || len(manifest) == 0 {
+		t.Fatalf("indexed restored manifest unavailable: bytes=%d err=%v", len(manifest), err)
+	}
+}
+
+func waitProposalAssemblyBuildWaiters(t *testing.T, service *Service, proposalID common.Hash, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		service.muProposalBody.RLock()
+		build := service.proposalAssemblyBuilds[proposalID]
+		got := 0
+		if build != nil {
+			got = build.waiters
+		}
+		service.muProposalBody.RUnlock()
+		if got == want {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("proposal assembly build did not reach %d waiters", want)
+}
+
+func TestProposalRepairRestoredBodyRebuildIsSingleflight(t *testing.T) {
+	service, body := testProposalSidecar(t)
+	service.proposalBodies[body.ProposalID] = cloneProposalBodyMsg(body)
+	request := cloneProposalBodyEnvelope(body)
+	var decodes atomic.Int32
+	decodeStarted := make(chan struct{})
+	releaseDecode := make(chan struct{})
+	service.decodeProposalBodyForRepair = func(encoded []byte) *types.Block {
+		if decodes.Add(1) == 1 {
+			close(decodeStarted)
+		}
+		<-releaseDecode
+		return types.DecodeToBlock(encoded)
+	}
+	const callers = 16
+	start := make(chan struct{})
+	results := make(chan error, callers)
+	var ready sync.WaitGroup
+	ready.Add(callers)
+	for index := 0; index < callers; index++ {
+		go func() {
+			ready.Done()
+			<-start
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			indexed, _, err := service.proposalBodyForRepairRequestContext(ctx, request)
+			if err == nil && (indexed == nil || len(indexed.EncodedBlock) != 0) {
+				err = fmt.Errorf("singleflight returned invalid metadata-only body")
+			}
+			results <- err
+		}()
+	}
+	ready.Wait()
+	close(start)
+	select {
+	case <-decodeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("donor index decode did not start")
+	}
+	waitProposalAssemblyBuildWaiters(t, service, body.ProposalID, callers)
+	close(releaseDecode)
+	for index := 0; index < callers; index++ {
+		if err := <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := decodes.Load(); got != 1 {
+		t.Fatalf("concurrent donor index decodes = %d, want 1", got)
+	}
+	service.muProposalBody.RLock()
+	builds := len(service.proposalAssemblyBuilds)
+	slots := len(service.proposalAssemblyBuildSlots)
+	service.muProposalBody.RUnlock()
+	if builds != 0 || slots != 0 {
+		t.Fatalf("singleflight resources leaked: builds=%d slots=%d", builds, slots)
+	}
+}
+
+func TestProposalRepairRestoredBodyRebuildWaitIsCancelable(t *testing.T) {
+	service, body := testProposalSidecar(t)
+	service.proposalBodies[body.ProposalID] = cloneProposalBodyMsg(body)
+	request := cloneProposalBodyEnvelope(body)
+	decodeStarted := make(chan struct{})
+	releaseDecode := make(chan struct{})
+	service.decodeProposalBodyForRepair = func(encoded []byte) *types.Block {
+		close(decodeStarted)
+		<-releaseDecode
+		return types.DecodeToBlock(encoded)
+	}
+	ownerResult := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _, err := service.proposalBodyForRepairRequestContext(ctx, request)
+		ownerResult <- err
+	}()
+	<-decodeStarted
+	waitCtx, cancelWait := context.WithCancel(context.Background())
+	waiterResult := make(chan error, 1)
+	go func() {
+		_, _, err := service.proposalBodyForRepairRequestContext(waitCtx, request)
+		waiterResult <- err
+	}()
+	waitProposalAssemblyBuildWaiters(t, service, body.ProposalID, 2)
+	cancelWait()
+	select {
+	case err := <-waiterResult:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled waiter error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled donor index waiter did not return")
+	}
+	close(releaseDecode)
+	if err := <-ownerResult; err != nil {
+		t.Fatalf("remaining build owner failed: %v", err)
+	}
+}
+
+func TestProposalRepairRestoredBodyRebuildPanicReleasesSingleflight(t *testing.T) {
+	service, body := testProposalSidecar(t)
+	service.proposalBodies[body.ProposalID] = cloneProposalBodyMsg(body)
+	request := cloneProposalBodyEnvelope(body)
+	service.decodeProposalBodyForRepair = func([]byte) *types.Block { panic("decode-test") }
+	if _, _, err := service.proposalBodyForRepairRequest(request); err == nil || !strings.Contains(err.Error(), "decode-test") {
+		t.Fatalf("decode panic was not reported: %v", err)
+	}
+	service.muProposalBody.RLock()
+	builds := len(service.proposalAssemblyBuilds)
+	slots := len(service.proposalAssemblyBuildSlots)
+	service.muProposalBody.RUnlock()
+	if builds != 0 || slots != 0 {
+		t.Fatalf("panic leaked singleflight resources: builds=%d slots=%d", builds, slots)
+	}
+	service.decodeProposalBodyForRepair = types.DecodeToBlock
+	if indexed, _, err := service.proposalBodyForRepairRequest(request); err != nil || indexed == nil {
+		t.Fatalf("singleflight did not recover after panic: body=%v err=%v", indexed != nil, err)
 	}
 }
 

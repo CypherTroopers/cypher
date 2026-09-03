@@ -143,6 +143,44 @@ func TestEthConfigCurrentNextAndLast(t *testing.T) {
 	}
 }
 
+func TestEthConfigBPOInheritsOsakaExecutionSurface(t *testing.T) {
+	shanghai, cancun, prague, osaka := uint64(0), uint64(10), uint64(20), uint64(30)
+	bpo1, bpo2 := uint64(40), uint64(50)
+	backend, genesisHash := newConfigAPITestBackend(t, bpo1, &params.ModernForkConfig{
+		BerlinBlock:  big.NewInt(0),
+		LondonBlock:  big.NewInt(0),
+		ShanghaiTime: &shanghai,
+		CancunTime:   &cancun,
+		PragueTime:   &prague,
+		OsakaTime:    &osaka,
+		BPO1Time:     &bpo1,
+		BPO2Time:     &bpo2,
+		BlobSchedule: &params.BlobScheduleConfig{
+			Cancun: &params.BlobConfig{Target: 3, Max: 6, BaseFeeUpdateFraction: 3338477},
+			Prague: &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+			Osaka:  &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+			BPO1:   &params.BlobConfig{Target: 10, Max: 15, BaseFeeUpdateFraction: 8346193},
+			BPO2:   &params.BlobConfig{Target: 14, Max: 21, BaseFeeUpdateFraction: 11684671},
+		},
+	})
+	result, err := NewPublicEthereumAPI(backend).Config()
+	if err != nil {
+		t.Fatalf("eth_config BPO failed: %v", err)
+	}
+	if result.Current.ActivationTime != bpo1 || result.Next == nil || result.Next.ActivationTime != bpo2 || result.Last == nil || result.Last.ActivationTime != bpo2 {
+		t.Fatalf("BPO current/next/last selection mismatch: %#v", result)
+	}
+	if result.Current.BlobSchedule.Target != 10 || result.Next.BlobSchedule.Target != 14 {
+		t.Fatalf("BPO blob schedules mismatch: current=%#v next=%#v", result.Current.BlobSchedule, result.Next.BlobSchedule)
+	}
+	if len(result.Current.Precompiles) != 18 || result.Current.Precompiles["P256VERIFY"] != common.BytesToAddress([]byte{0x01, 0x00}) {
+		t.Fatalf("BPO did not inherit Osaka precompiles: %#v", result.Current.Precompiles)
+	}
+	if result.Current.ForkID != forkIDFromValues(genesisHash, cancun, prague, osaka, bpo1) {
+		t.Fatalf("BPO1 forkId = %s", result.Current.ForkID)
+	}
+}
+
 func forkIDFromValues(genesisHash common.Hash, forks ...uint64) string {
 	checksum := crc32.ChecksumIEEE(genesisHash[:])
 	for _, fork := range forks {

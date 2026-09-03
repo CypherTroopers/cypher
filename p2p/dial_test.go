@@ -394,6 +394,37 @@ func TestDialSchedResolve(t *testing.T) {
 	})
 }
 
+// This test checks that an endpoint supplied for a static node remains
+// authoritative. Discovery may know a newer ENR for the same node ID, but it
+// must not redirect a configured static connection after a dial failure.
+func TestDialSchedStaticEndpointIsAuthoritative(t *testing.T) {
+	t.Parallel()
+
+	config := dialConfig{
+		maxActiveDials: 1,
+		maxDialPeers:   1,
+	}
+	id := uintID(0x01)
+	configured := newNode(id, "127.0.0.1:30303")
+	discovered := newNode(id, "127.0.0.99:30303")
+	runDialTest(t, config, []dialTestRound{
+		{
+			update: func(d *dialScheduler) {
+				d.addStatic(configured)
+			},
+			wantNewDials: []*enode.Node{configured},
+		},
+		{
+			failed:       []enode.ID{id},
+			wantResolves: map[enode.ID]*enode.Node{id: discovered},
+		},
+		{},
+		{
+			wantNewDials: []*enode.Node{configured},
+		},
+	})
+}
+
 // -------
 // Code below here is the framework for the tests above.
 

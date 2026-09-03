@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"math/big"
 	"reflect"
 	"testing"
 
@@ -92,9 +93,41 @@ func TestModernModExpGasAndExecution(t *testing.T) {
 		t.Fatalf("EIP-7883 vector gas = %d, want 4080", gas)
 	}
 
-	tooLarge := modExpInput(1025, 0, 0, nil, nil, nil)
-	if _, err := osaka.Run(tooLarge); !errors.Is(err, errModExpInputTooLarge) {
-		t.Fatalf("EIP-7823 oversized input error = %v, want %v", err, errModExpInputTooLarge)
+	for name, tooLarge := range map[string][]byte{
+		"base":     modExpInput(1025, 0, 0, nil, nil, nil),
+		"exponent": modExpInput(0, 1025, 0, nil, nil, nil),
+		"modulus":  modExpInput(0, 0, 1025, nil, nil, nil),
+	} {
+		t.Run("EIP-7823 "+name, func(t *testing.T) {
+			if _, err := osaka.Run(tooLarge); !errors.Is(err, errModExpInputTooLarge) {
+				t.Fatalf("oversized input error = %v, want %v", err, errModExpInputTooLarge)
+			}
+		})
+	}
+}
+
+func TestEIP7823ExceptionalHaltConsumesAllGas(t *testing.T) {
+	config := delegationTestConfig(true)
+	zero := uint64(0)
+	config.ModernForkConfig().OsakaTime = &zero
+	evm := NewEVM(Context{
+		CanTransfer: func(StateDB, common.Address, *big.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *big.Int) {},
+		BlockNumber: big.NewInt(0),
+		Time:        big.NewInt(0),
+	}, newDelegationStateDB(), config, Config{})
+	_, remaining, err := evm.Call(
+		AccountRef(common.HexToAddress("0xca11")),
+		common.BytesToAddress([]byte{0x05}),
+		modExpInput(1025, 0, 0, nil, nil, nil),
+		1_000_000,
+		new(big.Int),
+	)
+	if !errors.Is(err, errModExpInputTooLarge) {
+		t.Fatalf("oversized MODEXP error = %v, want %v", err, errModExpInputTooLarge)
+	}
+	if remaining != 0 {
+		t.Fatalf("oversized MODEXP remaining gas = %d, want exceptional halt", remaining)
 	}
 }
 
@@ -140,10 +173,46 @@ func TestP256Verify(t *testing.T) {
 	if string(result) != string(true32Byte) {
 		t.Fatalf("valid P256 signature result = %x, want %x", result, true32Byte)
 	}
+	validInput := append([]byte(nil), input...)
 	input[0] ^= 1
 	result, err = precompile.Run(input)
 	if err != nil || result != nil {
 		t.Fatalf("invalid P256 signature returned %x, %v", result, err)
+	}
+
+	withField := func(offset int, value *big.Int) []byte {
+		invalid := append([]byte(nil), validInput...)
+		for i := offset; i < offset+32; i++ {
+			invalid[i] = 0
+		}
+		if value != nil {
+			value.FillBytes(invalid[offset : offset+32])
+		}
+		return invalid
+	}
+	invalidInputs := map[string][]byte{
+		"short input":        validInput[:159],
+		"zero r":             withField(32, nil),
+		"zero s":             withField(64, nil),
+		"r at group order":   withField(32, curve.Params().N),
+		"s at group order":   withField(64, curve.Params().N),
+		"x at field modulus": withField(96, curve.Params().P),
+		"y at field modulus": withField(128, curve.Params().P),
+	}
+	infinity := append([]byte(nil), validInput...)
+	clear(infinity[96:160])
+	invalidInputs["point at infinity"] = infinity
+	offCurve := append([]byte(nil), validInput...)
+	clear(offCurve[96:160])
+	offCurve[127], offCurve[159] = 1, 1
+	invalidInputs["off-curve point"] = offCurve
+	for name, invalid := range invalidInputs {
+		t.Run(name, func(t *testing.T) {
+			result, err := precompile.Run(invalid)
+			if err != nil || result != nil {
+				t.Fatalf("invalid P256 input returned %x, %v", result, err)
+			}
+		})
 	}
 }
 

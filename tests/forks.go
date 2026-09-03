@@ -24,6 +24,8 @@ func AvailableForks() []string {
 		"London",
 		"Shanghai",
 		"Cancun",
+		"Prague",
+		"Osaka",
 	}
 }
 
@@ -86,7 +88,33 @@ func GetChainConfig(name string) (*params.ChainConfig, []int, error) {
 	}
 	enableCancun := func() {
 		enableIstanbul()
-		cfg.SetModernForkConfig(&params.ModernForkConfig{BerlinBlock: zero, LondonBlock: zero, ShanghaiTime: &timeZero, CancunTime: &timeZero})
+		cfg.SetModernForkConfig(&params.ModernForkConfig{
+			BerlinBlock: zero, LondonBlock: zero, ShanghaiTime: &timeZero, CancunTime: &timeZero,
+			BlobSchedule: &params.BlobScheduleConfig{
+				Cancun: &params.BlobConfig{Target: 3, Max: 6, BaseFeeUpdateFraction: 3338477},
+			},
+		})
+	}
+	enablePrague := func() {
+		enableIstanbul()
+		cfg.SetModernForkConfig(&params.ModernForkConfig{
+			BerlinBlock: zero, LondonBlock: zero, ShanghaiTime: &timeZero, CancunTime: &timeZero, PragueTime: &timeZero,
+			BlobSchedule: &params.BlobScheduleConfig{
+				Cancun: &params.BlobConfig{Target: 3, Max: 6, BaseFeeUpdateFraction: 3338477},
+				Prague: &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+			},
+		})
+	}
+	enableOsaka := func() {
+		enableIstanbul()
+		cfg.SetModernForkConfig(&params.ModernForkConfig{
+			BerlinBlock: zero, LondonBlock: zero, ShanghaiTime: &timeZero, CancunTime: &timeZero, PragueTime: &timeZero, OsakaTime: &timeZero,
+			BlobSchedule: &params.BlobScheduleConfig{
+				Cancun: &params.BlobConfig{Target: 3, Max: 6, BaseFeeUpdateFraction: 3338477},
+				Prague: &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+				Osaka:  &params.BlobConfig{Target: 6, Max: 9, BaseFeeUpdateFraction: 5007716},
+			},
+		})
 	}
 
 	switch fork {
@@ -113,6 +141,10 @@ func GetChainConfig(name string) (*params.ChainConfig, []int, error) {
 		enableShanghai()
 	case "cancun":
 		enableCancun()
+	case "prague":
+		enablePrague()
+	case "osaka":
+		enableOsaka()
 	default:
 		return nil, nil, fmt.Errorf("unsupported fork %q", name)
 	}

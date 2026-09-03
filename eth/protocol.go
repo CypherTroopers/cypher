@@ -178,16 +178,9 @@ func (request *newBlockData) sanityCheck() error {
 	return nil
 }
 
-// blockBody represents the data content of a single block.
-type blockBody struct {
-	Transactions             []*types.Transaction            // Transactions contained within a block
-	Uncles                   []*types.Header                 // Uncles contained within a block
-	CommonTxAdmissionBatches []*types.CommonTxAdmissionBatch // Signed common-RPC admission batches contained within a block
-	CommonTxAdmissionRefs    []types.CommonTxAdmissionRef    // Transaction-aligned selections from admission batches
-	CommonTxRewards          []*types.CommonTxReward         // Common transaction rewards contained within a block
-}
-
-type blockBodiesData []*blockBody
+// blockBodiesData uses the canonical genesis-native body type directly so
+// database bodies and BlockBodiesMsg can never drift in field count or order.
+type blockBodiesData []*types.Body
 
 // hashOrNumber is a combined field for specifying an origin block.
 type hashOrNumber struct {

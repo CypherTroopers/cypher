@@ -67,6 +67,7 @@ var (
 	blockReceiptsPrefix = []byte("r") // blockReceiptsPrefix + num (uint64 big endian) + hash -> block receipts
 
 	txLookupPrefix        = []byte("l") // txLookupPrefix + hash -> transaction/receipt lookup metadata
+	fhsFinalizedTxPrefix  = []byte("F") // fhsFinalizedTxPrefix + hash -> exact finalized block hash and number
 	bloomBitsPrefix       = []byte("B") // bloomBitsPrefix + bit (uint16 big endian) + section (uint64 big endian) + hash -> bloom bits
 	SnapshotAccountPrefix = []byte("a") // SnapshotAccountPrefix + account hash -> account trie value
 	SnapshotStoragePrefix = []byte("o") // SnapshotStoragePrefix + account hash + storage hash -> storage trie value
@@ -192,6 +193,11 @@ func blockReceiptsKey(number uint64, hash common.Hash) []byte {
 // txLookupKey = txLookupPrefix + hash
 func txLookupKey(hash common.Hash) []byte {
 	return append(txLookupPrefix, hash.Bytes()...)
+}
+
+// fhsFinalizedTxKey = fhsFinalizedTxPrefix + hash
+func fhsFinalizedTxKey(hash common.Hash) []byte {
+	return append(fhsFinalizedTxPrefix, hash.Bytes()...)
 }
 
 // accountSnapshotKey = SnapshotAccountPrefix + hash

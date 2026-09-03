@@ -10,7 +10,8 @@ import (
 
 // modernSigner is a compatibility signer for modern Ethereum transaction
 // formats. Legacy transactions delegate to EIP-155. Typed transaction signing
-// hashes follow EIP-2930/EIP-1559/EIP-4844/EIP-7702 typed transaction rules.
+// hashes follow EIP-2930/EIP-1559/EIP-4844/EIP-7702 typed transaction rules
+// and the genesis-native NativeTxV1 domain.
 type modernSigner struct {
 	EIP155Signer
 	fork string
@@ -25,17 +26,30 @@ func NewLondonSigner(chainID *big.Int) Signer  { return newModernSigner(chainID,
 func NewCancunSigner(chainID *big.Int) Signer  { return newModernSigner(chainID, "cancun") }
 func NewPragueSigner(chainID *big.Int) Signer  { return newModernSigner(chainID, "prague") }
 
+// NewNativeSigner signs NativeTxV1 without coupling callers to an Ethereum
+// fork name. Genesis configuration must select a modern signer for block
+// execution; the dedicated constructor is intended for native admission/RPC.
+func NewNativeSigner(chainID *big.Int) Signer { return newModernSigner(chainID, "native-v1") }
+
 func (s modernSigner) Equal(other Signer) bool {
 	o, ok := other.(modernSigner)
 	return ok && s.fork == o.fork && s.chainId.Cmp(o.chainId) == 0
 }
 
 func (s modernSigner) Sender(tx *Transaction) (common.Address, error) {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return common.Address{}, err
+	}
 	if tx.Type() == LegacyTxType {
 		return s.EIP155Signer.Sender(tx)
 	}
 	if tx.ChainId().Cmp(s.chainId) != 0 {
 		return common.Address{}, ErrInvalidChainId
+	}
+	if inner, ok := tx.data.(*NativeTxV1); ok {
+		if err := ValidateNativeManifest(inner); err != nil {
+			return common.Address{}, err
+		}
 	}
 	v, r, sigs := tx.RawSignatureValues()
 	if v == nil || v.Sign() < 0 || v.BitLen() > 8 || v.Uint64() > 1 {
@@ -43,7 +57,14 @@ func (s modernSigner) Sender(tx *Transaction) (common.Address, error) {
 	}
 	// Typed transactions carry recovery id as 0/1. recoverPlain expects 27/28.
 	typedV := new(big.Int).Add(v, big.NewInt(27))
-	return recoverPlain(s.Hash(tx), r, sigs, typedV, true)
+	from, err := recoverPlain(s.Hash(tx), r, sigs, typedV, true)
+	if err != nil {
+		return common.Address{}, err
+	}
+	if inner, ok := tx.data.(*NativeTxV1); ok && from != inner.Payer {
+		return common.Address{}, ErrNativePayerMismatch
+	}
+	return from, nil
 }
 
 func (s modernSigner) SignatureValues(tx *Transaction, sig []byte) (r, ss, v *big.Int, err error) {
@@ -60,6 +81,9 @@ func (s modernSigner) SignatureValues(tx *Transaction, sig []byte) (r, ss, v *bi
 }
 
 func (s modernSigner) Hash(tx *Transaction) common.Hash {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return common.Hash{}
+	}
 	switch inner := tx.data.(type) {
 	case *AccessListTx:
 		return prefixedRlpHash(AccessListTxType, []interface{}{
@@ -111,6 +135,8 @@ func (s modernSigner) Hash(tx *Transaction) common.Hash {
 			inner.AccessList,
 			inner.AuthList,
 		})
+	case *NativeTxV1:
+		return prefixedRlpHash(NativeTxType, inner.signingFields())
 	default:
 		return s.EIP155Signer.Hash(tx)
 	}

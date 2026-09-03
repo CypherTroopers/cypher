@@ -84,6 +84,9 @@ func MakeSignerRecover(config *params.ChainConfig, blockNumber, Vb *big.Int) Sig
 
 // SignTx signs the transaction using the given signer and private key
 func SignTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey) (*Transaction, error) {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return nil, err
+	}
 	h := s.Hash(tx)
 	sig, err := crypto.Sign(h[:], prv)
 	if err != nil {
@@ -100,6 +103,9 @@ func SignTx(tx *Transaction, s Signer, prv *ecdsa.PrivateKey) (*Transaction, err
 // signing method. The cache is invalidated if the cached signer does
 // not match the signer used in the current call.
 func Sender(signer Signer, tx *Transaction) (common.Address, error) {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return common.Address{}, err
+	}
 	if sc := tx.from.Load(); sc != nil {
 		sigCache := sc.(sigCache)
 		// If the signer used to derive from in a previous
@@ -155,6 +161,9 @@ func (s EIP155Signer) Equal(s2 Signer) bool {
 var big8 = big.NewInt(8)
 
 func (s EIP155Signer) Sender(tx *Transaction) (common.Address, error) {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return common.Address{}, err
+	}
 	if tx.Type() != LegacyTxType {
 		return NewLondonSigner(s.chainId).Sender(tx)
 	}
@@ -190,6 +199,9 @@ func (s EIP155Signer) SignatureValues(tx *Transaction, sig []byte) (R, S, V *big
 // Hash returns the hash to be signed by the sender.
 // It does not uniquely identify the transaction.
 func (s EIP155Signer) Hash(tx *Transaction) common.Hash {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return common.Hash{}
+	}
 	if tx.Type() != LegacyTxType {
 		return NewLondonSigner(s.chainId).Hash(tx)
 	}
@@ -246,6 +258,9 @@ func (fs FrontierSigner) SignatureValues(tx *Transaction, sig []byte) (r, s, v *
 // Hash returns the hash to be signed by the sender.
 // It does not uniquely identify the transaction.
 func (fs FrontierSigner) Hash(tx *Transaction) common.Hash {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return common.Hash{}
+	}
 	return rlpHash([]interface{}{
 		tx.Nonce(),
 		tx.GasPrice(),
@@ -257,6 +272,9 @@ func (fs FrontierSigner) Hash(tx *Transaction) common.Hash {
 }
 
 func (fs FrontierSigner) Sender(tx *Transaction) (common.Address, error) {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return common.Address{}, err
+	}
 	v, r, sigs := tx.RawSignatureValues()
 	return recoverPlain(fs.Hash(tx), r, sigs, v, false)
 }

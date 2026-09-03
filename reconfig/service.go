@@ -83,11 +83,15 @@ const proposalBodyWaitMaxTimeout = 30 * time.Second
 const proposalBodyWaitBytesPerSecond = 2 * 1024 * 1024
 const proposalBodyRequestAfter = 250 * time.Millisecond
 const proposalBodyRequestInterval = 250 * time.Millisecond
-const proposalBodyPollInterval = 5 * time.Millisecond
 const proposalBodyControlMaxBytes = 512 * 1024
 const proposalBodySidecarMaxBytes = int(params.MaxBlockSize)
 const proposalRepairMaxHashes = 1024
 const proposalRepairResponseReserve = 64 * 1024
+
+// Native proposals may contain hundreds of thousands of transactions. Keep
+// each authenticated repair message bounded, but pipeline a bounded number of
+// disjoint windows per request interval instead of serialising all windows.
+const proposalRepairNativeRequestBurst = 16
 
 // Leave a bounded response/assembly window after the last distinct repair
 // batch is scheduled; the batch schedule itself is accounted for separately.
@@ -95,7 +99,8 @@ const proposalRepairNetworkMargin = 2 * time.Second
 const proposalBodyCacheMaxEntries = 64
 const proposalBodyCacheMaxBytes = 8 * proposalBodySidecarMaxBytes
 const proposalBodyAuthDomain = "cypher-fhs-proposal-data"
-const proposalBodyKeyblockLivenessTimeout = time.Second
+
+var errProposalAssemblySuperseded = errors.New("proposal assembly superseded")
 
 // Two workers are deliberate: the active view can start while one superseded
 // execution unwinds from the non-interruptible EVM. The latest-wins queue below
@@ -120,6 +125,24 @@ const (
 	proposalBodyMsgRepairRequest
 	proposalBodyMsgRepairData
 )
+
+// proposalBodyCacheTTLForConfig keeps uncertified native proposal data through
+// at least two complete pacemaker intervals. A proposal body can still be the
+// only repair source while its current view validates, and the native deadline
+// includes size-derived body transfer, repair and execution leases. Legacy
+// networks retain their historical two-minute cache lifetime.
+func proposalBodyCacheTTLForConfig(config *params.ChainConfig) time.Duration {
+	ttl := proposalBodyCacheTTL
+	if config == nil || !config.NativeParallelEnabled() {
+		return ttl
+	}
+	paceMaker := paceMakerTimeoutForConfig(config)
+	minimum := addDurationSaturating(paceMaker, paceMaker)
+	if minimum > ttl {
+		return minimum
+	}
+	return ttl
+}
 
 type committeeInfo struct {
 	Committee *bftview.Committee
@@ -193,12 +216,47 @@ type proposalBodyMsg struct {
 // exact block order. A validator reconstructs the ordinary block encoding and
 // still verifies the signed BodyHash and BodySize before executing it.
 type proposalDataManifest struct {
-	Header                   *types.Header
-	TransactionHashes        []common.Hash
+	Header            *types.Header
+	TransactionHashes []common.Hash
+	// BlobSidecars are deep-copied and ordered one-for-one with BlobTxs in
+	// TransactionHashes. They are part of the authenticated manifest and the
+	// canonical proposal body commitment; ordinary transaction repair therefore
+	// never has to fetch unauthenticated blob bytes from local node state.
+	BlobSidecars             []*types.BlobTxSidecar
 	Uncles                   []*types.Header
 	CommonTxAdmissionBatches []*types.CommonTxAdmissionBatch
 	CommonTxAdmissionRefs    []types.CommonTxAdmissionRef
 	CommonTxRewards          []*types.CommonTxReward
+}
+
+// proposalAssemblyState is the verified, node-local index for one proposal
+// manifest. It is never encoded on the wire. The manifest is decoded once,
+// every hash has one deterministic position, and each repaired transaction is
+// decoded once before being installed at that position. This turns repair from
+// repeated O(manifest+repairs) work into O(repair chunk), while the final body
+// commitment is still checked in full before publication.
+//
+// All fields are protected by Service.muProposalBody. Transaction pointers are
+// immutable after installation, so a complete pointer slice may be copied and
+// encoded after releasing the cache lock.
+type proposalAssemblyState struct {
+	manifest     *proposalDataManifest
+	positions    map[common.Hash]int
+	transactions types.Transactions
+	missingCount int
+	revision     uint64
+	resolved     []common.Hash
+	assembling   bool
+	assemblyErr  error
+	cacheWeight  int
+}
+
+type proposalAssemblyBuild struct {
+	done    chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
+	waiters int
+	err     error
 }
 
 type fhsCertifiedProposal struct {
@@ -377,8 +435,16 @@ func (msg *networkMsg) NetworkClass() uint8 {
 		case proposalBodyMsgRepairRequest:
 			return network.NetClassProposalBodyControl
 		case proposalBodyMsgManifest, proposalBodyMsgRepairData:
-			if proposalBodyMsgPayloadBytes(msg.Pmsg) <= proposalBodyControlMaxBytes {
+			payloadBytes := proposalBodyMsgPayloadBytes(msg.Pmsg)
+			if payloadBytes <= proposalBodyControlMaxBytes {
 				return network.NetClassProposalBodyControl
+			}
+			// The dedicated proposal-body QUIC class intentionally retains its
+			// legacy 9 MiB packet cap. Genesis-native manifests can be larger, so
+			// route only those bounded messages through the 257 MiB large-data
+			// class. Both classes remain bulk-priority in the peer scheduler.
+			if payloadBytes > proposalBodySidecarMaxBytes {
+				return network.NetClassBulkGossip
 			}
 			return network.NetClassProposalBodyBulk
 		default:
@@ -407,15 +473,16 @@ func (msg *networkMsg) GetCommittee() *bftview.Committee {
 
 // Service work for protcol
 type Service struct {
-	netService               *netService
-	bc                       *core.BlockChain
-	txService                *txService
-	kbc                      *core.KeyBlockChain
-	keyService               *keyService
-	txPool                   *core.TxPool
-	removeFailedProposalTxs  func(types.Transactions)
-	resolveTxQUICTransaction func(common.Hash) (*types.Transaction, error)
-	chainConfig              *params.ChainConfig
+	netService                  *netService
+	bc                          *core.BlockChain
+	txService                   *txService
+	kbc                         *core.KeyBlockChain
+	keyService                  *keyService
+	txPool                      *core.TxPool
+	removeFailedProposalTxs     func(types.Transactions)
+	resolveTxQUICTransaction    func(common.Hash) (*types.Transaction, error)
+	decodeProposalBodyForRepair func([]byte) *types.Block
+	chainConfig                 *params.ChainConfig
 
 	protocolMng *hotstuff.HotstuffProtocolManager
 
@@ -461,14 +528,18 @@ type Service struct {
 	lastProgressViewID           common.Hash
 	lastProgressRank             uint8
 
-	muProposalBody       sync.RWMutex
-	proposalBodies       map[common.Hash]*proposalBodyMsg
-	verifiedProposalByID map[common.Hash]*core.VerifiedProposal
-	fhsCertifiedByHash   map[common.Hash]*fhsCertifiedProposal
-	fhsCertifiedByID     map[common.Hash]*fhsCertifiedProposal
-	fhsHighest           *fhsCertifiedProposal
-	fhsStore             *fhsSafetyStore
-	fhsContentWriter     *fhsContentWriter
+	muProposalBody             sync.RWMutex
+	proposalBodies             map[common.Hash]*proposalBodyMsg
+	proposalAssemblies         map[common.Hash]*proposalAssemblyState
+	proposalAssemblyBuilds     map[common.Hash]*proposalAssemblyBuild
+	proposalAssemblyBuildSlots chan struct{}
+	proposalBodyWake           chan struct{}
+	verifiedProposalByID       map[common.Hash]*core.VerifiedProposal
+	fhsCertifiedByHash         map[common.Hash]*fhsCertifiedProposal
+	fhsCertifiedByID           map[common.Hash]*fhsCertifiedProposal
+	fhsHighest                 *fhsCertifiedProposal
+	fhsStore                   *fhsSafetyStore
+	fhsContentWriter           *fhsContentWriter
 	// These QC broadcast markers are deliberately memory-only. The active
 	// marker brackets every physical send. The completed marker suppresses only
 	// a matching durable-outbox replay for a short period after that send. A
@@ -549,11 +620,15 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	if s.bc != nil && s.bc.Genesis() != nil {
 		genesisHash = s.bc.Genesis().Hash()
 	}
-	s.fhsStore = newFHSSafetyStore(backend.ChainDb(), chainID, genesisHash)
-	s.fhsContentWriter = newFHSContentWriter(s.persistFHSProposalData)
+	s.fhsStore = newFHSSafetyStoreForConfig(backend.ChainDb(), chainID, genesisHash, chainConfig)
+	s.fhsContentWriter = newFHSContentWriterForConfig(chainConfig, s.persistFHSProposalData)
 
 	s.lastCmInfoMap = make(map[common.Hash]*cachedCommitteeInfo)
 	s.proposalBodies = make(map[common.Hash]*proposalBodyMsg)
+	s.proposalAssemblies = make(map[common.Hash]*proposalAssemblyState)
+	s.proposalAssemblyBuilds = make(map[common.Hash]*proposalAssemblyBuild)
+	s.proposalAssemblyBuildSlots = make(chan struct{}, 1)
+	s.proposalBodyWake = make(chan struct{})
 	s.verifiedProposalByID = make(map[common.Hash]*core.VerifiedProposal)
 	s.fhsCertifiedByHash = make(map[common.Hash]*fhsCertifiedProposal)
 	s.fhsCertifiedByID = make(map[common.Hash]*fhsCertifiedProposal)
@@ -1018,7 +1093,55 @@ func cloneProposalBodyMsg(in *proposalBodyMsg) *proposalBodyMsg {
 	return &out
 }
 
+// cloneProposalBodyEnvelope copies authenticated proposal metadata and proof
+// fields without first copying any potentially block-sized data payload. The
+// caller explicitly attaches the one payload representation it needs.
+func cloneProposalBodyEnvelope(in *proposalBodyMsg) *proposalBodyMsg {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.EncodedBlock = nil
+	out.Manifest = nil
+	out.MissingTxHashes = nil
+	out.TransactionBytes = nil
+	out.Extra = append([]byte(nil), in.Extra...)
+	out.ParentQC = append([]byte(nil), in.ParentQC...)
+	out.AuthSig = append([]byte(nil), in.AuthSig...)
+	return &out
+}
+
+func (s *Service) proposalBodyWakeLocked() <-chan struct{} {
+	if s.proposalBodyWake == nil {
+		s.proposalBodyWake = make(chan struct{})
+	}
+	return s.proposalBodyWake
+}
+
+func (s *Service) signalProposalBodyUpdateLocked() {
+	if s.proposalBodyWake == nil {
+		s.proposalBodyWake = make(chan struct{})
+		return
+	}
+	close(s.proposalBodyWake)
+	s.proposalBodyWake = make(chan struct{})
+}
+
+func (s *Service) deleteProposalBodyLocked(proposalID common.Hash) {
+	delete(s.proposalBodies, proposalID)
+	delete(s.proposalAssemblies, proposalID)
+	if build := s.proposalAssemblyBuilds[proposalID]; build != nil && build.cancel != nil {
+		build.cancel()
+	}
+	delete(s.verifiedProposalByID, proposalID)
+	s.signalProposalBodyUpdateLocked()
+}
+
 func encodeProposalDataManifest(block *types.Block) ([]byte, error) {
+	return encodeProposalDataManifestForConfig(nil, block)
+}
+
+func proposalDataManifestForBlock(block *types.Block) (*proposalDataManifest, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil proposal block")
 	}
@@ -1030,33 +1153,49 @@ func encodeProposalDataManifest(block *types.Block) ([]byte, error) {
 		}
 		hashes[index] = tx.Hash()
 	}
-	manifest := &proposalDataManifest{
+	return &proposalDataManifest{
 		Header:                   block.Header(),
 		TransactionHashes:        hashes,
+		BlobSidecars:             block.BlobSidecars(),
 		Uncles:                   block.Uncles(),
 		CommonTxAdmissionBatches: block.CommonTxAdmissionBatches(),
 		CommonTxAdmissionRefs:    block.CommonTxAdmissionRefs(),
 		CommonTxRewards:          block.CommonTxRewards(),
+	}, nil
+}
+
+func encodeProposalDataManifestForConfig(config *params.ChainConfig, block *types.Block) ([]byte, error) {
+	manifest, err := proposalDataManifestForBlock(block)
+	if err != nil {
+		return nil, err
 	}
 	encoded, err := rlp.EncodeToBytes(manifest)
 	if err != nil {
 		return nil, err
 	}
-	if len(encoded) == 0 || len(encoded) > proposalBodySidecarMaxBytes {
-		return nil, fmt.Errorf("proposal manifest too large: bytes=%d limit=%d", len(encoded), proposalBodySidecarMaxBytes)
+	limit := proposalBodyLimitForConfig(config)
+	if len(encoded) == 0 || len(encoded) > limit {
+		return nil, fmt.Errorf("proposal manifest too large: bytes=%d limit=%d", len(encoded), limit)
 	}
 	return encoded, nil
 }
 
 func decodeProposalDataManifest(encoded []byte) (*proposalDataManifest, error) {
-	if len(encoded) == 0 || len(encoded) > proposalBodySidecarMaxBytes {
+	return decodeProposalDataManifestForConfig(nil, encoded)
+}
+
+func decodeProposalDataManifestForConfig(config *params.ChainConfig, encoded []byte) (*proposalDataManifest, error) {
+	if len(encoded) == 0 || len(encoded) > proposalBodyLimitForConfig(config) {
 		return nil, fmt.Errorf("invalid proposal manifest size: %d", len(encoded))
 	}
 	var manifest proposalDataManifest
 	if err := rlp.DecodeBytes(encoded, &manifest); err != nil {
 		return nil, fmt.Errorf("decode proposal manifest: %w", err)
 	}
-	limits := params.FairHotstuffWorkLimits()
+	limits := params.FairHotstuffWorkLimitsForConfig(config)
+	if isEVMOnlyProposalMode(config) {
+		limits = params.FairHotstuffEVMWorkLimitsForConfig(config)
+	}
 	if uint64(len(manifest.TransactionHashes)) > limits.Transactions {
 		return nil, fmt.Errorf("proposal manifest transaction count %d exceeds limit %d", len(manifest.TransactionHashes), limits.Transactions)
 	}
@@ -1071,6 +1210,9 @@ func decodeProposalDataManifest(encoded []byte) (*proposalDataManifest, error) {
 	}
 	if manifest.Header == nil || manifest.Header.Number == nil || manifest.Header.Number.Sign() <= 0 || manifest.Header.Difficulty == nil {
 		return nil, fmt.Errorf("proposal manifest has invalid header")
+	}
+	if err := validateProposalManifestBlobSidecars(config, &manifest); err != nil {
+		return nil, err
 	}
 	seen := make(map[common.Hash]struct{}, len(manifest.TransactionHashes))
 	for index, hash := range manifest.TransactionHashes {
@@ -1103,6 +1245,205 @@ func decodeProposalDataManifest(encoded []byte) (*proposalDataManifest, error) {
 	return &manifest, nil
 }
 
+func validateProposalManifestBlobSidecars(config *params.ChainConfig, manifest *proposalDataManifest) error {
+	if manifest == nil || manifest.Header == nil {
+		return fmt.Errorf("proposal manifest has no blob-sidecar header context")
+	}
+	if len(manifest.BlobSidecars) > len(manifest.TransactionHashes) {
+		return fmt.Errorf("proposal manifest blob sidecar count %d exceeds transaction count %d", len(manifest.BlobSidecars), len(manifest.TransactionHashes))
+	}
+	if len(manifest.BlobSidecars) > 0 && config != nil && !config.IsCancun(manifest.Header.Number, manifest.Header.Time) {
+		return fmt.Errorf("proposal manifest carries blob sidecars before Cancun")
+	}
+	maxPerTransaction := params.MaxBlobsPerTransaction(config, manifest.Header.Time)
+	if maxPerTransaction == 0 {
+		maxPerTransaction = params.BlobTxMaxBlobs
+	}
+	expectedVersion := types.BlobSidecarVersion0
+	if config != nil && config.IsOsaka(manifest.Header.Number, manifest.Header.Time) {
+		expectedVersion = types.BlobSidecarVersion1
+	}
+	maxBlockBlobGas := params.MaxBlobGasPerBlock(nil)
+	if config != nil {
+		maxBlockBlobGas = params.MaxBlobGasPerBlock(config.ActiveBlobConfig(manifest.Header.Time))
+	}
+	var totalBlobs uint64
+	for index, sidecar := range manifest.BlobSidecars {
+		if sidecar == nil {
+			return fmt.Errorf("proposal manifest blob sidecar %d is nil", index)
+		}
+		blobCount := len(sidecar.Blobs)
+		if blobCount == 0 {
+			return fmt.Errorf("proposal manifest blob sidecar %d has no blobs", index)
+		}
+		if err := sidecar.ValidateVersion(expectedVersion); err != nil {
+			return fmt.Errorf("proposal manifest blob sidecar %d: %w", index, err)
+		}
+		if maxPerTransaction > 0 && blobCount > maxPerTransaction {
+			return fmt.Errorf("proposal manifest blob sidecar %d has %d blobs, limit %d", index, blobCount, maxPerTransaction)
+		}
+		const eip4844BlobBytes = 4096 * 32
+		for blobIndex, blob := range sidecar.Blobs {
+			if len(blob) != eip4844BlobBytes {
+				return fmt.Errorf("proposal manifest blob sidecar %d blob %d has %d bytes, want %d", index, blobIndex, len(blob), eip4844BlobBytes)
+			}
+		}
+		if uint64(blobCount) > (^uint64(0) - totalBlobs) {
+			return fmt.Errorf("proposal manifest blob count overflows")
+		}
+		totalBlobs += uint64(blobCount)
+	}
+	if totalBlobs > ^uint64(0)/params.BlobTxBlobGasPerBlob {
+		return fmt.Errorf("proposal manifest blob gas overflows")
+	}
+	blobGasUsed := totalBlobs * params.BlobTxBlobGasPerBlob
+	if blobGasUsed != manifest.Header.BlobGasUsed {
+		return fmt.Errorf("proposal manifest blob gas mismatch: sidecars=%d header=%d", blobGasUsed, manifest.Header.BlobGasUsed)
+	}
+	if blobGasUsed > maxBlockBlobGas {
+		return fmt.Errorf("proposal manifest blob gas %d exceeds block limit %d", blobGasUsed, maxBlockBlobGas)
+	}
+	return nil
+}
+
+const proposalAssemblyBytesPerTransaction = 112
+const proposalAssemblyBytesPerRepairedTransaction = 160
+
+func proposalAssemblyBaseWeight(payloadBytes, transactions int) int {
+	return saturatingAddInt(payloadBytes, saturatingMulInt(transactions, proposalAssemblyBytesPerTransaction))
+}
+
+func proposalAssemblyTransactionWeight(tx *types.Transaction) int {
+	if tx == nil {
+		return 0
+	}
+	return saturatingAddInt(int(tx.Size()), proposalAssemblyBytesPerRepairedTransaction)
+}
+
+func proposalManifestBlobSidecarWeight(sidecars []*types.BlobTxSidecar) int {
+	weight := 0
+	for _, sidecar := range sidecars {
+		if sidecar == nil {
+			continue
+		}
+		weight = saturatingAddInt(weight, 128)
+		for _, blob := range sidecar.Blobs {
+			weight = saturatingAddInt(weight, len(blob))
+		}
+		weight = saturatingAddInt(weight, saturatingMulInt(len(sidecar.Commitments)+len(sidecar.Proofs), 48))
+	}
+	return weight
+}
+
+func proposalExecutionEnvelope(tx *types.Transaction) *types.Transaction {
+	if tx != nil && tx.Type() == types.BlobTxType && tx.BlobSidecar() != nil {
+		return tx.WithBlobSidecar(nil)
+	}
+	return tx
+}
+
+func newCompleteProposalAssembly(block *types.Block, encodedBytes int) (*proposalAssemblyState, error) {
+	manifest, err := proposalDataManifestForBlock(block)
+	if err != nil {
+		return nil, err
+	}
+	txs := block.Transactions()
+	state := &proposalAssemblyState{
+		manifest:     manifest,
+		positions:    make(map[common.Hash]int, len(txs)),
+		transactions: make(types.Transactions, len(txs)),
+		revision:     1,
+		cacheWeight: saturatingAddInt(
+			proposalAssemblyBaseWeight(encodedBytes, len(txs)),
+			proposalManifestBlobSidecarWeight(manifest.BlobSidecars),
+		),
+	}
+	for index, tx := range txs {
+		if tx == nil || !tx.IsInitialized() {
+			return nil, fmt.Errorf("proposal transaction %d is not initialized", index)
+		}
+		hash := tx.Hash()
+		if _, duplicate := state.positions[hash]; duplicate {
+			return nil, fmt.Errorf("proposal repeats transaction %s", hash)
+		}
+		state.transactions[index] = proposalExecutionEnvelope(tx)
+		state.positions[hash] = index
+	}
+	return state, nil
+}
+
+func (s *Service) newPendingProposalAssembly(manifest *proposalDataManifest, encodedBytes int) (*proposalAssemblyState, error) {
+	if manifest == nil {
+		return nil, fmt.Errorf("nil proposal manifest")
+	}
+	state := &proposalAssemblyState{
+		manifest:     manifest,
+		positions:    make(map[common.Hash]int, len(manifest.TransactionHashes)),
+		transactions: make(types.Transactions, len(manifest.TransactionHashes)),
+		missingCount: len(manifest.TransactionHashes),
+		revision:     1,
+		cacheWeight: saturatingAddInt(
+			proposalAssemblyBaseWeight(encodedBytes, len(manifest.TransactionHashes)),
+			proposalManifestBlobSidecarWeight(manifest.BlobSidecars),
+		),
+	}
+	for index, hash := range manifest.TransactionHashes {
+		if _, duplicate := state.positions[hash]; duplicate {
+			return nil, fmt.Errorf("proposal manifest repeats transaction %s", hash)
+		}
+		state.positions[hash] = index
+		tx, err := s.resolveProposalTransaction(hash)
+		if err != nil {
+			return nil, err
+		}
+		if tx == nil {
+			continue
+		}
+		tx = proposalExecutionEnvelope(tx)
+		state.transactions[index] = tx
+		state.missingCount--
+		state.cacheWeight = saturatingAddInt(state.cacheWeight, proposalAssemblyTransactionWeight(tx))
+	}
+	return state, nil
+}
+
+func (s *Service) resolveProposalTransaction(hash common.Hash) (*types.Transaction, error) {
+	var tx *types.Transaction
+	if s.txPool != nil {
+		tx = s.txPool.Get(hash)
+	}
+	if tx == nil && s.resolveTxQUICTransaction != nil {
+		var err error
+		tx, err = s.resolveTxQUICTransaction(hash)
+		if err != nil {
+			return nil, fmt.Errorf("resolve durable proposal transaction %s: %w", hash, err)
+		}
+	}
+	if tx == nil {
+		return nil, nil
+	}
+	if !tx.IsInitialized() {
+		return nil, fmt.Errorf("proposal transaction lookup returned an uninitialized transaction for %s", hash)
+	}
+	if tx.Hash() != hash {
+		return nil, fmt.Errorf("proposal transaction lookup mismatch for %s", hash)
+	}
+	return tx, nil
+}
+
+func proposalAssemblyMissingHashes(state *proposalAssemblyState) []common.Hash {
+	if state == nil || state.manifest == nil || state.missingCount == 0 {
+		return nil
+	}
+	missing := make([]common.Hash, 0, state.missingCount)
+	for index, hash := range state.manifest.TransactionHashes {
+		if state.transactions[index] == nil {
+			missing = append(missing, hash)
+		}
+	}
+	return missing
+}
+
 func proposalBodyMsgPayloadBytes(body *proposalBodyMsg) int {
 	if body == nil {
 		return 0
@@ -1116,6 +1457,10 @@ func proposalBodyMsgPayloadBytes(body *proposalBodyMsg) int {
 }
 
 func encodeProposalRepairTransaction(tx *types.Transaction) ([]byte, error) {
+	return encodeProposalRepairTransactionForConfig(nil, tx)
+}
+
+func encodeProposalRepairTransactionForConfig(config *params.ChainConfig, tx *types.Transaction) ([]byte, error) {
 	if tx == nil || !tx.IsInitialized() {
 		return nil, fmt.Errorf("proposal repair transaction is not initialized")
 	}
@@ -1123,14 +1468,18 @@ func encodeProposalRepairTransaction(tx *types.Transaction) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode proposal repair transaction: %w", err)
 	}
-	if len(encoded) == 0 || len(encoded) > proposalBodySidecarMaxBytes {
+	if len(encoded) == 0 || len(encoded) > proposalRepairPayloadLimitForConfig(config) {
 		return nil, fmt.Errorf("invalid proposal repair transaction size %d", len(encoded))
 	}
 	return encoded, nil
 }
 
 func decodeCanonicalProposalRepairTransaction(encoded []byte) (*types.Transaction, error) {
-	if len(encoded) == 0 || len(encoded) > proposalBodySidecarMaxBytes {
+	return decodeCanonicalProposalRepairTransactionForConfig(nil, encoded)
+}
+
+func decodeCanonicalProposalRepairTransactionForConfig(config *params.ChainConfig, encoded []byte) (*types.Transaction, error) {
+	if len(encoded) == 0 || len(encoded) > proposalRepairPayloadLimitForConfig(config) {
 		return nil, fmt.Errorf("invalid proposal repair transaction size %d", len(encoded))
 	}
 	tx := new(types.Transaction)
@@ -1151,12 +1500,17 @@ func decodeCanonicalProposalRepairTransaction(encoded []byte) (*types.Transactio
 }
 
 func decodeProposalRepairTransactions(hashes []common.Hash, encodedTransactions [][]byte) (types.Transactions, error) {
+	return decodeProposalRepairTransactionsForConfig(nil, hashes, encodedTransactions)
+}
+
+func decodeProposalRepairTransactionsForConfig(config *params.ChainConfig, hashes []common.Hash, encodedTransactions [][]byte) (types.Transactions, error) {
 	if len(encodedTransactions) == 0 || len(encodedTransactions) != len(hashes) || len(encodedTransactions) > proposalRepairMaxHashes {
 		return nil, fmt.Errorf("invalid proposal repair transaction count")
 	}
+	limit := proposalRepairPayloadLimitForConfig(config)
 	total := len(hashes) * common.HashLength
-	if total > proposalBodySidecarMaxBytes {
-		return nil, fmt.Errorf("proposal repair transactions exceed %d bytes", proposalBodySidecarMaxBytes)
+	if total > limit {
+		return nil, fmt.Errorf("proposal repair transactions exceed %d bytes", limit)
 	}
 	txs := make(types.Transactions, len(encodedTransactions))
 	seen := make(map[common.Hash]struct{}, len(hashes))
@@ -1169,11 +1523,11 @@ func decodeProposalRepairTransactions(hashes []common.Hash, encodedTransactions 
 			return nil, fmt.Errorf("proposal repair repeats transaction %s", hash)
 		}
 		seen[hash] = struct{}{}
-		if len(encoded) > proposalBodySidecarMaxBytes-total {
-			return nil, fmt.Errorf("proposal repair transactions exceed %d bytes", proposalBodySidecarMaxBytes)
+		if len(encoded) > limit-total {
+			return nil, fmt.Errorf("proposal repair transactions exceed %d bytes", limit)
 		}
 		total += len(encoded)
-		tx, err := decodeCanonicalProposalRepairTransaction(encoded)
+		tx, err := decodeCanonicalProposalRepairTransactionForConfig(config, encoded)
 		if err != nil {
 			return nil, fmt.Errorf("proposal repair transaction %d: %w", index, err)
 		}
@@ -1220,6 +1574,10 @@ func proposalBodyAuthDigest(chainID uint64, body *proposalBodyMsg) ([]byte, erro
 }
 
 func validateProposalBodyWireShape(body *proposalBodyMsg) error {
+	return validateProposalBodyWireShapeForConfig(nil, body)
+}
+
+func validateProposalBodyWireShapeForConfig(config *params.ChainConfig, body *proposalBodyMsg) error {
 	if body == nil || body.From == "" || len(body.From) > 512 || len(body.AuthSig) == 0 || len(body.AuthSig) > 256 {
 		return fmt.Errorf("invalid proposal sidecar identity fields")
 	}
@@ -1227,6 +1585,9 @@ func validateProposalBodyWireShape(body *proposalBodyMsg) error {
 		body.ProposalKeyHash == (common.Hash{}) || body.SenderKeyHash == (common.Hash{}) ||
 		body.Number == 0 || body.ViewNumber == 0 || body.ViewID == (common.Hash{}) || body.LeaderID == "" {
 		return fmt.Errorf("incomplete proposal data context")
+	}
+	if body.BodySize > uint64(proposalBodyLimitForConfig(config)) {
+		return fmt.Errorf("proposal body size %d exceeds configured limit", body.BodySize)
 	}
 	if len(body.EncodedBlock) != 0 {
 		return fmt.Errorf("full proposal body is forbidden on the wire")
@@ -1236,11 +1597,11 @@ func validateProposalBodyWireShape(body *proposalBodyMsg) error {
 	}
 	switch body.Type {
 	case proposalBodyMsgManifest:
-		if len(body.Manifest) == 0 || len(body.Manifest) > proposalBodySidecarMaxBytes ||
+		if len(body.Manifest) == 0 || len(body.Manifest) > proposalBodyLimitForConfig(config) ||
 			len(body.MissingTxHashes) != 0 || len(body.TransactionBytes) != 0 {
 			return fmt.Errorf("invalid proposal manifest payload")
 		}
-		if _, err := decodeProposalDataManifest(body.Manifest); err != nil {
+		if _, err := decodeProposalDataManifestForConfig(config, body.Manifest); err != nil {
 			return err
 		}
 	case proposalBodyMsgRepairRequest:
@@ -1261,10 +1622,10 @@ func validateProposalBodyWireShape(body *proposalBodyMsg) error {
 	case proposalBodyMsgRepairData:
 		if len(body.Manifest) != 0 || len(body.Extra) != 0 || len(body.ParentQC) != 0 ||
 			len(body.TransactionBytes) == 0 || len(body.TransactionBytes) != len(body.MissingTxHashes) ||
-			len(body.TransactionBytes) > proposalRepairMaxHashes || proposalBodyMsgPayloadBytes(body) > proposalBodySidecarMaxBytes {
+			len(body.TransactionBytes) > proposalRepairMaxHashes || proposalBodyMsgPayloadBytes(body) > proposalRepairPayloadLimitForConfig(config) {
 			return fmt.Errorf("invalid proposal repair payload")
 		}
-		if _, err := decodeProposalRepairTransactions(body.MissingTxHashes, body.TransactionBytes); err != nil {
+		if _, err := decodeProposalRepairTransactionsForConfig(config, body.MissingTxHashes, body.TransactionBytes); err != nil {
 			return err
 		}
 	default:
@@ -1486,7 +1847,7 @@ func (s *Service) verifyCertifiedTransitionManifestAuthority(body *proposalBodyM
 		return fmt.Errorf("manifest sender is not the certified-transition deterministic leader")
 	}
 
-	manifest, err := decodeProposalDataManifest(body.Manifest)
+	manifest, err := decodeProposalDataManifestForConfig(s.chainConfig, body.Manifest)
 	if err != nil {
 		return err
 	}
@@ -1528,8 +1889,7 @@ func (s *Service) discardIncompletePeerManifest(candidate *proposalBodyMsg) {
 	existing := s.proposalBodies[candidate.ProposalID]
 	if existing != nil && len(existing.EncodedBlock) == 0 && existing.From == candidate.From &&
 		bytes.Equal(existing.Manifest, candidate.Manifest) {
-		delete(s.proposalBodies, candidate.ProposalID)
-		delete(s.verifiedProposalByID, candidate.ProposalID)
+		s.deleteProposalBodyLocked(candidate.ProposalID)
 	}
 	s.muProposalBody.Unlock()
 }
@@ -1538,17 +1898,85 @@ func (s *Service) proposalBodyCacheUsageLocked() (int, int) {
 	bytesUsed := 0
 	for _, body := range s.proposalBodies {
 		if body != nil {
-			bytesUsed += proposalBodyMsgPayloadBytes(body)
+			bytesUsed = saturatingAddInt(bytesUsed, proposalBodyMsgPayloadBytes(body))
 		}
 	}
 	return len(s.proposalBodies), bytesUsed
 }
 
+func (s *Service) proposalAssemblyCacheUsageLocked() int {
+	bytesUsed := 0
+	for proposalID, assembly := range s.proposalAssemblies {
+		if assembly == nil || s.proposalBodies[proposalID] == nil {
+			continue
+		}
+		bytesUsed = saturatingAddInt(bytesUsed, assembly.cacheWeight)
+	}
+	return bytesUsed
+}
+
+// dropOldestCompleteProposalAssemblyExceptLocked releases only a rebuildable
+// donor index. The authenticated encoded body and certified chain record stay
+// cached, so index pressure cannot break the two-chain suffix needed for
+// finality or restart repair.
+func (s *Service) dropOldestCompleteProposalAssemblyExceptLocked(except common.Hash) bool {
+	var (
+		oldestID common.Hash
+		oldestAt int64
+		found    bool
+	)
+	for proposalID, assembly := range s.proposalAssemblies {
+		body := s.proposalBodies[proposalID]
+		if proposalID == except || assembly == nil || body == nil || len(body.EncodedBlock) == 0 {
+			continue
+		}
+		if !found || body.CreatedAtUnixNano < oldestAt {
+			oldestID, oldestAt, found = proposalID, body.CreatedAtUnixNano, true
+		}
+	}
+	if !found {
+		return false
+	}
+	delete(s.proposalAssemblies, oldestID)
+	return true
+}
+
+func (s *Service) ensureProposalAssemblyCapacityLocked(proposalID common.Hash, replacementWeight int) bool {
+	if replacementWeight < 0 {
+		return false
+	}
+	oldWeight := 0
+	if old := s.proposalAssemblies[proposalID]; old != nil {
+		oldWeight = old.cacheWeight
+	}
+	growth := replacementWeight - oldWeight
+	if growth < 0 {
+		growth = 0
+	}
+	limit := proposalBodyCacheLimitForConfig(s.chainConfig)
+	for !fitsIntBudget(s.proposalAssemblyCacheUsageLocked(), growth, limit) {
+		if s.dropOldestCompleteProposalAssemblyExceptLocked(proposalID) {
+			continue
+		}
+		if !s.evictOldestProposalBodyExceptLocked(proposalID) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Service) evictOldestProposalBodyLocked() bool {
+	return s.evictOldestProposalBodyExceptLocked(common.Hash{})
+}
+
+func (s *Service) evictOldestProposalBodyExceptLocked(except common.Hash) bool {
 	var oldestID common.Hash
 	var oldest *proposalBodyMsg
 	found := false
 	for id, body := range s.proposalBodies {
+		if id == except {
+			continue
+		}
 		if body == nil {
 			oldestID, found = id, true
 			break
@@ -1563,8 +1991,7 @@ func (s *Service) evictOldestProposalBodyLocked() bool {
 	if !found {
 		return false
 	}
-	delete(s.proposalBodies, oldestID)
-	delete(s.verifiedProposalByID, oldestID)
+	s.deleteProposalBodyLocked(oldestID)
 	return true
 }
 
@@ -1588,13 +2015,13 @@ func (s *Service) updateProposalBodyProof(proposalID common.Hash, extra []byte, 
 }
 
 func (s *Service) purgeExpiredProposalCachesLocked(now time.Time) {
+	ttl := proposalBodyCacheTTLForConfig(s.chainConfig)
 	for id, body := range s.proposalBodies {
-		if body == nil || (body.CreatedAtUnixNano > 0 && now.Sub(time.Unix(0, body.CreatedAtUnixNano)) > proposalBodyCacheTTL) {
+		if body == nil || (body.CreatedAtUnixNano > 0 && now.Sub(time.Unix(0, body.CreatedAtUnixNano)) > ttl) {
 			if _, certified := s.fhsCertifiedByID[id]; certified {
 				continue
 			}
-			delete(s.proposalBodies, id)
-			delete(s.verifiedProposalByID, id)
+			s.deleteProposalBodyLocked(id)
 		}
 	}
 }
@@ -1606,6 +2033,13 @@ func (s *Service) purgeExpiredProposalCaches(now time.Time) {
 }
 
 func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
+	return s.storeProposalBodyWithOwnership(body, false, nil)
+}
+
+// storeProposalBodyWithOwnership may take ownership of EncodedBlock only for
+// freshly reconstructed, function-local bytes. Network, staging and test
+// callers retain defensive-copy semantics through storeProposalBody.
+func (s *Service) storeProposalBodyWithOwnership(body *proposalBodyMsg, ownEncodedBlock bool, expectedAssembly *proposalAssemblyState) error {
 	if body == nil {
 		return fmt.Errorf("nil proposal body")
 	}
@@ -1621,8 +2055,9 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 	if len(body.EncodedBlock) == 0 {
 		return fmt.Errorf("proposal body missing encoded block")
 	}
-	if len(body.EncodedBlock) > proposalBodySidecarMaxBytes {
-		return fmt.Errorf("proposal body too large: bytes=%d limit=%d", len(body.EncodedBlock), proposalBodySidecarMaxBytes)
+	bodyLimit := proposalBodyLimitForConfig(s.chainConfig)
+	if len(body.EncodedBlock) > bodyLimit {
+		return fmt.Errorf("proposal body too large: bytes=%d limit=%d", len(body.EncodedBlock), bodyLimit)
 	}
 	if got := types.HotstuffProposalBodyHash(body.EncodedBlock); got != body.BodyHash {
 		return fmt.Errorf("proposal body hash mismatch: have %s want %s", got, body.BodyHash)
@@ -1633,6 +2068,10 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 	block := types.DecodeToBlock(body.EncodedBlock)
 	if block == nil {
 		return fmt.Errorf("proposal sidecar contains an invalid block")
+	}
+	assembly, err := newCompleteProposalAssembly(block, len(body.EncodedBlock))
+	if err != nil {
+		return err
 	}
 	parentQCID, err := proposalBodyParentQCID(body.ParentQC)
 	if err != nil {
@@ -1645,7 +2084,13 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 	if ref.ProposalID() != body.ProposalID || ref.Number != body.Number || ref.BodyHash != body.BodyHash || ref.KeyHash != body.ProposalKeyHash {
 		return fmt.Errorf("proposal sidecar does not match its proposal ID")
 	}
-	cpy := cloneProposalBodyMsg(body)
+	var cpy *proposalBodyMsg
+	if ownEncodedBlock {
+		cpy = cloneProposalBodyEnvelope(body)
+		cpy.EncodedBlock = body.EncodedBlock
+	} else {
+		cpy = cloneProposalBodyMsg(body)
+	}
 	cpy.Type = proposalBodyMsgManifest
 	cpy.Manifest = nil
 	cpy.MissingTxHashes = nil
@@ -1657,7 +2102,21 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 	cpy.CreatedAtUnixNano = time.Now().UnixNano()
 
 	s.muProposalBody.Lock()
+	if s.proposalAssemblies == nil {
+		s.proposalAssemblies = make(map[common.Hash]*proposalAssemblyState)
+	}
 	s.purgeExpiredProposalCachesLocked(time.Now())
+	if expectedAssembly != nil {
+		pending := s.proposalBodies[cpy.ProposalID]
+		if s.proposalAssemblies[cpy.ProposalID] != expectedAssembly || pending == nil || len(pending.EncodedBlock) > 0 {
+			s.muProposalBody.Unlock()
+			return errProposalAssemblySuperseded
+		}
+	}
+	if !s.ensureProposalAssemblyCapacityLocked(cpy.ProposalID, assembly.cacheWeight) {
+		s.muProposalBody.Unlock()
+		return fmt.Errorf("proposal assembly cache capacity exhausted")
+	}
 	var cached *proposalBodyMsg
 	if existing := s.proposalBodies[cpy.ProposalID]; existing != nil {
 		if existing.BodyHash != cpy.BodyHash || existing.BodySize != cpy.BodySize ||
@@ -1667,12 +2126,32 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 			return fmt.Errorf("conflicting proposal sidecar for %s", cpy.ProposalID)
 		}
 		if len(existing.EncodedBlock) == 0 {
+			existingBytes := proposalBodyMsgPayloadBytes(existing)
+			replacementBytes := proposalBodyMsgPayloadBytes(cpy)
+			growth := replacementBytes - existingBytes
+			if growth < 0 {
+				growth = 0
+			}
+			for {
+				_, bytesUsed := s.proposalBodyCacheUsageLocked()
+				if fitsIntBudget(bytesUsed, growth, proposalBodyCacheLimitForConfig(s.chainConfig)) {
+					break
+				}
+				if !s.evictOldestProposalBodyExceptLocked(cpy.ProposalID) {
+					s.muProposalBody.Unlock()
+					return fmt.Errorf("proposal sidecar cache capacity exhausted")
+				}
+			}
 			s.proposalBodies[cpy.ProposalID] = cpy
+			s.proposalAssemblies[cpy.ProposalID] = assembly
 			cached = cpy
 		} else {
 			if !bytes.Equal(existing.EncodedBlock, cpy.EncodedBlock) {
 				s.muProposalBody.Unlock()
 				return fmt.Errorf("conflicting proposal sidecar for %s", cpy.ProposalID)
+			}
+			if s.proposalAssemblies[cpy.ProposalID] == nil {
+				s.proposalAssemblies[cpy.ProposalID] = assembly
 			}
 			cached = existing
 		}
@@ -1680,7 +2159,7 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 		entryBytes := proposalBodyMsgPayloadBytes(cpy)
 		for {
 			entries, bytesUsed := s.proposalBodyCacheUsageLocked()
-			if entries < proposalBodyCacheMaxEntries && bytesUsed+entryBytes <= proposalBodyCacheMaxBytes {
+			if entries < proposalBodyCacheMaxEntries && fitsIntBudget(bytesUsed, entryBytes, proposalBodyCacheLimitForConfig(s.chainConfig)) {
 				break
 			}
 			if !s.evictOldestProposalBodyLocked() {
@@ -1689,8 +2168,10 @@ func (s *Service) storeProposalBody(body *proposalBodyMsg) error {
 			}
 		}
 		s.proposalBodies[cpy.ProposalID] = cpy
+		s.proposalAssemblies[cpy.ProposalID] = assembly
 		cached = cpy
 	}
+	s.signalProposalBodyUpdateLocked()
 	s.muProposalBody.Unlock()
 
 	// Cache publication is the validation boundary. The fixed single writer is
@@ -1716,10 +2197,10 @@ func (s *Service) storeProposalManifest(body *proposalBodyMsg) ([]common.Hash, e
 	if body == nil || body.Type != proposalBodyMsgManifest || len(body.Manifest) == 0 {
 		return nil, fmt.Errorf("invalid proposal manifest")
 	}
-	if body.BodySize == 0 || body.BodySize > uint64(proposalBodySidecarMaxBytes) {
+	if body.BodySize == 0 || body.BodySize > uint64(proposalBodyLimitForConfig(s.chainConfig)) {
 		return nil, fmt.Errorf("invalid proposal body size %d", body.BodySize)
 	}
-	manifest, err := decodeProposalDataManifest(body.Manifest)
+	manifest, err := decodeProposalDataManifestForConfig(s.chainConfig, body.Manifest)
 	if err != nil {
 		return nil, err
 	}
@@ -1739,6 +2220,10 @@ func (s *Service) storeProposalManifest(body *proposalBodyMsg) ([]common.Hash, e
 	if _, err := proposalBodyParentQCID(body.ParentQC); err != nil {
 		return nil, fmt.Errorf("proposal manifest parent QC: %w", err)
 	}
+	assembly, err := s.newPendingProposalAssembly(manifest, len(body.Manifest))
+	if err != nil {
+		return nil, err
+	}
 	cpy := cloneProposalBodyMsg(body)
 	cpy.EncodedBlock = nil
 	cpy.MissingTxHashes = nil
@@ -1746,7 +2231,14 @@ func (s *Service) storeProposalManifest(body *proposalBodyMsg) ([]common.Hash, e
 	cpy.CreatedAtUnixNano = time.Now().UnixNano()
 
 	s.muProposalBody.Lock()
+	if s.proposalAssemblies == nil {
+		s.proposalAssemblies = make(map[common.Hash]*proposalAssemblyState)
+	}
 	s.purgeExpiredProposalCachesLocked(time.Now())
+	if !s.ensureProposalAssemblyCapacityLocked(cpy.ProposalID, assembly.cacheWeight) {
+		s.muProposalBody.Unlock()
+		return nil, fmt.Errorf("proposal assembly cache capacity exhausted")
+	}
 	if existing := s.proposalBodies[cpy.ProposalID]; existing != nil {
 		if existing.BodyHash != cpy.BodyHash || existing.BodySize != cpy.BodySize || existing.Number != cpy.Number ||
 			existing.ViewNumber != cpy.ViewNumber || existing.ViewID != cpy.ViewID || existing.LeaderID != cpy.LeaderID ||
@@ -1763,13 +2255,20 @@ func (s *Service) storeProposalManifest(body *proposalBodyMsg) ([]common.Hash, e
 			s.muProposalBody.Unlock()
 			return nil, fmt.Errorf("conflicting proposal manifest for %s", cpy.ProposalID)
 		}
+		if s.proposalAssemblies[cpy.ProposalID] == nil {
+			s.proposalAssemblies[cpy.ProposalID] = assembly
+			s.signalProposalBodyUpdateLocked()
+		}
 		s.muProposalBody.Unlock()
-		return s.tryAssembleProposalBody(cpy.ProposalID)
+		if _, err := s.assembleProposalBody(cpy.ProposalID); err != nil {
+			return nil, err
+		}
+		return s.proposalMissingHashes(cpy.ProposalID), nil
 	}
 	entryBytes := proposalBodyMsgPayloadBytes(cpy)
 	for {
 		entries, bytesUsed := s.proposalBodyCacheUsageLocked()
-		if entries < proposalBodyCacheMaxEntries && bytesUsed+entryBytes <= proposalBodyCacheMaxBytes {
+		if entries < proposalBodyCacheMaxEntries && fitsIntBudget(bytesUsed, entryBytes, proposalBodyCacheLimitForConfig(s.chainConfig)) {
 			break
 		}
 		if !s.evictOldestProposalBodyLocked() {
@@ -1778,161 +2277,182 @@ func (s *Service) storeProposalManifest(body *proposalBodyMsg) ([]common.Hash, e
 		}
 	}
 	s.proposalBodies[cpy.ProposalID] = cpy
+	s.proposalAssemblies[cpy.ProposalID] = assembly
+	s.signalProposalBodyUpdateLocked()
 	s.muProposalBody.Unlock()
-	return s.tryAssembleProposalBody(cpy.ProposalID)
+	if _, err := s.assembleProposalBody(cpy.ProposalID); err != nil {
+		return nil, err
+	}
+	return s.proposalMissingHashes(cpy.ProposalID), nil
 }
 
-func (s *Service) mergeProposalRepair(body *proposalBodyMsg) ([]common.Hash, error) {
+func (s *Service) mergeProposalRepair(body *proposalBodyMsg) (int, error) {
 	if body == nil || body.Type != proposalBodyMsgRepairData {
-		return nil, fmt.Errorf("invalid proposal repair")
+		return 0, fmt.Errorf("invalid proposal repair")
 	}
-	txs, err := decodeProposalRepairTransactions(body.MissingTxHashes, body.TransactionBytes)
+	txs, err := decodeProposalRepairTransactionsForConfig(s.chainConfig, body.MissingTxHashes, body.TransactionBytes)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	s.muProposalBody.Lock()
 	existing := s.proposalBodies[body.ProposalID]
 	if existing == nil || len(existing.Manifest) == 0 || len(existing.EncodedBlock) > 0 {
 		s.muProposalBody.Unlock()
-		return nil, fmt.Errorf("proposal repair has no pending manifest")
+		return 0, fmt.Errorf("proposal repair has no pending manifest")
 	}
 	if existing.BodyHash != body.BodyHash || existing.BodySize != body.BodySize || existing.Number != body.Number ||
 		existing.ViewNumber != body.ViewNumber || existing.ViewID != body.ViewID || existing.LeaderID != body.LeaderID ||
 		existing.ProposalKeyHash != body.ProposalKeyHash {
 		s.muProposalBody.Unlock()
-		return nil, fmt.Errorf("proposal repair context mismatch")
+		return 0, fmt.Errorf("proposal repair context mismatch")
 	}
-	manifest, err := decodeProposalDataManifest(existing.Manifest)
-	if err != nil {
+	assembly := s.proposalAssemblies[body.ProposalID]
+	if assembly == nil || assembly.manifest == nil {
 		s.muProposalBody.Unlock()
-		return nil, err
+		return 0, fmt.Errorf("proposal repair has no verified manifest index")
 	}
-	allowed := make(map[common.Hash]struct{}, len(manifest.TransactionHashes))
-	for _, hash := range manifest.TransactionHashes {
-		allowed[hash] = struct{}{}
-	}
-	present := make(map[common.Hash]struct{}, len(existing.TransactionBytes))
-	for index, encoded := range existing.TransactionBytes {
-		tx, err := decodeCanonicalProposalRepairTransaction(encoded)
-		if err != nil {
+	positions := make([]int, len(txs))
+	for index, hash := range body.MissingTxHashes {
+		position, ok := assembly.positions[hash]
+		if !ok {
 			s.muProposalBody.Unlock()
-			return nil, fmt.Errorf("cached proposal repair transaction %d: %w", index, err)
+			return 0, fmt.Errorf("proposal repair transaction %s is outside the manifest", hash)
 		}
-		hash := tx.Hash()
-		if _, duplicate := present[hash]; duplicate {
-			s.muProposalBody.Unlock()
-			return nil, fmt.Errorf("cached proposal repair repeats transaction %s", hash)
-		}
-		present[hash] = struct{}{}
+		positions[index] = position
 	}
 	additionalBytes := 0
+	assemblyGrowth := 0
 	additions := make([][]byte, 0, len(body.TransactionBytes))
+	newlyResolved := make([]common.Hash, 0, len(body.TransactionBytes))
+	newPositions := make([]int, 0, len(body.TransactionBytes))
+	newTransactions := make(types.Transactions, 0, len(body.TransactionBytes))
 	for index := range txs {
-		hash := body.MissingTxHashes[index]
-		if _, ok := allowed[hash]; !ok {
-			s.muProposalBody.Unlock()
-			return nil, fmt.Errorf("proposal repair transaction %s is outside the manifest", hash)
-		}
-		if _, duplicate := present[hash]; duplicate {
+		position := positions[index]
+		if assembly.transactions[position] != nil {
 			continue
 		}
-		present[hash] = struct{}{}
+		newPositions = append(newPositions, position)
+		newTransactions = append(newTransactions, proposalExecutionEnvelope(txs[index]))
+		newlyResolved = append(newlyResolved, body.MissingTxHashes[index])
 		additions = append(additions, append([]byte(nil), body.TransactionBytes[index]...))
-		additionalBytes += len(body.TransactionBytes[index])
+		additionalBytes = saturatingAddInt(additionalBytes, len(body.TransactionBytes[index]))
+		assemblyGrowth = saturatingAddInt(assemblyGrowth,
+			saturatingAddInt(len(body.TransactionBytes[index]), proposalAssemblyBytesPerRepairedTransaction))
 	}
 	_, bytesUsed := s.proposalBodyCacheUsageLocked()
-	if bytesUsed+additionalBytes > proposalBodyCacheMaxBytes {
+	if !fitsIntBudget(bytesUsed, additionalBytes, proposalBodyCacheLimitForConfig(s.chainConfig)) {
 		s.muProposalBody.Unlock()
-		return nil, fmt.Errorf("proposal repair exceeds cache capacity")
+		return 0, fmt.Errorf("proposal repair exceeds cache capacity")
+	}
+	replacementWeight := saturatingAddInt(assembly.cacheWeight, assemblyGrowth)
+	if !s.ensureProposalAssemblyCapacityLocked(body.ProposalID, replacementWeight) {
+		s.muProposalBody.Unlock()
+		return 0, fmt.Errorf("proposal repair exceeds assembly cache capacity")
+	}
+	for index, position := range newPositions {
+		assembly.transactions[position] = newTransactions[index]
+		assembly.missingCount--
 	}
 	existing.TransactionBytes = append(existing.TransactionBytes, additions...)
 	existing.CreatedAtUnixNano = time.Now().UnixNano()
+	assembly.resolved = append(assembly.resolved, newlyResolved...)
+	assembly.cacheWeight = replacementWeight
+	assembly.revision++
+	s.signalProposalBodyUpdateLocked()
 	s.muProposalBody.Unlock()
-	return s.tryAssembleProposalBody(body.ProposalID)
+	return s.assembleProposalBody(body.ProposalID)
 }
 
-func (s *Service) tryAssembleProposalBody(proposalID common.Hash) ([]common.Hash, error) {
-	body := s.getProposalBody(proposalID)
-	if body == nil {
-		return nil, nil
+func (s *Service) proposalMissingHashes(proposalID common.Hash) []common.Hash {
+	s.muProposalBody.RLock()
+	missing := proposalAssemblyMissingHashes(s.proposalAssemblies[proposalID])
+	s.muProposalBody.RUnlock()
+	return missing
+}
+
+func (s *Service) finishProposalAssemblyError(proposalID common.Hash, state *proposalAssemblyState, err error) (int, error) {
+	s.muProposalBody.Lock()
+	if current := s.proposalAssemblies[proposalID]; current == state {
+		current.assembling = false
+		current.assemblyErr = err
+		current.revision++
+		s.signalProposalBodyUpdateLocked()
 	}
-	if len(body.EncodedBlock) > 0 {
-		return nil, nil
+	s.muProposalBody.Unlock()
+	return 0, err
+}
+
+func reconstructProposalBlock(manifest *proposalDataManifest, txs types.Transactions) (*types.Block, error) {
+	if manifest == nil || manifest.Header == nil {
+		return nil, fmt.Errorf("proposal manifest is incomplete")
 	}
-	manifest, err := decodeProposalDataManifest(body.Manifest)
+	block, err := types.NewBlockWithHeader(manifest.Header).WithBodyAndBlobSidecars(txs, manifest.Uncles, manifest.BlobSidecars)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reconstruct proposal blob sidecars: %w", err)
 	}
-	repaired := make(map[common.Hash]*types.Transaction, len(body.TransactionBytes))
-	for index, encoded := range body.TransactionBytes {
-		tx, err := decodeCanonicalProposalRepairTransaction(encoded)
-		if err != nil {
-			return nil, fmt.Errorf("cached proposal repair transaction %d: %w", index, err)
-		}
-		hash := tx.Hash()
-		if _, duplicate := repaired[hash]; duplicate {
-			return nil, fmt.Errorf("cached proposal repair repeats transaction %s", hash)
-		}
-		repaired[hash] = tx
-	}
-	txs := make(types.Transactions, len(manifest.TransactionHashes))
-	missing := make([]common.Hash, 0)
-	for index, hash := range manifest.TransactionHashes {
-		tx := repaired[hash]
-		if tx == nil && s.txPool != nil {
-			tx = s.txPool.Get(hash)
-		}
-		if tx == nil && s.resolveTxQUICTransaction != nil {
-			tx, err = s.resolveTxQUICTransaction(hash)
-			if err != nil {
-				return nil, fmt.Errorf("resolve durable proposal transaction %s: %w", hash, err)
-			}
-		}
-		if tx == nil {
-			missing = append(missing, hash)
-			continue
-		}
-		if !tx.IsInitialized() {
-			return nil, fmt.Errorf("proposal transaction lookup returned an uninitialized transaction for %s", hash)
-		}
-		if tx.Hash() != hash {
-			return nil, fmt.Errorf("proposal transaction lookup mismatch for %s", hash)
-		}
-		txs[index] = tx
-	}
-	if len(missing) > 0 {
-		return missing, nil
-	}
-	block := types.NewBlockWithHeader(manifest.Header).WithBody(txs, manifest.Uncles)
 	block.SetCommonTxData(manifest.CommonTxAdmissionBatches, manifest.CommonTxAdmissionRefs, manifest.CommonTxRewards)
+	return block, nil
+}
+
+func (s *Service) assembleProposalBody(proposalID common.Hash) (int, error) {
+	s.muProposalBody.Lock()
+	body := s.proposalBodies[proposalID]
+	state := s.proposalAssemblies[proposalID]
+	if body == nil || len(body.EncodedBlock) > 0 {
+		s.muProposalBody.Unlock()
+		return 0, nil
+	}
+	if state == nil || state.manifest == nil {
+		s.muProposalBody.Unlock()
+		return 0, fmt.Errorf("proposal has no verified manifest index")
+	}
+	if state.assemblyErr != nil {
+		err := state.assemblyErr
+		s.muProposalBody.Unlock()
+		return 0, err
+	}
+	if state.missingCount > 0 || state.assembling {
+		remaining := state.missingCount
+		s.muProposalBody.Unlock()
+		return remaining, nil
+	}
+	state.assembling = true
+	manifest := state.manifest
+	txs := append(types.Transactions(nil), state.transactions...)
+	complete := cloneProposalBodyEnvelope(body)
+	s.muProposalBody.Unlock()
+
+	block, err := reconstructProposalBlock(manifest, txs)
+	if err != nil {
+		return s.finishProposalAssemblyError(proposalID, state, err)
+	}
 	encodedBlock := block.EncodeToBytes()
-	if uint64(len(encodedBlock)) != body.BodySize {
-		return nil, fmt.Errorf("reconstructed proposal body size mismatch: have=%d want=%d", len(encodedBlock), body.BodySize)
+	if uint64(len(encodedBlock)) != complete.BodySize {
+		return s.finishProposalAssemblyError(proposalID, state, fmt.Errorf("reconstructed proposal body size mismatch: have=%d want=%d", len(encodedBlock), complete.BodySize))
 	}
-	if hash := types.HotstuffProposalBodyHash(encodedBlock); hash != body.BodyHash {
-		return nil, fmt.Errorf("reconstructed proposal body hash mismatch: have=%s want=%s", hash, body.BodyHash)
+	if hash := types.HotstuffProposalBodyHash(encodedBlock); hash != complete.BodyHash {
+		return s.finishProposalAssemblyError(proposalID, state, fmt.Errorf("reconstructed proposal body hash mismatch: have=%s want=%s", hash, complete.BodyHash))
 	}
-	parentQCID, err := proposalBodyParentQCID(body.ParentQC)
+	parentQCID, err := proposalBodyParentQCID(complete.ParentQC)
 	if err != nil {
-		return nil, err
+		return s.finishProposalAssemblyError(proposalID, state, err)
 	}
-	ref, err := types.NewHotstuffProposalRefWithProof(s.ChainID(), body.ViewNumber, body.ViewID, body.LeaderID, block, encodedBlock, body.Extra, parentQCID)
+	ref, err := types.NewHotstuffProposalRefWithProof(s.ChainID(), complete.ViewNumber, complete.ViewID, complete.LeaderID, block, encodedBlock, complete.Extra, parentQCID)
 	if err != nil {
-		return nil, err
+		return s.finishProposalAssemblyError(proposalID, state, err)
 	}
-	if ref.ProposalID() != body.ProposalID || ref.Number != body.Number || ref.BodyHash != body.BodyHash ||
-		ref.BodySize != body.BodySize || ref.KeyHash != body.ProposalKeyHash {
-		return nil, fmt.Errorf("reconstructed proposal does not match its signed reference")
+	if ref.ProposalID() != complete.ProposalID || ref.Number != complete.Number || ref.BodyHash != complete.BodyHash ||
+		ref.BodySize != complete.BodySize || ref.KeyHash != complete.ProposalKeyHash {
+		return s.finishProposalAssemblyError(proposalID, state, fmt.Errorf("reconstructed proposal does not match its signed reference"))
 	}
-	complete := cloneProposalBodyMsg(body)
 	complete.EncodedBlock = encodedBlock
-	complete.Manifest = nil
-	complete.MissingTxHashes = nil
-	complete.TransactionBytes = nil
-	if err := s.storeProposalBody(complete); err != nil {
-		return nil, err
+	if err := s.storeProposalBodyWithOwnership(complete, true, state); err != nil {
+		if errors.Is(err, errProposalAssemblySuperseded) {
+			return 0, nil
+		}
+		return s.finishProposalAssemblyError(proposalID, state, err)
 	}
-	return nil, nil
+	return 0, nil
 }
 
 func (s *Service) getProposalBody(proposalID common.Hash) *proposalBodyMsg {
@@ -1940,6 +2460,108 @@ func (s *Service) getProposalBody(proposalID common.Hash) *proposalBodyMsg {
 	body := cloneProposalBodyMsg(s.proposalBodies[proposalID])
 	s.muProposalBody.RUnlock()
 	return body
+}
+
+type proposalBodyWaitSnapshot struct {
+	body         *proposalBodyMsg
+	missingCount int
+	assemblyErr  error
+	hasManifest  bool
+	assembling   bool
+	wake         <-chan struct{}
+}
+
+// proposalBodySnapshotForWait copies a block-sized payload only after assembly
+// has completed. Pending waits observe constant-size state plus a close/reopen
+// notification channel, so unrelated timer ticks never clone the manifest or
+// accumulated repair bytes.
+func (s *Service) proposalBodySnapshotForWait(proposalID common.Hash) proposalBodyWaitSnapshot {
+	s.muProposalBody.Lock()
+	wake := s.proposalBodyWakeLocked()
+	body := s.proposalBodies[proposalID]
+	if body != nil && len(body.EncodedBlock) > 0 {
+		s.muProposalBody.Unlock()
+		// Completed cache entries are immutable. Retain the pointer across the
+		// copy so a 256 MiB handoff does not monopolize the global proposal lock.
+		complete := cloneProposalBodyMsg(body)
+		return proposalBodyWaitSnapshot{body: complete, wake: wake}
+	}
+	snapshot := proposalBodyWaitSnapshot{wake: wake}
+	if assembly := s.proposalAssemblies[proposalID]; assembly != nil {
+		snapshot.missingCount = assembly.missingCount
+		snapshot.assemblyErr = assembly.assemblyErr
+		snapshot.hasManifest = assembly.manifest != nil
+		snapshot.assembling = assembly.assembling
+	}
+	s.muProposalBody.Unlock()
+	return snapshot
+}
+
+func (s *Service) resolveProposalAssemblyWindow(proposalID common.Hash, hashes []common.Hash) ([]common.Hash, error) {
+	if len(hashes) == 0 {
+		return nil, nil
+	}
+	resolved := make(map[common.Hash]*types.Transaction, len(hashes))
+	for _, hash := range hashes {
+		tx, err := s.resolveProposalTransaction(hash)
+		if err != nil {
+			return nil, err
+		}
+		if tx != nil {
+			resolved[hash] = proposalExecutionEnvelope(tx)
+		}
+	}
+	if len(resolved) > 0 {
+		s.muProposalBody.Lock()
+		state := s.proposalAssemblies[proposalID]
+		changed := false
+		if state != nil && state.manifest != nil && state.assemblyErr == nil {
+			newlyResolved := make(map[common.Hash]*types.Transaction, len(resolved))
+			for hash, tx := range resolved {
+				position, ok := state.positions[hash]
+				if !ok || state.transactions[position] != nil {
+					continue
+				}
+				newlyResolved[hash] = tx
+			}
+			growth := 0
+			for _, tx := range newlyResolved {
+				growth = saturatingAddInt(growth, proposalAssemblyTransactionWeight(tx))
+			}
+			if len(newlyResolved) > 0 && s.ensureProposalAssemblyCapacityLocked(proposalID, saturatingAddInt(state.cacheWeight, growth)) {
+				for hash, tx := range newlyResolved {
+					position := state.positions[hash]
+					state.transactions[position] = tx
+					state.missingCount--
+					state.resolved = append(state.resolved, hash)
+				}
+				state.cacheWeight = saturatingAddInt(state.cacheWeight, growth)
+				changed = true
+				state.revision++
+				s.signalProposalBodyUpdateLocked()
+			}
+		}
+		s.muProposalBody.Unlock()
+		if changed {
+			if _, err := s.assembleProposalBody(proposalID); err != nil {
+				return nil, err
+			}
+		}
+	}
+	unresolved := make([]common.Hash, 0, len(hashes))
+	s.muProposalBody.RLock()
+	state := s.proposalAssemblies[proposalID]
+	for _, hash := range hashes {
+		position, ok := -1, false
+		if state != nil {
+			position, ok = state.positions[hash]
+		}
+		if !ok || state.transactions[position] == nil {
+			unresolved = append(unresolved, hash)
+		}
+	}
+	s.muProposalBody.RUnlock()
+	return unresolved, nil
 }
 
 func (s *Service) storeVerifiedProposal(proposalID common.Hash, verified *core.VerifiedProposal) {
@@ -1961,8 +2583,7 @@ func (s *Service) getVerifiedProposal(proposalID common.Hash) *core.VerifiedProp
 
 func (s *Service) deleteProposalCaches(proposalID common.Hash) {
 	s.muProposalBody.Lock()
-	delete(s.proposalBodies, proposalID)
-	delete(s.verifiedProposalByID, proposalID)
+	s.deleteProposalBodyLocked(proposalID)
 	s.muProposalBody.Unlock()
 }
 
@@ -2063,8 +2684,7 @@ func (s *Service) reconcileFHSCertifiedFrontierLocked(canonical *types.Block) er
 		if s.fhsCertifiedByID[proposalID] == record {
 			delete(s.fhsCertifiedByID, proposalID)
 		}
-		delete(s.proposalBodies, proposalID)
-		delete(s.verifiedProposalByID, proposalID)
+		s.deleteProposalBodyLocked(proposalID)
 	}
 	for proposalID, record := range s.fhsCertifiedByID {
 		if record == nil || record.ref == nil {
@@ -2703,8 +3323,7 @@ func (s *Service) commitFHS2ChainForCertified(qc *hotstuff.SignedState) error {
 		s.muProposalBody.Lock()
 		delete(s.fhsCertifiedByHash, certified.ref.BlockHash)
 		delete(s.fhsCertifiedByID, proposalID)
-		delete(s.proposalBodies, proposalID)
-		delete(s.verifiedProposalByID, proposalID)
+		s.deleteProposalBodyLocked(proposalID)
 		s.muProposalBody.Unlock()
 		log.Info("FHS 2-CHAIN COMMIT",
 			"number", certified.ref.Number,
@@ -2997,8 +3616,9 @@ func (s *Service) stageHotstuffProposal(viewNumber uint64, viewID common.Hash, l
 	if len(encodedBlock) == 0 {
 		return nil, fmt.Errorf("empty encoded block proposal")
 	}
-	if len(encodedBlock) > proposalBodySidecarMaxBytes {
-		return nil, fmt.Errorf("encoded block proposal too large: bytes=%d limit=%d", len(encodedBlock), proposalBodySidecarMaxBytes)
+	bodyLimit := proposalBodyLimitForConfig(s.chainConfig)
+	if len(encodedBlock) > bodyLimit {
+		return nil, fmt.Errorf("encoded block proposal too large: bytes=%d limit=%d", len(encodedBlock), bodyLimit)
 	}
 	block := types.DecodeToBlock(encodedBlock)
 	if block == nil {
@@ -3049,7 +3669,7 @@ func (s *Service) stageHotstuffProposal(viewNumber uint64, viewID common.Hash, l
 	if err := s.storeProposalBody(body); err != nil {
 		return nil, err
 	}
-	manifest, err := encodeProposalDataManifest(block)
+	manifest, err := encodeProposalDataManifestForConfig(s.chainConfig, block)
 	if err != nil {
 		return nil, err
 	}
@@ -3065,13 +3685,10 @@ func (s *Service) stageHotstuffProposal(viewNumber uint64, viewID common.Hash, l
 		"bodyHash", ref.BodyHash,
 		"bodySize", ref.BodySize,
 		"refBytes", len(refBytes))
-	wireBody := cloneProposalBodyMsg(body)
+	wireBody := cloneProposalBodyEnvelope(body)
 	wireBody.Type = proposalBodyMsgManifest
 	wireBody.From = s.Self()
-	wireBody.EncodedBlock = nil
 	wireBody.Manifest = append([]byte(nil), manifest...)
-	wireBody.MissingTxHashes = nil
-	wireBody.TransactionBytes = nil
 	if err := s.sealProposalBody(wireBody); err != nil {
 		return nil, fmt.Errorf("sign proposal manifest: %w", err)
 	}
@@ -3112,14 +3729,11 @@ func (s *Service) broadcastProposalManifestToCommittee(body *proposalBodyMsg, ma
 		log.Warn("HOTSTUFF PROPOSAL BODY broadcast skipped; missing committee", "number", body.Number, "proposalID", body.ProposalID, "err", err)
 		return
 	}
-	wireBody := cloneProposalBodyMsg(body)
+	wireBody := cloneProposalBodyEnvelope(body)
 	if wireBody != nil {
 		wireBody.Type = proposalBodyMsgManifest
 		wireBody.From = s.Self()
-		wireBody.EncodedBlock = nil
 		wireBody.Manifest = append([]byte(nil), manifest...)
-		wireBody.MissingTxHashes = nil
-		wireBody.TransactionBytes = nil
 	}
 	if err := s.sealProposalBody(wireBody); err != nil {
 		log.Warn("HOTSTUFF PROPOSAL BODY signing failed", "number", body.Number, "err", err)
@@ -3177,7 +3791,50 @@ func (s *Service) proposalRepairTarget(ref *types.HotstuffProposalRef, attempt u
 // then does it begin another pass, so a delayed response cannot pin retries to
 // the first proposalRepairMaxHashes entries forever.
 type proposalRepairRequestTracker struct {
-	requested map[common.Hash]struct{}
+	requested                map[common.Hash]struct{}
+	outstanding              [][]common.Hash
+	assemblyState            *proposalAssemblyState
+	assemblyRequested        map[common.Hash][]common.Hash
+	assemblyResolutionCursor int
+	retry                    []common.Hash
+	cursor                   int
+}
+
+// releaseAnsweredWindows makes the unreturned part of a byte-capped response
+// immediately requestable again. A donor sends at most one response per request;
+// observing that any hash in an outstanding window is no longer missing therefore
+// proves that the response for that window arrived. Without this step a 1 MiB
+// response to a 1024-hash request can strand the remaining hashes until the
+// tracker has walked the entire manifest.
+func (tracker *proposalRepairRequestTracker) releaseAnsweredWindows(missing []common.Hash) {
+	if tracker == nil || len(tracker.outstanding) == 0 {
+		return
+	}
+	stillMissing := make(map[common.Hash]struct{}, len(missing))
+	for _, hash := range missing {
+		stillMissing[hash] = struct{}{}
+	}
+	retained := tracker.outstanding[:0]
+	for _, window := range tracker.outstanding {
+		answered := false
+		for _, hash := range window {
+			if _, present := stillMissing[hash]; !present {
+				answered = true
+				break
+			}
+		}
+		if !answered {
+			retained = append(retained, window)
+			continue
+		}
+		for _, hash := range window {
+			delete(tracker.requested, hash)
+		}
+	}
+	for index := len(retained); index < len(tracker.outstanding); index++ {
+		tracker.outstanding[index] = nil
+	}
+	tracker.outstanding = retained
 }
 
 func (tracker *proposalRepairRequestTracker) nextWindow(missing []common.Hash) []common.Hash {
@@ -3187,6 +3844,7 @@ func (tracker *proposalRepairRequestTracker) nextWindow(missing []common.Hash) [
 	if tracker.requested == nil {
 		tracker.requested = make(map[common.Hash]struct{}, len(missing))
 	}
+	tracker.releaseAnsweredWindows(missing)
 	windowCapacity := len(missing)
 	if windowCapacity > proposalRepairMaxHashes {
 		windowCapacity = proposalRepairMaxHashes
@@ -3207,9 +3865,115 @@ func (tracker *proposalRepairRequestTracker) nextWindow(missing []common.Hash) [
 	appendUnrequested()
 	if len(next) == 0 {
 		clear(tracker.requested)
+		tracker.outstanding = nil
 		appendUnrequested()
 	}
+	if len(next) > 0 {
+		tracker.outstanding = append(tracker.outstanding, append([]common.Hash(nil), next...))
+	}
 	return next
+}
+
+func proposalAssemblyHashMissing(state *proposalAssemblyState, hash common.Hash) bool {
+	if state == nil {
+		return false
+	}
+	position, ok := state.positions[hash]
+	return ok && state.transactions[position] == nil
+}
+
+func (tracker *proposalRepairRequestTracker) releaseResolvedAssemblyWindows(state *proposalAssemblyState) {
+	if tracker == nil || state == nil || tracker.assemblyResolutionCursor >= len(state.resolved) {
+		return
+	}
+	for _, resolved := range state.resolved[tracker.assemblyResolutionCursor:] {
+		window := tracker.assemblyRequested[resolved]
+		if len(window) == 0 {
+			continue
+		}
+		for _, hash := range window {
+			delete(tracker.assemblyRequested, hash)
+			if proposalAssemblyHashMissing(state, hash) {
+				tracker.retry = append(tracker.retry, hash)
+			}
+		}
+	}
+	tracker.assemblyResolutionCursor = len(state.resolved)
+}
+
+// nextAssemblyWindow walks the immutable manifest order with a cursor. Unlike
+// nextWindow's compatibility slice API, it neither materializes the complete
+// missing set nor rescans from index zero for every repair request.
+func (tracker *proposalRepairRequestTracker) nextAssemblyWindow(state *proposalAssemblyState) []common.Hash {
+	if tracker == nil || state == nil || state.manifest == nil || state.missingCount == 0 {
+		return nil
+	}
+	if tracker.assemblyState != state {
+		tracker.assemblyState = state
+		tracker.assemblyRequested = nil
+		tracker.assemblyResolutionCursor = len(state.resolved)
+		tracker.retry = nil
+		tracker.cursor = 0
+	}
+	if tracker.assemblyRequested == nil {
+		tracker.assemblyRequested = make(map[common.Hash][]common.Hash)
+	}
+	tracker.releaseResolvedAssemblyWindows(state)
+	next := make([]common.Hash, 0, proposalRepairMaxHashes)
+	appendHash := func(hash common.Hash) {
+		if len(next) == proposalRepairMaxHashes || !proposalAssemblyHashMissing(state, hash) {
+			return
+		}
+		if _, requested := tracker.assemblyRequested[hash]; requested {
+			return
+		}
+		next = append(next, hash)
+	}
+	for len(tracker.retry) > 0 && len(next) < proposalRepairMaxHashes {
+		hash := tracker.retry[0]
+		tracker.retry[0] = common.Hash{}
+		tracker.retry = tracker.retry[1:]
+		appendHash(hash)
+	}
+	for tracker.cursor < len(state.manifest.TransactionHashes) && len(next) < proposalRepairMaxHashes {
+		hash := state.manifest.TransactionHashes[tracker.cursor]
+		tracker.cursor++
+		appendHash(hash)
+	}
+	if len(next) == 0 {
+		// Every missing hash is either in-flight or the first pass has ended.
+		// Start a bounded retry pass; delayed responses remain safe because
+		// repair data is idempotently installed by manifest position.
+		clear(tracker.assemblyRequested)
+		tracker.retry = nil
+		tracker.cursor = 0
+		for tracker.cursor < len(state.manifest.TransactionHashes) && len(next) < proposalRepairMaxHashes {
+			hash := state.manifest.TransactionHashes[tracker.cursor]
+			tracker.cursor++
+			appendHash(hash)
+		}
+	}
+	if len(next) > 0 {
+		window := append([]common.Hash(nil), next...)
+		for _, hash := range window {
+			tracker.assemblyRequested[hash] = window
+		}
+	}
+	return next
+}
+
+func (s *Service) nextProposalRepairWindow(proposalID common.Hash, tracker *proposalRepairRequestTracker) []common.Hash {
+	s.muProposalBody.RLock()
+	window := tracker.nextAssemblyWindow(s.proposalAssemblies[proposalID])
+	s.muProposalBody.RUnlock()
+	return window
+}
+
+func proposalRepairRequestBurstForConfig(config *params.ChainConfig) uint64 {
+	if config != nil && config.NativeParallelEnabled() {
+		return proposalRepairNativeRequestBurst
+	}
+	return 1
 }
 
 func (s *Service) sendProposalRepairRequest(ref *types.HotstuffProposalRef, missing []common.Hash, attempt uint64) {
@@ -3270,12 +4034,11 @@ func (s *Service) waitProposalBodyForValidation(ctx context.Context, ref *types.
 	}
 	proposalID := ref.ProposalID()
 	start := time.Now()
-	deadline := start.Add(proposalBodyWaitTimeout(ref.BodySize))
-	shortenedForKeyblock := false
-	if s.fixedModeKeyblockIntervalElapsed(start) && start.Add(proposalBodyKeyblockLivenessTimeout).Before(deadline) {
-		deadline = start.Add(proposalBodyKeyblockLivenessTimeout)
-		shortenedForKeyblock = true
-	}
+	// Once a proposal reference has been accepted for the current view, its
+	// size-derived body/repair deadline is immutable. A keyblock interval may
+	// influence selection of the next view, but must not truncate an in-flight
+	// 256 MiB proposal to one second and make a valid block untransportable.
+	deadline := start.Add(proposalBodyWaitTimeoutForConfig(s.chainConfig, ref.BodySize))
 	nextRequestAt := time.Now().Add(proposalBodyRequestAfter)
 	var requestAttempt uint64
 	var repairStartedAt time.Time
@@ -3287,64 +4050,82 @@ func (s *Service) waitProposalBodyForValidation(ctx context.Context, ref *types.
 		if serviceGeneration != 0 && (atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != serviceGeneration) {
 			return nil, hotstuff.ErrOldState
 		}
-		body := s.getProposalBody(proposalID)
-		if body != nil && len(body.EncodedBlock) > 0 {
-			if body.BodyHash != ref.BodyHash {
-				return nil, fmt.Errorf("proposal body hash mismatch for %s: have %s want %s", proposalID, body.BodyHash, ref.BodyHash)
-			}
-			if uint64(len(body.EncodedBlock)) != ref.BodySize {
-				return nil, fmt.Errorf("proposal body size mismatch for %s: have %d want %d", proposalID, len(body.EncodedBlock), ref.BodySize)
-			}
-			return body, nil
+		snapshot := s.proposalBodySnapshotForWait(proposalID)
+		if snapshot.assemblyErr != nil {
+			return nil, snapshot.assemblyErr
 		}
-		missing, assembleErr := s.tryAssembleProposalBody(proposalID)
-		if assembleErr != nil {
-			return nil, assembleErr
-		}
-		body = s.getProposalBody(proposalID)
-		if body != nil && len(body.EncodedBlock) > 0 {
-			continue
+		if snapshot.body != nil {
+			if snapshot.body.BodyHash != ref.BodyHash {
+				return nil, fmt.Errorf("proposal body hash mismatch for %s: have %s want %s", proposalID, snapshot.body.BodyHash, ref.BodyHash)
+			}
+			if uint64(len(snapshot.body.EncodedBlock)) != ref.BodySize {
+				return nil, fmt.Errorf("proposal body size mismatch for %s: have %d want %d", proposalID, len(snapshot.body.EncodedBlock), ref.BodySize)
+			}
+			return snapshot.body, nil
 		}
 		now := time.Now()
-		if len(missing) > 0 {
+		if snapshot.missingCount > 0 {
 			if repairStartedAt.IsZero() {
 				repairStartedAt = now
 			}
-			if !shortenedForKeyblock {
-				repairDeadline := repairStartedAt.Add(proposalRepairWaitTimeout(len(missing)))
-				if repairDeadline.After(deadline) {
-					deadline = repairDeadline
-				}
-			}
-		}
-		if !shortenedForKeyblock && s.fixedModeKeyblockIntervalElapsed(now) {
-			keyblockDeadline := now.Add(proposalBodyKeyblockLivenessTimeout)
-			if keyblockDeadline.Before(deadline) {
-				deadline = keyblockDeadline
-				shortenedForKeyblock = true
-				log.Warn("HOTSTUFF PROPOSAL BODY wait shortened for keyblock liveness",
-					"number", ref.Number,
-					"proposalID", proposalID,
-					"bodyHash", ref.BodyHash,
-					"bodySize", ref.BodySize,
-					"deadline", deadline.Sub(now))
+			repairDeadline := repairStartedAt.Add(proposalRepairWaitTimeoutForPayload(s.chainConfig, snapshot.missingCount, ref.BodySize))
+			if repairDeadline.After(deadline) {
+				deadline = repairDeadline
 			}
 		}
 		if !now.Before(nextRequestAt) {
-			s.sendProposalRepairRequest(ref, repairRequests.nextWindow(missing), requestAttempt)
-			requestAttempt++
+			if snapshot.hasManifest && snapshot.missingCount > 0 {
+				burst := proposalRepairRequestBurstForConfig(s.chainConfig)
+				for sent := uint64(0); sent < burst; sent++ {
+					window := s.nextProposalRepairWindow(proposalID, &repairRequests)
+					if len(window) == 0 {
+						break
+					}
+					unresolved, err := s.resolveProposalAssemblyWindow(proposalID, window)
+					if err != nil {
+						return nil, err
+					}
+					if len(unresolved) == 0 {
+						continue
+					}
+					s.sendProposalRepairRequest(ref, unresolved, requestAttempt)
+					requestAttempt++
+				}
+			} else if !snapshot.hasManifest && !snapshot.assembling {
+				// An empty hash list requests the authenticated manifest itself.
+				s.sendProposalRepairRequest(ref, nil, requestAttempt)
+				requestAttempt++
+			}
 			nextRequestAt = now.Add(proposalBodyRequestInterval)
+			// Sending or local resolution may have completed the proposal and
+			// replaced the wake channel. Refresh state before blocking.
+			continue
 		}
 		if now.After(deadline) {
 			return nil, fmt.Errorf("proposal body timeout: number=%d proposalID=%s bodyHash=%s", ref.Number, proposalID, ref.BodyHash)
 		}
-		poll := time.NewTimer(proposalBodyPollInterval)
+		wakeAt := nextRequestAt
+		if deadline.Before(wakeAt) {
+			wakeAt = deadline
+		}
+		wait := time.Until(wakeAt)
+		if wait < 0 {
+			wait = 0
+		}
+		timer := time.NewTimer(wait)
 		select {
-		case <-poll.C:
-		case <-ctx.Done():
-			if !poll.Stop() {
+		case <-timer.C:
+		case <-snapshot.wake:
+			if !timer.Stop() {
 				select {
-				case <-poll.C:
+				case <-timer.C:
+				default:
+				}
+			}
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
 				default:
 				}
 			}
@@ -3354,23 +4135,57 @@ func (s *Service) waitProposalBodyForValidation(ctx context.Context, ref *types.
 }
 
 func proposalBodyWaitTimeout(bodySize uint64) time.Duration {
+	return proposalBodyWaitTimeoutForConfig(nil, bodySize)
+}
+
+func proposalBodyWaitTimeoutForConfig(config *params.ChainConfig, bodySize uint64) time.Duration {
 	timeout := proposalBodyWaitBaseTimeout
+	if config != nil && config.NativeParallelEnabled() {
+		if limit := uint64(proposalBodyLimitForConfig(config)); bodySize > limit {
+			bodySize = limit
+		}
+	}
 	if bodySize > 0 {
 		transfer := time.Duration(bodySize) * time.Second / proposalBodyWaitBytesPerSecond
 		timeout += transfer
 	}
-	if timeout > proposalBodyWaitMaxTimeout {
-		return proposalBodyWaitMaxTimeout
+	maxTimeout := proposalBodyWaitMaxTimeout
+	if config != nil && config.NativeParallelEnabled() {
+		configuredTransfer := time.Duration(config.EffectiveMaxBlockBytes()) * time.Second / proposalBodyWaitBytesPerSecond
+		if configuredTransfer > time.Duration(^uint64(0)>>1)-proposalBodyWaitBaseTimeout {
+			maxTimeout = time.Duration(^uint64(0) >> 1)
+		} else if candidate := proposalBodyWaitBaseTimeout + configuredTransfer; candidate > maxTimeout {
+			maxTimeout = candidate
+		}
+	}
+	if timeout > maxTimeout {
+		return maxTimeout
 	}
 	return timeout
 }
 
 func proposalRepairWaitTimeout(missingCount int) time.Duration {
+	return proposalRepairWaitTimeoutForConfig(nil, missingCount)
+}
+
+func proposalRepairWaitTimeoutForConfig(config *params.ChainConfig, missingCount int) time.Duration {
+	recoveryBytes := uint64(0)
+	if config != nil && config.NativeParallelEnabled() {
+		recoveryBytes = config.EffectiveMaxBlockBytes()
+	}
+	return proposalRepairWaitTimeoutForPayload(config, missingCount, recoveryBytes)
+}
+
+// proposalRepairWaitTimeoutForPayload covers both the request-window schedule
+// and the bytes which may need to be recovered. The count schedule alone is not
+// sufficient: a single 1024-hash request can yield only one maximum-size
+// transaction because repair responses are deliberately capped near 1 MiB.
+func proposalRepairWaitTimeoutForPayload(config *params.ChainConfig, missingCount int, recoveryBytes uint64) time.Duration {
 	if missingCount <= 0 {
 		return 0
 	}
 	count := uint64(missingCount)
-	if limit := params.FairHotstuffWorkLimits().Transactions; count > limit {
+	if limit := params.FairHotstuffWorkLimitsForConfig(config).Transactions; count > limit {
 		count = limit
 	}
 	if count == 0 {
@@ -3378,9 +4193,30 @@ func proposalRepairWaitTimeout(missingCount int) time.Duration {
 	}
 	batchSize := uint64(proposalRepairMaxHashes)
 	batches := (count + batchSize - 1) / batchSize
-	timeout := proposalBodyRequestAfter + time.Duration(batches-1)*proposalBodyRequestInterval + proposalRepairNetworkMargin
-	if timeout > proposalBodyWaitMaxTimeout {
-		return proposalBodyWaitMaxTimeout
+	burst := proposalRepairRequestBurstForConfig(config)
+	rounds := (batches + burst - 1) / burst
+	timeout := proposalBodyRequestAfter + time.Duration(rounds-1)*proposalBodyRequestInterval + proposalRepairNetworkMargin
+	maxTimeout := proposalBodyWaitMaxTimeout
+	if config != nil && config.NativeParallelEnabled() {
+		maxBatches := (config.NativeParallel.MaxTransactionsPerBlock + batchSize - 1) / batchSize
+		if maxBatches > 0 {
+			maxRounds := (maxBatches + burst - 1) / burst
+			configured := proposalBodyRequestAfter + time.Duration(maxRounds-1)*proposalBodyRequestInterval + proposalRepairNetworkMargin
+			if configured > maxTimeout {
+				maxTimeout = configured
+			}
+		}
+		transferTimeout := proposalBodyWaitTimeoutForConfig(config, recoveryBytes)
+		if transferTimeout > timeout {
+			timeout = transferTimeout
+		}
+		configuredTransfer := proposalBodyWaitTimeoutForConfig(config, config.EffectiveMaxBlockBytes())
+		if configuredTransfer > maxTimeout {
+			maxTimeout = configuredTransfer
+		}
+	}
+	if timeout > maxTimeout {
+		return maxTimeout
 	}
 	return timeout
 }
@@ -3389,37 +4225,67 @@ func (s *Service) proposalRepairTransactions(body *proposalBodyMsg, requested []
 	if body == nil || len(requested) == 0 {
 		return nil, nil, nil
 	}
-	available := make(map[common.Hash]*types.Transaction, len(body.TransactionBytes))
-	allowed := make(map[common.Hash]struct{})
-	for index, encoded := range body.TransactionBytes {
-		tx, err := decodeCanonicalProposalRepairTransaction(encoded)
-		if err != nil {
-			return nil, nil, fmt.Errorf("cached proposal repair transaction %d: %w", index, err)
-		}
-		hash := tx.Hash()
-		if _, duplicate := available[hash]; duplicate {
-			return nil, nil, fmt.Errorf("cached proposal repair repeats transaction %s", hash)
-		}
-		available[hash] = tx
-	}
-	if len(body.Manifest) > 0 {
-		if manifest, err := decodeProposalDataManifest(body.Manifest); err == nil {
-			allowed = make(map[common.Hash]struct{}, len(manifest.TransactionHashes))
-			for _, hash := range manifest.TransactionHashes {
-				allowed[hash] = struct{}{}
+	available := make(map[common.Hash]*types.Transaction, len(requested))
+	allowed := make(map[common.Hash]struct{}, len(requested))
+	indexed := false
+	// An explicit payload is a standalone/durable repair source (and is used by
+	// focused validation tests). Metadata-only bodies returned by
+	// proposalBodyForRepairRequest select the cached incremental index.
+	useCachedIndex := len(body.EncodedBlock) == 0 && len(body.Manifest) == 0 && len(body.TransactionBytes) == 0
+	s.muProposalBody.RLock()
+	if useCachedIndex {
+		if cached := s.proposalBodies[body.ProposalID]; cached != nil && cached.BodyHash == body.BodyHash &&
+			cached.BodySize == body.BodySize && cached.Number == body.Number && cached.ViewNumber == body.ViewNumber &&
+			cached.ViewID == body.ViewID && cached.LeaderID == body.LeaderID && cached.ProposalKeyHash == body.ProposalKeyHash {
+			if state := s.proposalAssemblies[body.ProposalID]; state != nil {
+				indexed = true
+				for _, hash := range requested {
+					position, ok := state.positions[hash]
+					if !ok {
+						continue
+					}
+					allowed[hash] = struct{}{}
+					if tx := state.transactions[position]; tx != nil {
+						available[hash] = tx
+					}
+				}
 			}
 		}
 	}
-	if len(body.EncodedBlock) > 0 {
-		if block := types.DecodeToBlock(body.EncodedBlock); block != nil {
-			allowed = make(map[common.Hash]struct{}, len(block.Transactions()))
-			for index, tx := range block.Transactions() {
-				if tx == nil || !tx.IsInitialized() {
-					return nil, nil, fmt.Errorf("proposal repair block transaction %d is not initialized", index)
+	s.muProposalBody.RUnlock()
+	if !indexed {
+		available = make(map[common.Hash]*types.Transaction, len(body.TransactionBytes))
+		allowed = make(map[common.Hash]struct{})
+		for index, encoded := range body.TransactionBytes {
+			tx, err := decodeCanonicalProposalRepairTransactionForConfig(s.chainConfig, encoded)
+			if err != nil {
+				return nil, nil, fmt.Errorf("cached proposal repair transaction %d: %w", index, err)
+			}
+			hash := tx.Hash()
+			if _, duplicate := available[hash]; duplicate {
+				return nil, nil, fmt.Errorf("cached proposal repair repeats transaction %s", hash)
+			}
+			available[hash] = tx
+		}
+		if len(body.Manifest) > 0 {
+			if manifest, err := decodeProposalDataManifestForConfig(s.chainConfig, body.Manifest); err == nil {
+				allowed = make(map[common.Hash]struct{}, len(manifest.TransactionHashes))
+				for _, hash := range manifest.TransactionHashes {
+					allowed[hash] = struct{}{}
 				}
-				hash := tx.Hash()
-				available[hash] = tx
-				allowed[hash] = struct{}{}
+			}
+		}
+		if len(body.EncodedBlock) > 0 {
+			if block := types.DecodeToBlock(body.EncodedBlock); block != nil {
+				allowed = make(map[common.Hash]struct{}, len(block.Transactions()))
+				for index, tx := range block.Transactions() {
+					if tx == nil || !tx.IsInitialized() {
+						return nil, nil, fmt.Errorf("proposal repair block transaction %d is not initialized", index)
+					}
+					hash := tx.Hash()
+					available[hash] = tx
+					allowed[hash] = struct{}{}
+				}
 			}
 		}
 	}
@@ -3452,7 +4318,7 @@ func (s *Service) proposalRepairTransactions(body *proposalBodyMsg, requested []
 		if tx == nil {
 			continue
 		}
-		encoded, err := encodeProposalRepairTransaction(tx)
+		encoded, err := encodeProposalRepairTransactionForConfig(s.chainConfig, tx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("encode repair transaction %s: %w", hash, err)
 		}
@@ -3460,8 +4326,8 @@ func (s *Service) proposalRepairTransactions(body *proposalBodyMsg, requested []
 			continue
 		}
 		nextBytes := len(encoded) + common.HashLength
-		payloadLimit := proposalBodySidecarMaxBytes - proposalRepairResponseReserve
-		if len(encodedTransactions) > 0 && payloadBytes+nextBytes > payloadLimit {
+		payloadLimit := proposalRepairPayloadLimitForConfig(s.chainConfig) - proposalRepairResponseReserve
+		if len(encodedTransactions) > 0 && !fitsIntBudget(payloadBytes, nextBytes, payloadLimit) {
 			break
 		}
 		if nextBytes > payloadLimit {
@@ -3474,6 +4340,169 @@ func (s *Service) proposalRepairTransactions(body *proposalBodyMsg, requested []
 	return hashes, encodedTransactions, nil
 }
 
+func (s *Service) proposalManifestForRepair(proposalID common.Hash, fallback *proposalBodyMsg) ([]byte, error) {
+	if fallback != nil && len(fallback.Manifest) > 0 {
+		return append([]byte(nil), fallback.Manifest...), nil
+	}
+	s.muProposalBody.RLock()
+	var manifest *proposalDataManifest
+	if state := s.proposalAssemblies[proposalID]; state != nil {
+		manifest = state.manifest
+	}
+	s.muProposalBody.RUnlock()
+	if manifest == nil {
+		if fallback == nil || len(fallback.EncodedBlock) == 0 {
+			return nil, fmt.Errorf("proposal manifest is unavailable")
+		}
+		block := types.DecodeToBlock(fallback.EncodedBlock)
+		return encodeProposalDataManifestForConfig(s.chainConfig, block)
+	}
+	encoded, err := rlp.EncodeToBytes(manifest)
+	if err != nil {
+		return nil, err
+	}
+	limit := proposalBodyLimitForConfig(s.chainConfig)
+	if len(encoded) == 0 || len(encoded) > limit {
+		return nil, fmt.Errorf("proposal manifest too large: bytes=%d limit=%d", len(encoded), limit)
+	}
+	return encoded, nil
+}
+
+func proposalBodyRepairContextMatches(body, request *proposalBodyMsg) bool {
+	return body != nil && request != nil && body.ProposalID == request.ProposalID && body.BodyHash == request.BodyHash &&
+		body.BodySize == request.BodySize && body.Number == request.Number && body.ViewNumber == request.ViewNumber &&
+		body.ViewID == request.ViewID && body.LeaderID == request.LeaderID && body.ProposalKeyHash == request.ProposalKeyHash
+}
+
+func (s *Service) releaseProposalAssemblyBuildWaiter(build *proposalAssemblyBuild) {
+	if build == nil {
+		return
+	}
+	s.muProposalBody.Lock()
+	if build.waiters > 0 {
+		build.waiters--
+	}
+	if build.waiters == 0 && build.cancel != nil {
+		build.cancel()
+	}
+	s.muProposalBody.Unlock()
+}
+
+func (s *Service) finishProposalAssemblyBuild(proposalID common.Hash, build *proposalAssemblyBuild, buildErr error) {
+	s.muProposalBody.Lock()
+	build.err = buildErr
+	if s.proposalAssemblyBuilds[proposalID] == build {
+		delete(s.proposalAssemblyBuilds, proposalID)
+	}
+	if build.cancel != nil {
+		build.cancel()
+	}
+	close(build.done)
+	s.muProposalBody.Unlock()
+}
+
+func (s *Service) runProposalAssemblyBuild(proposalID common.Hash, cached *proposalBodyMsg, build *proposalAssemblyBuild, slots chan struct{}) {
+	var buildErr error
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			buildErr = fmt.Errorf("proposal donor index rebuild panic: %v", recovered)
+		}
+		s.finishProposalAssemblyBuild(proposalID, build, buildErr)
+	}()
+	select {
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
+	case <-build.ctx.Done():
+		buildErr = build.ctx.Err()
+		return
+	}
+	s.muProposalBody.RLock()
+	current := s.proposalBodies[proposalID]
+	alreadyBuilt := s.proposalAssemblies[proposalID] != nil
+	decoder := s.decodeProposalBodyForRepair
+	s.muProposalBody.RUnlock()
+	if alreadyBuilt {
+		return
+	}
+	if current != cached {
+		buildErr = errProposalAssemblySuperseded
+		return
+	}
+	if decoder == nil {
+		decoder = types.DecodeToBlock
+	}
+	block := decoder(cached.EncodedBlock)
+	if block == nil {
+		buildErr = fmt.Errorf("cached proposal repair body is invalid")
+		return
+	}
+	assembly, err := newCompleteProposalAssembly(block, len(cached.EncodedBlock))
+	if err != nil {
+		buildErr = err
+		return
+	}
+	if err := build.ctx.Err(); err != nil {
+		buildErr = err
+		return
+	}
+	s.muProposalBody.Lock()
+	defer s.muProposalBody.Unlock()
+	if s.proposalBodies[proposalID] != cached {
+		buildErr = errProposalAssemblySuperseded
+		return
+	}
+	if s.proposalAssemblies[proposalID] != nil {
+		return
+	}
+	if s.proposalAssemblies == nil {
+		s.proposalAssemblies = make(map[common.Hash]*proposalAssemblyState)
+	}
+	if !s.ensureProposalAssemblyCapacityLocked(proposalID, assembly.cacheWeight) {
+		buildErr = fmt.Errorf("proposal assembly cache capacity exhausted")
+		return
+	}
+	s.proposalAssemblies[proposalID] = assembly
+}
+
+func (s *Service) ensureProposalRepairAssembly(ctx context.Context, request *proposalBodyMsg, cached *proposalBodyMsg) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.muProposalBody.Lock()
+	if s.proposalBodies[request.ProposalID] != cached {
+		s.muProposalBody.Unlock()
+		return errProposalAssemblySuperseded
+	}
+	if s.proposalAssemblies[request.ProposalID] != nil {
+		s.muProposalBody.Unlock()
+		return nil
+	}
+	if s.proposalAssemblyBuilds == nil {
+		s.proposalAssemblyBuilds = make(map[common.Hash]*proposalAssemblyBuild)
+	}
+	if s.proposalAssemblyBuildSlots == nil {
+		s.proposalAssemblyBuildSlots = make(chan struct{}, 1)
+	}
+	build := s.proposalAssemblyBuilds[request.ProposalID]
+	if build == nil {
+		timeout := proposalBodyWaitTimeoutForConfig(s.chainConfig, request.BodySize)
+		buildCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		build = &proposalAssemblyBuild{done: make(chan struct{}), ctx: buildCtx, cancel: cancel}
+		s.proposalAssemblyBuilds[request.ProposalID] = build
+		go s.runProposalAssemblyBuild(request.ProposalID, cached, build, s.proposalAssemblyBuildSlots)
+	}
+	build.waiters++
+	done := build.done
+	s.muProposalBody.Unlock()
+	defer s.releaseProposalAssemblyBuildWaiter(build)
+	select {
+	case <-done:
+		return build.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // proposalBodyForRepairRequest first checks the volatile hot cache, then falls
 // back to the content-addressed recovery store. A restarted validator may have
 // certified proposal data on disk without having repopulated proposalBodies;
@@ -3484,9 +4513,49 @@ func (s *Service) proposalBodyForRepairRequest(request *proposalBodyMsg) (*propo
 	if request == nil || request.ProposalID == (common.Hash{}) {
 		return nil, false, fmt.Errorf("invalid proposal repair request")
 	}
-	body := s.getProposalBody(request.ProposalID)
-	fromDurable := false
-	if body == nil {
+	timeout := proposalBodyWaitTimeoutForConfig(s.chainConfig, request.BodySize)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return s.proposalBodyForRepairRequestContext(ctx, request)
+}
+
+func (s *Service) proposalBodyForRepairRequestContext(ctx context.Context, request *proposalBodyMsg) (*proposalBodyMsg, bool, error) {
+	if request == nil || request.ProposalID == (common.Hash{}) {
+		return nil, false, fmt.Errorf("invalid proposal repair request")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, false, err
+		}
+		s.muProposalBody.RLock()
+		cached := s.proposalBodies[request.ProposalID]
+		indexed := cached != nil && s.proposalAssemblies[request.ProposalID] != nil
+		s.muProposalBody.RUnlock()
+		if cached != nil {
+			if !proposalBodyRepairContextMatches(cached, request) {
+				return nil, false, fmt.Errorf("proposal repair request context mismatch")
+			}
+			if indexed {
+				// The cached assembly index is the repair payload source. Copy only
+				// authenticated metadata instead of a 256 MiB block.
+				return cloneProposalBodyEnvelope(cached), false, nil
+			}
+			if len(cached.EncodedBlock) > 0 {
+				if err := s.ensureProposalRepairAssembly(ctx, request, cached); err != nil {
+					if errors.Is(err, errProposalAssemblySuperseded) {
+						continue
+					}
+					return nil, false, err
+				}
+				continue
+			}
+			// Incomplete pre-index fixtures retain the compatibility fallback.
+			// Authenticated manifests normally install their index atomically.
+			return cloneProposalBodyMsg(cached), false, nil
+		}
 		if s.fhsStore == nil || s.fhsStore.db == nil {
 			return nil, false, nil
 		}
@@ -3497,22 +4566,18 @@ func (s *Service) proposalBodyForRepairRequest(request *proposalBodyMsg) (*propo
 		if !found || durableBody == nil {
 			return nil, false, nil
 		}
-		body = durableBody
-		fromDurable = true
+		if !proposalBodyRepairContextMatches(durableBody, request) {
+			return nil, true, fmt.Errorf("proposal repair request context mismatch")
+		}
+		return durableBody, true, nil
 	}
-	if body.ProposalID != request.ProposalID || body.BodyHash != request.BodyHash || body.BodySize != request.BodySize ||
-		body.Number != request.Number || body.ViewNumber != request.ViewNumber || body.ViewID != request.ViewID ||
-		body.LeaderID != request.LeaderID || body.ProposalKeyHash != request.ProposalKeyHash {
-		return nil, fromDurable, fmt.Errorf("proposal repair request context mismatch")
-	}
-	return body, fromDurable, nil
 }
 
 func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposalBodyMsg) {
 	if msg == nil {
 		return
 	}
-	if err := validateProposalBodyWireShape(msg); err != nil {
+	if err := validateProposalBodyWireShapeForConfig(s.chainConfig, msg); err != nil {
 		log.Warn("HOTSTUFF PROPOSAL BODY malformed", "from", msg.From, "number", msg.Number, "err", err)
 		return
 	}
@@ -3561,23 +4626,15 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 			return
 		}
 		if len(msg.MissingTxHashes) == 0 {
-			manifest := append([]byte(nil), body.Manifest...)
-			if len(manifest) == 0 && len(body.EncodedBlock) > 0 {
-				block := types.DecodeToBlock(body.EncodedBlock)
-				var err error
-				manifest, err = encodeProposalDataManifest(block)
-				if err != nil {
-					log.Warn("HOTSTUFF PROPOSAL MANIFEST response assembly failed", "to", address, "proposalID", body.ProposalID, "err", err)
-					return
-				}
+			manifest, err := s.proposalManifestForRepair(body.ProposalID, body)
+			if err != nil {
+				log.Warn("HOTSTUFF PROPOSAL MANIFEST response assembly failed", "to", address, "proposalID", body.ProposalID, "err", err)
+				return
 			}
-			response := cloneProposalBodyMsg(body)
+			response := cloneProposalBodyEnvelope(body)
 			response.Type = proposalBodyMsgManifest
 			response.From = s.Self()
-			response.EncodedBlock = nil
 			response.Manifest = manifest
-			response.MissingTxHashes = nil
-			response.TransactionBytes = nil
 			if err := s.sealProposalBody(response); err != nil {
 				log.Warn("HOTSTUFF PROPOSAL MANIFEST RESPONSE signing failed", "to", address, "number", body.Number, "err", err)
 				return
@@ -3614,7 +4671,7 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 			log.Warn("HOTSTUFF PROPOSAL REPAIR RESPONSE signing failed", "to", address, "number", body.Number, "err", err)
 			return
 		}
-		if err := validateProposalBodyWireShape(response); err != nil {
+		if err := validateProposalBodyWireShapeForConfig(s.chainConfig, response); err != nil {
 			log.Warn("HOTSTUFF PROPOSAL REPAIR RESPONSE invalid", "to", address, "number", body.Number, "err", err)
 			return
 		}
@@ -3622,13 +4679,13 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 			log.Warn("HOTSTUFF PROPOSAL REPAIR response failed", "to", address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
 		}
 	case proposalBodyMsgRepairData:
-		missing, err := s.mergeProposalRepair(msg)
+		remaining, err := s.mergeProposalRepair(msg)
 		if err != nil {
 			log.Warn("HOTSTUFF PROPOSAL REPAIR rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
 			return
 		}
 		log.Info("HOTSTUFF PROPOSAL REPAIR stored", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID,
-			"transactions", len(msg.TransactionBytes), "remaining", len(missing))
+			"transactions", len(msg.TransactionBytes), "remaining", remaining)
 	default:
 		log.Warn("HOTSTUFF PROPOSAL BODY unknown type", "type", msg.Type, "number", msg.Number, "proposalID", msg.ProposalID)
 	}

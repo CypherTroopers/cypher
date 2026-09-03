@@ -3,11 +3,13 @@ package types
 import (
 	"bytes"
 	"math/big"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/rlp"
 )
 
 func makeSignedCommonTxAdmissionBatch(t *testing.T, count int) *CommonTxAdmissionBatch {
@@ -177,6 +179,50 @@ func TestCommonTxAdmissionRootBindsCountsAndPositions(t *testing.T) {
 	}
 	if got := DeriveCommonTxAdmissionRoot(nil, nil); got != (common.Hash{}) {
 		t.Fatalf("empty admission root = %s, want zero", got)
+	}
+}
+
+func TestCommonTxAdmissionRefSupportsNativeBatchRange(t *testing.T) {
+	want := CommonTxAdmissionRef{Batch: 70_000, Item: 17}
+	encoded, err := rlp.EncodeToBytes(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got CommonTxAdmissionRef
+	if err := rlp.DecodeBytes(encoded, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("admission ref round trip = %+v, want %+v", got, want)
+	}
+}
+
+func TestCommonTxRootsIndependentOfWorkerCount(t *testing.T) {
+	batches := make([]*CommonTxAdmissionBatch, commonRootParallelThreshold+37)
+	refs := make([]CommonTxAdmissionRef, len(batches))
+	rewards := make([]*CommonTxReward, len(batches))
+	for index := range batches {
+		txHash := common.BigToHash(new(big.Int).SetUint64(uint64(index + 10_000)))
+		batch := &CommonTxAdmissionBatch{
+			ChainID: big.NewInt(99), GenesisHash: common.HexToHash("0x1234"), Miner: common.HexToAddress("0x5678"),
+			KeyBlockNumber: 7, Timestamp: 1_700_000_000, TxHashes: []common.Hash{txHash}, Signature: []byte{1, 2, 3},
+		}
+		batch.TxRoot = DeriveCommonTxAdmissionTxRoot(batch.TxHashes)
+		batch.AdmissionID = CommonTxAdmissionID(batch)
+		batches[index] = batch
+		refs[index] = CommonTxAdmissionRef{Batch: uint32(index), Item: 0}
+		rewards[index] = &CommonTxReward{TxHash: txHash, Approver: batch.Miner, ApproverReward: big.NewInt(int64(index + 1)), Burn: big.NewInt(1)}
+	}
+	previous := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previous) })
+	serialAdmission := DeriveCommonTxAdmissionRoot(batches, refs)
+	serialReward := DeriveCommonTxRewardRoot(rewards)
+	runtime.GOMAXPROCS(8)
+	if parallel := DeriveCommonTxAdmissionRoot(batches, refs); parallel != serialAdmission {
+		t.Fatalf("parallel admission root = %s, serial %s", parallel, serialAdmission)
+	}
+	if parallel := DeriveCommonTxRewardRoot(rewards); parallel != serialReward {
+		t.Fatalf("parallel reward root = %s, serial %s", parallel, serialReward)
 	}
 }
 

@@ -17,6 +17,7 @@
 package t8ntool
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -46,13 +47,18 @@ type Prestate struct {
 // ExecutionResult contains the execution status after running a state test, any
 // error that might have occurred and a dump of the final state if requested.
 type ExecutionResult struct {
-	StateRoot   common.Hash    `json:"stateRoot"`
-	TxRoot      common.Hash    `json:"txRoot"`
-	ReceiptRoot common.Hash    `json:"receiptRoot"`
-	LogsHash    common.Hash    `json:"logsHash"`
-	Bloom       types.Bloom    `json:"logsBloom"        gencodec:"required"`
-	Receipts    types.Receipts `json:"receipts"`
-	Rejected    []int          `json:"rejected,omitempty"`
+	StateRoot            common.Hash           `json:"stateRoot"`
+	TxRoot               common.Hash           `json:"txRoot"`
+	ReceiptRoot          common.Hash           `json:"receiptsRoot"`
+	LogsHash             common.Hash           `json:"logsHash"`
+	Bloom                types.Bloom           `json:"logsBloom"        gencodec:"required"`
+	Receipts             types.Receipts        `json:"receipts"`
+	Rejected             []int                 `json:"rejected,omitempty"`
+	Difficulty           *math.HexOrDecimal256 `json:"currentDifficulty" gencodec:"required"`
+	GasUsed              math.HexOrDecimal64   `json:"gasUsed"`
+	BaseFee              *math.HexOrDecimal256 `json:"currentBaseFee,omitempty"`
+	CurrentExcessBlobGas *math.HexOrDecimal64  `json:"currentExcessBlobGas,omitempty"`
+	CurrentBlobGasUsed   *math.HexOrDecimal64  `json:"blobGasUsed,omitempty"`
 }
 
 type ommer struct {
@@ -63,26 +69,48 @@ type ommer struct {
 //go:generate gencodec -type stEnv -field-override stEnvMarshaling -out gen_stenv.go
 type stEnv struct {
 	Coinbase    common.Address                      `json:"currentCoinbase"   gencodec:"required"`
-	Difficulty  *big.Int                            `json:"currentDifficulty" gencodec:"required"`
+	Difficulty  *big.Int                            `json:"currentDifficulty,omitempty"`
+	Random      *big.Int                            `json:"currentRandom,omitempty"`
 	GasLimit    uint64                              `json:"currentGasLimit"   gencodec:"required"`
 	Number      uint64                              `json:"currentNumber"     gencodec:"required"`
 	Timestamp   uint64                              `json:"currentTimestamp"  gencodec:"required"`
 	BlockHashes map[math.HexOrDecimal64]common.Hash `json:"blockHashes,omitempty"`
 	Ommers      []ommer                             `json:"ommers,omitempty"`
+
+	// Modern execution-test environment fields. Parent values are accepted as
+	// an alternative to currentExcessBlobGas so t8n can exercise the actual
+	// EIP-4844/EIP-7918 transition calculation at a fork boundary.
+	BaseFee             *big.Int `json:"currentBaseFee,omitempty"`
+	ParentBaseFee       *big.Int `json:"parentBaseFee,omitempty"`
+	ParentTimestamp     uint64   `json:"parentTimestamp,omitempty"`
+	ExcessBlobGas       *uint64  `json:"currentExcessBlobGas,omitempty"`
+	ParentExcessBlobGas *uint64  `json:"parentExcessBlobGas,omitempty"`
+	ParentBlobGasUsed   *uint64  `json:"parentBlobGasUsed,omitempty"`
 }
 
 type stEnvMarshaling struct {
-	Coinbase   common.UnprefixedAddress
-	Difficulty *math.HexOrDecimal256
-	GasLimit   math.HexOrDecimal64
-	Number     math.HexOrDecimal64
-	Timestamp  math.HexOrDecimal64
+	Coinbase            common.UnprefixedAddress
+	Difficulty          *math.HexOrDecimal256
+	Random              *math.HexOrDecimal256
+	GasLimit            math.HexOrDecimal64
+	Number              math.HexOrDecimal64
+	Timestamp           math.HexOrDecimal64
+	BaseFee             *math.HexOrDecimal256
+	ParentBaseFee       *math.HexOrDecimal256
+	ParentTimestamp     math.HexOrDecimal64
+	ExcessBlobGas       *math.HexOrDecimal64
+	ParentExcessBlobGas *math.HexOrDecimal64
+	ParentBlobGasUsed   *math.HexOrDecimal64
 }
 
 // Apply applies a set of transactions to a pre-state
 func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	txs types.Transactions, miningReward int64,
 	getTracerFn func(txIndex int, txHash common.Hash) (tracer vm.Tracer, err error)) (*state.StateDB, *ExecutionResult, error) {
+	blockNumber := new(big.Int).SetUint64(pre.Env.Number)
+	if chainConfig.IsShanghai(blockNumber, pre.Env.Timestamp) && pre.Env.Random == nil {
+		return nil, nil, NewError(ErrorVMConfig, errors.New("currentRandom is required at Shanghai and later forks"))
+	}
 
 	// Capture errors for BLOCKHASH operation, if we haven't been supplied the
 	// required blockhashes
@@ -100,12 +128,13 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	var (
 		statedb     = MakePreState(rawdb.NewMemoryDatabase(), pre.Pre)
-		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number))
+		signer      = types.MakeSignerWithTimestamp(chainConfig, blockNumber, pre.Env.Timestamp)
 		gaspool     = new(core.GasPool)
 		blockHash   = common.Hash{0x13, 0x37}
 		rejectedTxs []int
 		includedTxs types.Transactions
 		gasUsed     = uint64(0)
+		blobGasUsed = uint64(0)
 		receipts    = make(types.Receipts, 0)
 		txIndex     = 0
 	)
@@ -121,6 +150,33 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		GetHash:     getHash,
 		// GasPrice and Origin needs to be set per transaction
 	}
+	if pre.Env.Difficulty == nil {
+		vmContext.Difficulty = new(big.Int)
+	}
+	if pre.Env.Random != nil {
+		random := common.BigToHash(pre.Env.Random)
+		vmContext.Random = &random
+	}
+	if pre.Env.BaseFee != nil {
+		vmContext.BaseFee = new(big.Int).Set(pre.Env.BaseFee)
+	}
+	var currentExcessBlobGas *uint64
+	if pre.Env.ExcessBlobGas != nil {
+		excess := *pre.Env.ExcessBlobGas
+		currentExcessBlobGas = &excess
+	} else if pre.Env.ParentExcessBlobGas != nil && pre.Env.ParentBlobGasUsed != nil {
+		excess := params.CalcExcessBlobGasForFork(
+			chainConfig.IsOsaka(vmContext.BlockNumber, pre.Env.Timestamp),
+			*pre.Env.ParentExcessBlobGas,
+			*pre.Env.ParentBlobGasUsed,
+			pre.Env.ParentBaseFee,
+			chainConfig.ActiveBlobConfig(pre.Env.Timestamp),
+		)
+		currentExcessBlobGas = &excess
+	}
+	if currentExcessBlobGas != nil {
+		vmContext.BlobBaseFee = params.CalcBlobBaseFeeAtTime(chainConfig, pre.Env.Timestamp, *currentExcessBlobGas)
+	}
 	log.Info("Apply", "GasLimit", vmContext.GasLimit)
 	// If DAO is supported/enabled, we need to handle it here. In cypher 'proper', it's
 	// done in StateProcessor.Process(block, ...), right before transactions are applied.
@@ -129,8 +185,46 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		chainConfig.DAOForkBlock.Cmp(new(big.Int).SetUint64(pre.Env.Number)) == 0 {
 		misc.ApplyDAOHardFork(statedb)
 	}
+	// EIP-2935 is pre-execution system work. State-test inputs carry the parent
+	// hash in blockHashes[currentNumber-1], matching upstream t8n's environment
+	// shape and the production block processor.
+	if chainConfig.IsPrague(vmContext.BlockNumber, pre.Env.Timestamp) && pre.Env.Number > 0 && pre.Env.BlockHashes != nil {
+		parentNumber := math.HexOrDecimal64(pre.Env.Number - 1)
+		parentHash := pre.Env.BlockHashes[parentNumber]
+		header := &types.Header{
+			ParentHash: parentHash,
+			Coinbase:   pre.Env.Coinbase,
+			Difficulty: new(big.Int).Set(vmContext.Difficulty),
+			Number:     new(big.Int).Set(vmContext.BlockNumber),
+			GasLimit:   pre.Env.GasLimit,
+			Time:       pre.Env.Timestamp,
+			BaseFee:    copyBig(pre.Env.BaseFee),
+		}
+		if err := core.ProcessParentBlockHash(chainConfig, header, statedb); err != nil {
+			return nil, nil, NewError(ErrorEVM, err)
+		}
+	}
 
 	for i, tx := range txs {
+		if tx == nil {
+			log.Info("rejected tx", "index", i, "error", "nil transaction")
+			rejectedTxs = append(rejectedTxs, i)
+			continue
+		}
+		txBlobGas := tx.BlobGas()
+		if txBlobGas > 0 {
+			maxBlobGas := params.MaxBlobGasPerBlock(chainConfig.ActiveBlobConfig(pre.Env.Timestamp))
+			if blobGasUsed > maxBlobGas || txBlobGas > maxBlobGas-blobGasUsed {
+				log.Info("rejected tx", "index", i, "hash", tx.Hash(), "error", "blob gas exceeds block allowance")
+				rejectedTxs = append(rejectedTxs, i)
+				continue
+			}
+			if vmContext.BlobBaseFee == nil {
+				log.Info("rejected tx", "index", i, "hash", tx.Hash(), "error", "currentExcessBlobGas missing")
+				rejectedTxs = append(rejectedTxs, i)
+				continue
+			}
+		}
 		msg, err := tx.AsMessage(signer)
 		if err != nil {
 			log.Info("rejected tx", "index", i, "hash", tx.Hash(), "error", err)
@@ -144,20 +238,24 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		vmConfig.Tracer = tracer
 		vmConfig.Debug = (tracer != nil)
 		statedb.Prepare(tx.Hash(), blockHash, txIndex)
-		vmContext.GasPrice = msg.GasPrice()
+		vmContext.GasPrice = effectiveT8nGasPrice(tx, vmContext.BaseFee)
 		vmContext.Origin = msg.From()
+		vmContext.BlobHashes = tx.BlobHashes()
 
 		evm := vm.NewEVM(vmContext, statedb, chainConfig, vmConfig)
 		snapshot := statedb.Snapshot()
+		gasBefore := gaspool.Gas()
 		// (ret []byte, usedGas uint64, failed bool, err error)
 		msgResult, err := core.ApplyMessage(evm, msg, gaspool)
 		if err != nil {
 			statedb.RevertToSnapshot(snapshot)
+			*gaspool = core.GasPool(gasBefore)
 			log.Info("rejected tx", "index", i, "hash", tx.Hash(), "from", msg.From(), "error", err)
 			rejectedTxs = append(rejectedTxs, i)
 			continue
 		}
 		includedTxs = append(includedTxs, tx)
+		blobGasUsed += txBlobGas
 		if hashError != nil {
 			return nil, nil, NewError(ErrorMissingBlockhash, hashError)
 		}
@@ -229,8 +327,42 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		LogsHash:    rlpHash(statedb.Logs()),
 		Receipts:    receipts,
 		Rejected:    rejectedTxs,
+		Difficulty:  (*math.HexOrDecimal256)(new(big.Int).Set(vmContext.Difficulty)),
+		GasUsed:     math.HexOrDecimal64(gasUsed),
+	}
+	if vmContext.BaseFee != nil {
+		execRs.BaseFee = (*math.HexOrDecimal256)(new(big.Int).Set(vmContext.BaseFee))
+	}
+	if currentExcessBlobGas != nil {
+		excess := math.HexOrDecimal64(*currentExcessBlobGas)
+		used := math.HexOrDecimal64(blobGasUsed)
+		execRs.CurrentExcessBlobGas = &excess
+		execRs.CurrentBlobGasUsed = &used
 	}
 	return statedb, execRs, nil
+}
+
+func effectiveT8nGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
+	if tx == nil {
+		return new(big.Int)
+	}
+	if baseFee == nil {
+		return tx.GasPrice()
+	}
+	tip, err := tx.EffectiveGasTip(baseFee)
+	if err != nil {
+		// StateTransition returns the canonical fee-cap error before execution.
+		// This fallback only keeps the VM context total for that rejected path.
+		return tx.GasPrice()
+	}
+	return new(big.Int).Add(new(big.Int).Set(baseFee), tip)
+}
+
+func copyBig(value *big.Int) *big.Int {
+	if value == nil {
+		return nil
+	}
+	return new(big.Int).Set(value)
 }
 
 func MakePreState(db ethdb.Database, accounts core.GenesisAlloc) *state.StateDB {

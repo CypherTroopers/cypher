@@ -176,8 +176,13 @@ const (
 	// surcharge (2100), plus the access-list storage-key cost (1900).
 	SstoreClearsScheduleRefundEIP3529 uint64 = SstoreResetGas - ColdSloadCostEIP2929 + TxAccessListStorageKeyGas
 
-	MaxCodeSize  = 24576   // Maximum bytecode to permit for a contract
-	MaxBlockSize = 8388608 // EIP-7934 maximum RLP-encoded block size.
+	MaxCodeSize = 24576 // Maximum bytecode to permit for a contract
+
+	// EIP-7934 reserves 2 MiB of its 10 MiB execution-payload envelope for
+	// consensus-layer data, leaving an 8 MiB consensus limit for RLP(block).
+	EIP7934MaxBlockSize = 10 * 1024 * 1024
+	EIP7934SafetyMargin = 2 * 1024 * 1024
+	MaxBlockSize        = EIP7934MaxBlockSize - EIP7934SafetyMargin
 
 	// Precompiled contract gas prices
 
@@ -260,6 +265,99 @@ func FairHotstuffWorkLimits() FHSBlockWorkLimits {
 		CommonTxRewards:                MaxFHSCommonTxRewardsPerBlock,
 		CommonTxRewardBytesPerEntry:    MaxFHSCommonTxRewardBytesPerReward,
 		CommonTxRewardPayloadBytes:     MaxFHSCommonTxRewardPayloadBytesPerBlock,
+	}
+}
+
+// FairHotstuffWorkLimitsForConfig selects the genesis-committed work envelope.
+// The legacy accessor remains for non-native networks and existing callers.
+func FairHotstuffWorkLimitsForConfig(config *ChainConfig) FHSBlockWorkLimits {
+	if config == nil || !config.NativeParallelEnabled() {
+		return FairHotstuffWorkLimits()
+	}
+	native := config.NativeParallel
+	// A NativeTxV1 block must remain valid even when every transaction arrived
+	// under its own admission certificate. Fragmentation is an ingress concern,
+	// not a consensus-level reason to silently cap a 262k transaction block at
+	// 512 transactions. The block byte envelope remains the aggregate bound.
+	admissionBatches := native.MaxTransactionsPerBlock
+	admissionBytes := native.MaxBlockBytes
+	signatureOperations := native.MaxTransactionsPerBlock
+	if signatureOperations <= ^uint64(0)-admissionBatches {
+		signatureOperations += admissionBatches
+	} else {
+		signatureOperations = ^uint64(0)
+	}
+	return FHSBlockWorkLimits{
+		Transactions:                   native.MaxTransactionsPerBlock,
+		TransactionsPerSender:          native.MaxTransactionsPerBlock,
+		DeclaredGas:                    native.MaxComputePerBlock,
+		SignatureOperations:            signatureOperations,
+		SetCodeAuthorizationsPerTx:     0,
+		SetCodeAuthorizations:          0,
+		AccessListAddressesPerTx:       native.MaxAccessesPerTransaction,
+		AccessListAddresses:            native.MaxAccessesPerBlock,
+		AccessListStorageKeysPerTx:     native.MaxAccessesPerTransaction,
+		AccessListStorageKeys:          native.MaxAccessesPerBlock,
+		CommonTxAdmissionBatches:       admissionBatches,
+		CommonTxAdmissionBytesPerBatch: 64 * 1024,
+		CommonTxAdmissionPayloadBytes:  admissionBytes,
+		CommonTxAdmissionRefs:          native.MaxTransactionsPerBlock,
+		CommonTxRewards:                native.MaxTransactionsPerBlock,
+		CommonTxRewardBytesPerEntry:    MaxFHSCommonTxRewardBytesPerReward,
+		CommonTxRewardPayloadBytes:     native.MaxBlockBytes / 4,
+	}
+}
+
+// FairHotstuffEVMWorkLimitsForConfig selects the high-capacity work envelope
+// for standard Ethereum transaction types 0 through 4. The encoded block-byte
+// ceiling remains the ultimate bound, but aggregate EIP-2930 and EIP-7702 work
+// must scale with the configured transaction ceiling too; retaining the legacy
+// 16k-block aggregates here would silently cap otherwise valid EVM-only blocks.
+// A sender's nonce chain is necessarily serial. Bound it before ECDSA recovery
+// and EVM execution by both the configured dependency-depth limit and the
+// number of minimum-intrinsic-gas transactions that can fit the critical path.
+func FairHotstuffEVMWorkLimitsForConfig(config *ChainConfig) FHSBlockWorkLimits {
+	if config == nil || !config.NativeParallelEnabled() {
+		return FairHotstuffWorkLimits()
+	}
+	native := config.NativeParallel
+	serialTransactions := native.MaxCriticalPathCompute / TxGas
+	if native.MaxDependencyDepth < serialTransactions {
+		serialTransactions = native.MaxDependencyDepth
+	}
+	admissionBatches := native.MaxTransactionsPerBlock
+	authorizations := native.MaxTransactionsPerBlock
+	if authorizations > ^uint64(0)/MaxFHSSetCodeAuthorizationsPerTransaction {
+		authorizations = ^uint64(0)
+	} else {
+		authorizations *= MaxFHSSetCodeAuthorizationsPerTransaction
+	}
+	signatureOperations := native.MaxTransactionsPerBlock
+	for _, extra := range []uint64{authorizations, admissionBatches} {
+		if signatureOperations > ^uint64(0)-extra {
+			signatureOperations = ^uint64(0)
+			break
+		}
+		signatureOperations += extra
+	}
+	return FHSBlockWorkLimits{
+		Transactions:                   native.MaxTransactionsPerBlock,
+		TransactionsPerSender:          serialTransactions,
+		DeclaredGas:                    native.MaxComputePerBlock,
+		SignatureOperations:            signatureOperations,
+		SetCodeAuthorizationsPerTx:     MaxFHSSetCodeAuthorizationsPerTransaction,
+		SetCodeAuthorizations:          authorizations,
+		AccessListAddressesPerTx:       native.MaxAccessesPerTransaction,
+		AccessListAddresses:            native.MaxAccessesPerBlock,
+		AccessListStorageKeysPerTx:     native.MaxAccessesPerTransaction,
+		AccessListStorageKeys:          native.MaxAccessesPerBlock,
+		CommonTxAdmissionBatches:       admissionBatches,
+		CommonTxAdmissionBytesPerBatch: 64 * 1024,
+		CommonTxAdmissionPayloadBytes:  native.MaxBlockBytes,
+		CommonTxAdmissionRefs:          native.MaxTransactionsPerBlock,
+		CommonTxRewards:                native.MaxTransactionsPerBlock,
+		CommonTxRewardBytesPerEntry:    MaxFHSCommonTxRewardBytesPerReward,
+		CommonTxRewardPayloadBytes:     native.MaxBlockBytes / 4,
 	}
 }
 

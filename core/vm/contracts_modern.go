@@ -275,6 +275,16 @@ func (c *p256Verify) Run(input []byte) ([]byte, error) {
 	x := new(big.Int).SetBytes(input[96:128])
 	y := new(big.Int).SetBytes(input[128:160])
 	curve := elliptic.P256()
+	curveParams := curve.Params()
+	if r.Sign() <= 0 || s.Sign() <= 0 || r.Cmp(curveParams.N) >= 0 || s.Cmp(curveParams.N) >= 0 {
+		return nil, nil
+	}
+	if x.Sign() < 0 || y.Sign() < 0 || x.Cmp(curveParams.P) >= 0 || y.Cmp(curveParams.P) >= 0 {
+		return nil, nil
+	}
+	if x.Sign() == 0 && y.Sign() == 0 {
+		return nil, nil
+	}
 	if !curve.IsOnCurve(x, y) {
 		return nil, nil
 	}

@@ -55,6 +55,23 @@ func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
 	return p, ok
 }
 
+func (evm *EVM) runPrecompiledContract(p PrecompiledContract, input []byte, gas uint64) ([]byte, uint64, error) {
+	liveMemory := uint64(0)
+	if interpreter, ok := evm.interpreter.(*EVMInterpreter); ok {
+		liveMemory = interpreter.memoryUsed
+	}
+	return runPrecompiledContractWithUsage(
+		p, input, gas,
+		evm.vmConfig.MaxMemoryBytes,
+		evm.vmConfig.MaxReturnDataBytes,
+		liveMemory,
+		// A precompile invoked from an executing contract receives a slice of
+		// its caller's already-metered linear memory. A top-level precompile
+		// receives transaction calldata, which has not yet been metered.
+		evm.depth > 0,
+	)
+}
+
 func run(evm *EVM, contract *Contract, input []byte, readOnly bool) ([]byte, error) {
 	for _, interpreter := range evm.interpreters {
 		if interpreter.CanRun(contract.Code) {
@@ -81,6 +98,7 @@ type Context struct {
 	BlockNumber *big.Int
 	Time        *big.Int
 	Difficulty  *big.Int
+	Random      *common.Hash
 	BaseFee     *big.Int
 	BlobBaseFee *big.Int
 	BlobHashes  []common.Hash
@@ -156,7 +174,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		defer func() { evm.vmConfig.Tracer.CaptureEnd(ret, startGas-gas, time.Since(startTime), err) }()
 	}
 	if isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = evm.runPrecompiledContract(p, input, gas)
 	} else if code := evm.resolveCode(addr); len(code) > 0 {
 		addrCopy := addr
 		contract := NewContract(caller, AccountRef(addrCopy), value, gas)
@@ -187,7 +205,7 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 	var ret []byte
 	var err error
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = evm.runPrecompiledContract(p, input, gas)
 	} else {
 		addrCopy := addr
 		contract := NewContract(caller, AccountRef(caller.Address()), value, gas)
@@ -215,7 +233,7 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 	var ret []byte
 	var err error
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = evm.runPrecompiledContract(p, input, gas)
 	} else {
 		addrCopy := addr
 		contract := NewContract(caller, AccountRef(caller.Address()), nil, gas).AsDelegate()
@@ -244,7 +262,7 @@ func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte
 	var ret []byte
 	var err error
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		ret, gas, err = RunPrecompiledContract(p, input, gas)
+		ret, gas, err = evm.runPrecompiledContract(p, input, gas)
 	} else {
 		addrCopy := addr
 		contract := NewContract(caller, AccountRef(addrCopy), new(big.Int), gas)

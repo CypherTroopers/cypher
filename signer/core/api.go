@@ -31,7 +31,6 @@ import (
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/internal/ethapi"
 	"github.com/cypherium/cypher/log"
-	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/signer/storage"
 )
 
@@ -416,6 +415,18 @@ func logDiff(original *SignTxRequest, new *SignTxResponse) bool {
 		modified = true
 		log.Info("GasPrice changed by UI", "was", g0, "is", g1)
 	}
+	if f0, f1 := original.Transaction.MaxFeePerGas, new.Transaction.MaxFeePerGas; !reflect.DeepEqual(f0, f1) {
+		modified = true
+		log.Info("MaxFeePerGas changed by UI", "was", f0, "is", f1)
+	}
+	if f0, f1 := original.Transaction.MaxPriorityFeePerGas, new.Transaction.MaxPriorityFeePerGas; !reflect.DeepEqual(f0, f1) {
+		modified = true
+		log.Info("MaxPriorityFeePerGas changed by UI", "was", f0, "is", f1)
+	}
+	if f0, f1 := original.Transaction.MaxFeePerBlobGas, new.Transaction.MaxFeePerBlobGas; !reflect.DeepEqual(f0, f1) {
+		modified = true
+		log.Info("MaxFeePerBlobGas changed by UI", "was", f0, "is", f1)
+	}
 	if v0, v1 := big.Int(original.Transaction.Value), big.Int(new.Transaction.Value); v0.Cmp(&v1) != 0 {
 		modified = true
 		log.Info("Value changed by UI", "was", v0, "is", v1)
@@ -434,9 +445,44 @@ func logDiff(original *SignTxRequest, new *SignTxResponse) bool {
 			log.Info("Data changed by UI", "was", d0s, "is", d1s)
 		}
 	}
+	if d0, d1 := original.Transaction.Input, new.Transaction.Input; !reflect.DeepEqual(d0, d1) {
+		modified = true
+		log.Info("Input changed by UI")
+	}
 	if n0, n1 := original.Transaction.Nonce, new.Transaction.Nonce; n0 != n1 {
 		modified = true
 		log.Info("Nonce changed by UI", "was", n0, "is", n1)
+	}
+	if t0, t1 := original.Transaction.Type, new.Transaction.Type; !reflect.DeepEqual(t0, t1) {
+		modified = true
+		log.Info("Transaction type changed by UI", "was", t0, "is", t1)
+	}
+	if c0, c1 := original.Transaction.ChainID, new.Transaction.ChainID; !reflect.DeepEqual(c0, c1) {
+		modified = true
+		log.Info("Chain ID changed by UI", "was", c0, "is", c1)
+	}
+	if a0, a1 := original.Transaction.AccessList, new.Transaction.AccessList; !reflect.DeepEqual(a0, a1) {
+		modified = true
+		log.Info("Access list changed by UI")
+	}
+	if h0, h1 := original.Transaction.BlobVersionedHashes, new.Transaction.BlobVersionedHashes; !reflect.DeepEqual(h0, h1) {
+		modified = true
+		log.Info("Blob versioned hashes changed by UI", "was", len(h0), "is", len(h1))
+	}
+	if v0, v1 := original.Transaction.BlobVersion, new.Transaction.BlobVersion; v0 != v1 {
+		modified = true
+		log.Info("Blob wrapper version changed by UI", "was", v0, "is", v1)
+	}
+	if !reflect.DeepEqual(original.Transaction.Blobs, new.Transaction.Blobs) ||
+		!reflect.DeepEqual(original.Transaction.Commitments, new.Transaction.Commitments) ||
+		!reflect.DeepEqual(original.Transaction.Proofs, new.Transaction.Proofs) {
+		modified = true
+		log.Info("Blob sidecar changed by UI",
+			"wasBlobs", len(original.Transaction.Blobs), "isBlobs", len(new.Transaction.Blobs))
+	}
+	if a0, a1 := original.Transaction.AuthorizationList, new.Transaction.AuthorizationList; !reflect.DeepEqual(a0, a1) {
+		modified = true
+		log.Info("Authorization list changed by UI", "was", len(a0), "is", len(a1))
 	}
 	return modified
 }
@@ -501,8 +547,16 @@ func (api *SignerAPI) SignTransaction(ctx context.Context, args SendTxArgs, meth
 	if err != nil {
 		return nil, err
 	}
-	// Convert fields into a real transaction
-	var unsignedTx = result.Transaction.toTransaction()
+	// Convert and validate the exact transaction returned by the UI. In
+	// particular, this rejects custom transaction types and verifies an Osaka
+	// BlobTx's KZG cell-proof sidecar before a password is requested or any
+	// signature is produced. Resolve the wallet first so an unknown sender
+	// cannot consume the bounded KZG builder capacity.
+	unsignedTx, err := result.Transaction.toTransaction(ctx, api.chainID)
+	if err != nil {
+		api.UI.ShowError(err.Error())
+		return nil, err
+	}
 	// Get the password for the transaction
 	pw, err := api.lookupOrQueryPassword(acc.Address, "Account password",
 		fmt.Sprintf("Please enter the password for account %s", acc.Address.String()))
@@ -516,11 +570,13 @@ func (api *SignerAPI) SignTransaction(ctx context.Context, args SendTxArgs, meth
 		return nil, err
 	}
 
-	rlpdata, err := rlp.EncodeToBytes(signedTx)
+	// MarshalPooledBinary is identical to MarshalBinary for transaction types
+	// 0, 1, 2 and 4, and preserves the mandatory propagation sidecar for type 3.
+	rawdata, err := signedTx.MarshalPooledBinary()
 	if err != nil {
 		return nil, err
 	}
-	response := ethapi.SignTransactionResult{Raw: rlpdata, Tx: signedTx}
+	response := ethapi.SignTransactionResult{Raw: rawdata, Tx: signedTx}
 
 	// Finally, send the signed tx to the UI
 	api.UI.OnApprovedTx(response)

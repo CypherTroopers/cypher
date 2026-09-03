@@ -175,7 +175,7 @@ func (r *Receipt) consensusEncoding() *receiptRLP {
 
 func validTypedReceiptType(typ uint8) bool {
 	switch typ {
-	case AccessListTxType, DynamicFeeTxType, BlobTxType, SetCodeTxType:
+	case AccessListTxType, DynamicFeeTxType, BlobTxType, SetCodeTxType, NativeTxType:
 		return true
 	default:
 		return false

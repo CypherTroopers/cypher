@@ -37,6 +37,7 @@ var errJournalQueueFull = errors.New("transaction journal queue is full")
 
 const (
 	txJournalBatchSize             = 512
+	txJournalBatchBytes            = 16 * 1024 * 1024
 	txJournalFlushInterval         = 2 * time.Millisecond
 	txJournalMaxQueuedTransactions = 1_048_576
 )
@@ -328,16 +329,28 @@ func (journal *txJournal) load(add func([]*types.Transaction) []error) error {
 		}
 	}
 	var (
-		failure error
-		batch   types.Transactions
+		failure    error
+		batch      types.Transactions
+		batchBytes int
 	)
 	for {
-		// Parse the next transaction and terminate on error
-		tx := new(types.Transaction)
-		if err = stream.Decode(tx); err != nil {
-			if err != io.EOF {
-				failure = err
+		// Journal records contain the pooled EIP-2718 envelope as an RLP byte
+		// string. This is significant for type-3 transactions: their execution
+		// encoding deliberately omits the blobs, commitments, and proofs needed
+		// to re-admit the transaction after restart.
+		payload, decodeErr := stream.Bytes()
+		if decodeErr != nil {
+			if decodeErr != io.EOF {
+				failure = decodeErr
 			}
+			if batch.Len() > 0 {
+				loadBatch(batch)
+			}
+			break
+		}
+		tx := new(types.Transaction)
+		if decodeErr = tx.UnmarshalBinary(payload); decodeErr != nil {
+			failure = decodeErr
 			if batch.Len() > 0 {
 				loadBatch(batch)
 			}
@@ -346,9 +359,12 @@ func (journal *txJournal) load(add func([]*types.Transaction) []error) error {
 		// New transaction parsed, queue up for later, import if threshold is reached
 		total++
 
-		if batch = append(batch, tx); batch.Len() > 1024 {
+		batch = append(batch, tx)
+		batchBytes += len(payload)
+		if batch.Len() >= txJournalBatchSize || batchBytes >= txJournalBatchBytes {
 			loadBatch(batch)
 			batch = batch[:0]
+			batchBytes = 0
 		}
 	}
 	log.Info("Loaded local transaction journal", "transactions", total, "dropped", dropped)
@@ -361,33 +377,66 @@ func (journal *txJournal) insert(tx *types.Transaction) error {
 	return journal.insertBatch(types.Transactions{tx})
 }
 
-// insertBatch encodes a transaction batch in memory and writes it to the live
-// append-only journal with a single Write call.
+// insertBatch writes pooled transaction envelopes to the live append-only
+// journal. Writes are byte-bounded so a full batch of large type-3 sidecars
+// cannot require hundreds of MiB of transient contiguous memory.
 func (journal *txJournal) insertBatch(txs types.Transactions) error {
 	if journal.writer == nil {
 		return errNoActiveJournal
 	}
+	return writeJournalTransactions(journal.writer, txs)
+}
+
+func writeJournalTransactions(writer io.Writer, txs types.Transactions) error {
 	var encoded bytes.Buffer
+	writeEncoded := func() error {
+		payload := encoded.Bytes()
+		for len(payload) > 0 {
+			n, err := writer.Write(payload)
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return io.ErrShortWrite
+			}
+			payload = payload[n:]
+		}
+		encoded.Reset()
+		return nil
+	}
 	for _, tx := range txs {
 		if tx == nil {
 			continue
 		}
-		if err := rlp.Encode(&encoded, tx); err != nil {
-			return err
-		}
-	}
-	payload := encoded.Bytes()
-	for len(payload) > 0 {
-		n, err := journal.writer.Write(payload)
+		pooled, err := tx.MarshalPooledBinary()
 		if err != nil {
 			return err
 		}
-		if n == 0 {
-			return io.ErrShortWrite
+		record, err := rlp.EncodeToBytes(pooled)
+		if err != nil {
+			return err
 		}
-		payload = payload[n:]
+		if encoded.Len() > 0 && encoded.Len()+len(record) > txJournalBatchBytes {
+			if err := writeEncoded(); err != nil {
+				return err
+			}
+		}
+		if len(record) > txJournalBatchBytes {
+			for len(record) > 0 {
+				n, err := writer.Write(record)
+				if err != nil {
+					return err
+				}
+				if n == 0 {
+					return io.ErrShortWrite
+				}
+				record = record[n:]
+			}
+			continue
+		}
+		_, _ = encoded.Write(record)
 	}
-	return nil
+	return writeEncoded()
 }
 
 // rotate regenerates the transaction journal based on the current contents of
@@ -407,11 +456,9 @@ func (journal *txJournal) rotate(all map[common.Address]types.Transactions) erro
 	}
 	journaled := 0
 	for _, txs := range all {
-		for _, tx := range txs {
-			if err = rlp.Encode(replacement, tx); err != nil {
-				replacement.Close()
-				return err
-			}
+		if err = writeJournalTransactions(replacement, txs); err != nil {
+			replacement.Close()
+			return err
 		}
 		journaled += len(txs)
 	}

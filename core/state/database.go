@@ -80,6 +80,10 @@ type Trie interface {
 	// found in the database, a trie.MissingNodeError is returned.
 	TryDelete(key []byte) error
 
+	// TryUpdateBatch atomically applies independent trie mutations with bounded
+	// parallelism while preserving the serial Merkle Patricia root.
+	TryUpdateBatch(mutations []trie.BatchMutation, workers int) error
+
 	// Hash returns the root hash of the trie. It does not write to the database and
 	// can be used even if the trie doesn't have one.
 	Hash() common.Hash

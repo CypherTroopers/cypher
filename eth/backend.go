@@ -71,11 +71,14 @@ type Ethereum struct {
 	candidatePool   *core.CandidatePool
 	dialCandidates  enode.Iterator
 	txQUICIngress   *TxQUICIngress
+	txIngressLife   *transactionIngressLifecycle
+	rawTxAPI        *ethapi.PublicTransactionPoolAPI
 
 	// DB interfaces
-	chainDb     ethdb.Database // Block chain database
-	txOutboxDb  ethdb.Database // Dedicated durable TxQUIC outbox database (bridge nodes only)
-	txIngressDb ethdb.Database // Dedicated durable TxQUIC ingress database (committee nodes only)
+	chainDb        ethdb.Database // Block chain database
+	txOutboxDb     ethdb.Database // Rebuildable TxQUIC outbox projection (bridge nodes only)
+	txIngressDb    ethdb.Database // Rebuildable TxQUIC receiver projection (committee nodes only)
+	txIngressWALDb ethdb.Database // Role-independent transaction ingress authority
 
 	eventMux       *event.TypeMux
 	engine         consensus.Engine
@@ -105,7 +108,7 @@ type Ethereum struct {
 }
 
 // powResultTransportLifecycle is registered after reconfig so shutdown closes
-// PoW ingress before reconfig tears down committee state and chain databases.
+// PoW ingress before reconfig tears down committee activity.
 // The listener itself is started only by miner.start after validator identity
 // and membership have been established.
 type powResultTransportLifecycle struct {
@@ -117,6 +120,47 @@ func (l *powResultTransportLifecycle) Start() error { return nil }
 func (l *powResultTransportLifecycle) Stop() error {
 	if l != nil && l.pool != nil {
 		l.pool.StopPoWResultTransport()
+	}
+	return nil
+}
+
+// transactionIngressLifecycle is registered after reconfig. Node lifecycles
+// stop in reverse registration order, so this drains RPC/QUIC producers and
+// their WAL before reconfig tears down consensus activity. Ethereum.Stop calls
+// the same idempotent wrapper later, before closing the ingress databases.
+type transactionIngressLifecycle struct {
+	once    sync.Once
+	stopAPI func()
+	stop    func()
+}
+
+func newTransactionIngressLifecycle(api *ethapi.PublicTransactionPoolAPI, ingress *TxQUICIngress) *transactionIngressLifecycle {
+	return &transactionIngressLifecycle{
+		stopAPI: func() {
+			if api != nil {
+				api.Stop()
+			}
+		},
+		stop: func() {
+			if ingress != nil {
+				ingress.Stop()
+			}
+		},
+	}
+}
+
+func (l *transactionIngressLifecycle) Start() error { return nil }
+
+func (l *transactionIngressLifecycle) Stop() error {
+	if l != nil {
+		l.once.Do(func() {
+			if l.stopAPI != nil {
+				l.stopAPI()
+			}
+			if l.stop != nil {
+				l.stop()
+			}
+		})
 	}
 	return nil
 }
@@ -303,16 +347,17 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	eth.bloomIndexer.Start(eth.blockchain)
 
 	if config.TxQUIC.BridgeEnabled {
-		// Keep common RPC transactions local as an additional recovery path. The
-		// bridge's synchronously-written outbox is the RPC durability boundary;
-		// the tx journal remains an asynchronous secondary copy.
+		// The unified ingress WAL is the sole recovery owner for admission-enabled
+		// local transactions. Keep local priority semantics, but disable the legacy
+		// transactions.rlp writer so a high-rate RPC batch is not serialized and
+		// duplicated through a second journal after its WAL fsync.
 		if config.TxPool.NoLocals {
 			log.Warn("Disabling txpool.nolocals for durable common RPC ingress")
 			config.TxPool.NoLocals = false
 		}
-		if config.TxPool.Journal == "" {
-			log.Warn("Restoring transaction journal for durable common RPC ingress", "journal", core.DefaultTxPoolConfig.Journal)
-			config.TxPool.Journal = core.DefaultTxPoolConfig.Journal
+		if config.TxPool.Journal != "" {
+			log.Info("Disabling legacy transaction journal in favor of unified ingress WAL", "journal", config.TxPool.Journal)
+			config.TxPool.Journal = ""
 		}
 		outboxCache, outboxHandles := config.DatabaseCache/16, config.DatabaseHandles/16
 		if outboxCache < 16 {
@@ -351,11 +396,33 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 			return nil, fmt.Errorf("open TxQUIC ingress database: %w", err)
 		}
 	}
+	if config.TxQUIC.BridgeEnabled || config.TxQUIC.Enabled {
+		walCache, walHandles := config.DatabaseCache/16, config.DatabaseHandles/16
+		if walCache < 16 {
+			walCache = 16
+		}
+		if walCache > 128 {
+			walCache = 128
+		}
+		if walHandles < 16 {
+			walHandles = 16
+		}
+		if walHandles > 128 {
+			walHandles = 128
+		}
+		eth.txIngressWALDb, err = stack.OpenDatabase("txingresswal", walCache, walHandles, "eth/db/txingresswal/")
+		if err != nil {
+			return nil, fmt.Errorf("open transaction ingress WAL database: %w", err)
+		}
+	}
 	if config.TxPool.Journal != "" {
 		config.TxPool.Journal = stack.ResolvePath(config.TxPool.Journal)
 	}
 	eth.txPool = core.NewTxPool(config.TxPool, chainConfig, eth.blockchain)
 	eth.txQUICIngress = NewTxQUICIngress(config.TxQUIC, eth.txPool)
+	if eth.txIngressWALDb != nil {
+		eth.txQUICIngress.SetIngressWALDatabase(eth.txIngressWALDb)
+	}
 	eth.txQUICIngress.SetCanonicalTxLookup(func(hash common.Hash) bool {
 		return eth.blockchain.GetTransactionLookup(hash) != nil
 	})
@@ -416,6 +483,7 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	eth.netRPCService = ethapi.NewPublicNetAPI(eth.p2pServer, eth.NetVersion())
 
 	stack.RegisterAPIs(eth.APIs())
+	eth.txIngressLife = newTransactionIngressLifecycle(eth.rawTxAPI, eth.txQUICIngress)
 	stack.RegisterProtocols(eth.Protocols())
 	stack.RegisterLifecycle(eth)
 
@@ -423,6 +491,9 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
+	// This lifecycle must be registered after reconfig: node shutdown is LIFO,
+	// making transaction ingress the first stateful service to stop and drain.
+	stack.RegisterLifecycle(eth.txIngressLife)
 	if chainConfig != nil && (chainConfig.FixedLeader || chainConfig.FixedCommittee) {
 		if err := eth.candidatePool.ConfigurePoWResultTLS(eth.reconfig.PoWResultTLSPublicKey, func() (common.Hash, error) {
 			keyBlock := eth.keyBlockChain.CurrentBlock()
@@ -525,7 +596,8 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 
 // APIs return the collection of RPC services the ethereum package offers.
 func (s *Ethereum) APIs() []rpc.API {
-	apis := ethapi.GetAPIs(s.APIBackend)
+	apis, rawTxAPI := ethapi.GetAPIsWithTransactionPool(s.APIBackend)
+	s.rawTxAPI = rawTxAPI
 	apis = append(apis, s.engine.APIs(s.BlockChain())...)
 	apis = append(apis, []rpc.API{
 		{Namespace: "eth", Version: "1.0", Service: NewPublicEthereumAPI(s), Public: true},
@@ -686,8 +758,15 @@ func (s *Ethereum) Stop() error {
 	// dedicated lifecycle also invokes this first during normal node shutdown;
 	// the operation is intentionally idempotent for partial-start cleanup.
 	s.stopPoWResultTransport()
-	if s.txQUICIngress != nil {
-		s.txQUICIngress.Stop()
+	if s.txIngressLife != nil {
+		_ = s.txIngressLife.Stop()
+	} else {
+		if s.rawTxAPI != nil {
+			s.rawTxAPI.Stop()
+		}
+		if s.txQUICIngress != nil {
+			s.txQUICIngress.Stop()
+		}
 	}
 	if s.txOutboxDb != nil {
 		if err := s.txOutboxDb.Close(); err != nil {
@@ -697,6 +776,11 @@ func (s *Ethereum) Stop() error {
 	if s.txIngressDb != nil {
 		if err := s.txIngressDb.Close(); err != nil {
 			log.Warn("Failed to close TxQUIC ingress database", "err", err)
+		}
+	}
+	if s.txIngressWALDb != nil {
+		if err := s.txIngressWALDb.Close(); err != nil {
+			log.Warn("Failed to close transaction ingress WAL database", "err", err)
 		}
 	}
 	s.protocolManager.Stop()
@@ -715,7 +799,8 @@ func (s *Ethereum) Stop() error {
 }
 
 func (s *Ethereum) CalcGasLimit(block *types.Block) uint64 {
-	return core.CalcGasLimit(block, s.config.Miner.GasFloor, s.config.Miner.GasCeil)
+	floor, ceil := nativeMinerGasBounds(s.blockchain.Config(), s.config.Miner.GasFloor, s.config.Miner.GasCeil)
+	return core.CalcGasLimit(block, floor, ceil)
 }
 func (s *Ethereum) ConsensusServicePendingLogsFeed() *event.Feed {
 	return s.consensusServicePendingLogsFeed

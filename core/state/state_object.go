@@ -21,12 +21,14 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"sort"
 	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/metrics"
 	"github.com/cypherium/cypher/rlp"
+	"github.com/cypherium/cypher/trie"
 )
 
 var emptyCodeHash = crypto.Keccak256(nil)
@@ -238,16 +240,19 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 }
 
 // SetState updates a value in account storage.
-func (s *stateObject) SetState(db Database, key, value common.Hash) {
+func (s *stateObject) SetState(db Database, key, value common.Hash) bool {
 	// If the fake storage is set, put the temporary state update here.
 	if s.fakeStorage != nil {
+		if s.fakeStorage[key] == value {
+			return false
+		}
 		s.fakeStorage[key] = value
-		return
+		return true
 	}
 	// If the new value is the same as old, don't set
 	prev := s.GetState(db, key)
 	if prev == value {
-		return
+		return false
 	}
 	// New value is different, update and journal the change
 	s.db.journal.append(storageChange{
@@ -256,6 +261,7 @@ func (s *stateObject) SetState(db Database, key, value common.Hash) {
 		prevalue: prev,
 	})
 	s.setState(key, value)
+	return true
 }
 
 // SetStorage replaces the entire state storage with the given one.
@@ -294,6 +300,14 @@ func (s *stateObject) finalise() {
 // updateTrie writes cached storage modifications into the object's storage trie.
 // It will return nil if the trie has not been loaded and no changes have been made
 func (s *stateObject) updateTrie(db Database) Trie {
+	return s.updateTrieWithWorkers(db, 1)
+}
+
+// updateTrieWithWorkers applies a hot account's independent storage slots as a
+// deterministic secure-trie batch. This is the storage-level counterpart of
+// StateDB's account batch: a single heavily used program account no longer
+// collapses state-root computation back to one serial mutation loop.
+func (s *stateObject) updateTrieWithWorkers(db Database, workers int) Trie {
 	// Make sure all dirty slots are finalized into the pending storage area
 	s.finalise()
 	if len(s.pendingStorage) == 0 {
@@ -301,21 +315,35 @@ func (s *stateObject) updateTrie(db Database) Trie {
 	}
 	// Track the amount of time wasted on updating the storge trie
 	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.db.StorageUpdates += time.Since(start) }(time.Now())
+		defer func(start time.Time) {
+			s.db.parallelRootMu.Lock()
+			s.db.StorageUpdates += time.Since(start)
+			s.db.parallelRootMu.Unlock()
+		}(time.Now())
 	}
 	// Retrieve the snapshot storage map for the object
 	var storage map[common.Hash][]byte
 	if s.db.snap != nil {
+		s.db.parallelRootMu.Lock()
 		// Retrieve the old storage map, if available, create a new one otherwise
 		storage = s.db.snapStorage[s.addrHash]
 		if storage == nil {
 			storage = make(map[common.Hash][]byte)
 			s.db.snapStorage[s.addrHash] = storage
 		}
+		s.db.parallelRootMu.Unlock()
 	}
-	// Insert all the pending updates into the trie
+	// Prepare mutations in key order. SecureTrie hashes the original storage
+	// keys and partitions independent MPT subtrees using its bounded workers.
 	tr := s.getTrie(db)
-	for key, value := range s.pendingStorage {
+	keys := make([]common.Hash, 0, len(s.pendingStorage))
+	for key := range s.pendingStorage {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool { return bytes.Compare(keys[i][:], keys[j][:]) < 0 })
+	mutations := make([]trie.BatchMutation, 0, len(keys))
+	for _, key := range keys {
+		value := s.pendingStorage[key]
 		// Skip noop changes, persist actual changes
 		if value == s.originStorage[key] {
 			continue
@@ -323,33 +351,63 @@ func (s *stateObject) updateTrie(db Database) Trie {
 		s.originStorage[key] = value
 
 		var v []byte
+		keyBytes := make([]byte, len(key))
+		copy(keyBytes, key[:])
 		if (value == common.Hash{}) {
-			s.setError(tr.TryDelete(key[:]))
+			mutations = append(mutations, trie.BatchMutation{Key: keyBytes, Delete: true})
 		} else {
 			// Encoding []byte cannot fail, ok to ignore the error.
 			v, _ = rlp.EncodeToBytes(common.TrimLeftZeroes(value[:]))
-			s.setError(tr.TryUpdate(key[:], v))
+			mutations = append(mutations, trie.BatchMutation{Key: keyBytes, Value: v})
 		}
 		// If state snapshotting is active, cache the data til commit
 		if storage != nil {
 			storage[crypto.Keccak256Hash(key[:])] = v // v will be nil if value is 0x00
 		}
 	}
+	if len(mutations) == 1 || workers <= 1 {
+		for _, mutation := range mutations {
+			if mutation.Delete {
+				s.setError(tr.TryDelete(mutation.Key))
+			} else {
+				s.setError(tr.TryUpdate(mutation.Key, mutation.Value))
+			}
+		}
+	} else if err := tr.TryUpdateBatch(mutations, workers); err != nil {
+		s.setError(err)
+	}
 	if len(s.pendingStorage) > 0 {
 		s.pendingStorage = make(Storage)
+	}
+	// Every pending value has now either been proven equal to the trie value or
+	// published into this private trie. The original-value cache is only needed
+	// until that comparison completes; retaining it for the rest of a large block
+	// makes read-only and hot-slot workloads grow without bound. Future
+	// transactions lazily reload the slots they actually observe from the updated
+	// trie, preserving EIP-2200 original-value semantics at transaction boundaries.
+	if s.dbErr == nil && len(s.originStorage) > 0 {
+		s.originStorage = make(Storage)
 	}
 	return tr
 }
 
 // UpdateRoot sets the trie root to the current root hash of
 func (s *stateObject) updateRoot(db Database) {
+	s.updateRootWithWorkers(db, 1)
+}
+
+func (s *stateObject) updateRootWithWorkers(db Database, workers int) {
 	// If nothing changed, don't bother with hashing anything
-	if s.updateTrie(db) == nil {
+	if s.updateTrieWithWorkers(db, workers) == nil {
 		return
 	}
 	// Track the amount of time wasted on hashing the storge trie
 	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.db.StorageHashes += time.Since(start) }(time.Now())
+		defer func(start time.Time) {
+			s.db.parallelRootMu.Lock()
+			s.db.StorageHashes += time.Since(start)
+			s.db.parallelRootMu.Unlock()
+		}(time.Now())
 	}
 	s.data.Root = s.trie.Hash()
 }
@@ -366,7 +424,11 @@ func (s *stateObject) CommitTrie(db Database) error {
 	}
 	// Track the amount of time wasted on committing the storge trie
 	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.db.StorageCommits += time.Since(start) }(time.Now())
+		defer func(start time.Time) {
+			s.db.parallelRootMu.Lock()
+			s.db.StorageCommits += time.Since(start)
+			s.db.parallelRootMu.Unlock()
+		}(time.Now())
 	}
 	root, err := s.trie.Commit(nil)
 	if err == nil {
@@ -414,14 +476,70 @@ func (s *stateObject) setBalance(amount *big.Int) {
 func (s *stateObject) ReturnGas(gas *big.Int) {}
 
 func (s *stateObject) deepCopy(db *StateDB) *stateObject {
-	stateObject := newObject(db, s.address, s.data)
+	data := s.data
+	if s.data.Balance != nil {
+		data.Balance = new(big.Int).Set(s.data.Balance)
+	}
+	data.CodeHash = common.CopyBytes(s.data.CodeHash)
+	stateObject := newObject(db, s.address, data)
+	if s.trie != nil {
+		stateObject.trie = db.db.CopyTrie(s.trie)
+	}
+	stateObject.code = common.CopyBytes(s.code)
+	stateObject.dirtyStorage = s.dirtyStorage.Copy()
+	stateObject.originStorage = s.originStorage.Copy()
+	stateObject.pendingStorage = s.pendingStorage.Copy()
+	stateObject.suicided = s.suicided
+	stateObject.dirtyCode = s.dirtyCode
+	stateObject.deleted = s.deleted
+	return stateObject
+}
+
+// deepCopyRuntimeMVCC detaches an object from a frozen runtime snapshot without
+// copying the snapshot's cumulative storage caches. PrepareRuntimeMVCCSnapshot
+// has already published pending storage into s.trie and s.data.Root, so a
+// branch can load each exact slot it observes from its private trie copy. Code
+// bytes are immutable while the canonical snapshot is borrowed and SetCode
+// replaces (rather than mutates) the slice, so workers may safely share an
+// already-loaded code image. This keeps branch creation proportional to the
+// transaction's actual working set instead of all slots touched earlier in the
+// block.
+func (s *stateObject) deepCopyRuntimeMVCC(db *StateDB) *stateObject {
+	data := s.data
+	if s.data.Balance != nil {
+		data.Balance = new(big.Int).Set(s.data.Balance)
+	}
+	data.CodeHash = common.CopyBytes(s.data.CodeHash)
+	stateObject := newObject(db, s.address, data)
 	if s.trie != nil {
 		stateObject.trie = db.db.CopyTrie(s.trie)
 	}
 	stateObject.code = s.code
-	stateObject.dirtyStorage = s.dirtyStorage.Copy()
-	stateObject.originStorage = s.originStorage.Copy()
-	stateObject.pendingStorage = s.pendingStorage.Copy()
+	stateObject.dbErr = s.dbErr
+	stateObject.suicided = s.suicided
+	stateObject.dirtyCode = s.dirtyCode
+	stateObject.deleted = s.deleted
+	return stateObject
+}
+
+// deepCopyDeclared copies account metadata and the immutable trie handle but
+// intentionally starts with empty storage maps. CopyDeclared seeds only the
+// exact signed slots from the base's latest in-block view, avoiding repeated
+// copies of an ever-growing pendingStorage map for slot-parallel workloads.
+func (s *stateObject) deepCopyDeclared(db *StateDB, slots map[common.Hash]common.Hash) *stateObject {
+	data := s.data
+	if s.data.Balance != nil {
+		data.Balance = new(big.Int).Set(s.data.Balance)
+	}
+	data.CodeHash = common.CopyBytes(s.data.CodeHash)
+	stateObject := newObject(db, s.address, data)
+	if s.trie != nil {
+		stateObject.trie = db.db.CopyTrie(s.trie)
+	}
+	stateObject.code = common.CopyBytes(s.code)
+	for slot, value := range slots {
+		stateObject.originStorage[slot] = value
+	}
 	stateObject.suicided = s.suicided
 	stateObject.dirtyCode = s.dirtyCode
 	stateObject.deleted = s.deleted
