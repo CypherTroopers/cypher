@@ -220,7 +220,7 @@ func (txS *txService) buildProposalNewKeyBlock(keyblock *types.KeyBlock) (*keyPr
 
 	header := work.header
 	// commit state root after all state transitions.
-	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil, nil)
 	colossusX.ApplyKeyblockPowReward(work.publicState, keyblock)
 	header.Root = work.publicState.IntermediateRoot(false)
 
@@ -667,7 +667,7 @@ func (txS *txService) buildNativeProposalNewBlock(blockType uint8) (*txProposalC
 		return nil, fmt.Errorf("locally constructed native Fair HotStuff sidecar work is invalid: %w", err)
 	}
 	applyCommonTxRewards(work.publicState, commonRewards)
-	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, work.header, nil)
+	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, work.header, selected, nil)
 	work.header.Root = work.publicState.IntermediateRoot(false)
 
 	block := types.NewBlock(work.header, selected, nil, publicReceipts, new(trie.Trie))
@@ -825,7 +825,7 @@ func (txS *txService) buildProposalNewBlock(blockType uint8) (*txProposalCandida
 		applyCommonTxRewards(work.publicState, commonRewards)
 
 		// commit state root after all state transitions and Common RPC reward settlement.
-		colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, nil)
+		colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, header, committedTxes, nil)
 		header.Root = work.publicState.IntermediateRoot(false)
 
 		block := types.NewBlock(header, committedTxes, nil, publicReceipts, new(trie.Trie))

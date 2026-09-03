@@ -59,11 +59,11 @@ The DAG is a massive pseudorandom dataset derived from the blockchain state. In 
 
 | PARAMETER | VALUE | RATIONALE |
 |---|---|---|
-| DAG size (epoch 0) | 32 GiB | Fits high-memory devices while excluding many consumer profiles |
+| Nominal DAG size (epoch 0) | 32 GiB | Fits high-memory devices while excluding many consumer profiles |
 | Cell size | 256 bytes | Aligned to GPU cache lines; 4 × 64B sectors |
-| Total cells | 134,217,728 | 32 GiB ÷ 256 B |
-| Epoch length | 7,200 blocks | ~24 h at 12 s block time |
-| Growth rate | 48 MiB / epoch | Gradual growth used by daemon defaults |
+| Nominal total cells | 134,217,728 | 32 GiB ÷ 256 B before prime-cell rounding |
+| Epoch length | 52,560 key blocks | ~1 year at the 10-minute key-block cadence |
+| Growth rate | 8 GiB / epoch | Annual growth at the fixed key-block cadence |
 | Seed derivation | SHA3-256(epoch_number ‖ genesis_hash) | Deterministic, chain-anchored |
 
 ## ⚙ Generation Algorithm
@@ -321,20 +321,22 @@ How the DAG evolves over time, and the protocol for smooth transitions.
 
 ## 📅 Epoch Schedule
 
-Every 7,200 blocks (~24 hours at 12 s/block), the DAG seed changes and a new DAG must be generated. Miners should pre-generate the next epoch's DAG during the final ~1,000 blocks of the current epoch.
+Every 52,560 key blocks (~1 year at the 10-minute key-block cadence), the DAG seed changes and a new DAG must be generated. Miners should pre-generate the next epoch's DAG during the final ~1,000 key blocks of the current epoch.
 
 ### Growth Schedule
 
 ```text
-dag_size(epoch) = 32 GiB + (epoch × 48 MiB)
+nominal_dag_size(epoch) = 32 GiB + (epoch × 8 GiB)
 
-// Epoch 0:    32.0 GiB
-// Epoch 30:   33.4 GiB   (~1 month)
-// Epoch 365:  49.1 GiB   (~1 year)
-// Epoch 730:  66.2 GiB   (~2 years)
+// Epoch 0:   32 GiB
+// Epoch 1:   40 GiB   (~1 year)
+// Epoch 2:   48 GiB   (~2 years)
+// Epoch 5:   72 GiB   (~5 years)
 ```
 
-Governance lever: The growth rate (48 MiB/epoch) is a consensus parameter. It can be adjusted via hard fork if hardware capacities plateau.
+The implementation rounds each nominal size down until the number of 256-byte cells is prime, so the actual size and per-epoch increase differ from the nominal values by a few KiB.
+
+Governance lever: The growth rate (8 GiB/epoch) is a consensus parameter. It can be adjusted via hard fork if hardware capacities plateau.
 
 ## ⚡ Transition Protocol
 
@@ -461,8 +463,8 @@ Algorithm v3 introduces a matrix-oriented round function and an append-only scra
 
 - **Append-only resident scratchpad**
   - Base size: 32 GiB.
-  - Growth: 48 MiB / epoch.
-  - Growth activates progressively in a window near epoch end (`ScratchpadGrowthWindowBlocks`).
+  - Growth: 8 GiB / epoch.
+  - Growth activates at each 52,560-key-block epoch boundary; prime-cell rounding can shift the actual increment by a few KiB.
   - New tiles are derived from cycle seed + prior committed prefix root, producing an append-only DAG image.
   - Merkle sidecar/proofs (`MerkleSidecar`) provide verifiable membership for mining and audit cells.
 
@@ -472,15 +474,15 @@ This model keeps the workload bandwidth-bound while adding structured compute pr
 
 | PARAMETER | SYMBOL | VALUE |
 |---|---|---|
-| DAG size (epoch 0) | D₀ | 32 GiB (34,359,738,368 bytes) |
+| Nominal DAG size (epoch 0) | D₀ | 32 GiB (34,359,738,368 bytes) before prime-cell rounding |
 | DAG cell size | C | 256 bytes |
 | Seed cache size | S | 512 MB |
 | Cache entry size | — | 64 bytes (SHA3-512 output) |
 | Cache lookups per cell | — | 256 |
 | DAG reads per nonce | R | 64 |
 | Audit cells per solution | K | 16 |
-| Epoch length | E | 7,200 blocks |
-| DAG growth per epoch | ΔD | 48 MiB |
+| Epoch length | E | 52,560 key blocks |
+| DAG growth per epoch | ΔD | 8 GiB |
 | Merkle tree hash | — | Blake3 |
 | Mixing hash | — | SHA3-512 |
 | Final hash | — | Blake3 |

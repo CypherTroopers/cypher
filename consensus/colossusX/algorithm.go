@@ -23,17 +23,17 @@ import (
 
 const (
 	datasetInitBytes   = 32 << 30 // Bytes in dataset at genesis
-	datasetGrowthBytes = 48 << 20 // Dataset growth per epoch
+	datasetGrowthBytes = 8 << 30  // Dataset growth per epoch
 	cacheInitBytes     = 512 << 20
 	cacheGrowthBytes   = 8 << 20 // Cache growth per epoch
-	epochLength        = 7200
-	mixBytes           = 256 // Width of a DAG cell
-	hashBytes          = 64  // Hash length in bytes
-	hashWords          = 16  // Number of 32 bit ints in a hash
-	datasetParents     = 256 // Number of parents of each dataset element
-	cacheRounds        = 3   // Number of rounds in cache production
-	loopAccesses       = 128 // Number of accesses in colossusX loop
-	auditCellCount     = 16  // Number of sampled cells committed into the per-hash Merkle root
+	epochLength        = 52_560  // Key blocks per epoch (~1 year at 10-minute cadence)
+	mixBytes           = 256     // Width of a DAG cell
+	hashBytes          = 64      // Hash length in bytes
+	hashWords          = 16      // Number of 32 bit ints in a hash
+	datasetParents     = 256     // Number of parents of each dataset element
+	cacheRounds        = 3       // Number of rounds in cache production
+	loopAccesses       = 128     // Number of accesses in colossusX loop
+	auditCellCount     = 16      // Number of sampled cells committed into the per-hash Merkle root
 	mixWordCount       = mixBytes / 4
 )
 
