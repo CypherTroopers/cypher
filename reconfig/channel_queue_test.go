@@ -284,6 +284,21 @@ func TestOutboundBudgetSharesImmutableProposalAcrossPeers(t *testing.T) {
 	}
 }
 
+func TestOutboundBulkBudgetCoversMaximumCommitteeFanoutAndRepair(t *testing.T) {
+	if outboundBulkMaxReferences < 4*params.MaxFairHotstuffCommitteeSize {
+		t.Fatalf("bulk reference budget=%d, want at least four references per maximum committee member", outboundBulkMaxReferences)
+	}
+	if outboundBulkMaxBytes < 3*peerQueueBulkMaxBytes {
+		t.Fatalf("bulk byte budget=%d, want at least three maximum peer payloads", outboundBulkMaxBytes)
+	}
+	config := &params.ChainConfig{NativeParallel: params.SolanaScaleNativeParallelConfig()}
+	budget := newOutboundQueueBudgetForConfig(config)
+	want := saturatingMulInt(proposalPeerQueueBulkLimitForConfig(config), 3)
+	if budget.bulkMaxBytes < want {
+		t.Fatalf("configured bulk byte budget=%d, want at least %d", budget.bulkMaxBytes, want)
+	}
+}
+
 func TestOutboundBudgetGloballyBoundsControlMessages(t *testing.T) {
 	budget := newOutboundQueueBudget()
 	msg := &networkMsg{Hmsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgPrepare, DataA: make([]byte, hotstuff.MaxHotstuffControlBytes)}}
@@ -472,6 +487,37 @@ func TestOutboundMessageExpiresBeforeFirstSend(t *testing.T) {
 	msg.queueSince = now.Add(-peerQueueRetryTTL + time.Second)
 	if outboundMessageExpired(msg, now) {
 		t.Fatal("fresh outbound message was treated as expired")
+	}
+}
+
+func TestLargeProposalRetryTTLIncludesTransferRepairAndExecution(t *testing.T) {
+	now := time.Now()
+	msg := &networkMsg{
+		Pmsg:       &proposalBodyMsg{Type: proposalBodyMsgManifest, Manifest: make([]byte, proposalBodyControlMaxBytes+1)},
+		queueSince: now.Add(-peerQueueRetryTTL - time.Second),
+	}
+	if outboundMessageExpired(msg, now) {
+		t.Fatal("large proposal expired at the short control-message retry TTL")
+	}
+	msg.queueSince = now.Add(-peerQueueBulkRetryTTL - time.Nanosecond)
+	if !outboundMessageExpired(msg, now) {
+		t.Fatal("large proposal remained retryable beyond its bounded bulk TTL")
+	}
+	if peerQueueBulkRetryTTL < 10*time.Minute {
+		t.Fatalf("bulk retry TTL=%v, want at least 10m", peerQueueBulkRetryTTL)
+	}
+}
+
+func TestMaximumNativeProposalBulkGossipRemainsRetryable(t *testing.T) {
+	msg := &networkMsg{Pmsg: &proposalBodyMsg{
+		Type:     proposalBodyMsgManifest,
+		Manifest: make([]byte, proposalBodySidecarMaxBytes+1),
+	}}
+	if msg.NetworkClass() != network.NetClassBulkGossip {
+		t.Fatalf("fixture class=%d, want bulk gossip", msg.NetworkClass())
+	}
+	if !retryableConsensusNetworkMsg(msg) {
+		t.Fatal("large native proposal was not treated as retryable consensus data")
 	}
 }
 

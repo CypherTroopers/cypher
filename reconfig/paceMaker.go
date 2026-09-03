@@ -31,6 +31,82 @@ import (
 var maxPaceMakerTime time.Time
 var paceMakerPollInterval = 1 * time.Millisecond
 
+const (
+	// The native work envelope is denominated in EVM compute units. Pacemaker
+	// deadlines must cover every block accepted by that envelope, otherwise a
+	// busy but correct validator changes view while its execution worker is
+	// still making progress. Version 1 defines a conservative reference machine
+	// of 2^30 compute/s per worker and at most 64 useful DAG workers. These are
+	// timeout-accounting constants, not a claim about measured hardware speed.
+	nativeValidationComputePerSecond uint64 = 1 << 30
+	nativeValidationParallelism      uint64 = 64
+	nativePaceMakerExecutionMinimum         = 30 * time.Second
+)
+
+func nativeComputeLease(compute, perSecond uint64) time.Duration {
+	if compute == 0 || perSecond == 0 {
+		return 0
+	}
+	seconds := compute / perSecond
+	if compute%perSecond != 0 {
+		seconds++
+	}
+	maxSeconds := uint64(time.Duration(1<<63-1) / time.Second)
+	if seconds > maxSeconds {
+		return time.Duration(1<<63 - 1)
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// nativeExecutionLeaseForConfig derives the execution portion of the
+// progress deadline from both limiting shapes of the signed dependency DAG:
+// its longest serial path and its aggregate compute spread across workers.
+func nativeExecutionLeaseForConfig(config *params.ChainConfig) time.Duration {
+	if config == nil || !config.NativeParallelEnabled() {
+		return 0
+	}
+	native := config.NativeParallel
+	critical := nativeComputeLease(native.MaxCriticalPathCompute, nativeValidationComputePerSecond)
+	aggregateRate := nativeValidationComputePerSecond * nativeValidationParallelism
+	aggregate := nativeComputeLease(native.MaxComputePerBlock, aggregateRate)
+	lease := critical
+	if aggregate > lease {
+		lease = aggregate
+	}
+	if lease < nativePaceMakerExecutionMinimum {
+		lease = nativePaceMakerExecutionMinimum
+	}
+	return lease
+}
+
+func addDurationSaturating(left, right time.Duration) time.Duration {
+	const maximum = time.Duration(1<<63 - 1)
+	if right > 0 && left > maximum-right {
+		return maximum
+	}
+	return left + right
+}
+
+// paceMakerTimeoutForConfig covers the complete configured proposal body,
+// worst-case bounded repair schedule and a validation margin. AckTimeout still
+// rotates a genuinely silent leader quickly; this longer progress deadline
+// prevents the fixed legacy 30-second timer from changing view while a valid
+// genesis-native 256 MiB proposal is being transferred and verified.
+func paceMakerTimeoutForConfig(config *params.ChainConfig) time.Duration {
+	timeout := params.PaceMakerTimeout
+	if config == nil || !config.NativeParallelEnabled() {
+		return timeout
+	}
+	body := proposalBodyWaitTimeoutForConfig(config, config.EffectiveMaxBlockBytes())
+	repair := proposalRepairWaitTimeoutForConfig(config, int(config.NativeParallel.MaxTransactionsPerBlock))
+	candidate := addDurationSaturating(body, repair)
+	candidate = addDurationSaturating(candidate, nativeExecutionLeaseForConfig(config))
+	if candidate > timeout {
+		return candidate
+	}
+	return timeout
+}
+
 type paceMakerTimer struct {
 	startTime        time.Time
 	lastKeyTime      time.Time
@@ -203,7 +279,7 @@ func (t *paceMakerTimer) loopTimer() {
 			t.setNextLeader(false)
 			t.service.ResetLeaderAckTime()
 			t.resetAckMissCount()
-		} else if diff > params.PaceMakerTimeout /**time.Duration(retryNumber+1)*/ && bftview.IamMember() >= 0 { //timeout
+		} else if diff > paceMakerTimeoutForConfig(t.config) /**time.Duration(retryNumber+1)*/ && bftview.IamMember() >= 0 { //timeout
 			t.resetAckMissCount()
 			log.Warn("paceMakerTimer Viewchange PaceMakerTimeout Event is coming", "retryNumber", retryNumber)
 			/*

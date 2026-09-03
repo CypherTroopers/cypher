@@ -28,6 +28,7 @@ import (
 	"github.com/cypherium/cypher/crypto/blake2b"
 	"github.com/cypherium/cypher/crypto/bls12381"
 	"github.com/cypherium/cypher/crypto/bn256"
+	"github.com/cypherium/cypher/crypto/kzg4844"
 	"github.com/cypherium/cypher/params"
 
 	//lint:ignore SA1019 Needed for precompile
@@ -107,13 +108,177 @@ var PrecompiledContractsYoloV1 = map[common.Address]PrecompiledContract{
 // - the _remaining_ gas,
 // - any error that occurred
 func RunPrecompiledContract(p PrecompiledContract, input []byte, suppliedGas uint64) (ret []byte, remainingGas uint64, err error) {
+	return runPrecompiledContractWithLimits(p, input, suppliedGas, 0, 0)
+}
+
+const (
+	precompileFixedMemoryReserve = uint64(64 * 1024)
+	// bls12381Pairing's Miller loop allocates [68][3]fe2 coefficients
+	// (19,584 bytes) for every 384-byte pair, in addition to retained decoded
+	// G1/G2 points and pair metadata. Charge 23 KiB per pair plus the input and
+	// fixed engine workspace, which remains below the genesis 64 MiB ceiling for
+	// a maximum-size valid Native transaction while covering the real live heap.
+	bls12381PairingMemoryPerPair = uint64(23 * 1024)
+)
+
+// runPrecompiledContractWithLimits applies the NativeTxV1 signed resource
+// envelope before entering a Go precompile. The interpreter cannot meter these
+// allocations because precompiles execute outside EVM linear memory. In
+// particular, ModExp can allocate from operand lengths encoded in its 96-byte
+// header, and the pairing/multiexponentiation implementations retain decoded
+// point arrays proportional to their input.
+//
+// Zero limits preserve the legacy transaction behavior exposed by
+// RunPrecompiledContract. A non-zero Native limit is fail-closed for an unknown
+// precompile type, so adding a precompile also requires defining its deterministic
+// resource bound below.
+func runPrecompiledContractWithLimits(p PrecompiledContract, input []byte, suppliedGas, maxMemoryBytes, maxReturnDataBytes uint64) (ret []byte, remainingGas uint64, err error) {
+	return runPrecompiledContractWithUsage(p, input, suppliedGas, maxMemoryBytes, maxReturnDataBytes, 0, false)
+}
+
+// runPrecompiledContractWithUsage additionally accounts for linear memory
+// already retained by a caller frame. Nested CALL input aliases that memory, so
+// exactly one input image is deducted from the precompile's incremental charge;
+// top-level transaction calldata is not in EVM linear memory and remains fully
+// charged.
+func runPrecompiledContractWithUsage(p PrecompiledContract, input []byte, suppliedGas, maxMemoryBytes, maxReturnDataBytes, liveMemoryBytes uint64, inputAlreadyMetered bool) (ret []byte, remainingGas uint64, err error) {
 	gasCost := p.RequiredGas(input)
 	if suppliedGas < gasCost {
 		return nil, 0, ErrOutOfGas
 	}
 	suppliedGas -= gasCost
+	if maxMemoryBytes != 0 || maxReturnDataBytes != 0 {
+		// KZG's trusted setup is immutable process infrastructure, not
+		// transaction work memory. Native nodes preload it during chain startup;
+		// never let a signed transaction trigger the large lazy allocation outside
+		// its declared memory envelope.
+		if _, isKZG := p.(*kzgPointEvaluation); isKZG && !kzg4844.Preloaded() {
+			return nil, 0, ErrMemoryLimitExceeded
+		}
+		memoryBytes, outputBytes, known := precompileResourceBounds(p, input)
+		if !known {
+			return nil, 0, ErrMemoryLimitExceeded
+		}
+		// Check the output upper bound before Run allocates it. This is
+		// essential for ModExp, whose output length is supplied by the sender.
+		if maxReturnDataBytes != 0 && outputBytes > maxReturnDataBytes {
+			return nil, 0, ErrReturnDataLimitExceeded
+		}
+		if maxMemoryBytes != 0 {
+			incrementalMemory := memoryBytes
+			if inputAlreadyMetered {
+				inputBytes := uint64(len(input))
+				if inputBytes > incrementalMemory {
+					return nil, 0, ErrMemoryLimitExceeded
+				}
+				incrementalMemory -= inputBytes
+			}
+			if liveMemoryBytes > maxMemoryBytes || incrementalMemory > maxMemoryBytes-liveMemoryBytes {
+				return nil, 0, ErrMemoryLimitExceeded
+			}
+		}
+	}
 	output, err := p.Run(input)
+	// Keep a postcondition check as defense in depth if a precompile's concrete
+	// implementation ever returns more than its declared upper bound.
+	if maxReturnDataBytes != 0 && uint64(len(output)) > maxReturnDataBytes {
+		return nil, 0, ErrReturnDataLimitExceeded
+	}
 	return output, suppliedGas, err
+}
+
+// precompileResourceBounds returns deterministic upper bounds for transient
+// work memory and returned bytes. The bounds intentionally overcharge decoded
+// cryptographic objects: the DAG executor's physical-memory lease is derived
+// from the same signed MemoryLimit, so conservative charging also constrains
+// process heap under parallel execution.
+func precompileResourceBounds(p PrecompiledContract, input []byte) (memoryBytes, outputBytes uint64, known bool) {
+	inputBytes := uint64(len(input))
+	switch p.(type) {
+	case *dataCopy:
+		// Identity aliases its input, but the caller retains a RETURNDATA copy.
+		memoryBytes, overflow := math.SafeAdd(inputBytes, inputBytes)
+		return memoryBytes, inputBytes, !overflow
+
+	case *bigModExp, *modernBigModExp:
+		baseLen, expLen, modLen := modExpLengths(input)
+		if !baseLen.IsUint64() || !expLen.IsUint64() || !modLen.IsUint64() {
+			return 0, 0, false
+		}
+		operandBytes, overflow := math.SafeAdd(baseLen.Uint64(), expLen.Uint64())
+		if overflow {
+			return 0, 0, false
+		}
+		operandBytes, overflow = math.SafeAdd(operandBytes, modLen.Uint64())
+		if overflow {
+			return 0, 0, false
+		}
+		if operandBytes < inputBytes {
+			operandBytes = inputBytes
+		}
+		// getData padding, big.Int operands, exponentiation workspace and the
+		// padded result can coexist. Four logical copies plus the output keeps
+		// that work inside the signed envelope and the outer physical lease.
+		memoryBytes, overflow = math.SafeMul(operandBytes, 4)
+		if overflow {
+			return 0, 0, false
+		}
+		memoryBytes, overflow = math.SafeAdd(memoryBytes, modLen.Uint64())
+		if overflow {
+			return 0, 0, false
+		}
+		memoryBytes, overflow = math.SafeAdd(memoryBytes, precompileFixedMemoryReserve)
+		return memoryBytes, modLen.Uint64(), !overflow
+
+	case *ecrecover:
+		return fixedPrecompileResourceBound(inputBytes, 32, 1)
+	case *sha256hash, *ripemd160hash:
+		return fixedPrecompileResourceBound(inputBytes, 32, 1)
+	case *bn256AddIstanbul, *bn256AddByzantium,
+		*bn256ScalarMulIstanbul, *bn256ScalarMulByzantium:
+		return fixedPrecompileResourceBound(inputBytes, 64, 4)
+	case *bn256PairingIstanbul, *bn256PairingByzantium:
+		return fixedPrecompileResourceBound(inputBytes, 32, 4)
+	case *blake2F:
+		return fixedPrecompileResourceBound(inputBytes, 64, 1)
+	case *bls12381G1Add, *bls12381G1Mul, *bls12381G1MultiExp,
+		*bls12381MapG1:
+		return fixedPrecompileResourceBound(inputBytes, 128, 4)
+	case *bls12381G2Add, *bls12381G2Mul, *bls12381G2MultiExp,
+		*bls12381MapG2:
+		return fixedPrecompileResourceBound(inputBytes, 256, 4)
+	case *bls12381Pairing:
+		pairs := inputBytes / 384
+		memoryBytes, overflow := math.SafeMul(pairs, bls12381PairingMemoryPerPair)
+		if overflow {
+			return 0, 0, false
+		}
+		memoryBytes, overflow = math.SafeAdd(memoryBytes, inputBytes)
+		if overflow {
+			return 0, 0, false
+		}
+		memoryBytes, overflow = math.SafeAdd(memoryBytes, precompileFixedMemoryReserve+32)
+		return memoryBytes, 32, !overflow
+	case *kzgPointEvaluation:
+		return fixedPrecompileResourceBound(inputBytes, 64, 4)
+	case *p256Verify:
+		return fixedPrecompileResourceBound(inputBytes, 32, 4)
+	default:
+		return 0, 0, false
+	}
+}
+
+func fixedPrecompileResourceBound(inputBytes, outputBytes, inputFactor uint64) (memoryBytes, output uint64, known bool) {
+	memoryBytes, overflow := math.SafeMul(inputBytes, inputFactor)
+	if overflow {
+		return 0, 0, false
+	}
+	memoryBytes, overflow = math.SafeAdd(memoryBytes, outputBytes)
+	if overflow {
+		return 0, 0, false
+	}
+	memoryBytes, overflow = math.SafeAdd(memoryBytes, precompileFixedMemoryReserve)
+	return memoryBytes, outputBytes, !overflow
 }
 
 // ECRECOVER implemented as a native contract.

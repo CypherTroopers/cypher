@@ -24,6 +24,10 @@ type quicClassifiedTestMessage struct {
 	Value uint32
 }
 
+type quicControlEnvelopeTestMessage struct {
+	Payload []byte
+}
+
 type authenticatedQUICStub struct {
 	peerAddress string
 	peerKey     []byte
@@ -571,10 +575,13 @@ func TestQUICPeerCertificateRenewsBeforeExpiry(t *testing.T) {
 
 func TestQUICReceiveBudgetsSeparateControlFromLargeData(t *testing.T) {
 	limiter := new(quicReceiveLimiter)
-	if !limiter.reserve("byzantine", NetClassBulkGossip, def_MaxPacketSize, 0) {
+	if !limiter.reserve("byzantine-a", NetClassBulkGossip, def_MaxPacketSize, 0) {
 		t.Fatal("first maximum bulk payload was rejected")
 	}
-	if limiter.reserve("byzantine", NetClassBulkGossip, 1, 0) {
+	if !limiter.reserve("byzantine-b", NetClassBulkGossip, def_MaxPacketSize, 0) {
+		t.Fatal("second maximum bulk payload was rejected")
+	}
+	if limiter.reserve("byzantine-a", NetClassBulkGossip, 1, 0) {
 		t.Fatal("one peer reserved a second large-data stream")
 	}
 	if !limiter.reserve("honest", NetClassHotstuffControl, quicControlMaxPacketSize, 0) {
@@ -599,7 +606,7 @@ func TestQUICReceiveBudgetsSeparateControlFromLargeData(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	limiter.release("byzantine", NetClassBulkGossip, def_MaxPacketSize)
+	limiter.release("byzantine-a", NetClassBulkGossip, def_MaxPacketSize)
 	select {
 	case granted := <-honestGranted:
 		if !granted {
@@ -608,10 +615,11 @@ func TestQUICReceiveBudgetsSeparateControlFromLargeData(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("honest queued request starved")
 	}
-	if limiter.reserve("byzantine", NetClassBulkGossip, def_MaxPacketSize, 0) {
+	if limiter.reserve("byzantine-a", NetClassBulkGossip, def_MaxPacketSize, 0) {
 		t.Fatal("new Byzantine request bypassed the already-granted honest request")
 	}
 	limiter.release("honest", NetClassProposalBodyBulk, 1)
+	limiter.release("byzantine-b", NetClassBulkGossip, def_MaxPacketSize)
 }
 
 func TestQUICReceiveLimiterAllowsBoundedProposalParallelism(t *testing.T) {
@@ -635,10 +643,15 @@ func TestQUICReceiveLimiterAllowsBoundedProposalParallelism(t *testing.T) {
 
 func TestQUICReceiveControlBudgetIsPeerFair(t *testing.T) {
 	limiter := new(quicReceiveLimiter)
-	for index := 0; index < 2; index++ {
+	fullFrames := quicControlPeerBudget / quicControlMaxPacketSize
+	for index := 0; index < fullFrames; index++ {
 		if !limiter.reserve("byzantine", NetClassHotstuffControl, quicControlMaxPacketSize, 0) {
 			t.Fatalf("Byzantine peer reservation %d unexpectedly rejected", index)
 		}
+	}
+	remainder := quicControlPeerBudget - fullFrames*quicControlMaxPacketSize
+	if remainder > 0 && !limiter.reserve("byzantine", NetClassHotstuffControl, uint32(remainder), 0) {
+		t.Fatal("Byzantine peer's final bounded control reservation was rejected")
 	}
 	if limiter.reserve("byzantine", NetClassHotstuffControl, 1, 0) {
 		t.Fatal("one peer exceeded its HotStuff control quota")
@@ -652,8 +665,12 @@ func TestQUICReceiveControlBudgetIsPeerFair(t *testing.T) {
 	if !limiter.reserve("honest-2", NetClassHotstuffControl, quicControlMaxPacketSize, 0) {
 		t.Fatal("metadata traffic starved the isolated HotStuff control budget")
 	}
-	limiter.release("byzantine", NetClassHotstuffControl, quicControlMaxPacketSize)
-	limiter.release("byzantine", NetClassHotstuffControl, quicControlMaxPacketSize)
+	for index := 0; index < fullFrames; index++ {
+		limiter.release("byzantine", NetClassHotstuffControl, quicControlMaxPacketSize)
+	}
+	if remainder > 0 {
+		limiter.release("byzantine", NetClassHotstuffControl, uint32(remainder))
+	}
 	limiter.release("honest", NetClassHotstuffControl, quicControlMaxPacketSize)
 	limiter.release("metadata-attacker", NetClassProposalBodyControl, quicMetadataPeerBudget)
 	limiter.release("honest-2", NetClassHotstuffControl, quicControlMaxPacketSize)
@@ -661,8 +678,9 @@ func TestQUICReceiveControlBudgetIsPeerFair(t *testing.T) {
 
 func TestQUICReceiveLimiterTimeoutGrantsNextFittingWaiter(t *testing.T) {
 	limiter := new(quicReceiveLimiter)
-	if !limiter.reserve("active", NetClassBulkGossip, def_MaxPacketSize-1, 0) {
-		t.Fatal("active large reservation rejected")
+	if !limiter.reserve("active-a", NetClassBulkGossip, def_MaxPacketSize, 0) ||
+		!limiter.reserve("active-b", NetClassBulkGossip, def_MaxPacketSize-1, 0) {
+		t.Fatal("active large reservations rejected")
 	}
 	head := make(chan bool, 1)
 	go func() {
@@ -702,13 +720,15 @@ func TestQUICReceiveLimiterTimeoutGrantsNextFittingWaiter(t *testing.T) {
 		t.Fatal("timed-out head waiter left the fitting tail asleep")
 	}
 	limiter.release("tail", NetClassProposalBodyBulk, 1)
-	limiter.release("active", NetClassBulkGossip, def_MaxPacketSize-1)
+	limiter.release("active-a", NetClassBulkGossip, def_MaxPacketSize)
+	limiter.release("active-b", NetClassBulkGossip, def_MaxPacketSize-1)
 }
 
 func TestQUICReceiveLimiterConnectionCancelClearsPeer(t *testing.T) {
 	limiter := new(quicReceiveLimiter)
-	if !limiter.reserve("active", NetClassBulkGossip, def_MaxPacketSize, 0) {
-		t.Fatal("active large reservation rejected")
+	if !limiter.reserve("active-a", NetClassBulkGossip, def_MaxPacketSize, 0) ||
+		!limiter.reserve("active-b", NetClassBulkGossip, def_MaxPacketSize, 0) {
+		t.Fatal("active large reservations rejected")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan bool, 1)
@@ -732,7 +752,8 @@ func TestQUICReceiveLimiterConnectionCancelClearsPeer(t *testing.T) {
 	if granted := <-result; granted {
 		t.Fatal("canceled connection retained a large reservation")
 	}
-	limiter.release("active", NetClassBulkGossip, def_MaxPacketSize)
+	limiter.release("active-a", NetClassBulkGossip, def_MaxPacketSize)
+	limiter.release("active-b", NetClassBulkGossip, def_MaxPacketSize)
 	if !limiter.reserve("reconnecting-peer", NetClassProposalBodyBulk, 1, 0) {
 		t.Fatal("canceled peer remained blocked after reconnect")
 	}
@@ -770,9 +791,61 @@ func TestQUICListenerInboundLeaseIsPeerBounded(t *testing.T) {
 	}
 }
 
-func TestQUICLargeFrameTimeoutScalesForWAN(t *testing.T) {
-	if got := quicFrameReadTimeout(NetClassProposalBodyBulk, def_MaxPacketSize); got <= 5*time.Second || got > 30*time.Second {
-		t.Fatalf("large-frame I/O timeout = %v, want (5s,30s]", got)
+func TestQUICBulkGossipFrameTimeoutCoversNearLimitAtServiceRate(t *testing.T) {
+	// Exercise the pure deadline calculation with a near-limit size. Do not
+	// allocate a 257 MiB payload just to verify the transport's liveness budget.
+	const serviceBytesPerSecond = 2 * 1024 * 1024
+	size := uint32(def_MaxPacketSize - 1)
+	want := 5*time.Second + time.Duration(size)*time.Second/serviceBytesPerSecond
+	if got := quicFrameReadTimeout(NetClassBulkGossip, size); got != want {
+		t.Fatalf("near-limit bulk-gossip I/O timeout = %v, want %v", got, want)
+	}
+}
+
+func TestQUICLargeReservationWaitCoversOneMaximumFrame(t *testing.T) {
+	want := quicBulkGossipTimeoutSlack + time.Duration(def_MaxPacketSize)*time.Second/quicBulkGossipBytesPerSecond
+	if quicLargeReservationWait != want {
+		t.Fatalf("large reservation wait = %v, want %v", quicLargeReservationWait, want)
+	}
+	if quicLargeDataReceiveBudget < 2*uint64(def_MaxPacketSize) {
+		t.Fatalf("large receive budget = %d, want at least two maximum frames", quicLargeDataReceiveBudget)
+	}
+}
+
+func TestQUICControlTransportCapIncludesEnvelopeOverhead(t *testing.T) {
+	RegisterMessage(&quicControlEnvelopeTestMessage{})
+	encoded, err := Marshal(&quicControlEnvelopeTestMessage{Payload: make([]byte, 512*1024)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) <= 512*1024 {
+		t.Fatalf("fixture did not include wire overhead: encoded=%d", len(encoded))
+	}
+	if len(encoded) > quicControlMaxPacketSize {
+		t.Fatalf("valid maximum semantic control payload is not transportable: encoded=%d cap=%d", len(encoded), quicControlMaxPacketSize)
+	}
+	if quicControlPeerBudget < 2*quicControlMaxPacketSize {
+		t.Fatalf("control peer budget=%d, want at least two maximum transport frames", quicControlPeerBudget)
+	}
+}
+
+func TestQUICNonBulkGossipFrameTimeoutsRemainBounded(t *testing.T) {
+	tests := []struct {
+		name  string
+		class uint8
+		want  time.Duration
+	}{
+		{name: "handshake", class: NetClassHandshake, want: quicHandshakeReadTimeout},
+		{name: "consensus control", class: NetClassHotstuffControl, want: 10 * time.Second},
+		{name: "default metadata", class: NetClassCommitteeControl, want: 10 * time.Second},
+		{name: "proposal body bulk", class: NetClassProposalBodyBulk, want: 30 * time.Second},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := quicFrameReadTimeout(test.class, def_MaxPacketSize); got != test.want {
+				t.Fatalf("class-%d I/O timeout = %v, want %v", test.class, got, test.want)
+			}
+		})
 	}
 }
 

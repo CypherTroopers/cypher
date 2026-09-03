@@ -64,6 +64,7 @@ func ckzgInit() {
 	if err = ckzg4844.LoadTrustedSetup(g1s, g1Lag, g2s, 6); err != nil {
 		panic(err)
 	}
+	ckzgReady.Store(true)
 }
 
 // ckzgBlobToCommitment creates a small commitment out of a data blob.

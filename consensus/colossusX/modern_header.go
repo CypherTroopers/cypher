@@ -2,6 +2,7 @@ package colossusX
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
@@ -21,6 +22,17 @@ func verifyModernHeaderFields(config *params.ChainConfig, header *types.Header, 
 		if header.WithdrawalsHash != types.EmptyWithdrawalsHash {
 			return fmt.Errorf("invalid withdrawalsRoot for execution-only Shanghai block: have %s want %s", header.WithdrawalsHash, types.EmptyWithdrawalsHash)
 		}
+		// An ordinary transaction block that follows another ordinary block in
+		// the same authenticated key epoch must inherit its PREVRANDAO carrier.
+		// A Fair HotStuff key-block carrier is the transition exception: its
+		// direct child is still certified by the old epoch while the carrier waits
+		// for that child QC to reach two-chain finality. The FHS key-chain checks
+		// bind the child's value to that old canonical key separately.
+		if parent != nil && header.BlockType != types.Key_Block &&
+			(!config.FairHotstuff || parent.BlockType != types.Key_Block) &&
+			header.KeyHash == parent.KeyHash && header.MixDigest != parent.MixDigest {
+			return fmt.Errorf("invalid PREVRANDAO continuation: have %s want %s", header.MixDigest, parent.MixDigest)
+		}
 	} else if header.WithdrawalsHash != (common.Hash{}) {
 		return fmt.Errorf("unexpected withdrawalsRoot before Shanghai fork")
 	}
@@ -29,8 +41,9 @@ func verifyModernHeaderFields(config *params.ChainConfig, header *types.Header, 
 		if header.BaseFee == nil {
 			return fmt.Errorf("missing baseFeePerGas after London fork")
 		}
-		if header.BaseFee.Sign() < 0 {
-			return fmt.Errorf("invalid negative baseFeePerGas: %v", header.BaseFee)
+		want := big.NewInt(params.FixedBaseFeePerGas)
+		if header.BaseFee.Cmp(want) != 0 {
+			return fmt.Errorf("invalid baseFeePerGas: have %v want %v", header.BaseFee, want)
 		}
 	} else if header.BaseFee != nil {
 		return fmt.Errorf("unexpected baseFeePerGas before London fork")

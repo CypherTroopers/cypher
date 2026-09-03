@@ -69,22 +69,22 @@ func TestTxPoolValidateBlobTxHelper(t *testing.T) {
 	pool := &TxPool{chainconfig: &params.ChainConfig{}}
 
 	valid := newTxpoolBlobTx(t, []common.Hash{txpoolBlobTestHash(1)}, big.NewInt(1))
-	if err := pool.validateBlobTx(valid); err != nil {
+	if err := pool.validateBlobTxEnvelope(valid); err != nil {
 		t.Fatalf("expected valid blob tx, got %v", err)
 	}
 
 	missingHashes := newTxpoolBlobTx(t, nil, big.NewInt(1))
-	if err := pool.validateBlobTx(missingHashes); err != types.ErrBlobTxMissingBlobHashes {
+	if err := pool.validateBlobTxEnvelope(missingHashes); err != types.ErrBlobTxMissingBlobHashes {
 		t.Fatalf("expected missing blob hashes, got %v", err)
 	}
 
 	missingFeeCap := newTxpoolBlobTx(t, []common.Hash{txpoolBlobTestHash(1)}, nil)
-	if err := pool.validateBlobTx(missingFeeCap); err != types.ErrBlobTxInvalidFeeCap {
+	if err := pool.validateBlobTxEnvelope(missingFeeCap); err != types.ErrBlobTxInvalidFeeCap {
 		t.Fatalf("expected invalid blob fee cap, got %v", err)
 	}
 }
 
-func TestTxPoolRejectsBlobTxWithoutDA(t *testing.T) {
+func TestTxPoolRejectsBlobTxWithoutSidecar(t *testing.T) {
 	cfg := blobGasTestConfig(0)
 	pool := &TxPool{
 		chainconfig: cfg,
@@ -94,8 +94,8 @@ func TestTxPoolRejectsBlobTxWithoutDA(t *testing.T) {
 		})},
 	}
 	tx := newTxpoolBlobTx(t, []common.Hash{txpoolBlobTestHash(1)}, big.NewInt(2))
-	if err := pool.validateTx(tx, true); !errors.Is(err, ErrBlobDAUnavailable) {
-		t.Fatalf("error = %v, want %v", err, ErrBlobDAUnavailable)
+	if err := pool.validateBlobTx(tx); !errors.Is(err, types.ErrBlobSidecarMissing) {
+		t.Fatalf("error = %v, want %v", err, types.ErrBlobSidecarMissing)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestTxPoolRejectsMoreThanSixBlobsAtOsaka(t *testing.T) {
 	for i := range hashes {
 		hashes[i] = txpoolBlobTestHash(byte(i + 1))
 	}
-	if err := pool.validateBlobTx(newTxpoolBlobTx(t, hashes, big.NewInt(1))); err != types.ErrBlobTxTooManyBlobs {
+	if err := pool.validateBlobTxEnvelope(newTxpoolBlobTx(t, hashes, big.NewInt(1))); err != types.ErrBlobTxTooManyBlobs {
 		t.Fatalf("error = %v, want %v", err, types.ErrBlobTxTooManyBlobs)
 	}
 }

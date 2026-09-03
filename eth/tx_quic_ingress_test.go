@@ -101,6 +101,31 @@ func testTxQUICTransaction(nonce uint64, dataBytes int) *types.Transaction {
 	)
 }
 
+func testTxQUICNativeTransaction(payer common.Address, sequence uint64, tag byte) *types.Transaction {
+	return types.NewTx(&types.NativeTxV1{
+		ChainID:               big.NewInt(1337),
+		RecentBlockHash:       common.HexToHash("0x01"),
+		RecentBlockNumber:     1,
+		ValidUntil:            10,
+		Payer:                 payer,
+		ReplaySequence:        sequence,
+		To:                    payer,
+		Value:                 new(big.Int),
+		Data:                  []byte{tag},
+		MaxFeePerCompute:      big.NewInt(10),
+		PriorityFeePerCompute: big.NewInt(1),
+		ComputeLimit:          100_000,
+		MemoryLimit:           1 << 20,
+		LogLimit:              1 << 10,
+		OutputLimit:           1 << 10,
+		Accesses: []types.NativeAccess{{
+			Resource: types.NativeResource{Kind: types.NativeResourceAccount, Address: payer},
+			Mode:     types.NativeAccessWrite,
+		}},
+		V: new(big.Int), R: new(big.Int), S: new(big.Int),
+	})
+}
+
 type testTxQUICPoolChain struct {
 	block *types.Block
 	state *state.StateDB
@@ -816,6 +841,30 @@ func TestTxQUICAllowIPsAcceptsValidIPAndCIDR(t *testing.T) {
 }
 
 func TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes(t *testing.T) {
+	zeroDefaults := TxQUICConfig{}
+	applyTxQUICDefaults(&zeroDefaults)
+	for name, defaults := range map[string]TxQUICConfig{
+		"DefaultConfig.TxQUIC": DefaultConfig.TxQUIC,
+		"zero-value fallback":  zeroDefaults,
+	} {
+		if err := validateTxQUICRuntimeLimits(defaults); err != nil {
+			t.Fatalf("%s is invalid: %v", name, err)
+		}
+		if defaults.BridgeQueueSize < 200_000*5 {
+			t.Fatalf("%s bridge queue = %d, want at least a five-second 200k TPS envelope", name, defaults.BridgeQueueSize)
+		}
+		if defaults.BridgeWorkers < 64 || defaults.OutboxWorkers < 64 {
+			t.Fatalf("%s bridge/outbox workers = %d/%d, want at least 64/64", name, defaults.BridgeWorkers, defaults.OutboxWorkers)
+		}
+		if defaults.IngressWorkers < 256 || defaults.MaxIncomingStreams < 256 || defaults.MaxIncomingConns < 256 {
+			t.Fatalf("%s ingress workers/streams/connections = %d/%d/%d, want at least 256 each",
+				name, defaults.IngressWorkers, defaults.MaxIncomingStreams, defaults.MaxIncomingConns)
+		}
+		if defaults.MaxInflightPayloadBytes < 512<<20 {
+			t.Fatalf("%s in-flight payload bound = %d, want at least 512 MiB", name, defaults.MaxInflightPayloadBytes)
+		}
+	}
+
 	base := testTxQUICConfig()
 	applyTxQUICDefaults(&base)
 	if err := validateTxQUICRuntimeLimits(base); err != nil {
@@ -1079,6 +1128,32 @@ func TestTxQUICCertificateItemsAreFailClosed(t *testing.T) {
 				t.Fatal("invalid Fair HotStuff TxQUIC items were accepted")
 			}
 		})
+	}
+}
+
+func TestTxQUICCertificateRejectsDuplicateNativeReplayIdentity(t *testing.T) {
+	config := testTxQUICConfig()
+	payer := common.HexToAddress("0x1200000000000000000000000000000000000012")
+	first := testTxQUICNativeTransaction(payer, 9, 1)
+	conflict := testTxQUICNativeTransaction(payer, 9, 2)
+	certificate := testTxQUICCertificate(t, config, first, conflict)
+	if _, _, err := txQUICItemCommitments(certificate, testTxQUICItems(first, conflict)); err == nil || !strings.Contains(err.Error(), "native replay identity") {
+		t.Fatalf("duplicate native replay identity error = %v", err)
+	}
+
+	otherPayer := common.HexToAddress("0x1300000000000000000000000000000000000013")
+	independent := testTxQUICNativeTransaction(otherPayer, 9, 3)
+	certificate = testTxQUICCertificate(t, config, first, independent)
+	if _, _, err := txQUICItemCommitments(certificate, testTxQUICItems(first, independent)); err != nil {
+		t.Fatalf("payer-scoped replay identities rejected: %v", err)
+	}
+}
+
+func TestTxQUICPublicIngressRejectsNativeTransactionType(t *testing.T) {
+	payer := common.HexToAddress("0x1200000000000000000000000000000000000012")
+	native := testTxQUICNativeTransaction(payer, 1, 1)
+	if _, err := packetItemsToTxs(&txQUICPacket{Items: testTxQUICItems(native)}); err == nil || !strings.Contains(err.Error(), "unsupported transaction type 0x5") {
+		t.Fatalf("public TxQUIC NativeTx error = %v", err)
 	}
 }
 
@@ -3078,6 +3153,7 @@ func TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures(t *testi
 		{name: "fork intrinsic gas", err: core.ErrIntrinsicGas},
 		{name: "future transaction type", err: core.ErrTxTypeNotSupported},
 		{name: "blob availability policy", err: core.ErrBlobDAUnavailable},
+		{name: "payer sequence pending elsewhere", err: core.ErrNativeReplaySequenceReserved},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -3162,6 +3238,51 @@ type failingDeleteTxQUICDB struct {
 type failingDeleteTxQUICBatch struct {
 	ethdb.Batch
 	failDelete *atomic.Bool
+}
+
+type blockingHasTxQUICDB struct {
+	ethdb.KeyValueStore
+	target  []byte
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (db *blockingHasTxQUICDB) Has(key []byte) (bool, error) {
+	if bytes.Equal(key, db.target) {
+		db.once.Do(func() { close(db.entered) })
+		<-db.release
+	}
+	return db.KeyValueStore.Has(key)
+}
+
+type failingPutTxQUICDB struct {
+	ethdb.KeyValueStore
+	failRecordPut atomic.Bool
+}
+
+type failingPutTxQUICBatch struct {
+	ethdb.Batch
+	failRecordPut *atomic.Bool
+}
+
+func (db *failingPutTxQUICDB) NewBatch() ethdb.Batch {
+	return &failingPutTxQUICBatch{Batch: db.KeyValueStore.NewBatch(), failRecordPut: &db.failRecordPut}
+}
+
+func (batch *failingPutTxQUICBatch) Put(key, value []byte) error {
+	if batch.failRecordPut.Load() && bytes.HasPrefix(key, txOutboxRecordPrefix) {
+		return errors.New("simulated deterministic outbox projection put failure")
+	}
+	return batch.Batch.Put(key, value)
+}
+
+func (batch *failingPutTxQUICBatch) WriteSync() error {
+	syncBatch, ok := batch.Batch.(ethdb.SyncBatch)
+	if !ok {
+		return errors.New("underlying test database has no synchronous batch")
+	}
+	return syncBatch.WriteSync()
 }
 
 type recordedTxQUICBatchOperation struct {
@@ -4269,7 +4390,6 @@ func TestTxOutboxGroupCommitContinuesAfterCallerCancellation(t *testing.T) {
 	}, nil); err != nil {
 		t.Fatal(err)
 	}
-	defer outbox.Stop()
 	db.block.Store(true)
 
 	payload := testTxQUICBatchPayload(t, config, testTxQUICTransaction(6400, 0))
@@ -4294,7 +4414,23 @@ func TestTxOutboxGroupCommitContinuesAfterCallerCancellation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cancelled StoreSync did not return")
 	}
+	stopped := make(chan struct{})
+	go func() {
+		outbox.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		close(db.release)
+		t.Fatal("Stop returned before the node-owned projection fsync completed")
+	case <-time.After(20 * time.Millisecond):
+	}
 	close(db.release)
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not finish after the node-owned projection fsync completed")
+	}
 	deadline := time.Now().Add(time.Second)
 	for {
 		has, err := base.Has(txOutboxRecordKey(batchID))
@@ -4308,6 +4444,17 @@ func TestTxOutboxGroupCommitContinuesAfterCallerCancellation(t *testing.T) {
 			t.Fatal("caller cancellation discarded the already-enqueued durable commit")
 		}
 		time.Sleep(time.Millisecond)
+	}
+	stripeReleased := make(chan struct{})
+	go func() {
+		unlock := outbox.lockLifecycle(batchID)
+		unlock()
+		close(stripeReleased)
+	}()
+	select {
+	case <-stripeReleased:
+	case <-time.After(time.Second):
+		t.Fatal("Stop returned with a canceled caller's lifecycle stripe still held")
 	}
 }
 
@@ -4331,6 +4478,19 @@ func TestTxOutboxGroupCommitStopFailsQueuedWaiters(t *testing.T) {
 		testTxOutboxCommitRequest(t, txOutboxBatchID(payloadA), payloadA),
 		testTxOutboxCommitRequest(t, txOutboxBatchID(payloadB), payloadB),
 	}
+	outbox.mu.Lock()
+	for _, request := range requests {
+		capacityBytes, err := txOutboxRecordCapacityBytes(request.payload)
+		if err != nil {
+			outbox.mu.Unlock()
+			t.Fatal(err)
+		}
+		request.reservedBytes = capacityBytes
+		outbox.reservations[request.batchID] = capacityBytes
+		outbox.reservedRecords++
+		outbox.reservedBytes += capacityBytes
+	}
+	outbox.mu.Unlock()
 	outbox.commitCh <- requests[0]
 	deadline := time.Now().Add(time.Second)
 	for len(outbox.commitCh) != 0 {
@@ -4362,6 +4522,357 @@ func TestTxOutboxGroupCommitStopFailsQueuedWaiters(t *testing.T) {
 	}
 	if writes := db.syncWrites.Load(); writes != 0 {
 		t.Fatalf("stopped outbox performed %d unexpected sync writes", writes)
+	}
+	outbox.mu.Lock()
+	reservedRecords, reservedBytes, reservations := outbox.reservedRecords, outbox.reservedBytes, len(outbox.reservations)
+	outbox.mu.Unlock()
+	if reservedRecords != 0 || reservedBytes != 0 || reservations != 0 {
+		t.Fatalf("stopped queued commits leaked reservations = %d/%d/%d", reservedRecords, reservedBytes, reservations)
+	}
+}
+
+func TestTxOutboxParentCancellationCannotEnqueueAfterCommitDrain(t *testing.T) {
+	config := testTxQUICConfig()
+	config.OutboxMaxRecords = 64
+	config.OutboxMaxBytes = 64 << 20
+	parent, cancelParent := context.WithCancel(context.Background())
+	outbox := NewTxOutbox(memorydb.New(), config)
+	// This path models local outcomes which already own their bytes in the
+	// unified WAL. The callback is the deterministic boundary immediately before
+	// projection-commit admission.
+	outbox.wal = &txIngressWAL{}
+	if err := outbox.Start(parent, func(ctx context.Context, _ []byte) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	const stores = 64
+	payloads := make([][]byte, 0, stores)
+	stripes := make(map[int]struct{}, stores)
+	for nonce := uint64(7100); len(payloads) < stores; nonce++ {
+		payload := testTxQUICBatchPayload(t, config, testTxQUICTransaction(nonce, 0))
+		stripe := txOutboxLifecycleStripe(txOutboxBatchID(payload))
+		if _, duplicate := stripes[stripe]; duplicate {
+			continue
+		}
+		stripes[stripe] = struct{}{}
+		payloads = append(payloads, payload)
+	}
+
+	callbackEntered := make(chan struct{}, stores)
+	releaseCallbacks := make(chan struct{})
+	results := make(chan error, stores)
+	for _, payload := range payloads {
+		payload := payload
+		go func() {
+			_, err := outbox.storeLocalOutcomeVerifiedSync(context.Background(), payload, func(context.Context) error {
+				callbackEntered <- struct{}{}
+				<-releaseCallbacks
+				return nil
+			})
+			results <- err
+		}()
+	}
+	for range payloads {
+		select {
+		case <-callbackEntered:
+		case <-time.After(2 * time.Second):
+			cancelParent()
+			close(releaseCallbacks)
+			outbox.Stop()
+			t.Fatal("stores did not reach the pre-enqueue shutdown boundary")
+		}
+	}
+	cancelParent()
+	// All node-owned consumers have completed their final drain while producers
+	// remain paused just before enqueue.
+	outbox.wg.Wait()
+	close(releaseCallbacks)
+	for range payloads {
+		select {
+		case err := <-results:
+			if err == nil {
+				t.Fatal("store succeeded after parent cancellation")
+			}
+		case <-time.After(2 * time.Second):
+			outbox.Stop()
+			t.Fatal("store did not terminate after parent cancellation")
+		}
+	}
+
+	outbox.mu.Lock()
+	queued := len(outbox.commitCh)
+	reservedRecords, reservedBytes := outbox.reservedRecords, outbox.reservedBytes
+	outbox.mu.Unlock()
+	// Clean up a buggy implementation before reporting the assertion so leaked
+	// lifecycle waiters do not contaminate later tests.
+	for {
+		select {
+		case request := <-outbox.commitCh:
+			if request != nil {
+				_ = outbox.releaseRecordReservation(request.batchID, request.reservedBytes)
+				request.result <- txOutboxCommitResult{err: errors.New("test cleanup after late enqueue")}
+			}
+		default:
+			outbox.Stop()
+			if queued != 0 || reservedRecords != 0 || reservedBytes != 0 {
+				t.Fatalf("post-drain enqueue leaked queue/reservations = %d/%d/%d", queued, reservedRecords, reservedBytes)
+			}
+			return
+		}
+	}
+}
+
+func TestTxOutboxConcurrentStopsWaitForSameCompletion(t *testing.T) {
+	config := testTxQUICConfig()
+	deliveryStarted := make(chan struct{})
+	deliveryCanceled := make(chan struct{})
+	releaseDelivery := make(chan struct{})
+	var startedOnce, canceledOnce sync.Once
+	outbox := NewTxOutbox(memorydb.New(), config)
+	if err := outbox.Start(context.Background(), func(ctx context.Context, _ []byte) error {
+		startedOnce.Do(func() { close(deliveryStarted) })
+		<-ctx.Done()
+		canceledOnce.Do(func() { close(deliveryCanceled) })
+		<-releaseDelivery
+		return ctx.Err()
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := outbox.StoreSync(context.Background(), testTxQUICBatchPayload(t, config, testTxQUICTransaction(7199, 0))); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-deliveryStarted:
+	case <-time.After(time.Second):
+		t.Fatal("outbox delivery did not start")
+	}
+	firstStopped := make(chan struct{})
+	go func() {
+		outbox.Stop()
+		close(firstStopped)
+	}()
+	select {
+	case <-deliveryCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("first Stop did not cancel delivery")
+	}
+	secondStopped := make(chan struct{})
+	go func() {
+		outbox.Stop()
+		close(secondStopped)
+	}()
+	select {
+	case <-secondStopped:
+		close(releaseDelivery)
+		<-firstStopped
+		t.Fatal("concurrent Stop returned before the shared shutdown completed")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(releaseDelivery)
+	for index, stopped := range []<-chan struct{}{firstStopped, secondStopped} {
+		select {
+		case <-stopped:
+		case <-time.After(time.Second):
+			t.Fatalf("Stop caller %d did not observe shared completion", index)
+		}
+	}
+}
+
+func TestTxOutboxCapacityWaitDoesNotHoldLifecycleStripe(t *testing.T) {
+	config := testTxQUICConfig()
+	payloadA := testTxQUICBatchPayload(t, config, testTxQUICTransaction(7200, 0))
+	payloadB := testTxQUICBatchPayload(t, config, testTxQUICTransaction(7201, 0))
+	idB := txOutboxBatchID(payloadB)
+	idA := idB
+	idA[len(idA)-1] ^= 0x01 // distinct identity on the exact same lifecycle stripe
+	recordA := TxOutboxRecord{BatchID: idA, Payload: payloadA, CreatedAt: uint64(time.Now().UnixNano())}
+	encodedA, err := rlp.EncodeToBytes(&recordA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capacityA, err := txOutboxRecordCapacityBytes(payloadA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capacityB, err := txOutboxRecordCapacityBytes(payloadB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.OutboxMaxRecords = 1
+	config.OutboxMaxBytes = capacityA
+	if capacityB > config.OutboxMaxBytes {
+		config.OutboxMaxBytes = capacityB
+	}
+	base := memorydb.New()
+	db := &blockingHasTxQUICDB{
+		KeyValueStore: base, target: txOutboxRecordKey(idB), entered: make(chan struct{}), release: make(chan struct{}),
+	}
+	outbox := NewTxOutbox(db, config)
+	if err := outbox.Start(context.Background(), func(ctx context.Context, _ []byte) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := base.Put(txOutboxRecordKey(idA), encodedA); err != nil {
+		outbox.Stop()
+		t.Fatal(err)
+	}
+	outbox.mu.Lock()
+	outbox.records = 1
+	outbox.bytes = capacityA
+	outbox.mu.Unlock()
+
+	stored := make(chan error, 1)
+	go func() {
+		_, err := outbox.StoreSync(context.Background(), payloadB)
+		stored <- err
+	}()
+	select {
+	case <-db.entered:
+	case <-time.After(time.Second):
+		outbox.Stop()
+		t.Fatal("capacity waiter did not reach its authoritative record lookup")
+	}
+	deleted := make(chan error, 1)
+	go func() { deleted <- outbox.deleteRecord(&recordA) }()
+	close(db.release)
+	select {
+	case err := <-deleted:
+		if err != nil {
+			outbox.Stop()
+			t.Fatalf("same-stripe delete failed to free capacity: %v", err)
+		}
+	case <-time.After(time.Second):
+		outbox.Stop()
+		t.Fatal("capacity waiter held the lifecycle stripe needed by its capacity-releasing delete")
+	}
+	select {
+	case err := <-stored:
+		if err != nil {
+			t.Fatalf("store did not resume after same-stripe capacity release: %v", err)
+		}
+	case <-time.After(time.Second):
+		outbox.Stop()
+		t.Fatal("store did not resume after capacity was freed")
+	}
+	outbox.Stop()
+}
+
+func TestTxOutboxWALOwnedProjectionFailureRetainsCapacityUntilRestart(t *testing.T) {
+	config := testTxQUICConfig()
+	payloadA := testTxQUICBatchPayload(t, config, testTxQUICTransaction(7300, 0))
+	payloadB := testTxQUICBatchPayload(t, config, testTxQUICTransaction(7301, 0))
+	capacityA, err := txOutboxRecordCapacityBytes(payloadA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capacityB, err := txOutboxRecordCapacityBytes(payloadB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.OutboxMaxRecords = 1
+	config.OutboxMaxBytes = capacityA
+	if capacityB > config.OutboxMaxBytes {
+		config.OutboxMaxBytes = capacityB
+	}
+
+	walDB := memorydb.New()
+	wal := newTxIngressWAL(walDB, config)
+	wal.maxRecords = 64
+	wal.maxBytes = config.OutboxMaxBytes * 64
+	if err := wal.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	base := memorydb.New()
+	projectionDB := &failingPutTxQUICDB{KeyValueStore: base}
+	outbox := NewTxOutbox(projectionDB, config)
+	outbox.wal = wal
+	if err := outbox.Start(context.Background(), func(ctx context.Context, _ []byte) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}, nil); err != nil {
+		wal.Stop()
+		t.Fatal(err)
+	}
+	projectionDB.failRecordPut.Store(true)
+	if _, err := outbox.StoreSync(context.Background(), payloadA); err == nil || !strings.Contains(err.Error(), "projection") {
+		outbox.Stop()
+		wal.Stop()
+		t.Fatalf("WAL-owned projection failure = %v", err)
+	}
+	outbox.mu.Lock()
+	poison := outbox.poison
+	reservedRecords, reservedBytes := outbox.reservedRecords, outbox.reservedBytes
+	outbox.mu.Unlock()
+	if poison == nil || reservedRecords != 1 || reservedBytes != capacityA {
+		outbox.Stop()
+		wal.Stop()
+		t.Fatalf("post-WAL projection failure poison/reservation = %v/%d/%d, want poison/1/%d",
+			poison, reservedRecords, reservedBytes, capacityA)
+	}
+	projectionDB.failRecordPut.Store(false)
+	if _, err := outbox.StoreSync(context.Background(), payloadB); err == nil || !strings.Contains(err.Error(), "poisoned until restart") {
+		outbox.Stop()
+		wal.Stop()
+		t.Fatalf("post-failure ownership was not failed closed: %v", err)
+	}
+	outbox.Stop()
+	wal.Stop()
+
+	restartedWAL := newTxIngressWAL(walDB, config)
+	restartedWAL.maxRecords = 64
+	restartedWAL.maxBytes = config.OutboxMaxBytes * 64
+	if err := restartedWAL.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer restartedWAL.Stop()
+	restartedOutbox := NewTxOutbox(base, config)
+	if err := ensureTxQUICDatabaseIdentity(base, txOutboxIdentityKey, txQUICDatabaseIdentity{ChainID: config.ChainID, GenesisHash: config.GenesisHash}); err != nil {
+		t.Fatal(err)
+	}
+	q := &TxQUICIngress{config: config, ctx: context.Background(), wal: restartedWAL, outbox: restartedOutbox}
+	if err := q.replayWALOutboxProjection(); err != nil {
+		t.Fatal(err)
+	}
+	if err := restartedOutbox.Start(context.Background(), func(ctx context.Context, _ []byte) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}, nil); err != nil {
+		t.Fatalf("capacity-bounded restart after projection failure: %v", err)
+	}
+	defer restartedOutbox.Stop()
+	if records, _ := restartedOutbox.Pending(); records != 1 {
+		t.Fatalf("restart materialized %d WAL-owned records, want 1", records)
+	}
+}
+
+func TestTxOutboxBusyPredecessorDoesNotConsumeReenqueueSchedule(t *testing.T) {
+	config := testTxQUICConfig()
+	config.OutboxWorkers = 2
+	outbox := NewTxOutbox(memorydb.New(), config)
+	batchID := common.HexToHash("0x7311")
+	due := uint64(time.Now().UnixNano())
+	outbox.mu.Lock()
+	outbox.inFlight[batchID] = struct{}{}
+	outbox.scheduleRecordLocked(batchID, due)
+	outbox.mu.Unlock()
+	if claimed, ok := outbox.popDue(due); ok || claimed != (common.Hash{}) {
+		t.Fatalf("busy predecessor was claimed again: %s", claimed)
+	}
+	outbox.mu.Lock()
+	_, scheduled := outbox.scheduled[batchID]
+	heapEntries := outbox.schedule.Len()
+	delete(outbox.inFlight, batchID)
+	outbox.mu.Unlock()
+	if !scheduled || heapEntries != 1 {
+		t.Fatalf("busy predecessor consumed re-enqueue schedule: scheduled=%t heap=%d", scheduled, heapEntries)
+	}
+	if claimed, ok := outbox.popDue(due); !ok || claimed != batchID {
+		t.Fatalf("released predecessor claim = %s/%t, want %s/true", claimed, ok, batchID)
 	}
 }
 
@@ -4621,6 +5132,9 @@ func TestTxQUICRuntimeLimitsBoundBridgeQueueBytes(t *testing.T) {
 	}
 	if DefaultConfig.TxQUIC.BridgeQueueMaxBytes >= int64(DefaultConfig.TxQUIC.BridgeQueueSize)*(128<<10) {
 		t.Fatalf("default bridge byte limit %d permits the count bound to retain 128 KiB per item", DefaultConfig.TxQUIC.BridgeQueueMaxBytes)
+	}
+	if defaultTxQUICBridgeQueueMaxBytes < 256<<20 || defaultTxQUICBridgeQueueMaxBytes > txQUICMaxBridgeQueueBytes {
+		t.Fatalf("default bridge burst envelope %d is outside [256 MiB, %d]", defaultTxQUICBridgeQueueMaxBytes, txQUICMaxBridgeQueueBytes)
 	}
 }
 

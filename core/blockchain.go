@@ -39,6 +39,7 @@ import (
 	"github.com/cypherium/cypher/core/state/snapshot"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
+	"github.com/cypherium/cypher/crypto/kzg4844"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
@@ -279,6 +280,15 @@ type BlockChain struct {
 	processor  Processor  // Block transaction processor interface
 	vmConfig   vm.Config
 
+	// nativeSchedules is a bounded consume-once bridge between body validation
+	// and execution. It is strictly an optimisation; execution rebuilds on a
+	// cache miss and never depends on this node-local state for consensus.
+	nativeSchedules *nativeScheduleHandoff
+	// validatedFHSSidecars transfers the full common-RPC sidecar validation
+	// result from ValidateBody to the first StateProcessor consumer. Like the
+	// native schedule handoff, it is bounded, consume-once, and optional.
+	validatedFHSSidecars *fhsSidecarHandoff
+
 	badBlocks       *lru.Cache                     // Bad block cache
 	shouldPreserve  func(*types.Block) bool        // Function used to determine whether should preserve the given block.
 	terminateInsert func(common.Hash, uint64) bool // Testing hook used to terminate ancient receipt chain insertion.
@@ -366,6 +376,12 @@ func fairEqualTDTieBreak(candidateHash common.Hash, currentHash common.Hash) boo
 // available in the database. It initialises the default Ethereum Validator and
 // Processor.
 func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *params.ChainConfig, engine consensus.Engine, vmConfig vm.Config, shouldPreserve func(block *types.Block) bool, txLookupLimit *uint64, kbc *KeyBlockChain) (*BlockChain, error) {
+	// The KZG trusted setup is immutable process-wide infrastructure and is
+	// intentionally initialized before Native transactions start. This keeps
+	// its one-time allocation out of every signed per-transaction memory budget.
+	if chainConfig != nil && chainConfig.NativeParallelEnabled() {
+		kzg4844.PreloadAndFreeze()
+	}
 	if cacheConfig == nil {
 		cacheConfig = defaultCacheConfig
 	}
@@ -379,23 +395,25 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 	log.Info("BlockChain New", "chain id", chainConfig.ChainID)
 
 	bc := &BlockChain{
-		chainConfig:    chainConfig,
-		cacheConfig:    cacheConfig,
-		db:             db,
-		triegc:         prque.New(nil),
-		stateCache:     state.NewDatabaseWithCache(db, cacheConfig.TrieCleanLimit, cacheConfig.TrieCleanJournal),
-		quit:           make(chan struct{}),
-		shouldPreserve: shouldPreserve,
-		bodyCache:      bodyCache,
-		bodyRLPCache:   bodyRLPCache,
-		receiptsCache:  receiptsCache,
-		blockCache:     blockCache,
-		txLookupCache:  txLookupCache,
-		futureBlocks:   futureBlocks,
-		engine:         engine,
-		vmConfig:       vmConfig,
-		badBlocks:      badBlocks,
-		keyBlockChain:  kbc,
+		chainConfig:          chainConfig,
+		cacheConfig:          cacheConfig,
+		db:                   db,
+		triegc:               prque.New(nil),
+		stateCache:           state.NewDatabaseWithCache(db, cacheConfig.TrieCleanLimit, cacheConfig.TrieCleanJournal),
+		quit:                 make(chan struct{}),
+		shouldPreserve:       shouldPreserve,
+		bodyCache:            bodyCache,
+		bodyRLPCache:         bodyRLPCache,
+		receiptsCache:        receiptsCache,
+		blockCache:           blockCache,
+		txLookupCache:        txLookupCache,
+		futureBlocks:         futureBlocks,
+		engine:               engine,
+		vmConfig:             vmConfig,
+		badBlocks:            badBlocks,
+		keyBlockChain:        kbc,
+		nativeSchedules:      newNativeScheduleHandoff(),
+		validatedFHSSidecars: newFHSSidecarHandoff(),
 	}
 
 	bc.validator = NewBlockValidator(chainConfig, bc, engine)
@@ -930,7 +948,11 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) error {
 		rawdb.WriteBlock(batch, block)
 	}
 	rawdb.WriteCanonicalHash(batch, block.Hash(), block.NumberU64())
-	rawdb.WriteTxLookupEntries(batch, block)
+	if bc.chainConfig != nil && bc.chainConfig.FairHotstuff {
+		rawdb.WriteFHSFinalizedTxLookupEntries(batch, block)
+	} else {
+		rawdb.WriteTxLookupEntries(batch, block)
+	}
 	rawdb.WriteHeadBlockHash(batch, block.Hash())
 	if keyBlock != nil {
 		bc.keyBlockChain.stageCanonicalKeyBlock(batch, keyBlock)
@@ -965,6 +987,11 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) error {
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("failed to update transaction/key chain indexes and markers: %w", err)
 	}
+	// Publish finalized bits and remove cached winners before exposing the new
+	// head. Lock-free proposal readers either linearize before this point (and
+	// are rejected by their proposal-generation barrier) or observe finality;
+	// no reader can observe a new head with a stale admission cache entry.
+	forgetFinalizedAdmissions()
 	if keyBlock != nil {
 		bc.keyBlockChain.setCanonicalKeyBlock(keyBlock)
 	}
@@ -975,10 +1002,6 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) error {
 		headFastBlockGauge.Update(int64(block.NumberU64()))
 	}
 	bc.currentBlock.Store(block)
-	// Remove the in-memory winners before their stripes are released. Proposal
-	// selection can therefore never observe a finalized sidecar after the new
-	// head becomes visible, and a waiting replay sees finality and stays absent.
-	forgetFinalizedAdmissions()
 	if bc.blockCache != nil {
 		bc.blockCache.Add(block.Hash(), block)
 	}
@@ -1465,6 +1488,13 @@ func (bc *BlockChain) InsertReceiptChain(blockChain types.Blocks, receiptChain [
 					blockChain[i-1].Hash().Bytes()[:4], i, blockChain[i].NumberU64(), blockChain[i].Hash().Bytes()[:4], blockChain[i].ParentHash().Bytes()[:4])
 			}
 		}
+		// Fast sync persists bodies without executing them through ValidateBody.
+		// Verify blob gas, active-fork sidecar format and real KZG proofs for the
+		// entire receipt chain before preflightFHSReceiptChain or either storage
+		// path can perform its first database mutation.
+		if err := ValidateBlockBlobExecution(bc.chainConfig, blockChain[i].Header(), blockChain[i].Transactions(), types.KZGBlobVerifier{}); err != nil {
+			return i, fmt.Errorf("invalid blob body at receipt block %d: %w", blockChain[i].NumberU64(), err)
+		}
 		if blockChain[i].NumberU64() <= ancientLimit {
 			ancientBlocks, ancientReceipts = append(ancientBlocks, blockChain[i]), append(ancientReceipts, receiptChain[i])
 		} else {
@@ -1879,6 +1909,9 @@ func (bc *BlockChain) ValidateBlockForHotstuffWithParent(proposalID common.Hash,
 func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block, parentProposal *VerifiedProposal, proofAwareSync bool) (*VerifiedProposal, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal block")
+	}
+	if err := validateFHSPrevRandao(bc.chainConfig, block, bc.keyBlockChain); err != nil {
+		return nil, fmt.Errorf("hotstuff proposal PREVRANDAO invalid: %w", err)
 	}
 	if proposalID == (common.Hash{}) {
 		return nil, fmt.Errorf("empty hotstuff proposal id")
@@ -2386,9 +2419,11 @@ func (bc *BlockChain) backfillCurrentFHSFinalityProof(block *types.Block) error 
 	}
 	defer releaseAdmissionStripes()
 	rawdb.WriteBlock(batch, block)
+	rawdb.WriteFHSFinalizedTxLookupEntries(batch, block)
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("persist Fair HotStuff proof backfill: %w", err)
 	}
+	forgetFinalizedAdmissions()
 	if bc.blockCache != nil {
 		bc.blockCache.Add(block.Hash(), block)
 	}
@@ -2399,7 +2434,6 @@ func (bc *BlockChain) backfillCurrentFHSFinalityProof(block *types.Block) error 
 		bc.hc.SetCurrentHeader(block.Header())
 	}
 	bc.currentBlock.Store(block)
-	forgetFinalizedAdmissions()
 	if fast := bc.CurrentFastBlock(); fast != nil && fast.Hash() == block.Hash() && fast.NumberU64() == block.NumberU64() {
 		bc.currentFastBlock.Store(block)
 	}
@@ -2457,6 +2491,9 @@ func (bc *BlockChain) validateEmbeddedKeyBlockForCanonicalInsert(block *types.Bl
 func (bc *BlockChain) validateFHSCanonicalExtension(block *types.Block) error {
 	if bc.chainConfig == nil || !bc.chainConfig.FairHotstuff || block == nil || block.NumberU64() == 0 {
 		return nil
+	}
+	if err := validateFHSPrevRandao(bc.chainConfig, block, bc.keyBlockChain); err != nil {
+		return fmt.Errorf("invalid canonical Fair HotStuff PREVRANDAO: %w", err)
 	}
 	current := bc.CurrentBlock()
 	if current == nil {
@@ -4057,27 +4094,24 @@ func (bc *BlockChain) GetTransactionLookup(hash common.Hash) *rawdb.LegacyTxLook
 	return lookup
 }
 
-// IsFinalizedTransaction reports whether hash belongs to the canonical FHS
-// chain at or below the full-state head. Receipt sync may write transaction
-// lookup entries while the header/receipt chain is ahead of 2-chain finality,
-// so lookup presence alone is not a safe admission/WAL deletion boundary.
+// IsFinalizedTransaction reports whether hash has an exact FHS-finalized index
+// whose block is still canonical at or below the full-state head. The dedicated
+// index is written only in the same batch as finality publication; receipt sync
+// never writes it. This avoids decoding and linearly scanning a potentially
+// 262,144-transaction body for every admission lookup.
 func (bc *BlockChain) IsFinalizedTransaction(hash common.Hash) bool {
 	if bc == nil || hash == (common.Hash{}) {
 		return false
 	}
-	number := rawdb.ReadTxLookupEntry(bc.db, hash)
-	if number == nil {
+	blockHash, number, ok := rawdb.ReadFHSFinalizedTxLookupEntry(bc.db, hash)
+	if !ok {
 		return false
 	}
 	head := bc.CurrentBlock()
-	if head == nil || *number > head.NumberU64() {
+	if head == nil || number > head.NumberU64() {
 		return false
 	}
-	tx, blockHash, blockNumber, _ := rawdb.ReadTransaction(bc.db, hash)
-	if tx == nil || tx.Hash() != hash || blockNumber != *number {
-		return false
-	}
-	return blockHash != (common.Hash{}) && rawdb.ReadCanonicalHash(bc.db, *number) == blockHash
+	return rawdb.ReadCanonicalHash(bc.db, number) == blockHash
 }
 
 // Config retrieves the chain's fork configuration.

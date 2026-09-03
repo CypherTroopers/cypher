@@ -61,11 +61,53 @@ func (m *Memory) Set32(offset uint64, val *uint256.Int) {
 	val.WriteToSlice(m.store[offset:])
 }
 
-// Resize resizes the memory to size
-func (m *Memory) Resize(size uint64) {
-	if uint64(m.Len()) < size {
-		m.store = append(m.store, make([]byte, size-uint64(m.Len()))...)
+// nextCapacity returns an amortized geometric capacity. Native execution's
+// process-wide lease charges a conservative old+new backing-array factor while
+// its signed MemoryLimit retains stable logical-memory semantics.
+func (m *Memory) nextCapacity(size uint64) uint64 {
+	capacity := uint64(cap(m.store))
+	if capacity >= size {
+		return capacity
 	}
+	if capacity < 32 {
+		capacity = 32
+	}
+	for capacity < size {
+		if capacity > ^uint64(0)/2 {
+			return size
+		}
+		capacity *= 2
+	}
+	return capacity
+}
+
+// resize resizes the logical image and uses exactly targetCapacity when a new
+// backing allocation is needed. targetCapacity must be at least size.
+func (m *Memory) resize(size, targetCapacity uint64) {
+	if uint64(m.Len()) >= size {
+		return
+	}
+	oldLength := len(m.store)
+	if size <= uint64(cap(m.store)) {
+		m.store = m.store[:size]
+		for index := oldLength; index < len(m.store); index++ {
+			m.store[index] = 0
+		}
+		return
+	}
+	if targetCapacity < size {
+		targetCapacity = size
+	}
+	replacement := make([]byte, size, targetCapacity)
+	copy(replacement, m.store)
+	m.store = replacement
+
+}
+
+// Resize preserves logical EVM memory semantics with amortized growth. Native
+// execution accounts the possible old+new backing peak in its global DAG lease.
+func (m *Memory) Resize(size uint64) {
+	m.resize(size, m.nextCapacity(size))
 }
 
 // Get returns offset + size as a new slice

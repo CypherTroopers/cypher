@@ -275,3 +275,29 @@ func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes, now time.T
 
 	return addrTxes
 }
+
+// withoutProposedTransactions is the nonce-free NativeTxV1 counterpart of
+// withoutProposedTxes. PendingNative already returns an immutable deterministic
+// priority snapshot, so compact that fresh slice in place without imposing a
+// per-payer nonce window.
+func (chain *proposedChain) withoutProposedTransactions(txs types.Transactions, now time.Time) types.Transactions {
+	if chain.cleanupExpiredProposedTxes(now) {
+		chain.revision++
+	}
+	writeIndex := 0
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		hash := tx.Hash()
+		if _, blocked := chain.proposedTxes[hash]; blocked {
+			continue
+		}
+		if _, certified := chain.certifiedTxes[hash]; certified {
+			continue
+		}
+		txs[writeIndex] = tx
+		writeIndex++
+	}
+	return txs[:writeIndex]
+}

@@ -12,9 +12,14 @@ import (
 // transactions remain plain RLP. Typed transactions are encoded as
 // type || rlp(payload), following EIP-2718.
 func (tx *Transaction) MarshalBinary() ([]byte, error) {
-	if tx != nil && tx.Type() != LegacyTxType {
-		if err := validateTypedIntegerBounds(tx.data); err != nil {
+	if tx != nil {
+		if err := tx.ValidateIntegerBounds(); err != nil {
 			return nil, err
+		}
+		if inner, ok := tx.data.(*NativeTxV1); ok {
+			if err := ValidateNativeManifest(inner); err != nil {
+				return nil, err
+			}
 		}
 	}
 	switch inner := tx.data.(type) {
@@ -28,6 +33,8 @@ func (tx *Transaction) MarshalBinary() ([]byte, error) {
 		return encodeTypedEnvelope(BlobTxType, inner)
 	case *SetCodeTx:
 		return encodeTypedEnvelope(SetCodeTxType, inner)
+	case *NativeTxV1:
+		return encodeTypedEnvelope(NativeTxType, inner)
 	default:
 		return nil, fmt.Errorf("unsupported transaction inner type %T", tx.data)
 	}
@@ -79,14 +86,11 @@ func (tx *Transaction) decodeTypedEnvelope(input []byte) error {
 		}
 		tx.data = &inner
 	case BlobTxType:
-		var inner BlobTx
-		if err := decodeTypedPayload(payload, &inner); err != nil {
+		inner, err := decodeBlobTypedPayload(payload)
+		if err != nil {
 			return err
 		}
-		if err := validateTypedIntegerBounds(&inner); err != nil {
-			return err
-		}
-		tx.data = &inner
+		tx.data = inner
 	case SetCodeTxType:
 		var inner SetCodeTx
 		if err := decodeTypedPayload(payload, &inner); err != nil {
@@ -97,7 +101,7 @@ func (tx *Transaction) decodeTypedEnvelope(input []byte) error {
 		}
 		tx.data = &inner
 	default:
-		return fmt.Errorf("unsupported transaction type %d", typ)
+		return fmt.Errorf("unsupported transaction type %d; EVM consensus accepts only types 0 through 4", typ)
 	}
 	tx.setDecodedDefaults()
 	return nil
@@ -108,7 +112,7 @@ func validateTypedUint256(name string, value *big.Int) error {
 		return nil
 	}
 	if value.Sign() < 0 || value.BitLen() > 256 {
-		return fmt.Errorf("%s exceeds uint256", name)
+		return fmt.Errorf("%s: %w", name, ErrTxIntegerOutOfRange)
 	}
 	return nil
 }
@@ -125,7 +129,7 @@ func validateTypedValues(values ...struct {
 	return nil
 }
 
-// validateTypedIntegerBounds preserves the EIP-2718 wire contract despite the
+// validateTypedIntegerBounds preserves the Ethereum wire contract despite the
 // local transaction structs using big.Int instead of uint256.Int. Without this
 // check, a peer can encode 257-bit fee/value/signature fields that canonical
 // Ethereum decoders reject.
@@ -144,6 +148,11 @@ func validateTypedIntegerBounds(data TxData) error {
 		value *big.Int
 	}
 	switch tx := data.(type) {
+	case *txdata:
+		fields = []struct {
+			name  string
+			value *big.Int
+		}{field("gasPrice", tx.Price), field("value", tx.Amount), field("v", tx.V), field("r", tx.R), field("s", tx.S)}
 	case *AccessListTx:
 		fields = []struct {
 			name  string
@@ -176,6 +185,19 @@ func validateTypedIntegerBounds(data TxData) error {
 			if auth.V != nil && (auth.V.Sign() < 0 || auth.V.BitLen() > 8) {
 				return fmt.Errorf("authorization[%d].yParity exceeds uint8", i)
 			}
+		}
+	case *NativeTxV1:
+		fields = []struct {
+			name  string
+			value *big.Int
+		}{
+			field("chainId", tx.ChainID),
+			field("value", tx.Value),
+			field("maxFeePerCompute", tx.MaxFeePerCompute),
+			field("maxPriorityFeePerCompute", tx.PriorityFeePerCompute),
+			field("v", tx.V),
+			field("r", tx.R),
+			field("s", tx.S),
 		}
 	default:
 		return nil

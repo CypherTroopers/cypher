@@ -26,6 +26,7 @@ import (
 
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/console/prompt"
+	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/internal/ethapi"
 	"github.com/cypherium/cypher/log"
 )
@@ -116,13 +117,36 @@ func (ui *CommandlineUI) ApproveTx(request *SignTxRequest) (SignTxResponse, erro
 	fmt.Printf("from:     %v\n", request.Transaction.From.String())
 	fmt.Printf("value:    %v wei\n", weival)
 	fmt.Printf("gas:      %v (%v)\n", request.Transaction.Gas, uint64(request.Transaction.Gas))
-	fmt.Printf("gasprice: %v wei\n", request.Transaction.GasPrice.ToInt())
-	fmt.Printf("nonce:    %v (%v)\n", request.Transaction.Nonce, uint64(request.Transaction.Nonce))
-	if request.Transaction.Data != nil {
-		d := *request.Transaction.Data
-		if len(d) > 0 {
-			fmt.Printf("data:     %v\n", hexutil.Encode(d))
+	if txType, err := request.Transaction.transactionType(); err != nil {
+		fmt.Printf("type:     invalid (%v)\n", err)
+	} else {
+		fmt.Printf("type:     %d\n", txType)
+		if txType <= 1 {
+			fmt.Printf("gasprice: %v wei\n", request.Transaction.GasPrice.ToInt())
+		} else {
+			fmt.Printf("maxFeePerGas:         %v wei\n", request.Transaction.MaxFeePerGas)
+			fmt.Printf("maxPriorityFeePerGas: %v wei\n", request.Transaction.MaxPriorityFeePerGas)
 		}
+	}
+	if request.Transaction.ChainID != nil {
+		fmt.Printf("chainId:  %v\n", request.Transaction.ChainID)
+	}
+	fmt.Printf("nonce:    %v (%v)\n", request.Transaction.Nonce, uint64(request.Transaction.Nonce))
+	if data, err := request.Transaction.transactionData(); err != nil {
+		fmt.Printf("data:     invalid (%v)\n", err)
+	} else if len(data) > 0 {
+		fmt.Printf("data:     %v\n", hexutil.Encode(data))
+	}
+	if request.Transaction.AccessList != nil {
+		fmt.Printf("accessList entries: %d\n", len(*request.Transaction.AccessList))
+	}
+	if request.Transaction.MaxFeePerBlobGas != nil {
+		fmt.Printf("maxFeePerBlobGas: %v wei\n", request.Transaction.MaxFeePerBlobGas)
+		fmt.Printf("blob wrapper version: %d (Osaka)\n", types.BlobSidecarVersion1)
+		fmt.Printf("blobs: %d, versioned hashes: %d\n", len(request.Transaction.Blobs), len(request.Transaction.BlobVersionedHashes))
+	}
+	if request.Transaction.AuthorizationList != nil {
+		fmt.Printf("authorizationList entries: %d\n", len(request.Transaction.AuthorizationList))
 	}
 	if request.Callinfo != nil {
 		fmt.Printf("\nTransaction validation:\n")

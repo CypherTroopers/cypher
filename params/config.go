@@ -467,7 +467,10 @@ type ChainConfig struct {
 	FairHotstuff          bool             `json:"fairHotstuff,omitempty"`
 	FairHotstuffSeed      common.Hash      `json:"fairHotstuffSeed,omitempty"`
 	CommonRPCSigners      []common.Address `json:"commonRPCSigners,omitempty"`
-	EnabledTPS            bool
+	// NativeParallel retains its internal name while the public genesis schema
+	// calls this EVM execution-capacity profile "evmParallel".
+	NativeParallel *NativeParallelConfig `json:"evmParallel,omitempty"`
+	EnabledTPS     bool
 }
 type GenesisCommittee map[int]common.Cnode
 
@@ -593,6 +596,11 @@ func (c *ChainConfig) String() string {
 		cancunTime        *uint64
 		pragueTime        *uint64
 		osakaTime         *uint64
+		bpo1Time          *uint64
+		bpo2Time          *uint64
+		bpo3Time          *uint64
+		bpo4Time          *uint64
+		bpo5Time          *uint64
 		blobSchedule      *BlobScheduleConfig
 	)
 	if modern := c.ModernForkConfig(); modern != nil {
@@ -604,6 +612,11 @@ func (c *ChainConfig) String() string {
 		cancunTime = modern.CancunTime
 		pragueTime = modern.PragueTime
 		osakaTime = modern.OsakaTime
+		bpo1Time = modern.BPO1Time
+		bpo2Time = modern.BPO2Time
+		bpo3Time = modern.BPO3Time
+		bpo4Time = modern.BPO4Time
+		bpo5Time = modern.BPO5Time
 		blobSchedule = modern.BlobSchedule
 	}
 
@@ -623,10 +636,13 @@ func (c *ChainConfig) String() string {
 		if v == nil {
 			return nil
 		}
-		return fmt.Sprintf("{Cancun:%v Prague:%v Osaka:%v}", formatBlobConfig(v.Cancun), formatBlobConfig(v.Prague), formatBlobConfig(v.Osaka))
+		return fmt.Sprintf("{Cancun:%v Prague:%v Osaka:%v BPO1:%v BPO2:%v BPO3:%v BPO4:%v BPO5:%v}",
+			formatBlobConfig(v.Cancun), formatBlobConfig(v.Prague), formatBlobConfig(v.Osaka),
+			formatBlobConfig(v.BPO1), formatBlobConfig(v.BPO2), formatBlobConfig(v.BPO3),
+			formatBlobConfig(v.BPO4), formatBlobConfig(v.BPO5))
 	}
 
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Berlin: %v London: %v ArrowGlacier: %v GrayGlacier: %v ShanghaiTime: %v CancunTime: %v PragueTime: %v OsakaTime: %v BlobSchedule: %v FairHotstuff: %v Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Berlin: %v London: %v ArrowGlacier: %v GrayGlacier: %v ShanghaiTime: %v CancunTime: %v PragueTime: %v OsakaTime: %v BPO1Time: %v BPO2Time: %v BPO3Time: %v BPO4Time: %v BPO5Time: %v BlobSchedule: %v FairHotstuff: %v Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -651,6 +667,11 @@ func (c *ChainConfig) String() string {
 		formatUint64Ptr(cancunTime),
 		formatUint64Ptr(pragueTime),
 		formatUint64Ptr(osakaTime),
+		formatUint64Ptr(bpo1Time),
+		formatUint64Ptr(bpo2Time),
+		formatUint64Ptr(bpo3Time),
+		formatUint64Ptr(bpo4Time),
+		formatUint64Ptr(bpo5Time),
 		formatBlobSchedule(blobSchedule),
 		c.FairHotstuff,
 		engine,
@@ -843,6 +864,24 @@ func isMaxCodeSizeConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (error, *
 // CheckConfigForkOrder checks that we don't "skip" any forks, cypher isn't pluggable enough
 // to guarantee that forks
 func (c *ChainConfig) CheckConfigForkOrder() error {
+	if c.NativeParallel != nil && c.NativeParallel.RequireNativeTransactions {
+		return errors.New("evmParallel supports only Ethereum transaction types 0 through 4")
+	}
+	if err := c.NativeParallel.Validate(); err != nil {
+		return err
+	}
+	if err := c.validateEVMParallelBlobMemory(); err != nil {
+		return err
+	}
+	if c.NativeParallelEnabled() {
+		if !c.FairHotstuff {
+			return errors.New("native parallel execution requires fairHotstuff")
+		}
+		genesis := new(big.Int)
+		if !c.IsEIP158(genesis) || !c.IsByzantium(genesis) || !c.IsBerlin(genesis) || !c.IsLondon(genesis) || !c.IsPrague(genesis, 0) || !c.IsOsaka(genesis, 0) {
+			return errors.New("genesis-native parallel execution for EVM transaction types 0 through 4 requires EIP-158, Byzantium, Berlin, London, Prague and Osaka active at genesis")
+		}
+	}
 	if c.FairHotstuff {
 		if c.ChainID == nil || c.ChainID.Sign() <= 0 || !c.ChainID.IsUint64() {
 			return errors.New("fairHotstuff requires a positive uint64 chain ID")

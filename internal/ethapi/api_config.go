@@ -44,6 +44,7 @@ type EthBlobSchedule struct {
 
 type modernConfigStage struct {
 	name       string
+	execution  string
 	activation uint64
 	blobs      *params.BlobConfig
 }
@@ -103,18 +104,42 @@ func configuredModernStages(config *params.ChainConfig) ([]modernConfigStage, er
 	if modern == nil || modern.CancunTime == nil || modern.BlobSchedule == nil || modern.BlobSchedule.Cancun == nil {
 		return nil, errors.New("eth_config requires a configured Cancun blob schedule")
 	}
-	stages := []modernConfigStage{{name: "cancun", activation: *modern.CancunTime, blobs: modern.BlobSchedule.Cancun}}
+	stages := []modernConfigStage{{name: "cancun", execution: "cancun", activation: *modern.CancunTime, blobs: modern.BlobSchedule.Cancun}}
 	if modern.PragueTime != nil {
 		if modern.BlobSchedule.Prague == nil {
 			return nil, errors.New("eth_config requires a configured Prague blob schedule")
 		}
-		stages = append(stages, modernConfigStage{name: "prague", activation: *modern.PragueTime, blobs: modern.BlobSchedule.Prague})
+		stages = append(stages, modernConfigStage{name: "prague", execution: "prague", activation: *modern.PragueTime, blobs: modern.BlobSchedule.Prague})
 	}
 	if modern.OsakaTime != nil {
 		if modern.BlobSchedule.Osaka == nil {
 			return nil, errors.New("eth_config requires a configured Osaka blob schedule")
 		}
-		stages = append(stages, modernConfigStage{name: "osaka", activation: *modern.OsakaTime, blobs: modern.BlobSchedule.Osaka})
+		stages = append(stages, modernConfigStage{name: "osaka", execution: "osaka", activation: *modern.OsakaTime, blobs: modern.BlobSchedule.Osaka})
+	}
+	for _, fork := range []struct {
+		name   string
+		at     *uint64
+		config *params.BlobConfig
+	}{
+		{name: "bpo1", at: modern.BPO1Time, config: modern.BlobSchedule.BPO1},
+		{name: "bpo2", at: modern.BPO2Time, config: modern.BlobSchedule.BPO2},
+		{name: "bpo3", at: modern.BPO3Time, config: modern.BlobSchedule.BPO3},
+		{name: "bpo4", at: modern.BPO4Time, config: modern.BlobSchedule.BPO4},
+		{name: "bpo5", at: modern.BPO5Time, config: modern.BlobSchedule.BPO5},
+	} {
+		if fork.at == nil {
+			continue
+		}
+		if modern.OsakaTime == nil {
+			return nil, errors.New("eth_config requires Osaka before " + fork.name)
+		}
+		if fork.config == nil {
+			return nil, errors.New("eth_config requires a configured " + fork.name + " blob schedule")
+		}
+		// EIP-7892 BPO forks inherit Osaka's execution surface and alter only
+		// the three blob scheduling parameters.
+		stages = append(stages, modernConfigStage{name: fork.name, execution: "osaka", activation: *fork.at, blobs: fork.config})
 	}
 	for i, stage := range stages {
 		if stage.blobs.Target <= 0 || stage.blobs.Max < stage.blobs.Target || stage.blobs.BaseFeeUpdateFraction <= 0 {
@@ -137,10 +162,10 @@ func makeEthForkConfig(config *params.ChainConfig, genesisHash common.Hash, stag
 		},
 		ChainID:         hexutil.EncodeBig(config.ChainID),
 		ForkID:          modernForkHash(config, genesisHash, stage.activation),
-		Precompiles:     precompilesForStage(stage.name),
+		Precompiles:     precompilesForStage(stage.execution),
 		SystemContracts: make(map[string]common.Address),
 	}
-	if stage.name == "prague" || stage.name == "osaka" {
+	if stage.execution == "prague" || stage.execution == "osaka" {
 		result.SystemContracts["HISTORY_STORAGE_ADDRESS"] = params.HistoryStorageAddress
 	}
 	return result
@@ -185,7 +210,10 @@ func modernForkHash(config *params.ChainConfig, genesisHash common.Hash, through
 	modern := config.ModernForkConfig()
 	if modern != nil {
 		timestamps := []uint64{}
-		for _, fork := range []*uint64{modern.ShanghaiTime, modern.CancunTime, modern.PragueTime, modern.OsakaTime} {
+		for _, fork := range []*uint64{
+			modern.ShanghaiTime, modern.CancunTime, modern.PragueTime, modern.OsakaTime,
+			modern.BPO1Time, modern.BPO2Time, modern.BPO3Time, modern.BPO4Time, modern.BPO5Time,
+		} {
 			if fork != nil && *fork > 0 && *fork <= throughTimestamp {
 				timestamps = append(timestamps, *fork)
 			}

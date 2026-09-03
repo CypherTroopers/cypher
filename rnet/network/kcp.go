@@ -37,6 +37,25 @@ var (
 var ReadTimeout = 3 * time.Minute // 60 * time.Second
 var WriteTimeout = 5 * time.Second
 
+const (
+	fallbackTransferBytesPerSecond = 2 * 1024 * 1024
+	fallbackTransferTimeoutSlack   = 5 * time.Second
+)
+
+// fallbackFrameWriteTimeout preserves the legacy deadline for small control
+// messages and scales bounded large-frame writes to the same 2 MiB/s service
+// model as QUIC bulk gossip.
+func fallbackFrameWriteTimeout(size uint32) time.Duration {
+	if size > def_MaxPacketSize {
+		size = def_MaxPacketSize
+	}
+	serviceTime := time.Duration(size) * time.Second / fallbackTransferBytesPerSecond
+	if serviceTime <= WriteTimeout {
+		return WriteTimeout
+	}
+	return fallbackTransferTimeoutSlack + serviceTime
+}
+
 // Global lock for 'ReadTimeout'
 // Using a 'RWMutex' to be as efficient as possible, because it will be used
 // quite a lot in 'Receive()'.
@@ -223,13 +242,12 @@ func (c *KCPConn) sendRaw(b []byte) (uint64, error) {
 		return 0, NewPermanentSendError(SendErrorPacketTooLarge,
 			fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize))
 	}
-	_ = c.conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
+	packetSize := uint32(len(b))
+	_ = c.conn.SetWriteDeadline(time.Now().Add(fallbackFrameWriteTimeout(packetSize)))
 	defer c.conn.SetWriteDeadline(time.Time{})
 
 	// Keep the original 24-bit header for ordinary messages. Transaction block
 	// proposals above that limit use an extended 32-bit packet length.
-	packetSize := uint32(len(b))
-
 	headBuf := encodePacketHeader(packetSize)
 
 	if _, err := c.conn.Write(headBuf); err != nil {

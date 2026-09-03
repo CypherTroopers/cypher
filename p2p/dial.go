@@ -464,6 +464,10 @@ func (d *dialScheduler) startDial(task *dialTask) {
 type dialTask struct {
 	staticPoolIndex int
 	flags           connFlag
+	// resolveAllowed is fixed when the task is created. A static node with an
+	// explicit endpoint is operator-pinned and must not be redirected by a
+	// newer discovery record for the same node ID.
+	resolveAllowed bool
 	// These fields are private to the task and should not be
 	// accessed by dialScheduler while the task is running.
 	dest         *enode.Node
@@ -472,7 +476,12 @@ type dialTask struct {
 }
 
 func newDialTask(dest *enode.Node, flags connFlag) *dialTask {
-	return &dialTask{dest: dest, flags: flags, staticPoolIndex: -1}
+	return &dialTask{
+		dest:            dest,
+		flags:           flags,
+		staticPoolIndex: -1,
+		resolveAllowed:  flags&staticDialedConn != 0 && dest.IP() == nil,
+	}
 }
 
 type dialError struct {
@@ -486,8 +495,8 @@ func (t *dialTask) run(d *dialScheduler) {
 
 	err := t.dial(d, t.dest)
 	if err != nil {
-		// For static nodes, resolve one more time if dialing fails.
-		if _, ok := err.(*dialError); ok && t.flags&staticDialedConn != 0 {
+		// For unresolved static nodes, resolve one more time if dialing fails.
+		if _, ok := err.(*dialError); ok && t.resolveAllowed {
 			if t.resolve(d) {
 				t.dial(d, t.dest)
 			}
@@ -496,7 +505,7 @@ func (t *dialTask) run(d *dialScheduler) {
 }
 
 func (t *dialTask) needResolve() bool {
-	return t.flags&staticDialedConn != 0 && t.dest.IP() == nil
+	return t.resolveAllowed && t.dest.IP() == nil
 }
 
 // resolve attempts to find the current endpoint for the destination

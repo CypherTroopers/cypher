@@ -10,6 +10,7 @@
 GO ?= go
 BINDIR ?= ./build/bin
 STAGE_ROOT ?= ./build/stage
+BUILD_TMPDIR ?= $(STAGE_ROOT)/tmp
 TARGET_OS ?=
 TARGET_ARCH ?=
 BUILD_HELPER := ./build/build-cypher.sh
@@ -18,6 +19,7 @@ cypher:
 	@GO="$(GO)" \
 		BINDIR="$(BINDIR)" \
 		STAGE_ROOT="$(STAGE_ROOT)" \
+		BUILD_TMPDIR="$(BUILD_TMPDIR)" \
 		TARGET_OS="$(TARGET_OS)" \
 		TARGET_ARCH="$(TARGET_ARCH)" \
 		$(BUILD_HELPER)

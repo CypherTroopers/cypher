@@ -23,6 +23,7 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
+	parallelstate "github.com/cypherium/cypher/core/parallel"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/params"
@@ -118,13 +119,24 @@ func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailabl
 			return fmt.Errorf("invalid fixed baseFeePerGas: have %v want %v", header.BaseFee, wantBaseFee)
 		}
 	}
+	// Reject an unlinked body before hashing a maximum-size transaction trie or
+	// verifying up to the genesis-configured KZG ceiling. HotStuff may supply an
+	// already-certified parent outside the canonical database; that explicit
+	// handoff is the only reason to skip this cheap ancestry gate.
+	if !hotstuffParentAvailable && !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
+		if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
+			return consensus.ErrUnknownAncestor
+		}
+		return consensus.ErrPrunedAncestor
+	}
 	// Reject count/byte/list/gas bounds and nil entries before deriving body
 	// roots or scheduling any public-key recovery. This phase is linear, does
 	// not deep-copy transaction lists, and cannot execute EVM code.
-	if err := validateFHSBlockWorkEnvelope(v.config, block); err != nil {
+	nativeSchedule, err := validateFHSBlockWorkEnvelopeWithSchedule(v.config, block)
+	if err != nil {
 		return err
 	}
-	if err := validateFHSCommonRPCSidecarCoverage(v.config, block); err != nil {
+	if err := validateFHSCommonRPCSidecarCardinality(v.config, block); err != nil {
 		return err
 	}
 
@@ -140,26 +152,58 @@ func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailabl
 	if hash := types.DeriveSha(types.Transactions(body.Transactions), new(trie.Trie)); hash != header.TxHash {
 		return fmt.Errorf("transaction root hash mismatch: have %x, want %x", hash, header.TxHash)
 	}
-	if hash := types.DeriveCommonTxAdmissionRoot(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs); hash != header.CommonTxAdmissionRoot {
-		return fmt.Errorf("common tx admission root mismatch: have %x, want %x", hash, header.CommonTxAdmissionRoot)
-	}
-	if hash := types.DeriveCommonTxRewardRoot(body.CommonTxRewards); hash != header.CommonTxRewardRoot {
-		return fmt.Errorf("common tx reward root mismatch: have %x, want %x", hash, header.CommonTxRewardRoot)
-	}
-	if err := ValidateBlockBlobBody(v.config, header, block.Transactions()); err != nil {
+	if err := validateCommonTxSidecarRoots(block); err != nil {
 		return err
 	}
-	if !hotstuffParentAvailable && !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
-		if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
-			return consensus.ErrUnknownAncestor
-		}
-		return consensus.ErrPrunedAncestor
+	// The block body carries BlobTx sidecars in blob-transaction order. Verify
+	// their commitment/hash binding and real KZG proofs before sender recovery,
+	// voting, state execution, or persistence can accept the block.
+	if err := ValidateBlockBlobExecution(v.config, header, block.Transactions(), types.KZGBlobVerifier{}); err != nil {
+		return err
 	}
-	// Sender recovery is the first CPU-heavy body check. Keep all cheap body
-	// commitments, blob bounds, and ancestry checks ahead of it so a malformed
-	// proposal cannot force a maximum block's worth of ECDSA work.
+	// Resolve and validate the deterministic sidecar layout and signed boundary
+	// before crypto. The admission signatures themselves remain after sender
+	// recovery so malformed transaction signatures cannot multiply verifier
+	// work. The resulting slices are fresh and become immutable on publication.
+	var (
+		validatedSidecars *validatedFHSSidecars
+		sidecarContext    fhsSidecarValidationContext
+	)
+	if isFHSSidecarHandoffCandidate(v.config, block, body) {
+		genesisHash, err := commonRPCAdmissionGenesisHash(v.bc)
+		if err != nil {
+			return err
+		}
+		keyBlockNumber, err := commonRPCAdmissionKeyBlockNumberForHeader(v.bc, header)
+		if err != nil {
+			return err
+		}
+		sidecarContext = fhsSidecarValidationContext{genesisHash: genesisHash, keyBlockNumber: keyBlockNumber}
+		validatedSidecars, err = buildValidatedFHSSidecarLayout(v.config, block, sidecarContext)
+		if err != nil {
+			return err
+		}
+	}
+	// Sender recovery is the first transaction CPU-heavy body check. Keep all
+	// cheap body commitments, blob bounds, ancestry, and sidecar layout checks
+	// ahead of it so malformed proposals fail before maximum-block crypto.
 	if err := validateFHSSenderWork(v.config, block); err != nil {
 		return err
+	}
+	if validatedSidecars != nil {
+		var handoff *fhsSidecarHandoff
+		if v.bc != nil {
+			handoff = v.bc.validatedFHSSidecars
+		}
+		if err := verifyAndPublishValidatedFHSSidecars(v.config, block, sidecarContext, validatedSidecars, handoff); err != nil {
+			return err
+		}
+	}
+	// Publish only after every body invariant has succeeded. The schedule is a
+	// node-local optimisation and is consumed exactly once by StateProcessor;
+	// a concurrent miss simply rebuilds it from the signed manifests.
+	if nativeSchedule != nil && v.bc != nil && v.bc.nativeSchedules != nil {
+		v.bc.nativeSchedules.publish(v.config, block, nativeSchedule)
 	}
 
 	return nil
@@ -185,6 +229,16 @@ type FHSBlockWorkMeter struct {
 
 func NewFHSBlockWorkMeter() *FHSBlockWorkMeter {
 	return &FHSBlockWorkMeter{limits: params.FairHotstuffWorkLimits()}
+}
+
+func NewFHSBlockWorkMeterForConfig(config *params.ChainConfig) *FHSBlockWorkMeter {
+	return &FHSBlockWorkMeter{limits: params.FairHotstuffWorkLimitsForConfig(config)}
+}
+
+// NewFHSEVMBlockWorkMeterForConfig returns the standard-Ethereum lane meter
+// used by a genesis-native dual-mode network.
+func NewFHSEVMBlockWorkMeterForConfig(config *params.ChainConfig) *FHSBlockWorkMeter {
+	return &FHSBlockWorkMeter{limits: params.FairHotstuffEVMWorkLimitsForConfig(config)}
 }
 
 // AddTransaction adds one transaction in block order. It does not mutate the
@@ -389,7 +443,7 @@ func (m *FHSBlockWorkMeter) AddCommonSidecars(batches []*types.CommonTxAdmission
 	}
 
 	referenced := make([]bool, len(batches))
-	selectedRefs := make(map[uint32]struct{}, len(refs))
+	selectedRefs := make(map[uint64]struct{}, len(refs))
 	approverByTx := make(map[common.Hash]common.Address, len(refs))
 	for index, ref := range refs {
 		if int(ref.Batch) >= len(batches) {
@@ -399,7 +453,7 @@ func (m *FHSBlockWorkMeter) AddCommonSidecars(batches []*types.CommonTxAdmission
 		if int(ref.Item) >= len(batch.TxHashes) {
 			return fmt.Errorf("Fair HotStuff common transaction admission reference %d selects item %d outside batch %d size %d", index, ref.Item, ref.Batch, len(batch.TxHashes))
 		}
-		key := uint32(ref.Batch)<<16 | uint32(ref.Item)
+		key := uint64(ref.Batch)<<16 | uint64(ref.Item)
 		if _, duplicate := selectedRefs[key]; duplicate {
 			return fmt.Errorf("Fair HotStuff common transaction admission reference %d duplicates batch %d item %d", index, ref.Batch, ref.Item)
 		}
@@ -456,29 +510,158 @@ func validateFHSBlockWork(config *params.ChainConfig, block *types.Block) error 
 }
 
 func validateFHSBlockWorkEnvelope(config *params.ChainConfig, block *types.Block) error {
-	if config == nil || !config.FairHotstuff || block == nil {
-		return nil
-	}
-	txs := block.Transactions()
-	limits := params.FairHotstuffWorkLimits()
-	if uint64(len(txs)) > limits.Transactions {
-		return fmt.Errorf("Fair HotStuff transaction count %d exceeds maximum %d", len(txs), limits.Transactions)
-	}
-	meter := NewFHSBlockWorkMeter()
-	for index, tx := range txs {
-		if err := meter.AddTransaction(index, tx); err != nil {
-			return err
-		}
-	}
-	body := block.Body()
-	return meter.AddCommonSidecars(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.CommonTxRewards)
+	_, err := validateFHSBlockWorkEnvelopeWithSchedule(config, block)
+	return err
 }
 
-// validateFHSCommonRPCSidecarCoverage makes common RPC payment authorization a
-// consensus property before signature recovery or EVM execution. Transactions
-// do not carry a signed ingress marker, so the only deterministic omission-proof
-// rule is that every FHS user transaction has exactly one admission and reward.
-func validateFHSCommonRPCSidecarCoverage(config *params.ChainConfig, block *types.Block) error {
+func validateFHSBlockWorkEnvelopeWithSchedule(config *params.ChainConfig, block *types.Block) (*parallelstate.Schedule, error) {
+	if config == nil || block == nil {
+		return nil, nil
+	}
+	txs := block.Transactions()
+	mode, err := ValidateNativeParallelBlockMode(config, block.BlockType(), txs)
+	if err != nil {
+		return nil, err
+	}
+	var meter *FHSBlockWorkMeter
+	if config.FairHotstuff {
+		limits := params.FairHotstuffWorkLimitsForConfig(config)
+		candidate := NewFHSBlockWorkMeterForConfig(config)
+		if mode == NativeParallelBlockModeEVM {
+			limits = params.FairHotstuffEVMWorkLimitsForConfig(config)
+			candidate = NewFHSEVMBlockWorkMeterForConfig(config)
+		}
+		if uint64(len(txs)) > limits.Transactions {
+			return nil, fmt.Errorf("Fair HotStuff transaction count %d exceeds maximum %d", len(txs), limits.Transactions)
+		}
+		meter = candidate
+		for index, tx := range txs {
+			if err := meter.AddTransaction(index, tx); err != nil {
+				return nil, err
+			}
+		}
+	}
+	var nativeSchedule *parallelstate.Schedule
+	if mode == NativeParallelBlockModeNative {
+		nativeSchedule, err = validateNativeParallelEnvelopeWithSchedule(config, txs)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateNativeGasReservations(txs, block.GasLimit()); err != nil {
+			return nil, err
+		}
+	}
+	if meter == nil {
+		return nativeSchedule, nil
+	}
+	body := block.Body()
+	if err := meter.AddCommonSidecars(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.CommonTxRewards); err != nil {
+		return nil, err
+	}
+	return nativeSchedule, nil
+}
+
+// validateNativeParallelEnvelope derives the consensus dependency schedule
+// entirely from signed manifests. It runs before signature recovery and EVM
+// execution, bounding both aggregate work and a deliberately adversarial hot
+// resource chain independently of the validator's local worker count.
+func validateNativeParallelEnvelope(config *params.ChainConfig, txs types.Transactions) error {
+	_, err := validateNativeParallelEnvelopeWithSchedule(config, txs)
+	return err
+}
+
+func validateNativeParallelEnvelopeWithSchedule(config *params.ChainConfig, txs types.Transactions) (*parallelstate.Schedule, error) {
+	if config == nil || !config.NativeParallelEnabled() {
+		return nil, nil
+	}
+	native := config.NativeParallel
+	if !native.RequireNativeTransactions {
+		for index, tx := range txs {
+			if tx == nil || !tx.IsInitialized() {
+				return nil, fmt.Errorf("standard EVM transaction %d is nil or uninitialized", index)
+			}
+			if tx.Type() == types.NativeTxType {
+				return nil, fmt.Errorf("%w: transaction %d NativeTxV1 is disabled by genesis", ErrNativeParallelLaneMismatch, index)
+			}
+		}
+		return nil, nil
+	}
+	planningWeight := nativeDAGPlanningMemoryWeight(txs)
+	if planningWeight >= nativeExecutionMemoryBudget {
+		return nil, fmt.Errorf("native dependency plan memory exceeds budget %d", nativeExecutionMemoryBudget)
+	}
+	planningLease := nativeDAGMemoryLimiter.acquire(planningWeight)
+	defer nativeDAGMemoryLimiter.release(planningLease)
+	limits, err := nativeExecutionLimits(config)
+	if err != nil {
+		return nil, err
+	}
+	planner := parallelstate.NewPlanner(limits)
+	seenHashes := make(map[common.Hash]struct{}, len(txs))
+	for index, tx := range txs {
+		if tx == nil || !tx.IsInitialized() {
+			return nil, fmt.Errorf("native transaction %d is nil or uninitialized", index)
+		}
+		if native.RequireNativeTransactions && tx.Type() != types.NativeTxType {
+			return nil, fmt.Errorf("transaction %d has legacy type %#x on a genesis-native chain", index, tx.Type())
+		}
+		if tx.Type() != types.NativeTxType {
+			continue
+		}
+		hash := tx.Hash()
+		if _, duplicate := seenHashes[hash]; duplicate {
+			return nil, fmt.Errorf("native transaction %d repeats hash %s", index, hash)
+		}
+		seenHashes[hash] = struct{}{}
+		if txBytes := uint64(tx.Size()); txBytes > native.MaxTransactionBytes {
+			return nil, fmt.Errorf("native transaction %d encoded size %d exceeds maximum %d", index, txBytes, native.MaxTransactionBytes)
+		}
+		if err := tx.ValidateNativeManifest(); err != nil {
+			return nil, fmt.Errorf("native transaction %d manifest: %w", index, err)
+		}
+		if config.ChainID == nil || tx.ChainId().Cmp(config.ChainID) != 0 {
+			return nil, fmt.Errorf("native transaction %d has chain ID %v, want %v", index, tx.ChainId(), config.ChainID)
+		}
+		if tx.PriorityFeePerCompute().Cmp(tx.MaxFeePerCompute()) > 0 {
+			return nil, fmt.Errorf("native transaction %d priority fee exceeds maximum fee", index)
+		}
+		if tx.MemoryLimit() == 0 || tx.MemoryLimit() > native.MaxMemoryBytesPerTransaction {
+			return nil, fmt.Errorf("native transaction %d memory limit %d exceeds range 1..%d", index, tx.MemoryLimit(), native.MaxMemoryBytesPerTransaction)
+		}
+		if tx.LogLimit() == 0 || tx.LogLimit() > native.MaxLogBytesPerTransaction {
+			return nil, fmt.Errorf("native transaction %d log limit %d exceeds range 1..%d", index, tx.LogLimit(), native.MaxLogBytesPerTransaction)
+		}
+		if tx.OutputLimit() == 0 || tx.OutputLimit() > native.MaxOutputBytesPerTransaction {
+			return nil, fmt.Errorf("native transaction %d output limit %d exceeds range 1..%d", index, tx.OutputLimit(), native.MaxOutputBytesPerTransaction)
+		}
+		for accessIndex := uint64(0); accessIndex < tx.NativeAccessCount(); accessIndex++ {
+			access, _ := tx.NativeAccessAt(accessIndex)
+			if params.IsNativeReplayRegistryAddress(access.Resource.Address) {
+				return nil, fmt.Errorf("native transaction %d manifest accesses reserved replay registry", index)
+			}
+		}
+		if tx.To() != nil && params.IsNativeReplayRegistryAddress(*tx.To()) {
+			return nil, fmt.Errorf("native transaction %d targets reserved replay registry", index)
+		}
+		projection, err := nativeExecutionProjection(native, tx)
+		if err != nil {
+			return nil, fmt.Errorf("native transaction %d dependency projection: %w", index, err)
+		}
+		if err := planner.TryAdd(projection); err != nil {
+			return nil, fmt.Errorf("native dependency schedule transaction %d: %w", index, err)
+		}
+	}
+	if err := validateNativeDeclaredResultEnvelope(config, txs); err != nil {
+		return nil, err
+	}
+	return planner.TakeSchedule(), nil
+}
+
+// validateFHSCommonRPCSidecarCardinality performs the allocation-free coverage
+// checks used before roots and cryptography. Full layout validation is kept in
+// validateFHSCommonRPCSidecarCoverage for standalone callers and in the
+// validated-sidecar builder for the normal import handoff.
+func validateFHSCommonRPCSidecarCardinality(config *params.ChainConfig, block *types.Block) error {
 	if config == nil || !config.FairHotstuff || block == nil {
 		return nil
 	}
@@ -502,9 +685,6 @@ func validateFHSCommonRPCSidecarCoverage(config *params.ChainConfig, block *type
 		if txCount == 0 && batchCount != 0 {
 			return fmt.Errorf("Fair HotStuff empty transaction block contains %d common transaction admission batches", batchCount)
 		}
-		if _, err := validateCommonTxAdmissionLayout(config, body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.Transactions, common.Hash{}); err != nil {
-			return err
-		}
 		for index, reward := range body.CommonTxRewards {
 			if reward == nil {
 				return fmt.Errorf("Fair HotStuff common transaction reward %d is nil", index)
@@ -516,6 +696,22 @@ func validateFHSCommonRPCSidecarCoverage(config *params.ChainConfig, block *type
 	return nil
 }
 
+// validateFHSCommonRPCSidecarCoverage makes common RPC payment authorization a
+// consensus property before signature recovery or EVM execution. Transactions
+// do not carry a signed ingress marker, so the only deterministic omission-proof
+// rule is that every FHS user transaction has exactly one admission and reward.
+func validateFHSCommonRPCSidecarCoverage(config *params.ChainConfig, block *types.Block) error {
+	if err := validateFHSCommonRPCSidecarCardinality(config, block); err != nil || config == nil || !config.FairHotstuff || block == nil {
+		return err
+	}
+	if block.BlockType() != types.FastTx_Block && block.BlockType() != types.SlowTx_Block {
+		return nil
+	}
+	body := block.Body()
+	_, err := validateCommonTxAdmissionLayout(config, body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.Transactions, common.Hash{})
+	return err
+}
+
 func validateFHSSenderWork(config *params.ChainConfig, block *types.Block) error {
 	if config == nil || !config.FairHotstuff || block == nil {
 		return nil
@@ -524,10 +720,17 @@ func validateFHSSenderWork(config *params.ChainConfig, block *types.Block) error
 	if len(txs) == 0 {
 		return nil
 	}
-	limits := params.FairHotstuffWorkLimits()
+	mode, err := ValidateNativeParallelBlockMode(config, block.BlockType(), txs)
+	if err != nil {
+		return err
+	}
+	limits := params.FairHotstuffWorkLimitsForConfig(config)
+	if mode == NativeParallelBlockModeEVM {
+		limits = params.FairHotstuffEVMWorkLimitsForConfig(config)
+	}
 	senders := make([]common.Address, len(txs))
 	senderErrors := make([]error, len(txs))
-	perSender := make(map[common.Address]uint16)
+	perSender := make(map[common.Address]uint64)
 	for start := 0; start < len(txs); start += parallelValidationMicroBatch {
 		end := start + parallelValidationMicroBatch
 		if end > len(txs) {
@@ -573,14 +776,13 @@ func validateOsakaBlockSize(config *params.ChainConfig, block *types.Block) erro
 	if !config.IsOsaka(header.Number, header.Time) {
 		return nil
 	}
-	limit := uint64(params.MaxBlockSize)
+	limit := config.EffectiveMaxBlockBytes()
 	// Fair HotStuff proposals do not carry their direct-child finality proof
 	// until after they have received a QC. Reserve the complete bounded proof
 	// envelope before voting, otherwise an almost-full proposal can become an
 	// invalid oversized block exactly when the proof is attached at commit.
 	if config.FairHotstuff && len(block.FHSFinalityProof()) == 0 {
-		const rlpProofOverhead = uint64(16)
-		reserve := uint64(types.MaxFHSFinalityProofSize) + rlpProofOverhead
+		reserve := uint64(params.FairHotstuffFinalityProofReserveBytes)
 		if reserve >= limit {
 			return fmt.Errorf("Fair HotStuff finality-proof reserve %d exceeds Osaka maximum %d", reserve, limit)
 		}
@@ -603,14 +805,43 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	if block.GasUsed() != usedGas {
 		return fmt.Errorf("invalid gas used (remote: %d local: %d)", block.GasUsed(), usedGas)
 	}
+	// CreateBloom dereferences every receipt. Fail closed before entering it so
+	// a malformed internal execution result cannot turn validation into a node
+	// panic (network blocks never carry receipts directly).
+	for index, receipt := range receipts {
+		if receipt == nil {
+			return fmt.Errorf("receipt %d is nil", index)
+		}
+	}
 	// Validate the received block's bloom with the one derived from the generated receipts.
 	// For valid blocks this should always validate to true.
 	rbloom := types.CreateBloom(receipts)
 	if rbloom != header.Bloom {
 		return fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
 	}
+	var receiptSha common.Hash
+	if v.config != nil && v.config.NativeParallelEnabled() {
+		measurements := make([]executionOutputMeasurement, len(receipts))
+		encodingErrors := make([]error, len(receipts))
+		runBoundedParallelValidation(len(receipts), func(index int) {
+			measurements[index], encodingErrors[index] = measureExecutionOutput(receipts[index])
+		})
+		meter := newBlockExecutionOutputMeter(v.config)
+		encodedReceipts := make([][]byte, len(receipts))
+		for index, measured := range measurements {
+			if encodingErrors[index] != nil {
+				return fmt.Errorf("encode receipt %d: %w", index, encodingErrors[index])
+			}
+			if err := meter.AddMeasured(index, measured); err != nil {
+				return err
+			}
+			encodedReceipts[index] = measured.receiptLeaf
+		}
+		receiptSha = types.DeriveShaFromEncoded(encodedReceipts, new(trie.Trie))
+	} else {
+		receiptSha = types.DeriveSha(receipts, new(trie.Trie))
+	}
 	// Tre receipt Trie's root (R = (Tr [[H1, R1], ... [Hn, R1]]))
-	receiptSha := types.DeriveSha(receipts, new(trie.Trie))
 	if receiptSha != header.ReceiptHash {
 		return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
 	}
@@ -620,6 +851,21 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x)", header.Root, root)
 	}
 	return nil
+}
+
+func rlpStringEnvelopeSize(payload []byte) uint64 {
+	size := uint64(len(payload))
+	if len(payload) == 1 && payload[0] < 0x80 {
+		return 1
+	}
+	if size < 56 {
+		return size + 1
+	}
+	lengthBytes := uint64(0)
+	for value := size; value != 0; value >>= 8 {
+		lengthBytes++
+	}
+	return size + 1 + lengthBytes
 }
 
 // CalcGasLimit computes the gas limit of the next block after parent. It aims
@@ -659,7 +905,21 @@ func CalcGasLimit(parent *types.Block, gasFloor, gasCeil uint64) uint64 {
 	return limit
 }
 
+type verifiedBlockProposal struct {
+	ref           *types.HotstuffProposalRef
+	proposalBytes []byte
+	signInfo      types.SignInfo
+}
+
 func (v *BlockValidator) VerifySignature(block *types.Block) error {
+	_, err := v.verifyBlockProposalSignature(block)
+	return err
+}
+
+// verifyBlockProposalSignature reconstructs and verifies the signed proposal
+// in one pass. Its result owns all signature/ref bytes needed to reconstruct a
+// QC, so ReconstructFHSQC does not have to copy or encode the block again.
+func (v *BlockValidator) verifyBlockProposalSignature(block *types.Block) (*verifiedBlockProposal, error) {
 	// HotStuff proposal-reference signature verification.
 	//
 	// Validators now sign the compact HotstuffProposalRef carried in
@@ -673,26 +933,34 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 	// Important:
 	//   - BodyHash is computed from the unsigned block encoding.
 	//   - block.Hash() / header.Hash() already ignores SignInfo.
-	//   - CopyOrg() clears SignInfo and gives the same unsigned body that was
-	//     used when the leader created the original ProposalRef.
+	//   - the types helper clears only SignInfo while synchronously sharing the
+	//     immutable body backing used by the original ProposalRef.
+	if block == nil {
+		return nil, types.ErrInvalidSignature
+	}
 	mycommittee := &bftview.Committee{List: v.bc.keyBlockChain.GetCommitteeByHash(block.KeyHash())}
 	if mycommittee == nil || len(mycommittee.List) < 2 {
-		return types.ErrInvalidCommittee
+		return nil, types.ErrInvalidCommittee
 	}
 	pubs := mycommittee.ToBlsPublicKeys(block.KeyHash())
 
-	si := block.SignInfo()
-	if si == nil {
-		return types.ErrEmptySignature
+	sourceSignInfo := block.SignInfo()
+	if sourceSignInfo == nil {
+		return nil, types.ErrEmptySignature
+	}
+	// Snapshot caller-visible byte slices before verification. The returned QC
+	// can safely outlive, or be mutated independently from, the source block.
+	si := types.SignInfo{
+		Signature:  common.CopyBytes(sourceSignInfo.Signature),
+		Exceptions: common.CopyBytes(sourceSignInfo.Exceptions),
+		ViewID:     sourceSignInfo.ViewID,
+		LeaderID:   sourceSignInfo.LeaderID,
+		ViewNumber: sourceSignInfo.ViewNumber,
+		ExtraHash:  sourceSignInfo.ExtraHash,
+		ParentQCID: sourceSignInfo.ParentQCID,
 	}
 	if si.ViewID == (common.Hash{}) || si.LeaderID == "" {
-		return types.ErrInvalidSignature
-	}
-
-	unsignedBlock := block.CopyOrg()
-	encodedUnsignedBlock := unsignedBlock.EncodeToBytes()
-	if encodedUnsignedBlock == nil {
-		return types.ErrEncodeRLP
+		return nil, types.ErrInvalidSignature
 	}
 
 	threshold := hotstuff.CalcThreshold(len(pubs))
@@ -704,16 +972,16 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 	var proposalRef *types.HotstuffProposalRef
 	var err error
 	if v.config != nil && v.config.FairHotstuff {
-		proposalRef, err = types.NewHotstuffProposalRefWithCommitments(chainID, si.ViewNumber, si.ViewID, si.LeaderID, unsignedBlock, encodedUnsignedBlock, si.ExtraHash, si.ParentQCID)
+		proposalRef, err = types.NewHotstuffProposalRefFromUnsignedBlockWithCommitments(chainID, si.ViewNumber, si.ViewID, si.LeaderID, block, si.ExtraHash, si.ParentQCID)
 	} else {
-		proposalRef, err = types.NewHotstuffProposalRef(chainID, si.ViewNumber, si.ViewID, si.LeaderID, unsignedBlock, encodedUnsignedBlock)
+		proposalRef, err = types.NewHotstuffProposalRefFromUnsignedBlock(chainID, si.ViewNumber, si.ViewID, si.LeaderID, block)
 	}
 	if err != nil {
-		return types.ErrInvalidSignature
+		return nil, types.ErrInvalidSignature
 	}
 	proposalBytes := proposalRef.EncodeToBytes()
 	if len(proposalBytes) == 0 {
-		return types.ErrEncodeRLP
+		return nil, types.ErrEncodeRLP
 	}
 
 	var validSignature bool
@@ -723,9 +991,9 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 		validSignature = hotstuff.VerifySignatureWithContext(si.Signature, si.Exceptions, proposalBytes, pubs, threshold, chainID, hotstuff.MsgVotePrepare, si.ViewID, si.LeaderID)
 	}
 	if !validSignature {
-		return types.ErrInvalidSignature
+		return nil, types.ErrInvalidSignature
 	}
-	return nil
+	return &verifiedBlockProposal{ref: proposalRef, proposalBytes: proposalBytes, signInfo: si}, nil
 }
 
 // ReconstructFHSQC verifies a block's own FHS signature and reconstructs the
@@ -736,29 +1004,20 @@ func (v *BlockValidator) ReconstructFHSQC(block *types.Block) (*types.HotstuffPr
 	if block == nil || v.config == nil || !v.config.FairHotstuff {
 		return nil, nil, types.ErrInvalidSignature
 	}
-	if err := v.VerifySignature(block); err != nil {
-		return nil, nil, err
-	}
-	si := block.SignInfo()
-	unsigned := block.CopyOrg()
-	encoded := unsigned.EncodeToBytes()
-	chainID := uint64(0)
-	if v.config.ChainID != nil {
-		chainID = v.config.ChainID.Uint64()
-	}
-	ref, err := types.NewHotstuffProposalRefWithCommitments(chainID, si.ViewNumber, si.ViewID, si.LeaderID, unsigned, encoded, si.ExtraHash, si.ParentQCID)
+	verified, err := v.verifyBlockProposalSignature(block)
 	if err != nil {
 		return nil, nil, err
 	}
+	si := verified.signInfo
 	qc := &hotstuff.SignedState{
-		State:    ref.EncodeToBytes(),
-		Sign:     append([]byte(nil), si.Signature...),
-		Mask:     append([]byte(nil), si.Exceptions...),
+		State:    verified.proposalBytes,
+		Sign:     si.Signature,
+		Mask:     si.Exceptions,
 		ViewID:   si.ViewID,
 		LeaderID: si.LeaderID,
 		Number:   si.ViewNumber,
 	}
-	return ref, qc, nil
+	return verified.ref, qc, nil
 }
 
 // VerifyFHS2ChainCommitProof verifies that childQC certifies the direct child

@@ -78,21 +78,32 @@ esac
 
 BINDIR="$(absolute_from_repo "${BINDIR:-build/bin}")"
 STAGE_ROOT="$(absolute_from_repo "${STAGE_ROOT:-build/stage}")"
+BUILD_TMPDIR="$(absolute_from_repo "${BUILD_TMPDIR:-${STAGE_ROOT}/tmp}")"
 
-mkdir -p "${BINDIR}" "${STAGE_ROOT}"
+mkdir -p "${BINDIR}" "${STAGE_ROOT}" "${BUILD_TMPDIR}"
 BINDIR="$(cd "${BINDIR}" && pwd -P)"
 STAGE_ROOT="$(cd "${STAGE_ROOT}" && pwd -P)"
+BUILD_TMPDIR="$(cd "${BUILD_TMPDIR}" && pwd -P)"
 [[ "${STAGE_ROOT}" != "/" && "${STAGE_ROOT}" != "${REPO_ROOT}" ]] ||
   die "Unsafe staging root: ${STAGE_ROOT}"
+[[ "${BUILD_TMPDIR}" != "/" && "${BUILD_TMPDIR}" != "${REPO_ROOT}" ]] ||
+  die "Unsafe build temporary directory: ${BUILD_TMPDIR}"
 
-TMP_ROOT="$(mktemp -d)"
+TMP_ROOT="$(mktemp -d "${BUILD_TMPDIR}/cypher-build.XXXXXXXX")"
 NATIVE_LIB_DIR="${TMP_ROOT}/native-lib"
+TOOL_TMPDIR="${TMP_ROOT}/tool-tmp"
+GO_TMPDIR="${TMP_ROOT}/go-tmp"
 NEW_OUTPUT=""
 STAGE_DIR="${STAGE_ROOT}/${PLATFORM_ID}"
 STAGE_NEW="${STAGE_ROOT}/.${PLATFORM_ID}.new.$$"
 STAGE_BACKUP="${STAGE_ROOT}/.${PLATFORM_ID}.backup.$$"
 LOCAL_TEMP_FILES=()
-mkdir -p "${NATIVE_LIB_DIR}"
+mkdir -p "${NATIVE_LIB_DIR}" "${TOOL_TMPDIR}" "${GO_TMPDIR}"
+
+# Keep every large compiler temporary inside the per-build directory. This
+# avoids exhausting a small /tmp tmpfs and lets the exit trap remove $WORK.
+export TMPDIR="${TOOL_TMPDIR}"
+export GOTMPDIR="${GO_TMPDIR}"
 
 cleanup() {
   local status=$?

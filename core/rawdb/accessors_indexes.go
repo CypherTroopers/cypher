@@ -18,6 +18,7 @@ package rawdb
 
 import (
 	"bytes"
+	"encoding/binary"
 	"math/big"
 
 	"github.com/cypherium/cypher/common"
@@ -26,6 +27,10 @@ import (
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
+)
+
+const (
+	fhsFinalizedTxLookupValueSize = common.HashLength + 8
 )
 
 // ReadTxLookupEntry retrieves the positional metadata associated with a transaction
@@ -80,6 +85,9 @@ func DeleteTxLookupEntry(db ethdb.KeyValueWriter, hash common.Hash) {
 	if err := db.Delete(txLookupKey(hash)); err != nil {
 		log.Crit("Failed to delete transaction lookup entry", "err", err)
 	}
+	if err := db.Delete(fhsFinalizedTxKey(hash)); err != nil {
+		log.Crit("Failed to delete finalized FHS transaction lookup entry", "err", err)
+	}
 }
 
 // DeleteTxLookupEntries removes all transaction lookups for a given block.
@@ -88,7 +96,54 @@ func DeleteTxLookupEntriesByHash(db ethdb.KeyValueWriter, hashes []common.Hash) 
 		if err := db.Delete(txLookupKey(hash)); err != nil {
 			log.Crit("Failed to delete transaction lookup entry", "err", err)
 		}
+		if err := db.Delete(fhsFinalizedTxKey(hash)); err != nil {
+			log.Crit("Failed to delete finalized FHS transaction lookup entry", "err", err)
+		}
 	}
+}
+
+// WriteFHSFinalizedTxLookupEntries records the exact canonical block identity
+// for every transaction at the FHS finality boundary. The exact marker uses a
+// separate key from the ordinary tx lookup: receipt sync and background tx
+// reindexing may rewrite the latter, but can neither manufacture nor erase
+// finality. Both keys share the ordinary tx-index pruning lifecycle.
+func WriteFHSFinalizedTxLookupEntries(db ethdb.KeyValueWriter, block *types.Block) {
+	if db == nil || block == nil {
+		return
+	}
+	value := make([]byte, fhsFinalizedTxLookupValueSize)
+	copy(value, block.Hash().Bytes())
+	binary.BigEndian.PutUint64(value[common.HashLength:], block.NumberU64())
+	number := block.Number().Bytes()
+	for _, tx := range block.Transactions() {
+		if tx == nil {
+			continue
+		}
+		if err := db.Put(txLookupKey(tx.Hash()), number); err != nil {
+			log.Crit("Failed to store transaction lookup entry", "err", err)
+		}
+		if err := db.Put(fhsFinalizedTxKey(tx.Hash()), value); err != nil {
+			log.Crit("Failed to store finalized FHS transaction lookup", "err", err)
+		}
+	}
+}
+
+// ReadFHSFinalizedTxLookupEntry returns the exact block identity written only
+// after an FHS finality proof was verified and committed.
+func ReadFHSFinalizedTxLookupEntry(db ethdb.Reader, hash common.Hash) (common.Hash, uint64, bool) {
+	if db == nil || hash == (common.Hash{}) {
+		return common.Hash{}, 0, false
+	}
+	data, _ := db.Get(fhsFinalizedTxKey(hash))
+	// Ordinary receipt/header sync never writes this dedicated finality key.
+	if len(data) != fhsFinalizedTxLookupValueSize {
+		return common.Hash{}, 0, false
+	}
+	blockHash := common.BytesToHash(data[:common.HashLength])
+	if blockHash == (common.Hash{}) {
+		return common.Hash{}, 0, false
+	}
+	return blockHash, binary.BigEndian.Uint64(data[common.HashLength:]), true
 }
 
 // ReadTransaction retrieves a specific transaction from the database, along with

@@ -32,10 +32,11 @@ import (
 )
 
 const (
-	lightTimeout  = time.Millisecond       // Time allowance before an announced header is explicitly requested
-	arriveTimeout = 500 * time.Millisecond // Time allowance before an announced block/transaction is explicitly requested
-	gatherSlack   = 100 * time.Millisecond // Interval used to collate almost-expired announces with fetches
-	fetchTimeout  = 5 * time.Second        // Maximum allotted time to return an explicitly requested block/transaction
+	lightTimeout     = time.Millisecond       // Time allowance before an announced header is explicitly requested
+	arriveTimeout    = 500 * time.Millisecond // Time allowance before an announced block/transaction is explicitly requested
+	gatherSlack      = 100 * time.Millisecond // Interval used to collate almost-expired announces with fetches
+	fetchTimeout     = 5 * time.Second        // Maximum allotted time to return an explicitly requested header
+	bodyFetchTimeout = 150 * time.Second      // Maximum allotted time to return a maximum-size block body
 )
 
 const (
@@ -120,13 +121,9 @@ type headerFilterTask struct {
 
 // bodyFilterTask represents a batch of block bodies needing fetcher filtering.
 type bodyFilterTask struct {
-	peer                     string                            // The source peer of block bodies
-	transactions             [][]*types.Transaction            // Collection of transactions per block body
-	uncles                   [][]*types.Header                 // Collection of uncles per block body
-	commonTxAdmissionBatches [][]*types.CommonTxAdmissionBatch // Collection of signed admission batches per block body
-	commonTxAdmissionRefs    [][]types.CommonTxAdmissionRef    // Collection of transaction-aligned admission references
-	commonTxRewards          [][]*types.CommonTxReward         // Collection of common transaction rewards per block body
-	time                     time.Time                         // Arrival time of the blocks' contents
+	peer   string        // The source peer of block bodies
+	bodies []*types.Body // Canonical six-field block bodies
+	time   time.Time     // Arrival time of the blocks' contents
 }
 
 // blockOrHeaderInject represents a schedules import operation.
@@ -303,8 +300,8 @@ func (f *BlockFetcher) FilterHeaders(peer string, headers []*types.Header, time 
 
 // FilterBodies extracts all the block bodies that were explicitly requested by
 // the fetcher, returning those that should be handled differently.
-func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transaction, uncles [][]*types.Header, commonTxAdmissionBatches [][]*types.CommonTxAdmissionBatch, commonTxAdmissionRefs [][]types.CommonTxAdmissionRef, commonTxRewards [][]*types.CommonTxReward, time time.Time) ([][]*types.Transaction, [][]*types.Header, [][]*types.CommonTxAdmissionBatch, [][]types.CommonTxAdmissionRef, [][]*types.CommonTxReward) {
-	log.Trace("Filtering bodies", "peer", peer, "txs", len(transactions), "uncles", len(uncles), "commonTxAdmissionBatches", len(commonTxAdmissionBatches), "commonTxAdmissionRefs", len(commonTxAdmissionRefs), "commonTxRewards", len(commonTxRewards))
+func (f *BlockFetcher) FilterBodies(peer string, bodies []*types.Body, time time.Time) []*types.Body {
+	log.Trace("Filtering bodies", "peer", peer, "bodies", len(bodies))
 
 	// Send the filter channel to the fetcher
 	filter := make(chan *bodyFilterTask)
@@ -312,20 +309,20 @@ func (f *BlockFetcher) FilterBodies(peer string, transactions [][]*types.Transac
 	select {
 	case f.bodyFilter <- filter:
 	case <-f.quit:
-		return nil, nil, nil, nil, nil
+		return nil
 	}
 	// Request the filtering of the body list
 	select {
-	case filter <- &bodyFilterTask{peer: peer, transactions: transactions, uncles: uncles, commonTxAdmissionBatches: commonTxAdmissionBatches, commonTxAdmissionRefs: commonTxAdmissionRefs, commonTxRewards: commonTxRewards, time: time}:
+	case filter <- &bodyFilterTask{peer: peer, bodies: bodies, time: time}:
 	case <-f.quit:
-		return nil, nil, nil, nil, nil
+		return nil
 	}
 	// Retrieve the bodies remaining after filtering
 	select {
 	case task := <-filter:
-		return task.transactions, task.uncles, task.commonTxAdmissionBatches, task.commonTxAdmissionRefs, task.commonTxRewards
+		return task.bodies
 	case <-f.quit:
-		return nil, nil, nil, nil, nil
+		return nil
 	}
 }
 
@@ -335,8 +332,11 @@ func (f *BlockFetcher) loop() {
 	// Iterate the block fetching until a quit is requested
 	fetchTimer := time.NewTimer(0)
 	completeTimer := time.NewTimer(0)
+	bodyTimer := time.NewTimer(0)
+	<-bodyTimer.C
 	defer fetchTimer.Stop()
 	defer completeTimer.Stop()
+	defer bodyTimer.Stop()
 
 	for {
 		// Clean up any expired block fetches
@@ -497,8 +497,20 @@ func (f *BlockFetcher) loop() {
 				bodyFetchMeter.Mark(int64(len(hashes)))
 				go f.completing[hashes[0]].fetchBodies(hashes)
 			}
+			f.rescheduleBodyTimeout(bodyTimer)
 			// Schedule the next fetch if blocks are still pending
 			f.rescheduleComplete(completeTimer)
+
+		case <-bodyTimer.C:
+			// Block bodies can be hundreds of MiB. Expire them against the
+			// large-frame service budget, independently of the short header
+			// timeout, so control-message failure detection remains fast.
+			for hash, announce := range f.completing {
+				if time.Since(announce.time) >= bodyFetchTimeout {
+					f.forgetHash(hash)
+				}
+			}
+			f.rescheduleBodyTimeout(bodyTimer)
 
 		case filter := <-f.headerFilter:
 			// Headers arrived from a remote peer. Extract those that were explicitly
@@ -600,11 +612,16 @@ func (f *BlockFetcher) loop() {
 			case <-f.quit:
 				return
 			}
-			bodyFilterInMeter.Mark(int64(len(task.transactions)))
+			bodyFilterInMeter.Mark(int64(len(task.bodies)))
 			blocks := []*types.Block{}
 			// abort early if there's nothing explicitly requested
 			if len(f.completing) > 0 {
-				for i := 0; i < len(task.transactions) && i < len(task.uncles) && i < len(task.commonTxAdmissionBatches) && i < len(task.commonTxAdmissionRefs) && i < len(task.commonTxRewards); i++ {
+				for i := 0; i < len(task.bodies); i++ {
+					body := task.bodies[i]
+					if err := body.ValidateBlobSidecars(); err != nil {
+						log.Debug("Invalid block body blob sidecars", "peer", task.peer, "index", i, "err", err)
+						continue
+					}
 					// Match up a body to any possible completion request
 					var (
 						matched               = false
@@ -618,53 +635,53 @@ func (f *BlockFetcher) loop() {
 							continue
 						}
 						if uncleHash == (common.Hash{}) {
-							uncleHash = types.CalcUncleHash(task.uncles[i])
+							uncleHash = types.CalcUncleHash(body.Uncles)
 						}
 						if uncleHash != announce.header.UncleHash {
 							continue
 						}
 						if txnHash == (common.Hash{}) {
-							txnHash = types.DeriveSha(types.Transactions(task.transactions[i]), new(trie.Trie))
+							txnHash = types.DeriveSha(types.Transactions(body.Transactions), new(trie.Trie))
 						}
 						if txnHash != announce.header.TxHash {
 							continue
 						}
 						if commonTxAdmissionRoot == (common.Hash{}) {
-							commonTxAdmissionRoot = types.DeriveCommonTxAdmissionRoot(task.commonTxAdmissionBatches[i], task.commonTxAdmissionRefs[i])
+							commonTxAdmissionRoot = types.DeriveCommonTxAdmissionRoot(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs)
 						}
 						if commonTxAdmissionRoot != announce.header.CommonTxAdmissionRoot {
 							continue
 						}
 						if commonTxRewardRoot == (common.Hash{}) {
-							commonTxRewardRoot = types.DeriveCommonTxRewardRoot(task.commonTxRewards[i])
+							commonTxRewardRoot = types.DeriveCommonTxRewardRoot(body.CommonTxRewards)
 						}
 						if commonTxRewardRoot != announce.header.CommonTxRewardRoot {
 							continue
 						}
-						// Mark the body matched, reassemble if still unknown
-						matched = true
+						// Reassemble a matched body without dropping its EIP-4844 sidecars.
 						if f.getBlock(hash) == nil {
-							block := types.NewBlockWithHeader(announce.header).WithBody(task.transactions[i], task.uncles[i])
-							block.SetCommonTxData(task.commonTxAdmissionBatches[i], task.commonTxAdmissionRefs[i], task.commonTxRewards[i])
+							block, err := types.NewBlockWithHeader(announce.header).WithBodyAndBlobSidecars(body.Transactions, body.Uncles, body.BlobSidecars)
+							if err != nil {
+								log.Debug("Failed to reconstruct block body", "peer", task.peer, "hash", hash, "err", err)
+								continue
+							}
+							block.SetCommonTxData(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.CommonTxRewards)
 							block.ReceivedAt = task.time
 							blocks = append(blocks, block)
 						} else {
 							f.forgetHash(hash)
 						}
+						matched = true
 
 					}
 					if matched {
-						task.transactions = append(task.transactions[:i], task.transactions[i+1:]...)
-						task.uncles = append(task.uncles[:i], task.uncles[i+1:]...)
-						task.commonTxAdmissionBatches = append(task.commonTxAdmissionBatches[:i], task.commonTxAdmissionBatches[i+1:]...)
-						task.commonTxAdmissionRefs = append(task.commonTxAdmissionRefs[:i], task.commonTxAdmissionRefs[i+1:]...)
-						task.commonTxRewards = append(task.commonTxRewards[:i], task.commonTxRewards[i+1:]...)
+						task.bodies = append(task.bodies[:i], task.bodies[i+1:]...)
 						i--
 						continue
 					}
 				}
 			}
-			bodyFilterOutMeter.Mark(int64(len(task.transactions)))
+			bodyFilterOutMeter.Mark(int64(len(task.bodies)))
 			select {
 			case filter <- task:
 			case <-f.quit:
@@ -716,6 +733,26 @@ func (f *BlockFetcher) rescheduleComplete(complete *time.Timer) {
 		}
 	}
 	complete.Reset(gatherSlack - time.Since(earliest))
+}
+
+// rescheduleBodyTimeout resets the body timer to the oldest in-flight body.
+// Header retrieval keeps its original five-second deadline.
+func (f *BlockFetcher) rescheduleBodyTimeout(timer *time.Timer) {
+	if len(f.completing) == 0 {
+		return
+	}
+	var earliest time.Time
+	for _, announce := range f.completing {
+		deadline := announce.time.Add(bodyFetchTimeout)
+		if earliest.IsZero() || earliest.After(deadline) {
+			earliest = deadline
+		}
+	}
+	delay := time.Until(earliest)
+	if delay < 0 {
+		delay = 0
+	}
+	timer.Reset(delay)
 }
 
 // enqueue schedules a new header or block import operation, if the component

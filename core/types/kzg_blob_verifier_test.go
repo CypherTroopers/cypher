@@ -80,7 +80,10 @@ func TestVerifyBlobSidecarsUsesRealVerifier(t *testing.T) {
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{proof},
 	})
-	if err := VerifyBlobSidecars(Transactions{tx}, KZGBlobVerifier{}); err != nil {
+	// Two independently owned sidecars exercise the bounded parallel block
+	// verifier and its shared immutable KZG setup under the race detector.
+	second := tx.WithBlobSidecar(tx.BlobSidecar())
+	if err := VerifyBlobSidecars(Transactions{tx, second}, KZGBlobVerifier{}); err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
 }
@@ -100,5 +103,33 @@ func TestVerifyBlobSidecarsRejectsMissingSidecarWithRealVerifier(t *testing.T) {
 	tx := testVerifyBlobTx(KZGToVersionedHash(commitment))
 	if err := VerifyBlobSidecars(Transactions{tx}, KZGBlobVerifier{}); !errors.Is(err, ErrBlobSidecarMissing) {
 		t.Fatalf("expected missing sidecar error, got %v", err)
+	}
+}
+
+func TestVerifyOsakaBlobSidecarUsesCellProofs(t *testing.T) {
+	blob, commitment, _ := buildValidBlobTuple(t)
+	var kzgBlob kzg.Blob
+	copy(kzgBlob[:], blob)
+	proofs, err := kzg.ComputeCellProofs(&kzgBlob)
+	if err != nil {
+		t.Fatalf("ComputeCellProofs failed: %v", err)
+	}
+	wireProofs := make([]KZGProof, len(proofs))
+	for i := range proofs {
+		wireProofs[i] = KZGProof(proofs[i])
+	}
+	sidecar := NewBlobTxSidecar(BlobSidecarVersion1, []Blob{blob}, []KZGCommitment{commitment}, wireProofs)
+	tx := testVerifyBlobTx(KZGToVersionedHash(commitment))
+	if err := tx.VerifyBlobSidecarVersion(sidecar, BlobSidecarVersion1, KZGBlobVerifier{}); err != nil {
+		t.Fatalf("valid Osaka cell proofs rejected: %v", err)
+	}
+	if err := tx.VerifyBlobSidecarVersion(sidecar, BlobSidecarVersion0, KZGBlobVerifier{}); !errors.Is(err, ErrBlobSidecarVersionMismatch) {
+		t.Fatalf("Osaka sidecar accepted under Prague rules: %v", err)
+	}
+
+	bad := sidecar.Copy()
+	bad.Proofs[0][0] ^= 0xff
+	if err := tx.VerifyBlobSidecarVersion(bad, BlobSidecarVersion1, KZGBlobVerifier{}); err == nil {
+		t.Fatal("invalid Osaka cell proof accepted")
 	}
 }

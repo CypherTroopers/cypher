@@ -18,19 +18,19 @@
 
     "blobSchedule": {
       "cancun": {
-        "target": 3,
-        "max": 6,
-        "baseFeeUpdateFraction": 3338477
+        "target": 192,
+        "max": 288,
+        "baseFeeUpdateFraction": 213662528
       },
       "prague": {
-        "target": 6,
-        "max": 9,
-        "baseFeeUpdateFraction": 5007716
+        "target": 192,
+        "max": 288,
+        "baseFeeUpdateFraction": 160246912
       },
       "osaka": {
-        "target": 6,
-        "max": 9,
-        "baseFeeUpdateFraction": 5007716
+        "target": 192,
+        "max": 288,
+        "baseFeeUpdateFraction": 160246912
       }
     },
 
@@ -43,6 +43,24 @@
     "rnettransport": "quic",
     "rnetfallbacktransport": "none",
     "fairHotstuffSeed": "0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627",
+
+    "evmParallel": {
+      "maxTransactionsPerBlock": 1048576,
+      "maxBlockBytes": 268435456,
+      "maxTransactionBytes": 1048576,
+      "maxAccessesPerTransaction": 1024,
+      "maxAccessesPerBlock": 2097152,
+      "maxComputePerTransaction": 4294967296,
+      "maxComputePerBlock": 17592186044416,
+      "maxCriticalPathCompute": 268435456,
+      "maxDependencyDepth": 12782,
+      "maxMemoryBytesPerTransaction": 67108864,
+      "maxLogBytesPerTransaction": 262144,
+      "maxLogBytesPerBlock": 67108864,
+      "maxReceiptBytesPerBlock": 234881024,
+      "maxOutputBytesPerTransaction": 1048576,
+      "replayWindowBlocks": 512
+    },
 
     "committee": {
       "0": {
@@ -149,12 +167,12 @@
 },
 
   "difficulty": "0x44C",
-  "gasLimit": "0xc9221576",
+  "gasLimit": "0x100000000000",
   "baseFeePerGas": "0x2faf0800",
 
   "nonce": "0x0",
 
-  "mixHash": "0x958661fda822c1cf99ef5c25865c8deb6411888df8117384980c077f86df1264",
+  "mixHash": "0x5e0346f0cfb44f939d675e4fa5322900d360f5f5db42cd535737e729d4312f14",
 
   "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 

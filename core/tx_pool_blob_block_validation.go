@@ -20,12 +20,11 @@ func (pool *TxPool) ValidateBlobSidecarsForBlock(txs types.Transactions, verifie
 		if sidecar == nil {
 			return ErrMissingBlobSidecarForBlock
 		}
-		bundle := &types.BlobTxWithSidecar{Tx: tx, Sidecar: sidecar}
 		if verifier != nil {
-			if err := bundle.Verify(verifier); err != nil {
+			if err := tx.VerifyBlobSidecarVersion(sidecar, pool.activeBlobSidecarVersion(), verifier); err != nil {
 				return err
 			}
-		} else if err := bundle.Validate(); err != nil {
+		} else if err := tx.ValidateBlobSidecarVersion(sidecar, pool.activeBlobSidecarVersion()); err != nil {
 			return err
 		}
 	}

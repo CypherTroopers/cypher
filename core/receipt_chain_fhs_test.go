@@ -3,14 +3,26 @@ package core
 import (
 	"errors"
 	"math/big"
+	"sync/atomic"
 	"testing"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
+	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/params"
 )
+
+type countingFinalityDatabase struct {
+	ethdb.Database
+	reads atomic.Int64
+}
+
+func (db *countingFinalityDatabase) Get(key []byte) ([]byte, error) {
+	db.reads.Add(1)
+	return db.Database.Get(key)
+}
 
 type receiptChainSignatureValidator struct {
 	failAt uint64
@@ -96,7 +108,7 @@ func TestFHSBlockProofGuardRejectsBeforeAlternateImportPaths(t *testing.T) {
 }
 
 func TestIsFinalizedTransactionRejectsReceiptSyncLookupAheadOfStateHead(t *testing.T) {
-	db := rawdb.NewMemoryDatabase()
+	db := &countingFinalityDatabase{Database: rawdb.NewMemoryDatabase()}
 	tx := types.NewTransaction(0, common.Address{1}, big.NewInt(1), params.TxGas, big.NewInt(1), nil)
 	genesis := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(0), Difficulty: big.NewInt(1)})
 	block := types.NewBlockWithHeader(&types.Header{
@@ -112,8 +124,16 @@ func TestIsFinalizedTransactionRejectsReceiptSyncLookupAheadOfStateHead(t *testi
 		t.Fatal("receipt-sync lookup ahead of the FHS state head was treated as finalized")
 	}
 	bc.currentBlock.Store(block)
+	if bc.IsFinalizedTransaction(tx.Hash()) {
+		t.Fatal("ordinary canonical tx lookup was treated as an FHS finality marker")
+	}
+	rawdb.WriteFHSFinalizedTxLookupEntries(db, block)
+	db.reads.Store(0)
 	if !bc.IsFinalizedTransaction(tx.Hash()) {
 		t.Fatal("canonical transaction at the FHS state head was not finalized")
+	}
+	if reads := db.reads.Load(); reads != 2 {
+		t.Fatalf("exact finalized lookup performed %d DB reads, want marker+canonical only", reads)
 	}
 	rawdb.WriteCanonicalHash(db, common.HexToHash("0xdead"), block.NumberU64())
 	if bc.IsFinalizedTransaction(tx.Hash()) {

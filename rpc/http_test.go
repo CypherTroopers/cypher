@@ -21,7 +21,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -40,6 +42,44 @@ func (s *delayedHTTPTestService) Wait() string {
 type immediateHTTPTestService struct{}
 
 func (immediateHTTPTestService) Ping() string { return "ok" }
+
+type concurrentRawTxBatchTestService struct {
+	entered chan struct{}
+	release chan struct{}
+
+	mu        sync.Mutex
+	active    int
+	maxActive int
+}
+
+func (s *concurrentRawTxBatchTestService) SendRawTransaction(_ context.Context, raw string) string {
+	return s.wait(raw)
+}
+
+func (s *concurrentRawTxBatchTestService) SendTransaction(_ context.Context, raw string) string {
+	return s.wait(raw)
+}
+
+func (s *concurrentRawTxBatchTestService) wait(raw string) string {
+	s.mu.Lock()
+	s.active++
+	if s.active > s.maxActive {
+		s.maxActive = s.active
+	}
+	s.mu.Unlock()
+	s.entered <- struct{}{}
+	<-s.release
+	s.mu.Lock()
+	s.active--
+	s.mu.Unlock()
+	return raw
+}
+
+func (s *concurrentRawTxBatchTestService) maximumActive() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.maxActive
+}
 
 type recordingDeadlineResponseWriter struct {
 	header    http.Header
@@ -128,6 +168,225 @@ func confirmHTTPRequestYieldsStatusCode(t *testing.T, method, contentType, body 
 
 func TestHTTPResponseWithEmptyGet(t *testing.T) {
 	confirmHTTPRequestYieldsStatusCode(t, http.MethodGet, "", "", http.StatusOK)
+}
+
+func TestRawTransactionBatchUsesBoundedParallelFastPath(t *testing.T) {
+	const calls = 32
+	service := &concurrentRawTxBatchTestService{
+		entered: make(chan struct{}, calls),
+		release: make(chan struct{}),
+	}
+	server := NewServer()
+	if err := server.RegisterName("eth", service); err != nil {
+		t.Fatal(err)
+	}
+	client := DialInProc(server)
+	defer client.Close()
+
+	results := make([]string, calls)
+	batch := make([]BatchElem, calls)
+	for index := range batch {
+		batch[index] = BatchElem{
+			Method: "eth_sendRawTransaction",
+			Args:   []interface{}{"raw-" + strconv.Itoa(index+1)},
+			Result: &results[index],
+		}
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- client.BatchCallContext(context.Background(), batch)
+	}()
+
+	released := false
+	defer func() {
+		if !released {
+			close(service.release)
+		}
+	}()
+	for index := 0; index < calls; index++ {
+		select {
+		case <-service.entered:
+		case <-time.After(time.Second):
+			t.Fatalf("raw transaction batch started only %d/%d calls concurrently", index, calls)
+		}
+	}
+	if got := service.maximumActive(); got != calls {
+		t.Fatalf("maximum active raw transaction calls = %d, want %d", got, calls)
+	}
+	close(service.release)
+	released = true
+
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	for index := range batch {
+		if batch[index].Error != nil {
+			t.Fatalf("batch response %d error: %v", index, batch[index].Error)
+		}
+		if results[index] != "raw-"+strconv.Itoa(index+1) {
+			t.Fatalf("batch response %d result %q", index, results[index])
+		}
+	}
+}
+
+func TestRawTransactionBatchParallelFastPathIsNodeBounded(t *testing.T) {
+	const calls = rawTransactionBatchParallelism + 16
+	service := &concurrentRawTxBatchTestService{
+		entered: make(chan struct{}, calls),
+		release: make(chan struct{}),
+	}
+	server := NewServer()
+	if err := server.RegisterName("eth", service); err != nil {
+		t.Fatal(err)
+	}
+	client := DialInProc(server)
+	defer client.Close()
+
+	results := make([]string, calls)
+	batch := make([]BatchElem, calls)
+	for index := range batch {
+		batch[index] = BatchElem{Method: "eth_sendRawTransaction", Args: []interface{}{"raw"}, Result: &results[index]}
+	}
+	result := make(chan error, 1)
+	go func() { result <- client.BatchCallContext(context.Background(), batch) }()
+	released := false
+	defer func() {
+		if !released {
+			close(service.release)
+		}
+	}()
+	for index := 0; index < rawTransactionBatchParallelism; index++ {
+		select {
+		case <-service.entered:
+		case <-time.After(time.Second):
+			t.Fatalf("raw transaction slot %d/%d was not activated", index, rawTransactionBatchParallelism)
+		}
+	}
+	select {
+	case <-service.entered:
+		t.Fatalf("raw transaction batch exceeded node limit %d", rawTransactionBatchParallelism)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if got := service.maximumActive(); got != rawTransactionBatchParallelism {
+		t.Fatalf("maximum active raw transaction calls = %d, want %d", got, rawTransactionBatchParallelism)
+	}
+	close(service.release)
+	released = true
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRawTransactionParallelLimitIncludesSingleRequestShapes(t *testing.T) {
+	const batchCalls = rawTransactionBatchParallelism - 1
+	service := &concurrentRawTxBatchTestService{
+		entered: make(chan struct{}, rawTransactionBatchParallelism+1),
+		release: make(chan struct{}),
+	}
+	server := NewServer()
+	if err := server.RegisterName("eth", service); err != nil {
+		t.Fatal(err)
+	}
+	batchClient := DialInProc(server)
+	singleClient := DialInProc(server)
+	oneElementBatchClient := DialInProc(server)
+	defer batchClient.Close()
+	defer singleClient.Close()
+	defer oneElementBatchClient.Close()
+
+	batch := make([]BatchElem, batchCalls)
+	for index := range batch {
+		var result string
+		batch[index] = BatchElem{Method: "eth_sendRawTransaction", Args: []interface{}{"batch"}, Result: &result}
+	}
+	batchDone := make(chan error, 1)
+	go func() { batchDone <- batchClient.BatchCallContext(context.Background(), batch) }()
+	for index := 0; index < batchCalls; index++ {
+		select {
+		case <-service.entered:
+		case <-time.After(time.Second):
+			t.Fatalf("raw transaction batch started only %d/%d calls", index, batchCalls)
+		}
+	}
+
+	singleDone := make(chan error, 1)
+	go func() {
+		var result string
+		singleDone <- singleClient.CallContext(context.Background(), &result, "eth_sendRawTransaction", "single")
+	}()
+	select {
+	case <-service.entered:
+	case <-time.After(time.Second):
+		t.Fatal("single raw transaction did not consume the final node-global slot")
+	}
+
+	oneElementDone := make(chan error, 1)
+	go func() {
+		var result string
+		oneElementDone <- oneElementBatchClient.BatchCallContext(context.Background(), []BatchElem{{
+			Method: "eth_sendRawTransaction", Args: []interface{}{"one-element"}, Result: &result,
+		}})
+	}()
+	select {
+	case <-service.entered:
+		t.Fatalf("one-element batch exceeded node-global limit %d", rawTransactionBatchParallelism)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if got := service.maximumActive(); got != rawTransactionBatchParallelism {
+		t.Fatalf("maximum active raw transaction calls = %d, want %d", got, rawTransactionBatchParallelism)
+	}
+
+	close(service.release)
+	if err := <-batchDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-singleDone; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-oneElementDone; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMixedBatchRetainsSerialExecution(t *testing.T) {
+	service := &concurrentRawTxBatchTestService{
+		entered: make(chan struct{}, 2),
+		release: make(chan struct{}),
+	}
+	server := NewServer()
+	if err := server.RegisterName("eth", service); err != nil {
+		t.Fatal(err)
+	}
+	client := DialInProc(server)
+	defer client.Close()
+
+	var rawResult, transactionResult string
+	batch := []BatchElem{
+		{Method: "eth_sendRawTransaction", Args: []interface{}{"raw"}, Result: &rawResult},
+		{Method: "eth_sendTransaction", Args: []interface{}{"managed"}, Result: &transactionResult},
+	}
+	result := make(chan error, 1)
+	go func() { result <- client.BatchCallContext(context.Background(), batch) }()
+	select {
+	case <-service.entered:
+	case <-time.After(time.Second):
+		t.Fatal("first mixed batch call did not start")
+	}
+	select {
+	case <-service.entered:
+		t.Fatal("mixed JSON-RPC batch executed concurrently")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(service.release)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if got := service.maximumActive(); got != 1 {
+		t.Fatalf("maximum active mixed batch calls = %d, want 1", got)
+	}
+	if rawResult != "raw" || transactionResult != "managed" {
+		t.Fatalf("mixed batch results = %q, %q", rawResult, transactionResult)
+	}
 }
 
 func TestHTTPResponseWriteDeadlineStartsWhenRPCCompletesHTTP1(t *testing.T) {

@@ -318,11 +318,27 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 	}
 	statedb, _ := state.New(common.Hash{}, state.NewDatabase(db), nil)
 	for addr, account := range g.Alloc {
-		statedb.AddBalance(addr, account.Balance)
+		// Balance is required by the JSON schema, but programmatically assembled
+		// genesis specifications may leave it nil. Treat that as zero here so an
+		// invalid specification can be rejected by Commit without panicking.
+		if account.Balance != nil {
+			statedb.AddBalance(addr, account.Balance)
+		}
 		statedb.SetCode(addr, account.Code)
 		statedb.SetNonce(addr, account.Nonce)
 		for key, value := range account.Storage {
 			statedb.SetState(addr, key, value)
+		}
+	}
+	// Reserve all replay-registry shards in the genesis state. Nonce one is the
+	// protocol account marker consumed by the NativeTxV1 replay reader; creating
+	// every shard up front prevents an ordinary EVM transfer from defining its
+	// initial shape differently on first use.
+	if g.Config != nil && g.Config.NativeParallelEnabled() && g.Config.NativeParallel.RequireNativeTransactions {
+		for shard := 0; shard < 256; shard++ {
+			var payer common.Address
+			payer[0] = byte(shard)
+			statedb.SetNonce(params.NativeReplayRegistryAddressForPayer(payer), 1)
 		}
 	}
 	// Prague is active from genesis on the Cypherium network. Install the
@@ -386,6 +402,14 @@ func (g *Genesis) Commit(db ethdb.Database) (*types.Block, error) {
 	if err := config.CheckConfigForkOrder(); err != nil {
 		return nil, err
 	}
+	if config.NativeParallelEnabled() && config.NativeParallel.RequireNativeTransactions {
+		if addr, ok := firstReservedNativeGenesisAccount(g.Alloc); ok {
+			return nil, fmt.Errorf("genesis-native alloc contains reserved replay registry account %s", addr)
+		}
+		if addr, ok := firstEmptyGenesisAccount(g.Alloc); ok {
+			return nil, fmt.Errorf("genesis-native alloc contains empty account %s", addr)
+		}
+	}
 	if config.FairHotstuff {
 		commitment, err := params.FairHotstuffGenesisCommitment(config)
 		if err != nil {
@@ -409,6 +433,52 @@ func (g *Genesis) Commit(db ethdb.Database) (*types.Block, error) {
 	rawdb.WriteHeadHeaderHash(db, block.Hash())
 	rawdb.WriteChainConfig(db, block.Hash(), config)
 	return block, nil
+}
+
+// firstReservedNativeGenesisAccount prevents alloc data from attaching
+// balance, code or storage to an account whose complete shape is owned by the
+// NativeTxV1 replay protocol. ToBlock creates every shard canonically.
+func firstReservedNativeGenesisAccount(alloc GenesisAlloc) (common.Address, bool) {
+	var first common.Address
+	found := false
+	for address := range alloc {
+		if !params.IsNativeReplayRegistryAddress(address) {
+			continue
+		}
+		if !found || bytes.Compare(address[:], first[:]) < 0 {
+			first = address
+			found = true
+		}
+	}
+	return first, found
+}
+
+// firstEmptyGenesisAccount enforces the genesis-native account model. The
+// parallel guard deliberately treats zero-value touches as no-ops; admitting an
+// already-empty account at genesis would otherwise make that rule differ from
+// EIP-161 deletion semantics. Rejecting the ambiguous state at the genesis
+// boundary keeps serial and DAG execution identical without legacy exceptions.
+func firstEmptyGenesisAccount(alloc GenesisAlloc) (common.Address, bool) {
+	var first common.Address
+	found := false
+	for addr, account := range alloc {
+		nonZeroStorage := false
+		for _, value := range account.Storage {
+			if value != (common.Hash{}) {
+				nonZeroStorage = true
+				break
+			}
+		}
+		emptyBalance := account.Balance == nil || account.Balance.Sign() == 0
+		if !emptyBalance || account.Nonce != 0 || len(account.Code) != 0 || nonZeroStorage {
+			continue
+		}
+		if !found || bytes.Compare(addr[:], first[:]) < 0 {
+			first = addr
+			found = true
+		}
+	}
+	return first, found
 }
 
 // MustCommit writes the genesis block and state to db, panicking on error.

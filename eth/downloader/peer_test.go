@@ -20,6 +20,7 @@ import (
 	"sort"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestPeerThroughputSorting(t *testing.T) {
@@ -101,5 +102,21 @@ func TestIdlePeersAcceptNegotiatedProtocolUpgrades(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLargeDataTTLDoesNotExtendHeaderControlTTL(t *testing.T) {
+	d := new(Downloader)
+	atomic.StoreUint64(&d.rttEstimate, uint64(rttMaxEstimate))
+	atomic.StoreUint64(&d.rttConfidence, 1_000_000)
+	if got := d.requestTTL(); got != ttlLimit {
+		t.Fatalf("header request TTL = %v, want legacy cap %v", got, ttlLimit)
+	}
+	if got := d.requestLargeDataTTL(); got != largeDataTTL {
+		t.Fatalf("large-data request TTL = %v, want %v", got, largeDataTTL)
+	}
+	maxFrameService := 5*time.Second + time.Duration(257*1024*1024)*time.Second/(2*1024*1024)
+	if largeDataTTL <= maxFrameService {
+		t.Fatalf("large-data TTL = %v, want margin above maximum-frame service time %v", largeDataTTL, maxFrameService)
 	}
 }

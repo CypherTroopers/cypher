@@ -38,6 +38,7 @@ import (
 	rnetnetwork "github.com/cypherium/cypher/rnet/network"
 	quic "github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
+	"golang.org/x/crypto/sha3"
 )
 
 const (
@@ -46,6 +47,7 @@ const (
 	txQUICBatchDomain       = "CPH_TXQUIC_BATCH"
 	txQUICPacketDomain      = "CPH_TXQUIC_PACKET"
 	txQUICTxLeafDomain      = "CPH_TXQUIC_TX_LEAF"
+	txQUICBlobSidecarDomain = "CPH_TXQUIC_BLOB_SIDECAR"
 	txQUICItemDomain        = "CPH_TXQUIC_ITEM"
 	txQUICTxRootDomain      = "CPH_TXQUIC_TX_ROOT"
 	txQUICCertificateDomain = "CPH_TXQUIC_ADMISSION_CERTIFICATE"
@@ -79,9 +81,13 @@ const (
 	txQUICMaxBridgeQueueItems        = 4_000_000
 	txQUICMaxBridgeQueueBytes        = int64(1024 * 1024 * 1024)
 	txQUICMaxOutboxRecords           = 1_000_000
-	txQUICMaxOutboxBytes             = int64(1024 * 1024 * 1024)
-	txQUICMaxCommitRequests          = 4096
-	txQUICMaxCommitBytes             = int64(256 * 1024 * 1024)
+	// Outbox capacity is disk-backed and includes a 128 KiB reservation for
+	// committee placement metadata on every record. Keep this independent from
+	// the 1 GiB in-memory bridge/in-flight ceilings: the standard 1,048,576-TX
+	// burst can be split into 131,072 eight-TX durable records.
+	txQUICMaxOutboxBytes    = int64(32 * 1024 * 1024 * 1024)
+	txQUICMaxCommitRequests = 4096
+	txQUICMaxCommitBytes    = int64(256 * 1024 * 1024)
 )
 
 var (
@@ -102,6 +108,7 @@ type txQUICRateBucket struct {
 type txQUICItem struct {
 	AdmissionIndex uint16
 	Tx             *types.Transaction
+	BlobSidecar    *types.BlobTxSidecar `rlp:"nil"`
 }
 
 type txQUICPacket struct {
@@ -304,6 +311,147 @@ func validateTxQUICCertificateStructure(certificate *types.CommonTxAdmissionBatc
 	return nil
 }
 
+// newTxQUICItem moves an EIP-4844 sidecar out of the execution transaction and
+// into the durable transport item. Transaction hashes remain canonical while
+// every mutable sidecar byte is owned by the item.
+func newTxQUICItem(admissionIndex uint16, tx *types.Transaction) (*txQUICItem, error) {
+	return newTxQUICItemWithSidecar(admissionIndex, tx, nil)
+}
+
+func newTxQUICItemWithSidecar(admissionIndex uint16, tx *types.Transaction, supplied *types.BlobTxSidecar) (*txQUICItem, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("txquic transaction is nil")
+	}
+	if tx.Type() != types.BlobTxType {
+		if supplied != nil {
+			return nil, types.ErrBlobTxSidecarOnNonBlobTx
+		}
+		return &txQUICItem{AdmissionIndex: admissionIndex, Tx: tx}, nil
+	}
+	sidecar := supplied
+	if supplied != nil && tx.BlobSidecar() != nil {
+		return nil, fmt.Errorf("txquic blob transaction has two sidecar sources")
+	}
+	if sidecar == nil {
+		sidecar = tx.BlobSidecar()
+	}
+	item := &txQUICItem{
+		AdmissionIndex: admissionIndex,
+		Tx:             tx.WithBlobSidecar(nil),
+		BlobSidecar:    sidecar.Copy(),
+	}
+	if err := validateTxQUICItem(item); err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+// validateTxQUICItem performs only bounded structural and commitment checks.
+// It deliberately does not invoke KZG, because network callers must first pass
+// packet signature authentication and rate limiting.
+func validateTxQUICItem(item *txQUICItem) error {
+	if item == nil || item.Tx == nil {
+		return fmt.Errorf("txquic item has no transaction")
+	}
+	if item.Tx.Type() != types.BlobTxType {
+		if item.BlobSidecar != nil {
+			return types.ErrBlobTxSidecarOnNonBlobTx
+		}
+		return nil
+	}
+	// Pooled wrappers embedded in Tx would create two possible sidecar sources.
+	// TxQUIC has one canonical representation: execution envelope plus this
+	// item's separately committed sidecar.
+	if item.Tx.BlobSidecar() != nil {
+		return fmt.Errorf("txquic blob transaction embeds a pooled sidecar")
+	}
+	if item.BlobSidecar == nil {
+		return types.ErrBlobSidecarMissing
+	}
+	if err := item.Tx.ValidateBlobTx(params.BlobTxMaxBlobs, nil); err != nil {
+		return err
+	}
+	if err := item.Tx.ValidateBlobSidecar(item.BlobSidecar); err != nil {
+		return err
+	}
+	if len(item.BlobSidecar.Blobs) > params.BlobTxMaxBlobs {
+		return types.ErrBlobTxTooManyBlobs
+	}
+	for index, blob := range item.BlobSidecar.Blobs {
+		if len(blob) != int(params.BlobTxBlobGasPerBlob) {
+			return fmt.Errorf("%w at index %d: have %d want %d", types.ErrBlobSidecarInvalidBlobLength, index, len(blob), params.BlobTxBlobGasPerBlob)
+		}
+	}
+	return nil
+}
+
+func copyTxQUICItem(item *txQUICItem) (*txQUICItem, error) {
+	if err := validateTxQUICItem(item); err != nil {
+		return nil, err
+	}
+	return newTxQUICItemWithSidecar(item.AdmissionIndex, item.Tx, item.BlobSidecar)
+}
+
+func canonicalizeTxQUICItems(items []*txQUICItem) ([]*txQUICItem, error) {
+	canonical := make([]*txQUICItem, len(items))
+	for index, item := range items {
+		if item == nil || item.Tx == nil {
+			return nil, fmt.Errorf("txquic item %d has no transaction", index)
+		}
+		owned, err := newTxQUICItemWithSidecar(item.AdmissionIndex, item.Tx, item.BlobSidecar)
+		if err != nil {
+			return nil, fmt.Errorf("txquic item %d: %w", index, err)
+		}
+		canonical[index] = owned
+	}
+	return canonical, nil
+}
+
+func txQUICBlobSidecarHash(sidecar *types.BlobTxSidecar) (common.Hash, error) {
+	if sidecar == nil {
+		return common.Hash{}, nil
+	}
+	// Stream the potentially multi-megabyte sidecar into Keccak instead of
+	// allocating a second full encoded copy merely to commit it.
+	hasher := sha3.NewLegacyKeccak256()
+	if err := rlp.Encode(hasher, []interface{}{txQUICBlobSidecarDomain, sidecar}); err != nil {
+		return common.Hash{}, err
+	}
+	var digest common.Hash
+	copy(digest[:], hasher.Sum(nil))
+	return digest, nil
+}
+
+func txQUICItemCommitment(certificate *types.CommonTxAdmissionBatch, item *txQUICItem, position uint32) (common.Hash, common.Hash, common.Hash, error) {
+	if err := validateTxQUICItem(item); err != nil {
+		return common.Hash{}, common.Hash{}, common.Hash{}, err
+	}
+	txHash := item.Tx.Hash()
+	if certificate == nil || int(item.AdmissionIndex) >= len(certificate.TxHashes) || certificate.TxHashes[item.AdmissionIndex] != txHash {
+		return common.Hash{}, common.Hash{}, common.Hash{}, fmt.Errorf("txquic item does not match admission certificate index %d", item.AdmissionIndex)
+	}
+	sidecarHash, err := txQUICBlobSidecarHash(item.BlobSidecar)
+	if err != nil {
+		return common.Hash{}, common.Hash{}, common.Hash{}, err
+	}
+	var txLeaf common.Hash
+	if item.BlobSidecar == nil {
+		// Preserve the established type 0/1/2/4 identity exactly. Only type 3
+		// extends the leaf schema with a separately domain-separated DA hash.
+		txLeaf, err = txQUICRLPHash([]interface{}{txQUICTxLeafDomain, position, item.AdmissionIndex, txHash})
+	} else {
+		txLeaf, err = txQUICRLPHash([]interface{}{txQUICTxLeafDomain, position, item.AdmissionIndex, txHash, sidecarHash})
+	}
+	if err != nil {
+		return common.Hash{}, common.Hash{}, common.Hash{}, err
+	}
+	itemID, err := txQUICRLPHash([]interface{}{txQUICItemDomain, position, item.AdmissionIndex, txLeaf})
+	if err != nil {
+		return common.Hash{}, common.Hash{}, common.Hash{}, err
+	}
+	return itemID, txLeaf, txHash, nil
+}
+
 func txQUICItemCommitments(certificate *types.CommonTxAdmissionBatch, items []*txQUICItem) ([]common.Hash, common.Hash, error) {
 	if len(items) == 0 || len(items) > int(^uint32(0)) {
 		return nil, common.Hash{}, fmt.Errorf("invalid txquic item count %d", len(items))
@@ -315,31 +463,35 @@ func txQUICItemCommitments(certificate *types.CommonTxAdmissionBatch, items []*t
 	txLeaves := make([]common.Hash, len(items))
 	seenTxs := make(map[common.Hash]struct{}, len(items))
 	seenIndexes := make(map[uint16]struct{}, len(items))
+	type nativeReplayIdentity struct {
+		payer    common.Address
+		sequence uint64
+	}
+	var seenNativeReplay map[nativeReplayIdentity]struct{}
 	for index, item := range items {
-		if item == nil || item.Tx == nil {
-			return nil, common.Hash{}, fmt.Errorf("txquic item %d has no transaction", index)
-		}
-		txHash := item.Tx.Hash()
-		if int(item.AdmissionIndex) >= len(certificate.TxHashes) || certificate.TxHashes[item.AdmissionIndex] != txHash {
-			return nil, common.Hash{}, fmt.Errorf("txquic item %d does not match admission certificate index %d", index, item.AdmissionIndex)
+		itemID, txLeaf, txHash, err := txQUICItemCommitment(certificate, item, uint32(index))
+		if err != nil {
+			return nil, common.Hash{}, fmt.Errorf("txquic item %d: %w", index, err)
 		}
 		if _, duplicate := seenTxs[txHash]; duplicate {
 			return nil, common.Hash{}, fmt.Errorf("duplicate txquic transaction %s", txHash)
 		}
 		seenTxs[txHash] = struct{}{}
+		if item.Tx.Type() == types.NativeTxType {
+			if seenNativeReplay == nil {
+				seenNativeReplay = make(map[nativeReplayIdentity]struct{}, len(items))
+			}
+			identity := nativeReplayIdentity{payer: item.Tx.Payer(), sequence: item.Tx.ReplaySequence()}
+			if _, duplicate := seenNativeReplay[identity]; duplicate {
+				return nil, common.Hash{}, fmt.Errorf("duplicate txquic native replay identity %s/%d", identity.payer, identity.sequence)
+			}
+			seenNativeReplay[identity] = struct{}{}
+		}
 		if _, duplicate := seenIndexes[item.AdmissionIndex]; duplicate {
 			return nil, common.Hash{}, fmt.Errorf("duplicate txquic admission index %d", item.AdmissionIndex)
 		}
 		seenIndexes[item.AdmissionIndex] = struct{}{}
-		txLeaf, err := txQUICRLPHash([]interface{}{txQUICTxLeafDomain, uint32(index), item.AdmissionIndex, txHash})
-		if err != nil {
-			return nil, common.Hash{}, err
-		}
 		txLeaves[index] = txLeaf
-		itemID, err := txQUICRLPHash([]interface{}{txQUICItemDomain, uint32(index), item.AdmissionIndex, txLeaf})
-		if err != nil {
-			return nil, common.Hash{}, err
-		}
 		itemIDs[index] = itemID
 	}
 	txRoot, err := txQUICRLPHash([]interface{}{txQUICTxRootDomain, txLeaves})
@@ -357,7 +509,11 @@ func txQUICSemanticBatchID(chainID uint64, genesisHash common.Hash, admissionID,
 }
 
 func newTxQUICBatch(chainID uint64, genesisHash common.Hash, certificate *types.CommonTxAdmissionBatch, items []*txQUICItem) (*txQUICBatch, []common.Hash, error) {
-	itemIDs, txRoot, err := txQUICItemCommitments(certificate, items)
+	ownedItems, err := canonicalizeTxQUICItems(items)
+	if err != nil {
+		return nil, nil, err
+	}
+	itemIDs, txRoot, err := txQUICItemCommitments(certificate, ownedItems)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -371,7 +527,7 @@ func newTxQUICBatch(chainID uint64, genesisHash common.Hash, certificate *types.
 	}
 	return &txQUICBatch{
 		ChainID: chainID, GenesisHash: genesisHash, BatchID: batchID,
-		TxRoot: txRoot, Certificate: copyCommonTxAdmissionBatchForQUIC(certificate), Items: items,
+		TxRoot: txRoot, Certificate: copyCommonTxAdmissionBatchForQUIC(certificate), Items: ownedItems,
 	}, itemIDs, nil
 }
 
@@ -546,6 +702,7 @@ func (e *txQUICRemoteRejectError) Retryable() bool {
 
 type txQUICBridgeItem struct {
 	tx             *types.Transaction
+	blobSidecar    *types.BlobTxSidecar
 	admissionIndex uint16
 	am             *accounts.Manager
 	request        *txQUICBridgeRequest
@@ -564,6 +721,7 @@ type txQUICBridgeRequest struct {
 	rawBytes    int64
 	result      error
 	completed   bool
+	walOwned    bool
 	done        chan struct{}
 }
 
@@ -575,16 +733,23 @@ func newTxQUICBridgeRequest(certificate *types.CommonTxAdmissionBatch, items []t
 	durableItems := make([]*txQUICItem, len(copied))
 	var itemBytes int64
 	for i := range copied {
-		encodedSize, err := txQUICBridgeItemRawSize(copied[i].tx, copied[i].admissionIndex)
+		durableItem, err := newTxQUICItemWithSidecar(copied[i].admissionIndex, copied[i].tx, copied[i].blobSidecar)
+		if err != nil {
+			return nil, fmt.Errorf("copy txquic durable bridge item %d: %w", i, err)
+		}
+		encodedSize, err := txQUICItemRawSize(durableItem)
 		if err != nil {
 			return nil, fmt.Errorf("size txquic durable bridge item %d: %w", i, err)
 		}
+		// The queue owns the sidecar independently of the RPC decoder and caller.
+		copied[i].tx = durableItem.Tx
+		copied[i].blobSidecar = durableItem.BlobSidecar
 		copied[i].rawBytes = encodedSize
 		if copied[i].rawBytes <= 0 || itemBytes > int64(^uint64(0)>>1)-copied[i].rawBytes {
 			return nil, fmt.Errorf("invalid txquic durable bridge item byte size")
 		}
 		itemBytes += copied[i].rawBytes
-		durableItems[i] = &txQUICItem{AdmissionIndex: copied[i].admissionIndex, Tx: copied[i].tx}
+		durableItems[i] = durableItem
 	}
 	if _, _, err := txQUICItemCommitments(certificate, durableItems); err != nil {
 		return nil, err
@@ -615,34 +780,77 @@ func newTxQUICBridgeRequest(certificate *types.CommonTxAdmissionBatch, items []t
 }
 
 func txQUICBridgeItemRawSize(tx *types.Transaction, admissionIndex uint16) (int64, error) {
-	if tx == nil {
-		return 0, fmt.Errorf("transaction is nil")
+	item, err := newTxQUICItem(admissionIndex, tx)
+	if err != nil {
+		return 0, err
+	}
+	return txQUICItemRawSize(item)
+}
+
+func txQUICItemRawSize(item *txQUICItem) (int64, error) {
+	if err := validateTxQUICItem(item); err != nil {
+		return 0, err
 	}
 	maxSize := uint64(^uint64(0) >> 1)
-	txSize := uint64(tx.Size())
-	if txSize == 0 || txSize > maxSize-10 {
+	txSize := uint64(item.Tx.Size())
+	if txSize == 0 || txSize > maxSize-16 {
 		return 0, fmt.Errorf("invalid transaction encoding size")
 	}
-	if tx.Type() != types.LegacyTxType {
-		// Typed transactions are wrapped in an RLP byte string when nested in
-		// txQUICItem. Transaction.Size reports the unwrapped EIP-2718 payload.
+	if item.Tx.Type() != types.LegacyTxType {
+		// Typed execution envelopes are nested as one RLP byte string. Blob data
+		// is separately encoded below and is never part of Transaction.Size.
 		txSize = txQUICByteStringSize(txSize)
 	}
 	indexSize := uint64(1)
-	if admissionIndex > 0x7f {
+	if item.AdmissionIndex > 0x7f {
 		indexSize = 2
 	}
-	if admissionIndex > 0xff {
+	if item.AdmissionIndex > 0xff {
 		indexSize = 3
 	}
-	if indexSize > maxSize-txSize {
+	sidecarSize, err := txQUICBlobSidecarRLPSize(item.BlobSidecar)
+	if err != nil {
+		return 0, err
+	}
+	if indexSize > maxSize-txSize || sidecarSize > maxSize-indexSize-txSize {
 		return 0, fmt.Errorf("transaction item encoding is too large")
 	}
-	total := rlp.ListSize(indexSize + txSize)
+	total := rlp.ListSize(indexSize + txSize + sidecarSize)
 	if total == 0 || total > maxSize {
 		return 0, fmt.Errorf("transaction item encoding is too large")
 	}
 	return int64(total), nil
+}
+
+func txQUICBlobSidecarRLPSize(sidecar *types.BlobTxSidecar) (uint64, error) {
+	if sidecar == nil {
+		// rlp:"nil" uses the empty-list marker for a nil pointer to a struct.
+		return 1, nil
+	}
+	maxSize := uint64(^uint64(0) >> 1)
+	var blobContent uint64
+	for _, blob := range sidecar.Blobs {
+		encoded := txQUICByteStringSize(uint64(len(blob)))
+		if encoded > maxSize-blobContent {
+			return 0, fmt.Errorf("blob sidecar encoding is too large")
+		}
+		blobContent += encoded
+	}
+	blobs := rlp.ListSize(blobContent)
+	commitments := rlp.ListSize(uint64(len(sidecar.Commitments)) * txQUICByteStringSize(uint64(len(types.KZGCommitment{}))))
+	proofs := rlp.ListSize(uint64(len(sidecar.Proofs)) * txQUICByteStringSize(uint64(len(types.KZGProof{}))))
+	// Supported wrapper versions 0 and 1 are both encoded as one RLP byte
+	// (0 as the empty-string marker and 1 as itself). validateTxQUICItem has
+	// already rejected every other version before this sizing path.
+	version := uint64(1)
+	if commitments > maxSize-blobs || proofs > maxSize-blobs-commitments || version > maxSize-blobs-commitments-proofs {
+		return 0, fmt.Errorf("blob sidecar encoding is too large")
+	}
+	total := rlp.ListSize(version + blobs + commitments + proofs)
+	if total == 0 || total > maxSize {
+		return 0, fmt.Errorf("blob sidecar encoding is too large")
+	}
+	return total, nil
 }
 
 func txQUICByteStringSize(content uint64) uint64 {
@@ -1070,8 +1278,11 @@ type txQUICBackgroundForward struct {
 type TxQUICIngress struct {
 	config      TxQUICConfig
 	txpool      *core.TxPool
+	liveIngress *txLiveIngressScheduler
+	poolIngress *txPoolIngressScheduler
 	outbox      *TxOutbox
 	ingress     *TxQUICIngressStore
+	wal         *txIngressWAL
 	am          *accounts.Manager
 	canonicalTx func(common.Hash) bool
 	finalizedTx func(common.Hash) bool
@@ -1221,6 +1432,10 @@ func NewTxQUICIngress(config TxQUICConfig, txpool *core.TxPool) *TxQUICIngress {
 		allowIPs:             make(map[string]struct{}),
 		signers:              make(map[common.Address]struct{}),
 	}
+	if txpool != nil {
+		q.liveIngress = newTxLiveIngressScheduler(txLiveIngressSchedulerConfigFor(config))
+		q.poolIngress = newTxPoolIngressScheduler(txpool, txPoolIngressSchedulerConfigFor(config))
+	}
 	if config.BridgeEnabled {
 		bridgeWorkers := minPositiveInt(config.BridgeWorkers, txQUICMaxBridgeWorkers)
 		bridgeQueueItems := minPositiveInt(config.BridgeQueueSize, txQUICMaxBridgeQueueItems)
@@ -1311,7 +1526,7 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 		config.PortOffset = 2000
 	}
 	if config.BridgeQueueSize <= 0 {
-		config.BridgeQueueSize = 100000
+		config.BridgeQueueSize = int(params.NativeParallelHardMaxTransactions)
 	}
 	if config.BridgeQueueMaxBytes <= 0 {
 		config.BridgeQueueMaxBytes = defaultTxQUICBridgeQueueMaxBytes
@@ -1323,7 +1538,7 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 		config.OutboxMaxBytes = defaultTxOutboxMaxBytes
 	}
 	if config.BridgeWorkers <= 0 {
-		config.BridgeWorkers = 1
+		config.BridgeWorkers = defaultTxQUICBridgeWorkers
 	}
 	if config.OutboxWorkers <= 0 {
 		config.OutboxWorkers = defaultTxOutboxWorkers
@@ -1338,7 +1553,7 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 		config.BridgeBatchInterval = 10 * time.Millisecond
 	}
 	if config.IngressWorkers <= 0 {
-		config.IngressWorkers = 64
+		config.IngressWorkers = defaultTxQUICIngressWorkers
 	}
 	if config.MaxIncomingStreams <= 0 {
 		config.MaxIncomingStreams = int64(config.IngressWorkers)
@@ -1347,9 +1562,10 @@ func applyTxQUICDefaults(config *TxQUICConfig) {
 		config.MaxIncomingConns = config.IngressWorkers
 	}
 	if config.MaxInflightPayloadBytes <= 0 {
-		config.MaxInflightPayloadBytes = int64(config.IngressWorkers) * txQUICMicroBatchMaxWireBytes
-		if config.MaxInflightPayloadBytes > txQUICMaxInflightPayloadBytes {
-			config.MaxInflightPayloadBytes = txQUICMaxInflightPayloadBytes
+		config.MaxInflightPayloadBytes = defaultTxQUICMaxInflightPayloadBytes
+		maxWorkerPayloadBytes := int64(config.IngressWorkers) * txQUICMicroBatchMaxWireBytes
+		if config.MaxInflightPayloadBytes > maxWorkerPayloadBytes {
+			config.MaxInflightPayloadBytes = maxWorkerPayloadBytes
 		}
 	}
 	if config.ReadTimeout <= 0 {
@@ -1416,6 +1632,10 @@ func (q *TxQUICIngress) SetDurableOutbox(outbox *TxOutbox, am *accounts.Manager)
 	}
 	q.outbox = outbox
 	q.am = am
+	if outbox != nil && q.wal == nil {
+		q.wal = newTxIngressWAL(outbox.db, q.config)
+		q.bindIngressWALLookups()
+	}
 }
 
 func (q *TxQUICIngress) SetDurableIngress(ingress *TxQUICIngressStore) {
@@ -1423,6 +1643,23 @@ func (q *TxQUICIngress) SetDurableIngress(ingress *TxQUICIngressStore) {
 		return
 	}
 	q.ingress = ingress
+	if ingress != nil && q.wal == nil {
+		q.wal = newTxIngressWAL(ingress.db, q.config)
+		q.bindIngressWALLookups()
+	}
+}
+
+// SetIngressWALDatabase selects the role-independent, node-global transaction
+// ingress log. Production nodes always provide the same dedicated database for
+// bridge-only, receiver-only, and dual-role configurations so a role change
+// cannot silently start from an empty authority. Store-local fallbacks above
+// exist only for embedders and focused tests.
+func (q *TxQUICIngress) SetIngressWALDatabase(db ethdb.KeyValueStore) {
+	if q == nil || db == nil {
+		return
+	}
+	q.wal = newTxIngressWAL(db, q.config)
+	q.bindIngressWALLookups()
 }
 
 func (q *TxQUICIngress) SetCanonicalTxLookup(lookup func(common.Hash) bool) {
@@ -1437,6 +1674,7 @@ func (q *TxQUICIngress) SetFinalizedTxLookup(lookup func(common.Hash) bool) {
 		return
 	}
 	q.finalizedTx = lookup
+	q.bindIngressWALLookups()
 }
 
 func (q *TxQUICIngress) SetObsoleteTxLookup(lookup func(types.Transactions) []bool) {
@@ -1444,6 +1682,13 @@ func (q *TxQUICIngress) SetObsoleteTxLookup(lookup func(types.Transactions) []bo
 		return
 	}
 	q.obsoleteTxs = lookup
+	q.bindIngressWALLookups()
+}
+
+func (q *TxQUICIngress) bindIngressWALLookups() {
+	if q != nil && q.wal != nil {
+		q.wal.setTransactionLookups(q.finalizedTx, q.obsoleteTxs)
+	}
 }
 
 func (q *TxQUICIngress) obsoleteTransactions(txs types.Transactions) []bool {
@@ -1513,6 +1758,35 @@ func (q *TxQUICIngress) Start() error {
 		q.Stop()
 		return err
 	}
+	if q.wal == nil {
+		switch {
+		case q.ingress != nil:
+			q.wal = newTxIngressWAL(q.ingress.db, q.config)
+		case q.outbox != nil:
+			q.wal = newTxIngressWAL(q.outbox.db, q.config)
+		}
+	}
+	if q.wal != nil {
+		q.bindIngressWALLookups()
+		if err := q.wal.Start(q.ctx); err != nil {
+			q.Stop()
+			return err
+		}
+		if q.outbox != nil {
+			q.outbox.wal = q.wal
+		}
+		if q.outbox != nil {
+			identity := txQUICDatabaseIdentity{ChainID: q.config.ChainID, GenesisHash: q.config.GenesisHash}
+			if err := ensureTxQUICDatabaseIdentity(q.outbox.db, txOutboxIdentityKey, identity); err != nil {
+				q.Stop()
+				return err
+			}
+		}
+		if err := q.replayWALOutboxProjection(); err != nil {
+			q.Stop()
+			return err
+		}
+	}
 	if q.config.BridgeEnabled {
 		q.startBackgroundForwardWorkers()
 		if err := q.outbox.Start(q.ctx, q.deliverOutboxPayload, q.restoreOutboxPayload); err != nil {
@@ -1525,6 +1799,47 @@ func (q *TxQUICIngress) Start() error {
 		q.bridgeAcceptMu.Lock()
 		q.bridgeAccepting = true
 		q.bridgeAcceptMu.Unlock()
+		if err := q.replayWALLocalIntents(); err != nil {
+			q.Stop()
+			return err
+		}
+	}
+	if q.config.Enabled {
+		if q.txpool == nil {
+			q.Stop()
+			return fmt.Errorf("txquic ingress requires txpool")
+		}
+		if q.ingress != nil {
+			if err := q.ingress.Start(q.ctx); err != nil {
+				q.Stop()
+				return err
+			}
+			if err := q.replayWALInboundProjection(); err != nil {
+				q.Stop()
+				return err
+			}
+			if err := q.restoreDurableIngress(); err != nil {
+				q.Stop()
+				return err
+			}
+			q.wg.Add(1)
+			go q.maintainDurableIngress()
+		}
+	}
+	// Recovery above deliberately publishes directly into TxPool. Only after
+	// every durable prefix is reconciled do live RPC and QUIC producers share
+	// the bounded node-global full-pipeline gate and pool scheduler.
+	if q.liveIngress != nil {
+		if err := q.liveIngress.Start(); err != nil {
+			q.Stop()
+			return err
+		}
+	}
+	if q.poolIngress != nil {
+		if err := q.poolIngress.Start(q.ctx); err != nil {
+			q.Stop()
+			return err
+		}
 	}
 	if err := q.startHTTP3RPC(); err != nil {
 		q.Stop()
@@ -1535,22 +1850,6 @@ func (q *TxQUICIngress) Start() error {
 			log.Info("TxQUIC bridge enabled", "queue", q.config.BridgeQueueSize, "queueBytes", q.config.BridgeQueueMaxBytes, "batch", txQUICMicroBatchMaxTxs, "wireBytes", txQUICMicroBatchMaxWireBytes, "interval", q.config.BridgeBatchInterval)
 		}
 		return nil
-	}
-	if q.txpool == nil {
-		q.Stop()
-		return fmt.Errorf("txquic ingress requires txpool")
-	}
-	if q.ingress != nil {
-		if err := q.ingress.Start(q.ctx); err != nil {
-			q.Stop()
-			return err
-		}
-		if err := q.restoreDurableIngress(); err != nil {
-			q.Stop()
-			return err
-		}
-		q.wg.Add(1)
-		go q.maintainDurableIngress()
 	}
 	addr := txQUICJoinHostPort(q.config.Addr, q.config.Port)
 	packetConn, err := net.ListenPacket("udp", addr)
@@ -1660,6 +1959,12 @@ func (q *TxQUICIngress) Stop() {
 	if q.cancel != nil {
 		q.cancel()
 	}
+	if q.liveIngress != nil {
+		q.liveIngress.Stop()
+	}
+	if q.poolIngress != nil {
+		q.poolIngress.Stop()
+	}
 	q.bridgeAcceptMu.Lock()
 	q.bridgeAccepting = false
 	q.bridgeAcceptMu.Unlock()
@@ -1668,6 +1973,9 @@ func (q *TxQUICIngress) Stop() {
 	}
 	if q.ingress != nil {
 		q.ingress.Stop()
+	}
+	if q.wal != nil {
+		q.wal.Stop()
 	}
 	if q.listener != nil {
 		_ = q.listener.Close()
@@ -1732,33 +2040,48 @@ func (q *TxQUICIngress) enqueueLocalTxsWithAdmissions(ctx context.Context, txs [
 	if am == nil {
 		am = q.am
 	}
-	type certificateGroup struct {
-		certificate *types.CommonTxAdmissionBatch
-		fingerprint common.Hash
-		items       []txQUICBridgeItem
+	groups, err := q.txQUICBridgeGroups(txs, admissions, am, signaturesVerified)
+	if err != nil {
+		return err
 	}
-	type validatedCertificate struct {
-		certificate *types.CommonTxAdmissionBatch
-		fingerprint common.Hash
+	for _, group := range groups {
+		if err := q.enqueueDurableBridgeRequest(ctx, group.certificate, group.items, am); err != nil {
+			return err
+		}
 	}
-	groups := make([]*certificateGroup, 0, (len(txs)+txQUICMicroBatchMaxTxs-1)/txQUICMicroBatchMaxTxs)
-	groupByAdmissionID := make(map[common.Hash]*certificateGroup)
+	return nil
+}
+
+type txQUICCertificateGroup struct {
+	certificate *types.CommonTxAdmissionBatch
+	fingerprint common.Hash
+	items       []txQUICBridgeItem
+}
+
+type txQUICValidatedCertificate struct {
+	certificate *types.CommonTxAdmissionBatch
+	fingerprint common.Hash
+}
+
+func (q *TxQUICIngress) txQUICBridgeGroups(txs []*types.Transaction, admissions []core.CommonRPCAdmissionResult, am *accounts.Manager, signaturesVerified bool) ([]*txQUICCertificateGroup, error) {
+	groups := make([]*txQUICCertificateGroup, 0, (len(txs)+txQUICMicroBatchMaxTxs-1)/txQUICMicroBatchMaxTxs)
+	groupByAdmissionID := make(map[common.Hash]*txQUICCertificateGroup)
 	// A batch RPC returns one immutable certificate pointer for every item in
 	// the signed admission. Validating and hashing that 512-item certificate
 	// for each of its 512 transactions turns a bounded micro-batch into O(n²)
 	// work before it can even enter the durable queue. Cache only by object
 	// identity: a distinct object that claims the same AdmissionID still goes
 	// through full structural validation and fingerprint comparison below.
-	validatedByPointer := make(map[*types.CommonTxAdmissionBatch]validatedCertificate)
+	validatedByPointer := make(map[*types.CommonTxAdmissionBatch]txQUICValidatedCertificate)
 	seenTxs := make(map[common.Hash]struct{}, len(txs))
 	verifiedCertificates := make(map[common.Hash]struct{})
 	for index, tx := range txs {
 		if tx == nil {
-			return fmt.Errorf("txquic transaction %d is nil", index)
+			return nil, fmt.Errorf("txquic transaction %d is nil", index)
 		}
 		hash := tx.Hash()
 		if _, duplicate := seenTxs[hash]; duplicate {
-			return fmt.Errorf("duplicate TxQUIC transaction %s", hash)
+			return nil, fmt.Errorf("duplicate TxQUIC transaction %s", hash)
 		}
 		seenTxs[hash] = struct{}{}
 		result := admissions[index]
@@ -1767,46 +2090,59 @@ func (q *TxQUICIngress) enqueueLocalTxsWithAdmissions(ctx context.Context, txs [
 		if !cached {
 			certificate := copyCommonTxAdmissionBatchForQUIC(sourceCertificate)
 			if err := validateTxQUICCertificateStructure(certificate, q.config.ChainID, q.config.GenesisHash); err != nil {
-				return fmt.Errorf("invalid TxQUIC admission certificate for %s: %w", hash, err)
+				return nil, fmt.Errorf("invalid TxQUIC admission certificate for %s: %w", hash, err)
 			}
 			fingerprint, err := txQUICCertificateHash(certificate)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if !signaturesVerified {
 				if _, verified := verifiedCertificates[fingerprint]; !verified {
 					if err := types.VerifyCommonTxAdmissionSignature(certificate); err != nil {
-						return fmt.Errorf("invalid TxQUIC admission certificate %s: %w", certificate.AdmissionID, err)
+						return nil, fmt.Errorf("invalid TxQUIC admission certificate %s: %w", certificate.AdmissionID, err)
 					}
 					verifiedCertificates[fingerprint] = struct{}{}
 				}
 			}
-			validated = validatedCertificate{certificate: certificate, fingerprint: fingerprint}
+			validated = txQUICValidatedCertificate{certificate: certificate, fingerprint: fingerprint}
 			validatedByPointer[sourceCertificate] = validated
 		}
 		certificate := validated.certificate
 		if int(result.Item) >= len(certificate.TxHashes) || certificate.TxHashes[result.Item] != hash {
-			return fmt.Errorf("TxQUIC transaction %s does not match admission index %d", hash, result.Item)
+			return nil, fmt.Errorf("TxQUIC transaction %s does not match admission index %d", hash, result.Item)
+		}
+		bridgeTx := tx
+		var bridgeSidecar *types.BlobTxSidecar
+		if tx.Type() == types.BlobTxType {
+			// Certificate authentication is deliberately completed before KZG.
+			// Canonicalize and own the exact sidecar bytes first, closing the
+			// caller-mutation window between verification and WAL/outbox storage.
+			owned, err := newTxQUICItem(result.Item, tx)
+			if err != nil {
+				return nil, fmt.Errorf("invalid TxQUIC blob transaction %s: %w", hash, err)
+			}
+			attached := owned.Tx.WithBlobSidecar(owned.BlobSidecar)
+			if err := q.verifyTxQUICBlobTransactions(types.Transactions{attached}); err != nil {
+				return nil, fmt.Errorf("invalid TxQUIC blob sidecar for %s: %w", hash, err)
+			}
+			bridgeTx, bridgeSidecar = owned.Tx, owned.BlobSidecar
 		}
 		group := groupByAdmissionID[certificate.AdmissionID]
 		if group == nil {
-			group = &certificateGroup{certificate: certificate, fingerprint: validated.fingerprint}
+			group = &txQUICCertificateGroup{certificate: certificate, fingerprint: validated.fingerprint}
 			groupByAdmissionID[certificate.AdmissionID] = group
 			groups = append(groups, group)
 		} else if group.fingerprint != validated.fingerprint {
-			return fmt.Errorf("conflicting TxQUIC certificates share admission id %s", certificate.AdmissionID)
+			return nil, fmt.Errorf("conflicting TxQUIC certificates share admission id %s", certificate.AdmissionID)
 		}
-		group.items = append(group.items, txQUICBridgeItem{tx: tx, admissionIndex: result.Item, am: am})
+		group.items = append(group.items, txQUICBridgeItem{tx: bridgeTx, blobSidecar: bridgeSidecar, admissionIndex: result.Item, am: am})
 	}
 	for _, group := range groups {
 		if len(group.items) > q.durableBatchTxLimit() {
-			return fmt.Errorf("txquic admission certificate item count exceeds limit: count=%d limit=%d", len(group.items), q.durableBatchTxLimit())
-		}
-		if err := q.enqueueDurableBridgeRequest(ctx, group.certificate, group.items, am); err != nil {
-			return err
+			return nil, fmt.Errorf("txquic admission certificate item count exceeds limit: count=%d limit=%d", len(group.items), q.durableBatchTxLimit())
 		}
 	}
-	return nil
+	return groups, nil
 }
 
 func (q *TxQUICIngress) durableBatchTxLimit() int {
@@ -1818,6 +2154,10 @@ func (q *TxQUICIngress) durableBatchByteLimit() int64 {
 }
 
 func (q *TxQUICIngress) enqueueDurableBridgeRequest(ctx context.Context, certificate *types.CommonTxAdmissionBatch, items []txQUICBridgeItem, am *accounts.Manager) error {
+	return q.enqueueDurableBridgeRequestOwned(ctx, certificate, items, am, false)
+}
+
+func (q *TxQUICIngress) enqueueDurableBridgeRequestOwned(ctx context.Context, certificate *types.CommonTxAdmissionBatch, items []txQUICBridgeItem, am *accounts.Manager, walOwned bool) error {
 	if q.durableQueue == nil || q.durableSlots == nil {
 		return fmt.Errorf("txquic durable bridge queue is unavailable")
 	}
@@ -1825,6 +2165,7 @@ func (q *TxQUICIngress) enqueueDurableBridgeRequest(ctx context.Context, certifi
 	if err != nil {
 		return err
 	}
+	request.walOwned = walOwned
 	q.bridgeAcceptMu.RLock()
 	if !q.bridgeAccepting {
 		q.bridgeAcceptMu.RUnlock()
@@ -2066,6 +2407,9 @@ func (q *TxQUICIngress) restoreOutboxPayload(payload []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := q.verifyTxQUICBlobTransactions(txs); err != nil {
+		return fmt.Errorf("restore TxQUIC outbox blob sidecars: %w", err)
+	}
 	// Restore sidecars before publishing transactions into the pool. Adding a
 	// transaction can synchronously enqueue its NewTx event, and consumers of
 	// that event must already be able to resolve the admission sidecar.
@@ -2103,12 +2447,12 @@ func (q *TxQUICIngress) publishDurableIngressPayloads(items []*txQUICItem) error
 	if len(items) == 0 {
 		return nil
 	}
-	txs := make(types.Transactions, len(items))
-	for index, item := range items {
-		if item == nil || item.Tx == nil {
-			return fmt.Errorf("restore durable ingress item %d has no transaction", index)
-		}
-		txs[index] = item.Tx
+	txs, err := packetItemsToTxs(&txQUICPacket{Items: items})
+	if err != nil {
+		return fmt.Errorf("restore durable ingress transactions: %w", err)
+	}
+	if err := q.verifyTxQUICBlobTransactions(txs); err != nil {
+		return fmt.Errorf("restore durable ingress blob sidecars: %w", err)
 	}
 	if q.txpool == nil {
 		return nil
@@ -2965,12 +3309,12 @@ func (q *TxQUICIngress) durableBridgeWorker(id int) {
 			if request == nil || len(request.items) == 0 {
 				continue
 			}
-			q.persistDurableBridgeItems(request.certificate, request.items, request.am)
+			q.persistDurableBridgeItems(request.certificate, request.items, request.am, request.walOwned)
 		}
 	}
 }
 
-func (q *TxQUICIngress) persistDurableBridgeItems(certificate *types.CommonTxAdmissionBatch, items []txQUICBridgeItem, am *accounts.Manager) {
+func (q *TxQUICIngress) persistDurableBridgeItems(certificate *types.CommonTxAdmissionBatch, items []txQUICBridgeItem, am *accounts.Manager, walOwned bool) {
 	if len(items) == 0 {
 		return
 	}
@@ -2985,8 +3329,8 @@ func (q *TxQUICIngress) persistDurableBridgeItems(certificate *types.CommonTxAdm
 			return
 		}
 		middle := len(items) / 2
-		q.persistDurableBridgeItems(certificate, items[:middle], am)
-		q.persistDurableBridgeItems(certificate, items[middle:], am)
+		q.persistDurableBridgeItems(certificate, items[:middle], am, walOwned)
+		q.persistDurableBridgeItems(certificate, items[middle:], am, walOwned)
 		return
 	}
 	storeCtx := q.ctx
@@ -2994,7 +3338,11 @@ func (q *TxQUICIngress) persistDurableBridgeItems(certificate *types.CommonTxAdm
 	if q.config.ForwardTimeout > 0 {
 		storeCtx, cancel = context.WithTimeout(q.ctx, q.config.ForwardTimeout)
 	}
-	_, err = q.outbox.storeVerifiedSync(storeCtx, payload)
+	if walOwned {
+		_, err = q.outbox.storeWALOwnedVerifiedSync(storeCtx, payload)
+	} else {
+		_, err = q.outbox.storeVerifiedSync(storeCtx, payload)
+	}
 	cancel()
 	q.finishDurableBridgeItems(items, err)
 }
@@ -3057,10 +3405,17 @@ func (q *TxQUICIngress) buildTxBatch(certificate *types.CommonTxAdmissionBatch, 
 		if item.tx == nil {
 			return nil, fmt.Errorf("nil TxQUIC transaction at %d", index)
 		}
-		items[index] = &txQUICItem{AdmissionIndex: item.admissionIndex, Tx: item.tx}
+		owned, err := newTxQUICItemWithSidecar(item.admissionIndex, item.tx, item.blobSidecar)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TxQUIC transaction at %d: %w", index, err)
+		}
+		items[index] = owned
 	}
 	batch, _, err := newTxQUICBatch(q.config.ChainID, q.config.GenesisHash, certificate, items)
-	return batch, err
+	if err != nil {
+		return nil, err
+	}
+	return batch, nil
 }
 
 func (q *TxQUICIngress) encodeSignedTxQUICPacket(batch *txQUICBatch, am *accounts.Manager) ([]byte, error) {
@@ -3284,6 +3639,26 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 		log.Warn("TxQUIC rate limited", "remote", remote, "batch", packet.BatchID, "items", len(packet.Items))
 		return
 	}
+	// Authenticated live RPC and QUIC work shares one fair weighted gate before
+	// committee resolution, admission verification, WAL fsync, projection,
+	// TxPool publication, and ACK persistence. Startup replay never enters this
+	// path and therefore cannot deadlock behind live pressure.
+	if q.liveIngress == nil {
+		log.Error("Node-global live transaction ingress scheduler is unavailable", "remote", remote, "batch", packet.BatchID)
+		return
+	}
+	liveTimeout := q.config.ForwardTimeout
+	if liveTimeout <= 0 {
+		liveTimeout = 15 * time.Second
+	}
+	liveCtx, cancelLive := context.WithTimeout(q.ctx, liveTimeout)
+	releaseLive, err := q.liveIngress.Acquire(liveCtx, txPoolIngressQUIC, len(packet.Items), payloadBytes)
+	cancelLive()
+	if err != nil {
+		log.Warn("TxQUIC live ingress scheduler rejected packet", "remote", remote, "batch", packet.BatchID, "items", len(packet.Items), "err", err)
+		return
+	}
+	defer releaseLive()
 	if err := q.validateAuthenticatedPacket(packet); err != nil {
 		txQUICIngressAuthFailMeter.Mark(1)
 		log.Warn("TxQUIC authenticated packet validation failed", "remote", remote, "batch", packet.BatchID, "err", err)
@@ -3306,14 +3681,36 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 		return
 	}
 	durableCertificate := cached.ItemCount == uint32(len(packet.Items))
+	if !durableCertificate {
+		if err := types.VerifyCommonTxAdmissionSignature(packet.Certificate); err != nil {
+			log.Warn("TxQUIC admission signature verification failed; withholding WAL ownership and ACK", "remote", remote, "batch", packet.BatchID, "err", err)
+			return
+		}
+	}
+	// This is the ownership handoff. A crash after this fsync is resumed from
+	// the WAL; only after it succeeds may admission indexes or the txpool become
+	// visible to the rest of the node. The combined helper makes real KZG a
+	// non-bypassable precondition of that first durable write.
+	if err := q.appendKZGVerifiedInboundReceived(q.ctx, packet); err != nil {
+		log.Error("TxQUIC blob verification or received-record WAL persistence failed; withholding ACK", "remote", remote, "batch", packet.BatchID, "err", err)
+		return
+	}
 	if err := q.verifyAndStoreAdmissionCertificate(packet.Certificate, packet.Items, durableCertificate); err != nil {
 		log.Warn("TxQUIC admission certificate verification or storage failed; withholding ACK", "remote", remote, "batch", packet.BatchID, "err", err)
 		return
 	}
-	ack := q.processTxQUICIngressPacketVerified(packet, nil)
+	ack := q.processTxQUICIngressPacketVerifiedScheduled(packet, nil)
+	if err := q.wal.appendInboundOutcome(q.ctx, packet, ack); err != nil {
+		log.Error("TxQUIC outcome WAL persistence failed; withholding ACK", "remote", remote, "batch", packet.BatchID, "items", len(packet.Items), "err", err)
+		return
+	}
 	ack, err = q.ingress.StoreSyncLocked(q.ctx, packet, ack)
 	if err != nil {
 		log.Error("TxQUIC durable ingress persistence failed; withholding ACK", "remote", remote, "batch", packet.BatchID, "items", len(packet.Items), "err", err)
+		return
+	}
+	if err := q.wal.appendInboundApplied(q.ctx, packet); err != nil {
+		log.Error("TxQUIC applied-record WAL persistence failed; withholding ACK", "remote", remote, "batch", packet.BatchID, "items", len(packet.Items), "err", err)
 		return
 	}
 	markTxQUICAckMetrics(ack)
@@ -3369,6 +3766,18 @@ func (q *TxQUICIngress) processTxQUICIngressPacket(packet *txQUICPacket) txQUICA
 }
 
 func (q *TxQUICIngress) processTxQUICIngressPacketVerified(packet *txQUICPacket, admissionErr error) txQUICAck {
+	return q.processTxQUICIngressPacketVerifiedWithScheduler(packet, admissionErr, false)
+}
+
+// processTxQUICIngressPacketVerifiedScheduled is the live network path. Its
+// caller has already fsynced InboundReceived, so the bounded node-global
+// scheduler may now publish to TxPool. Startup recovery uses the direct helper
+// above and cannot be delayed by live RPC/QUIC queue pressure.
+func (q *TxQUICIngress) processTxQUICIngressPacketVerifiedScheduled(packet *txQUICPacket, admissionErr error) txQUICAck {
+	return q.processTxQUICIngressPacketVerifiedWithScheduler(packet, admissionErr, true)
+}
+
+func (q *TxQUICIngress) processTxQUICIngressPacketVerifiedWithScheduler(packet *txQUICPacket, admissionErr error, scheduled bool) txQUICAck {
 	itemCount := len(packet.Items)
 	ack := txQUICAck{
 		ChainID: packet.ChainID, GenesisHash: packet.GenesisHash,
@@ -3377,9 +3786,12 @@ func (q *TxQUICIngress) processTxQUICIngressPacketVerified(packet *txQUICPacket,
 		ItemCount: uint32(itemCount), DurableBitmap: make([]byte, txQUICBitmapBytes(itemCount)),
 		RetryableBitmap: make([]byte, txQUICBitmapBytes(itemCount)),
 	}
-	txs := make(types.Transactions, itemCount)
-	for index, item := range packet.Items {
-		txs[index] = item.Tx
+	txs, itemErr := packetItemsToTxs(packet)
+	if itemErr != nil {
+		if admissionErr == nil {
+			admissionErr = itemErr
+		}
+		txs = make(types.Transactions, itemCount)
 	}
 	// TxQUIC already delivers each transaction and admission to a 2f+1
 	// committee quorum and persists the outcome before ACK. Re-broadcasting the
@@ -3398,7 +3810,30 @@ func (q *TxQUICIngress) processTxQUICIngressPacketVerified(packet *txQUICPacket,
 			insertIndexes = append(insertIndexes, index)
 		}
 	}
-	insertErrors := q.txpool.AddRemotes(insertTxs)
+	var insertErrors []error
+	if len(insertTxs) > 0 {
+		if scheduled {
+			var scheduleErr error
+			if q.poolIngress == nil {
+				scheduleErr = errors.New("node-global transaction ingress scheduler is unavailable")
+			} else {
+				insertErrors, scheduleErr = q.poolIngress.Submit(q.ctx, txPoolIngressQUIC, insertTxs)
+			}
+			if scheduleErr != nil {
+				insertErrors = make([]error, len(insertTxs))
+				for index := range insertErrors {
+					insertErrors[index] = fmt.Errorf("%w: schedule durable TxQUIC pool publication: %v", core.ErrTxPoolOverflow, scheduleErr)
+				}
+			}
+		} else if q.txpool == nil {
+			insertErrors = make([]error, len(insertTxs))
+			for index := range insertErrors {
+				insertErrors[index] = errors.New("transaction pool is unavailable")
+			}
+		} else {
+			insertErrors = q.txpool.AddRemotes(insertTxs)
+		}
+	}
 	insertErrorsByItem := make([]error, itemCount)
 	for resultIndex, itemIndex := range insertIndexes {
 		if resultIndex < len(insertErrors) {
@@ -3515,6 +3950,7 @@ func classifyTxQUICInsertError(err error) uint {
 		core.ErrGasLimitReached,
 		core.ErrGasLimit,
 		core.ErrOversizedData,
+		core.ErrNativeReplaySequenceReserved,
 	} {
 		if errors.Is(err, retryable) {
 			return txQUICRejectRetryable
@@ -4007,6 +4443,9 @@ func (q *TxQUICIngress) validateAuthenticatedPacket(pkt *txQUICPacket) error {
 	if pkt == nil {
 		return fmt.Errorf("nil txquic packet")
 	}
+	if err := validateTxQUICPublicTransactionTypes(pkt.Items); err != nil {
+		return err
+	}
 	route, err := q.refreshFHSRouteCache()
 	if err != nil {
 		return fmt.Errorf("resolve current Fair HotStuff committee: %w", err)
@@ -4023,18 +4462,96 @@ func (q *TxQUICIngress) validateAuthenticatedPacket(pkt *txQUICPacket) error {
 	return nil
 }
 
+func validateTxQUICPublicTransactionTypes(items []*txQUICItem) error {
+	for index, item := range items {
+		if item == nil || item.Tx == nil || !item.Tx.IsInitialized() {
+			continue
+		}
+		if item.Tx.Type() > types.SetCodeTxType {
+			return fmt.Errorf("txquic item %d has unsupported transaction type %#x", index, item.Tx.Type())
+		}
+	}
+	return nil
+}
+
 func packetItemsToTxs(pkt *txQUICPacket) ([]*types.Transaction, error) {
 	if pkt == nil || len(pkt.Items) == 0 {
 		return nil, fmt.Errorf("empty txquic packet items")
 	}
+	if err := validateTxQUICPublicTransactionTypes(pkt.Items); err != nil {
+		return nil, err
+	}
 	txs := make([]*types.Transaction, len(pkt.Items))
 	for i, item := range pkt.Items {
-		if item == nil || item.Tx == nil {
-			return nil, fmt.Errorf("txquic item %d has no transaction", i)
+		if err := validateTxQUICItem(item); err != nil {
+			return nil, fmt.Errorf("txquic item %d: %w", i, err)
 		}
-		txs[i] = item.Tx
+		if item.Tx.Type() == types.BlobTxType {
+			txs[i] = item.Tx.WithBlobSidecar(item.BlobSidecar)
+		} else {
+			txs[i] = item.Tx
+		}
 	}
 	return txs, nil
+}
+
+func verifyTxQUICBlobTransactions(txs types.Transactions) error {
+	return types.VerifyBlobSidecars(txs, types.KZGBlobVerifier{})
+}
+
+func (q *TxQUICIngress) verifyTxQUICBlobTransactions(txs types.Transactions) error {
+	if q != nil && q.txpool != nil {
+		return types.VerifyBlobSidecarsForVersion(txs, q.txpool.ActiveBlobSidecarVersion(), types.KZGBlobVerifier{})
+	}
+	return verifyTxQUICBlobTransactions(txs)
+}
+
+func verifyTxQUICPacketBlobSidecars(pkt *txQUICPacket) error {
+	txs, err := packetItemsToTxs(pkt)
+	if err != nil {
+		return err
+	}
+	return verifyTxQUICBlobTransactions(txs)
+}
+
+func verifyTxQUICBatchBlobSidecars(batch *txQUICBatch) error {
+	if batch == nil {
+		return fmt.Errorf("nil txquic batch")
+	}
+	return verifyTxQUICPacketBlobSidecars(&txQUICPacket{Certificate: batch.Certificate, Items: batch.Items})
+}
+
+func (q *TxQUICIngress) verifyTxQUICPacketBlobSidecars(pkt *txQUICPacket) error {
+	txs, err := packetItemsToTxs(pkt)
+	if err != nil {
+		return err
+	}
+	return q.verifyTxQUICBlobTransactions(txs)
+}
+
+func (q *TxQUICIngress) verifyTxQUICBatchBlobSidecars(batch *txQUICBatch) error {
+	if batch == nil {
+		return fmt.Errorf("nil txquic batch")
+	}
+	return q.verifyTxQUICPacketBlobSidecars(&txQUICPacket{Certificate: batch.Certificate, Items: batch.Items})
+}
+
+// appendKZGVerifiedInboundReceived is the receiver ownership boundary. Its
+// caller has already authenticated the packet and admission certificate. No
+// sidecar can enter the unified WAL, TxPool, or a durable ACK without passing
+// the real KZG verifier; exact durable retries are handled before this method.
+func (q *TxQUICIngress) appendKZGVerifiedInboundReceived(ctx context.Context, pkt *txQUICPacket) error {
+	if q == nil || q.wal == nil {
+		return fmt.Errorf("TxQUIC unified ingress WAL is unavailable")
+	}
+	txs, err := packetItemsToTxs(pkt)
+	if err != nil {
+		return err
+	}
+	if err := q.verifyTxQUICBlobTransactions(txs); err != nil {
+		return fmt.Errorf("verify TxQUIC blob sidecars: %w", err)
+	}
+	return q.wal.appendInboundReceived(ctx, pkt)
 }
 
 func (q *TxQUICIngress) verifyPacket(pkt *txQUICPacket) (common.Address, error) {
@@ -4569,15 +5086,22 @@ func txQUICJoinHostPort(host string, port int) string {
 }
 
 const (
-	defaultTxQUICBridgeQueueMaxBytes = int64(64 * 1024 * 1024)
-	defaultTxOutboxMaxRecords        = 1_000_000
-	defaultTxOutboxMaxBytes          = int64(1024 * 1024 * 1024)
-	defaultTxOutboxWorkers           = 4
-	defaultTxOutboxRetryMin          = 50 * time.Millisecond
-	defaultTxOutboxRetryMax          = 30 * time.Second
-	txOutboxCommitInterval           = time.Millisecond
-	txOutboxCommitMaxRequests        = 64
-	txOutboxCommitMaxBytes           = int64(16 * 1024 * 1024)
+	// Hold the byte envelope for a five-second 200k TPS burst without changing
+	// the fixed 512-item/4 MiB wire micro-batch bound. The independent 1 GiB
+	// runtime ceiling still prevents configuration from becoming unbounded.
+	defaultTxQUICBridgeQueueMaxBytes     = int64(256 * 1024 * 1024)
+	defaultTxQUICBridgeWorkers           = 64
+	defaultTxQUICIngressWorkers          = 256
+	defaultTxQUICMaxInflightPayloadBytes = int64(512 * 1024 * 1024)
+	defaultTxOutboxMaxRecords            = 1_000_000
+	defaultTxOutboxMaxBytes              = int64(32 * 1024 * 1024 * 1024)
+	defaultTxOutboxWorkers               = 64
+	defaultTxOutboxRetryMin              = 50 * time.Millisecond
+	defaultTxOutboxRetryMax              = 30 * time.Second
+	txOutboxCommitInterval               = time.Millisecond
+	txOutboxCommitMaxRequests            = 64
+	txOutboxCommitMaxBytes               = int64(16 * 1024 * 1024)
+	txOutboxLifecycleStripes             = 4096
 	// Every admitted record reserves enough durable capacity for the largest
 	// valid committee snapshot and bitmap before it can reach quorum. This
 	// prevents a full payload-only outbox from deadlocking at stage promotion
@@ -4722,12 +5246,14 @@ type txOutboxDeliveryResult struct {
 }
 
 type txOutboxCommitRequest struct {
-	batchID common.Hash
-	payload []byte
-	encoded []byte
-	bytes   int64
-	queued  time.Time
-	result  chan txOutboxCommitResult
+	batchID       common.Hash
+	payload       []byte
+	encoded       []byte
+	bytes         int64
+	reservedBytes int64
+	walOwned      bool
+	queued        time.Time
+	result        chan txOutboxCommitResult
 }
 
 type txOutboxCommitResult struct {
@@ -4764,6 +5290,10 @@ func (h *txOutboxScheduleHeap) Pop() interface{} {
 
 type TxOutbox struct {
 	db ethdb.KeyValueStore
+	// wal is shared with the receiver ingress store in dual-role nodes. The
+	// outbox database below is a rebuildable delivery index, not a competing
+	// durability boundary.
+	wal *txIngressWAL
 
 	maxRecords int
 	maxBytes   int64
@@ -4776,26 +5306,107 @@ type TxOutbox struct {
 	commitMaxRequests int
 	commitMaxBytes    int64
 	commitCh          chan *txOutboxCommitRequest
+	lifecycle         [txOutboxLifecycleStripes]sync.Mutex
+	lifecycleWG       sync.WaitGroup
+	admissionMu       sync.Mutex
 
-	mu          sync.Mutex
-	started     bool
-	stopped     bool
-	poison      error
-	records     int
-	bytes       int64
-	inFlight    map[common.Hash]struct{}
-	schedule    txOutboxScheduleHeap
-	scheduled   map[common.Hash]uint64
-	notify      chan struct{}
-	space       chan struct{}
-	jobs        chan *TxOutboxRecord
-	results     chan txOutboxDeliveryResult
-	ctx         context.Context
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
-	deliver     func(context.Context, []byte) error
-	restore     func([]byte) error
-	nonceRanges map[string]*txOutboxNonceRange
+	mu                    sync.Mutex
+	started               bool
+	stopped               bool
+	poison                error
+	records               int
+	bytes                 int64
+	reservedRecords       int
+	reservedBytes         int64
+	reservations          map[common.Hash]int64
+	inFlight              map[common.Hash]struct{}
+	schedule              txOutboxScheduleHeap
+	scheduled             map[common.Hash]uint64
+	notify                chan struct{}
+	space                 chan struct{}
+	jobs                  chan *TxOutboxRecord
+	results               chan txOutboxDeliveryResult
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	wg                    sync.WaitGroup
+	stopDone              chan struct{}
+	stopStarted           bool
+	storeAdmissionClosed  bool
+	activeStores          int
+	activeStoresDone      chan struct{}
+	commitAdmissionClosed bool
+	commitProducers       int
+	commitProducersDone   chan struct{}
+	deliver               func(context.Context, []byte) error
+	restore               func([]byte) error
+	nonceRanges           map[string]*txOutboxNonceRange
+}
+
+func txOutboxLifecycleStripe(batchID common.Hash) int {
+	return int(binary.BigEndian.Uint16(batchID[:2])) & (txOutboxLifecycleStripes - 1)
+}
+
+// lockLifecycle serializes the WAL->projection sequence for the same semantic
+// batch while retaining parallelism across 4K independent hash stripes. This
+// prevents a concurrent enqueue from committing its WAL record before an ACK
+// delete but its mutable projection after that delete (or the inverse).
+func (o *TxOutbox) lockLifecycle(batchIDs ...common.Hash) func() {
+	indices := make([]int, 0, len(batchIDs))
+	for _, batchID := range batchIDs {
+		index := txOutboxLifecycleStripe(batchID)
+		duplicate := false
+		for _, existing := range indices {
+			if existing == index {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			indices = append(indices, index)
+		}
+	}
+	sort.Ints(indices)
+	for _, index := range indices {
+		o.lifecycle[index].Lock()
+	}
+	return func() {
+		for index := len(indices) - 1; index >= 0; index-- {
+			o.lifecycle[indices[index]].Unlock()
+		}
+	}
+}
+
+// backgroundIOContext snapshots the lifetime used by a durable lifecycle
+// mutation without retaining the global scheduler/accounting lock across WAL
+// or database I/O. The caller already owns the relevant lifecycle stripe.
+func (o *TxOutbox) backgroundIOContext() (context.Context, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.poison != nil {
+		return nil, fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+	}
+	if !o.started || o.stopped {
+		return nil, errors.New("tx outbox is not running")
+	}
+	return o.ctx, nil
+}
+
+func (o *TxOutbox) backgroundIOComplete() error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.poison != nil {
+		return fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+	}
+	return nil
+}
+
+func (o *TxOutbox) poisonBackgroundIO(err error) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.poison == nil {
+		o.poison = err
+	}
+	return o.poison
 }
 
 func NewTxQUICIngressStore(db ethdb.KeyValueStore, config TxQUICConfig) *TxQUICIngressStore {
@@ -4903,7 +5514,20 @@ func ensureTxQUICDatabaseIdentity(db ethdb.KeyValueStore, key []byte, identity t
 		return fmt.Errorf("inspect txquic database identity: %w", iteratorErr)
 	}
 	if nonEmpty {
-		return fmt.Errorf("txquic database has no current chain identity; reset it with genesis")
+		// The unified WAL is deliberately started before its rebuildable
+		// ingress/outbox index. A matching WAL identity is sufficient to add the
+		// legacy index identity without mistaking the WAL records for an obsolete
+		// database.
+		if raw, walErr := db.Get(txIngressWALIdentityKey); walErr == nil {
+			var walIdentity txIngressWALIdentity
+			if decodeErr := rlp.DecodeBytes(raw, &walIdentity); decodeErr == nil &&
+				walIdentity.Version == txIngressWALVersion && walIdentity.ChainID == identity.ChainID && walIdentity.GenesisHash == identity.GenesisHash {
+				nonEmpty = false
+			}
+		}
+		if nonEmpty {
+			return fmt.Errorf("txquic database has no current chain identity; reset it with genesis")
+		}
 	}
 	encoded, err := rlp.EncodeToBytes(&identity)
 	if err != nil {
@@ -5951,7 +6575,10 @@ func (s *TxQUICIngressStore) Restore(restore func(*types.CommonTxAdmissionBatch,
 	if err := s.validateReplayWAL(); err != nil {
 		return err
 	}
-	if err := validateTxQUICDatabaseKeys(s.db, txIngressIdentityKey, txIngressManifestPrefix, txIngressItemPrefix, txIngressTxPrefix, txIngressReplayPrefix, txIngressNoncePrefix); err != nil {
+	if err := validateTxQUICDatabaseKeys(s.db, txIngressIdentityKey,
+		txIngressManifestPrefix, txIngressItemPrefix, txIngressTxPrefix, txIngressReplayPrefix, txIngressNoncePrefix,
+		txIngressWALIdentityKey, txIngressWALManifestKey, txIngressWALTailKey, txIngressWALRecordPrefix, txIngressWALEventPrefix, txIngressWALGenerationPrefix,
+	); err != nil {
 		return err
 	}
 	if restore != nil {
@@ -6087,17 +6714,10 @@ func decodeTxQUICIngressItem(key, encoded []byte, manifest *txQUICIngressManifes
 	if record.BatchID != keyBatch || record.BatchID != manifest.BatchID || record.Index != keyIndex || int(record.Index) >= len(manifest.ItemIDs) || record.Item == nil || record.Item.Tx == nil {
 		return nil, fmt.Errorf("invalid txquic ingress item identity")
 	}
-	// Rebuild the position-bound item commitment recorded by the manifest.
-	txHash := record.Item.Tx.Hash()
-	if manifest.Certificate == nil || int(record.Item.AdmissionIndex) >= len(manifest.Certificate.TxHashes) ||
-		manifest.Certificate.TxHashes[record.Item.AdmissionIndex] != txHash {
-		return nil, fmt.Errorf("txquic ingress item does not match its admission certificate")
-	}
-	txLeaf, err := txQUICRLPHash([]interface{}{txQUICTxLeafDomain, record.Index, record.Item.AdmissionIndex, txHash})
-	if err != nil {
-		return nil, err
-	}
-	itemID, err := txQUICRLPHash([]interface{}{txQUICItemDomain, record.Index, record.Item.AdmissionIndex, txLeaf})
+	// Rebuild the position-bound transaction and sidecar commitment recorded by
+	// the manifest. This also rejects missing, duplicate-source, malformed, or
+	// non-blob sidecars before startup restore can publish the item.
+	itemID, _, _, err := txQUICItemCommitment(manifest.Certificate, record.Item, record.Index)
 	if err != nil {
 		return nil, err
 	}
@@ -6229,7 +6849,11 @@ func (s *TxQUICIngressStore) ResolveTransaction(hash common.Hash) (*types.Transa
 	if item.Tx == nil || item.Tx.Hash() != hash {
 		return nil, fmt.Errorf("txquic ingress transaction index hash mismatch")
 	}
-	return item.Tx, nil
+	txs, err := packetItemsToTxs(&txQUICPacket{Items: []*txQUICItem{item}})
+	if err != nil {
+		return nil, err
+	}
+	return txs[0], nil
 }
 
 func (s *TxQUICIngressStore) CompactFinalized(batchID common.Hash, finalized func(common.Hash) bool, now time.Time) (int, error) {
@@ -6391,7 +7015,9 @@ func NewTxOutbox(db ethdb.KeyValueStore, config TxQUICConfig) *TxOutbox {
 		space:             make(chan struct{}),
 		jobs:              make(chan *TxOutboxRecord, workers),
 		results:           make(chan txOutboxDeliveryResult, workers),
+		stopDone:          make(chan struct{}),
 		nonceRanges:       make(map[string]*txOutboxNonceRange),
+		reservations:      make(map[common.Hash]int64),
 	}
 }
 
@@ -6523,7 +7149,7 @@ func sameTxOutboxPlacementGeneration(left, right txOutboxPlacementState) bool {
 	return true
 }
 
-func (o *TxOutbox) readPlacementRecordLocked(batchID common.Hash) (TxOutboxRecord, error) {
+func (o *TxOutbox) readPlacementRecord(batchID common.Hash) (TxOutboxRecord, error) {
 	key := txOutboxRecordKey(batchID)
 	encoded, err := o.db.Get(key)
 	if err != nil {
@@ -6536,12 +7162,14 @@ func (o *TxOutbox) readPlacementRecordLocked(batchID common.Hash) (TxOutboxRecor
 	return record, nil
 }
 
-// writePlacementSyncLocked changes only the delivery stage of an existing
-// record. The caller holds o.mu. The fixed reservation means even a completely
-// full outbox can cross the quorum boundary without allocating unaccounted
-// capacity; an ambiguous fsync poisons the live instance before it can delete
-// or otherwise reinterpret the original work.
-func (o *TxOutbox) writePlacementSyncLocked(record TxOutboxRecord, state txOutboxPlacementState, clearRetry bool) error {
+// writePlacementSync changes only the delivery stage of an existing record.
+// The caller holds the record's lifecycle stripe, which preserves per-batch
+// WAL->projection ordering while allowing unrelated batches to join WAL group
+// commits and complete their projection I/O concurrently. The fixed
+// reservation means even a completely full outbox can cross the quorum
+// boundary without allocating unaccounted capacity; an ambiguous fsync
+// poisons the live instance before it can delete or reinterpret original work.
+func (o *TxOutbox) writePlacementSync(ctx context.Context, record TxOutboxRecord, state txOutboxPlacementState, clearRetry bool) error {
 	key := txOutboxRecordKey(record.BatchID)
 	baseRecord := record
 	baseRecord.Placement = txOutboxPlacementState{}
@@ -6560,6 +7188,18 @@ func (o *TxOutbox) writePlacementSyncLocked(record TxOutboxRecord, state txOutbo
 	if int64(len(key)+len(updated)) > o.commitMaxBytes {
 		return fmt.Errorf("tx outbox placement checkpoint exceeds commit byte limit")
 	}
+	if o.wal != nil {
+		var retry txOutboxRetryState
+		if !clearRetry {
+			retry, err = o.readRetry(record.BatchID)
+			if err != nil {
+				return err
+			}
+		}
+		if err := o.wal.appendOutbox(ctx, txIngressWALOutboxState, record, retry); err != nil {
+			return fmt.Errorf("persist tx outbox placement in unified ingress WAL: %w", err)
+		}
+	}
 	write := o.db.NewBatch()
 	if err := write.Put(key, updated); err != nil {
 		return err
@@ -6574,10 +7214,9 @@ func (o *TxOutbox) writePlacementSyncLocked(record TxOutboxRecord, state txOutbo
 		return fmt.Errorf("tx outbox database does not support synchronous batches")
 	}
 	if err := syncBatch.WriteSync(); err != nil {
-		o.poison = fmt.Errorf("ambiguous committee placement fsync failure: %w", err)
-		return o.poison
+		return o.poisonBackgroundIO(fmt.Errorf("ambiguous committee placement fsync failure: %w", err))
 	}
-	return nil
+	return o.backgroundIOComplete()
 }
 
 // promotePlacementSync is the sole false-to-true transition for the persisted
@@ -6587,15 +7226,13 @@ func (o *TxOutbox) promotePlacementSync(batchID common.Hash, state txOutboxPlace
 	if o == nil || o.db == nil || batchID == (common.Hash{}) {
 		return fmt.Errorf("tx outbox database is unavailable for committee placement")
 	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.poison != nil {
-		return fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+	unlockLifecycle := o.lockLifecycle(batchID)
+	defer unlockLifecycle()
+	ctx, err := o.backgroundIOContext()
+	if err != nil {
+		return err
 	}
-	if !o.started || o.stopped {
-		return fmt.Errorf("tx outbox is not running")
-	}
-	record, err := o.readPlacementRecordLocked(batchID)
+	record, err := o.readPlacementRecord(batchID)
 	if err != nil {
 		return err
 	}
@@ -6604,7 +7241,7 @@ func (o *TxOutbox) promotePlacementSync(batchID common.Hash, state txOutboxPlace
 	}
 	promoted := cloneTxOutboxPlacementState(state)
 	promoted.QuorumEstablished = true
-	return o.writePlacementSyncLocked(record, promoted, true)
+	return o.writePlacementSync(ctx, record, promoted, true)
 }
 
 // checkpointPlacementSync advances only a previously trusted placement stage.
@@ -6617,15 +7254,13 @@ func (o *TxOutbox) checkpointPlacementSync(batchID common.Hash, state txOutboxPl
 	if err := validatePersistedTxOutboxPlacementState(state); err != nil {
 		return err
 	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.poison != nil {
-		return fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+	unlockLifecycle := o.lockLifecycle(batchID)
+	defer unlockLifecycle()
+	ctx, err := o.backgroundIOContext()
+	if err != nil {
+		return err
 	}
-	if !o.started || o.stopped {
-		return fmt.Errorf("tx outbox is not running")
-	}
-	record, err := o.readPlacementRecordLocked(batchID)
+	record, err := o.readPlacementRecord(batchID)
 	if err != nil {
 		return err
 	}
@@ -6640,7 +7275,7 @@ func (o *TxOutbox) checkpointPlacementSync(batchID common.Hash, state txOutboxPl
 			return fmt.Errorf("tx outbox placement checkpoint cleared completed endpoint %d", index)
 		}
 	}
-	return o.writePlacementSyncLocked(record, state, clearRetry)
+	return o.writePlacementSync(ctx, record, state, clearRetry)
 }
 
 func (o *TxOutbox) Start(parent context.Context, deliver func(context.Context, []byte) error, restore func([]byte) error) error {
@@ -6674,6 +7309,14 @@ func (o *TxOutbox) Start(parent context.Context, deliver func(context.Context, [
 	o.schedule = nil
 	o.scheduled = make(map[common.Hash]uint64)
 	o.mu.Unlock()
+	o.admissionMu.Lock()
+	o.storeAdmissionClosed = false
+	o.commitAdmissionClosed = false
+	o.activeStores = 0
+	o.activeStoresDone = nil
+	o.commitProducers = 0
+	o.commitProducersDone = nil
+	o.admissionMu.Unlock()
 
 	records, totalBytes, err := o.scanRecords(restore)
 	if err != nil {
@@ -6703,15 +7346,123 @@ func (o *TxOutbox) Start(parent context.Context, deliver func(context.Context, [
 	return nil
 }
 
+func (o *TxOutbox) beginStore() error {
+	o.admissionMu.Lock()
+	if o.storeAdmissionClosed {
+		o.admissionMu.Unlock()
+		return errors.New("tx outbox is not running")
+	}
+	o.activeStores++
+	o.admissionMu.Unlock()
+	o.mu.Lock()
+	if o.poison != nil {
+		err := fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+		o.mu.Unlock()
+		o.endStore()
+		return err
+	}
+	if !o.started || o.stopped || o.ctx == nil || o.ctx.Err() != nil {
+		o.mu.Unlock()
+		o.endStore()
+		return errors.New("tx outbox is not running")
+	}
+	o.mu.Unlock()
+	return nil
+}
+
+func (o *TxOutbox) endStore() {
+	o.admissionMu.Lock()
+	defer o.admissionMu.Unlock()
+	if o.activeStores < 1 {
+		return
+	}
+	o.activeStores--
+	if o.storeAdmissionClosed && o.activeStores == 0 && o.activeStoresDone != nil {
+		close(o.activeStoresDone)
+		o.activeStoresDone = nil
+	}
+}
+
+func (o *TxOutbox) beginCommitProducer() (<-chan struct{}, error) {
+	o.admissionMu.Lock()
+	if o.commitAdmissionClosed {
+		o.admissionMu.Unlock()
+		return nil, errors.New("tx outbox is not running")
+	}
+	o.commitProducers++
+	o.admissionMu.Unlock()
+	o.mu.Lock()
+	if o.poison != nil {
+		err := fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+		o.mu.Unlock()
+		o.endCommitProducer()
+		return nil, err
+	}
+	if !o.started || o.stopped || o.ctx == nil || o.ctx.Err() != nil {
+		o.mu.Unlock()
+		o.endCommitProducer()
+		return nil, errors.New("tx outbox is not running")
+	}
+	storeDone := o.ctx.Done()
+	o.mu.Unlock()
+	return storeDone, nil
+}
+
+func (o *TxOutbox) endCommitProducer() {
+	o.admissionMu.Lock()
+	defer o.admissionMu.Unlock()
+	if o.commitProducers < 1 {
+		return
+	}
+	o.commitProducers--
+	if o.commitAdmissionClosed && o.commitProducers == 0 && o.commitProducersDone != nil {
+		close(o.commitProducersDone)
+		o.commitProducersDone = nil
+	}
+}
+
+// closeAdmissionsLocked prevents a producer from being created after the
+// commit loop's final drain. Callers waiting on the returned channels observe
+// all producers/stores that crossed admission before it closed.
+func (o *TxOutbox) closeAdmissionsLocked() (<-chan struct{}, <-chan struct{}) {
+	o.storeAdmissionClosed = true
+	if o.activeStores > 0 && o.activeStoresDone == nil {
+		o.activeStoresDone = make(chan struct{})
+	}
+	o.commitAdmissionClosed = true
+	if o.commitProducers > 0 && o.commitProducersDone == nil {
+		o.commitProducersDone = make(chan struct{})
+	}
+	return o.commitProducersDone, o.activeStoresDone
+}
+
+func (o *TxOutbox) closeCommitAdmissionAndWait() {
+	o.admissionMu.Lock()
+	producersDone, _ := o.closeAdmissionsLocked()
+	o.admissionMu.Unlock()
+	if producersDone != nil {
+		<-producersDone
+	}
+}
+
 func (o *TxOutbox) Stop() {
 	if o == nil {
 		return
 	}
-	o.mu.Lock()
-	if o.stopped {
-		o.mu.Unlock()
+	o.admissionMu.Lock()
+	if o.stopStarted {
+		stopDone := o.stopDone
+		o.admissionMu.Unlock()
+		if stopDone != nil {
+			<-stopDone
+		}
 		return
 	}
+	o.stopStarted = true
+	_, activeStoresDone := o.closeAdmissionsLocked()
+	stopDone := o.stopDone
+	o.admissionMu.Unlock()
+	o.mu.Lock()
 	o.stopped = true
 	cancel := o.cancel
 	o.mu.Unlock()
@@ -6719,6 +7470,16 @@ func (o *TxOutbox) Stop() {
 		cancel()
 	}
 	o.wg.Wait()
+	if activeStoresDone != nil {
+		<-activeStoresDone
+	}
+	// A canceled caller may have handed lifecycle ownership to the commit
+	// result waiter. Store admission is closed and drained above, so no Add can
+	// race this final wait.
+	o.lifecycleWG.Wait()
+	if stopDone != nil {
+		close(stopDone)
+	}
 	log.Info("Stopped durable TxQUIC outbox")
 }
 
@@ -6726,7 +7487,7 @@ func (o *TxOutbox) Stop() {
 // allocate a fresh durable nonce and sign an envelope around this batch. Exact
 // batches are idempotent; collisions and corrupt records are never overwritten.
 func (o *TxOutbox) StoreSync(ctx context.Context, payload []byte) (common.Hash, error) {
-	return o.storeSync(ctx, payload, false)
+	return o.storeSync(ctx, payload, false, false, nil)
 }
 
 // storeVerifiedSync is restricted to the local bridge worker. Every admission
@@ -6734,12 +7495,34 @@ func (o *TxOutbox) StoreSync(ctx context.Context, payload []byte) (common.Hash, 
 // verified by EnqueueLocalTxsWithAdmissions before it entered the queue. Disk
 // restore separately repeats full signature validation before replay.
 func (o *TxOutbox) storeVerifiedSync(ctx context.Context, payload []byte) (common.Hash, error) {
-	return o.storeSync(ctx, payload, true)
+	return o.storeSync(ctx, payload, true, false, nil)
 }
 
-func (o *TxOutbox) storeSync(ctx context.Context, payload []byte, signaturesVerified bool) (common.Hash, error) {
+// storeWALOwnedVerifiedSync materializes a local-RPC outcome already owned by
+// a fsynced local-intent/outcome pair. It must not duplicate transaction bytes
+// in another WAL enqueue record.
+func (o *TxOutbox) storeWALOwnedVerifiedSync(ctx context.Context, payload []byte) (common.Hash, error) {
+	return o.storeSync(ctx, payload, true, true, nil)
+}
+
+// storeLocalOutcomeVerifiedSync makes capacity admission part of the local-RPC
+// durability transaction. The callback appends the authoritative local outcome
+// only after an outbox slot has been reserved and while the semantic lifecycle
+// stripe remains held. A crash can therefore never leave more replayable local
+// outcomes than the projection can materialize.
+func (o *TxOutbox) storeLocalOutcomeVerifiedSync(ctx context.Context, payload []byte, appendOutcome func(context.Context) error) (common.Hash, error) {
+	if appendOutcome == nil {
+		return common.Hash{}, errors.New("missing local ingress outcome callback")
+	}
+	return o.storeSync(ctx, payload, true, true, appendOutcome)
+}
+
+func (o *TxOutbox) storeSync(ctx context.Context, payload []byte, signaturesVerified bool, walAlreadyOwned bool, beforeProjection func(context.Context) error) (common.Hash, error) {
 	if o == nil || o.db == nil {
 		return common.Hash{}, errors.New("tx outbox database is unavailable")
+	}
+	if walAlreadyOwned && o.wal == nil {
+		return common.Hash{}, errors.New("tx outbox has no unified WAL ownership")
 	}
 	if len(payload) == 0 {
 		return common.Hash{}, errors.New("empty tx outbox payload")
@@ -6768,11 +7551,23 @@ func (o *TxOutbox) storeSync(ctx context.Context, payload []byte, signaturesVeri
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := o.beginStore(); err != nil {
+		return common.Hash{}, err
+	}
+	defer o.endStore()
 	batchID := semanticBatch.BatchID
+	var unlockLifecycle func()
+	lifecycleOwned := false
+	defer func() {
+		if lifecycleOwned && unlockLifecycle != nil {
+			unlockLifecycle()
+		}
+	}()
+	createdAt := txOutboxStableCreatedAt(semanticBatch.Certificate)
 	record := &TxOutboxRecord{
 		BatchID:   batchID,
 		Payload:   append([]byte(nil), payload...),
-		CreatedAt: uint64(time.Now().UnixNano()),
+		CreatedAt: createdAt,
 	}
 	encoded, err := rlp.EncodeToBytes(record)
 	if err != nil {
@@ -6790,44 +7585,159 @@ func (o *TxOutbox) storeSync(ctx context.Context, payload []byte, signaturesVeri
 	if o.maxRecords < 1 || capacityBytes > o.maxBytes {
 		return common.Hash{}, fmt.Errorf("tx outbox capacity exceeded: records=0+1/%d bytes=0+%d/%d", o.maxRecords, capacityBytes, o.maxBytes)
 	}
-	request := &txOutboxCommitRequest{
-		batchID: batchID,
-		payload: record.Payload,
-		encoded: encoded,
-		bytes:   commitBytes,
-	}
+	// The authoritative record lookup and the non-blocking reservation attempt
+	// are serialized by the lifecycle stripe. If capacity is full, release the
+	// stripe before waiting so an ACK/delete on that stripe can free the slot;
+	// after every wake the DB and capacity state are revalidated from scratch.
 	for {
+		unlockLifecycle = o.lockLifecycle(batchID)
+		lifecycleOwned = true
 		o.mu.Lock()
 		if o.poison != nil {
 			err := o.poison
 			o.mu.Unlock()
 			return common.Hash{}, fmt.Errorf("tx outbox is poisoned until restart: %w", err)
 		}
-		if !o.started || o.stopped {
+		if !o.started || o.stopped || o.ctx == nil || o.ctx.Err() != nil {
 			o.mu.Unlock()
 			return common.Hash{}, errors.New("tx outbox is not running")
 		}
+		hasRecord, err := o.db.Has(key)
+		if err != nil {
+			o.mu.Unlock()
+			return common.Hash{}, err
+		}
+		if hasRecord {
+			existing, err := o.db.Get(key)
+			if err != nil {
+				o.mu.Unlock()
+				return common.Hash{}, err
+			}
+			var stored TxOutboxRecord
+			if err := rlp.DecodeBytes(existing, &stored); err != nil || stored.BatchID != batchID || !bytes.Equal(stored.Payload, payload) {
+				o.mu.Unlock()
+				return common.Hash{}, fmt.Errorf("tx outbox batch identity collision for %s", batchID)
+			}
+			if _, err := o.readRetry(batchID); err != nil {
+				o.mu.Unlock()
+				return common.Hash{}, fmt.Errorf("read existing tx outbox retry state %s: %w", batchID, err)
+			}
+			durableCtx := o.ctx
+			o.mu.Unlock()
+			// An already materialized exact batch consumes no new capacity, but a
+			// new local intent still needs its own durable completion record.
+			if beforeProjection != nil {
+				if err := beforeProjection(durableCtx); err != nil {
+					return common.Hash{}, err
+				}
+			}
+			return batchID, nil
+		}
+		if _, exists := o.reservations[batchID]; exists {
+			o.mu.Unlock()
+			return common.Hash{}, fmt.Errorf("tx outbox capacity is already reserved for %s", batchID)
+		}
+		usedRecords := o.records + o.reservedRecords
+		usedBytes := o.bytes + o.reservedBytes
+		if _, _, err := advanceTxQUICDurableCapacity("tx outbox", usedRecords, usedBytes, 1, capacityBytes, o.maxRecords, o.maxBytes); err == nil {
+			o.reservations[batchID] = capacityBytes
+			o.reservedRecords++
+			o.reservedBytes += capacityBytes
+			o.mu.Unlock()
+			break
+		}
+		space := o.space
 		storeDone := o.ctx.Done()
 		o.mu.Unlock()
-
+		unlockLifecycle()
+		unlockLifecycle = nil
+		lifecycleOwned = false
+		select {
+		case <-space:
+			continue
+		case <-ctx.Done():
+			return common.Hash{}, fmt.Errorf("tx outbox capacity wait: %w", ctx.Err())
+		case <-storeDone:
+			return common.Hash{}, errors.New("tx outbox stopped while waiting for capacity")
+		}
+	}
+	reservationOwned := true
+	defer func() {
+		if reservationOwned {
+			_ = o.releaseRecordReservation(batchID, capacityBytes)
+		}
+	}()
+	durableOwnership := walAlreadyOwned
+	if beforeProjection != nil {
+		// Capacity ownership and lifecycle serialization are established before
+		// the local outcome becomes replay authority. Detach this append from
+		// the caller deadline for the same reason as an ordinary outbox enqueue.
+		if err := beforeProjection(o.ctx); err != nil {
+			return common.Hash{}, err
+		}
+		durableOwnership = true
+	}
+	if o.wal != nil && !walAlreadyOwned {
+		// Capacity is admitted before WAL ownership. Once reserved, detach the
+		// durability operation from the request deadline so a timed-out caller
+		// cannot leave an unmaterializable enqueue in the authoritative log.
+		if err := o.wal.appendOutbox(o.ctx, txIngressWALOutboxEnqueued, *record, txOutboxRetryState{}); err != nil {
+			return common.Hash{}, fmt.Errorf("persist tx outbox enqueue in unified ingress WAL: %w", err)
+		}
+		durableOwnership = true
+	}
+	request := &txOutboxCommitRequest{
+		batchID:       batchID,
+		payload:       record.Payload,
+		encoded:       encoded,
+		bytes:         commitBytes,
+		reservedBytes: capacityBytes,
+		walOwned:      durableOwnership,
+	}
+	for {
+		storeDone, err := o.beginCommitProducer()
+		if err != nil {
+			return common.Hash{}, err
+		}
 		request.result = make(chan txOutboxCommitResult, 1)
 		request.queued = time.Now()
+		enqueued := false
 		select {
 		case o.commitCh <- request:
-		case <-ctx.Done():
-			return common.Hash{}, ctx.Err()
+			enqueued = true
 		case <-storeDone:
+		}
+		o.endCommitProducer()
+		if !enqueued {
 			return common.Hash{}, errors.New("tx outbox stopped before durable commit")
 		}
+		reservationOwned = false // commitRequests now owns the reservation
 		var result txOutboxCommitResult
 		select {
 		case result = <-request.result:
 		case <-ctx.Done():
 			// Once queued, persistence is detached from the request context. The
-			// buffered result keeps the commit loop non-blocking if the caller has
-			// already gone away.
+			// lifecycle stripe must follow that ownership too; otherwise an ACK
+			// delete could overtake the background projection commit and invert
+			// WAL order versus mutable-DB order.
+			resultCh := request.result
+			o.lifecycleWG.Add(1)
+			lifecycleOwned = false
+			go func() {
+				defer o.lifecycleWG.Done()
+				<-resultCh
+				unlockLifecycle()
+			}()
 			return common.Hash{}, ctx.Err()
 		case <-storeDone:
+			resultCh := request.result
+			o.lifecycleWG.Add(1)
+			lifecycleOwned = false
+			go func() {
+				defer o.lifecycleWG.Done()
+				<-resultCh
+				unlockLifecycle()
+			}()
 			return common.Hash{}, errors.New("tx outbox stopped during durable commit")
 		}
 		if result.err != nil {
@@ -6848,6 +7758,7 @@ func (o *TxOutbox) storeSync(ctx context.Context, payload []byte, signaturesVeri
 
 func (o *TxOutbox) commitLoop() {
 	defer o.wg.Done()
+	stopErr := errors.New("tx outbox stopped before durable commit")
 	var carry *txOutboxCommitRequest
 	for {
 		first := carry
@@ -6855,8 +7766,9 @@ func (o *TxOutbox) commitLoop() {
 		if first != nil {
 			select {
 			case <-o.ctx.Done():
-				first.result <- txOutboxCommitResult{err: errors.New("tx outbox stopped before durable commit")}
-				o.failQueuedCommits(errors.New("tx outbox stopped before durable commit"))
+				o.closeCommitAdmissionAndWait()
+				o.failCommitRequests([]*txOutboxCommitRequest{first}, stopErr, false)
+				o.failQueuedCommits(stopErr)
 				return
 			default:
 			}
@@ -6864,7 +7776,8 @@ func (o *TxOutbox) commitLoop() {
 		if first == nil {
 			select {
 			case <-o.ctx.Done():
-				o.failQueuedCommits(errors.New("tx outbox stopped before durable commit"))
+				o.closeCommitAdmissionAndWait()
+				o.failQueuedCommits(stopErr)
 				return
 			case first = <-o.commitCh:
 				if first == nil {
@@ -6873,12 +7786,13 @@ func (o *TxOutbox) commitLoop() {
 			}
 		}
 		if first.bytes <= 0 || first.bytes > o.commitMaxBytes {
-			first.result <- txOutboxCommitResult{err: fmt.Errorf("tx outbox commit request has invalid byte size %d", first.bytes)}
+			o.failCommitRequests([]*txOutboxCommitRequest{first}, fmt.Errorf("tx outbox commit request has invalid byte size %d", first.bytes), true)
 			continue
 		}
 		group := []*txOutboxCommitRequest{first}
 		bytesUsed := first.bytes
 		timer := time.NewTimer(o.commitInterval)
+		stopping := false
 	collect:
 		for len(group) < o.commitMaxRequests {
 			select {
@@ -6887,7 +7801,7 @@ func (o *TxOutbox) commitLoop() {
 					continue
 				}
 				if request.bytes <= 0 || request.bytes > o.commitMaxBytes {
-					request.result <- txOutboxCommitResult{err: fmt.Errorf("tx outbox commit request has invalid byte size %d", request.bytes)}
+					o.failCommitRequests([]*txOutboxCommitRequest{request}, fmt.Errorf("tx outbox commit request has invalid byte size %d", request.bytes), true)
 					continue
 				}
 				if bytesUsed > o.commitMaxBytes-request.bytes {
@@ -6899,6 +7813,7 @@ func (o *TxOutbox) commitLoop() {
 			case <-timer.C:
 				break collect
 			case <-o.ctx.Done():
+				stopping = true
 				break collect
 			}
 		}
@@ -6908,19 +7823,77 @@ func (o *TxOutbox) commitLoop() {
 			default:
 			}
 		}
+		if !stopping {
+			select {
+			case <-o.ctx.Done():
+				stopping = true
+			default:
+			}
+		}
+		if stopping {
+			o.closeCommitAdmissionAndWait()
+			o.failCommitRequests(group, stopErr, false)
+			if carry != nil {
+				o.failCommitRequests([]*txOutboxCommitRequest{carry}, stopErr, false)
+				carry = nil
+			}
+			o.failQueuedCommits(stopErr)
+			return
+		}
 		o.commitRequests(group)
 	}
 }
 
 func (o *TxOutbox) failQueuedCommits(err error) {
+	requests := make([]*txOutboxCommitRequest, 0, len(o.commitCh))
 	for {
 		select {
 		case request := <-o.commitCh:
 			if request != nil {
-				request.result <- txOutboxCommitResult{err: err}
+				requests = append(requests, request)
 			}
 		default:
+			o.failCommitRequests(requests, err, false)
 			return
+		}
+	}
+}
+
+// failCommitRequests resolves reservation ownership exactly once. Projection
+// failures after WAL ownership are fail-closed: their logical capacity remains
+// charged until restart replay rebuilds the authoritative set. Shutdown closes
+// producer/store admission first, so its abandoned live reservations are safe
+// to refund while the WAL remains the restart authority.
+func (o *TxOutbox) failCommitRequests(requests []*txOutboxCommitRequest, failure error, retainWALOwned bool) {
+	if len(requests) == 0 {
+		return
+	}
+	o.mu.Lock()
+	resultErr := failure
+	if retainWALOwned {
+		for _, request := range requests {
+			if request != nil && request.walOwned {
+				if o.poison == nil {
+					o.poison = fmt.Errorf("tx outbox projection failed after durable WAL ownership: %w", failure)
+				}
+				resultErr = o.poison
+				break
+			}
+		}
+	}
+	for _, request := range requests {
+		if request == nil || request.reservedBytes <= 0 || (retainWALOwned && request.walOwned) {
+			continue
+		}
+		if err := o.releaseRecordReservationLocked(request.batchID, request.reservedBytes, true); err != nil && o.poison == nil {
+			o.poison = err
+			resultErr = err
+		}
+	}
+	o.mu.Unlock()
+	for _, request := range requests {
+		if request != nil && request.result != nil {
+			request.result <- txOutboxCommitResult{err: resultErr}
 		}
 	}
 }
@@ -6940,20 +7913,21 @@ func (o *TxOutbox) commitRequests(requests []*txOutboxCommitRequest) {
 	}
 	results := make([]txOutboxCommitResult, len(requests))
 	newRecords := make([]*txOutboxCommitRequest, 0, len(requests))
+	newRecordSet := make(map[*txOutboxCommitRequest]struct{}, len(requests))
 	staged := make(map[common.Hash]*txOutboxCommitRequest)
 
 	o.mu.Lock()
 	if o.poison != nil || !o.started || o.stopped {
 		var err error
+		retainWALOwned := false
 		if o.poison != nil {
 			err = fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+			retainWALOwned = true
 		} else {
 			err = errors.New("tx outbox is not running")
 		}
 		o.mu.Unlock()
-		for _, request := range requests {
-			request.result <- txOutboxCommitResult{err: err}
-		}
+		o.failCommitRequests(requests, err, retainWALOwned)
 		return
 	}
 	batch := o.db.NewBatch()
@@ -6964,9 +7938,18 @@ func (o *TxOutbox) commitRequests(requests []*txOutboxCommitRequest) {
 			fatalErr = errors.New("invalid tx outbox commit request")
 			break
 		}
+		if request.reservedBytes > 0 && o.reservations[request.batchID] != request.reservedBytes {
+			fatalErr = fmt.Errorf("tx outbox commit reservation mismatch for %s", request.batchID)
+			break
+		}
 		if pending := staged[request.batchID]; pending != nil {
 			if !bytes.Equal(pending.payload, request.payload) {
-				results[index].err = fmt.Errorf("tx outbox batch identity collision for %s", request.batchID)
+				err := fmt.Errorf("tx outbox batch identity collision for %s", request.batchID)
+				if request.walOwned {
+					fatalErr = err
+					break
+				}
+				results[index].err = err
 			}
 			continue
 		}
@@ -6984,29 +7967,58 @@ func (o *TxOutbox) commitRequests(requests []*txOutboxCommitRequest) {
 			}
 			var stored TxOutboxRecord
 			if err := rlp.DecodeBytes(existing, &stored); err != nil {
-				results[index].err = fmt.Errorf("decode existing tx outbox batch %s: %w", request.batchID, err)
+				err = fmt.Errorf("decode existing tx outbox batch %s: %w", request.batchID, err)
+				if request.walOwned {
+					fatalErr = err
+					break
+				}
+				results[index].err = err
 				continue
 			}
 			if stored.BatchID != request.batchID || !bytes.Equal(stored.Payload, request.payload) {
-				results[index].err = fmt.Errorf("tx outbox batch identity collision for %s", request.batchID)
+				err := fmt.Errorf("tx outbox batch identity collision for %s", request.batchID)
+				if request.walOwned {
+					fatalErr = err
+					break
+				}
+				results[index].err = err
 				continue
 			}
 			if _, err := o.readRetry(request.batchID); err != nil {
-				results[index].err = fmt.Errorf("read existing tx outbox retry state %s: %w", request.batchID, err)
+				err = fmt.Errorf("read existing tx outbox retry state %s: %w", request.batchID, err)
+				if request.walOwned {
+					fatalErr = err
+					break
+				}
+				results[index].err = err
 			}
 			continue
 		}
 		capacityBytes, err := txOutboxRecordCapacityBytes(request.payload)
 		if err != nil {
+			if request.walOwned {
+				fatalErr = err
+				break
+			}
 			results[index].err = err
 			continue
 		}
-		nextRecords, nextBytes, err := advanceTxQUICDurableCapacity(
-			"tx outbox", projectedRecords, projectedBytes, 1, capacityBytes, o.maxRecords, o.maxBytes,
-		)
-		if err != nil {
-			results[index].waitForSpace = o.space
-			continue
+		var nextRecords int
+		var nextBytes int64
+		if request.reservedBytes > 0 {
+			nextRecords, nextBytes = projectedRecords+1, projectedBytes+request.reservedBytes
+			if request.reservedBytes != capacityBytes || nextRecords > o.maxRecords || nextBytes > o.maxBytes {
+				fatalErr = fmt.Errorf("invalid reserved tx outbox capacity for %s", request.batchID)
+				break
+			}
+		} else {
+			nextRecords, nextBytes, err = advanceTxQUICDurableCapacity(
+				"tx outbox", projectedRecords, projectedBytes, 1, capacityBytes, o.maxRecords, o.maxBytes,
+			)
+			if err != nil {
+				results[index].waitForSpace = o.space
+				continue
+			}
 		}
 		if err := batch.Put(key, request.encoded); err != nil {
 			fatalErr = err
@@ -7015,12 +8027,11 @@ func (o *TxOutbox) commitRequests(requests []*txOutboxCommitRequest) {
 		projectedRecords, projectedBytes = nextRecords, nextBytes
 		staged[request.batchID] = request
 		newRecords = append(newRecords, request)
+		newRecordSet[request] = struct{}{}
 	}
 	if fatalErr != nil {
 		o.mu.Unlock()
-		for _, request := range requests {
-			request.result <- txOutboxCommitResult{err: fatalErr}
-		}
+		o.failCommitRequests(requests, fatalErr, true)
 		return
 	}
 	var (
@@ -7032,21 +8043,17 @@ func (o *TxOutbox) commitRequests(requests []*txOutboxCommitRequest) {
 		if !ok {
 			err := errors.New("tx outbox database does not support synchronous batches")
 			o.mu.Unlock()
-			for _, request := range requests {
-				request.result <- txOutboxCommitResult{err: err}
-			}
+			o.failCommitRequests(requests, err, true)
 			return
 		}
 		fsyncStarted := time.Now()
 		if err := syncBatch.WriteSync(); err != nil {
 			fsyncElapsed = time.Since(fsyncStarted)
 			txOutboxCommitFsync.Update(fsyncElapsed)
-			o.poison = fmt.Errorf("ambiguous outbox group fsync failure: %w", err)
-			poison := o.poison
+			failure := fmt.Errorf("ambiguous outbox group fsync failure: %w", err)
+			o.poison = failure
 			o.mu.Unlock()
-			for _, request := range requests {
-				request.result <- txOutboxCommitResult{err: poison}
-			}
+			o.failCommitRequests(requests, failure, true)
 			return
 		}
 		fsyncElapsed = time.Since(fsyncStarted)
@@ -7057,6 +8064,15 @@ func (o *TxOutbox) commitRequests(requests []*txOutboxCommitRequest) {
 			o.scheduleRecordLocked(request.batchID, 0)
 		}
 		o.updateGaugesLocked()
+	}
+	for _, request := range requests {
+		if request == nil || request.reservedBytes <= 0 {
+			continue
+		}
+		_, materialized := newRecordSet[request]
+		if err := o.releaseRecordReservationLocked(request.batchID, request.reservedBytes, !materialized); err != nil {
+			o.poison = err
+		}
 	}
 	o.mu.Unlock()
 
@@ -7081,19 +8097,30 @@ func (o *TxOutbox) NextNonce(sender common.Address, epoch common.Hash) (uint64, 
 	}
 	key := txOutboxNonceKey(sender, epoch)
 	rangeKey := string(key)
+	// A nonce stream has the same WAL->projection ordering requirement as a
+	// batch lifecycle. Hashing its namespaced durable key onto the existing
+	// stripes serializes one sender/epoch while independent streams remain able
+	// to share WAL group commits.
+	unlockLifecycle := o.lockLifecycle(cyphercrypto.Keccak256Hash(key))
+	defer unlockLifecycle()
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	if o.poison != nil {
-		return 0, fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+		err := o.poison
+		o.mu.Unlock()
+		return 0, fmt.Errorf("tx outbox is poisoned until restart: %w", err)
 	}
 	if !o.started || o.stopped {
+		o.mu.Unlock()
 		return 0, fmt.Errorf("tx outbox is not running")
 	}
 	if available := o.nonceRanges[rangeKey]; available != nil && available.next <= available.end {
 		nonce := available.next
 		available.next++
+		o.mu.Unlock()
 		return nonce, nil
 	}
+	durableCtx := o.ctx
+	o.mu.Unlock()
 	state := txOutboxNonceState{Sender: sender, Epoch: epoch}
 	has, err := o.db.Has(key)
 	if err != nil {
@@ -7118,6 +8145,11 @@ func (o *TxOutbox) NextNonce(sender common.Address, epoch common.Hash) (uint64, 
 	if err != nil {
 		return 0, err
 	}
+	if o.wal != nil {
+		if err := o.wal.appendOutboxNonce(durableCtx, state); err != nil {
+			return 0, fmt.Errorf("persist tx outbox nonce reservation in unified ingress WAL: %w", err)
+		}
+	}
 	batch := o.db.NewBatch()
 	if err := batch.Put(key, encoded); err != nil {
 		return 0, err
@@ -7127,8 +8159,17 @@ func (o *TxOutbox) NextNonce(sender common.Address, epoch common.Hash) (uint64, 
 		return 0, fmt.Errorf("tx outbox database does not support synchronous batches")
 	}
 	if err := syncBatch.WriteSync(); err != nil {
-		o.poison = fmt.Errorf("ambiguous nonce reservation fsync failure: %w", err)
-		return 0, o.poison
+		return 0, o.poisonBackgroundIO(fmt.Errorf("ambiguous nonce reservation fsync failure: %w", err))
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.poison != nil {
+		return 0, fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+	}
+	if !o.started || o.stopped {
+		// The durable reservation remains authoritative and intentionally creates
+		// a gap. Restart recovers ReservedThrough before issuing another nonce.
+		return 0, fmt.Errorf("tx outbox is not running")
 	}
 	o.nonceRanges[rangeKey] = &txOutboxNonceRange{next: first + 1, end: state.ReservedThrough}
 	return first, nil
@@ -7148,6 +8189,27 @@ func txOutboxRecordCapacityBytes(payload []byte) (int64, error) {
 		return 0, fmt.Errorf("invalid tx outbox record capacity")
 	}
 	return int64(len(payload)) + txOutboxPlacementReserveBytes, nil
+}
+
+func (o *TxOutbox) releaseRecordReservationLocked(batchID common.Hash, capacityBytes int64, signal bool) error {
+	reserved, exists := o.reservations[batchID]
+	if !exists || reserved != capacityBytes || o.reservedRecords < 1 || o.reservedBytes < capacityBytes {
+		return fmt.Errorf("tx outbox reservation mismatch for %s", batchID)
+	}
+	delete(o.reservations, batchID)
+	o.reservedRecords--
+	o.reservedBytes -= capacityBytes
+	if signal {
+		close(o.space)
+		o.space = make(chan struct{})
+	}
+	return nil
+}
+
+func (o *TxOutbox) releaseRecordReservation(batchID common.Hash, capacityBytes int64) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.releaseRecordReservationLocked(batchID, capacityBytes, true)
 }
 
 func (o *TxOutbox) scanRecords(restore func([]byte) error) (int, int64, error) {
@@ -7266,7 +8328,10 @@ func (o *TxOutbox) scanRecords(restore func([]byte) error) (int, int64, error) {
 	if err := nonceIterator.Error(); err != nil {
 		return 0, 0, err
 	}
-	if err := validateTxQUICDatabaseKeys(o.db, txOutboxIdentityKey, txOutboxRecordPrefix, txOutboxRetryPrefix, txOutboxNoncePrefix); err != nil {
+	if err := validateTxQUICDatabaseKeys(o.db, txOutboxIdentityKey,
+		txOutboxRecordPrefix, txOutboxRetryPrefix, txOutboxNoncePrefix,
+		txIngressWALIdentityKey, txIngressWALManifestKey, txIngressWALTailKey, txIngressWALRecordPrefix, txIngressWALEventPrefix, txIngressWALGenerationPrefix,
+	); err != nil {
 		return 0, 0, err
 	}
 
@@ -7518,110 +8583,133 @@ func (o *TxOutbox) compactAcknowledgedRecord(record *TxOutboxRecord, ack *txQUIC
 	if o == nil || o.db == nil {
 		return nil, false, fmt.Errorf("tx outbox database is unavailable")
 	}
-	o.mu.Lock()
-	if o.poison != nil {
-		err := o.poison
-		o.mu.Unlock()
+	unlockLifecycle := o.lockLifecycle(record.BatchID, residual.BatchID)
+	defer unlockLifecycle()
+	durableCtx, err := o.backgroundIOContext()
+	if err != nil {
 		return nil, false, err
 	}
 	oldKey := txOutboxRecordKey(record.BatchID)
 	oldEncoded, err := o.db.Get(oldKey)
 	if err != nil {
-		o.mu.Unlock()
 		return nil, false, fmt.Errorf("read superseded outbox batch %s: %w", record.BatchID, err)
 	}
 	var storedOld TxOutboxRecord
 	if err := rlp.DecodeBytes(oldEncoded, &storedOld); err != nil || storedOld.BatchID != record.BatchID || !bytes.Equal(storedOld.Payload, record.Payload) {
-		o.mu.Unlock()
 		return nil, false, fmt.Errorf("superseded outbox batch %s changed before compaction", record.BatchID)
 	}
 
 	residualKey := txOutboxRecordKey(residual.BatchID)
 	has, err := o.db.Has(residualKey)
 	if err != nil {
-		o.mu.Unlock()
 		return nil, false, err
 	}
 	newlyStored := !has
 	if has {
 		existing, err := o.db.Get(residualKey)
 		if err != nil {
-			o.mu.Unlock()
 			return nil, false, err
 		}
 		var stored TxOutboxRecord
 		if err := rlp.DecodeBytes(existing, &stored); err != nil || stored.BatchID != residual.BatchID || !bytes.Equal(stored.Payload, residual.Payload) {
-			o.mu.Unlock()
 			return nil, false, fmt.Errorf("tx outbox residual batch identity collision")
 		}
+		// The existing projection is authoritative for placement and creation
+		// metadata. WAL the exact stored record, not the freshly synthesized
+		// zero-placement residual, so restart replay cannot roll it backward.
+		residual = &stored
 	} else {
 		hasRetry, err := o.db.Has(txOutboxRetryKey(residual.BatchID))
 		if err != nil {
-			o.mu.Unlock()
 			return nil, false, err
 		}
 		if hasRetry {
-			o.mu.Unlock()
 			return nil, false, fmt.Errorf("orphan retry state exists for residual outbox batch %s", residual.BatchID)
 		}
 	}
 
 	oldBytes, err := txOutboxRecordCapacityBytes(record.Payload)
 	if err != nil {
-		o.mu.Unlock()
 		return nil, false, err
 	}
 	residualBytes, err := txOutboxRecordCapacityBytes(residual.Payload)
 	if err != nil {
-		o.mu.Unlock()
 		return nil, false, err
+	}
+	// Keep mutable accounting locked only long enough to validate it and reserve
+	// any positive byte delta. The old and residual lifecycle stripes keep both
+	// identities stable while unrelated records continue making progress.
+	var reservedGrowth int64
+	o.mu.Lock()
+	if o.poison != nil {
+		poison := o.poison
+		o.mu.Unlock()
+		return nil, false, fmt.Errorf("tx outbox is poisoned until restart: %w", poison)
 	}
 	if o.records < 1 || oldBytes > o.bytes {
 		o.mu.Unlock()
 		return nil, false, fmt.Errorf("tx outbox accounting does not contain superseded batch %s", record.BatchID)
 	}
-	projectedRecords := o.records
-	projectedBytes := o.bytes - oldBytes
 	if newlyStored {
-		if residualBytes > o.maxBytes-projectedBytes {
+		if residualBytes > oldBytes {
+			reservedGrowth = residualBytes - oldBytes
+		}
+		usedBytes := o.bytes + o.reservedBytes
+		if usedBytes > o.maxBytes || reservedGrowth > o.maxBytes-usedBytes {
 			o.mu.Unlock()
 			return nil, false, fmt.Errorf("tx outbox replacement capacity exceeded: records=%d/%d bytes=%d+%d/%d",
-				projectedRecords, o.maxRecords, projectedBytes, residualBytes, o.maxBytes)
+				o.records, o.maxRecords, usedBytes, reservedGrowth, o.maxBytes)
 		}
-		projectedBytes += residualBytes
+		o.reservedBytes += reservedGrowth
 	} else {
 		if o.records < 2 || o.bytes < oldBytes+residualBytes {
 			o.mu.Unlock()
 			return residual, false, fmt.Errorf("tx outbox accounting does not contain existing residual batch %s", residual.BatchID)
 		}
-		projectedRecords--
 	}
-	if projectedRecords < 0 || projectedRecords > o.maxRecords || projectedBytes < 0 || projectedBytes > o.maxBytes {
-		o.mu.Unlock()
-		if newlyStored {
-			return nil, false, fmt.Errorf("tx outbox replacement capacity exceeded: records=%d/%d bytes=%d/%d",
-				projectedRecords, o.maxRecords, projectedBytes, o.maxBytes)
+	o.mu.Unlock()
+	releaseGrowth := func() {
+		if reservedGrowth == 0 {
+			return
 		}
-		return residual, false, fmt.Errorf("tx outbox replacement capacity exceeded: records=%d/%d bytes=%d/%d",
-			projectedRecords, o.maxRecords, projectedBytes, o.maxBytes)
+		o.mu.Lock()
+		if o.reservedBytes < reservedGrowth {
+			o.poison = fmt.Errorf("tx outbox replacement byte reservation underflow")
+		} else {
+			o.reservedBytes -= reservedGrowth
+		}
+		close(o.space)
+		o.space = make(chan struct{})
+		o.mu.Unlock()
+		reservedGrowth = 0
+	}
+	defer releaseGrowth()
+
+	var replacementMutationID common.Hash
+	if o.wal != nil {
+		residualRetry, err := o.readRetry(residual.BatchID)
+		if err != nil {
+			return residual, false, err
+		}
+		replacementMutationID, err = o.wal.appendOutboxProjectionTracked(durableCtx, txIngressWALOutboxState, *residual, residualRetry, record.BatchID)
+		if err != nil {
+			return residual, false, fmt.Errorf("persist residual tx outbox replacement in unified ingress WAL: %w", err)
+		}
 	}
 
 	write := o.db.NewBatch()
 	if newlyStored {
 		if err := write.Put(residualKey, encoded); err != nil {
-			o.mu.Unlock()
 			return nil, false, err
 		}
 	}
 	if err := write.Delete(oldKey); err != nil {
-		o.mu.Unlock()
 		if newlyStored {
 			return nil, false, err
 		}
 		return residual, false, err
 	}
 	if err := write.Delete(txOutboxRetryKey(record.BatchID)); err != nil {
-		o.mu.Unlock()
 		if newlyStored {
 			return nil, false, err
 		}
@@ -7629,19 +8717,41 @@ func (o *TxOutbox) compactAcknowledgedRecord(record *TxOutboxRecord, ack *txQUIC
 	}
 	syncBatch, ok := write.(ethdb.SyncBatch)
 	if !ok {
-		o.mu.Unlock()
 		if newlyStored {
 			return nil, false, fmt.Errorf("tx outbox database does not support synchronous batches")
 		}
 		return residual, false, fmt.Errorf("tx outbox database does not support synchronous batches")
 	}
 	if err := syncBatch.WriteSync(); err != nil {
-		o.poison = fmt.Errorf("ambiguous residual outbox replacement fsync failure: %w", err)
+		return nil, false, o.poisonBackgroundIO(fmt.Errorf("ambiguous residual outbox replacement fsync failure: %w", err))
+	}
+	if o.wal != nil {
+		if err := o.wal.appendOutboxApplied(durableCtx, residual.BatchID, replacementMutationID); err != nil {
+			return residual, true, o.poisonBackgroundIO(fmt.Errorf("confirm durable residual outbox replacement projection: %w", err))
+		}
+	}
+	o.mu.Lock()
+	if o.poison != nil {
 		poison := o.poison
 		o.mu.Unlock()
-		return nil, false, poison
+		return residual, true, fmt.Errorf("tx outbox is poisoned until restart: %w", poison)
 	}
-	o.records, o.bytes = projectedRecords, projectedBytes
+	if o.records < 1 || o.bytes < oldBytes || (!newlyStored && (o.records < 2 || o.bytes < oldBytes+residualBytes)) {
+		o.poison = fmt.Errorf("tx outbox accounting changed during residual replacement for %s", record.BatchID)
+		poison := o.poison
+		o.mu.Unlock()
+		return residual, true, poison
+	}
+	if newlyStored {
+		o.bytes = o.bytes - oldBytes + residualBytes
+		if reservedGrowth > 0 {
+			o.reservedBytes -= reservedGrowth
+			reservedGrowth = 0
+		}
+	} else {
+		o.records--
+		o.bytes -= oldBytes
+	}
 	delete(o.scheduled, record.BatchID)
 	close(o.space)
 	o.space = make(chan struct{})
@@ -7654,14 +8764,39 @@ func (o *TxOutbox) compactAcknowledgedRecord(record *TxOutboxRecord, ack *txQUIC
 }
 
 func (o *TxOutbox) deleteRecord(record *TxOutboxRecord) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.poison != nil {
-		return fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+	if o == nil || record == nil {
+		return errors.New("tx outbox deletion is unavailable")
 	}
+	unlockLifecycle := o.lockLifecycle(record.BatchID)
+	defer unlockLifecycle()
 	capacityBytes, err := txOutboxRecordCapacityBytes(record.Payload)
 	if err != nil {
 		return err
+	}
+	durableCtx, err := o.backgroundIOContext()
+	if err != nil {
+		return err
+	}
+	storedBytes, err := o.db.Get(txOutboxRecordKey(record.BatchID))
+	if err != nil {
+		return fmt.Errorf("read acknowledged outbox batch %s: %w", record.BatchID, err)
+	}
+	var stored TxOutboxRecord
+	if err := rlp.DecodeBytes(storedBytes, &stored); err != nil || stored.BatchID != record.BatchID || !bytes.Equal(stored.Payload, record.Payload) {
+		return fmt.Errorf("acknowledged outbox batch %s changed before deletion", record.BatchID)
+	}
+	o.mu.Lock()
+	if o.records < 1 || o.bytes < capacityBytes {
+		o.mu.Unlock()
+		return fmt.Errorf("tx outbox accounting does not contain acknowledged batch %s", record.BatchID)
+	}
+	o.mu.Unlock()
+	var deleteMutationID common.Hash
+	if o.wal != nil {
+		deleteMutationID, err = o.wal.appendOutboxProjectionTracked(durableCtx, txIngressWALOutboxDeleted, *record, txOutboxRetryState{}, common.Hash{})
+		if err != nil {
+			return fmt.Errorf("persist tx outbox deletion in unified ingress WAL: %w", err)
+		}
 	}
 	batch := o.db.NewBatch()
 	if err := batch.Delete(txOutboxRecordKey(record.BatchID)); err != nil {
@@ -7675,16 +8810,24 @@ func (o *TxOutbox) deleteRecord(record *TxOutboxRecord) error {
 		return fmt.Errorf("tx outbox database does not support synchronous batches")
 	}
 	if err := syncBatch.WriteSync(); err != nil {
-		o.poison = fmt.Errorf("ambiguous acknowledged outbox delete fsync failure: %w", err)
+		return o.poisonBackgroundIO(fmt.Errorf("ambiguous acknowledged outbox delete fsync failure: %w", err))
+	}
+	if o.wal != nil {
+		if err := o.wal.appendOutboxApplied(durableCtx, record.BatchID, deleteMutationID); err != nil {
+			return o.poisonBackgroundIO(fmt.Errorf("confirm durable acknowledged outbox delete projection: %w", err))
+		}
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.poison != nil {
+		return fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+	}
+	if o.records < 1 || o.bytes < capacityBytes {
+		o.poison = fmt.Errorf("tx outbox accounting changed during acknowledged delete for %s", record.BatchID)
 		return o.poison
 	}
-	if o.records > 0 {
-		o.records--
-	}
+	o.records--
 	o.bytes -= capacityBytes
-	if o.bytes < 0 {
-		o.bytes = 0
-	}
 	// Capacity is a condition, not a one-consumer event. Wake every waiter so
 	// differently-sized batches can all re-evaluate the newly available space.
 	close(o.space)
@@ -7694,10 +8837,11 @@ func (o *TxOutbox) deleteRecord(record *TxOutboxRecord) error {
 }
 
 func (o *TxOutbox) updateRetry(batchID common.Hash, deliveryErr error) (txOutboxRetryState, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if o.poison != nil {
-		return txOutboxRetryState{}, fmt.Errorf("tx outbox is poisoned until restart: %w", o.poison)
+	unlockLifecycle := o.lockLifecycle(batchID)
+	defer unlockLifecycle()
+	durableCtx, err := o.backgroundIOContext()
+	if err != nil {
+		return txOutboxRetryState{}, err
 	}
 	retry, err := o.readRetry(batchID)
 	if err != nil {
@@ -7714,10 +8858,19 @@ func (o *TxOutbox) updateRetry(batchID common.Hash, deliveryErr error) (txOutbox
 	if err != nil {
 		return retry, err
 	}
+	if o.wal != nil {
+		record, err := o.readPlacementRecord(batchID)
+		if err != nil {
+			return retry, err
+		}
+		if err := o.wal.appendOutbox(durableCtx, txIngressWALOutboxState, record, retry); err != nil {
+			return retry, fmt.Errorf("persist tx outbox retry in unified ingress WAL: %w", err)
+		}
+	}
 	if err := o.db.Put(txOutboxRetryKey(batchID), encoded); err != nil {
 		return retry, err
 	}
-	return retry, nil
+	return retry, o.backgroundIOComplete()
 }
 
 func (o *TxOutbox) readRetry(batchID common.Hash) (txOutboxRetryState, error) {
@@ -7784,6 +8937,12 @@ func (o *TxOutbox) scheduleRecordLocked(batchID common.Hash, due uint64) {
 func (o *TxOutbox) popDue(now uint64) (common.Hash, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	var busyItems []txOutboxScheduleItem
+	defer func() {
+		for _, item := range busyItems {
+			heap.Push(&o.schedule, item)
+		}
+	}()
 	if o.poison != nil || len(o.inFlight) >= o.workers {
 		return common.Hash{}, false
 	}
@@ -7797,11 +8956,18 @@ func (o *TxOutbox) popDue(now uint64) (common.Hash, bool) {
 		if item.due > now {
 			return common.Hash{}, false
 		}
-		heap.Pop(&o.schedule)
-		delete(o.scheduled, item.batchID)
+		// A replacement with the same semantic BatchID may be scheduled after
+		// its predecessor was durably deleted but before finishDelivery releases
+		// the predecessor's in-flight claim. Keep the due entry intact; consuming
+		// it without acquiring the claim would strand the replacement until a
+		// restart rebuilds the schedule.
 		if _, busy := o.inFlight[item.batchID]; busy {
+			heap.Pop(&o.schedule)
+			busyItems = append(busyItems, item)
 			continue
 		}
+		heap.Pop(&o.schedule)
+		delete(o.scheduled, item.batchID)
 		o.inFlight[item.batchID] = struct{}{}
 		return item.batchID, true
 	}

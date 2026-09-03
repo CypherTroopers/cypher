@@ -46,6 +46,89 @@ func TestHighBacklogProposalIsChunked(t *testing.T) {
 	}
 }
 
+func TestGenesisNativeProposalUsesRaisedConsensusCeilings(t *testing.T) {
+	config := &params.ChainConfig{NativeParallel: params.SolanaScaleNativeParallelConfig()}
+	if got := blockMaxTxCountForConfig(config, types.FastTx_Block); got != config.NativeParallel.MaxTransactionsPerBlock {
+		t.Fatalf("native block transaction limit = %d, want %d", got, config.NativeParallel.MaxTransactionsPerBlock)
+	}
+	if got := proposalByteLimit(config, types.FastTx_Block); got != config.NativeParallel.MaxBlockBytes {
+		t.Fatalf("native proposal byte limit = %d, want %d", got, config.NativeParallel.MaxBlockBytes)
+	}
+	serialLimit := params.FairHotstuffEVMWorkLimitsForConfig(config).TransactionsPerSender
+	if got := blockProposalLimitForConfig(config, types.FastTx_Block, 1_000_000); uint64(got) != serialLimit {
+		t.Fatalf("EVM per-sender proposal limit = %d, want %d", got, serialLimit)
+	}
+	maxTx, perAccount := proposalPoolScanLimitsForConfig(config, types.FastTx_Block, 1_000_000, false)
+	if uint64(maxTx) != config.NativeParallel.MaxTransactionsPerBlock {
+		t.Fatalf("native proposal scan limit = %d, want %d", maxTx, config.NativeParallel.MaxTransactionsPerBlock)
+	}
+	if uint64(perAccount) != serialLimit {
+		t.Fatalf("EVM proposal per-account scan limit = %d, want %d", perAccount, serialLimit)
+	}
+	maxTx, perAccount = proposalPoolScanLimitsForConfig(config, types.FastTx_Block, 1_000_000, true)
+	if uint64(maxTx) != 2*config.NativeParallel.MaxTransactionsPerBlock || uint64(perAccount) != 2*serialLimit {
+		t.Fatalf("two-chain EVM proposal scan limits = %d/%d, want %d/%d", maxTx, perAccount, 2*config.NativeParallel.MaxTransactionsPerBlock, 2*serialLimit)
+	}
+}
+
+func TestEVMOnlyProposalRoutesBothResourceLanesToStandardEVM(t *testing.T) {
+	strict := &params.ChainConfig{NativeParallel: params.SolanaScaleNativeParallelConfig()}
+	evmOnly := strict
+	if useNativeProposalBuilder(evmOnly, types.FastTx_Block) || useNativeProposalBuilder(evmOnly, types.SlowTx_Block) {
+		t.Fatal("EVM-only genesis selected the native builder for a transaction lane")
+	}
+	if !isEVMOnlyProposalMode(evmOnly) {
+		t.Fatal("EVM-only genesis did not select the EVM work limits and meter")
+	}
+	if useNativeProposalBuilder(&params.ChainConfig{}, types.FastTx_Block) {
+		t.Fatal("legacy network selected the native proposal builder")
+	}
+	retired := *evmOnly.NativeParallel
+	retired.RequireNativeTransactions = true
+	invalid := &params.ChainConfig{NativeParallel: &retired}
+	if useNativeProposalBuilder(invalid, types.FastTx_Block) || useNativeProposalBuilder(invalid, types.SlowTx_Block) || !isEVMOnlyProposalMode(invalid) {
+		t.Fatal("retired strict flag re-enabled the public native proposal builder")
+	}
+
+	wantLimit := params.FairHotstuffEVMWorkLimitsForConfig(evmOnly).Transactions
+	for _, blockType := range []uint8{types.FastTx_Block, types.SlowTx_Block} {
+		if got := blockMaxTxCountForConfig(evmOnly, blockType); got != wantLimit {
+			t.Fatalf("EVM-only %s scan limit = %d, want %d", readableTxBlockType(blockType), got, wantLimit)
+		}
+	}
+	wantClasses := map[uint8][]core.TxResourceClass{
+		types.FastTx_Block: {core.TxClassNative, core.TxClassERC20, core.TxClassSmallCall},
+		types.SlowTx_Block: {core.TxClassDex, core.TxClassDeploy, core.TxClassHeavy, core.TxClassData},
+	}
+	for blockType, want := range wantClasses {
+		got := pendingClassesForBlockType(blockType)
+		if len(got) != len(want) {
+			t.Fatalf("EVM-only %s resource classes = %v, want %v", readableTxBlockType(blockType), got, want)
+		}
+		for index := range want {
+			if got[index] != want[index] {
+				t.Fatalf("EVM-only %s resource classes = %v, want %v", readableTxBlockType(blockType), got, want)
+			}
+		}
+	}
+}
+
+func TestEVMOnlyProposalResourceClassesUseConfiguredBlockCeiling(t *testing.T) {
+	config := &params.ChainConfig{NativeParallel: params.SolanaScaleNativeParallelConfig()}
+	config.NativeParallel.RequireNativeTransactions = false
+	const gasTarget = uint64(9_000_000)
+	budget := newTxResourceBudgetForConfig(config, types.SlowTx_Block, gasTarget, backlogEmergencyDrainPendingThreshold)
+	wantTx := config.NativeParallel.MaxTransactionsPerBlock
+	for _, class := range []core.TxResourceClass{core.TxClassDeploy, core.TxClassHeavy, core.TxClassData, core.TxClassDex} {
+		if got := budget.txCaps[class]; got != wantTx {
+			t.Fatalf("class %s transaction cap = %d, want %d", class, got, wantTx)
+		}
+		if got := budget.gasCaps[class]; got != gasTarget {
+			t.Fatalf("class %s gas cap = %d, want %d", class, got, gasTarget)
+		}
+	}
+}
+
 func TestFHSAdmissionBatchLimitPreservesDeterministicNoncePrefixes(t *testing.T) {
 	firstAddress := common.Address{1}
 	secondAddress := common.Address{2}
@@ -522,31 +605,35 @@ func TestProposalGenerationRejectsStaleConstruction(t *testing.T) {
 	chain := newProposedChain()
 	chain.clear(parent)
 	generation := proposalGeneration{
-		proposedRevision: chain.revision,
-		parentHash:       parent.Hash(),
-		parentRoot:       parent.Root(),
-		parentNumber:     parent.NumberU64(),
-		keyHash:          keyBlock.Hash(),
-		keyNumber:        keyBlock.NumberU64(),
+		proposedRevision:            chain.revision,
+		admissionFinalityGeneration: 7,
+		parentHash:                  parent.Hash(),
+		parentRoot:                  parent.Root(),
+		parentNumber:                parent.NumberU64(),
+		keyHash:                     keyBlock.Hash(),
+		keyNumber:                   keyBlock.NumberU64(),
 	}
-	if !generation.matches(chain.revision, parent, keyBlock) {
+	if !generation.matches(chain.revision, 7, parent, keyBlock) {
 		t.Fatal("fresh proposal generation was rejected")
+	}
+	if generation.matches(chain.revision, 8, parent, keyBlock) {
+		t.Fatal("proposal generation survived an admission-finality publication")
 	}
 
 	child := types.NewBlockWithHeader(&types.Header{
 		ParentHash: parent.Hash(), Number: big.NewInt(10), Root: common.HexToHash("0x901"), Difficulty: big.NewInt(1),
 	})
 	chain.extend(child)
-	if generation.matches(chain.revision, parent, keyBlock) {
+	if generation.matches(chain.revision, 7, parent, keyBlock) {
 		t.Fatal("proposal generation survived a concurrent proposed-chain update")
 	}
-	if generation.matches(generation.proposedRevision, child, keyBlock) {
+	if generation.matches(generation.proposedRevision, 7, child, keyBlock) {
 		t.Fatal("proposal generation survived a parent change")
 	}
 	nextKeyBlock := types.NewKeyBlock(&types.KeyBlockHeader{
 		Number: big.NewInt(4), Difficulty: big.NewInt(1),
 	})
-	if generation.matches(generation.proposedRevision, parent, nextKeyBlock) {
+	if generation.matches(generation.proposedRevision, 7, parent, nextKeyBlock) {
 		t.Fatal("proposal generation survived a key-committee change")
 	}
 }

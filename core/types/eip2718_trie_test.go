@@ -39,6 +39,17 @@ func testTypedTransactions() []*Transaction {
 			To: to, Value: big.NewInt(3), Data: []byte{4}, AccessList: AccessList{}, AuthList: []SetCodeAuthorization{},
 			V: big.NewInt(0), R: big.NewInt(1), S: big.NewInt(1),
 		}),
+		NewTx(&NativeTxV1{
+			ChainID: big.NewInt(1), RecentBlockHash: testHash(5), RecentBlockNumber: 7, ValidUntil: 14,
+			Payer: testAddress(1), To: testAddress(2), Value: big.NewInt(3), Data: []byte{4},
+			MaxFeePerCompute: big.NewInt(2), PriorityFeePerCompute: big.NewInt(1), ComputeLimit: 21_000,
+			MemoryLimit: 1024, LogLimit: 1024, OutputLimit: 1024,
+			Accesses: []NativeAccess{
+				{Resource: NativeResource{Kind: NativeResourceAccount, Address: testAddress(1)}, Mode: NativeAccessWrite},
+				{Resource: NativeResource{Kind: NativeResourceAccount, Address: testAddress(2)}, Mode: NativeAccessWrite},
+			},
+			V: big.NewInt(0), R: big.NewInt(1), S: big.NewInt(1),
+		}),
 	}
 }
 
@@ -78,7 +89,7 @@ func TestEIP2718TransactionTrieLeafUsesRawTypedEnvelope(t *testing.T) {
 }
 
 func TestEIP2718ReceiptTrieLeafAndEmbeddedRoundTrip(t *testing.T) {
-	for _, typ := range []uint8{AccessListTxType, DynamicFeeTxType, BlobTxType, SetCodeTxType} {
+	for _, typ := range []uint8{AccessListTxType, DynamicFeeTxType, BlobTxType, SetCodeTxType, NativeTxType} {
 		receipt := testConsensusReceipt(typ)
 		payload, err := rlp.EncodeToBytes(receipt.consensusEncoding())
 		if err != nil {

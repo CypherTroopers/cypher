@@ -36,6 +36,17 @@ import (
 var DefaultFullGPOConfig = gasprice.Config{Blocks: 20, Percentile: 60}
 var DefaultLightGPOConfig = gasprice.Config{Blocks: 2, Percentile: 60}
 
+func nativeMinerGasBounds(chainConfig *params.ChainConfig, floor, ceil uint64) (uint64, uint64) {
+	if chainConfig == nil || !chainConfig.NativeParallelEnabled() {
+		return floor, ceil
+	}
+	// Genesis-native execution uses one consensus capacity target. Leaving the
+	// legacy 3.37G default ceiling in place would slowly decay a 2^44 genesis
+	// header until even a maximum native transaction could never be proposed.
+	target := chainConfig.NativeParallel.MaxComputePerBlock
+	return target, target
+}
+
 var DefaultConfig = Config{
 	SyncMode: downloader.FastSync,
 	colossusX: colossusX.Config{
@@ -68,20 +79,23 @@ var DefaultConfig = Config{
 	GPO:         DefaultFullGPOConfig,
 	RPCTxFeeCap: 100,
 	TxQUIC: TxQUICConfig{
-		Enabled:                  false,
-		AutoRole:                 true,
-		BridgeEnabled:            false,
-		BridgeQueueSize:          65536,
+		Enabled:       false,
+		AutoRole:      true,
+		BridgeEnabled: false,
+		// Retain a five-second burst at the 200k TPS architecture target.
+		// Bytes remain independently bounded so large calldata/blob traffic
+		// applies backpressure before count capacity is exhausted.
+		BridgeQueueSize:          int(params.NativeParallelHardMaxTransactions),
 		BridgeQueueMaxBytes:      defaultTxQUICBridgeQueueMaxBytes,
-		BridgeWorkers:            8,
+		BridgeWorkers:            64,
 		BridgeBatchInterval:      10 * time.Millisecond,
 		OutboxMaxRecords:         defaultTxOutboxMaxRecords,
 		OutboxMaxBytes:           defaultTxOutboxMaxBytes,
-		OutboxWorkers:            8,
+		OutboxWorkers:            64,
 		OutboxRetryMin:           defaultTxOutboxRetryMin,
 		OutboxRetryMax:           defaultTxOutboxRetryMax,
-		IngressWorkers:           64,
-		MaxInflightPayloadBytes:  256 * 1024 * 1024,
+		IngressWorkers:           256,
+		MaxInflightPayloadBytes:  512 * 1024 * 1024,
 		ReplayWindow:             65536,
 		MaxClockSkew:             30 * time.Second,
 		MaxPacketAge:             10 * time.Minute,
@@ -97,8 +111,8 @@ var DefaultConfig = Config{
 		Addr:                 "0.0.0.0",
 		Port:                 4444,
 		PortOffset:           2000,
-		MaxIncomingStreams:   64,
-		MaxIncomingConns:     64,
+		MaxIncomingStreams:   256,
+		MaxIncomingConns:     256,
 		ReadTimeout:          10 * time.Second,
 		WriteTimeout:         10 * time.Second,
 		ForwardTimeout:       15 * time.Second,

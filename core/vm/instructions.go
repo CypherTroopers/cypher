@@ -477,6 +477,10 @@ func opNumber(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]
 }
 
 func opDifficulty(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+	if interpreter.evm.Random != nil {
+		callContext.stack.push(new(uint256.Int).SetBytes(interpreter.evm.Random[:]))
+		return nil, nil
+	}
 	v, _ := uint256.FromBig(interpreter.evm.Difficulty)
 	callContext.stack.push(v)
 	return nil, nil

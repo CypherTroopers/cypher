@@ -67,6 +67,13 @@ func NewEVMContextWithConfig(config *params.ChainConfig, msg Message, header *ty
 		blobHashes = blobMsg.BlobHashes()
 	}
 	blobBaseFee := params.CalcBlobBaseFeeAtTime(config, header.Time, header.ExcessBlobGas)
+	// ColossusX commits MixDigest in the FHS-signed header. Reuse that canonical
+	// header field as PREVRANDAO after Shanghai, matching Ethereum's 0x44 context.
+	var random *common.Hash
+	if config != nil && config.IsShanghai(header.Number, header.Time) {
+		value := header.MixDigest
+		random = &value
+	}
 	gasPrice := new(big.Int).Set(msg.GasPrice())
 	if baseFee != nil {
 		if tip, err := calcEffectiveGasTip(messageGasFeeCap(msg), messageGasTipCap(msg), baseFee); err == nil {
@@ -82,6 +89,7 @@ func NewEVMContextWithConfig(config *params.ChainConfig, msg Message, header *ty
 		BlockNumber: new(big.Int).Set(header.Number),
 		Time:        new(big.Int).SetUint64(header.Time),
 		Difficulty:  new(big.Int).Set(header.Difficulty),
+		Random:      random,
 		BaseFee:     baseFee,
 		BlobBaseFee: blobBaseFee,
 		BlobHashes:  blobHashes,
@@ -132,6 +140,9 @@ func CanTransfer(db vm.StateDB, addr common.Address, amount *big.Int) bool {
 
 // Transfer subtracts amount from sender and adds amount to recipient using the given Db
 func Transfer(db vm.StateDB, sender, recipient common.Address, amount *big.Int) {
+	if amount == nil || amount.Sign() == 0 {
+		return
+	}
 	db.SubBalance(sender, amount)
 	db.AddBalance(recipient, amount)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/log"
+	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/reconfig/hotstuff"
 	"github.com/cypherium/cypher/rlp"
@@ -74,6 +75,10 @@ type fhsContentWriter struct {
 
 func newFHSContentWriter(persist func(*types.HotstuffProposalRef, *proposalBodyMsg) error) *fhsContentWriter {
 	return newFHSContentWriterWithLimits(fhsContentQueueMaxEntries, fhsContentQueueMaxBytes, persist)
+}
+
+func newFHSContentWriterForConfig(config *params.ChainConfig, persist func(*types.HotstuffProposalRef, *proposalBodyMsg) error) *fhsContentWriter {
+	return newFHSContentWriterWithLimits(fhsContentQueueMaxEntries, proposalBodyCacheLimitForConfig(config), persist)
 }
 
 func newFHSContentWriterWithLimits(maxEntries, maxBytes int, persist func(*types.HotstuffProposalRef, *proposalBodyMsg) error) *fhsContentWriter {
@@ -239,9 +244,11 @@ func cloneFHSDeferredRecovery(recovery *fhsDeferredRecovery) *fhsDeferredRecover
 }
 
 type fhsSafetyStore struct {
-	db          ethdb.KeyValueStore
-	chainID     uint64
-	genesisHash common.Hash
+	db                  ethdb.KeyValueStore
+	chainID             uint64
+	genesisHash         common.Hash
+	bodyMaxBytes        int
+	uncertifiedMaxBytes int
 
 	// safetyMu serializes the small synchronous anti-equivocation WAL. Proposal
 	// bodies are deliberately excluded: an 8 MiB content write must never delay
@@ -260,6 +267,20 @@ type fhsSafetyStore struct {
 	// holding contentMu.
 	contentMu                sync.Mutex
 	proposalWritesSincePrune uint64
+}
+
+func (store *fhsSafetyStore) effectiveBodyMaxBytes() int {
+	if store != nil && store.bodyMaxBytes > 0 {
+		return store.bodyMaxBytes
+	}
+	return proposalBodySidecarMaxBytes
+}
+
+func (store *fhsSafetyStore) effectiveUncertifiedMaxBytes() int {
+	if store != nil && store.uncertifiedMaxBytes > 0 {
+		return store.uncertifiedMaxBytes
+	}
+	return fhsPersistenceUncertifiedBytes
 }
 
 func (store *fhsSafetyStore) deferRecovery(recovery *fhsDeferredRecovery) error {
@@ -358,11 +379,17 @@ func (s *Service) completeDeferredFHSRecovery(qc *hotstuff.SignedState) (bool, e
 }
 
 func newFHSSafetyStore(db ethdb.KeyValueStore, chainID uint64, genesisHash common.Hash) *fhsSafetyStore {
+	return newFHSSafetyStoreForConfig(db, chainID, genesisHash, nil)
+}
+
+func newFHSSafetyStoreForConfig(db ethdb.KeyValueStore, chainID uint64, genesisHash common.Hash, config *params.ChainConfig) *fhsSafetyStore {
 	return &fhsSafetyStore{
-		db:          db,
-		chainID:     chainID,
-		genesisHash: genesisHash,
-		state:       hotstuff.NewFHSSafetyState(),
+		db:                  db,
+		chainID:             chainID,
+		genesisHash:         genesisHash,
+		bodyMaxBytes:        proposalBodyLimitForConfig(config),
+		uncertifiedMaxBytes: proposalBodyCacheLimitForConfig(config),
+		state:               hotstuff.NewFHSSafetyState(),
 	}
 }
 
@@ -702,7 +729,7 @@ func (s *Service) pruneFHSPersistence(canonicalNumber, currentView uint64) error
 		}
 		if proposal.ProposalID != proposalID || ref.ProposalID() != proposalID ||
 			ref.ChainID != store.chainID || ref.BodyHash == (common.Hash{}) || ref.BodySize == 0 ||
-			ref.BodySize > uint64(proposalBodySidecarMaxBytes) {
+			ref.BodySize > uint64(store.effectiveBodyMaxBytes()) {
 			return fmt.Errorf("invalid FHS proposal %s (stored=%s derived=%s chain=%d body=%s bytes=%d)",
 				proposalID, proposal.ProposalID, ref.ProposalID(), ref.ChainID, ref.BodyHash, ref.BodySize)
 		}
@@ -747,9 +774,10 @@ func (s *Service) pruneFHSPersistence(canonicalNumber, currentView uint64) error
 		if _, shared := retainedBodyHashes[candidate.bodyHash]; !shared {
 			additionalBytes = candidate.bodySize
 		}
+		uncertifiedMaxBytes := uint64(store.effectiveUncertifiedMaxBytes())
 		if retainedUncertified >= fhsPersistenceUncertifiedLimit ||
-			additionalBytes > uint64(fhsPersistenceUncertifiedBytes) ||
-			retainedUncertifiedBytes > uint64(fhsPersistenceUncertifiedBytes)-additionalBytes {
+			additionalBytes > uncertifiedMaxBytes ||
+			retainedUncertifiedBytes > uncertifiedMaxBytes-additionalBytes {
 			deleteProposals = append(deleteProposals, candidate.proposalID)
 			continue
 		}
@@ -902,10 +930,14 @@ func validatePersistedVote(vote *hotstuff.PersistedVote) error {
 // mutating the live proposal caches. Recovery uses this during its staging
 // phase so a corrupt suffix cannot partially publish an earlier prefix.
 func validateFHSProposalCommitments(ref *types.HotstuffProposalRef, encodedBlock, extra, encodedParentQC []byte) (*types.Block, error) {
+	return validateFHSProposalCommitmentsForConfig(nil, ref, encodedBlock, extra, encodedParentQC)
+}
+
+func validateFHSProposalCommitmentsForConfig(config *params.ChainConfig, ref *types.HotstuffProposalRef, encodedBlock, extra, encodedParentQC []byte) (*types.Block, error) {
 	if ref == nil {
 		return nil, fmt.Errorf("nil FHS proposal reference")
 	}
-	if len(encodedBlock) == 0 || len(encodedBlock) > proposalBodySidecarMaxBytes {
+	if len(encodedBlock) == 0 || len(encodedBlock) > proposalBodyLimitForConfig(config) {
 		return nil, fmt.Errorf("invalid FHS proposal body size: %d", len(encodedBlock))
 	}
 	if len(extra) > proposalBodyControlMaxBytes || len(encodedParentQC) > proposalBodyControlMaxBytes-len(extra) {
@@ -1048,7 +1080,7 @@ func (s *Service) readFHSDurableProposalBody(proposalID common.Hash) (*types.Hot
 	if err := rlp.DecodeBytes(encodedBody, &bodyRecord); err != nil || bodyRecord.BodyHash != ref.BodyHash {
 		return nil, nil, true, fmt.Errorf("invalid persisted FHS body %s", ref.BodyHash)
 	}
-	if _, err := validateFHSProposalCommitments(ref, bodyRecord.EncodedBlock, proposal.Extra, proposal.ParentQC); err != nil {
+	if _, err := validateFHSProposalCommitmentsForConfig(s.chainConfig, ref, bodyRecord.EncodedBlock, proposal.Extra, proposal.ParentQC); err != nil {
 		return nil, nil, true, fmt.Errorf("invalid persisted FHS proposal: %w", err)
 	}
 	return ref, &proposalBodyMsg{
@@ -1431,7 +1463,7 @@ func (s *Service) persistFHSCertificateWithBroadcast(ref *types.HotstuffProposal
 	if !bytes.Equal(body.Extra, extra) {
 		return fmt.Errorf("FHS certificate extra does not match proposal sidecar")
 	}
-	if _, err := validateFHSProposalCommitments(ref, body.EncodedBlock, extra, body.ParentQC); err != nil {
+	if _, err := validateFHSProposalCommitmentsForConfig(s.chainConfig, ref, body.EncodedBlock, extra, body.ParentQC); err != nil {
 		return fmt.Errorf("invalid FHS certificate proposal body: %w", err)
 	}
 	return s.persistValidatedFHSCertificateWithBroadcast(ref, qc, pendingBroadcast)
@@ -2044,7 +2076,7 @@ func (s *Service) stageFHSHighQC(ctx context.Context, key hotstuff.FHSHighQCVali
 		if err != nil {
 			return nil, err
 		}
-		block, err := validateFHSProposalCommitments(cursorRef, body.EncodedBlock, body.Extra, body.ParentQC)
+		block, err := validateFHSProposalCommitmentsForConfig(s.chainConfig, cursorRef, body.EncodedBlock, body.Extra, body.ParentQC)
 		if err != nil {
 			return nil, fmt.Errorf("invalid certified FHS proposal %s: %w", cursorRef.BlockHash, err)
 		}
@@ -2491,7 +2523,7 @@ func (s *Service) loadFHSWAL() error {
 	staged := make([]stagedRestore, 0, len(chain))
 	var parentVerified *core.VerifiedProposal
 	for index, record := range chain {
-		block, err := validateFHSProposalCommitments(record.ref, record.body.EncodedBlock, record.extra, record.body.ParentQC)
+		block, err := validateFHSProposalCommitmentsForConfig(s.chainConfig, record.ref, record.body.EncodedBlock, record.extra, record.body.ParentQC)
 		if err != nil {
 			return fmt.Errorf("invalid restored FHS proposal %s: %w", record.ref.BlockHash, err)
 		}
@@ -2555,7 +2587,7 @@ func (s *Service) loadFHSWAL() error {
 			}
 		} else {
 			additionalEntries++
-			additionalBytes += len(record.body.EncodedBlock) + len(record.body.Extra) + len(record.body.ParentQC) + len(record.body.AuthSig)
+			additionalBytes = saturatingAddInt(additionalBytes, proposalBodyMsgPayloadBytes(record.body))
 		}
 		if existing := s.fhsCertifiedByHash[record.ref.BlockHash]; existing != nil && !hotstuff.SignedStateSemanticEqual(existing.qc, record.qc) {
 			s.muProposalBody.Unlock()
@@ -2580,10 +2612,10 @@ func (s *Service) loadFHSWAL() error {
 			}
 		} else {
 			additionalEntries++
-			additionalBytes += len(lastVoteBody.EncodedBlock) + len(lastVoteBody.Extra) + len(lastVoteBody.ParentQC) + len(lastVoteBody.AuthSig)
+			additionalBytes = saturatingAddInt(additionalBytes, proposalBodyMsgPayloadBytes(lastVoteBody))
 		}
 	}
-	if entries+additionalEntries > proposalBodyCacheMaxEntries || bytesUsed+additionalBytes > proposalBodyCacheMaxBytes {
+	if entries+additionalEntries > proposalBodyCacheMaxEntries || !fitsIntBudget(bytesUsed, additionalBytes, proposalBodyCacheLimitForConfig(s.chainConfig)) {
 		s.muProposalBody.Unlock()
 		return fmt.Errorf("restored FHS chain exceeds proposal cache capacity")
 	}

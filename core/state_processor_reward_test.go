@@ -41,6 +41,40 @@ func TestCommonRPCRewardIsAppliedOnlyAfterTransactionExecution(t *testing.T) {
 	}
 }
 
+func TestCommonRPCRewardsAggregateByApproverWithoutChangingRoot(t *testing.T) {
+	approverA := common.HexToAddress("0x1000000000000000000000000000000000000001")
+	approverB := common.HexToAddress("0x1000000000000000000000000000000000000002")
+	first := big.NewInt(7)
+	second := big.NewInt(11)
+	rewards := []*types.CommonTxReward{
+		{Approver: approverA, ApproverReward: first},
+		{Approver: approverB, ApproverReward: big.NewInt(13)},
+		{Approver: approverA, ApproverReward: second},
+		{Approver: approverA, ApproverReward: new(big.Int)},
+		nil,
+	}
+
+	aggregated := newModernTestState(t)
+	serial := newModernTestState(t)
+	applyCommonRPCRewards(aggregated, rewards)
+	serial.AddBalance(approverA, first)
+	serial.AddBalance(approverB, big.NewInt(13))
+	serial.AddBalance(approverA, second)
+
+	if got, want := aggregated.GetBalance(approverA), big.NewInt(18); got.Cmp(want) != 0 {
+		t.Fatalf("aggregated approver A balance = %v, want %v", got, want)
+	}
+	if got, want := aggregated.GetBalance(approverB), big.NewInt(13); got.Cmp(want) != 0 {
+		t.Fatalf("aggregated approver B balance = %v, want %v", got, want)
+	}
+	if first.Cmp(big.NewInt(7)) != 0 || second.Cmp(big.NewInt(11)) != 0 {
+		t.Fatal("reward aggregation mutated signed sidecar amounts")
+	}
+	if got, want := aggregated.IntermediateRoot(true), serial.IntermediateRoot(true); got != want {
+		t.Fatalf("aggregated reward root = %s, serial root = %s", got, want)
+	}
+}
+
 func stateProcessorTestAdmissionBatch(t *testing.T, key *ecdsa.PrivateKey, chainID *big.Int, genesisHash common.Hash, keyBlockNumber, timestamp uint64, txHashes []common.Hash) *types.CommonTxAdmissionBatch {
 	t.Helper()
 	batch := &types.CommonTxAdmissionBatch{
@@ -228,10 +262,10 @@ func TestCommonTxAdmissionReferenceConsensusValidation(t *testing.T) {
 	if bytes.Compare(batches[0].AdmissionID[:], batches[1].AdmissionID[:]) > 0 {
 		batches[0], batches[1] = batches[1], batches[0]
 	}
-	batchFor := func(hash common.Hash) uint16 {
+	batchFor := func(hash common.Hash) uint32 {
 		for index, batch := range batches {
 			if batch.TxHashes[0] == hash {
-				return uint16(index)
+				return uint32(index)
 			}
 		}
 		t.Fatalf("missing batch for %s", hash)

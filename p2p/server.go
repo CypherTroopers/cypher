@@ -62,7 +62,27 @@ const (
 
 	// Maximum amount of time allowed for writing a complete message.
 	frameWriteTimeout = 20 * time.Second
+
+	// Large block messages are permitted up to maxRLPXFrameSize. Give their
+	// payload transfer a bounded service allowance while retaining the short
+	// idle/header deadlines above for ordinary control traffic.
+	frameTransferBytesPerSecond = 2 * 1024 * 1024
+	frameTransferTimeoutSlack   = 5 * time.Second
 )
+
+// frameTransferTimeout returns a size-aware frame deadline with the legacy
+// timeout as its floor. The input is clamped to the wire cap so an invalid
+// advertised size cannot create an unbounded deadline.
+func frameTransferTimeout(size uint32, floor time.Duration) time.Duration {
+	if size > maxRLPXFrameSize {
+		size = maxRLPXFrameSize
+	}
+	timeout := frameTransferTimeoutSlack + time.Duration(size)*time.Second/frameTransferBytesPerSecond
+	if timeout < floor {
+		return floor
+	}
+	return timeout
+}
 
 var errServerStopped = errors.New("server stopped")
 
@@ -902,11 +922,28 @@ func (srv *Server) checkInboundConn(fd net.Conn, remoteIP net.IP) error {
 	// Reject Internet peers that try too often.
 	now := srv.clock.Now()
 	srv.inboundHistory.expire(now, nil)
-	if !netutil.IsLAN(remoteIP) && srv.inboundHistory.contains(remoteIP.String()) {
+	if !netutil.IsLAN(remoteIP) && srv.inboundHistory.count(remoteIP.String()) >= srv.inboundThrottleLimit(remoteIP) {
 		return fmt.Errorf("too many attempts")
 	}
 	srv.inboundHistory.add(remoteIP.String(), now.Add(inboundThrottleTime))
 	return nil
+}
+
+// inboundThrottleLimit returns a bounded connection-attempt burst for an IP.
+// The remote identity isn't available until after the RLPx handshake, so peers
+// explicitly configured behind one shared IP must be accounted for by address.
+// Unknown Internet addresses retain the legacy one-attempt limit.
+func (srv *Server) inboundThrottleLimit(remoteIP net.IP) int {
+	staticIDs := make(map[enode.ID]struct{})
+	for _, node := range srv.StaticNodes {
+		if node != nil && node.IP() != nil && node.IP().Equal(remoteIP) {
+			staticIDs[node.ID()] = struct{}{}
+		}
+	}
+	if len(staticIDs) > 1 {
+		return len(staticIDs)
+	}
+	return 1
 }
 
 // SetupConn runs the handshakes and attempts to add the connection

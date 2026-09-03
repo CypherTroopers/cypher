@@ -3,6 +3,7 @@ package network
 import (
 	"encoding/binary"
 	"testing"
+	"time"
 )
 
 func TestPacketHeaderSupportsLargeTxBlockProposal(t *testing.T) {
@@ -50,6 +51,19 @@ func TestPacketHeaderRejectsInvalidInput(t *testing.T) {
 		if _, _, ok := decodePacketHeader(header); ok {
 			t.Fatalf("invalid header accepted: %x", header)
 		}
+	}
+}
+
+func TestFallbackFrameWriteTimeoutScalesForMaximumPacket(t *testing.T) {
+	if got := fallbackFrameWriteTimeout(1024); got != WriteTimeout {
+		t.Fatalf("small packet timeout = %v, want legacy %v", got, WriteTimeout)
+	}
+	want := fallbackTransferTimeoutSlack + time.Duration(def_MaxPacketSize)*time.Second/fallbackTransferBytesPerSecond
+	if got := fallbackFrameWriteTimeout(def_MaxPacketSize); got != want {
+		t.Fatalf("maximum packet timeout = %v, want %v", got, want)
+	}
+	if got := fallbackFrameWriteTimeout(^uint32(0)); got != want {
+		t.Fatalf("oversized packet timeout = %v, want bounded %v", got, want)
 	}
 }
 

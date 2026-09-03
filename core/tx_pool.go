@@ -17,7 +17,9 @@
 package core
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"sort"
@@ -37,7 +39,10 @@ import (
 
 const (
 	chainHeadChanSize = 10
-	txSlotSize        = 32 * 1024
+	// Charge retained transactions in 1 KiB units. The default two pending FHS
+	// windows plus one queued window therefore have a 3 GiB charged-byte ceiling.
+	// Blob transactions also charge both defensive sidecar copies below.
+	txSlotSize = 1024
 )
 
 var (
@@ -52,6 +57,9 @@ var (
 	ErrOversizedData         = errors.New("oversized data")
 	ErrInvalidGasPrice       = errors.New("Gas price not 0")
 	ErrEtherValueUnsupported = errors.New("ether value is not supported for private transactions")
+	ErrNativeTxDisabled      = errors.New("native transaction type is disabled by genesis")
+	ErrNativeReplayAnchor    = errors.New("invalid native transaction replay anchor")
+	ErrNativeResourceLimit   = errors.New("native transaction resource limit exceeded")
 )
 
 var (
@@ -138,12 +146,11 @@ type txReadyKey struct {
 }
 
 const (
-	// Phase 7B: candidate scan limit.
-	// With 100k+ wallets, building a full candidate account list for every
-	// proposal is too expensive. Limit the number of account candidates scanned
-	// per proposal and let subsequent proposals drain the rest.
-	fastPendingCandidateScanLimit = 262144
-	slowPendingCandidateScanLimit = 262144
+	// These are bounded fallbacks for callers which do not provide a request
+	// limit. A genesis-configured FHS proposer supplies its two-window limit and
+	// must not be clipped by these legacy defaults.
+	fastPendingCandidateScanLimit = 2 * 262144
+	slowPendingCandidateScanLimit = 2 * 262144
 )
 
 type pendingReadyIndex struct {
@@ -296,13 +303,18 @@ var DefaultTxPoolConfig = TxPoolConfig{
 	PriceLimit: params.GWei,
 	PriceBump:  10,
 
-	AccountSlots: 1000000,
-	GlobalSlots:  3000000,
-	AccountQueue: 1000000,
-	GlobalQueue:  3000000,
+	// Retain the two executable windows needed by the Fair HotStuff proposer:
+	// one window may already be present in the certified (not yet canonical)
+	// parent and the second is the next proposal. Keep one additional queued
+	// nonce window. These are 1 KiB memory-charge slots; larger transactions and
+	// Blob sidecars consume proportionally more than one slot.
+	AccountSlots: 32_768,
+	GlobalSlots:  2 * params.NativeParallelHardMaxTransactions,
+	AccountQueue: 32_768,
+	GlobalQueue:  params.NativeParallelHardMaxTransactions,
 
-	RemoteAccountWindow: 1000000,
-	LocalAccountWindow:  1000000,
+	RemoteAccountWindow: 262_144,
+	LocalAccountWindow:  262_144,
 	FastPendingLifetime: 5 * time.Minute,
 	SlowPendingLifetime: 10 * time.Minute,
 	FastQueuedLifetime:  10 * time.Minute,
@@ -376,20 +388,24 @@ func (config *TxPoolConfig) sanitize() TxPoolConfig {
 }
 
 type TxPool struct {
-	config      TxPoolConfig
-	chainconfig *params.ChainConfig
-	chain       blockChain
-	gasPrice    *big.Int
-	txFeed      event.Feed
-	scope       event.SubscriptionScope
-	signer      types.Signer
-	mu          sync.RWMutex
+	config       TxPoolConfig
+	chainconfig  *params.ChainConfig
+	chain        blockChain
+	gasPrice     *big.Int
+	txFeed       event.Feed
+	scope        event.SubscriptionScope
+	signer       types.Signer
+	nativeSigner types.Signer
+	mu           sync.RWMutex
 
 	istanbul bool
 
-	currentState  *state.StateDB
-	pendingNonces *txNoncer
-	currentMaxGas uint64
+	currentState           *state.StateDB
+	currentStateRoot       common.Hash
+	currentStateHead       *types.Header
+	currentStateGeneration uint64
+	pendingNonces          *txNoncer
+	currentMaxGas          uint64
 
 	locals        *accountSet
 	journal       *txJournal
@@ -400,7 +416,14 @@ type TxPool struct {
 	beats   map[common.Address]time.Time
 	all     *txLookup
 	priced  *txPricedList
+	native  *nativeTxPool
 	seen    map[common.Hash]time.Time
+
+	// nativeCanonical is a bounded canonical hash ring derived from the
+	// canonical head. Admission checks RecentBlockHash+RecentBlockNumber with
+	// one map lookup instead of walking the chain for every transaction.
+	nativeCanonical  map[uint64]common.Hash
+	nativeHeadNumber uint64
 
 	pendingIndexVersion    uint64
 	pendingIndex           *pendingReadyIndex
@@ -434,11 +457,14 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		chainconfig:     chainconfig,
 		chain:           chain,
 		signer:          types.NewEIP155Signer(chainconfig.ChainID),
+		nativeSigner:    types.NewNativeSigner(chainconfig.ChainID),
 		pending:         make(map[common.Address]*txList),
 		queue:           make(map[common.Address]*txList),
 		beats:           make(map[common.Address]time.Time),
 		all:             newTxLookup(),
+		native:          newNativeTxPool(config, chainconfig),
 		seen:            make(map[common.Hash]time.Time),
+		nativeCanonical: make(map[uint64]common.Hash),
 		chainHeadCh:     make(chan ChainHeadEvent, chainHeadChanSize),
 		reqResetCh:      make(chan *txpoolResetRequest),
 		reqPromoteCh:    make(chan *txpoolPromoteRequest),
@@ -544,6 +570,7 @@ func (pool *TxPool) Stop() {
 	} else if pool.journal != nil {
 		pool.journal.close()
 	}
+	dropBlobSidecarStore(pool)
 	log.Info("Transaction pool stopped")
 }
 
@@ -564,6 +591,7 @@ func (pool *TxPool) SetGasPrice(price *big.Int) {
 	for _, tx := range pool.priced.Cap(price, pool.locals) {
 		pool.removeTx(tx.Hash(), false)
 	}
+	pool.recordNativeRemovalsLocked(pool.native.removeUnderpriced(price), "below updated price threshold")
 	log.Info("Transaction pool price threshold updated", "price", price)
 }
 
@@ -617,7 +645,7 @@ func (pool *TxPool) PendingRevision() uint64 {
 }
 
 func (pool *TxPool) stats() (int, int) {
-	pending := 0
+	pending := pool.native.count()
 	for _, list := range pool.pending {
 		pending += list.Len()
 	}
@@ -635,6 +663,9 @@ func (pool *TxPool) Content() (map[common.Address]types.Transactions, map[common
 	for addr, list := range pool.pending {
 		pending[addr] = list.Flatten()
 	}
+	for addr, txs := range pool.nativeByPayerLocked(false) {
+		pending[addr] = append(pending[addr], txs...)
+	}
 	queued := make(map[common.Address]types.Transactions)
 	for addr, list := range pool.queue {
 		queued[addr] = list.Flatten()
@@ -648,6 +679,9 @@ func (pool *TxPool) Pending() (map[common.Address]types.Transactions, error) {
 	pending := make(map[common.Address]types.Transactions)
 	for addr, list := range pool.pending {
 		pending[addr] = list.Flatten()
+	}
+	for addr, txs := range pool.nativeByPayerLocked(false) {
+		pending[addr] = append(pending[addr], txs...)
 	}
 	return pending, nil
 }
@@ -668,7 +702,24 @@ func (pool *TxPool) local() map[common.Address]types.Transactions {
 			txs[addr] = append(txs[addr], queued.Flatten()...)
 		}
 	}
+	for addr, native := range pool.native.localByPayer() {
+		txs[addr] = append(txs[addr], native...)
+	}
 	return txs
+}
+
+// nativeByPayerLocked returns a deterministic native snapshot grouped by fee
+// payer. The caller holds pool.mu; nativeTxPool uses its own lock so Get/Has
+// remain race-safe without recursively acquiring pool.mu.
+func (pool *TxPool) nativeByPayerLocked(localOnly bool) map[common.Address]types.Transactions {
+	if localOnly {
+		return pool.native.localByPayer()
+	}
+	grouped := make(map[common.Address]types.Transactions)
+	for _, tx := range pool.native.snapshot() {
+		grouped[tx.Payer()] = append(grouped[tx.Payer()], tx)
+	}
+	return grouped
 }
 
 func ClassifyTxLane(tx *types.Transaction) TxLane {
@@ -748,7 +799,14 @@ func (pool *TxPool) rebuildPendingIndexLocked() {
 	pool.pendingIndex = idx
 }
 
-func pendingCandidateScanLimit(lane TxLane) int {
+func pendingCandidateScanLimit(lane TxLane, requested int) int {
+	// A positive limit is already bounded by the internal caller's consensus
+	// configuration. Return it directly: multiplying or converting it again here
+	// could overflow, and a legacy fixed ceiling would silently hide independent
+	// accounts from a larger genesis-configured proposal window.
+	if requested > 0 {
+		return requested
+	}
 	if lane == TxLaneFast {
 		return fastPendingCandidateScanLimit
 	}
@@ -875,7 +933,14 @@ func (pool *TxPool) pendingCandidateAddrsLocked(lane TxLane, classes []TxResourc
 	seen := make(map[common.Address]struct{})
 	candidates := make([]common.Address, 0)
 	if limit > 0 {
-		candidates = make([]common.Address, 0, limit)
+		// The request may be math.MaxInt in a defensive/internal call. Capacity
+		// never needs to exceed the number of accounts actually retained, and this
+		// clamp prevents a correct no-arithmetic limit from becoming a huge make.
+		capacity := limit
+		if capacity > len(pool.pending) {
+			capacity = len(pool.pending)
+		}
+		candidates = make([]common.Address, 0, capacity)
 	}
 
 	// First pass: give each lane/class key a fair slice of the scan budget.
@@ -939,7 +1004,8 @@ func (pool *TxPool) PendingByLaneAndClassesLimited(lane TxLane, maxTx int, perAc
 	}
 	useClassFilter := len(allowed) > 0
 
-	candidates := pool.pendingCandidateAddrsLocked(lane, classes, pendingCandidateScanLimit(lane))
+	candidateLimit := pendingCandidateScanLimit(lane, maxTx)
+	candidates := pool.pendingCandidateAddrsLocked(lane, classes, candidateLimit)
 
 	pending := make(map[common.Address]types.Transactions)
 	remainingGas := gasTarget
@@ -1020,7 +1086,6 @@ func (pool *TxPool) PendingClassStats() (fastPending int, slowPending int, class
 	for class, count := range pool.pendingIndex.classPending {
 		classPending[class] = count
 	}
-
 	return pool.pendingIndex.fastPending, pool.pendingIndex.slowPending, classPending
 }
 
@@ -1069,30 +1134,185 @@ func (pool *TxPool) evictStaleTransactionsLocked(now time.Time) {
 }
 
 func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
-	sizeLimit := pool.chainconfig.TransactionSizeLimit
-	if sizeLimit == 0 {
-		sizeLimit = DefaultTxPoolConfig.TransactionSizeLimit
+	return pool.validateTxWithState(tx, local, pool.currentState)
+}
+
+func (pool *TxPool) validateTxWithState(tx *types.Transaction, local bool, statedb *state.StateDB) error {
+	return pool.validateTxWithStateAndBlobProof(tx, local, statedb, false)
+}
+
+// txPoolValidationView is an immutable copy of every head-dependent input used
+// by EVM transaction admission. A preflight worker combines it with its own
+// StateDB instance; no worker reads pool fields or shares StateDB caches.
+type txPoolValidationView struct {
+	stateRoot        common.Hash
+	headGeneration   uint64
+	chain            blockChain
+	chainconfig      *params.ChainConfig
+	signer           types.Signer
+	rules            params.Rules
+	maxTxBytes       uint64
+	maxGas           uint64
+	baseFee          *big.Int
+	gasPrice         *big.Int
+	remoteWindow     uint64
+	localWindow      uint64
+	pendingNonces    *txNoncer
+	nonceOverrides   map[common.Address]uint64
+	useNonceFallback bool
+	maxBlobs         int
+	blobBaseFee      *big.Int
+	sidecarVersion   byte
+}
+
+// validationViewLocked snapshots admission policy at the StateDB generation
+// selected by Reset/ResetHead. Callers either hold pool.mu or run in a context
+// where the pool cannot concurrently reset (construction and focused tests).
+func (pool *TxPool) validationViewLocked(needBlob bool) txPoolValidationView {
+	view := txPoolValidationView{
+		stateRoot:        pool.currentStateRoot,
+		headGeneration:   pool.currentStateGeneration,
+		chain:            pool.chain,
+		chainconfig:      pool.chainconfig,
+		signer:           pool.signer,
+		maxGas:           pool.currentMaxGas,
+		remoteWindow:     pool.config.RemoteAccountWindow,
+		localWindow:      pool.config.LocalAccountWindow,
+		pendingNonces:    pool.pendingNonces,
+		useNonceFallback: true,
+		baseFee:          big.NewInt(params.FixedBaseFeePerGas),
+		gasPrice:         new(big.Int),
+		sidecarVersion:   types.BlobSidecarVersion0,
 	}
-	if float64(tx.Size()) > float64(sizeLimit*1024) {
+	if pool.gasPrice != nil {
+		view.gasPrice.Set(pool.gasPrice)
+	}
+	if pool.chainconfig != nil {
+		view.maxTxBytes = pool.chainconfig.EffectiveMaxTransactionBytes()
+	} else {
+		view.maxTxBytes = DefaultTxPoolConfig.TransactionSizeLimit * 1024
+	}
+
+	var head *types.Header
+	if pool.currentStateHead != nil {
+		// currentStateHead is a private deep copy replaced only while pool.mu is
+		// write-locked. Reading it under the caller's lock needs no second copy.
+		head = pool.currentStateHead
+	} else if pool.chain != nil {
+		if block := pool.chain.CurrentBlock(); block != nil && block.Header() != nil {
+			head = block.Header()
+		}
+	}
+	var (
+		headNumber = new(big.Int)
+		headTime   uint64
+	)
+	if head != nil {
+		if head.Number != nil {
+			headNumber.Set(head.Number)
+			if pool.chainconfig != nil {
+				nextNumber := new(big.Int).Add(head.Number, big.NewInt(1))
+				view.rules = pool.chainconfig.CypheriumRules(nextNumber, head.Time)
+			}
+		}
+		headTime = head.Time
+		if head.BaseFee != nil && head.BaseFee.Sign() != 0 {
+			view.baseFee.Set(head.BaseFee)
+		}
+		if needBlob {
+			view.blobBaseFee = params.CalcBlobBaseFeeAtTime(pool.chainconfig, head.Time, head.ExcessBlobGas)
+		}
+	}
+	if needBlob {
+		view.maxBlobs = params.MaxBlobsPerTransaction(pool.chainconfig, headTime)
+		if pool.chainconfig != nil {
+			view.sidecarVersion = types.BlobSidecarVersionForOsaka(pool.chainconfig.IsOsaka(headNumber, headTime))
+		}
+	}
+	return view
+}
+
+func (view txPoolValidationView) accountWindow(local bool) uint64 {
+	if local {
+		return view.localWindow
+	}
+	return view.remoteWindow
+}
+
+func (view txPoolValidationView) pendingNonce(addr common.Address, chainNonce uint64) uint64 {
+	if view.pendingNonces == nil {
+		return chainNonce
+	}
+	if view.useNonceFallback {
+		if nonce := view.pendingNonces.get(addr); nonce > chainNonce {
+			return nonce
+		}
+		return chainNonce
+	}
+	if nonce, ok := view.nonceOverrides[addr]; ok && nonce > chainNonce {
+		return nonce
+	}
+	return chainNonce
+}
+
+func validateBlobTxWithView(tx *types.Transaction, view txPoolValidationView, blobProofVerified bool) error {
+	if tx == nil || tx.Type() != types.BlobTxType {
+		return nil
+	}
+	if err := tx.ValidateBlobTx(view.maxBlobs, view.blobBaseFee); err != nil {
+		return err
+	}
+	if blobProofVerified {
+		return tx.ValidateBlobSidecarVersion(tx.BlobSidecar(), view.sidecarVersion)
+	}
+	return tx.VerifyBlobSidecarVersion(tx.BlobSidecar(), view.sidecarVersion, types.KZGBlobVerifier{})
+}
+
+// validateFHSStandaloneTransactionWork rejects transactions which cannot fit an
+// otherwise-empty Fair HotStuff block. Reusing the consensus meter keeps TxPool
+// admission aligned with proposer and validator per-transaction list limits.
+func validateFHSStandaloneTransactionWork(config *params.ChainConfig, tx *types.Transaction) error {
+	if config == nil || !config.FairHotstuff {
+		return nil
+	}
+	meter := NewFHSBlockWorkMeterForConfig(config)
+	if config.NativeParallelEnabled() {
+		meter = NewFHSEVMBlockWorkMeterForConfig(config)
+	}
+	return meter.AddTransaction(0, tx)
+}
+
+// validateTxWithStateAndBlobProof keeps expensive KZG work outside pool.mu for
+// normal ingress. blobProofVerified may only be true for an immutable private
+// copy verified by addTxs, or for transactions reinjected from an already
+// validated canonical block. Envelope/sidecar shape checks are always repeated.
+func (pool *TxPool) validateTxWithStateAndBlobProof(tx *types.Transaction, local bool, statedb *state.StateDB, blobProofVerified bool) error {
+	needBlob := tx != nil && tx.IsInitialized() && tx.Type() == types.BlobTxType
+	return pool.validateTxWithView(tx, local, statedb, blobProofVerified, pool.validationViewLocked(needBlob))
+}
+
+func (pool *TxPool) validateTxWithView(tx *types.Transaction, local bool, statedb *state.StateDB, blobProofVerified bool, view txPoolValidationView) error {
+	if tx == nil || !tx.IsInitialized() {
+		return ErrInvalidSender
+	}
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return err
+	}
+	if tx.Type() == types.NativeTxType {
+		return ErrNativeTxDisabled
+	}
+	if uint64(tx.Size()) > view.maxTxBytes {
 		return ErrOversizedData
 	}
 	if tx.Value().Sign() < 0 {
 		return ErrNegativeValue
 	}
-	rules := params.Rules{}
-	if head := pool.chain.CurrentBlock(); head != nil {
-		header := head.Header()
-		nextNumber := new(big.Int).Add(header.Number, big.NewInt(1))
-		rules = pool.chainconfig.CypheriumRules(nextNumber, header.Time)
-	}
+	rules := view.rules
 	if rules.IsOsaka && tx.Gas() > params.MaxTxGas {
 		return ErrTxGasLimitExceeded
 	}
 	if err := ValidateTxTypeForRules(tx.Type(), rules); err != nil {
 		return err
-	}
-	if tx.Type() == types.BlobTxType {
-		return ErrBlobDAUnavailable
 	}
 	if tx.Type() == types.SetCodeTxType {
 		if tx.To() == nil {
@@ -1102,44 +1322,48 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			return ErrEmptyAuthList
 		}
 	}
-	if pool.currentMaxGas < tx.Gas() {
+	if err := validateFHSStandaloneTransactionWork(view.chainconfig, tx); err != nil {
+		return err
+	}
+	if view.maxGas < tx.Gas() {
 		return ErrGasLimit
 	}
-	from, err := types.Sender(pool.signer, tx)
+	from, err := types.Sender(view.signer, tx)
 	if err != nil {
 		return ErrInvalidSender
 	}
+	if statedb == nil {
+		return errors.New("txpool state snapshot is unavailable")
+	}
 	if rules.IsLondon {
-		code := pool.currentState.GetCode(from)
+		code := statedb.GetCode(from)
 		_, delegated := types.ParseDelegation(code)
 		if len(code) != 0 && !(rules.IsPrague && delegated) {
 			return ErrSenderNoEOA
 		}
 	}
-	if err := validate1559FeeCaps(tx, pool.currentBaseFee()); err != nil {
+	if err := validate1559FeeCaps(tx, view.baseFee); err != nil {
 		return err
 	}
-	if tx.GasPriceIntCmp(pool.gasPrice) < 0 {
+	if tx.GasPriceIntCmp(view.gasPrice) < 0 {
 		return ErrUnderpriced
 	}
-	if pool.currentState.GetNonce(from) > tx.Nonce() {
+	chainNonce := statedb.GetNonce(from)
+	if chainNonce > tx.Nonce() {
 		return ErrNonceTooLow
 	}
-	if pool.currentState.GetNonce(from) == math.MaxUint64 {
+	if chainNonce == math.MaxUint64 {
 		return ErrNonceMax
 	}
-	baseNonce := pool.currentState.GetNonce(from)
-	if pendingNonce := pool.pendingNonces.get(from); pendingNonce > baseNonce {
-		baseNonce = pendingNonce
-	}
-	window := pool.accountWindow(local)
+	baseNonce := view.pendingNonce(from, chainNonce)
+	window := view.accountWindow(local)
 	if tx.Nonce() > baseNonce && tx.Nonce()-baseNonce > window {
 		return ErrNonceTooFarInFuture
 	}
-	if pool.currentState.GetBalance(from).Cmp(tx.Cost()) < 0 {
+	if statedb.GetBalance(from).Cmp(tx.Cost()) < 0 {
 		return ErrInsufficientFunds
 	}
-	if err := pool.validateBlobTx(tx); err != nil {
+	if err := validateBlobTxWithView(tx, view, blobProofVerified); err != nil {
 		return err
 	}
 	intrGas, err := IntrinsicGasWithRulesAndAuthorizations(tx.Data(), tx.AccessList(), tx.SetCodeAuthorizations(), tx.To() == nil, rules)
@@ -1161,21 +1385,142 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	return nil
 }
 
-func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, journal bool, event bool, err error) {
+func (pool *TxPool) validateNativeTxWithState(tx *types.Transaction, statedb *state.StateDB) error {
+	if pool.chainconfig == nil || !pool.chainconfig.NativeParallelEnabled() || !pool.chainconfig.NativeParallel.RequireNativeTransactions {
+		return ErrNativeTxDisabled
+	}
+	if statedb == nil {
+		return errors.New("native transaction state snapshot is unavailable")
+	}
+	native := pool.chainconfig.NativeParallel
+	if uint64(tx.Size()) > native.MaxTransactionBytes {
+		return ErrOversizedData
+	}
+	// Keep pool and block-envelope admission identical for signed manifests,
+	// reserved state, and every declared resource ceiling.
+	if err := validateNativeParallelEnvelope(pool.chainconfig, types.Transactions{tx}); err != nil {
+		return fmt.Errorf("%w: %w", ErrNativeResourceLimit, err)
+	}
+	from, err := types.Sender(pool.nativeSigner, tx)
+	if err != nil || from != tx.Payer() {
+		return ErrInvalidSender
+	}
+
+	headNumber := pool.nativeHeadNumber
+	if headNumber == math.MaxUint64 {
+		return fmt.Errorf("%w: canonical head overflows proposal number", ErrNativeReplayAnchor)
+	}
+	recentNumber := tx.RecentBlockNumber()
+	if recentNumber > headNumber {
+		return fmt.Errorf("%w: recent block %d is ahead of canonical head %d", ErrNativeReplayAnchor, recentNumber, headNumber)
+	}
+	if headNumber-recentNumber >= native.ReplayWindowBlocks {
+		return fmt.Errorf("%w: recent block %d is outside replay window %d at head %d", ErrNativeReplayAnchor, recentNumber, native.ReplayWindowBlocks, headNumber)
+	}
+	if tx.ValidUntil() <= headNumber {
+		return fmt.Errorf("%w: transaction expires at %d before next block %d", ErrNativeReplayAnchor, tx.ValidUntil(), headNumber+1)
+	}
+	if tx.ValidUntil()-recentNumber > native.ReplayWindowBlocks {
+		return fmt.Errorf("%w: validity span %d exceeds replay window %d", ErrNativeReplayAnchor, tx.ValidUntil()-recentNumber, native.ReplayWindowBlocks)
+	}
+	if canonical, ok := pool.nativeCanonical[recentNumber]; !ok || canonical != tx.RecentBlockHash() {
+		return fmt.Errorf("%w: block %d/%s is not canonical", ErrNativeReplayAnchor, recentNumber, tx.RecentBlockHash())
+	}
+	if err := checkNativeReplaySequence(pool.chainconfig, statedb, tx); err != nil {
+		return err
+	}
+
+	rules := params.Rules{}
+	if head := pool.chain.CurrentBlock(); head != nil && head.Header() != nil {
+		header := head.Header()
+		rules = pool.chainconfig.CypheriumRules(new(big.Int).Add(header.Number, big.NewInt(1)), header.Time)
+	}
+	code := statedb.GetCode(from)
+	_, delegated := types.ParseDelegation(code)
+	if len(code) != 0 && !(rules.IsPrague && delegated) {
+		return ErrSenderNoEOA
+	}
+	if err := validate1559FeeCaps(tx, pool.currentBaseFee()); err != nil {
+		return err
+	}
+	if tx.GasPriceIntCmp(pool.gasPrice) < 0 {
+		return ErrUnderpriced
+	}
+	if statedb.GetBalance(from).Cmp(tx.Cost()) < 0 {
+		return ErrInsufficientFunds
+	}
+	// NativeTxV1 projects its signed resource manifest into the EVM access
+	// list. Admission must charge exactly the same intrinsic work as the serial
+	// reference executor; otherwise a transaction can enter the pool and later
+	// make every proposal containing it consensus-invalid.
+	intrinsic, err := IntrinsicGasWithRulesAndAuthorizations(tx.Data(), tx.AccessList(), nil, false, rules)
+	if err != nil {
+		return err
+	}
+	if tx.ComputeLimit() < intrinsic {
+		return ErrIntrinsicGas
+	}
+	if rules.IsPrague {
+		floorDataGas, err := FloorDataGas(tx.Data())
+		if err != nil {
+			return err
+		}
+		if tx.ComputeLimit() < floorDataGas {
+			return ErrFloorDataGas
+		}
+	}
+	return nil
+}
+
+func (pool *TxPool) add(tx *types.Transaction, local bool, blobProofVerified bool, view txPoolValidationView) (replaced bool, journal bool, event bool, err error) {
+	if err := tx.ValidateIntegerBounds(); err != nil {
+		return false, false, false, err
+	}
 	hash := tx.Hash()
-	if pool.all.Get(hash) != nil {
+	if pool.getTx(hash) != nil {
 		log.Trace("Discarding already known transaction", "hash", hash)
 		knownTxMeter.Mark(1)
 		return false, false, false, ErrAlreadyKnown
 	}
-	isLocal := local || pool.locals.containsTx(tx)
-	if err := pool.validateTx(tx, isLocal); err != nil {
+	isLocal := local || (tx.Type() == types.NativeTxType && pool.locals.contains(tx.Payer())) || (tx.Type() != types.NativeTxType && pool.locals.containsTx(tx))
+	if err := pool.validateTxWithView(tx, isLocal, pool.currentState, blobProofVerified, view); err != nil {
 		log.Trace("Discarding invalid transaction", "hash", hash, "err", err)
 		invalidTxMeter.Mark(1)
 		return false, false, false, err
 	}
+	if tx.Type() == types.NativeTxType {
+		victims, err := pool.native.add(tx, isLocal, pool.currentState.GetBalance(tx.Payer()))
+		if err != nil {
+			return false, false, false, err
+		}
+		for _, victim := range victims {
+			delete(pool.seen, victim.hash)
+			pendingGauge.Dec(1)
+			if victim.local {
+				localGauge.Dec(1)
+			}
+			log.Trace("Evicted lower-priority native transaction", "hash", victim.hash, "priority", victim.priority)
+		}
+		if local && !pool.locals.contains(tx.Payer()) {
+			pool.locals.add(tx.Payer())
+			log.Info("Setting new native transaction payer local", "address", tx.Payer())
+		}
+		pool.noteSeen(hash)
+		pool.markPendingIndexDirty()
+		pendingGauge.Inc(1)
+		if isLocal {
+			localGauge.Inc(1)
+		}
+		log.Trace("Pooled native transaction", "hash", hash, "payer", tx.Payer(), "priority", tx.PriorityFeePerCompute(), "validUntil", tx.ValidUntil())
+		return false, pool.journalWriter != nil && isLocal, true, nil
+	}
 	from, _ := types.Sender(pool.signer, tx)
-	if uint64(pool.all.Slots()+numSlots(tx)) > pool.config.GlobalSlots+pool.config.GlobalQueue {
+	txSlots := numSlots(tx)
+	poolSlots := saturatingAddUint64(pool.config.GlobalSlots, pool.config.GlobalQueue)
+	if uint64(txSlots) > poolSlots {
+		return false, false, false, ErrTxPoolOverflow
+	}
+	if uint64(pool.all.Slots()+txSlots) > poolSlots {
 		if !isLocal && pool.priced.Underpriced(tx, pool.locals) {
 			log.Trace("Discarding underpriced transaction", "hash", hash, "price", tx.GasPrice())
 			underpricedTxMeter.Mark(1)
@@ -1184,12 +1529,19 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, journ
 		if pool.changesSinceReorg > int(pool.config.GlobalSlots/4) {
 			return false, false, false, ErrTxPoolOverflow
 		}
-		drop := pool.priced.Discard(pool.all.Slots()-int(pool.config.GlobalSlots+pool.config.GlobalQueue)+numSlots(tx), pool.locals)
+		poolSlotLimit := math.MaxInt
+		if poolSlots <= uint64(math.MaxInt) {
+			poolSlotLimit = int(poolSlots)
+		}
+		drop := pool.priced.Discard(pool.all.Slots()-poolSlotLimit+txSlots, pool.locals)
 		pool.changesSinceReorg += len(drop)
 		for _, tx := range drop {
 			log.Trace("Discarding freshly underpriced transaction", "hash", tx.Hash(), "price", tx.GasPrice())
 			underpricedTxMeter.Mark(1)
 			pool.removeTx(tx.Hash(), false)
+		}
+		if uint64(pool.all.Slots()+txSlots) > poolSlots {
+			return false, false, false, ErrTxPoolOverflow
 		}
 	}
 	if list := pool.pending[from]; list != nil && list.Overlaps(tx) {
@@ -1200,6 +1552,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool) (replaced bool, journ
 		}
 		if old != nil {
 			pool.all.Remove(old.Hash())
+			pool.RemoveBlobSidecar(old.Hash())
 			pool.priced.Removed(1)
 			pendingReplaceMeter.Mark(1)
 		}
@@ -1239,6 +1592,7 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 	}
 	if old != nil {
 		pool.all.Remove(old.Hash())
+		pool.RemoveBlobSidecar(old.Hash())
 		pool.priced.Removed(1)
 		queuedReplaceMeter.Mark(1)
 	} else {
@@ -1270,12 +1624,14 @@ func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.T
 	inserted, old := list.Add(tx, pool.config.PriceBump)
 	if !inserted {
 		pool.all.Remove(hash)
+		pool.RemoveBlobSidecar(hash)
 		pool.priced.Removed(1)
 		pendingDiscardMeter.Mark(1)
 		return false
 	}
 	if old != nil {
 		pool.all.Remove(old.Hash())
+		pool.RemoveBlobSidecar(old.Hash())
 		pool.priced.Removed(1)
 		pendingReplaceMeter.Mark(1)
 	} else {
@@ -1298,33 +1654,220 @@ func (pool *TxPool) AddLocalsAsync(txs []*types.Transaction) []error {
 	return pool.addTxs(txs, !pool.config.NoLocals, false)
 }
 
+const validateLocalsHeadRetries = 2
+
+type txPoolLocalPreflightSnapshot struct {
+	view           txPoolValidationView
+	localByDefault bool
+	locals         map[common.Address]struct{}
+}
+
+func (pool *TxPool) localPreflightSnapshot(needBlob bool) txPoolLocalPreflightSnapshot {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+
+	snapshot := txPoolLocalPreflightSnapshot{
+		view:           pool.validationViewLocked(needBlob),
+		localByDefault: !pool.config.NoLocals,
+		locals:         make(map[common.Address]struct{}),
+	}
+	// Preflight already owns an independent StateDB at view.stateRoot. A cold
+	// pending nonce must therefore fall back to that same StateDB, not the
+	// txNoncer's mutable fallback copy.
+	snapshot.view.useNonceFallback = false
+	if pool.locals != nil {
+		for addr := range pool.locals.accounts {
+			snapshot.locals[addr] = struct{}{}
+		}
+	}
+	return snapshot
+}
+
+func (pool *TxPool) preflightHeadUnchanged(view txPoolValidationView) bool {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+	if pool.currentStateGeneration != view.headGeneration || pool.currentStateRoot != view.stateRoot || pool.pendingNonces != view.pendingNonces || pool.currentMaxGas != view.maxGas {
+		return false
+	}
+	if pool.gasPrice == nil {
+		return view.gasPrice.Sign() == 0
+	}
+	return pool.gasPrice.Cmp(view.gasPrice) == 0
+}
+
+// validateLocalsAtSnapshot validates sender groups in input order. Groups are
+// distributed across bounded workers, each of which owns a distinct StateDB,
+// so StateDB's read-populated caches are never concurrently shared.
+func (pool *TxPool) validateLocalsAtSnapshot(txs []*types.Transaction, validate []int, snapshot txPoolLocalPreflightSnapshot, errs []error) {
+	if len(validate) == 0 {
+		return
+	}
+	view := snapshot.view
+	if view.chain == nil {
+		err := errors.New("txpool state snapshot unavailable: blockchain is unavailable")
+		for _, index := range validate {
+			errs[index] = err
+		}
+		return
+	}
+
+	// Recover senders under the same global CPU budget used by block and KZG
+	// validation. The validation pass reuses the transaction sender cache.
+	senders := make([]common.Address, len(txs))
+	senderOK := make([]bool, len(txs))
+	runBoundedParallelValidation(len(validate), func(offset int) {
+		index := validate[offset]
+		tx := txs[index]
+		if tx.Type() == types.NativeTxType || view.signer == nil {
+			return
+		}
+		from, err := types.Sender(view.signer, tx)
+		if err == nil {
+			senders[index] = from
+			senderOK[index] = true
+		}
+	})
+	uniqueSenders := make([]common.Address, 0, len(validate))
+	seenSenders := make(map[common.Address]struct{}, len(validate))
+	for _, index := range validate {
+		if !senderOK[index] {
+			continue
+		}
+		if _, seen := seenSenders[senders[index]]; seen {
+			continue
+		}
+		seenSenders[senders[index]] = struct{}{}
+		uniqueSenders = append(uniqueSenders, senders[index])
+	}
+	view.nonceOverrides = view.pendingNonces.snapshot(uniqueSenders)
+
+	// A sender group is never split across workers. This keeps same-sender
+	// validation in original input order while unrelated accounts run in
+	// parallel. Invalid signatures share a serial miscellaneous group because
+	// their final error still comes from the full ordered validation pipeline.
+	groups := make([][]int, 0, len(validate))
+	groupBySender := make(map[common.Address]int)
+	miscGroup := -1
+	for _, index := range validate {
+		if senderOK[index] {
+			group, ok := groupBySender[senders[index]]
+			if !ok {
+				group = len(groups)
+				groupBySender[senders[index]] = group
+				groups = append(groups, nil)
+			}
+			groups[group] = append(groups[group], index)
+			continue
+		}
+		if miscGroup < 0 {
+			miscGroup = len(groups)
+			groups = append(groups, nil)
+		}
+		groups[miscGroup] = append(groups[miscGroup], index)
+	}
+
+	workers := len(groups)
+	if budget := parallelValidationWorkerBudget(); workers > budget {
+		workers = budget
+	}
+	shards := make([][]int, workers)
+	for group := range groups {
+		shard := group % workers
+		shards[shard] = append(shards[shard], group)
+	}
+	snapshotErrs := make([]error, workers)
+	runBoundedParallelValidationWithLimit(workers, workers, func(worker int) {
+		validationState, err := view.chain.StateAt(view.stateRoot)
+		if err != nil || validationState == nil {
+			if err == nil {
+				err = errors.New("state backend returned a nil snapshot")
+			}
+			snapshotErrs[worker] = fmt.Errorf("txpool state snapshot unavailable: %w", err)
+			return
+		}
+		for _, group := range shards[worker] {
+			for _, index := range groups[group] {
+				local := snapshot.localByDefault
+				if txs[index].Type() == types.NativeTxType {
+					_, configuredLocal := snapshot.locals[txs[index].Payer()]
+					local = local || configuredLocal
+				} else if senderOK[index] {
+					_, configuredLocal := snapshot.locals[senders[index]]
+					local = local || configuredLocal
+				}
+				errs[index] = pool.validateTxWithView(txs[index], local, validationState, false, view)
+			}
+		}
+	})
+	for _, err := range snapshotErrs {
+		if err == nil {
+			continue
+		}
+		for _, index := range validate {
+			errs[index] = err
+		}
+		return
+	}
+}
+
 // ValidateLocals performs the state-dependent, non-mutating portion of local
 // admission before an external durable sidecar is created. Results are aligned
 // with txs; ErrAlreadyKnown is returned for an idempotent pool hit. The actual
 // AddLocalsAsync call must still revalidate because the head or pool may change.
 func (pool *TxPool) ValidateLocals(txs []*types.Transaction) []error {
-	errs := make([]error, len(txs))
+	baseErrs := make([]error, len(txs))
 	if pool == nil {
-		for i := range errs {
-			errs[i] = errors.New("transaction pool is unavailable")
+		for i := range baseErrs {
+			baseErrs[i] = errors.New("transaction pool is unavailable")
 		}
-		return errs
+		return baseErrs
 	}
-	pool.mu.RLock()
-	defer pool.mu.RUnlock()
-	local := !pool.config.NoLocals
 	for i, tx := range txs {
-		if tx == nil {
-			errs[i] = ErrInvalidSender
+		if tx == nil || !tx.IsInitialized() {
+			baseErrs[i] = ErrInvalidSender
 			continue
 		}
-		if pool.all.Get(tx.Hash()) != nil {
-			errs[i] = ErrAlreadyKnown
-			continue
+		if err := tx.ValidateIntegerBounds(); err != nil {
+			baseErrs[i] = err
 		}
-		errs[i] = pool.validateTx(tx, local || pool.locals.containsTx(tx))
 	}
-	return errs
+
+	var latest []error
+	for attempt := 0; attempt < validateLocalsHeadRetries; attempt++ {
+		errs := append([]error(nil), baseErrs...)
+		validate := make([]int, 0, len(txs))
+		for i, tx := range txs {
+			if errs[i] != nil {
+				continue
+			}
+			if pool.getTx(tx.Hash()) != nil {
+				errs[i] = ErrAlreadyKnown
+				continue
+			}
+			validate = append(validate, i)
+		}
+		if len(validate) == 0 {
+			return errs
+		}
+
+		needBlob := false
+		for _, index := range validate {
+			if txs[index].Type() == types.BlobTxType {
+				needBlob = true
+				break
+			}
+		}
+		snapshot := pool.localPreflightSnapshot(needBlob)
+		pool.validateLocalsAtSnapshot(txs, validate, snapshot, errs)
+		latest = errs
+		if pool.preflightHeadUnchanged(snapshot.view) {
+			return errs
+		}
+	}
+	// Continuous head movement can outrun a large preliminary batch. Return the
+	// newest immutable-snapshot result instead of holding pool.mu indefinitely;
+	// AddLocalsAsync performs the authoritative validation under pool.mu.
+	return latest
 }
 
 func (pool *TxPool) AddLocal(tx *types.Transaction) error {
@@ -1362,7 +1905,24 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 		knownLocals = make([]*types.Transaction, 0)
 	)
 	for i, tx := range txs {
-		if pool.all.Get(tx.Hash()) != nil {
+		if tx == nil || !tx.IsInitialized() {
+			errs[i] = ErrInvalidSender
+			invalidTxMeter.Mark(1)
+			continue
+		}
+		if err := tx.ValidateIntegerBounds(); err != nil {
+			errs[i] = err
+			invalidTxMeter.Mark(1)
+			continue
+		}
+		// Snapshot caller-owned Blob DA before verification. This private copy is
+		// the exact data later admitted, closing mutation races while keeping KZG
+		// work outside the global pool mutex so concurrent ingress can verify in
+		// parallel.
+		if tx.Type() == types.BlobTxType {
+			tx = tx.WithBlobSidecar(tx.BlobSidecar())
+		}
+		if pool.getTx(tx.Hash()) != nil {
 			errs[i] = ErrAlreadyKnown
 			knownTxMeter.Mark(1)
 			if local {
@@ -1370,11 +1930,29 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 			}
 			continue
 		}
-		_, err := types.Sender(pool.signer, tx)
+		_, err := pool.sender(tx)
 		if err != nil {
 			errs[i] = ErrInvalidSender
 			invalidTxMeter.Mark(1)
 			continue
+		}
+		if tx.Type() == types.BlobTxType {
+			if err := pool.validateBlobTxEnvelope(tx); err != nil {
+				errs[i] = err
+				invalidTxMeter.Mark(1)
+				continue
+			}
+			poolSlots := saturatingAddUint64(pool.config.GlobalSlots, pool.config.GlobalQueue)
+			if uint64(numSlots(tx)) > poolSlots {
+				errs[i] = ErrTxPoolOverflow
+				invalidTxMeter.Mark(1)
+				continue
+			}
+			if err := tx.VerifyBlobSidecarVersion(tx.BlobSidecar(), pool.activeBlobSidecarVersion(), types.KZGBlobVerifier{}); err != nil {
+				errs[i] = err
+				invalidTxMeter.Mark(1)
+				continue
+			}
 		}
 		news = append(news, tx)
 	}
@@ -1383,7 +1961,7 @@ func (pool *TxPool) addTxs(txs []*types.Transaction, local, sync bool) []error {
 	}
 	pool.mu.Lock()
 	knownJournalTxs := pool.localizeKnownTransactionsLocked(knownLocals)
-	newErrs, dirtyAddrs, newJournalTxs, queuedEvents := pool.addTxsLocked(news, local)
+	newErrs, dirtyAddrs, newJournalTxs, queuedEvents := pool.addTxsLocked(news, local, true)
 	journalTxs := append(knownJournalTxs, newJournalTxs...)
 	// Preserve append-before-rotate ordering by queueing the journal command
 	// while pool.mu still excludes a rotation snapshot and later additions.
@@ -1420,19 +1998,21 @@ func (pool *TxPool) localizeKnownTransactionsLocked(txs types.Transactions) type
 		if requested == nil {
 			continue
 		}
-		known := pool.all.Get(requested.Hash())
+		known := pool.getTx(requested.Hash())
 		if known == nil {
 			continue
 		}
-		from, err := types.Sender(pool.signer, known)
+		from, err := pool.sender(known)
 		if err != nil || pool.locals.contains(from) {
 			continue
 		}
 		pool.locals.add(from)
+		pool.native.markPayerLocal(from)
 		newAccounts[from] = struct{}{}
 		log.Info("Setting known transaction account local", "address", from)
 	}
 	journalTxs := make(types.Transactions, 0, len(txs))
+	nativeLocals := pool.native.localByPayer()
 	for addr := range newAccounts {
 		if pending := pool.pending[addr]; pending != nil {
 			journalTxs = append(journalTxs, pending.Flatten()...)
@@ -1440,6 +2020,7 @@ func (pool *TxPool) localizeKnownTransactionsLocked(txs types.Transactions) type
 		if queued := pool.queue[addr]; queued != nil {
 			journalTxs = append(journalTxs, queued.Flatten()...)
 		}
+		journalTxs = append(journalTxs, nativeLocals[addr]...)
 	}
 	if len(journalTxs) > 0 {
 		localGauge.Inc(int64(len(journalTxs)))
@@ -1447,15 +2028,34 @@ func (pool *TxPool) localizeKnownTransactionsLocked(txs types.Transactions) type
 	return journalTxs
 }
 
-func (pool *TxPool) addTxsLocked(txs []*types.Transaction, local bool) ([]error, *accountSet, types.Transactions, types.Transactions) {
+func (pool *TxPool) addTxsLocked(txs []*types.Transaction, local, blobProofsVerified bool) ([]error, *accountSet, types.Transactions, types.Transactions) {
 	dirty := newAccountSet(pool.signer)
 	errs := make([]error, len(txs))
 	journalTxs := make(types.Transactions, 0, len(txs))
 	queuedEvents := make(types.Transactions, 0, len(txs))
+	var validNative int64
+	needBlob := false
+	for _, tx := range txs {
+		if tx != nil && tx.IsInitialized() && tx.Type() == types.BlobTxType {
+			needBlob = true
+			break
+		}
+	}
+	view := pool.validationViewLocked(needBlob)
 	for i, tx := range txs {
-		replaced, journal, event, err := pool.add(tx, local)
+		replaced, journal, event, err := pool.add(tx, local, blobProofsVerified, view)
 		errs[i] = err
-		if err == nil && !replaced {
+		// Publish DA only after the execution transaction is present in the pool.
+		// Failed admission therefore cannot leave a sidecar that later makes an
+		// unrelated/bare envelope appear proposal-ready.
+		if err == nil && tx.Type() == types.BlobTxType {
+			if sidecarErr := pool.storeBlobSidecar(tx, tx.BlobSidecar()); sidecarErr != nil {
+				pool.removeTx(tx.Hash(), true)
+				err = sidecarErr
+				errs[i] = sidecarErr
+			}
+		}
+		if err == nil && !replaced && tx.Type() != types.NativeTxType {
 			dirty.addTx(tx)
 		}
 		if err == nil && journal {
@@ -1464,8 +2064,11 @@ func (pool *TxPool) addTxsLocked(txs []*types.Transaction, local bool) ([]error,
 		if err == nil && event {
 			queuedEvents = append(queuedEvents, tx)
 		}
+		if err == nil && tx.Type() == types.NativeTxType {
+			validNative++
+		}
 	}
-	validTxMeter.Mark(int64(len(dirty.accounts)))
+	validTxMeter.Mark(int64(len(dirty.accounts)) + validNative)
 	return errs, dirty, journalTxs, queuedEvents
 }
 
@@ -1474,6 +2077,10 @@ func (pool *TxPool) Status(hashes []common.Hash) []TxStatus {
 	for i, hash := range hashes {
 		tx := pool.Get(hash)
 		if tx == nil {
+			continue
+		}
+		if tx.Type() == types.NativeTxType {
+			status[i] = TxStatusPending
 			continue
 		}
 		from, _ := types.Sender(pool.signer, tx)
@@ -1489,14 +2096,45 @@ func (pool *TxPool) Status(hashes []common.Hash) []TxStatus {
 }
 
 func (pool *TxPool) Get(hash common.Hash) *types.Transaction {
-	return pool.all.Get(hash)
+	return pool.getTx(hash)
 }
 
 func (pool *TxPool) Has(hash common.Hash) bool {
-	return pool.all.Get(hash) != nil
+	return pool.getTx(hash) != nil
+}
+
+func (pool *TxPool) getTx(hash common.Hash) *types.Transaction {
+	if pool == nil {
+		return nil
+	}
+	if pool.all != nil {
+		if tx := pool.all.Get(hash); tx != nil {
+			return tx
+		}
+	}
+	return pool.native.get(hash)
+}
+
+func (pool *TxPool) sender(tx *types.Transaction) (common.Address, error) {
+	if tx != nil && tx.Type() == types.NativeTxType {
+		if pool.nativeSigner == nil {
+			return common.Address{}, ErrInvalidSender
+		}
+		return types.Sender(pool.nativeSigner, tx)
+	}
+	return types.Sender(pool.signer, tx)
 }
 
 func (pool *TxPool) removeTx(hash common.Hash, outofbound bool) {
+	if native := pool.native.remove(hash); native != nil {
+		pool.markPendingIndexDirty()
+		delete(pool.seen, hash)
+		pendingGauge.Dec(1)
+		if native.local {
+			localGauge.Dec(1)
+		}
+		return
+	}
 	tx := pool.all.Get(hash)
 	if tx == nil {
 		return
@@ -1504,6 +2142,7 @@ func (pool *TxPool) removeTx(hash common.Hash, outofbound bool) {
 	addr, _ := types.Sender(pool.signer, tx)
 	pool.markPendingIndexDirty()
 	pool.all.Remove(hash)
+	pool.RemoveBlobSidecar(hash)
 	delete(pool.seen, hash)
 	if outofbound {
 		pool.priced.Removed(1)
@@ -1602,14 +2241,16 @@ func (pool *TxPool) scheduleReorgLoop() {
 		reset         *txpoolResetRequest
 		dirtyAccounts *accountSet
 		queuedEvents  = make(map[common.Address]*txSortedMap)
+		nativeEvents  = make(map[common.Hash]*types.Transaction)
 	)
 	for {
 		if curDone == nil && launchNextRun {
-			go pool.runReorg(nextDone, reset, dirtyAccounts, queuedEvents)
+			go pool.runReorg(nextDone, reset, dirtyAccounts, queuedEvents, nativeEvents)
 			curDone, nextDone = nextDone, make(chan struct{})
 			launchNextRun = false
 			reset, dirtyAccounts = nil, nil
 			queuedEvents = make(map[common.Address]*txSortedMap)
+			nativeEvents = make(map[common.Hash]*types.Transaction)
 		}
 		select {
 		case req := <-pool.reqResetCh:
@@ -1626,7 +2267,7 @@ func (pool *TxPool) scheduleReorgLoop() {
 			} else {
 				dirtyAccounts.merge(req.accounts)
 			}
-			pool.mergeQueuedTxEvents(queuedEvents, req.events)
+			pool.mergeQueuedTxEvents(queuedEvents, nativeEvents, req.events)
 			launchNextRun = true
 			req.reply <- nextDone
 		case <-curDone:
@@ -1641,9 +2282,13 @@ func (pool *TxPool) scheduleReorgLoop() {
 	}
 }
 
-func (pool *TxPool) mergeQueuedTxEvents(events map[common.Address]*txSortedMap, txs types.Transactions) {
+func (pool *TxPool) mergeQueuedTxEvents(events map[common.Address]*txSortedMap, nativeEvents map[common.Hash]*types.Transaction, txs types.Transactions) {
 	for _, tx := range txs {
 		if tx == nil {
+			continue
+		}
+		if tx.Type() == types.NativeTxType {
+			nativeEvents[tx.Hash()] = tx
 			continue
 		}
 		addr, err := types.Sender(pool.signer, tx)
@@ -1657,7 +2302,7 @@ func (pool *TxPool) mergeQueuedTxEvents(events map[common.Address]*txSortedMap, 
 	}
 }
 
-func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirtyAccounts *accountSet, events map[common.Address]*txSortedMap) {
+func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirtyAccounts *accountSet, events map[common.Address]*txSortedMap, nativeEvents map[common.Hash]*types.Transaction) {
 	defer close(done)
 	var promoteAddrs []common.Address
 	var resetJournal types.Transactions
@@ -1678,6 +2323,11 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 		for addr := range pool.queue {
 			promoteAddrs = append(promoteAddrs, addr)
 		}
+		for hash := range nativeEvents {
+			if pool.native.get(hash) == nil {
+				delete(nativeEvents, hash)
+			}
+		}
 	}
 	promoted := pool.promoteExecutables(promoteAddrs)
 	if reset != nil {
@@ -1694,31 +2344,35 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 	pool.changesSinceReorg = 0
 	pool.queueJournalTxs(resetJournal, false)
 	pool.mu.Unlock()
-	for _, tx := range append(resetEvents, promoted...) {
-		addr, _ := types.Sender(pool.signer, tx)
-		if _, ok := events[addr]; !ok {
-			events[addr] = newTxSortedMap()
-		}
-		events[addr].Put(tx)
-	}
-	if len(events) > 0 {
+	pool.mergeQueuedTxEvents(events, nativeEvents, append(resetEvents, promoted...))
+	if len(events) > 0 || len(nativeEvents) > 0 {
 		var txs []*types.Transaction
 		for _, set := range events {
 			txs = append(txs, set.Flatten()...)
+		}
+		nativeHashes := make([]common.Hash, 0, len(nativeEvents))
+		for hash := range nativeEvents {
+			nativeHashes = append(nativeHashes, hash)
+		}
+		sort.Slice(nativeHashes, func(i, j int) bool {
+			return bytes.Compare(nativeHashes[i][:], nativeHashes[j][:]) < 0
+		})
+		for _, hash := range nativeHashes {
+			txs = append(txs, nativeEvents[hash])
 		}
 		pool.txFeed.Send(NewTxsEvent{txs})
 	}
 }
 
 func (pool *TxPool) Reset(oldHead, newHead *types.Header) (journalTxs types.Transactions, queuedEvents types.Transactions) {
-	var reinject types.Transactions
+	var reinject, included types.Transactions
 	if oldHead != nil && oldHead.Hash() != newHead.ParentHash {
 		oldNum := oldHead.Number.Uint64()
 		newNum := newHead.Number.Uint64()
 		if depth := uint64(math.Abs(float64(oldNum) - float64(newNum))); depth > 64 {
 			log.Debug("Skipping deep transaction reorg", "depth", depth)
 		} else {
-			var discarded, included types.Transactions
+			var discarded types.Transactions
 			var (
 				rem = pool.chain.GetBlock(oldHead.Hash(), oldHead.Number.Uint64())
 				add = pool.chain.GetBlock(newHead.Hash(), newHead.Number.Uint64())
@@ -1760,6 +2414,14 @@ func (pool *TxPool) Reset(oldHead, newHead *types.Header) (journalTxs types.Tran
 			reinject = types.TxDifference(discarded, included)
 		}
 	}
+	// Always include the new head body, including when deep-reorg reinjection is
+	// intentionally skipped. Duplicate hashes are harmless and ensure a native
+	// transaction consumed by the new canonical head cannot remain proposal-visible.
+	if newHead != nil {
+		if added := pool.chain.GetBlock(newHead.Hash(), newHead.Number.Uint64()); added != nil {
+			included = append(included, added.Transactions()...)
+		}
+	}
 	if newHead == nil {
 		newHead = pool.chain.CurrentBlock().Header()
 	}
@@ -1769,11 +2431,30 @@ func (pool *TxPool) Reset(oldHead, newHead *types.Header) (journalTxs types.Tran
 		return
 	}
 	pool.currentState = statedb
+	pool.currentStateRoot = newHead.Root
+	pool.currentStateHead = types.CopyHeader(newHead)
+	pool.currentStateGeneration++
 	pool.pendingNonces = newTxNoncer(statedb)
 	pool.currentMaxGas = newHead.GasLimit
+	pool.pruneNativeLocked(oldHead, newHead)
+	includedNativePayers := make(map[common.Address]struct{})
+	for _, tx := range included {
+		if tx != nil && tx.Type() == types.NativeTxType {
+			includedNativePayers[tx.Payer()] = struct{}{}
+			pool.removeTx(tx.Hash(), false)
+		}
+	}
+	pool.recordNativeRemovalsLocked(pool.native.removeReplaySequences(included), "payer replay sequence consumed at canonical head")
+	pool.recordNativeRemovalsLocked(pool.native.removeUnfundedPayers(includedNativePayers, statedb.GetBalance), "payer balance changed at canonical head")
 	log.Debug("Reinjecting stale transactions", "count", len(reinject))
-	senderCacher.recover(pool.signer, reinject)
-	_, _, journalTxs, queuedEvents = pool.addTxsLocked(reinject, false)
+	legacyReinject := make(types.Transactions, 0, len(reinject))
+	for _, tx := range reinject {
+		if tx != nil && tx.Type() != types.NativeTxType {
+			legacyReinject = append(legacyReinject, tx)
+		}
+	}
+	senderCacher.recover(pool.signer, legacyReinject)
+	_, _, journalTxs, queuedEvents = pool.addTxsLocked(reinject, false, true)
 	pool.markPendingIndexDirty()
 	next := new(big.Int).Add(newHead.Number, big.NewInt(1))
 	pool.istanbul = pool.chainconfig.IsIstanbul(next)
@@ -1789,8 +2470,24 @@ func (pool *TxPool) ResetHead(newHead *types.Header) {
 		return
 	}
 	pool.currentState = statedb
+	pool.currentStateRoot = newHead.Root
+	pool.currentStateHead = types.CopyHeader(newHead)
+	pool.currentStateGeneration++
 	pool.pendingNonces = newTxNoncer(statedb)
 	pool.currentMaxGas = newHead.GasLimit
+	pool.pruneNativeLocked(nil, newHead)
+	if added := pool.chain.GetBlock(newHead.Hash(), newHead.Number.Uint64()); added != nil {
+		addedTxs := added.Transactions()
+		includedNativePayers := make(map[common.Address]struct{})
+		for _, tx := range addedTxs {
+			if tx != nil && tx.Type() == types.NativeTxType {
+				includedNativePayers[tx.Payer()] = struct{}{}
+				pool.removeTx(tx.Hash(), false)
+			}
+		}
+		pool.recordNativeRemovalsLocked(pool.native.removeReplaySequences(addedTxs), "payer replay sequence consumed at canonical head")
+		pool.recordNativeRemovalsLocked(pool.native.removeUnfundedPayers(includedNativePayers, statedb.GetBalance), "payer balance changed at canonical head")
+	}
 	accounts := make([]common.Address, 0, len(pool.queue))
 	for addr := range pool.queue {
 		accounts = append(accounts, addr)
@@ -1820,6 +2517,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		for _, tx := range forwards {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			pool.RemoveBlobSidecar(hash)
 			delete(pool.seen, hash)
 		}
 		log.Trace("Removed old queued transactions", "count", len(forwards))
@@ -1827,6 +2525,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		for _, tx := range drops {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			pool.RemoveBlobSidecar(hash)
 			delete(pool.seen, hash)
 		}
 		log.Trace("Removed unpayable queued transactions", "count", len(drops))
@@ -1839,6 +2538,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		for _, tx := range windowDrops {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			pool.RemoveBlobSidecar(hash)
 			delete(pool.seen, hash)
 			log.Trace("Removed too-far future queued transaction", "hash", hash)
 		}
@@ -1856,6 +2556,7 @@ func (pool *TxPool) promoteExecutables(accounts []common.Address) []*types.Trans
 		for _, tx := range caps {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			pool.RemoveBlobSidecar(hash)
 			delete(pool.seen, hash)
 			log.Trace("Removed cap-exceeding queued transaction", "hash", hash)
 		}
@@ -1901,6 +2602,7 @@ func (pool *TxPool) truncatePending() {
 					for _, tx := range caps {
 						hash := tx.Hash()
 						pool.all.Remove(hash)
+						pool.RemoveBlobSidecar(hash)
 						pool.pendingNonces.setIfLower(offenders[i], tx.Nonce())
 						log.Trace("Removed fairness-exceeding pending transaction", "hash", hash)
 					}
@@ -1922,6 +2624,7 @@ func (pool *TxPool) truncatePending() {
 				for _, tx := range caps {
 					hash := tx.Hash()
 					pool.all.Remove(hash)
+					pool.RemoveBlobSidecar(hash)
 					pool.pendingNonces.setIfLower(addr, tx.Nonce())
 					log.Trace("Removed fairness-exceeding pending transaction", "hash", hash)
 				}
@@ -1981,6 +2684,7 @@ func (pool *TxPool) demoteUnexecutables() {
 		for _, tx := range olds {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
+			pool.RemoveBlobSidecar(hash)
 			log.Trace("Removed old pending transaction", "hash", hash)
 		}
 		drops, invalids := list.Filter(pool.currentState.GetBalance(addr), pool.currentMaxGas)
@@ -1988,6 +2692,7 @@ func (pool *TxPool) demoteUnexecutables() {
 			hash := tx.Hash()
 			log.Trace("Removed unpayable pending transaction", "hash", hash)
 			pool.all.Remove(hash)
+			pool.RemoveBlobSidecar(hash)
 		}
 		pendingNofundsMeter.Mark(int64(len(drops)))
 		for _, tx := range invalids {
@@ -2019,7 +2724,7 @@ func (pool *TxPool) demoteUnexecutables() {
 func (pool *TxPool) PendingCount() int {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
-	pending := 0
+	pending := pool.native.count()
 	for _, list := range pool.pending {
 		pending += list.Len()
 	}
@@ -2103,14 +2808,19 @@ func (as *accountSet) merge(other *accountSet) {
 }
 
 type txLookup struct {
-	slots   int
-	lock    sync.RWMutex
-	locals  map[common.Hash]*types.Transaction
-	remotes map[common.Hash]*types.Transaction
+	slots       int
+	lock        sync.RWMutex
+	locals      map[common.Hash]*types.Transaction
+	remotes     map[common.Hash]*types.Transaction
+	slotsByHash map[common.Hash]int
 }
 
 func newTxLookup() *txLookup {
-	return &txLookup{locals: make(map[common.Hash]*types.Transaction), remotes: make(map[common.Hash]*types.Transaction)}
+	return &txLookup{
+		locals:      make(map[common.Hash]*types.Transaction),
+		remotes:     make(map[common.Hash]*types.Transaction),
+		slotsByHash: make(map[common.Hash]int),
+	}
 }
 
 func (t *txLookup) Range(f func(hash common.Hash, tx *types.Transaction, local bool) bool, local bool, remote bool) {
@@ -2180,12 +2890,18 @@ func (t *txLookup) Slots() int {
 func (t *txLookup) Add(tx *types.Transaction, local bool) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	t.slots += numSlots(tx)
+	hash := tx.Hash()
+	charged := numSlots(tx)
+	if old, exists := t.slotsByHash[hash]; exists {
+		t.slots -= old
+	}
+	t.slots += charged
+	t.slotsByHash[hash] = charged
 	slotsGauge.Update(int64(t.slots))
 	if local {
-		t.locals[tx.Hash()] = tx
+		t.locals[hash] = tx
 	} else {
-		t.remotes[tx.Hash()] = tx
+		t.remotes[hash] = tx
 	}
 }
 
@@ -2200,7 +2916,15 @@ func (t *txLookup) Remove(hash common.Hash) {
 		log.Error("No transaction found to be deleted", "hash", hash)
 		return
 	}
-	t.slots -= numSlots(tx)
+	charged, exists := t.slotsByHash[hash]
+	if !exists {
+		// Backward-compatible fallback for hand-built test lookups. Production
+		// lookups always snapshot the charge at Add time, so mutation of an
+		// exposed BlobSidecar pointer cannot corrupt quota accounting on Remove.
+		charged = numSlots(tx)
+	}
+	t.slots -= charged
+	delete(t.slotsByHash, hash)
 	slotsGauge.Update(int64(t.slots))
 	delete(t.locals, hash)
 	delete(t.remotes, hash)
@@ -2221,5 +2945,26 @@ func (t *txLookup) RemoteToLocals(locals *accountSet) int {
 }
 
 func numSlots(tx *types.Transaction) int {
-	return int((tx.Size() + txSlotSize - 1) / txSlotSize)
+	if tx == nil {
+		return 0
+	}
+	size := uint64(tx.Size())
+	if tx.Type() == types.BlobTxType {
+		// Admission retains one immutable sidecar on the transaction and another
+		// defensive copy in the proposal sidecar store. Charge both so the
+		// generic pool slot ceiling is also a hard blob-memory ceiling.
+		sidecarBytes := blobSidecarMemoryBytes(tx.BlobSidecar())
+		if sidecarBytes > (math.MaxUint64-size)/2 {
+			return math.MaxInt
+		}
+		size += sidecarBytes * 2
+	}
+	if size > math.MaxUint64-(txSlotSize-1) {
+		return math.MaxInt
+	}
+	slots := (size + txSlotSize - 1) / txSlotSize
+	if slots > uint64(math.MaxInt) {
+		return math.MaxInt
+	}
+	return int(slots)
 }

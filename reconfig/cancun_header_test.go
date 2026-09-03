@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
@@ -73,7 +72,7 @@ func TestCanIncludeBlobGasHonorsBlockLimit(t *testing.T) {
 	}
 }
 
-func TestProposalPrecheckRejectsBlobTxWithoutDA(t *testing.T) {
+func TestProposalPrecheckRejectsBlobTxWithoutSidecar(t *testing.T) {
 	zero := uint64(0)
 	config := &params.ChainConfig{ChainID: big.NewInt(1)}
 	config.SetModernForkConfig(&params.ModernForkConfig{
@@ -103,8 +102,8 @@ func TestProposalPrecheckRejectsBlobTxWithoutDA(t *testing.T) {
 		S:          big.NewInt(1),
 	})
 	header := &types.Header{Number: big.NewInt(1), Time: 0, GasLimit: 30_000_000, BaseFee: big.NewInt(params.FixedBaseFeePerGas)}
-	if err := precheckTxForProposal(config, st, header, tx, from); !errors.Is(err, core.ErrBlobDAUnavailable) {
-		t.Fatalf("error = %v, want %v", err, core.ErrBlobDAUnavailable)
+	if err := precheckTxForProposal(config, st, header, tx, from); !errors.Is(err, types.ErrBlobSidecarMissing) {
+		t.Fatalf("error = %v, want %v", err, types.ErrBlobSidecarMissing)
 	}
 }
 

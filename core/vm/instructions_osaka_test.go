@@ -53,3 +53,9 @@ func TestCLZ(t *testing.T) {
 		})
 	}
 }
+
+func TestStringToOpIncludesOsakaCLZ(t *testing.T) {
+	if got := StringToOp("CLZ"); got != CLZ {
+		t.Fatalf("StringToOp(CLZ) = %#x, want %#x", got, CLZ)
+	}
+}

@@ -28,7 +28,6 @@ import (
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/core/types"
-	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
 )
 
@@ -518,7 +517,15 @@ func (ec *Client) EstimateGas(ctx context.Context, msg cypher.CallMsg) (uint64, 
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
 func (ec *Client) SendTransaction(ctx context.Context, tx *types.Transaction) error {
-	data, err := rlp.EncodeToBytes(tx)
+	var (
+		data []byte
+		err  error
+	)
+	if tx != nil && tx.Type() == types.BlobTxType && tx.BlobSidecar() != nil {
+		data, err = tx.MarshalPooledBinary()
+	} else {
+		data, err = tx.MarshalBinary()
+	}
 	if err != nil {
 		return err
 	}
@@ -531,7 +538,7 @@ func toCallArg(msg cypher.CallMsg) interface{} {
 		"to":   msg.To,
 	}
 	if len(msg.Data) > 0 {
-		arg["data"] = hexutil.Bytes(msg.Data)
+		arg["input"] = hexutil.Bytes(msg.Data)
 	}
 	if msg.Value != nil {
 		arg["value"] = (*hexutil.Big)(msg.Value)
@@ -541,6 +548,24 @@ func toCallArg(msg cypher.CallMsg) interface{} {
 	}
 	if msg.GasPrice != nil {
 		arg["gasPrice"] = (*hexutil.Big)(msg.GasPrice)
+	}
+	if msg.GasFeeCap != nil {
+		arg["maxFeePerGas"] = (*hexutil.Big)(msg.GasFeeCap)
+	}
+	if msg.GasTipCap != nil {
+		arg["maxPriorityFeePerGas"] = (*hexutil.Big)(msg.GasTipCap)
+	}
+	if msg.AccessList != nil {
+		arg["accessList"] = msg.AccessList
+	}
+	if msg.BlobGasFeeCap != nil {
+		arg["maxFeePerBlobGas"] = (*hexutil.Big)(msg.BlobGasFeeCap)
+	}
+	if msg.BlobHashes != nil {
+		arg["blobVersionedHashes"] = msg.BlobHashes
+	}
+	if msg.AuthorizationList != nil {
+		arg["authorizationList"] = msg.AuthorizationList
 	}
 	return arg
 }
