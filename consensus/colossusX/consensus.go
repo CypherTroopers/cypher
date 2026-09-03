@@ -441,7 +441,7 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 // setting the final state on the header
 func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, totalGas uint64) {
 	// Accumulate any block and uncle rewards and commit the final state root
-	accumulateRewards(chain.Config(), state, header, uncles)
+	accumulateRewards(chain.Config(), state, header, txs, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
 	}
@@ -453,7 +453,7 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 // uncle rewards, setting the final state and assembling the block.
 func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
 	// Accumulate any block and uncle rewards and commit the final state root
-	accumulateRewards(chain.Config(), state, header, uncles)
+	accumulateRewards(chain.Config(), state, header, txs, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
 	}
@@ -510,10 +510,14 @@ func calcDifficultyFrontier(time uint64, parent *types.Header) *big.Int {
 	return diff
 }
 
-// AccumulateRewards credits the coinbase of the given block with the mining
-// reward. The total reward consists of the static block reward and rewards for
-// included uncles. The coinbase of each uncle block is also rewarded.
-func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, uncles []*types.Header) {
+// accumulateRewards applies the protocol rewards for a block. Empty FastTx and
+// SlowTx blocks are intentionally entirely rewardless. Key block carriers keep
+// the existing static and PoW reward flow even though they contain no
+// transactions.
+func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, txs []*types.Transaction, uncles []*types.Header) {
+	if len(txs) == 0 && (header.BlockType == types.FastTx_Block || header.BlockType == types.SlowTx_Block) {
+		return
+	}
 	// Select the correct block reward based on chain progression
 	blockReward := FrontierBlockReward
 	// Accumulate the rewards for the miner and any included uncles
@@ -532,9 +536,9 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 	state.AddBalance(header.Coinbase, reward)
 }
 
-// wrapper for accumulateRewards to be called by raft minter
-func AccumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, uncles []*types.Header) {
-	accumulateRewards(config, state, header, uncles)
+// AccumulateRewards exposes the shared reward rule to the proposal builders.
+func AccumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, txs []*types.Transaction, uncles []*types.Header) {
+	accumulateRewards(config, state, header, txs, uncles)
 }
 
 // ApplyFixedModeKeyblockPowReward credits CommonNodePowReward to keyblock outAddress
