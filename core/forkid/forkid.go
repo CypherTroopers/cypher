@@ -67,11 +67,18 @@ type Filter func(id ID) error
 
 // NewID calculates the Ethereum fork ID from the chain config and head.
 func NewID(chain Blockchain) ID {
-	return newID(
+	return newIDForChain(
 		chain.Config(),
 		chain.Genesis().Hash(),
 		chain.CurrentHeader().Number.Uint64(),
 	)
+}
+
+func newIDForChain(config *params.ChainConfig, genesis common.Hash, head uint64) ID {
+	if usesLegacyCypheriumForkID(config, genesis) {
+		return ID{Hash: checksumToBytes(crc32.ChecksumIEEE(genesis[:]))}
+	}
+	return newID(config, genesis, head)
 }
 
 // newID is the internal version of NewID, which takes extracted values as its
@@ -98,13 +105,27 @@ func newID(config *params.ChainConfig, genesis common.Hash, head uint64) ID {
 // NewFilter creates a filter that returns if a fork ID should be rejected or not
 // based on the local chain's status.
 func NewFilter(chain Blockchain) Filter {
-	return newFilter(
+	return newFilterForChain(
 		chain.Config(),
 		chain.Genesis().Hash(),
 		func() uint64 {
 			return chain.CurrentHeader().Number.Uint64()
 		},
 	)
+}
+
+func newFilterForChain(config *params.ChainConfig, genesis common.Hash, headfn func() uint64) Filter {
+	filter := newFilter(config, genesis, headfn)
+	if !usesLegacyCypheriumForkID(config, genesis) {
+		return filter
+	}
+	legacy := ID{Hash: checksumToBytes(crc32.ChecksumIEEE(genesis[:]))}
+	return func(id ID) error {
+		if id == legacy {
+			return nil
+		}
+		return filter(id)
+	}
 }
 
 // NewStaticFilter creates a filter at block zero.
@@ -196,6 +217,15 @@ func newFilter(config *params.ChainConfig, genesis common.Hash, headfn func() ui
 		log.Error("Impossible fork ID validation", "id", id)
 		return nil // Something's very wrong, accept rather than reject
 	}
+}
+
+// usesLegacyCypheriumForkID reports whether the wire protocol needs the fork ID
+// used by the already-running Cypherium mainnet. That network was upgraded in
+// place after block 182529, while deployed nodes kept advertising the all-zero
+// schedule (block-zero forks are omitted from EIP-2124). Execution still uses
+// the reconstructed historical transition at block 182530.
+func usesLegacyCypheriumForkID(config *params.ChainConfig, genesis common.Hash) bool {
+	return params.IsCypheriumMainnet(config, genesis)
 }
 
 // checksumUpdate calculates the next IEEE CRC32 checksum based on the previous

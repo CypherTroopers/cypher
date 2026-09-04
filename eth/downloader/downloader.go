@@ -121,6 +121,7 @@ type Downloader struct {
 
 	lightchain LightChain
 	blockchain BlockChain
+	mainnet    bool // ChainID 16166 with the deployed mainnet genesis
 
 	// Callbacks
 	dropPeer peerDropFn // Drops a peer for misbehaving
@@ -247,6 +248,13 @@ func New(checkpoint uint64, stateDb ethdb.Database, stateBloom *trie.SyncBloom, 
 			processed: rawdb.ReadFastTrieProgress(stateDb),
 		},
 		trackStateReq: make(chan *stateReq),
+	}
+	if identified, ok := chain.(interface {
+		Config() *params.ChainConfig
+		Genesis() *types.Block
+	}); ok {
+		genesis := identified.Genesis()
+		dl.mainnet = genesis != nil && params.IsCypheriumMainnet(identified.Config(), genesis.Hash())
 	}
 	go dl.qosTuner()
 	go dl.stateFetcher()
@@ -1263,7 +1271,7 @@ func (d *Downloader) fetchReceipts(from uint64) error {
 //  - capacity:    network callback to retrieve the estimated type-specific bandwidth capacity of a peer (traffic shaping)
 //  - idle:        network callback to retrieve the currently (type specific) idle peers that can be assigned tasks
 //  - setIdle:     network callback to set a peer back to idle and update its estimated capacity (traffic shaping)
-//  - kind:        textual label of the type being downloaded to display in log messages
+//   - kind:        textual label of the type being downloaded to display in log messages
 func (d *Downloader) fetchParts(deliveryCh chan dataPack, deliver func(dataPack) (int, error), wakeCh chan bool,
 	expire func() map[string]int, pending func() int, inFlight func() bool, reserve func(*peerConnection, int) (*fetchRequest, bool, bool),
 	fetchHook func([]*types.Header), fetch func(*peerConnection, *fetchRequest) error, cancel func(*fetchRequest), capacity func(*peerConnection) int,
@@ -1539,10 +1547,10 @@ func (d *Downloader) processHeaders(origin uint64, pivot uint64, td *big.Int) er
 				}
 				chunk := headers[:limit]
 				for _, header := range chunk {
-					if header.Number.Uint64() == params.BadBlockNumber {
-						correctParent := d.blockchain.GetBlockByNumber(params.Roll139976backTarget)
-						if correctParent == nil || correctParent.Hash() != common.HexToHash(params.Roll139976ParentHash) {
-							rollbackErr = fmt.Errorf("local parent block %d is corrupted", params.Roll139976backTarget)
+					if d.mainnet && header.Number.Uint64() == params.BadBlockNumber {
+						expectedParent := common.HexToHash(params.Roll139976ParentHash)
+						if header.ParentHash != expectedParent {
+							rollbackErr = fmt.Errorf("parent block %d hash mismatch: have %s, want %s", params.Roll139976backTarget, header.ParentHash, expectedParent)
 							return rollbackErr
 						}
 					}

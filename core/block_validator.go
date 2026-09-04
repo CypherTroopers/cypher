@@ -22,6 +22,7 @@ import (
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
+	"github.com/cypherium/cypher/crypto/bls"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/reconfig/hotstuff"
@@ -52,22 +53,33 @@ func NewBlockValidator(config *params.ChainConfig, blockchain *BlockChain, engin
 // header's transaction and uncle roots. The headers are assumed to be already
 // validated at this point.
 func (v *BlockValidator) ValidateBody(block *types.Block) error {
-	if params.IsBadBlock(block.NumberU64(), block.Hash()) {
+	mainnet := params.IsCypheriumMainnet(v.config, v.bc.Genesis().Hash())
+	if mainnet && params.IsBadBlock(block.NumberU64(), block.Hash()) {
 		return fmt.Errorf("transaction root hash mismatch: number:%x, has:%x", params.BadBlockNumber, params.BadBlockHash)
 	}
-	for _, tx := range block.Transactions() {
-		if to := tx.To(); to != nil {
+	if mainnet {
+		for _, tx := range block.Transactions() {
+			to := tx.To()
+			if to == nil {
+				continue
+			}
 			for _, banned := range params.BlackAddressList {
-				if *to == banned && block.NumberU64() >= params.Roll139976backTarget {
+				if *to == banned && params.IsBlackAddressToActive(banned, block.NumberU64()) {
 					return fmt.Errorf("block %d contains banned transaction to %s",
 						block.NumberU64(), banned.Hex())
 				}
-				// Check sender
-				from, err := types.Sender(types.NewEIP155Signer(v.config.ChainID), tx)
-				if err != nil {
-					return err
-				}
-				if from == banned {
+			}
+			// Sender blocking was deployed at block 286278. Avoid recovering
+			// historical Frontier signatures before the rule exists.
+			if !params.HasActiveBlackAddressFromRule(block.NumberU64()) {
+				continue
+			}
+			from, err := types.Sender(types.NewEIP155Signer(v.config.ChainID), tx)
+			if err != nil {
+				return err
+			}
+			for _, banned := range params.BlackAddressList {
+				if from == banned && params.IsBlackAddressFromActive(banned, block.NumberU64()) {
 					return fmt.Errorf("block %d contains banned transaction from %s",
 						block.NumberU64(), banned.Hex())
 				}
@@ -170,11 +182,28 @@ func CalcGasLimit(parent *types.Block, gasFloor, gasCeil uint64) uint64 {
 
 func (v *BlockValidator) VerifySignature(block *types.Block) error {
 	//TxHash  verify
-	mycommittee := &bftview.Committee{List: v.bc.keyBlockChain.GetCommitteeByHash(block.KeyHash())}
-	if mycommittee == nil || len(mycommittee.List) < 2 {
+	resolved, err := v.resolveHistoricalCommittee(block)
+	if err != nil {
+		return err
+	}
+	var mycommittee *bftview.Committee
+	if resolved != nil {
+		mycommittee = resolved.committee
+	} else {
+		mycommittee = &bftview.Committee{List: v.bc.keyBlockChain.GetCommitteeByHash(block.KeyHash())}
+	}
+	if len(mycommittee.List) < 2 {
 		return types.ErrInvalidCommittee
 	}
-	pubs := mycommittee.ToBlsPublicKeys(block.KeyHash())
+	var pubs []*bls.PublicKey
+	if resolved != nil {
+		// The old committee's public keys can still be cached under the same
+		// key hash at an out-of-band transition. Verify from the checkpoint
+		// itself before replacing any local data.
+		pubs = mycommittee.ToBlsPublicKeysUncached()
+	} else {
+		pubs = mycommittee.ToBlsPublicKeys(block.KeyHash())
+	}
 
 	buf := block.CopyOrg().EncodeToBytes()
 	if buf == nil {
@@ -187,6 +216,9 @@ func (v *BlockValidator) VerifySignature(block *types.Block) error {
 
 	if !hotstuff.VerifySignature(si.Signature, si.Exceptions, buf, pubs, hotstuff.CalcThreshold(len(pubs))) {
 		return types.ErrInvalidSignature
+	}
+	if err := installHistoricalCommittee(resolved); err != nil {
+		return err
 	}
 	return nil
 }

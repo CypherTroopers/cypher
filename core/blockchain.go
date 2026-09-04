@@ -1660,7 +1660,7 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 		block, prev *types.Block
 	)
 	for i, block := range chain {
-		if params.IsBadBlock(block.NumberU64(), block.Hash()) {
+		if params.IsCypheriumMainnet(bc.chainConfig, bc.genesisBlock.Hash()) && params.IsBadBlock(block.NumberU64(), block.Hash()) {
 			if err := bc.emergencyRollback(params.Roll139976backTarget); err != nil {
 				return i, err
 			}

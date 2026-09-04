@@ -206,6 +206,16 @@ var (
 		common.HexToAddress("0xdc97e8ca50691596039e7428f6ce5d5cc43c6d17"),
 		common.HexToAddress("0x43eb8148fcfba29263d7955e9091b51970cb8c67"),
 	}
+	blackAddressToActivation = map[common.Address]uint64{
+		common.HexToAddress("0x5561dcdc624eeb569e42698017b632a49a177fee"): Roll139976backTarget,
+		common.HexToAddress("0xdc97e8ca50691596039e7428f6ce5d5cc43c6d17"): 286278,
+		common.HexToAddress("0x43eb8148fcfba29263d7955e9091b51970cb8c67"): 286278,
+	}
+	blackAddressFromActivation = map[common.Address]uint64{
+		common.HexToAddress("0x5561dcdc624eeb569e42698017b632a49a177fee"): 286278,
+		common.HexToAddress("0xdc97e8ca50691596039e7428f6ce5d5cc43c6d17"): 286278,
+		common.HexToAddress("0x43eb8148fcfba29263d7955e9091b51970cb8c67"): 286278,
+	}
 
 	TrustedAddressList = []common.Address{
 		common.HexToAddress("0x8c22B884c3f774DCd4F0cC4C6E920Bd23b5d513F"),
@@ -255,6 +265,33 @@ var (
 		common.HexToAddress("0x01d5a57c84911e06dad39628f7b2d7e7c20f1ed7"),
 	}
 )
+
+// IsBlackAddressToActive reports whether block validation should reject a
+// transaction to address. Later additions must not invalidate canonical blocks
+// which predate the corresponding incident response.
+func IsBlackAddressToActive(address common.Address, block uint64) bool {
+	activation, ok := blackAddressToActivation[address]
+	return ok && block >= activation
+}
+
+// IsBlackAddressFromActive reports whether block validation should reject a
+// transaction from address. Sender blocking was deployed separately from the
+// original recipient-only rule.
+func IsBlackAddressFromActive(address common.Address, block uint64) bool {
+	activation, ok := blackAddressFromActivation[address]
+	return ok && block >= activation
+}
+
+// HasActiveBlackAddressFromRule reports whether sender recovery is needed at
+// block. This keeps pre-rule historical signatures out of the policy path.
+func HasActiveBlackAddressFromRule(block uint64) bool {
+	for _, activation := range blackAddressFromActivation {
+		if block >= activation {
+			return true
+		}
+	}
+	return false
+}
 
 func GetMaximumExtraDataSize(isCypher bool) uint64 {
 	if isCypher {

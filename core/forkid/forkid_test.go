@@ -19,12 +19,77 @@ package forkid
 import (
 	"bytes"
 	"math"
+	"math/big"
 	"testing"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
 )
+
+// The inherited EIP-2124 vectors below describe Ethereum mainnet, not the
+// Cypherium chain exposed as params.MainnetChainConfig by this repository.
+// Keep the reference network explicit so Cypherium mainnet can evolve without
+// invalidating the upstream protocol vectors.
+var ethereumMainnetConfig = &params.ChainConfig{
+	ChainID:             big.NewInt(1),
+	HomesteadBlock:      big.NewInt(1150000),
+	DAOForkBlock:        big.NewInt(1920000),
+	DAOForkSupport:      true,
+	EIP150Block:         big.NewInt(2463000),
+	EIP155Block:         big.NewInt(2675000),
+	EIP158Block:         big.NewInt(2675000),
+	ByzantiumBlock:      big.NewInt(4370000),
+	ConstantinopleBlock: big.NewInt(7280000),
+	PetersburgBlock:     big.NewInt(7280000),
+	IstanbulBlock:       big.NewInt(9069000),
+	MuirGlacierBlock:    big.NewInt(9200000),
+}
+
+var ethereumMainnetGenesisHash = common.HexToHash("0xd4e56740f876aef8c010b86a40d5f56745a118d0906a34e69aec8c0db1cb8fa3")
+
+var ethereumRopstenConfig = &params.ChainConfig{
+	ChainID:             big.NewInt(3),
+	HomesteadBlock:      big.NewInt(0),
+	EIP150Block:         big.NewInt(0),
+	EIP155Block:         big.NewInt(10),
+	EIP158Block:         big.NewInt(10),
+	ByzantiumBlock:      big.NewInt(1700000),
+	ConstantinopleBlock: big.NewInt(4230000),
+	PetersburgBlock:     big.NewInt(4939394),
+	IstanbulBlock:       big.NewInt(6485846),
+	MuirGlacierBlock:    big.NewInt(7117117),
+}
+
+var ethereumRopstenGenesisHash = common.HexToHash("0x41941023680923e0fe4d74a34bdac8141f2540e3ae90623718e47d66d1ca4a2d")
+
+var ethereumRinkebyConfig = &params.ChainConfig{
+	ChainID:             big.NewInt(4),
+	HomesteadBlock:      big.NewInt(1),
+	EIP150Block:         big.NewInt(2),
+	EIP155Block:         big.NewInt(3),
+	EIP158Block:         big.NewInt(3),
+	ByzantiumBlock:      big.NewInt(1035301),
+	ConstantinopleBlock: big.NewInt(3660663),
+	PetersburgBlock:     big.NewInt(4321234),
+	IstanbulBlock:       big.NewInt(5435345),
+}
+
+var ethereumRinkebyGenesisHash = common.HexToHash("0x6341fd3daf94b748c72ced5a5b26028f2474f5f00d824504e4fa37a75767e177")
+
+var ethereumGoerliConfig = &params.ChainConfig{
+	ChainID:             big.NewInt(5),
+	HomesteadBlock:      big.NewInt(0),
+	EIP150Block:         big.NewInt(0),
+	EIP155Block:         big.NewInt(0),
+	EIP158Block:         big.NewInt(0),
+	ByzantiumBlock:      big.NewInt(0),
+	ConstantinopleBlock: big.NewInt(0),
+	PetersburgBlock:     big.NewInt(0),
+	IstanbulBlock:       big.NewInt(1561651),
+}
+
+var ethereumGoerliGenesisHash = common.HexToHash("0xbf7e331f7f7c1dd2e05159666b3bf8bc7a8a3a9eb1d518969eab529dd9b88c1a")
 
 // TestCreation tests that different genesis and fork rule combinations result in
 // the correct fork ID.
@@ -40,8 +105,8 @@ func TestCreation(t *testing.T) {
 	}{
 		// Mainnet test cases
 		{
-			params.MainnetChainConfig,
-			params.MainnetGenesisHash,
+			ethereumMainnetConfig,
+			ethereumMainnetGenesisHash,
 			[]testcase{
 				{0, ID{Hash: checksumToBytes(0xfc64ec04), Next: 1150000}},       // Unsynced
 				{1149999, ID{Hash: checksumToBytes(0xfc64ec04), Next: 1150000}}, // Last Frontier block
@@ -65,8 +130,8 @@ func TestCreation(t *testing.T) {
 		},
 		// Ropsten test cases
 		{
-			params.RopstenChainConfig,
-			params.RopstenGenesisHash,
+			ethereumRopstenConfig,
+			ethereumRopstenGenesisHash,
 			[]testcase{
 				{0, ID{Hash: checksumToBytes(0x30c7ddbc), Next: 10}},            // Unsynced, last Frontier, Homestead and first Tangerine block
 				{9, ID{Hash: checksumToBytes(0x30c7ddbc), Next: 10}},            // Last Tangerine block
@@ -86,8 +151,8 @@ func TestCreation(t *testing.T) {
 		},
 		// Rinkeby test cases
 		{
-			params.RinkebyChainConfig,
-			params.RinkebyGenesisHash,
+			ethereumRinkebyConfig,
+			ethereumRinkebyGenesisHash,
 			[]testcase{
 				{0, ID{Hash: checksumToBytes(0x3b8e0691), Next: 1}},             // Unsynced, last Frontier block
 				{1, ID{Hash: checksumToBytes(0x60949295), Next: 2}},             // First and last Homestead block
@@ -106,8 +171,8 @@ func TestCreation(t *testing.T) {
 		},
 		// Goerli test cases
 		{
-			params.GoerliChainConfig,
-			params.GoerliGenesisHash,
+			ethereumGoerliConfig,
+			ethereumGoerliGenesisHash,
 			[]testcase{
 				{0, ID{Hash: checksumToBytes(0xa3f5ab08), Next: 1561651}},       // Unsynced, last Frontier, Homestead, Tangerine, Spurious, Byzantium, Constantinople and first Petersburg block
 				{1561650, ID{Hash: checksumToBytes(0xa3f5ab08), Next: 1561651}}, // Last Petersburg block
@@ -196,7 +261,7 @@ func TestValidation(t *testing.T) {
 		{7279999, ID{Hash: checksumToBytes(0xa00bc324), Next: 7279999}, ErrLocalIncompatibleOrStale},
 	}
 	for i, tt := range tests {
-		filter := newFilter(params.MainnetChainConfig, params.MainnetGenesisHash, func() uint64 { return tt.head })
+		filter := newFilter(ethereumMainnetConfig, ethereumMainnetGenesisHash, func() uint64 { return tt.head })
 		if err := filter(tt.id); err != tt.err {
 			t.Errorf("test %d: validation error mismatch: have %v, want %v", i, err, tt.err)
 		}
@@ -223,5 +288,42 @@ func TestEncoding(t *testing.T) {
 		if !bytes.Equal(have, tt.want) {
 			t.Errorf("test %d: RLP mismatch: have %x, want %x", i, have, tt.want)
 		}
+	}
+}
+
+func TestCypheriumMainnetLegacyWireID(t *testing.T) {
+	want := ID{Hash: checksumToBytes(0x5705bf8f), Next: 0}
+	for _, head := range []uint64{0, 182529, 182530, 341814} {
+		if have := newIDForChain(params.MainnetChainConfig, params.MainnetGenesisHash, head); have != want {
+			t.Fatalf("head %d: fork ID mismatch: have %x, want %x", head, have, want)
+		}
+	}
+	filter := newFilterForChain(params.MainnetChainConfig, params.MainnetGenesisHash, func() uint64 { return 341814 })
+	if err := filter(want); err != nil {
+		t.Fatalf("legacy mainnet fork ID rejected: %v", err)
+	}
+	real := newID(params.MainnetChainConfig, params.MainnetGenesisHash, 341814)
+	wantReal := ID{Hash: checksumToBytes(0x14482c7b), Next: 0}
+	if real != wantReal {
+		t.Fatalf("reconstructed mainnet fork ID mismatch: have %x, want %x", real, wantReal)
+	}
+	if err := filter(real); err != nil {
+		t.Fatalf("reconstructed mainnet fork ID rejected: %v", err)
+	}
+	if err := filter(ID{Hash: checksumToBytes(0xdeadbeef)}); err == nil {
+		t.Fatal("unrelated fork ID accepted")
+	}
+
+	otherGenesis := params.MainnetGenesisHash
+	otherGenesis[31] ^= 1
+	if have := newIDForChain(params.MainnetChainConfig, otherGenesis, 0); have.Next != 182530 {
+		t.Fatalf("legacy override leaked to another genesis: next fork have %d, want 182530", have.Next)
+	}
+	// This is an in-memory negative test only: prove the 16166 compatibility
+	// rule cannot leak to a different chain ID. No node is started with 16167.
+	otherChain := *params.MainnetChainConfig
+	otherChain.ChainID = big.NewInt(16167)
+	if have := newIDForChain(&otherChain, params.MainnetGenesisHash, 0); have.Next != 182530 {
+		t.Fatalf("legacy override leaked to another chain ID: next fork have %d, want 182530", have.Next)
 	}
 }

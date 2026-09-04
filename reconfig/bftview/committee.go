@@ -20,6 +20,7 @@ package bftview
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,7 +51,7 @@ type ServiceInterface interface {
 	Committee_Request(kNumber uint64, hash common.Hash)
 }
 
-//type Committee []*common.Cnode
+// type Committee []*common.Cnode
 type Committee struct {
 	List []*common.Cnode
 }
@@ -185,8 +186,8 @@ func GetServerInfo(infoType ServerInfoType) string {
 // load committee by keyblock number, needIP is for ignore ip address
 func LoadMember(kNumber uint64, hash common.Hash, needIP bool) *Committee {
 	m_config.muCommitteeCache.Lock()
+	defer m_config.muCommitteeCache.Unlock()
 	c, ok := m_config.cacheCommittee[hash]
-	m_config.muCommitteeCache.Unlock()
 	if ok {
 		if !needIP || c.hasIP {
 			return c.committee
@@ -196,7 +197,7 @@ func LoadMember(kNumber uint64, hash common.Hash, needIP bool) *Committee {
 	cm := ReadCommittee(kNumber, hash)
 	if cm != nil && cm.List != nil && len(cm.List) >= 0 {
 		hasIP := cm.HasIP()
-		cm.storeInCache(hash, kNumber, hasIP)
+		cm.storeInCacheLocked(hash, kNumber, hasIP)
 		if !needIP || hasIP {
 			return cm
 		}
@@ -208,7 +209,10 @@ func LoadMember(kNumber uint64, hash common.Hash, needIP bool) *Committee {
 func (committee *Committee) storeInCache(hash common.Hash, keyNumber uint64, hasIP bool) {
 	m_config.muCommitteeCache.Lock()
 	defer m_config.muCommitteeCache.Unlock()
+	committee.storeInCacheLocked(hash, keyNumber, hasIP)
+}
 
+func (committee *Committee) storeInCacheLocked(hash common.Hash, keyNumber uint64, hasIP bool) {
 	if keyNumber > m_config.maxKeyNumber {
 		m_config.maxKeyNumber = keyNumber
 	}
@@ -470,10 +474,7 @@ func (committee *Committee) ToBlsPublicKeys(hash common.Hash) []*bls.PublicKey {
 		return c.pubs
 	}
 
-	pubs := make([]*bls.PublicKey, 0)
-	for _, r := range committee.List {
-		pubs = append(pubs, StrToBlsPubKey(r.Public))
-	}
+	pubs := committee.ToBlsPublicKeysUncached()
 
 	if ok {
 		m_config.muCommitteeCache.Lock()
@@ -481,6 +482,17 @@ func (committee *Committee) ToBlsPublicKeys(hash common.Hash) []*bls.PublicKey {
 		m_config.muCommitteeCache.Unlock()
 	}
 
+	return pubs
+}
+
+// ToBlsPublicKeysUncached derives keys only from the receiver. Historical
+// committee transitions use this before replacing an older entry cached under
+// the same key-block hash.
+func (committee *Committee) ToBlsPublicKeysUncached() []*bls.PublicKey {
+	pubs := make([]*bls.PublicKey, 0, len(committee.List))
+	for _, r := range committee.List {
+		pubs = append(pubs, StrToBlsPubKey(r.Public))
+	}
 	return pubs
 }
 func (committee *Committee) HasIP() bool {
@@ -502,7 +514,7 @@ func (committee *Committee) HasIP() bool {
 	return true
 }
 
-//------Tools---------------------------------------------------------------------------------------------------------
+// ------Tools---------------------------------------------------------------------------------------------------------
 func ToBlsPublicKeys(hash common.Hash) []*bls.PublicKey {
 	m_config.muCommitteeCache.Lock()
 	c, ok := m_config.cacheCommittee[hash]
@@ -602,6 +614,53 @@ func WriteCommittee(keyBlockNumber uint64, hash common.Hash, cm *Committee) bool
 		return false
 	}
 	return true
+}
+
+// EnsureCommitteeRLP atomically installs a committee's persisted RLP and keeps
+// the committee/public-key cache coherent. It is intentionally separate from
+// SetRescueMode: historical replay must not enable the global rescue-mode hash
+// bypass. The return value reports whether the database or cache changed.
+func EnsureCommitteeRLP(keyBlockNumber uint64, hash common.Hash, data []byte) (bool, error) {
+	if m_config.db == nil {
+		return false, errors.New("committee db is nil")
+	}
+	if len(data) == 0 {
+		return false, errors.New("committee RLP is empty")
+	}
+
+	// Keep the old cached value available if the database write fails. Once the
+	// overwrite succeeds, readers must reload both the committee and BLS keys.
+	m_config.muCommitteeCache.Lock()
+	defer m_config.muCommitteeCache.Unlock()
+	key := rawdb.CommitteeKey(keyBlockNumber, hash)
+	hasExisting, err := m_config.db.Has(key)
+	if err != nil {
+		return false, err
+	}
+	var existing []byte
+	if hasExisting {
+		existing, err = m_config.db.Get(key)
+		if err != nil {
+			return false, err
+		}
+	}
+	if bytes.Equal(existing, data) {
+		cached, ok := m_config.cacheCommittee[hash]
+		if !ok {
+			return false, nil
+		}
+		cachedRLP, err := rlp.EncodeToBytes(cached.committee)
+		if err == nil && bytes.Equal(cachedRLP, data) {
+			return false, nil
+		}
+		delete(m_config.cacheCommittee, hash)
+		return true, nil
+	}
+	if err := m_config.db.Put(key, data); err != nil {
+		return false, err
+	}
+	delete(m_config.cacheCommittee, hash)
+	return true, nil
 }
 
 func DeleteCommittee(keyBlockNumber uint64, hash common.Hash) {

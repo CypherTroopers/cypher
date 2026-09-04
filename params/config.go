@@ -35,6 +35,14 @@ var (
 	YoloV1GenesisHash  = common.HexToHash("0xc3fd235071f24f93865b0850bd2a2119b30f7224d18a0e34c7bbf549ad7e3d36")
 )
 
+// IsCypheriumMainnet reports whether config and genesis identify the deployed
+// ChainID 16166 network. Historical recovery rules must be scoped to both
+// values so they cannot affect another chain that reuses either one alone.
+func IsCypheriumMainnet(config *ChainConfig, genesis common.Hash) bool {
+	return config != nil && config.ChainID != nil &&
+		config.ChainID.Cmp(big.NewInt(16166)) == 0 && genesis == MainnetGenesisHash
+}
+
 // TrustedCheckpoints associates each known checkpoint with the genesis hash of
 // the chain it belongs to.
 var TrustedCheckpoints = map[common.Hash]*TrustedCheckpoint{
@@ -58,18 +66,18 @@ var (
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
 	MainnetChainConfig = &ChainConfig{
 		ChainID:             big.NewInt(16166),
-		HomesteadBlock:      big.NewInt(0),
-		DAOForkBlock:        big.NewInt(0),
-		DAOForkSupport:      true,
-		EIP150Block:         big.NewInt(0),
-		EIP150Hash:          common.HexToHash("0xe8186a2e15328b38547348dec5d25b051bc1d17681c66b8c8ac15c06afa223c6"),
-		EIP155Block:         big.NewInt(0),
-		EIP158Block:         big.NewInt(0),
-		ByzantiumBlock:      big.NewInt(0),
-		ConstantinopleBlock: big.NewInt(0),
-		PetersburgBlock:     big.NewInt(0),
-		IstanbulBlock:       big.NewInt(0),
-		MuirGlacierBlock:    big.NewInt(0),
+		HomesteadBlock:      big.NewInt(182530),
+		DAOForkBlock:        nil,
+		DAOForkSupport:      false,
+		EIP150Block:         big.NewInt(182530),
+		EIP150Hash:          common.HexToHash("0x37865ef3c30acc4149e8dd8d0668451c675dd8426039eeec0d7398f26861708e"),
+		EIP155Block:         big.NewInt(182530),
+		EIP158Block:         big.NewInt(182530),
+		ByzantiumBlock:      big.NewInt(182530),
+		ConstantinopleBlock: big.NewInt(182530),
+		PetersburgBlock:     big.NewInt(182530),
+		IstanbulBlock:       big.NewInt(182530),
+		MuirGlacierBlock:    big.NewInt(182530),
 		Ethash:              new(EthashConfig)}
 
 	// MainnetTrustedCheckpoint contains the light client trusted checkpoint for the main network.
@@ -381,7 +389,7 @@ func (c *ChainConfig) String() string {
 	default:
 		engine = "unknown"
 	}
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v PrivacyEnhancements: %v Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
