@@ -1,6 +1,9 @@
 package reconfig
 
-import "github.com/cypherium/cypher/params"
+import (
+	"github.com/cypherium/cypher/core/types"
+	"github.com/cypherium/cypher/params"
+)
 
 // proposalBodyLimitForConfig is the maximum canonical encoded block and
 // manifest size accepted by Fair HotStuff. The legacy constants remain the
@@ -31,13 +34,13 @@ func proposalRepairPayloadLimitForConfig(config *params.ChainConfig) int {
 	return boundedUint64ToInt(limit)
 }
 
-// proposalBodyCacheLimitForConfig retains room for the two-chain certified
-// suffix plus the next maximum-sized proposal without multiplying a 256 MiB
-// genesis limit by the legacy eight-body factor. Small/legacy blocks retain
-// their historical 64 MiB budget.
+// proposalBodyCacheLimitForConfig budgets a hot working set of three maximum-
+// sized bodies. Certificates and execution artifacts outlive this evictable
+// cache, so its capacity does not bound an uncommitted certified suffix.
+// Small/legacy blocks retain their historical 64 MiB budget.
 func proposalBodyCacheLimitForConfig(config *params.ChainConfig) int {
 	limit := proposalBodyCacheMaxBytes
-	perBody := saturatingAddInt(proposalBodyLimitForConfig(config), proposalBodyControlMaxBytes+4096)
+	perBody := saturatingAddInt(proposalBodyLimitForConfig(config), proposalBodyControlMaxBytes+types.MaxFHSFinalityProofSize+4096)
 	if candidate := saturatingMulInt(perBody, 3); candidate > limit {
 		limit = candidate
 	}
@@ -49,7 +52,7 @@ func proposalPeerQueueBulkLimitForConfig(config *params.ChainConfig) int {
 	if repair := proposalRepairPayloadLimitForConfig(config); repair > limit {
 		limit = repair
 	}
-	return saturatingAddInt(limit, 1024*1024)
+	return saturatingAddInt(limit, proposalBodyControlMaxBytes+types.MaxFHSFinalityProofSize+4096)
 }
 
 func boundedUint64ToInt(value uint64) int {

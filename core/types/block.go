@@ -168,7 +168,7 @@ type SignInfo struct {
 	// with the QC so a syncing node can reconstruct exactly the signed bytes.
 	ExtraHash  common.Hash `json:"extraHash"`
 	ParentQCID common.Hash `json:"parentQcId"`
-	// FHSFinalityProof is the RLP-encoded direct-child QC which finalizes this
+	// FHSFinalityProof is the RLP-encoded descendant QC proof which finalizes this
 	// block under the 2-chain rule. It is attached only after the proposal has
 	// been certified, so Hash and CopyOrg must always exclude it. A syncing
 	// common node verifies this committee-produced proof; it never creates one.
@@ -1313,7 +1313,7 @@ func (b *Block) SetFHSSignature(sig []byte, exceptions []byte, viewID common.Has
 	b.header.SignInfo.ParentQCID = parentQCID
 }
 
-// SetFHSFinalityProof attaches a verified direct-child QC to a certified
+// SetFHSFinalityProof attaches a verified descendant QC proof to a certified
 // target. The proof is finality metadata, not part of the proposal or block
 // hash, and is copied to avoid caller mutation after persistence.
 func (b *Block) SetFHSFinalityProof(proof []byte) error {
@@ -1325,7 +1325,7 @@ func (b *Block) SetFHSFinalityProof(proof []byte) error {
 	return nil
 }
 
-// FHSFinalityProof returns a defensive copy of the embedded direct-child QC.
+// FHSFinalityProof returns a defensive copy of the embedded descendant QC proof.
 func (b *Block) FHSFinalityProof() []byte {
 	return common.CopyBytes(b.header.SignInfo.FHSFinalityProof)
 }

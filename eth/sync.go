@@ -288,6 +288,13 @@ func peerToSyncOp(mode downloader.SyncMode, p *peer) *chainSyncOp {
 }
 
 func (cs *chainSyncer) modeAndLocalHead() (downloader.SyncMode, *big.Int) {
+	if cs.pm.chainConfig != nil && cs.pm.chainConfig.FairHotstuff {
+		// Only executed, finalized blocks count as local FHS progress. Header or
+		// fast heads and a persisted pivot must never resume receipt-only sync.
+		head := cs.pm.blockchain.CurrentBlock()
+		td := cs.pm.blockchain.GetTd(head.Hash(), head.NumberU64())
+		return downloader.FullSync, td
+	}
 	// If we're in fast sync mode, return that directly
 	if atomic.LoadUint32(&cs.pm.fastSync) == 1 {
 		block := cs.pm.blockchain.CurrentFastBlock()

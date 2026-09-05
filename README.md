@@ -2,7 +2,7 @@
 
 [Fair Byzantine Fault-Tolerant Consensus (FHS-C), arXiv:2501.02970v3](https://arxiv.org/html/2501.02970v3)
 
-### PoW x EVM(〜OSAKA) x RPC reward x Mining Reward
+### PoW x EVM (through OSAKA) x RPC reward x Mining Reward
 
 
 ## Preparations
@@ -141,13 +141,17 @@ This branch implements the FHS-C current-leader QC-broadcast change and the safe
 
 - Fair HotStuff requires a committee of `n = 3f + 1` validators (`4 <= n <= 100`) and rejects malformed, duplicate, or invalid BLS committee keys at genesis. The upper bound keeps the quorum proof within the authenticated control-message budget.
 - Every signer mask has one canonical encoding. Extra bytes, committee-external bits, and under-quorum masks are rejected.
-- `NewView` carries each replica's latest QC. A leader must include `n - f` independently signed reports in its aggregate proof, and a lagging replica verifies and adopts the highest valid QC before voting.
+- `NewView` carries each replica's highest observed QC. A leader includes `n - f` independently signed reports and proposes on their highest QC. After verifying the complete aggregate, a replica can select that parent even if it privately observed a higher QC on another uncommitted branch. The observed maximum remains durable and is still advertised in later `NewView` messages. Canonical committed ancestry cannot change.
+- Finality requires a certified parent and direct child in consecutive views. This commits the parent and its ancestors. Ancestors separated by skipped views carry the complete descendant-QC path ending in the consecutive pair; sync and restart verify the same proof. A QC alone does not finalize a block.
+- Votes go to the current proposer, which persists the QC and pending broadcast before directly sending it to every member of its signing committee. Replay resolves that committee from the QC, including after a committee change. Transport retains the previous committee and generations referenced by durable QC state; message-level authority remains specific to each proof.
 - A local timer cannot change views by itself. A view changes only after a verified `2f + 1` timeout certificate; timeout votes and certificates are bounded and persisted.
 - Prepare, vote, QC, NewView, and timeout envelopes are signed by their committee BLS key. QUIC uses mutual, short-lived TLS certificates whose chain ID, node address, and TLS public key are attested by the same BLS identity. Fair HotStuff disables TCP fallback.
-- Votes, timeout votes, QCs, certified proposal bodies, and the highest safety state are synchronously written before the corresponding message or state transition becomes visible. Restart restores this WAL and fails closed on corruption or conflicting same-view votes.
+- Votes, timeout votes, QCs and safety watermarks are synchronously written before the corresponding message or state transition becomes visible. Reconstructable proposal bodies use a separate durable cache and can be repaired from peers. Restart restores the WAL and fails closed on corruption or conflicting same-view votes.
 - The QC producer cannot grind the next leader by choosing a signature or signer subset. Leader selection is a domain-separated PRF of the genesis seed, chain ID, absolute view, and historical committee hash, with unbiased rejection sampling.
 
 The supplied [`genesis.json`](genesis.json) commits the complete Fair HotStuff configuration in the genesis header `mixHash`, including the chain ID, committee, fork settings, transport policy, and `fairHotstuffSeed`. This intentionally changes the genesis block hash; existing databases from the old protocol must not be reused.
+
+The finality-proof format and certificate recovery records in this experiment require a fresh genesis database. The [seven-node runtime harness](scripts/fhs-e2e/README.md) preserves existing validator keystores and archives chain-bound stores before initialization. Its crash/omission tests supplement the signed-QC convergence, finality, and committee-handoff regression tests; they are not a proof of consensus correctness for all adversarial schedules.
 
 The committed seed is a trusted-genesis implementation of the paper's fair-election assumption for a static Byzantine set. It removes current-leader QC grinding, but the schedule is predictable after genesis and the seed creator must generate the seed honestly. Deployments that require resistance to a malicious seed ceremony, adaptive corruption, or targeted future-leader denial of service should replace it with a DKG-backed threshold beacon or an independently verified external beacon.
 

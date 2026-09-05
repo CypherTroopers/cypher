@@ -99,8 +99,10 @@ func IterateFHSBodies(db ethdb.Iteratee, visit func(common.Hash) error) error {
 	return iterator.Error()
 }
 
-func ReadFHSCertificate(db ethdb.KeyValueReader, blockHash common.Hash) ([]byte, error) {
-	key := fhsHashKey(fhsCertificatePrefix, blockHash)
+// Certificates are keyed by proposal identity, which includes the view. The
+// same execution block may have independently valid certificates in many views.
+func ReadFHSCertificate(db ethdb.KeyValueReader, proposalID common.Hash) ([]byte, error) {
+	key := fhsHashKey(fhsCertificatePrefix, proposalID)
 	has, err := db.Has(key)
 	if err != nil || !has {
 		return nil, err
@@ -109,12 +111,12 @@ func ReadFHSCertificate(db ethdb.KeyValueReader, blockHash common.Hash) ([]byte,
 	return common.CopyBytes(data), err
 }
 
-func WriteFHSCertificate(db ethdb.KeyValueWriter, blockHash common.Hash, data []byte) error {
-	return db.Put(fhsHashKey(fhsCertificatePrefix, blockHash), common.CopyBytes(data))
+func WriteFHSCertificate(db ethdb.KeyValueWriter, proposalID common.Hash, data []byte) error {
+	return db.Put(fhsHashKey(fhsCertificatePrefix, proposalID), common.CopyBytes(data))
 }
 
-func DeleteFHSCertificate(db ethdb.KeyValueWriter, blockHash common.Hash) error {
-	return db.Delete(fhsHashKey(fhsCertificatePrefix, blockHash))
+func DeleteFHSCertificate(db ethdb.KeyValueWriter, proposalID common.Hash) error {
+	return db.Delete(fhsHashKey(fhsCertificatePrefix, proposalID))
 }
 
 // IterateFHSCertificates visits every durable certificate. The value is owned

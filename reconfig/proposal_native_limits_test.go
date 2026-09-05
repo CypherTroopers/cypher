@@ -29,11 +29,11 @@ func TestNativeProposalLimitsFollowGenesisConfig(t *testing.T) {
 	if got, want := proposalBodyLimitForConfig(config), int(config.NativeParallel.MaxBlockBytes); got != want {
 		t.Fatalf("proposal body limit = %d, want %d", got, want)
 	}
-	cacheWant := 3 * (int(config.NativeParallel.MaxBlockBytes) + proposalBodyControlMaxBytes + 4096)
+	cacheWant := 3 * (int(config.NativeParallel.MaxBlockBytes) + proposalBodyControlMaxBytes + types.MaxFHSFinalityProofSize + 4096)
 	if got, want := proposalBodyCacheLimitForConfig(config), cacheWant; got != want {
 		t.Fatalf("proposal cache limit = %d, want %d", got, want)
 	}
-	if got, want := proposalPeerQueueBulkLimitForConfig(config), int(config.NativeParallel.MaxBlockBytes)+1024*1024; got != want {
+	if got, want := proposalPeerQueueBulkLimitForConfig(config), int(config.NativeParallel.MaxBlockBytes)+proposalBodyControlMaxBytes+types.MaxFHSFinalityProofSize+4096; got != want {
 		t.Fatalf("peer bulk limit = %d, want %d", got, want)
 	}
 	if got := proposalRepairPayloadLimitForConfig(config); got != proposalBodySidecarMaxBytes {

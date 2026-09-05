@@ -1359,7 +1359,7 @@ func (hsm *HotstuffProtocolManager) CanTryPropose() bool {
 		if leaderID != v.leaderId {
 			return false
 		}
-		highest = hsm.app.HighestCertified()
+		highest = hsm.selectedFHSProposalParent()
 	}
 	if number != v.number || !bytes.Equal(state, v.currentState) {
 		return false

@@ -1020,67 +1020,101 @@ func (v *BlockValidator) ReconstructFHSQC(block *types.Block) (*types.HotstuffPr
 	return verified.ref, qc, nil
 }
 
-// VerifyFHS2ChainCommitProof verifies that childQC certifies the direct child
-// of target and therefore finalizes target under the Fast-HotStuff 2-chain
-// rule. Generic block sync must never advance the FHS canonical head from the
-// target's own one-chain QC alone.
+// VerifyFHS2ChainCommitProof is the direct-child form of the finality proof.
+// Its one edge must join consecutive views.
 func (v *BlockValidator) VerifyFHS2ChainCommitProof(target *types.Block, childQC *hotstuff.SignedState) error {
-	if target == nil || childQC == nil || v.config == nil || !v.config.FairHotstuff {
+	return v.VerifyFHSCommitProof(target, singleFHSCommitProof(childQC))
+}
+
+func (v *BlockValidator) VerifyFHSCommitProof(target *types.Block, proof *FHSCommitProof) error {
+	if target == nil || v.config == nil || !v.config.FairHotstuff {
 		return fmt.Errorf("incomplete Fair HotStuff 2-chain commit proof")
+	}
+	if err := proof.validateShape(); err != nil {
+		return err
 	}
 	targetRef, targetQC, err := v.ReconstructFHSQC(target)
 	if err != nil {
 		return fmt.Errorf("invalid target FHS QC: %w", err)
 	}
-	childRef, err := types.DecodeHotstuffProposalRef(childQC.State)
-	if err != nil {
-		return fmt.Errorf("invalid child FHS proposal reference: %w", err)
-	}
 	chainID := uint64(0)
 	if v.config.ChainID != nil {
 		chainID = v.config.ChainID.Uint64()
 	}
-	if childRef.ChainID != chainID || childQC.Number != childRef.ViewNumber || childQC.ViewID != childRef.ViewID || childQC.LeaderID != childRef.LeaderID {
-		return fmt.Errorf("child FHS QC context mismatch")
-	}
-	if childRef.ParentHash != target.Hash() || childRef.Number != target.NumberU64()+1 || childRef.ViewNumber <= targetRef.ViewNumber {
-		return fmt.Errorf("child FHS QC does not directly extend target")
-	}
-	targetID, err := hotstuff.SignedStateID(targetQC)
-	if err != nil {
-		return fmt.Errorf("invalid target FHS QC identity: %w", err)
-	}
-	if childRef.ParentQCID != targetID.Hash() {
-		return fmt.Errorf("child FHS QC does not bind the target QC")
-	}
-
-	committee := &bftview.Committee{List: v.bc.keyBlockChain.GetCommitteeByHash(childRef.KeyHash)}
-	if committee == nil || len(committee.List) < 2 {
-		return types.ErrInvalidCommittee
-	}
-	pubs := committee.ToBlsPublicKeys(childRef.KeyHash)
-	threshold := hotstuff.CalcThreshold(len(pubs))
-	if err := hotstuff.ValidateCanonicalSignerMask(childQC.Mask, len(pubs), threshold); err != nil {
-		return fmt.Errorf("invalid child FHS signer mask: %w", err)
-	}
-	if !hotstuff.VerifyFHSSignatureWithContext(childQC.Sign, childQC.Mask, childQC.State, pubs, threshold, chainID, hotstuff.MsgVotePrepare, childQC.ViewID, childQC.LeaderID) {
-		return fmt.Errorf("invalid child FHS QC signature")
-	}
-
 	latestKey := v.bc.keyBlockChain.CurrentBlock()
 	if target.BlockType() == types.Key_Block {
 		latestKey = types.DecodeToKeyBlock(target.KeyInfo())
+		if latestKey == nil || target.NumberU64() == 0 || latestKey.T_Number() != target.NumberU64()-1 || latestKey.ParentHash() != target.KeyHash() {
+			return fmt.Errorf("invalid Fair HotStuff key carrier height or parent")
+		}
 	}
 	if latestKey == nil {
 		return fmt.Errorf("missing Fair HotStuff key activation state")
 	}
 	latestHash := latestKey.Hash()
-	if childRef.KeyHash != target.KeyHash() && childRef.KeyHash != latestHash {
-		return fmt.Errorf("child FHS QC uses an invalid signing key transition")
-	}
-	if childRef.KeyHash != latestHash && target.KeyHash() != latestHash &&
-		(latestKey.T_Number() > ^uint64(0)-2 || childRef.Number > latestKey.T_Number()+2) {
-		return fmt.Errorf("child FHS QC continues an expired signing key")
+	parentRef, parentQC := targetRef, targetQC
+	var signingKey common.Hash
+	for index, childQC := range proof.QCs {
+		childRef, err := types.DecodeHotstuffProposalRef(childQC.State)
+		if err != nil {
+			return fmt.Errorf("invalid FHS descendant reference %d: %w", index, err)
+		}
+		if childRef.ChainID != chainID || childQC.Number != childRef.ViewNumber || childQC.ViewID != childRef.ViewID || childQC.LeaderID != childRef.LeaderID {
+			return fmt.Errorf("FHS descendant QC context mismatch at %d", index)
+		}
+		if childRef.ParentHash != parentRef.BlockHash || childRef.Number <= parentRef.Number || childRef.Number-parentRef.Number != 1 || childRef.ViewNumber <= parentRef.ViewNumber {
+			return fmt.Errorf("FHS descendant QC does not directly extend its parent at %d", index)
+		}
+		parentID, err := hotstuff.SignedStateID(parentQC)
+		if err != nil || childRef.ParentQCID != parentID.Hash() {
+			return fmt.Errorf("FHS descendant QC does not bind its exact parent QC at %d", index)
+		}
+		if index == len(proof.QCs)-1 && childRef.ViewNumber-parentRef.ViewNumber != 1 {
+			return fmt.Errorf("terminal FHS 2-chain requires consecutive views")
+		}
+		if index == 0 {
+			signingKey = childRef.KeyHash
+			if signingKey != target.KeyHash() && signingKey != latestHash {
+				return fmt.Errorf("child FHS QC uses an invalid signing key transition")
+			}
+			if target.BlockType() == types.Key_Block && signingKey != target.KeyHash() {
+				// The proposed committee cannot provide the proof that activates
+				// itself. Its signatures are usable only after an independent
+				// old-epoch proof has made this exact key generation canonical.
+				canonicalKey := v.bc.keyBlockChain.GetBlockByNumber(latestKey.NumberU64())
+				if canonicalKey == nil || canonicalKey.Hash() != latestHash {
+					return fmt.Errorf("FHS key carrier cannot be finalized by its inactive committee")
+				}
+			}
+		} else if childRef.KeyHash != signingKey {
+			// A partially committed ancestor prefix can already have activated
+			// the latest key before this proof finishes the remaining old-epoch
+			// tail. Permit that one-way change only to a canonical key; refs do
+			// not carry enough key-block data to authorize another new epoch.
+			canonicalKey := v.bc.keyBlockChain.GetBlockByNumber(latestKey.NumberU64())
+			if signingKey == latestHash || childRef.KeyHash != latestHash || canonicalKey == nil || canonicalKey.Hash() != latestHash {
+				return fmt.Errorf("FHS finality proof changes to an inactive signing epoch")
+			}
+			signingKey = latestHash
+		}
+		if target.BlockType() != types.Key_Block && signingKey != latestHash && target.KeyHash() != latestHash &&
+			(latestKey.T_Number() > ^uint64(0)-2 || childRef.Number > latestKey.T_Number()+2) &&
+			!v.bc.fhsQCInKeyActivationProof(childQC, latestKey) {
+			return fmt.Errorf("child FHS QC continues an expired signing key")
+		}
+		committee := &bftview.Committee{List: v.bc.keyBlockChain.GetCommitteeByHash(childRef.KeyHash)}
+		if len(committee.List) < 2 {
+			return types.ErrInvalidCommittee
+		}
+		pubs := committee.ToBlsPublicKeys(childRef.KeyHash)
+		threshold := hotstuff.CalcThreshold(len(pubs))
+		if err := hotstuff.ValidateCanonicalSignerMask(childQC.Mask, len(pubs), threshold); err != nil {
+			return fmt.Errorf("invalid FHS descendant signer mask %d: %w", index, err)
+		}
+		if !hotstuff.VerifyFHSSignatureWithContext(childQC.Sign, childQC.Mask, childQC.State, pubs, threshold, chainID, hotstuff.MsgVotePrepare, childQC.ViewID, childQC.LeaderID) {
+			return fmt.Errorf("invalid FHS descendant QC signature at %d", index)
+		}
+		parentRef, parentQC = childRef, childQC
 	}
 	return nil
 }

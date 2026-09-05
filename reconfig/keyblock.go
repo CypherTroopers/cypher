@@ -275,6 +275,109 @@ func verifyKeyBlockCarrierParent(keyblock *types.KeyBlock, txParentNumber uint64
 	return nil
 }
 
+// verifyCertifiedFHSKeyBlock replays a QC-authenticated carrier against its
+// immutable signing epoch. A later local view, best candidate, or reputation
+// estimate cannot invalidate a proposal already certified by that committee.
+// The live proposal verifier below retains those admission checks.
+func (keyS *keyService) verifyCertifiedFHSKeyBlock(ref *types.HotstuffProposalRef, keyblock *types.KeyBlock, candidate *types.Candidate) error {
+	if keyS == nil || keyS.kbc == nil || keyS.config == nil || !keyS.config.FairHotstuff ||
+		ref == nil || ref.Number == 0 || ref.BlockType != types.Key_Block || keyblock == nil {
+		return fmt.Errorf("incomplete certified FHS key carrier")
+	}
+	if keyS.config.ChainID == nil || ref.ChainID != keyS.config.ChainID.Uint64() {
+		return fmt.Errorf("certified FHS key carrier chain mismatch")
+	}
+	if err := verifyKeyBlockCarrierParent(keyblock, ref.Number-1); err != nil {
+		return err
+	}
+	if ref.KeyHash != keyblock.ParentHash() {
+		return fmt.Errorf("certified FHS key carrier signing parent mismatch")
+	}
+	parent := keyS.kbc.GetBlockByHash(ref.KeyHash)
+	if parent == nil || parent.NumberU64() == ^uint64(0) || keyblock.NumberU64() != parent.NumberU64()+1 {
+		return fmt.Errorf("certified FHS key carrier has an invalid parent epoch")
+	}
+	canonicalParent := keyS.kbc.GetBlockByNumber(parent.NumberU64())
+	if canonicalParent == nil || canonicalParent.Hash() != parent.Hash() {
+		return fmt.Errorf("certified FHS key carrier parent epoch is not canonical")
+	}
+	if err := verifyKeyBlockInterval(keyblock, parent, keyS.fixedModeEnabled()); err != nil {
+		return err
+	}
+	committee := bftview.LoadMember(parent.NumberU64(), parent.Hash(), true)
+	if committee == nil || len(committee.List) < 2 || committee.RlpHash() != parent.CommitteeHash() {
+		return fmt.Errorf("certified FHS key carrier signing committee is unavailable")
+	}
+	leaderIndex, err := fairHotstuffLeaderIndex(keyS.config.FairHotstuffSeed, ref.ChainID, ref.ViewNumber, parent.CommitteeHash(), len(committee.List))
+	if err != nil {
+		return err
+	}
+	leader := committee.List[leaderIndex]
+	if leader == nil || ref.LeaderID != leader.Address || keyblock.LeaderPubKey() != leader.Public || keyblock.LeaderAddress() != leader.CoinBase {
+		return fmt.Errorf("certified FHS key carrier leader differs from its authenticated view")
+	}
+	if keyblock.InAddress() == "" || keyblock.InPubKey() == "" || keyblock.LeaderAddress() == "" || !keyblock.TypeCheck(parent.T_Number()) {
+		return fmt.Errorf("invalid certified FHS key carrier membership")
+	}
+	keyType := keyblock.BlockType()
+	powChange := keyType == types.PowReconfig || keyType == types.PacePowReconfig
+	if powChange && keyS.fixedModeEnabled() {
+		return fmt.Errorf("certified FHS pow reconfiguration is disabled in fixed mode")
+	}
+	if !powChange && keyType != types.TimeReconfig && keyType != types.PaceReconfig {
+		return fmt.Errorf("invalid certified FHS key carrier type %d", keyType)
+	}
+	rewardCandidate := keyS.fixedModeEnabled() && !powChange && keyblock.OutPubKey() != "" && keyblock.OutAddress(0) != ""
+	var newNode *common.Cnode
+	if powChange || rewardCandidate {
+		if candidate == nil || candidate.KeyCandidate == nil || keyS.engine == nil {
+			return fmt.Errorf("certified FHS key carrier requires its PoW candidate")
+		}
+		// Candidate verification may normalize BlockType. Keep the sidecar
+		// immutable while retaining the exact candidate proof checks.
+		candidate = types.DecodeToCandidate(candidate.EncodeToBytes())
+		if candidate == nil || candidate.KeyCandidate == nil {
+			return fmt.Errorf("invalid certified FHS key carrier candidate encoding")
+		}
+		candidate.KeyCandidate.BlockType = keyType
+		if keyblock.Header().HashWithCandi() != candidate.KeyCandidate.HashWithCandi() {
+			return fmt.Errorf("certified FHS key carrier candidate commitment mismatch")
+		}
+		if powChange {
+			if keyblock.InPubKey() != candidate.PubKey || keyblock.InAddress() != candidate.Coinbase {
+				return fmt.Errorf("certified FHS key carrier incoming candidate mismatch")
+			}
+			newNode = &common.Cnode{Address: net.JoinHostPort(net.IP(candidate.IP).String(), strconv.Itoa(candidate.Port)), CoinBase: candidate.Coinbase, Public: candidate.PubKey}
+		} else if keyblock.OutPubKey() != candidate.PubKey || keyblock.OutAddress(0) != candidate.Coinbase {
+			return fmt.Errorf("certified FHS key carrier reward candidate mismatch")
+		}
+		if err := keyS.engine.VerifyCandidate(keyS.kbc, candidate); err != nil {
+			return err
+		}
+	}
+	next := committee.Copy()
+	outer := next.Add(newNode, int(leaderIndex), keyblock.OutAddress(1))
+	if next.RlpHash() != keyblock.CommitteeHash() || next.Leader().CoinBase != keyblock.LeaderAddress() ||
+		next.Leader().Public != keyblock.LeaderPubKey() || next.In().CoinBase != keyblock.InAddress() || next.In().Public != keyblock.InPubKey() {
+		return fmt.Errorf("certified FHS key carrier committee commitment mismatch")
+	}
+	if powChange {
+		outAddress := keyblock.OutAddress(0)
+		if len(outAddress) > 0 && outAddress[0] == '*' {
+			outAddress = outAddress[1:]
+		}
+		if outer == nil || outer.CoinBase != outAddress || outer.Public != keyblock.OutPubKey() {
+			return fmt.Errorf("certified FHS key carrier outgoing member mismatch")
+		}
+	}
+	// Persist only immutable committee material, with no network callback,
+	// rescue-mode change, or modification of the live pacemaker context.
+	if !next.StoreWithoutCallback(keyblock) {
+		return fmt.Errorf("cannot store certified FHS key carrier committee")
+	}
+	return nil
+}
+
 func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *types.Candidate, txParentNumber uint64) error { //
 	log.Info("@verifyKeyBlock", "number", keyblock.NumberU64())
 	if err := verifyKeyBlockCarrierParent(keyblock, txParentNumber); err != nil {

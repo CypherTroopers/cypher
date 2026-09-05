@@ -37,10 +37,10 @@ const (
 	// EIP-2935 commits this many recent ancestor hashes in consensus state.
 	// Native replay anchors and BLOCKHASH resolve their exact branch through it.
 	NativeReplayHistoryWindow = 8191
-	// Fair HotStuff attaches the direct-child finality proof after proposal
+	// Fair HotStuff attaches a bounded descendant finality proof after proposal
 	// voting. Genesis block limits must reserve both the bounded proof and its
 	// RLP/list growth or proposer subtraction would underflow.
-	FairHotstuffMaxFinalityProofBytes     = 64 * 1024
+	FairHotstuffMaxFinalityProofBytes     = 1024 * 1024
 	FairHotstuffFinalityProofRLPOverhead  = 16
 	FairHotstuffFinalityProofReserveBytes = FairHotstuffMaxFinalityProofBytes + FairHotstuffFinalityProofRLPOverhead
 )
