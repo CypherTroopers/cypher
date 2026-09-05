@@ -130,8 +130,14 @@ func TestFHS2ChainCommitTarget(t *testing.T) {
 	}
 	b2 := &fhsCertifiedProposal{
 		ref: &types.HotstuffProposalRef{Number: 2, BlockHash: b2Hash, ParentHash: b1Hash},
-		qc:  &hotstuff.SignedState{Number: 14},
+		qc:  &hotstuff.SignedState{Number: 12},
 	}
+	b1.qc.State, b1.qc.ViewID, b1.qc.LeaderID = []byte("certified parent"), common.HexToHash("0x11"), "leader"
+	parentID, err := hotstuff.SignedStateID(b1.qc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2.ref.ParentQCID = parentID.Hash()
 	certified := map[common.Hash]*fhsCertifiedProposal{
 		b1Hash: b1,
 		b2Hash: b2,
@@ -141,12 +147,16 @@ func TestFHS2ChainCommitTarget(t *testing.T) {
 		t.Fatalf("commit target = %p, want first block %p", target, b1)
 	}
 
+	b2.qc.Number = 14
+	if target := fhs2ChainCommitTarget(certified, b2); target != nil {
+		t.Fatalf("nonconsecutive certified views produced commit target %p", target)
+	}
 	b2.qc.Number = 11
 	if target := fhs2ChainCommitTarget(certified, b2); target != nil {
 		t.Fatalf("non-increasing certified views produced commit target %p", target)
 	}
 
-	b2.qc.Number = 14
+	b2.qc.Number = 12
 	b2.ref.ParentHash = common.HexToHash("0xffff")
 	if target := fhs2ChainCommitTarget(certified, b2); target != nil {
 		t.Fatalf("non-extending certified child produced commit target %p", target)

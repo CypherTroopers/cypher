@@ -206,7 +206,10 @@ func (txS *txService) buildProposalNewKeyBlock(keyblock *types.KeyBlock) (*keyPr
 	txS.mu.Lock()
 	defer txS.mu.Unlock()
 
-	work := txS.createWork(types.Key_Block)
+	work, err := txS.createWork(types.Key_Block)
+	if err != nil {
+		return nil, err
+	}
 	if work == nil || work.header == nil || work.header.Number == nil || work.header.Number.Sign() <= 0 {
 		return nil, fmt.Errorf("cannot determine key block carrier parent")
 	}
@@ -552,14 +555,17 @@ func (txS *txService) buildNativeProposalNewBlock(blockType uint8) (*txProposalC
 	if err := func() error {
 		txS.mu.Lock()
 		defer txS.mu.Unlock()
-		work = txS.createWork(blockType)
+		var err error
+		work, err = txS.createWork(blockType)
+		if err != nil {
+			return err
+		}
 		candidates = txS.proposedChain.withoutProposedTransactions(pending, time.Now())
 		if txS.config != nil && txS.config.FairHotstuff {
 			if svc, ok := txS.s.(*Service); ok {
 				allowFHSFinalityBlock = svc.needsFHSFinalityBlock()
 			}
 		}
-		var err error
 		generation, err = txS.captureProposalGeneration(work)
 		return err
 	}(); err != nil {
@@ -736,7 +742,11 @@ func (txS *txService) buildProposalNewBlock(blockType uint8) (*txProposalCandida
 		txS.mu.Lock()
 		defer txS.mu.Unlock()
 
-		work = txS.createWork(blockType)
+		var err error
+		work, err = txS.createWork(blockType)
+		if err != nil {
+			return err
+		}
 		filteredAddrTxes = txS.filterProposalTransactions(blockType, allAddrTxes)
 		if txS.config != nil && txS.config.FairHotstuff {
 			if svc, ok := txS.s.(*Service); ok {
@@ -947,7 +957,19 @@ func (txS *txService) verifyHistoricalCertifiedProposal(ref *types.HotstuffPropo
 // where an entire uncommitted chain must be validated before any record is
 // published into the live certified-proposal maps.
 func (txS *txService) verifyHotstuffProposalWithParent(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentVerified *core.VerifiedProposal) (*core.VerifiedProposal, error) {
-	return txS.verifyHotstuffProposalWithKeyContext(ref, txblock, extra, parentVerified, false)
+	return txS.verifyHotstuffProposalWithKeyContext(ref, txblock, extra, parentVerified, false, false)
+}
+
+// verifyHotstuffProposalWithOwnedParent is only for the private snapshot handed
+// to one Prepare worker. Consume it even if the live key/ref checks fail, so a
+// failed or superseded execution cannot reuse a partially mutated parent.
+func (txS *txService) verifyHotstuffProposalWithOwnedParent(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentSnapshot *core.VerifiedProposal) (*core.VerifiedProposal, error) {
+	if parentSnapshot == nil || parentSnapshot.StateDB == nil {
+		return nil, fmt.Errorf("missing or consumed hotstuff parent snapshot")
+	}
+	ownedParent := *parentSnapshot
+	parentSnapshot.StateDB = nil
+	return txS.verifyHotstuffProposalWithKeyContext(ref, txblock, extra, &ownedParent, false, true)
 }
 
 // verifyHistoricalCertifiedProposalWithParent is deliberately separate from
@@ -955,10 +977,10 @@ func (txS *txService) verifyHotstuffProposalWithParent(ref *types.HotstuffPropos
 // block is present on the local canonical key chain. The caller must first
 // verify the proposal QC with the committee selected by ref.KeyHash.
 func (txS *txService) verifyHistoricalCertifiedProposalWithParent(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentVerified *core.VerifiedProposal) (*core.VerifiedProposal, error) {
-	return txS.verifyHotstuffProposalWithKeyContext(ref, txblock, extra, parentVerified, true)
+	return txS.verifyHotstuffProposalWithKeyContext(ref, txblock, extra, parentVerified, true, false)
 }
 
-func (txS *txService) verifyHotstuffProposalWithKeyContext(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentVerified *core.VerifiedProposal, allowHistoricalKey bool) (*core.VerifiedProposal, error) {
+func (txS *txService) verifyHotstuffProposalWithKeyContext(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte, parentVerified *core.VerifiedProposal, allowHistoricalKey, ownsParentState bool) (*core.VerifiedProposal, error) {
 	if ref == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal ref")
 	}
@@ -1017,11 +1039,10 @@ func (txS *txService) verifyHotstuffProposalWithKeyContext(ref *types.HotstuffPr
 		return nil, err
 	}
 
-	verified, err := bc.ValidateBlockForHotstuffWithParent(proposalID, ref.ViewNumber, ref.ViewID, ref.LeaderID, txblock, parentVerified)
-	if err != nil {
-		return nil, err
+	if ownsParentState {
+		return bc.ValidateBlockForHotstuffWithOwnedParent(proposalID, ref.ViewNumber, ref.ViewID, ref.LeaderID, txblock, parentVerified)
 	}
-	return verified, nil
+	return bc.ValidateBlockForHotstuffWithParent(proposalID, ref.ViewNumber, ref.ViewID, ref.LeaderID, txblock, parentVerified)
 }
 
 // verifyHotstuffProposalPrevRandao prevents a proposer from choosing the
@@ -1066,17 +1087,17 @@ func verifyHotstuffProposalPrevRandao(config *params.ChainConfig, block *types.B
 // VotePrepare validation. It is used by legacy Decide and by delayed FHS
 // 2-chain commit, and deliberately avoids a second StateProcessor execution.
 func (txS *txService) decideVerifiedProposal(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, sig []byte, mask []byte, viewNumber uint64, viewID common.Hash, leaderID string) error {
-	return txS.decideVerifiedProposalWithChild(ref, verified, sig, mask, viewNumber, viewID, leaderID, nil)
+	return txS.decideVerifiedProposalWithProof(ref, verified, sig, mask, viewNumber, viewID, leaderID, nil)
 }
 
-func (txS *txService) decideFHSVerifiedProposal(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, targetQC, childQC *hotstuff.SignedState) error {
-	if targetQC == nil || childQC == nil {
+func (txS *txService) decideFHSVerifiedProposal(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, targetQC *hotstuff.SignedState, proof *core.FHSCommitProof) error {
+	if targetQC == nil || proof == nil || len(proof.QCs) == 0 {
 		return fmt.Errorf("incomplete FHS 2-chain commit proof")
 	}
-	return txS.decideVerifiedProposalWithChild(ref, verified, targetQC.Sign, targetQC.Mask, targetQC.Number, targetQC.ViewID, targetQC.LeaderID, childQC)
+	return txS.decideVerifiedProposalWithProof(ref, verified, targetQC.Sign, targetQC.Mask, targetQC.Number, targetQC.ViewID, targetQC.LeaderID, proof)
 }
 
-func (txS *txService) decideVerifiedProposalWithChild(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, sig []byte, mask []byte, viewNumber uint64, viewID common.Hash, leaderID string, childQC *hotstuff.SignedState) error {
+func (txS *txService) decideVerifiedProposalWithProof(ref *types.HotstuffProposalRef, verified *core.VerifiedProposal, sig []byte, mask []byte, viewNumber uint64, viewID common.Hash, leaderID string, proof *core.FHSCommitProof) error {
 	if ref == nil {
 		return fmt.Errorf("nil hotstuff proposal ref")
 	}
@@ -1122,7 +1143,7 @@ func (txS *txService) decideVerifiedProposalWithChild(ref *types.HotstuffProposa
 	}
 	var err error
 	if txS.config != nil && txS.config.FairHotstuff {
-		_, err = bc.CommitFHSVerifiedProposal(verified, childQC, false)
+		_, err = bc.CommitFHSVerifiedProposalWithProof(verified, proof, false)
 	} else {
 		_, err = bc.CommitVerifiedProposal(verified, false)
 	}
@@ -1610,8 +1631,31 @@ func (txS *txService) updateChainPerNewHead(newBlock *types.Block) {
 	txS.proposedChain.accept(newBlock)
 }
 
+// nextProposalTimestamp preserves strictly increasing uint64 block times. FHS
+// builders share the validator's future-time allowance and return an error for
+// a temporary exhausted window instead of publishing an invalid proposal.
+func nextProposalTimestamp(config *params.ChainConfig, parentTime uint64, now time.Time) (uint64, error) {
+	if parentTime == math.MaxUint64 {
+		return 0, fmt.Errorf("cannot create proposal after maximum block timestamp")
+	}
+	seconds := now.Unix()
+	if seconds < 0 {
+		return 0, fmt.Errorf("cannot create proposal before the Unix epoch")
+	}
+	timestamp := uint64(seconds)
+	if timestamp <= parentTime {
+		timestamp = parentTime + 1
+	}
+	if config != nil && config.FairHotstuff {
+		if err := colossusX.VerifyFHSBlockTimestamp(timestamp, now); err != nil {
+			return 0, fmt.Errorf("proposal timestamp %d is not ready: %w", timestamp, err)
+		}
+	}
+	return timestamp, nil
+}
+
 // Assumes mu is held.
-func (txS *txService) createWork(blockType uint8) *work {
+func (txS *txService) createWork(blockType uint8) (*work, error) {
 	parent := txS.bc.CurrentBlock()
 	var publicState *state.StateDB
 	if txS.config != nil && txS.config.FairHotstuff {
@@ -1625,15 +1669,13 @@ func (txS *txService) createWork(blockType uint8) *work {
 		}
 	}
 	if parent == nil {
-		panic("failed to get proposal parent")
+		return nil, fmt.Errorf("failed to get proposal parent")
 	}
 	parentNumber := parent.Number()
 
-	parentTime := int64(parent.Time())
-	tstamp := time.Now().Unix()
-
-	if parentTime >= tstamp { // Each successive block needs to be after its predecessor.
-		tstamp = parentTime + 1
+	tstamp, err := nextProposalTimestamp(txS.config, parent.Time(), time.Now())
+	if err != nil {
+		return nil, err
 	}
 	log.Info("createWork", "parent.Difficulty()", parent.Difficulty())
 
@@ -1644,7 +1686,7 @@ func (txS *txService) createWork(blockType uint8) *work {
 		GasLimit:   txS.cph.calcGasLimitFunc(parent),
 		GasUsed:    0,
 		Coinbase:   bftview.GetServerCoinBase(),
-		Time:       uint64(tstamp),
+		Time:       tstamp,
 		BlockType:  blockType,
 	}
 	if txS.config != nil && txS.config.IsLondon(header.Number) {
@@ -1662,14 +1704,14 @@ func (txS *txService) createWork(blockType uint8) *work {
 		var err error
 		publicState, err = txS.bc.StateAt(parent.Root())
 		if err != nil {
-			panic(fmt.Sprint("failed to get parent state: ", err))
+			return nil, fmt.Errorf("failed to get parent state: %w", err)
 		}
 	}
 	if err := core.ProcessParentBlockHash(txS.config, header, publicState); err != nil {
 		// The EIP-2935 call is deterministic system work. Continuing with a
 		// partially updated state would create a proposal validators cannot
 		// reproduce, so proposal construction must fail closed.
-		panic(fmt.Sprint("failed to store Prague parent block hash: ", err))
+		return nil, fmt.Errorf("failed to store Prague parent block hash: %w", err)
 	}
 	gasTarget := blockGasTarget(blockType, header.GasLimit)
 	pendingTotal, _ := txS.txPool.Stats()
@@ -1692,7 +1734,7 @@ func (txS *txService) createWork(blockType uint8) *work {
 			work.fhsWorkMeter = core.NewFHSBlockWorkMeterForConfig(txS.config)
 		}
 	}
-	return work
+	return work, nil
 }
 
 // deriveCancunHeaderFields initializes the fields whose values are known before

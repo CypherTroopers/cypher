@@ -85,7 +85,7 @@ var (
 	blockPrefetchInterruptMeter = metrics.NewRegisteredMeter("chain/prefetch/interrupts", nil)
 
 	errInsertionInterrupted   = errors.New("insertion is interrupted")
-	ErrFHSCommitProofRequired = errors.New("Fair HotStuff canonical commit requires a direct-child QC proof")
+	ErrFHSCommitProofRequired = errors.New("Fair HotStuff canonical commit requires a consecutive-view finality proof")
 	// ErrFHSFinalizedSyncPublicationBusy is returned internally when a
 	// proof-aware FHS sync import reaches a key transition while a live
 	// consensus publication owns the epoch barrier. InsertChain consumes this
@@ -94,63 +94,6 @@ var (
 	// invalid block or peer fault.
 	ErrFHSFinalizedSyncPublicationBusy = errors.New("Fair HotStuff validation publication is busy")
 )
-
-const fhsFinalityProofEnvelopeVersion = uint32(1)
-
-// fhsFinalityProofEnvelope is post-certification metadata. ChildQC is formed
-// by the committee and proves that the target has a certified direct child;
-// a common RPC/mining node only verifies and consumes it during block sync.
-type fhsFinalityProofEnvelope struct {
-	Version uint32
-	ChildQC []byte
-}
-
-func encodeFHSFinalityProof(childQC *hotstuff.SignedState) ([]byte, error) {
-	clone := hotstuff.CloneSignedState(childQC)
-	if clone == nil {
-		return nil, errors.New("nil Fair HotStuff child QC")
-	}
-	encodedQC, err := hotstuff.EncodeSignedState(clone)
-	if err != nil {
-		return nil, fmt.Errorf("encode Fair HotStuff child QC: %w", err)
-	}
-	encoded, err := rlp.EncodeToBytes(&fhsFinalityProofEnvelope{Version: fhsFinalityProofEnvelopeVersion, ChildQC: encodedQC})
-	if err != nil {
-		return nil, fmt.Errorf("encode Fair HotStuff finality proof: %w", err)
-	}
-	if len(encoded) == 0 || len(encoded) > types.MaxFHSFinalityProofSize {
-		return nil, fmt.Errorf("invalid Fair HotStuff finality proof size %d", len(encoded))
-	}
-	return encoded, nil
-}
-
-func decodeFHSFinalityProof(block *types.Block) (*hotstuff.SignedState, bool, error) {
-	if block == nil {
-		return nil, false, errors.New("nil Fair HotStuff proof block")
-	}
-	encoded := block.FHSFinalityProof()
-	if len(encoded) == 0 {
-		return nil, false, nil
-	}
-	if len(encoded) > types.MaxFHSFinalityProofSize {
-		return nil, true, fmt.Errorf("Fair HotStuff finality proof exceeds %d bytes", types.MaxFHSFinalityProofSize)
-	}
-	var envelope fhsFinalityProofEnvelope
-	if err := rlp.DecodeBytes(encoded, &envelope); err != nil {
-		return nil, true, fmt.Errorf("decode Fair HotStuff finality proof: %w", err)
-	}
-	if envelope.Version != fhsFinalityProofEnvelopeVersion {
-		return nil, true, fmt.Errorf("unsupported Fair HotStuff finality proof version %d", envelope.Version)
-	}
-	childQC, err := hotstuff.DecodeSignedState(envelope.ChildQC)
-	if err != nil {
-		return nil, true, fmt.Errorf("decode Fair HotStuff finality child QC: %w", err)
-	}
-	if childQC == nil {
-		return nil, true, errors.New("empty Fair HotStuff finality child QC")
-	}
-	return childQC, true, nil
-}
 
 const (
 	bodyCacheLimit      = 128
@@ -904,20 +847,14 @@ func (bc *BlockChain) ExportN(w io.Writer, first uint64, last uint64) error {
 // Note, this function assumes that the `mu` mutex is held!
 func (bc *BlockChain) writeHeadBlock(block *types.Block) error {
 	if bc.chainConfig != nil && bc.chainConfig.FairHotstuff && block != nil && block.NumberU64() > 0 {
-		childQC, present, err := decodeFHSFinalityProof(block)
+		childQC, present, err := DecodeFHSCommitProof(block)
 		if err != nil {
 			return err
 		}
 		if !present {
 			return ErrFHSCommitProofRequired
 		}
-		proofValidator, ok := bc.validator.(interface {
-			VerifyFHS2ChainCommitProof(*types.Block, *hotstuff.SignedState) error
-		})
-		if !ok {
-			return errors.New("Fair HotStuff finality proof validator is unavailable")
-		}
-		if err := proofValidator.VerifyFHS2ChainCommitProof(block, childQC); err != nil {
+		if err := bc.VerifyFHSCommitProof(block, childQC); err != nil {
 			return fmt.Errorf("invalid embedded Fair HotStuff finality proof: %w", err)
 		}
 	}
@@ -1900,13 +1837,28 @@ func (r *hotstuffHeaderReader) GetHeader(hash common.Hash, number uint64) *types
 // ValidateBlockForHotstuffWithParent validates a proposal on top of a
 // certified parent that may still be outside the canonical database.
 func (bc *BlockChain) ValidateBlockForHotstuffWithParent(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block, parentProposal *VerifiedProposal) (*VerifiedProposal, error) {
-	return bc.validateBlockForHotstuffWithParent(proposalID, viewNumber, viewID, leaderID, block, parentProposal, false)
+	return bc.validateBlockForHotstuffWithParent(proposalID, viewNumber, viewID, leaderID, block, parentProposal, false, false)
+}
+
+// ValidateBlockForHotstuffWithOwnedParent consumes a private parent snapshot
+// instead of copying its StateDB again. The caller must exclusively own both
+// parentSnapshot and its StateDB; a shared cached or committable parent must use
+// ValidateBlockForHotstuffWithParent. StateDB is detached on entry, including on
+// failure, and the snapshot must not be reused. All proposal validation remains
+// identical to the copying path.
+func (bc *BlockChain) ValidateBlockForHotstuffWithOwnedParent(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block, parentSnapshot *VerifiedProposal) (*VerifiedProposal, error) {
+	if parentSnapshot == nil || parentSnapshot.StateDB == nil {
+		return nil, fmt.Errorf("missing or consumed hotstuff parent snapshot")
+	}
+	ownedParent := *parentSnapshot
+	parentSnapshot.StateDB = nil
+	return bc.validateBlockForHotstuffWithParent(proposalID, viewNumber, viewID, leaderID, block, &ownedParent, false, true)
 }
 
 // validateBlockForHotstuffWithParent is also used by the proof-aware full-sync
 // importer. proofAwareSync both revalidates known data and permits finalized
 // proof metadata; a live known proposal revalidates without that permission.
-func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block, parentProposal *VerifiedProposal, proofAwareSync bool) (*VerifiedProposal, error) {
+func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash, viewNumber uint64, viewID common.Hash, leaderID string, block *types.Block, parentProposal *VerifiedProposal, proofAwareSync, ownsParentState bool) (*VerifiedProposal, error) {
 	if block == nil {
 		return nil, fmt.Errorf("nil hotstuff proposal block")
 	}
@@ -1974,7 +1926,10 @@ func (bc *BlockChain) validateBlockForHotstuffWithParent(proposalID common.Hash,
 		headerReader = &hotstuffHeaderReader{ChainHeaderReader: bc, parent: parent}
 		hasHotstuffParent = true
 		if parentProposal.StateDB != nil {
-			statedb = parentProposal.StateDB.Copy()
+			statedb = parentProposal.StateDB
+			if !ownsParentState {
+				statedb = statedb.Copy()
+			}
 		}
 	}
 	if err := bc.engine.VerifyHeader(headerReader, header, false); err != nil {
@@ -2073,7 +2028,7 @@ func (bc *BlockChain) CommitVerifiedProposal(vp *VerifiedProposal, emitHeadEvent
 // HotStuff canonical head. childQC must certify the direct child of vp.Block;
 // the target block's own QC alone is not a finality proof in a 2-chain protocol.
 func (bc *BlockChain) CommitFHSVerifiedProposal(vp *VerifiedProposal, childQC *hotstuff.SignedState, emitHeadEvent bool) (WriteStatus, error) {
-	return bc.commitVerifiedProposal(vp, childQC, emitHeadEvent)
+	return bc.CommitFHSVerifiedProposalWithProof(vp, singleFHSCommitProof(childQC), emitHeadEvent)
 }
 
 // VerifyFHS2ChainCommitProof performs the cryptographic and key-epoch proof
@@ -2081,16 +2036,20 @@ func (bc *BlockChain) CommitFHSVerifiedProposal(vp *VerifiedProposal, childQC *h
 // callers use this before rotating epoch-local safety state; the commit path
 // repeats the same verification while holding chainmu.
 func (bc *BlockChain) VerifyFHS2ChainCommitProof(target *types.Block, childQC *hotstuff.SignedState) error {
-	if bc == nil || target == nil || childQC == nil {
-		return fmt.Errorf("incomplete Fair HotStuff 2-chain commit proof")
+	return bc.VerifyFHSCommitProof(target, singleFHSCommitProof(childQC))
+}
+
+// VerifyFHSCommitProof checks the complete descendant path and its terminal
+// consecutive-view pair without changing canonical, pacemaker or WAL state.
+func (bc *BlockChain) VerifyFHSCommitProof(target *types.Block, proof *FHSCommitProof) error {
+	if bc == nil {
+		return fmt.Errorf("nil Fair HotStuff block chain")
 	}
-	proofValidator, ok := bc.validator.(interface {
-		VerifyFHS2ChainCommitProof(*types.Block, *hotstuff.SignedState) error
-	})
-	if !ok {
-		return fmt.Errorf("Fair HotStuff 2-chain proof validator is unavailable")
-	}
-	return proofValidator.VerifyFHS2ChainCommitProof(target, hotstuff.CloneSignedState(childQC))
+	return verifyFHSCommitProofWithValidator(bc.validator, target, proof)
+}
+
+func (bc *BlockChain) CommitFHSVerifiedProposalWithProof(vp *VerifiedProposal, proof *FHSCommitProof, emitHeadEvent bool) (WriteStatus, error) {
+	return bc.commitVerifiedProposal(vp, CloneFHSCommitProof(proof), emitHeadEvent)
 }
 
 // ReconstructFHSQC verifies and reconstructs the exact QC carried by block.
@@ -2145,7 +2104,11 @@ const (
 // published. The post hook runs only after a successful canonical commit.
 // chainmu must be held by the caller.
 func (bc *BlockChain) commitFHSSyncVerifiedProposal(vp *VerifiedProposal, childQC *hotstuff.SignedState) (WriteStatus, error) {
-	if vp == nil || vp.Block == nil || childQC == nil {
+	return bc.commitFHSSyncVerifiedProposalWithProof(vp, singleFHSCommitProof(childQC))
+}
+
+func (bc *BlockChain) commitFHSSyncVerifiedProposalWithProof(vp *VerifiedProposal, proof *FHSCommitProof) (WriteStatus, error) {
+	if vp == nil || vp.Block == nil || proof == nil {
 		return NonStatTy, fmt.Errorf("incomplete Fair HotStuff finalized sync proposal")
 	}
 	lifecycleConfigured := bc.fhsSyncBeforeKeyCommit != nil || bc.fhsSyncWaitPublication != nil ||
@@ -2154,10 +2117,11 @@ func (bc *BlockChain) commitFHSSyncVerifiedProposal(vp *VerifiedProposal, childQ
 		bc.fhsSyncAfterCommit == nil || bc.fhsSyncFinishKeyCommit == nil) {
 		return NonStatTy, fmt.Errorf("incomplete Fair HotStuff finalized sync key lifecycle")
 	}
-	childQC = hotstuff.CloneSignedState(childQC)
-	if err := bc.VerifyFHS2ChainCommitProof(vp.Block, childQC); err != nil {
+	proof = CloneFHSCommitProof(proof)
+	if err := bc.VerifyFHSCommitProof(vp.Block, proof); err != nil {
 		return NonStatTy, fmt.Errorf("invalid Fair HotStuff finalized sync proof: %w", err)
 	}
+	terminalQC := proof.QCs[len(proof.QCs)-1]
 	_, ownQC, err := bc.ReconstructFHSQC(vp.Block)
 	if err != nil {
 		return NonStatTy, fmt.Errorf("reconstruct Fair HotStuff finalized sync target QC: %w", err)
@@ -2165,7 +2129,7 @@ func (bc *BlockChain) commitFHSSyncVerifiedProposal(vp *VerifiedProposal, childQ
 	keyCarrier := vp.Block.BlockType() == types.Key_Block
 	keyTransitionStarted := false
 	if keyCarrier && bc.fhsSyncBeforeKeyCommit != nil {
-		acquired, err := bc.fhsSyncBeforeKeyCommit(vp.Block, hotstuff.CloneSignedState(childQC))
+		acquired, err := bc.fhsSyncBeforeKeyCommit(vp.Block, hotstuff.CloneSignedState(terminalQC))
 		if err != nil {
 			// A live HotStuff publication may already own the barrier while
 			// waiting for chainmu. The sync hook must fail fast in that case;
@@ -2186,7 +2150,7 @@ func (bc *BlockChain) commitFHSSyncVerifiedProposal(vp *VerifiedProposal, childQ
 	if keyTransitionStarted && bc.fhsSyncFinishKeyCommit != nil {
 		defer func() { bc.fhsSyncFinishKeyCommit(vp.Block, keyTransitionOutcome) }()
 	}
-	status, err := bc.commitVerifiedProposalLocked(vp, childQC, false)
+	status, err := bc.commitVerifiedProposalLocked(vp, proof, false)
 	if err != nil {
 		return status, err
 	}
@@ -2197,7 +2161,13 @@ func (bc *BlockChain) commitFHSSyncVerifiedProposal(vp *VerifiedProposal, childQ
 		keyTransitionOutcome = FHSFinalizedSyncCanonicalAfterFailed
 	}
 	if status == CanonStatTy && bc.fhsSyncAfterCommit != nil {
-		if err := bc.fhsSyncAfterCommit(vp.Block, hotstuff.CloneSignedState(ownQC), hotstuff.CloneSignedState(childQC)); err != nil {
+		// An already-canonical identical payload may retain SignInfo from a
+		// different valid QC. Reconcile the exact canonical representation.
+		_, ownQC, err = bc.ReconstructFHSQC(vp.Block)
+		if err != nil {
+			return status, fmt.Errorf("reconstruct committed Fair HotStuff sync target QC: %w", err)
+		}
+		if err := bc.fhsSyncAfterCommit(vp.Block, hotstuff.CloneSignedState(ownQC), hotstuff.CloneSignedState(terminalQC)); err != nil {
 			return status, fmt.Errorf("complete Fair HotStuff finalized sync commit: %w", err)
 		}
 	}
@@ -2207,46 +2177,44 @@ func (bc *BlockChain) commitFHSSyncVerifiedProposal(vp *VerifiedProposal, childQ
 	return status, nil
 }
 
-func (bc *BlockChain) commitVerifiedProposal(vp *VerifiedProposal, childQC *hotstuff.SignedState, emitHeadEvent bool) (WriteStatus, error) {
+func (bc *BlockChain) commitVerifiedProposal(vp *VerifiedProposal, proof *FHSCommitProof, emitHeadEvent bool) (WriteStatus, error) {
 	bc.chainmu.Lock()
 	defer bc.chainmu.Unlock()
-	return bc.commitVerifiedProposalLocked(vp, childQC, emitHeadEvent)
+	return bc.commitVerifiedProposalLocked(vp, proof, emitHeadEvent)
 }
 
 // commitVerifiedProposalLocked is the chainmu-held implementation shared by
 // the live HotStuff callback and the proof-aware full-sync importer.
-func (bc *BlockChain) commitVerifiedProposalLocked(vp *VerifiedProposal, childQC *hotstuff.SignedState, emitHeadEvent bool) (WriteStatus, error) {
+func (bc *BlockChain) commitVerifiedProposalLocked(vp *VerifiedProposal, proof *FHSCommitProof, emitHeadEvent bool) (WriteStatus, error) {
 	if err := vp.SanityCheck(); err != nil {
 		return NonStatTy, err
 	}
 	block := vp.Block
 	var proofValidator interface {
 		ReconstructFHSQC(*types.Block) (*types.HotstuffProposalRef, *hotstuff.SignedState, error)
-		VerifyFHS2ChainCommitProof(*types.Block, *hotstuff.SignedState) error
 	}
 	var encodedFinalityProof []byte
 	if bc.chainConfig != nil && bc.chainConfig.FairHotstuff {
-		if childQC == nil {
+		if proof == nil {
 			return NonStatTy, ErrFHSCommitProofRequired
 		}
 		var ok bool
 		proofValidator, ok = bc.validator.(interface {
 			ReconstructFHSQC(*types.Block) (*types.HotstuffProposalRef, *hotstuff.SignedState, error)
-			VerifyFHS2ChainCommitProof(*types.Block, *hotstuff.SignedState) error
 		})
 		if !ok {
 			return NonStatTy, fmt.Errorf("Fair HotStuff 2-chain proof validator is unavailable")
 		}
-		childQC = hotstuff.CloneSignedState(childQC)
-		if err := bc.VerifyFHS2ChainCommitProof(block, childQC); err != nil {
+		proof = CloneFHSCommitProof(proof)
+		if err := bc.VerifyFHSCommitProof(block, proof); err != nil {
 			return NonStatTy, fmt.Errorf("invalid Fair HotStuff 2-chain commit proof: %w", err)
 		}
-		encodedProof, err := encodeFHSFinalityProof(childQC)
+		encodedProof, err := EncodeFHSCommitProof(proof)
 		if err != nil {
 			return NonStatTy, err
 		}
 		encodedFinalityProof = encodedProof
-	} else if childQC != nil {
+	} else if proof != nil {
 		return NonStatTy, fmt.Errorf("Fair HotStuff commit proof supplied for a non-FHS chain")
 	}
 	if bc.HasBlockAndState(block.Hash(), block.NumberU64()) {
@@ -2268,25 +2236,23 @@ func (bc *BlockChain) commitVerifiedProposalLocked(vp *VerifiedProposal, childQC
 				if stored == nil || !bytes.Equal(stored.CopyOrg().EncodeToBytes(), block.CopyOrg().EncodeToBytes()) {
 					return NonStatTy, fmt.Errorf("persisted Fair HotStuff head differs from finalized proposal %d %s", block.NumberU64(), block.Hash())
 				}
-				_, storedQC, err := proofValidator.ReconstructFHSQC(stored)
+				_, _, err := proofValidator.ReconstructFHSQC(stored)
 				if err != nil {
 					return NonStatTy, fmt.Errorf("reconstruct persisted Fair HotStuff head QC: %w", err)
 				}
-				_, incomingQC, err := proofValidator.ReconstructFHSQC(block)
-				if err != nil || !hotstuff.SignedStateSemanticEqual(storedQC, incomingQC) {
-					return NonStatTy, fmt.Errorf("persisted Fair HotStuff head has a different target QC")
-				}
-				existingProof, present, err := decodeFHSFinalityProof(stored)
+				existingProof, present, err := DecodeFHSCommitProof(stored)
 				if err != nil {
 					return NonStatTy, err
 				}
 				if present {
-					if err := proofValidator.VerifyFHS2ChainCommitProof(stored, existingProof); err != nil {
+					if err := verifyFHSCommitProofWithValidator(proofValidator, stored, existingProof); err != nil {
 						return NonStatTy, fmt.Errorf("persisted Fair HotStuff head has an invalid finality proof: %w", err)
 					}
-					if !hotstuff.SignedStateSemanticEqual(existingProof, childQC) {
-						return NonStatTy, fmt.Errorf("conflicting Fair HotStuff finality proofs for canonical block %d %s", block.NumberU64(), block.Hash())
-					}
+					// Finality fixes the unsigned payload. A valid certificate in
+					// another view may finalize the same block independently; retain
+					// both canonical SignInfo and its matching proof as one unit.
+					block = stored
+					vp.Block = stored
 				}
 				if err := bc.reconcileFHSKeyHeadForCanonicalBlock(block); err != nil {
 					return NonStatTy, err
@@ -2314,7 +2280,7 @@ func (bc *BlockChain) commitVerifiedProposalLocked(vp *VerifiedProposal, childQC
 				return NonStatTy, fmt.Errorf("persisted Fair HotStuff block body differs from finalized proposal %d %s", block.NumberU64(), block.Hash())
 			}
 			// The raw staged copy may carry another valid one-chain QC for the
-			// same unsigned block. childQC finalizes the exact incoming QC, and
+			// same unsigned block. proof finalizes the exact incoming QC, and
 			// writeHeadBlock atomically replaces SignInfo with that representation.
 			if err := bc.writeKnownBlock(block); err != nil {
 				return NonStatTy, err
@@ -2396,20 +2362,14 @@ func (bc *BlockChain) backfillCurrentFHSFinalityProof(block *types.Block) error 
 	if block == nil || bc.CurrentBlock() == nil || bc.CurrentBlock().Hash() != block.Hash() || bc.CurrentBlock().NumberU64() != block.NumberU64() {
 		return errors.New("Fair HotStuff proof backfill target is not the canonical head")
 	}
-	childQC, present, err := decodeFHSFinalityProof(block)
+	childQC, present, err := DecodeFHSCommitProof(block)
 	if err != nil {
 		return err
 	}
 	if !present {
 		return ErrFHSCommitProofRequired
 	}
-	proofValidator, ok := bc.validator.(interface {
-		VerifyFHS2ChainCommitProof(*types.Block, *hotstuff.SignedState) error
-	})
-	if !ok {
-		return errors.New("Fair HotStuff finality proof validator is unavailable")
-	}
-	if err := proofValidator.VerifyFHS2ChainCommitProof(block, childQC); err != nil {
+	if err := bc.VerifyFHSCommitProof(block, childQC); err != nil {
 		return fmt.Errorf("invalid Fair HotStuff proof backfill: %w", err)
 	}
 	batch := bc.db.NewBatch()
@@ -2511,7 +2471,7 @@ func (bc *BlockChain) validateFHSCanonicalExtension(block *types.Block) error {
 	if current.NumberU64() == 0 && parentSigningKey == (common.Hash{}) {
 		parentSigningKey = keyHead.Hash()
 	}
-	if err := validateFHSKeyActivation(block, parentSigningKey, keyHead); err != nil {
+	if err := bc.validateFHSKeyActivationWithProof(block, parentSigningKey, keyHead); err != nil {
 		return err
 	}
 	return nil
@@ -2606,7 +2566,7 @@ func (bc *BlockChain) deriveFHSCanonicalKeyHistory(head *types.Block) ([]*types.
 			return nil, fmt.Errorf("Fair HotStuff canonical transaction ancestry is not contiguous at %d/%s: parent=%s expected=%s",
 				number, block.Hash(), block.ParentHash(), previous.Hash())
 		}
-		if err := validateFHSKeyActivation(block, signingKey, expected); err != nil {
+		if err := bc.validateFHSKeyActivationWithProof(block, signingKey, expected); err != nil {
 			return nil, fmt.Errorf("invalid Fair HotStuff key activation at canonical transaction block %d/%s: %w", number, block.Hash(), err)
 		}
 		signingKey = block.KeyHash()
@@ -3343,14 +3303,14 @@ func (bc *BlockChain) commitFHSSyncProposalFromEmbeddedProof(pending *VerifiedPr
 	if pending == nil || pending.Block == nil {
 		return false, errors.New("nil Fair HotStuff sync proposal")
 	}
-	childQC, present, err := decodeFHSFinalityProof(pending.Block)
+	childQC, present, err := DecodeFHSCommitProof(pending.Block)
 	if err != nil {
 		return false, err
 	}
 	if !present {
 		return false, nil
 	}
-	status, err := bc.commitFHSSyncVerifiedProposal(pending, childQC)
+	status, err := bc.commitFHSSyncVerifiedProposalWithProof(pending, childQC)
 	if err != nil {
 		return false, err
 	}
@@ -3362,7 +3322,7 @@ func (bc *BlockChain) commitFHSSyncProposalFromEmbeddedProof(pending *VerifiedPr
 
 // insertFHSFinalizedChain imports a contiguous downloaded FHS chain. A block's
 // own QC authenticates it but never finalizes it. Canonical blocks carry a
-// committee-produced direct-child QC as bounded metadata, allowing a common
+// committee-produced descendant QC proof as bounded metadata, allowing a common
 // node to verify the 2-chain proof and catch the advertised head immediately.
 // A peer without that metadata falls back to the safe one-block pending path.
 //
@@ -3375,7 +3335,6 @@ func (bc *BlockChain) insertFHSFinalizedChain(chain types.Blocks, verifySeals bo
 	}
 	proofs, ok := bc.validator.(interface {
 		ReconstructFHSQC(*types.Block) (*types.HotstuffProposalRef, *hotstuff.SignedState, error)
-		VerifyFHS2ChainCommitProof(*types.Block, *hotstuff.SignedState) error
 	})
 	if !ok {
 		return 0, fmt.Errorf("Fair HotStuff proof-aware sync validator is unavailable")
@@ -3407,17 +3366,15 @@ func (bc *BlockChain) insertFHSFinalizedChain(chain types.Blocks, verifySeals bo
 			return start, fmt.Errorf("same-hash Fair HotStuff canonical block has different unsigned contents at %d", chain[start].NumberU64())
 		}
 		if canonical.NumberU64() > 0 {
-			_, canonicalQC, err := proofs.ReconstructFHSQC(canonical)
+			_, _, err := proofs.ReconstructFHSQC(canonical)
 			if err != nil {
 				return start, fmt.Errorf("invalid canonical Fair HotStuff QC at %d: %w", canonical.NumberU64(), err)
 			}
-			_, incomingQC, err := proofs.ReconstructFHSQC(chain[start])
+			_, _, err = proofs.ReconstructFHSQC(chain[start])
 			if err != nil {
 				return start, fmt.Errorf("invalid downloaded Fair HotStuff QC at %d: %w", chain[start].NumberU64(), err)
 			}
-			if !hotstuff.SignedStateSemanticEqual(canonicalQC, incomingQC) {
-				return start, fmt.Errorf("same-hash Fair HotStuff canonical block has a different QC at %d", canonical.NumberU64())
-			}
+
 		}
 		start++
 	}
@@ -3435,24 +3392,24 @@ func (bc *BlockChain) insertFHSFinalizedChain(chain types.Blocks, verifySeals bo
 
 	var pending *VerifiedProposal
 	if pending := bc.fhsSyncPending; pending != nil {
-		_, pendingQC, err := proofs.ReconstructFHSQC(pending.Block)
+		_, _, err := proofs.ReconstructFHSQC(pending.Block)
 		if err != nil {
 			return start, fmt.Errorf("invalid pending Fair HotStuff QC: %w", err)
 		}
 		if chain[start].Hash() == pending.Block.Hash() && chain[start].NumberU64() == pending.Block.NumberU64() {
 			incoming := chain[start]
-			_, incomingQC, err := proofs.ReconstructFHSQC(chain[start])
+			incomingRef, _, err := proofs.ReconstructFHSQC(chain[start])
 			if err != nil {
 				return start, err
 			}
-			if !bytes.Equal(chain[start].CopyOrg().EncodeToBytes(), pending.Block.CopyOrg().EncodeToBytes()) ||
-				!hotstuff.SignedStateSemanticEqual(incomingQC, pendingQC) {
+			if !bytes.Equal(chain[start].CopyOrg().EncodeToBytes(), pending.Block.CopyOrg().EncodeToBytes()) {
 				return start, fmt.Errorf("same-hash Fair HotStuff sync tip has different certified contents")
 			}
-			// The same target may be advertised again after the committee has
-			// attached its direct-child proof. Preserve the already executed state
-			// while replacing only the exact, semantically equivalent wire block.
+			// Reuse execution for the identical payload, while retaining the
+			// incoming exact certificate context and its own finality proof.
 			pending.Block = incoming
+			pending.ProposalID, pending.ViewNumber = incomingRef.ProposalID(), incomingRef.ViewNumber
+			pending.ViewID, pending.LeaderID = incomingRef.ViewID, incomingRef.LeaderID
 			if committed, err := bc.commitFHSSyncProposalFromEmbeddedProof(pending); err != nil {
 				return start, err
 			} else if committed {
@@ -3488,28 +3445,15 @@ func (bc *BlockChain) insertFHSFinalizedChain(chain types.Blocks, verifySeals bo
 				if ref.ParentQCID != (common.Hash{}) {
 					return index, fmt.Errorf("first Fair HotStuff block has a non-genesis parent QC")
 				}
-			} else {
-				_, parentQC, err := proofs.ReconstructFHSQC(current)
-				if err != nil {
-					return index, fmt.Errorf("reconstruct canonical Fair HotStuff parent QC: %w", err)
-				}
-				parentID, err := hotstuff.SignedStateID(parentQC)
-				if err != nil || ref.ParentQCID != parentID.Hash() {
-					return index, fmt.Errorf("downloaded Fair HotStuff block does not bind the canonical parent QC")
-				}
-				expectedChildQC, present, err := decodeFHSFinalityProof(current)
-				if err != nil {
-					return index, fmt.Errorf("decode canonical Fair HotStuff child constraint: %w", err)
-				}
-				if !present {
-					return index, fmt.Errorf("canonical Fair HotStuff parent %d/%s lacks its direct-child constraint", current.NumberU64(), current.Hash())
-				}
-				if !hotstuff.SignedStateSemanticEqual(expectedChildQC, qc) {
-					return index, fmt.Errorf("downloaded Fair HotStuff block is not the exact child certified by canonical parent %d/%s", current.NumberU64(), current.Hash())
-				}
+			} else if ref.ParentQCID == (common.Hash{}) {
+				return index, fmt.Errorf("downloaded Fair HotStuff block has no certified parent")
 			}
+			// The parent payload is canonical. Its certificate may differ by
+			// view from local SignInfo, so its local QC identity cannot pin
+			// this certified child's parent. Finality verifies the child's
+			// own exact QC and all descendant links before publication.
 		}
-		verified, err := bc.validateBlockForHotstuffWithParent(ref.ProposalID(), ref.ViewNumber, ref.ViewID, ref.LeaderID, block, pending, true)
+		verified, err := bc.validateBlockForHotstuffWithParent(ref.ProposalID(), ref.ViewNumber, ref.ViewID, ref.LeaderID, block, pending, true, false)
 		if err != nil {
 			return index, err
 		}
@@ -3534,7 +3478,7 @@ func (bc *BlockChain) insertFHSFinalizedChain(chain types.Blocks, verifySeals bo
 		// now finalizes the target. Commit before processing the next child so a
 		// key-carrier target can install the exact committee required to verify
 		// the following view.
-		if err := proofs.VerifyFHS2ChainCommitProof(pending.Block, qc); err != nil {
+		if err := bc.VerifyFHS2ChainCommitProof(pending.Block, qc); err != nil {
 			return index, err
 		}
 		status, err := bc.commitFHSSyncVerifiedProposal(pending, qc)

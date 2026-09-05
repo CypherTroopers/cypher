@@ -191,25 +191,74 @@ func appendFHSHighQCContinuation(pending *pendingFHSHighQCValidation, resumeMess
 	return nil
 }
 
+func (hsm *HotstuffProtocolManager) selectedFHSProposalParent() *SignedState {
+	if app, ok := hsm.app.(FHSProposalParentApplication); ok {
+		return app.SelectedFHSProposalParent()
+	}
+	return hsm.app.HighestCertified()
+}
+
+// selectFHSProposalParent may only be called after verifying a complete
+// AggregateQC. Its selected parent can be below the local observed maximum:
+// quorum intersection, rather than one replica's private QC, justifies voting.
+func (hsm *HotstuffProtocolManager) selectFHSProposalParent(qc *SignedState, targetView uint64, resumeMessage *HotstuffMessage, resumeLeaderView common.Hash) error {
+	if observed := hsm.app.HighestCertified(); observed != nil && qc != nil &&
+		observed.Number == qc.Number && !SignedStateSemanticEqual(observed, qc) {
+		return ErrInvalidHighQC
+	}
+	app, ok := hsm.app.(FHSProposalParentApplication)
+	if !ok {
+		if qc == nil {
+			return nil
+		}
+		return hsm.scheduleFHSHighQCCatchup(qc, targetView, resumeMessage, resumeLeaderView)
+	}
+	if pending := hsm.pendingHighQC; pending != nil {
+		// Finish current validated content work before changing its execution
+		// base. Replay verifies this proof again and selects its exact parent.
+		if err := appendFHSHighQCContinuation(pending, resumeMessage, resumeLeaderView); err != nil {
+			return err
+		}
+		return ErrProposalValidationPending
+	}
+	if err := app.SelectFHSProposalParent(qc); !errors.Is(err, ErrProposalValidationPending) {
+		return err
+	}
+	if qc == nil {
+		return ErrInvalidHighQC
+	}
+	return hsm.scheduleFHSCertificateValidation(qc, targetView, resumeMessage, resumeLeaderView, true)
+}
+
 func (hsm *HotstuffProtocolManager) scheduleFHSHighQCCatchup(qc *SignedState, targetView uint64, resumeMessage *HotstuffMessage, resumeLeaderView common.Hash) error {
+	return hsm.scheduleFHSCertificateValidation(qc, targetView, resumeMessage, resumeLeaderView, false)
+}
+
+func (hsm *HotstuffProtocolManager) scheduleFHSCertificateValidation(qc *SignedState, targetView uint64, resumeMessage *HotstuffMessage, resumeLeaderView common.Hash, selectParent bool) error {
 	app, ok := hsm.fhsApplication()
 	if !ok || qc == nil {
 		return ErrInvalidHighQC
 	}
 	local := hsm.app.HighestCertified()
-	if local != nil {
-		switch {
-		case local.Number > qc.Number:
-			return nil
-		case local.Number == qc.Number:
-			if SignedStateSemanticEqual(local, qc) {
+	if local != nil && !selectParent {
+		if local.Number == qc.Number && !SignedStateSemanticEqual(local, qc) {
+			return ErrInvalidHighQC
+		}
+	}
+	if !selectParent {
+		if cache, ok := hsm.app.(FHSCertificateCacheApplication); ok {
+			if cache.HasValidatedFHSCertificate(qc) {
 				return nil
 			}
-			return ErrInvalidHighQC
+		} else if local != nil && local.Number >= qc.Number {
+			return nil
 		}
 	}
 	async, ok := hsm.app.(FHSHighQCValidationApplication)
 	if !ok {
+		if selectParent {
+			return ErrInvalidHighQC
+		}
 		return app.AdoptFHSHighQC(qc)
 	}
 	id, err := SignedStateID(qc)
@@ -222,8 +271,16 @@ func (hsm *HotstuffProtocolManager) scheduleFHSHighQCCatchup(qc *SignedState, ta
 	}
 	previous := hsm.pendingHighQC
 	if pending := hsm.pendingHighQC; pending != nil {
+		if pending.key.SelectProposalParent && !selectParent {
+			// A raw observation must not repeatedly cancel a quorum-authorized
+			// parent fetch. It is processed after that bounded fetch finishes.
+			if err := appendFHSHighQCContinuation(pending, resumeMessage, resumeLeaderView); err != nil {
+				return err
+			}
+			return ErrProposalValidationPending
+		}
 		switch {
-		case pending.key.QCID == qcID:
+		case pending.key.QCID == qcID && pending.key.SelectProposalParent == selectParent:
 			if !SignedStateSemanticEqual(pending.qc, qc) {
 				return ErrInvalidHighQC
 			}
@@ -238,7 +295,7 @@ func (hsm *HotstuffProtocolManager) scheduleFHSHighQCCatchup(qc *SignedState, ta
 				return err
 			}
 			return ErrProposalValidationPending
-		case pending.qc != nil && pending.qc.Number >= qc.Number:
+		case !selectParent && pending.qc != nil && pending.qc.Number >= qc.Number:
 			return ErrOldState
 		}
 	}
@@ -247,7 +304,7 @@ func (hsm *HotstuffProtocolManager) scheduleFHSHighQCCatchup(qc *SignedState, ta
 	if hsm.validationSequence == 0 {
 		hsm.validationSequence++
 	}
-	key := FHSHighQCValidationKey{RequestID: hsm.validationSequence, QCID: qcID, TargetView: targetView}
+	key := FHSHighQCValidationKey{RequestID: hsm.validationSequence, QCID: qcID, TargetView: targetView, SelectProposalParent: selectParent}
 	pending := &pendingFHSHighQCValidation{
 		key:         key,
 		qc:          CloneSignedState(qc),
@@ -330,15 +387,26 @@ func (hsm *HotstuffProtocolManager) certifyFHSQC(qc *SignedState, resumeMessage 
 	if local := hsm.app.HighestCertified(); local != nil {
 		switch {
 		case local.Number > qc.Number:
-			return nil
+			if _, ok := hsm.app.(FHSCertificateCacheApplication); !ok {
+				return nil
+			}
 		case local.Number == qc.Number:
 			if !SignedStateSemanticEqual(local, qc) {
 				return ErrInvalidHighQC
 			}
-			return hsm.app.OnCertified(qc)
+			if _, ok := hsm.app.(FHSCertificateCacheApplication); !ok {
+				return hsm.app.OnCertified(qc)
+			}
 		}
 	}
-	return hsm.scheduleFHSHighQCCatchup(qc, qc.Number+1, resumeMessage, common.Hash{})
+	if cache, ok := hsm.app.(FHSCertificateCacheApplication); ok && cache.HasValidatedFHSCertificate(qc) {
+		return hsm.app.OnCertified(qc)
+	}
+	_, _, targetView := hsm.app.CurrentState()
+	if targetView <= qc.Number {
+		targetView = qc.Number + 1
+	}
+	return hsm.scheduleFHSHighQCCatchup(qc, targetView, resumeMessage, common.Hash{})
 }
 
 func (hsm *HotstuffProtocolManager) usesFHSProtocolV2() bool {
@@ -740,18 +808,11 @@ func (hsm *HotstuffProtocolManager) activateFHSLeaderView(v *View) error {
 	if err != nil {
 		return err
 	}
-	localHighest := hsm.app.HighestCertified()
-	if localHighest != nil && (highest == nil || localHighest.Number > highest.Number ||
-		(localHighest.Number == highest.Number && !SignedStateSemanticEqual(localHighest, highest))) {
-		return ErrInvalidHighQC
-	}
 	if err := hsm.validateFHSHighQCScheduleTarget(v.fhsContext, highest); err != nil {
 		return err
 	}
-	if highest != nil {
-		if err := hsm.scheduleFHSHighQCCatchup(highest, v.number, nil, v.hash); err != nil {
-			return err
-		}
+	if err := hsm.selectFHSProposalParent(highest, v.number, nil, v.hash); err != nil {
+		return err
 	}
 	state, leaderID, number := hsm.app.CurrentState()
 	if leaderID != v.leaderId || number != v.number {
@@ -838,7 +899,7 @@ func (hsm *HotstuffProtocolManager) CompleteFHSProposalBuild(result *FHSProposal
 	}
 	state, leaderID, number := hsm.app.CurrentState()
 	if leaderID != v.leaderId || number != v.number || !bytes.Equal(state, v.currentState) ||
-		StateDigest(state) != result.Key.CurrentStateDigest || !SignedStateSemanticEqual(hsm.app.HighestCertified(), v.fhsHighest) {
+		StateDigest(state) != result.Key.CurrentStateDigest || !SignedStateSemanticEqual(hsm.selectedFHSProposalParent(), v.fhsHighest) {
 		v.fhsBuild = nil
 		return ErrOldState
 	}
@@ -985,11 +1046,6 @@ func (hsm *HotstuffProtocolManager) handleFHSPrepareMsg(msg *HotstuffMessage) er
 	if err != nil || !SignedStateSemanticEqual(highest, carriedHighest) {
 		return ErrInvalidHighQC
 	}
-	localHighest := hsm.app.HighestCertified()
-	if localHighest != nil && (highest == nil || localHighest.Number > highest.Number ||
-		(localHighest.Number == highest.Number && !SignedStateSemanticEqual(localHighest, highest))) {
-		return ErrInvalidHighQC
-	}
 	// A TC is an independent quorum proof and must advance the durable pacemaker
 	// before target gating. Without it, only the exact canonical target or an
 	// immediately preceding HighQC may start expensive catch-up work.
@@ -1001,10 +1057,8 @@ func (hsm *HotstuffProtocolManager) handleFHSPrepareMsg(msg *HotstuffMessage) er
 	if err := hsm.validateFHSHighQCScheduleTarget(ctx, highest); err != nil {
 		return err
 	}
-	if highest != nil {
-		if err := hsm.scheduleFHSHighQCCatchup(highest, ctx.TargetView, msg, common.Hash{}); err != nil {
-			return err
-		}
+	if err := hsm.selectFHSProposalParent(highest, ctx.TargetView, msg, common.Hash{}); err != nil {
+		return err
 	}
 	if err := app.ValidateFHSContext(ctx); err != nil {
 		return err
@@ -1156,7 +1210,7 @@ func (hsm *HotstuffProtocolManager) CompleteFHSProposalValidation(result *FHSPro
 	}
 	state, leaderID, number := hsm.app.CurrentState()
 	if leaderID != v.leaderId || number != v.number || v.phaseAsReplica != PhasePrepare ||
-		!bytes.Equal(state, v.currentState) || !SignedStateSemanticEqual(hsm.app.HighestCertified(), v.fhsHighest) {
+		!bytes.Equal(state, v.currentState) || !SignedStateSemanticEqual(hsm.selectedFHSProposalParent(), v.fhsHighest) {
 		v.fhsValidation = nil
 		return ErrOldState
 	}

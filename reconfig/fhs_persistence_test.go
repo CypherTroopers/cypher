@@ -204,7 +204,7 @@ func writeFHSPersistenceCertificate(t *testing.T, db ethdb.KeyValueStore, ref *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := rawdb.WriteFHSCertificate(db, ref.BlockHash, encoded); err != nil {
+	if err := rawdb.WriteFHSCertificate(db, ref.ProposalID(), encoded); err != nil {
 		t.Fatal(err)
 	}
 	return qc
@@ -953,7 +953,7 @@ func TestFHSPersistencePruneAllowsCertifiedContentAwaitingRepair(t *testing.T) {
 	if err := service.pruneFHSPersistence(ref.Number+100, ref.ViewNumber+1000); err != nil {
 		t.Fatalf("GC rejected certified content awaiting repair: %v", err)
 	}
-	if encoded, err := rawdb.ReadFHSCertificate(db, ref.BlockHash); err != nil || len(encoded) == 0 {
+	if encoded, err := rawdb.ReadFHSCertificate(db, ref.ProposalID()); err != nil || len(encoded) == 0 {
 		t.Fatalf("GC collected protected certificate: bytes=%d err=%v", len(encoded), err)
 	}
 	proposals, bodies, certificates := countFHSPersistenceRecords(t, db)
@@ -1083,7 +1083,7 @@ func TestFHSPersistencePruneProtectsRecoveryWatermarksAndCertificates(t *testing
 		t.Fatalf("GC did not use database batches: direct=%d batchDeletes=%d batchWrites=%d",
 			counting.directDeletes, counting.batchDeletes, counting.batchWrites)
 	}
-	if encoded, err := rawdb.ReadFHSCertificate(counting, staleRef.BlockHash); err != nil || len(encoded) != 0 {
+	if encoded, err := rawdb.ReadFHSCertificate(counting, staleRef.ProposalID()); err != nil || len(encoded) != 0 {
 		t.Fatalf("stale certificate survived: bytes=%d err=%v", len(encoded), err)
 	}
 	for name, ref := range map[string]*types.HotstuffProposalRef{
@@ -1323,6 +1323,13 @@ func TestReconcileFHSCertifiedFrontierDropsCanonicalizedPrefix(t *testing.T) {
 	stale := testFHSCertifiedFrontierRecord(7, 11, common.HexToHash("0x700"), 1)
 	child := testFHSCertifiedFrontierRecord(14, 23, canonical.Hash(), 2)
 	tip := testFHSCertifiedFrontierRecord(15, 24, child.ref.BlockHash, 3)
+	parentID, err := hotstuff.SignedStateID(child.qc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tip.ref.ParentQCID = parentID.Hash()
+	tip.qc.State = tip.ref.EncodeToBytes()
+	tip.verified.ProposalID = tip.ref.ProposalID()
 	service := &Service{
 		fhsCertifiedByHash: map[common.Hash]*fhsCertifiedProposal{
 			stale.ref.BlockHash: stale, child.ref.BlockHash: child, tip.ref.BlockHash: tip,
@@ -1362,7 +1369,7 @@ func TestReconcileFHSCertifiedFrontierDropsCanonicalizedPrefix(t *testing.T) {
 	}
 }
 
-func TestReconcileFHSCertifiedFrontierRejectsAmbiguousChildren(t *testing.T) {
+func TestReconcileFHSCertifiedFrontierSelectsHighestSibling(t *testing.T) {
 	canonical := types.NewBlockWithHeader(&types.Header{
 		Number: big.NewInt(13), Difficulty: big.NewInt(1), BlockType: types.FastTx_Block,
 	})
@@ -1377,12 +1384,21 @@ func TestReconcileFHSCertifiedFrontierRejectsAmbiguousChildren(t *testing.T) {
 		},
 		fhsHighest: first,
 	}
+	if err := service.reconcileFHSCertifiedFrontierLocked(canonical); err != nil {
+		t.Fatal(err)
+	}
+	if len(service.fhsCertifiedByHash) != 2 || service.fhsHighest != second {
+		t.Fatal("did not retain siblings and select highest view")
+	}
+	second.ref.ViewNumber = first.qc.Number
+	second.qc.Number = first.qc.Number
+	second.qc.State = second.ref.EncodeToBytes()
+	second.verified.ViewNumber = first.qc.Number
+	second.verified.ProposalID = second.ref.ProposalID()
 	if err := service.reconcileFHSCertifiedFrontierLocked(canonical); err == nil {
-		t.Fatal("ambiguous certified children were selected by map iteration")
+		t.Fatal("conflicting same-view QCs accepted")
 	}
-	if len(service.fhsCertifiedByHash) != 2 || service.fhsHighest != first {
-		t.Fatal("failed reconciliation mutated the certified cache")
-	}
+
 }
 
 func TestFHSHighQCCanonicalClassificationAndStaleBase(t *testing.T) {
@@ -1416,7 +1432,7 @@ func TestFHSHighQCCanonicalClassificationAndStaleBase(t *testing.T) {
 	}
 }
 
-func TestValidateCanonicalFHSQCAdvanceRequiresExactAncestor(t *testing.T) {
+func TestValidateCanonicalFHSQCAdvanceSupersedesUncommittedObservation(t *testing.T) {
 	makeQC := func(blockNumber, view uint64, blockHash common.Hash) (*types.HotstuffProposalRef, *hotstuff.SignedState) {
 		ref := &types.HotstuffProposalRef{
 			Version:    types.HotstuffProposalRefVersion,
@@ -1453,8 +1469,8 @@ func TestValidateCanonicalFHSQCAdvanceRequiresExactAncestor(t *testing.T) {
 	if _, err := validateCanonicalFHSQCAdvance(
 		oldQC, oldHash, targetRef, targetQC, targetHash, verify,
 		func(uint64, common.Hash) bool { return false },
-	); err == nil {
-		t.Fatal("noncanonical prior QC was accepted across a sync gap")
+	); err != nil {
+		t.Fatalf("verified canonical QC could not supersede old uncommitted fork: %v", err)
 	}
 
 	advance, err = validateCanonicalFHSQCAdvance(
@@ -2318,6 +2334,7 @@ func TestCertifiedUncommittedKeyCommitteeAuthenticatesNextEpoch(t *testing.T) {
 	fixture.service.fhsCertifiedByHash = map[common.Hash]*fhsCertifiedProposal{
 		carrier.Hash(): fhsEpochCertifiedRecord(carrierRef, carrier, carrierQC),
 	}
+	fixture.service.fhsCertifiedByID = map[common.Hash]*fhsCertifiedProposal{carrierRef.ProposalID(): fixture.service.fhsCertifiedByHash[carrier.Hash()]}
 	fixture.service.proposalBodies = make(map[common.Hash]*proposalBodyMsg)
 	fixture.service.fhsHighest = fixture.service.fhsCertifiedByHash[carrier.Hash()]
 	fixture.service.currentView.TxNumber = carrier.NumberU64()
@@ -2463,6 +2480,7 @@ func TestCertifiedUncommittedKeyCommitteeAuthenticatesNextEpoch(t *testing.T) {
 		t.Fatal("activated committee remained trusted after its only verified activation proof was removed")
 	}
 	fixture.service.fhsCertifiedByHash[child.Hash()] = fhsEpochCertifiedRecord(childRef, child, childQC)
+	fixture.service.fhsCertifiedByID[childRef.ProposalID()] = fixture.service.fhsCertifiedByHash[child.Hash()]
 	fixture.service.fhsHighest = fixture.service.fhsCertifiedByHash[child.Hash()]
 	if _, err := fixture.service.proposalBodySenderKey(nextKey.Hash(), leader.Address); err != nil {
 		t.Fatalf("installed direct-child activation QC did not resolve the new committee: %v", err)

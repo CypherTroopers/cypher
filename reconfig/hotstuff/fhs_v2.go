@@ -163,9 +163,10 @@ type FHSProposalBuildResult struct {
 // TargetView binds the result to the control-plane continuation that requested
 // it. These records are process-local and never enter the wire protocol.
 type FHSHighQCValidationKey struct {
-	RequestID  uint64
-	QCID       common.Hash
-	TargetView uint64
+	RequestID            uint64
+	QCID                 common.Hash
+	TargetView           uint64
+	SelectProposalParent bool
 }
 
 type FHSHighQCValidationRequest struct {
@@ -177,6 +178,23 @@ type FHSHighQCValidationResult struct {
 	Key             FHSHighQCValidationKey
 	Err             error
 	ApplicationData interface{}
+}
+
+// FHSProposalParentApplication separates the monotonic observed QC reported in
+// NewView from the parent chosen by a verified quorum of NewView reports. The
+// latter may be older than a QC that was disclosed to this replica alone.
+// SelectFHSProposalParent returns ErrProposalValidationPending when the parent
+// needs asynchronous content validation before it can be selected.
+type FHSProposalParentApplication interface {
+	SelectedFHSProposalParent() *SignedState
+	SelectFHSProposalParent(*SignedState) error
+}
+
+// FHSCertificateCacheApplication recognizes validated content independently of
+// the maximum observed QC. Delayed lower-view certificates can still carry a
+// new finality proof and must be processed without moving that maximum back.
+type FHSCertificateCacheApplication interface {
+	HasValidatedFHSCertificate(*SignedState) bool
 }
 
 type FHSSafetyState struct {

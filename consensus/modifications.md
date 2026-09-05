@@ -450,7 +450,7 @@ Runtime path:
 
 This section is normative for operator workflows on this branch.
 
-## 13 Matrix演算とメモリ常駐型DAGスクラッチパッド（v3）
+## 13 Matrix Operations and Memory-Resident DAG Scratchpad (v3)
 
 Algorithm v3 introduces a matrix-oriented round function and an append-only scratchpad model:
 

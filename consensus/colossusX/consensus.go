@@ -264,12 +264,35 @@ func (colossusX *colossusX) Author0(header *types.Header) (common.PublicKey25519
 	return common.PublicKey25519{}, nil
 }
 
+// VerifyFHSBlockTimestamp bounds the timestamp before a proposal can receive a
+// QC. The allowance covers clock skew and short bursts of subsecond production;
+// a proposer at the limit must retry after the wall clock advances.
+func VerifyFHSBlockTimestamp(timestamp uint64, now time.Time) error {
+	seconds := now.Unix()
+	if seconds < 0 {
+		return consensus.ErrFutureBlock
+	}
+	current := uint64(seconds)
+	// Subtract only in the forward direction so neither a malicious timestamp
+	// nor the allowance can wrap the comparison.
+	if timestamp > current && timestamp-current > uint64(allowedFutureBlockTime/time.Second) {
+		return consensus.ErrFutureBlock
+	}
+	return nil
+}
+
 // VerifyHeader checks whether a header conforms to the consensus rules of the
 // stock Ethereum colossusX engine.
 func (colossusX *colossusX) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
 	// If we're running a full engine faking, accept any input as valid
 	if colossusX.config.PowMode == ModeFullFake {
 		return nil
+	}
+	if config := chain.Config(); config != nil && config.FairHotstuff {
+		// A hash-known header must not bypass the gate used before FHS voting.
+		if err := VerifyFHSBlockTimestamp(header.Time, time.Now()); err != nil {
+			return err
+		}
 	}
 	// Short circuit if the header is known, or its parent not
 	number := header.Number.Uint64()
@@ -350,6 +373,11 @@ func (colossusX *colossusX) VerifyHeaders(chain consensus.ChainHeaderReader, hea
 }
 
 func (colossusX *colossusX) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, index int) error {
+	if config := chain.Config(); config != nil && config.FairHotstuff {
+		if err := VerifyFHSBlockTimestamp(headers[index].Time, time.Now()); err != nil {
+			return err
+		}
+	}
 	var parent *types.Header
 	if index == 0 {
 		parent = chain.GetHeader(headers[0].ParentHash, headers[0].Number.Uint64()-1)
@@ -373,13 +401,8 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 	if uint64(len(header.Extra)) > params.MaximumExtraDataSize {
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), params.MaximumExtraDataSize)
 	}
-	// Verify the header's timestamp
-	//if !uncle {
-	//	log.Info("verifyHeader", "header.Time", header.Time, "future time", uint64(time.Now().Add(allowedFutureBlockTime).Unix()))
-	//	if header.Time > uint64(time.Now().Add(allowedFutureBlockTime).Unix()) {
-	//		return consensus.ErrFutureBlock
-	//	}
-	//}
+	// The FHS future-time bound is checked before the public entry points'
+	// known-header shortcuts. Every new header must also advance its parent.
 	if header.Time <= parent.Time {
 		return errOlderBlockTime
 	}

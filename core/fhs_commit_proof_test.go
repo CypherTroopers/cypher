@@ -229,7 +229,11 @@ func TestVerifyFHS2ChainCommitProofRequiresDirectChildQC(t *testing.T) {
 		BlockType:  types.FastTx_Block,
 		KeyHash:    keyHash,
 	})
-	_, childQC := makeFHSCommitProofQC(t, child, 14, "leader-14", targetID.Hash(), secrets, public)
+	_, skippedQC := makeFHSCommitProofQC(t, child, 14, "leader-14", targetID.Hash(), secrets, public)
+	if err := validator.VerifyFHS2ChainCommitProof(target, skippedQC); err == nil {
+		t.Fatal("nonconsecutive views were accepted as a terminal 2-chain commit proof")
+	}
+	_, childQC := makeFHSCommitProofQC(t, child, 11, "leader-11", targetID.Hash(), secrets, public)
 	if err := validator.VerifyFHS2ChainCommitProof(target, childQC); err != nil {
 		t.Fatalf("valid direct-child QC proof rejected: %v", err)
 	}

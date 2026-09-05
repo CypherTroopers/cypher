@@ -35,7 +35,6 @@ import (
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/bloombits"
 	"github.com/cypherium/cypher/core/rawdb"
-	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
 	"github.com/cypherium/cypher/eth/downloader"
@@ -165,52 +164,6 @@ func (l *transactionIngressLifecycle) Stop() error {
 	return nil
 }
 
-type txQUICFinalizedStateReader interface {
-	CurrentBlock() *types.Block
-	StateAt(common.Hash) (*state.StateDB, error)
-}
-
-// txQUICFinalizedNonceObsolete uses one isolated state snapshot for a whole
-// micro-batch. It is safe as a terminal delivery predicate only when CurrentBlock
-// is final; New wires it exclusively for Fair HotStuff after its 2-chain commit.
-func txQUICFinalizedNonceObsolete(chain txQUICFinalizedStateReader, chainID *big.Int, txs types.Transactions) []bool {
-	obsolete := make([]bool, len(txs))
-	if chain == nil || chainID == nil || len(txs) == 0 {
-		return obsolete
-	}
-	head := chain.CurrentBlock()
-	if head == nil {
-		return obsolete
-	}
-	finalizedState, err := chain.StateAt(head.Root())
-	if err != nil {
-		log.Warn("Failed to open finalized state for TxQUIC cleanup", "root", head.Root(), "err", err)
-		return obsolete
-	}
-	signer := types.LatestSignerForChainID(chainID)
-	nonces := make(map[common.Address]uint64)
-	for index, tx := range txs {
-		if tx == nil {
-			continue
-		}
-		sender, err := types.Sender(signer, tx)
-		if err != nil {
-			continue
-		}
-		nonce, cached := nonces[sender]
-		if !cached {
-			nonce = finalizedState.GetNonce(sender)
-			nonces[sender] = nonce
-		}
-		obsolete[index] = nonce > tx.Nonce()
-	}
-	if err := finalizedState.Error(); err != nil {
-		log.Warn("Failed to read finalized state for TxQUIC cleanup", "root", head.Root(), "err", err)
-		return make([]bool, len(txs))
-	}
-	return obsolete
-}
-
 // New creates a new Ethereum object (including the initialisation of the common Ethereum object).
 func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if config.SyncMode == downloader.LightSync {
@@ -246,6 +199,10 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	chainConfig, genesisHash, blockGenesisErr := core.SetupGenesisBlock(chainDb, config.Genesis)
 	if blockGenesisErr != nil {
 		return nil, blockGenesisErr
+	}
+	if chainConfig.FairHotstuff && config.SyncMode != downloader.FullSync {
+		log.Warn("Fair HotStuff requires full sync", "requested", config.SyncMode)
+		config.SyncMode = downloader.FullSync
 	}
 	if chainConfig != nil && chainConfig.ChainID != nil && chainConfig.ChainID.IsUint64() {
 		// Bind every TxQUIC packet and acknowledgement to this chain before
@@ -432,9 +389,8 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		eth.txQUICIngress.SetFinalizedTxLookup(func(hash common.Hash) bool {
 			return eth.blockchain.IsFinalizedTransaction(hash)
 		})
-		eth.txQUICIngress.SetObsoleteTxLookup(func(txs types.Transactions) []bool {
-			return txQUICFinalizedNonceObsolete(eth.blockchain, chainConfig.ChainID, txs)
-		})
+		nonceLookup := newTxQUICFinalizedNonceLookup(eth.blockchain, chainConfig.ChainID)
+		eth.txQUICIngress.SetObsoleteTxLookup(nonceLookup.Lookup)
 	}
 	if eth.txOutboxDb != nil {
 		eth.txQUICIngress.SetDurableOutbox(NewTxOutbox(eth.txOutboxDb, config.TxQUIC), eth.accountManager)
