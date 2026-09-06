@@ -207,8 +207,12 @@ type proposalBodyMsg struct {
 	Extra              []byte
 	ParentQC           []byte
 	KeyActivationProof []byte
-	AuthSig            []byte
-	CreatedAtUnixNano  int64
+	// ManifestAuthSig is the original leader's signature over the immutable
+	// manifest and proposal context. Repair donors preserve it while signing
+	// their own transport envelope in AuthSig.
+	ManifestAuthSig   []byte
+	AuthSig           []byte
+	CreatedAtUnixNano int64
 }
 
 // proposalDataManifest is the compact data-availability description sent for
@@ -1132,6 +1136,7 @@ func cloneProposalBodyMsg(in *proposalBodyMsg) *proposalBodyMsg {
 	out.Extra = append([]byte(nil), in.Extra...)
 	out.ParentQC = append([]byte(nil), in.ParentQC...)
 	out.KeyActivationProof = append([]byte(nil), in.KeyActivationProof...)
+	out.ManifestAuthSig = append([]byte(nil), in.ManifestAuthSig...)
 	out.AuthSig = append([]byte(nil), in.AuthSig...)
 	return &out
 }
@@ -1151,6 +1156,7 @@ func cloneProposalBodyEnvelope(in *proposalBodyMsg) *proposalBodyMsg {
 	out.Extra = append([]byte(nil), in.Extra...)
 	out.ParentQC = append([]byte(nil), in.ParentQC...)
 	out.KeyActivationProof = append([]byte(nil), in.KeyActivationProof...)
+	out.ManifestAuthSig = append([]byte(nil), in.ManifestAuthSig...)
 	out.AuthSig = append([]byte(nil), in.AuthSig...)
 	return &out
 }
@@ -1500,7 +1506,7 @@ func proposalBodyMsgPayloadBytes(body *proposalBodyMsg) int {
 		return 0
 	}
 	total := len(body.From) + len(body.LeaderID) + len(body.EncodedBlock) + len(body.Manifest) +
-		len(body.Extra) + len(body.ParentQC) + len(body.KeyActivationProof) + len(body.AuthSig) + len(body.MissingTxHashes)*common.HashLength
+		len(body.Extra) + len(body.ParentQC) + len(body.KeyActivationProof) + len(body.ManifestAuthSig) + len(body.AuthSig) + len(body.MissingTxHashes)*common.HashLength
 	for _, encoded := range body.TransactionBytes {
 		total += len(encoded)
 	}
@@ -1616,6 +1622,7 @@ func proposalBodyAuthDigest(chainID uint64, body *proposalBodyMsg) ([]byte, erro
 		body.ProposalKeyHash, body.SenderKeyHash,
 		sha256.Sum256(body.EncodedBlock), sha256.Sum256(body.Manifest), body.MissingTxHashes,
 		sha256.Sum256(encodedTransactions), sha256.Sum256(body.Extra), sha256.Sum256(body.ParentQC), sha256.Sum256(body.KeyActivationProof),
+		sha256.Sum256(body.ManifestAuthSig),
 	})
 	if err != nil {
 		return nil, err
@@ -1631,6 +1638,9 @@ func validateProposalBodyWireShape(body *proposalBodyMsg) error {
 func validateProposalBodyWireShapeForConfig(config *params.ChainConfig, body *proposalBodyMsg) error {
 	if body == nil || body.From == "" || len(body.From) > 512 || len(body.AuthSig) == 0 || len(body.AuthSig) > 256 {
 		return fmt.Errorf("invalid proposal sidecar identity fields")
+	}
+	if len(body.ManifestAuthSig) > 256 {
+		return fmt.Errorf("proposal manifest signature exceeds size limit")
 	}
 	if body.ProposalID == (common.Hash{}) || body.BodyHash == (common.Hash{}) || body.BodySize == 0 ||
 		body.ProposalKeyHash == (common.Hash{}) || body.SenderKeyHash == (common.Hash{}) ||
@@ -1713,6 +1723,11 @@ func (s *Service) sealProposalBody(body *proposalBodyMsg) error {
 	if body.ProposalKeyHash != (common.Hash{}) && s.kbc != nil {
 		if _, err := s.proposalBodySenderKey(body.ProposalKeyHash, body.From); err == nil {
 			body.SenderKeyHash = body.ProposalKeyHash
+		}
+	}
+	if body.Type == proposalBodyMsgManifest && body.From == body.LeaderID && len(body.Manifest) > 0 {
+		if err := signProposalManifest(s.ChainID(), body, secret); err != nil {
+			return err
 		}
 	}
 	digest, err := proposalBodyAuthDigest(s.ChainID(), body)
@@ -1932,12 +1947,9 @@ func (s *Service) verifyCertifiedTransitionManifestAuthority(body *proposalBodyM
 	return nil
 }
 
-// discardIncompletePeerManifest removes only the exact pending candidate
-// installed by a non-leader repair peer. A peer manifest is useful when the
-// receiver already has every transaction and can verify BodyHash immediately;
-// it must not remain authoritative while data is missing, because a Byzantine
-// committee peer could otherwise poison the proposal ID before the leader's
-// valid manifest arrives.
+// discardIncompletePeerManifest removes only an exact failed peer candidate.
+// Authenticated relays with missing transactions remain cached for repair;
+// the leader's manifest signature prevents another peer from poisoning them.
 func (s *Service) discardIncompletePeerManifest(candidate *proposalBodyMsg) {
 	if s == nil || candidate == nil || candidate.From == candidate.LeaderID {
 		return
@@ -3658,6 +3670,7 @@ func (s *Service) afterFHSFinalizedSyncCommit(block *types.Block, ownQC, childQC
 	s.waittingView.KeyNumber = currentKey.NumberU64()
 	s.muCurrentView.Unlock()
 	if block.BlockType() != types.Key_Block {
+		s.wakeDeferredFHSRecoveryAfterSync(block)
 		return nil
 	}
 	expected := types.DecodeToKeyBlock(block.KeyInfo())
@@ -3665,7 +3678,11 @@ func (s *Service) afterFHSFinalizedSyncCommit(block *types.Block, ownQC, childQC
 	if expected == nil || current == nil || current.NumberU64() != expected.NumberU64() || current.Hash() != expected.Hash() {
 		return fmt.Errorf("Fair HotStuff synced key head was not installed exactly")
 	}
-	return s.normalizeFHSEpochView(childQC, current)
+	if err := s.normalizeFHSEpochView(childQC, current); err != nil {
+		return err
+	}
+	s.wakeDeferredFHSRecoveryAfterSync(block)
+	return nil
 }
 
 func (s *Service) stageHotstuffProposal(viewNumber uint64, viewID common.Hash, leaderID string, encodedBlock, extra []byte, parentQC *hotstuff.SignedState) (*stagedHotstuffProposal, error) {
@@ -3723,9 +3740,6 @@ func (s *Service) stageHotstuffProposal(viewNumber uint64, viewID common.Hash, l
 		KeyActivationProof: s.canonicalFHSKeyActivationProof(ref.KeyHash),
 		CreatedAtUnixNano:  time.Now().UnixNano(),
 	}
-	if err := s.storeProposalBody(body); err != nil {
-		return nil, err
-	}
 	manifest, err := encodeProposalDataManifestForConfig(s.chainConfig, block)
 	if err != nil {
 		return nil, err
@@ -3748,6 +3762,13 @@ func (s *Service) stageHotstuffProposal(viewNumber uint64, viewID common.Hash, l
 	wireBody.Manifest = append([]byte(nil), manifest...)
 	if err := s.sealProposalBody(wireBody); err != nil {
 		return nil, fmt.Errorf("sign proposal manifest: %w", err)
+	}
+	// Attach the relayable leader proof before caching and queuing durable
+	// content, so a donor that retains this body can serve the same proof after
+	// its original leader becomes unavailable, including after a donor restart.
+	body.ManifestAuthSig = append([]byte(nil), wireBody.ManifestAuthSig...)
+	if err := s.storeProposalBody(body); err != nil {
+		return nil, err
 	}
 	_, committee, _, err := s.resolveExactFHSCommittee(ref.KeyHash, true)
 	if err != nil || committee == nil || len(committee.List) == 0 {
@@ -4174,7 +4195,7 @@ func (s *Service) waitProposalBodyForValidation(ctx context.Context, ref *types.
 			continue
 		}
 		if now.After(deadline) {
-			return nil, fmt.Errorf("proposal body timeout: number=%d proposalID=%s bodyHash=%s", ref.Number, proposalID, ref.BodyHash)
+			return nil, fmt.Errorf("%w: proposal body timeout: number=%d proposalID=%s bodyHash=%s", hotstuff.ErrProposalDataUnavailable, ref.Number, proposalID, ref.BodyHash)
 		}
 		wakeAt := nextRequestAt
 		if deadline.Before(wakeAt) {
@@ -4685,6 +4706,10 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 			log.Warn("HOTSTUFF PROPOSAL MANIFEST authority rejected", "from", msg.From, "leader", msg.LeaderID, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
 			return
 		}
+		if err := s.verifyProposalManifestSignature(msg); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL MANIFEST leader signature rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+			return
+		}
 	}
 	switch msg.Type {
 	case proposalBodyMsgManifest:
@@ -4692,12 +4717,6 @@ func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposa
 		if err != nil {
 			s.discardIncompletePeerManifest(msg)
 			log.Warn("HOTSTUFF PROPOSAL MANIFEST rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
-			return
-		}
-		if msg.From != msg.LeaderID && len(missing) > 0 {
-			s.discardIncompletePeerManifest(msg)
-			log.Warn("HOTSTUFF PROPOSAL MANIFEST peer repair is not immediately verifiable",
-				"from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "missing", len(missing))
 			return
 		}
 		log.Info("HOTSTUFF PROPOSAL MANIFEST stored", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID,
@@ -7633,7 +7652,9 @@ func (s *Service) handleHotStuffMsg() {
 			continue
 		case <-timerTicker.C:
 			if atomic.LoadInt32(&s.runningState) == 1 && !s.hasDeferredFHSRecovery() {
-				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.currentHotstuffBaseNumber()})
+				if err := s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.currentHotstuffBaseNumber()}); err != nil {
+					log.Warn("HotStuff recovery retry failed", "err", err)
+				}
 			}
 			continue
 		}
@@ -8455,6 +8476,21 @@ func (s *Service) wakeDeferredFHSRecovery() {
 	}
 }
 
+// Called only after the proof-aware importer has successfully published its
+// WAL and runtime route, while it still holds chainmu. The control loop owns
+// gate completion and consensus activation outside the importer.
+func (s *Service) wakeDeferredFHSRecoveryAfterSync(block *types.Block) {
+	if s == nil || s.fhsStore == nil || block == nil {
+		return
+	}
+	s.fhsStore.safetyMu.Lock()
+	if recovery := s.fhsStore.deferredRecovery; recovery != nil {
+		recovery.CanonicalSyncHash = block.Hash()
+	}
+	s.fhsStore.safetyMu.Unlock()
+	s.wakeDeferredFHSRecovery()
+}
+
 func (s *Service) retryDeferredFHSRecovery() {
 	if s == nil || !s.hasDeferredFHSRecovery() || !atomic.CompareAndSwapInt32(&s.fhsRecoveryRetryQueued, 0, 1) {
 		return
@@ -8472,6 +8508,14 @@ func (s *Service) retryDeferredFHSRecovery() {
 // consensus messages and pacemaker activity remain gated.
 func (s *Service) attemptDeferredFHSRecovery() {
 	if s == nil || atomic.LoadInt32(&s.runningState) != 1 || s.fhsStore == nil {
+		return
+	}
+	if completed, err := s.completeCanonicalFHSRecovery(); err != nil {
+		log.Warn("Deferred FHS canonical recovery will retry", "err", err)
+		s.retryDeferredFHSRecovery()
+		return
+	} else if completed {
+		s.resumeAfterDeferredFHSRecovery()
 		return
 	}
 	recovery := s.fhsStore.deferredRecoverySnapshot()
@@ -8694,12 +8738,10 @@ func (s *Service) isRunning() bool {
 
 func (s *Service) printAllStatus() {
 	s.netService.GetNetBlocks(nil)
-	for addr, a := range s.netService.ackMap {
+	for addr, a := range s.netService.ackStatusSnapshot() {
 		si := network.NewServerIdentity(addr)
 		log.Info("ackInfo", "addr", addr, "id", si.ID)
-		if a != nil {
-			log.Info("ackInfo", "ackTm", a.ackTm, "sendTm", a.sendTm, "isSending", *a.isSending)
-		}
+		log.Info("ackInfo", "ackTm", a.ackTm, "sendTm", a.sendTm, "isSending", a.isSending)
 	}
 }
 

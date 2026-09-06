@@ -726,6 +726,10 @@ func (c *QUICConn) Receive() (env *Envelope, e error) {
 			return result.env, result.err
 		case err := <-c.recvErr:
 			return nil, err
+		case <-c.conn.Context().Done():
+			// Stream errors may be discarded below, but an actual connection
+			// shutdown must unblock this and every subsequent Receive call.
+			return nil, ErrClosed
 		}
 	}
 }
@@ -774,6 +778,12 @@ func (c *QUICConn) receiveStream(stream *quic.Stream, first bool) {
 
 	buff, frameClass, reservation, err := c.receiveRaw(stream, first)
 	if err != nil {
+		// Once ServerIdentity has authenticated the application handshake,
+		// a canceled, truncated or slow stream must not retire the other
+		// streams carrying votes and certificates on this connection.
+		if !first && c.conn.Context().Err() == nil && isQUICStreamLocalReadError(err) {
+			return
+		}
 		c.reportReceiveError(handleError(err))
 		return
 	}
@@ -808,6 +818,16 @@ func (c *QUICConn) receiveStream(stream *quic.Stream, first bool) {
 	default:
 		c.deliverResult(c.recvBulk, result)
 	}
+}
+
+func isQUICStreamLocalReadError(err error) bool {
+	var streamErr *quic.StreamError
+	if errors.As(err, &streamErr) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func (c *QUICConn) deliverResult(channel chan<- quicEnvelopeResult, result quicEnvelopeResult) {
@@ -899,7 +919,7 @@ func (c *QUICConn) receiveRaw(stream *quic.Stream, expectHandshake bool) ([]byte
 	c.updateRx(headerSize + uint64(read))
 	if err != nil {
 		reservation.release()
-		return nil, 0, nil, handleError(err)
+		return nil, 0, nil, err
 	}
 	return payload, class, reservation, nil
 }

@@ -383,7 +383,10 @@ func (t *paceMakerTimer) txsEventLoop() {
 			t.mu.Lock()
 			beStop := t.beStop
 			beClose := t.beClose
-			if !beStop && !beClose {
+			// Transactions make proposal work available, but do not prove that
+			// consensus advanced. In FHS, a stalled leader can keep heartbeating
+			// while transactions arrive, so retain the no-progress deadline.
+			if !beStop && !beClose && (t.config == nil || !t.config.FairHotstuff) {
 				t.startTime = time.Now()
 			}
 			t.mu.Unlock()

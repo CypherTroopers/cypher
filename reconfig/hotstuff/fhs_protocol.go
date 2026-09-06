@@ -366,7 +366,54 @@ func (hsm *HotstuffProtocolManager) RecoverFHSHighQC(qc *SignedState, targetView
 		return ErrInvalidHighQC
 	}
 	hsm.applyScheduledFHSEpochReset()
-	return hsm.scheduleFHSHighQCCatchup(qc, targetView, nil, common.Hash{})
+	err := hsm.scheduleFHSHighQCCatchup(qc, targetView, nil, common.Hash{})
+	if !errors.Is(err, ErrProposalValidationPending) || hsm.pendingHighQC == nil || hsm.pendingHighQC.retryAt.IsZero() {
+		return err
+	}
+	// Startup gates normal timer messages. Its recovery wake must drive the
+	// same bounded retry and remain armed while no worker is actually active.
+	err = hsm.retryFHSHighQCValidation(time.Now())
+	if pending := hsm.pendingHighQC; pending != nil {
+		if !pending.retryAt.IsZero() {
+			return ErrProposalDataUnavailable
+		}
+		return ErrProposalValidationPending
+	}
+	return err
+}
+
+// retryFHSHighQCValidation resumes the exact verified certificate after a data
+// outage, even if no peer sends another QC. The existing scheduler still owns
+// generation checks and singleflight; each accepted attempt gets a fresh key so
+// a late result from a timed-out attempt cannot publish state.
+func (hsm *HotstuffProtocolManager) retryFHSHighQCValidation(now time.Time) error {
+	pending := hsm.pendingHighQC
+	if pending == nil || pending.retryAt.IsZero() || now.Before(pending.retryAt) {
+		return nil
+	}
+	hsm.pendingHighQC = nil
+	err := hsm.scheduleFHSCertificateValidation(pending.qc, pending.key.TargetView, nil, common.Hash{}, pending.key.SelectProposalParent)
+	if replacement := hsm.pendingHighQC; replacement != nil {
+		// These continuations already passed the count/byte bounds and wire
+		// authentication. Normal replay checks their applicability again.
+		replacement.messages = pending.messages
+		replacement.leaderViews = pending.leaderViews
+		return nil
+	}
+	if errors.Is(err, ErrOldState) || errors.Is(err, ErrProposalValidationPending) || errors.Is(err, ErrProposalDataUnavailable) {
+		// Scheduler backpressure must not turn a transient fetch failure into
+		// lost work or an unbounded retry loop.
+		pending.retryAt = now.Add(hotstuffRecoveryInterval)
+		hsm.pendingHighQC = pending
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	// Another path may have validated the certificate during the retry delay.
+	// Resume the retained control messages without repeating content work.
+	messages, leaderViews := snapshotFHSHighQCContinuations(pending)
+	return hsm.replayFHSHighQCContinuations(messages, leaderViews)
 }
 
 // certifyFHSQC schedules any missing body/EVM catch-up before invoking the
@@ -1326,7 +1373,7 @@ func (hsm *HotstuffProtocolManager) HandleFHSHighQCValidationResult(result *FHSH
 		return ErrOldState
 	}
 	pending := hsm.pendingHighQC
-	if pending == nil || pending.key != result.Key {
+	if pending == nil || pending.key != result.Key || !pending.retryAt.IsZero() {
 		return ErrOldState
 	}
 	async, ok := hsm.app.(FHSHighQCValidationApplication)
@@ -1338,6 +1385,10 @@ func (hsm *HotstuffProtocolManager) HandleFHSHighQCValidationResult(result *FHSH
 	if result.Err != nil {
 		if errors.Is(result.Err, ErrOldState) {
 			return hsm.retryFHSHighQCContinuations(messages, leaderViews)
+		}
+		if errors.Is(result.Err, ErrProposalDataUnavailable) {
+			pending.retryAt = time.Now().Add(hotstuffRecoveryInterval)
+			return fmt.Errorf("FHS HighQC validation failed: %w", result.Err)
 		}
 		hsm.pendingHighQC = nil
 		return fmt.Errorf("FHS HighQC validation failed: %w", result.Err)
@@ -1441,15 +1492,76 @@ func (hsm *HotstuffProtocolManager) LocalTimeout() error {
 }
 
 func (hsm *HotstuffProtocolManager) broadcastTimeoutVote(statement *TimeoutStatement) error {
-	app, ok := hsm.fhsApplication()
+	_, ok := hsm.fhsApplication()
 	if !ok || statement == nil {
 		return ErrInvalidLeaderView
 	}
 	id := statement.ID()
 	hsm.pruneTimeoutState(hsm.app.CurrentN())
-	if hsm.timeoutEchoed[id] {
+	if hsm.timeoutEchoed[id] && time.Now().Before(hsm.timeoutVoteRetryAt) {
 		return nil
 	}
+	return hsm.sendFHSTimeoutVote(statement)
+}
+
+// replayFHSTimeoutVote uses the WAL and a local send deadline, so neither a
+// pre-certificate partition nor a peer's duplicate votes can suppress retry.
+// The active epoch/view and the monotonic QC/TC watermarks are checked again
+// before re-persisting and signing the retained statement.
+func (hsm *HotstuffProtocolManager) replayFHSTimeoutVote(now time.Time) error {
+	app, ok := hsm.fhsApplication()
+	if !ok || now.Before(hsm.timeoutVoteRetryAt) {
+		return nil
+	}
+	recovery, ok := hsm.app.(FHSTimeoutVoteRecoveryApplication)
+	if !ok {
+		return nil
+	}
+	hsm.timeoutVoteRetryAt = now.Add(hotstuffRecoveryInterval)
+	statement, err := recovery.PendingFHSTimeoutVote()
+	if err != nil || statement == nil {
+		return err
+	}
+	state, _, activeView := hsm.app.CurrentState()
+	view := bftview.DecodeToView(state)
+	if view == nil || activeView == 0 {
+		return ErrInvalidLeaderView
+	}
+	if statement.TimedOutView < activeView {
+		return nil
+	}
+	if highest := hsm.app.HighestCertified(); highest != nil && highest.Number >= statement.TimedOutView {
+		return nil
+	}
+	if highest := app.HighestFHSTimeoutCertificate(); highest != nil && highest.Statement.TimedOutView >= statement.TimedOutView {
+		return nil
+	}
+	if statement.TimedOutView != activeView || statement.ChainID != hsm.app.ChainID() ||
+		statement.KeyNumber != view.KeyNumber || statement.KeyHash != view.KeyHash ||
+		statement.CommitteeHash != view.CommitteeHash {
+		return ErrInvalidHighQC
+	}
+	if _, err := TimeoutStatementDigest(statement); err != nil {
+		return err
+	}
+	ctx := &FHSViewContext{KeyNumber: view.KeyNumber, KeyHash: view.KeyHash, CommitteeHash: view.CommitteeHash}
+	committee, keys, err := hsm.fhsCommittee(ctx, true)
+	if err != nil {
+		return err
+	}
+	index := fhsFindMember(committee, hsm.app.Self())
+	if index < 0 || hsm.publicKey == nil || !bytes.Equal(hsm.publicKey.Serialize(), keys[index].Serialize()) {
+		return ErrInvalidReplica
+	}
+	return hsm.sendFHSTimeoutVote(statement)
+}
+
+func (hsm *HotstuffProtocolManager) sendFHSTimeoutVote(statement *TimeoutStatement) error {
+	app, ok := hsm.fhsApplication()
+	if !ok || statement == nil {
+		return ErrInvalidLeaderView
+	}
+	hsm.timeoutVoteRetryAt = time.Now().Add(hotstuffRecoveryInterval)
 	if err := app.PersistFHSTimeoutVote(statement); err != nil {
 		return err
 	}
@@ -1469,6 +1581,7 @@ func (hsm *HotstuffProtocolManager) broadcastTimeoutVote(statement *TimeoutState
 	if err != nil {
 		return err
 	}
+	id := statement.ID()
 	msg := hsm.newMsg(MsgTimeout, statement.TimedOutView, id, encoded, signature.Serialize(), nil)
 	if err := hsm.sealMessage(msg); err != nil {
 		return err
@@ -1476,8 +1589,10 @@ func (hsm *HotstuffProtocolManager) broadcastTimeoutVote(statement *TimeoutState
 	hsm.timeoutEchoed[id] = true
 	hsm.timeoutSeen[id] = time.Now()
 	hsm.timeoutView[id] = statement.TimedOutView
-	hsm.app.Broadcast(msg)
-	return nil
+	if err := ValidateHotstuffWireMessage(msg); err != nil {
+		return err
+	}
+	return errors.Join(hsm.app.Broadcast(msg)...)
 }
 
 func decodeTimeoutStatement(data []byte) (*TimeoutStatement, error) {
@@ -1650,6 +1765,61 @@ func buildTimeoutCertificate(statement *TimeoutStatement, votes map[int]*bls.Sig
 }
 
 func (hsm *HotstuffProtocolManager) broadcastTimeoutCertificate(tc *TimeoutCertificate) error {
+	// Advancing locally must not depend on delivery to every peer. Preserve
+	// both errors while the durable HighestTC keeps failed delivery retryable.
+	return errors.Join(hsm.sendFHSTimeoutCertificate(tc), hsm.NewView())
+}
+
+// replayFHSTimeoutCertificate repairs partial TC dissemination even when the
+// original sender stopped or all volatile/outbound queues expired. Every
+// replica re-envelopes its durable proof with its own authenticated identity.
+// The active proof has no wall-clock expiry: only a higher certified view or
+// an epoch transition can make it obsolete.
+func (hsm *HotstuffProtocolManager) replayFHSTimeoutCertificate(now time.Time) error {
+	app, ok := hsm.fhsApplication()
+	if !ok || now.Before(hsm.timeoutCertificateRetryAt) {
+		return nil
+	}
+	hsm.timeoutCertificateRetryAt = now.Add(hotstuffRecoveryInterval)
+	tc := app.HighestFHSTimeoutCertificate()
+	if tc == nil {
+		return nil
+	}
+	state, _, target := hsm.app.CurrentState()
+	view := bftview.DecodeToView(state)
+	if view == nil || target == 0 {
+		return ErrInvalidLeaderView
+	}
+	if tc.Statement.TimedOutView < target-1 {
+		return nil
+	}
+	if highest := hsm.app.HighestCertified(); highest != nil && highest.Number >= tc.Statement.TimedOutView {
+		return nil
+	}
+	if tc.Statement.TimedOutView != target-1 || tc.Statement.ChainID != hsm.app.ChainID() ||
+		tc.Statement.KeyNumber != view.KeyNumber || tc.Statement.KeyHash != view.KeyHash ||
+		tc.Statement.CommitteeHash != view.CommitteeHash {
+		return ErrInvalidHighQC
+	}
+	ctx := &FHSViewContext{
+		KeyNumber: view.KeyNumber, KeyHash: view.KeyHash, CommitteeHash: view.CommitteeHash,
+	}
+	committee, keys, err := hsm.fhsCommittee(ctx, true)
+	if err != nil {
+		return err
+	}
+	index := fhsFindMember(committee, hsm.app.Self())
+	if index < 0 || hsm.publicKey == nil || !bytes.Equal(hsm.publicKey.Serialize(), keys[index].Serialize()) {
+		return ErrInvalidReplica
+	}
+	if err := VerifyTimeoutCertificate(tc, keys, CalcThreshold(len(keys))); err != nil {
+		return err
+	}
+	return hsm.sendFHSTimeoutCertificate(tc)
+}
+
+func (hsm *HotstuffProtocolManager) sendFHSTimeoutCertificate(tc *TimeoutCertificate) error {
+	hsm.timeoutCertificateRetryAt = time.Now().Add(hotstuffRecoveryInterval)
 	encoded, err := rlp.EncodeToBytes(&tc.Statement)
 	if err != nil {
 		return err
@@ -1658,8 +1828,10 @@ func (hsm *HotstuffProtocolManager) broadcastTimeoutCertificate(tc *TimeoutCerti
 	if err := hsm.sealMessage(msg); err != nil {
 		return err
 	}
-	hsm.app.Broadcast(msg)
-	return hsm.NewView()
+	if err := ValidateHotstuffWireMessage(msg); err != nil {
+		return err
+	}
+	return errors.Join(hsm.app.Broadcast(msg)...)
 }
 
 func (hsm *HotstuffProtocolManager) handleTimeoutQCMsg(msg *HotstuffMessage) error {

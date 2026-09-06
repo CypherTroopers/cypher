@@ -921,6 +921,8 @@ func TestFHSEpochResetClearsOnlyVolatileProtocolState(t *testing.T) {
 	manager.timeoutQC[viewID] = &TimeoutCertificate{}
 	manager.timeoutSeen[viewID] = time.Now()
 	manager.timeoutView[viewID] = 29
+	manager.timeoutVoteRetryAt = time.Now().Add(hotstuffRecoveryInterval)
+	manager.timeoutCertificateRetryAt = time.Now().Add(hotstuffRecoveryInterval)
 
 	manager.ScheduleFHSEpochReset()
 	if !manager.applyScheduledFHSEpochReset() {
@@ -929,7 +931,8 @@ func TestFHSEpochResetClearsOnlyVolatileProtocolState(t *testing.T) {
 	if len(manager.views) != 0 || manager.leaderView != nil || len(manager.unhandledMsg) != 0 ||
 		len(manager.unhandledSize) != 0 || manager.unhandledBytes != 0 || len(manager.pendingNewView) != 0 ||
 		len(manager.finalized) != 0 || len(manager.timeoutVotes) != 0 || len(manager.timeoutEchoed) != 0 ||
-		len(manager.timeoutQC) != 0 || len(manager.timeoutSeen) != 0 || len(manager.timeoutView) != 0 {
+		len(manager.timeoutQC) != 0 || len(manager.timeoutSeen) != 0 || len(manager.timeoutView) != 0 ||
+		!manager.timeoutVoteRetryAt.IsZero() || !manager.timeoutCertificateRetryAt.IsZero() {
 		t.Fatal("epoch reset retained old volatile protocol state")
 	}
 	if manager.applyScheduledFHSEpochReset() {

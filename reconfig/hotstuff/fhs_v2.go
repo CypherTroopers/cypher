@@ -218,6 +218,13 @@ type FHSApplication interface {
 	AcceptFHSTimeoutCertificate(*TimeoutCertificate) error
 }
 
+// FHSTimeoutVoteRecoveryApplication exposes the durable local vote separately
+// from volatile received votes. Recovery must remain possible before any
+// collector has received enough votes to form a timeout certificate.
+type FHSTimeoutVoteRecoveryApplication interface {
+	PendingFHSTimeoutVote() (*TimeoutStatement, error)
+}
+
 // FHSProposalValidationApplication is optional. Production nodes implement it
 // to keep body retrieval and execution off the HotStuff control loop. Test and
 // legacy applications may omit it and use the synchronous OnPropose callback.

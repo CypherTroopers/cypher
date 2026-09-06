@@ -149,6 +149,9 @@ func TestFHSKeyActivationManifestCarriesAncestorFinality(t *testing.T) {
 	}
 	signBody := func(body *proposalBodyMsg) {
 		t.Helper()
+		if err := signProposalManifest(s.ChainID(), body, &fixture.keys[leaderIndex]); err != nil {
+			t.Fatal(err)
+		}
 		digest, err := proposalBodyAuthDigest(s.ChainID(), body)
 		if err != nil {
 			t.Fatal(err)
@@ -168,6 +171,9 @@ func TestFHSKeyActivationManifestCarriesAncestorFinality(t *testing.T) {
 	}
 	if err := s.verifyProposalManifestAuthority(body); err != nil {
 		t.Fatalf("gapped activation manifest authority: %v", err)
+	}
+	if err := s.verifyProposalManifestSignature(body); err != nil {
+		t.Fatalf("relayable leader signature did not resolve its proven new committee: %v", err)
 	}
 	tampered := cloneProposalBodyMsg(body)
 	tampered.KeyActivationProof[len(tampered.KeyActivationProof)-1] ^= 1
@@ -199,7 +205,7 @@ func TestFHSKeyActivationProofFitsMaximumManifestDelivery(t *testing.T) {
 	message := &networkMsg{Pmsg: &proposalBodyMsg{
 		Type: proposalBodyMsgManifest, Manifest: make([]byte, proposalBodyLimitForConfig(nil)),
 		ParentQC: make([]byte, proposalBodyControlMaxBytes), KeyActivationProof: make([]byte, types.MaxFHSFinalityProofSize),
-		From: "sender", LeaderID: "leader", AuthSig: make([]byte, 256),
+		From: "sender", LeaderID: "leader", AuthSig: make([]byte, 256), ManifestAuthSig: make([]byte, 256),
 	}}
 	if reserved, _ := q.reserve(message); !reserved {
 		t.Fatal("maximum bounded manifest and activation proof do not fit the outbound queue")
