@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cypherium/cypher/common"
@@ -22,6 +23,8 @@ import (
 )
 
 var errFHSRecoveryPending = errors.New("Fair HotStuff durable recovery is waiting for proposal content")
+
+var _ hotstuff.FHSTimeoutVoteRecoveryApplication = (*Service)(nil)
 
 const (
 	fhsMaxCertifiedChainDepth = 128
@@ -210,6 +213,7 @@ type fhsDiskProposal struct {
 	Extra              []byte
 	ParentQC           []byte
 	KeyActivationProof []byte
+	ManifestAuthSig    []byte
 }
 
 type fhsDiskBody struct {
@@ -230,6 +234,10 @@ type fhsDeferredRecovery struct {
 	HighestBlockHash common.Hash
 	RecoveredView    uint64
 	PendingBroadcast *hotstuff.SignedState
+	// Set only after a full-sync commit has published both the canonical WAL
+	// watermark and runtime route. Completion must not replay a stale route
+	// over another transaction block imported concurrently.
+	CanonicalSyncHash common.Hash
 }
 
 func cloneFHSDeferredRecovery(recovery *fhsDeferredRecovery) *fhsDeferredRecovery {
@@ -237,10 +245,11 @@ func cloneFHSDeferredRecovery(recovery *fhsDeferredRecovery) *fhsDeferredRecover
 		return nil
 	}
 	return &fhsDeferredRecovery{
-		HighestQC:        hotstuff.CloneSignedState(recovery.HighestQC),
-		HighestBlockHash: recovery.HighestBlockHash,
-		RecoveredView:    recovery.RecoveredView,
-		PendingBroadcast: hotstuff.CloneSignedState(recovery.PendingBroadcast),
+		HighestQC:         hotstuff.CloneSignedState(recovery.HighestQC),
+		HighestBlockHash:  recovery.HighestBlockHash,
+		RecoveredView:     recovery.RecoveredView,
+		PendingBroadcast:  hotstuff.CloneSignedState(recovery.PendingBroadcast),
+		CanonicalSyncHash: recovery.CanonicalSyncHash,
 	}
 }
 
@@ -356,6 +365,10 @@ func (s *Service) completeDeferredFHSRecovery(qc *hotstuff.SignedState) (bool, e
 	if qc == nil || !hotstuff.SignedStateSemanticEqual(recovery.HighestQC, qc) {
 		return false, fmt.Errorf("deferred FHS recovery completion does not match durable HighestQC")
 	}
+	return s.finishDeferredFHSRecovery(recovery, recovery.RecoveredView)
+}
+
+func (s *Service) finishDeferredFHSRecovery(recovery *fhsDeferredRecovery, recoveredView uint64) (bool, error) {
 	// Applying a repaired certified prefix invokes block-completion callbacks,
 	// which normally restart the pacemaker. Close that transient window before
 	// the recovery watermark is released.
@@ -372,10 +385,83 @@ func (s *Service) completeDeferredFHSRecovery(qc *hotstuff.SignedState) (bool, e
 		}
 		s.netService.setAuthenticatedPeerKeys(peers)
 	}
-	if err := s.fhsStore.completeDeferredRecovery(qc); err != nil {
+	if err := s.fhsStore.completeDeferredRecovery(recovery.HighestQC); err != nil {
 		return false, err
 	}
-	s.applyFHSRecoveredView(recovery.RecoveredView)
+	s.applyFHSRecoveredView(recoveredView)
+	return true, nil
+}
+
+// completeCanonicalFHSRecovery handles a full-sync decision which overtook the
+// body being repaired. A certified but uncommitted sibling may no longer be an
+// execution parent. Its vote/QC watermarks remain durable, while the independently
+// verified canonical proof permits recovery at the finalized execution state.
+// Only the control loop calls this; sync callbacks merely wake it after their
+// canonical route and WAL updates have succeeded.
+func (s *Service) completeCanonicalFHSRecovery() (bool, error) {
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+	if !s.isRunning() || !s.hasDeferredFHSRecovery() {
+		return false, nil
+	}
+	if err := s.acquireFHSValidationPublication(fhsValidationPublicationHighQC); err != nil {
+		return false, err
+	}
+	defer s.releaseFHSValidationPublication(fhsValidationPublicationHighQC)
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return false, hotstuff.ErrOldState
+	}
+	recovery := s.fhsStore.deferredRecoverySnapshot()
+	if recovery == nil || recovery.CanonicalSyncHash == (common.Hash{}) {
+		return false, nil
+	}
+	ref, err := s.verifyFHSQCCryptographic(recovery.HighestQC)
+	if err != nil || ref.BlockHash != recovery.HighestBlockHash {
+		return false, fmt.Errorf("invalid deferred FHS canonical recovery identity: %v", err)
+	}
+	canonical := s.bc.CurrentBlock()
+	if canonical == nil || ref.Number > canonical.NumberU64() {
+		return false, nil
+	}
+	if canonical.Hash() != recovery.CanonicalSyncHash {
+		return false, hotstuff.ErrOldState
+	}
+	proof, present, err := core.DecodeFHSCommitProof(canonical)
+	if err != nil || !present {
+		return false, fmt.Errorf("canonical FHS recovery has no valid finality proof: %v", err)
+	}
+	if err := s.bc.VerifyFHSCommitProof(canonical, proof); err != nil {
+		return false, fmt.Errorf("verify canonical FHS recovery proof: %w", err)
+	}
+	_, canonicalQC, err := s.bc.ReconstructFHSQC(canonical)
+	if err != nil {
+		return false, err
+	}
+	if err := s.reconcileFHSCanonicalQCWatermark(canonical, canonicalQC); err != nil {
+		return false, err
+	}
+	state, highestHash, err := s.fhsStore.recoverySnapshot()
+	if err != nil {
+		return false, err
+	}
+	state, err = s.reconcileFHSTimeoutEpoch(state, highestHash)
+	if err != nil {
+		return false, err
+	}
+	recoveredView, err := s.validateFHSTimeoutState(state)
+	if err != nil {
+		return false, err
+	}
+	completed, err := s.finishDeferredFHSRecovery(recovery, recoveredView)
+	if err != nil || !completed {
+		return completed, err
+	}
+	// A canceled old-body worker must not revive its former branch when its
+	// result arrives after the canonical recovery gate has opened.
+	s.cancelAllProposalValidations()
+	if s.protocolMng != nil {
+		s.protocolMng.ScheduleFHSEpochReset()
+	}
 	return true, nil
 }
 
@@ -450,6 +536,20 @@ func (store *fhsSafetyStore) snapshot() (*hotstuff.FHSSafetyState, common.Hash, 
 		return nil, common.Hash{}, err
 	}
 	return hotstuff.CloneFHSSafetyState(store.state), store.highestBlockHash, nil
+}
+
+// PendingFHSTimeoutVote returns the durable statement for protocol recovery.
+// The protocol verifies its active epoch and view before replaying it; returning
+// a clone keeps the WAL immutable while the signature and message are built.
+func (s *Service) PendingFHSTimeoutVote() (*hotstuff.TimeoutStatement, error) {
+	if s == nil || s.fhsStore == nil {
+		return nil, fmt.Errorf("FHS safety store not initialized")
+	}
+	state, _, err := s.fhsStore.snapshot()
+	if err != nil || state == nil {
+		return nil, err
+	}
+	return state.LastTimeoutVote, nil
 }
 
 func (store *fhsSafetyStore) pendingBroadcastSnapshot() (*hotstuff.SignedState, error) {
@@ -973,12 +1073,16 @@ func (s *Service) persistFHSProposalData(ref *types.HotstuffProposalRef, body *p
 	if len(body.KeyActivationProof) > types.MaxFHSFinalityProofSize {
 		return fmt.Errorf("FHS key activation proof exceeds size limit")
 	}
+	if len(body.ManifestAuthSig) > 256 {
+		return fmt.Errorf("FHS leader manifest signature exceeds size limit")
+	}
 	record := &fhsDiskProposal{
 		ProposalID:         ref.ProposalID(),
 		ProposalRef:        append([]byte(nil), ref.EncodeToBytes()...),
 		Extra:              append([]byte(nil), body.Extra...),
 		ParentQC:           append([]byte(nil), body.ParentQC...),
 		KeyActivationProof: append([]byte(nil), body.KeyActivationProof...),
+		ManifestAuthSig:    append([]byte(nil), body.ManifestAuthSig...),
 	}
 	bodyRecord := &fhsDiskBody{BodyHash: ref.BodyHash, EncodedBlock: append([]byte(nil), body.EncodedBlock...)}
 	encodedProposal, err := rlp.EncodeToBytes(record)
@@ -1068,6 +1172,9 @@ func (s *Service) readFHSDurableProposalBody(proposalID common.Hash) (*types.Hot
 	if len(proposal.KeyActivationProof) > types.MaxFHSFinalityProofSize {
 		return nil, nil, true, fmt.Errorf("persisted FHS key activation proof exceeds size limit")
 	}
+	if len(proposal.ManifestAuthSig) > 256 {
+		return nil, nil, true, fmt.Errorf("persisted FHS leader manifest signature exceeds size limit")
+	}
 	ref, err := types.DecodeHotstuffProposalRef(proposal.ProposalRef)
 	if err != nil {
 		return nil, nil, true, fmt.Errorf("decode persisted FHS proposal reference %s: %w", proposalID, err)
@@ -1104,6 +1211,7 @@ func (s *Service) readFHSDurableProposalBody(proposalID common.Hash) (*types.Hot
 		Extra:              append([]byte(nil), proposal.Extra...),
 		ParentQC:           append([]byte(nil), proposal.ParentQC...),
 		KeyActivationProof: append([]byte(nil), proposal.KeyActivationProof...),
+		ManifestAuthSig:    append([]byte(nil), proposal.ManifestAuthSig...),
 		CreatedAtUnixNano:  1,
 	}, true, nil
 }
@@ -2452,6 +2560,9 @@ func (s *Service) loadFHSWAL() error {
 		if len(proposal.KeyActivationProof) > types.MaxFHSFinalityProofSize {
 			return fmt.Errorf("restored FHS key activation proof exceeds size limit")
 		}
+		if len(proposal.ManifestAuthSig) > 256 {
+			return fmt.Errorf("restored FHS leader manifest signature exceeds size limit")
+		}
 		ref, err := types.DecodeHotstuffProposalRef(proposal.ProposalRef)
 		if err != nil || ref.BlockHash != cursor || ref.ProposalID() != proposal.ProposalID ||
 			ref.ProposalID() != certificateRef.ProposalID() ||
@@ -2483,6 +2594,7 @@ func (s *Service) loadFHSWAL() error {
 			Extra:              append([]byte(nil), proposal.Extra...),
 			ParentQC:           append([]byte(nil), proposal.ParentQC...),
 			KeyActivationProof: append([]byte(nil), proposal.KeyActivationProof...),
+			ManifestAuthSig:    append([]byte(nil), proposal.ManifestAuthSig...),
 			CreatedAtUnixNano:  1,
 		}
 		chain = append(chain, restoreRecord{ref: ref, body: body, extra: append([]byte(nil), proposal.Extra...), qc: hotstuff.CloneSignedState(certificate.QC)})

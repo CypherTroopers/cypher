@@ -3,6 +3,7 @@ package hotstuff
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -45,9 +46,12 @@ var (
 	ErrInvalidCommitQC           = fmt.Errorf("hotstuff commitQC invalid")
 	ErrInvalidProposal           = fmt.Errorf("hotstuff proposal invalid")
 	ErrProposalValidationPending = fmt.Errorf("hotstuff proposal validation pending")
-	ErrInvalidPublicKey          = fmt.Errorf("invalid public key for bls deserialize")
-	ErrViewPhaseNotMatch         = fmt.Errorf("hotstuff view phase not match")
-	ErrViewOldPhase              = fmt.Errorf("hotstuff old phase ")
+	// ErrProposalDataUnavailable marks a transient failure to fetch proposal data.
+	// Invalid proofs and permanently invalid proposal contents must not wrap it.
+	ErrProposalDataUnavailable = fmt.Errorf("hotstuff proposal data unavailable")
+	ErrInvalidPublicKey        = fmt.Errorf("invalid public key for bls deserialize")
+	ErrViewPhaseNotMatch       = fmt.Errorf("hotstuff view phase not match")
+	ErrViewOldPhase            = fmt.Errorf("hotstuff old phase ")
 
 	ErrMissingView       = fmt.Errorf("hotstuff view missing")
 	ErrInvalidLeaderView = fmt.Errorf("hotstuff invalid leader view")
@@ -409,6 +413,12 @@ type HotstuffProtocolManager struct {
 	validationSequence uint64
 	pendingHighQC      *pendingFHSHighQCValidation
 	epochReset         uint32
+
+	// This bounds physical TC broadcasts and durable-store reads. The TC
+	// itself is owned by the application's safety store, never by this timer.
+	timeoutCertificateRetryAt time.Time
+	// Receive activity never postpones the local durable timeout vote's resend.
+	timeoutVoteRetryAt time.Time
 }
 
 type pendingFHSHighQCValidation struct {
@@ -416,6 +426,8 @@ type pendingFHSHighQCValidation struct {
 	qc          *SignedState
 	messages    []*HotstuffMessage
 	leaderViews map[common.Hash]struct{}
+	// Nonzero only after a transient data failure, while no worker is active.
+	retryAt time.Time
 }
 
 type finalizedRecovery struct {
@@ -489,6 +501,8 @@ func (hsm *HotstuffProtocolManager) applyScheduledFHSEpochReset() bool {
 	hsm.timeoutQC = make(map[common.Hash]*TimeoutCertificate)
 	hsm.timeoutSeen = make(map[common.Hash]time.Time)
 	hsm.timeoutView = make(map[common.Hash]uint64)
+	hsm.timeoutCertificateRetryAt = time.Time{}
+	hsm.timeoutVoteRetryAt = time.Time{}
 	hsm.pendingHighQC = nil
 	log.Info("reset Fair HotStuff volatile state for new key epoch")
 	return true
@@ -2345,6 +2359,9 @@ func (hsm *HotstuffProtocolManager) HandleMessage(msg *HotstuffMessage) error {
 
 func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 	now := time.Now()
+	timeoutReplayErr := hsm.replayFHSTimeoutCertificate(now)
+	timeoutVoteReplayErr := hsm.replayFHSTimeoutVote(now)
+	highQCRetryErr := hsm.retryFHSHighQCValidation(now)
 	for _, v := range hsm.views {
 		if v.number <= curN {
 			continue
@@ -2506,7 +2523,7 @@ func (hsm *HotstuffProtocolManager) handleTimerMsg(curN uint64) error {
 		}
 	}
 
-	return nil
+	return errors.Join(timeoutReplayErr, timeoutVoteReplayErr, highQCRetryErr)
 }
 
 func (hsm *HotstuffProtocolManager) SignHash(data []byte) []byte {

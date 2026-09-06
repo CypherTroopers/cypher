@@ -85,9 +85,61 @@ func (msg *checkMinerMsg) NetworkClass() uint8 {
 }
 
 type ackInfo struct {
+	mu        sync.RWMutex
 	ackTm     time.Time
 	sendTm    time.Time
 	isSending *int32 // atomic int
+}
+
+func (a *ackInfo) ackTime() time.Time {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.ackTm
+}
+
+func (a *ackInfo) setAckTime(now time.Time) {
+	a.mu.Lock()
+	a.ackTm = now
+	a.mu.Unlock()
+}
+
+func (a *ackInfo) sendTime() time.Time {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.sendTm
+}
+
+func (a *ackInfo) setSendTime(now time.Time) {
+	a.mu.Lock()
+	a.sendTm = now
+	a.mu.Unlock()
+}
+
+type ackStatus struct {
+	ackTm     time.Time
+	sendTm    time.Time
+	isSending int32
+}
+
+// Copy diagnostics while both the peer map and its timestamps are protected.
+// Callers can log the snapshot without keeping the network locks held.
+func (s *netService) ackStatusSnapshot() map[string]ackStatus {
+	s.muIdMap.Lock()
+	defer s.muIdMap.Unlock()
+	status := make(map[string]ackStatus, len(s.ackMap))
+	for addr, a := range s.ackMap {
+		if a == nil {
+			continue
+		}
+		a.mu.RLock()
+		entry := ackStatus{ackTm: a.ackTm, sendTm: a.sendTm}
+		a.mu.RUnlock()
+		if a.isSending != nil {
+			entry.isSending = atomic.LoadInt32(a.isSending)
+		}
+		status[addr] = entry
+	}
+	return status
 }
 
 type msgHeadInfo struct {
@@ -840,7 +892,7 @@ func (s *netService) handleNetworkMsgAck(env *network.Envelope) {
 	si := env.ServerIdentity
 	address := si.Address.String()
 	// log.Info("handleNetworkMsgReq Recv", "from address", address)
-	s.getAckInfo(address).ackTm = time.Now()
+	s.getAckInfo(address).setAckTime(time.Now())
 
 	if s.IgnoreMsg(msg) {
 		return
@@ -1097,6 +1149,13 @@ func (s *netService) IgnoreMsg(m *networkMsg) bool {
 			return true
 		}
 	} else if m.Pmsg != nil {
+		// A donor can be ahead of the requester. Historical requests AND their
+		// manifest/TX responses must cross both this receive filter and the send
+		// lane's filter. FHS sidecars carry exact proposal commitments and are
+		// authenticated/authorized by Service; local height is not their expiry.
+		if s.chainConfig != nil && s.chainConfig.FairHotstuff {
+			return false
+		}
 		if m.Pmsg.Number < atomic.LoadUint64(&s.curBlockN) {
 			return true
 		}
@@ -1164,7 +1223,7 @@ func (s *netService) handleHeartBeatMsgAck(env *network.Envelope) {
 	si := env.ServerIdentity
 	address := si.Address.String()
 	// log.Info("handleHeartBeatMsgAck Recv", "from address", address, "blockN", msg.blockN)
-	s.getAckInfo(address).ackTm = time.Now()
+	s.getAckInfo(address).setAckTime(time.Now())
 }
 
 func (s *netService) getAckInfo(addr string) *ackInfo {
@@ -1196,11 +1255,11 @@ func (s *netService) heartBeat_Loop(generation uint64) {
 			}
 			addr := node.Address
 			a := s.getAckInfo(addr)
-			if a != nil && now.Sub(a.sendTm) > heatBeatTimeout {
+			if a != nil && now.Sub(a.sendTime()) > heatBeatTimeout {
 				if atomic.LoadInt32(a.isSending) == 0 {
 					si := s.serverIdentityFor(addr)
 					if s.GetNetBlocks(si) == 0 {
-						a.sendTm = time.Now()
+						a.setSendTime(time.Now())
 						go func(si *network.ServerIdentity, msg interface{}, isRunning *int32) {
 							atomic.StoreInt32(isRunning, 1)
 							s.SendRaw(si, msg, false)
@@ -1217,7 +1276,7 @@ func (s *netService) heartBeat_Loop(generation uint64) {
 }
 
 func (s *netService) GetAckTime(addr string) time.Time {
-	return s.getAckInfo(addr).ackTm
+	return s.getAckInfo(addr).ackTime()
 }
 
 func (s *netService) ResetAckTime(addr string) {
@@ -1227,11 +1286,11 @@ func (s *netService) ResetAckTime(addr string) {
 	if addr != "" {
 		a, ok := s.ackMap[addr]
 		if ok {
-			a.ackTm = now
+			a.setAckTime(now)
 		}
 	} else {
 		for _, a := range s.ackMap {
-			a.ackTm = now
+			a.setAckTime(now)
 		}
 	}
 	s.muIdMap.Unlock()
