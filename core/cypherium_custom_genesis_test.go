@@ -23,6 +23,9 @@ func TestCypheriumCustomGenesisConfigPinsUpgradeSurface(t *testing.T) {
 	if !bytes.Contains(blob, []byte(`"evmParallel"`)) || bytes.Contains(blob, []byte(`"nativeParallel"`)) || bytes.Contains(blob, []byte(`"requireNativeTransactions"`)) {
 		t.Fatal("genesis.json must use only the EVM transaction capacity schema")
 	}
+	if bytes.Contains(blob, []byte(`"commonRPCSigners"`)) {
+		t.Fatal("genesis.json must not restrict Common RPC operators to a fixed signer set")
+	}
 
 	var genesis Genesis
 	if err := json.Unmarshal(blob, &genesis); err != nil {

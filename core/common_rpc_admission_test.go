@@ -328,7 +328,7 @@ func TestBuildCommonTxAdmissionsSortsUniqueBatchesAndRefs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
 	txs := types.Transactions{tx1, tx0, tx2}
 	batches, refs, err := BuildCommonTxAdmissions(txs, config, genesis, 5, 10, now+1)
 	if err != nil {
@@ -358,7 +358,7 @@ func TestCommonRPCAdmissionMillionMemoryHitsDoNotReadDBOrFinality(t *testing.T) 
 	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 1, now); err != nil {
 		t.Fatal(err)
 	}
-	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
 	var finalityCalls atomic.Int64
 	SetCommonRPCAdmissionFinalizedLookup(func(common.Hash) bool {
 		finalityCalls.Add(1)
@@ -391,7 +391,7 @@ func TestBuildCommonTxAdmissionsReusesFilteredResultsWithoutLookup(t *testing.T)
 	if _, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 4, now); err != nil {
 		t.Fatal(err)
 	}
-	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
 	selections := make([]CommonRPCAdmissionResult, len(txs))
 	for i, tx := range txs {
 		selection, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 4, 5, now)
@@ -444,7 +444,7 @@ func TestCommonRPCAdmissionConcurrentFinalizationTombstonesMemoryReaders(t *test
 	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 4, now); err != nil {
 		t.Fatal(err)
 	}
-	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
 	initial, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 4, 5, now)
 	if err != nil {
 		t.Fatal(err)
@@ -510,7 +510,7 @@ func TestCommonRPCAdmissionRemainsValidAcrossKeyBlocksAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	SetCommonRPCAdmissionDatabase(db)
-	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
 	selection, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 25, 90, admittedAt+86_400)
 	if err != nil {
 		t.Fatalf("durable admission became stale across key blocks: %v", err)
@@ -541,7 +541,7 @@ func TestCommonRPCAdmissionRejectsFutureBoundary(t *testing.T) {
 	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 8, admittedAt); err != nil {
 		t.Fatal(err)
 	}
-	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
 	if _, err := CommonRPCAdmissionForBlockTransaction(tx, config, genesis, 7, 1, admittedAt); err == nil {
 		t.Fatal("future-key admission was accepted")
 	}
@@ -557,14 +557,13 @@ func TestCommonRPCAdmissionConcurrentCrossKeySelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	miner := crypto.PubkeyToAddress(key.PublicKey)
 	tx := testTransaction(19)
 	oldBatch := signedAdmissionBatchWithKey(t, key, []common.Hash{tx.Hash()}, chainID, genesis, 1, 1_000)
 	newBatch := signedAdmissionBatchWithKey(t, key, []common.Hash{tx.Hash()}, chainID, genesis, 20, 2_000)
 	if _, err := VerifyAndStoreCommonRPCAdmissionBatch(oldBatch, chainID, genesis); err != nil {
 		t.Fatal(err)
 	}
-	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true, CommonRPCSigners: []common.Address{miner}}
+	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
 	start := make(chan struct{})
 	errs := make(chan error, 33)
 	var wg sync.WaitGroup

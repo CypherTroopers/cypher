@@ -260,7 +260,6 @@ var (
 		FixedCommittee:         false,
 		FixedLeader:            false,
 		FairHotstuff:           false,
-		CommonRPCSigners:       nil,
 		EnabledTPS:             false,
 	}
 
@@ -298,7 +297,6 @@ var (
 		FixedCommittee:         false,
 		FixedLeader:            false,
 		FairHotstuff:           false,
-		CommonRPCSigners:       nil,
 		EnabledTPS:             false,
 	}
 
@@ -331,7 +329,6 @@ var (
 		FixedCommittee:         false,
 		FixedLeader:            false,
 		FairHotstuff:           false,
-		CommonRPCSigners:       nil,
 		EnabledTPS:             false,
 	}
 	TestRules = TestChainConfig.Rules(new(big.Int))
@@ -365,7 +362,6 @@ var (
 		FixedCommittee:         false,
 		FixedLeader:            false,
 		FairHotstuff:           false,
-		CommonRPCSigners:       nil,
 		EnabledTPS:             false,
 	}
 )
@@ -466,7 +462,6 @@ type ChainConfig struct {
 	FixedLeader           bool             `json:"fixedLeader,omitempty"`
 	FairHotstuff          bool             `json:"fairHotstuff,omitempty"`
 	FairHotstuffSeed      common.Hash      `json:"fairHotstuffSeed,omitempty"`
-	CommonRPCSigners      []common.Address `json:"commonRPCSigners,omitempty"`
 	// NativeParallel retains its internal name while the public genesis schema
 	// calls this EVM execution-capacity profile "evmParallel".
 	NativeParallel *NativeParallelConfig `json:"evmParallel,omitempty"`
@@ -514,21 +509,6 @@ func (c *ChainConfig) EffectiveRnetTransport() string {
 		return "quic"
 	}
 	return c.RnetTransport
-}
-
-// IsCommonRPCSigner reports whether an admission signer is authorized by the
-// genesis-committed FHS configuration. Runtime transport allowlists are derived
-// from this set and are never consensus evidence on their own.
-func (c *ChainConfig) IsCommonRPCSigner(address common.Address) bool {
-	if c == nil || !c.FairHotstuff || address == (common.Address{}) {
-		return false
-	}
-	for _, signer := range c.CommonRPCSigners {
-		if signer == address {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *ChainConfig) EffectiveRnetFallbackTransport() string {
@@ -894,17 +874,6 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		}
 		if fallback := c.EffectiveRnetFallbackTransport(); fallback != "none" {
 			return fmt.Errorf("fairHotstuff forbids unauthenticated transport fallback %q", fallback)
-		}
-		if len(c.CommonRPCSigners) == 0 {
-			return errors.New("fairHotstuff requires at least one genesis-committed common RPC signer")
-		}
-		for index, signer := range c.CommonRPCSigners {
-			if signer == (common.Address{}) {
-				return fmt.Errorf("fairHotstuff common RPC signer %d is zero", index)
-			}
-			if index > 0 && bytes.Compare(c.CommonRPCSigners[index-1][:], signer[:]) >= 0 {
-				return errors.New("fairHotstuff common RPC signers must be unique and strictly sorted")
-			}
 		}
 		if len(c.GenCommittee) < 4 || len(c.GenCommittee) > MaxFairHotstuffCommitteeSize || (len(c.GenCommittee)-1)%3 != 0 {
 			return fmt.Errorf("fairHotstuff committee size %d is invalid: require n=3f+1 and 4<=n<=%d", len(c.GenCommittee), MaxFairHotstuffCommitteeSize)

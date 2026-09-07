@@ -354,9 +354,6 @@ func validateCommonTxAdmissionLayout(config *params.ChainConfig, batches []*type
 		if batch.Miner == (common.Address{}) {
 			return nil, fmt.Errorf("common tx admission batch %s has empty miner", batch.AdmissionID)
 		}
-		if !config.IsCommonRPCSigner(batch.Miner) {
-			return nil, fmt.Errorf("common tx admission batch %s signer %s is not genesis-authorized", batch.AdmissionID, batch.Miner)
-		}
 		if batch.Timestamp == 0 {
 			return nil, fmt.Errorf("common tx admission batch %s has empty timestamp", batch.AdmissionID)
 		}

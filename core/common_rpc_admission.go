@@ -1109,8 +1109,8 @@ func validateCommonRPCAdmissionForBlock(batch *types.CommonTxAdmissionBatch, key
 		return fmt.Errorf("common RPC admission %s is bound to future key block", batch.AdmissionID)
 	}
 	// An admission is durable ingress evidence, not a lease on a proposal
-	// boundary. Once a genesis-authorized signer has admitted a transaction for
-	// this chain, queueing, restart, or key-block progress must not silently
+	// boundary. Once a signer has admitted a transaction for this chain,
+	// queueing, restart, or key-block progress must not silently
 	// expire it before finalization. KeyBlockNumber and Timestamp remain signed
 	// audit data; only evidence from the future is invalid at proposal time.
 	return nil
@@ -1133,9 +1133,6 @@ func commonRPCAdmissionForBlockTransaction(tx *types.Transaction, config *params
 		batch := entry.batch
 		if batch.ChainID == nil || batch.ChainID.Cmp(config.ChainID) != 0 || batch.GenesisHash != genesisHash {
 			return CommonRPCAdmissionResult{}, fmt.Errorf("common RPC admission for %s belongs to another chain genesis", txHash)
-		}
-		if !config.IsCommonRPCSigner(batch.Miner) {
-			return CommonRPCAdmissionResult{}, fmt.Errorf("common RPC admission for %s signer %s is not genesis-authorized", txHash, batch.Miner)
 		}
 		if err := validateCommonRPCAdmissionForBlock(batch, keyBlockNumber, timestamp); err != nil {
 			return CommonRPCAdmissionResult{}, err
@@ -1213,9 +1210,6 @@ func BuildCommonTxAdmissionsFromResults(txs types.Transactions, selections []Com
 		batch := selection.Batch
 		if batch.ChainID == nil || batch.ChainID.Cmp(config.ChainID) != 0 || batch.GenesisHash != genesisHash {
 			return nil, nil, fmt.Errorf("common RPC admission for %s belongs to another chain genesis", tx.Hash())
-		}
-		if !config.IsCommonRPCSigner(batch.Miner) {
-			return nil, nil, fmt.Errorf("common RPC admission for %s signer %s is not genesis-authorized", tx.Hash(), batch.Miner)
 		}
 		if err := validateCommonRPCAdmissionForBlock(batch, keyBlockNumber, timestamp); err != nil {
 			return nil, nil, err

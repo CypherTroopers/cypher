@@ -216,12 +216,6 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	log.Info("Initialised chain configuration", "config", chainConfig)
 	chainConfig.RnetPort = config.RnetPort
 	chainConfig.EnabledTPS = config.EnableTPS
-	if chainConfig.FairHotstuff {
-		// Admission authorization is consensus state committed by genesis. Derive
-		// the TxQUIC packet allowlist from it so an operator-local TOML value
-		// cannot admit a signer whose reward validators must reject.
-		config.TxQUIC.AllowedSigners = append([]common.Address(nil), chainConfig.CommonRPCSigners...)
-	}
 	config.TxQUIC.ApplyFixedCommitteeAutoRole(chainConfig)
 	config.TxQUIC.ApplyHTTP3RPCDefaults(stack.Config().HTTPHost, stack.Config().HTTPPort)
 
@@ -408,22 +402,15 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		return nil, err
 	}
 	eth.miner = miner.New(eth, chainConfig, eth.EventMux(), eth.engine, extIP)
-	// Every TxQUIC bridge packet is authenticated with the node etherbase. Resolve
-	// and publish that address while constructing the service, before discovery
-	// policy and RPC become visible. A bridge without a local signing wallet must
-	// fail closed instead of accepting transactions it cannot authenticate.
+	// Publish an existing bridge identity before RPC becomes visible. A new node
+	// may create or import its signing account through RPC after startup; admission
+	// signing still rejects submissions until that account is configured and ready.
 	if config.TxQUIC.BridgeEnabled {
-		etherbase, err := eth.Etherbase()
-		if err != nil {
-			return nil, fmt.Errorf("resolve TxQUIC bridge signer: %w", err)
+		if etherbase, err := eth.Etherbase(); err == nil {
+			eth.SetEtherbase(etherbase)
+		} else {
+			log.Info("Common RPC signing account is not configured yet", "err", err)
 		}
-		if eth.accountManager == nil {
-			return nil, fmt.Errorf("TxQUIC bridge account manager is unavailable")
-		}
-		if _, err := eth.accountManager.Find(accounts.Account{Address: etherbase}); err != nil {
-			return nil, fmt.Errorf("TxQUIC bridge etherbase %s has no local signing wallet: %w", etherbase, err)
-		}
-		eth.SetEtherbase(etherbase)
 	}
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), eth, nil, "hexNodeId", config.EVMCallTimeOut}
 	gpoParams := config.GPO

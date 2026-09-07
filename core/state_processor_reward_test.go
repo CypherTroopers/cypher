@@ -128,7 +128,6 @@ func TestCommonTxAdmissionBatchConsensusValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	miner := crypto.PubkeyToAddress(key.PublicKey)
-	config.CommonRPCSigners = []common.Address{miner}
 	genesisHash := common.Hash{0xaa}
 	const keyBlockNumber = uint64(7)
 	const blockTimestamp = uint64(100)
@@ -213,14 +212,15 @@ func TestCommonTxAdmissionBatchConsensusValidation(t *testing.T) {
 			},
 		},
 		{
-			name: "unauthorized miner", want: "genesis-authorized",
+			name: "miner does not match signature", want: "signer mismatch",
 			run: func() error {
-				unauthorizedKey, err := crypto.GenerateKey()
+				otherKey, err := crypto.GenerateKey()
 				if err != nil {
 					t.Fatal(err)
 				}
 				batch := cloneStateProcessorTestAdmissionBatch(valid)
-				resealStateProcessorTestAdmissionBatch(t, batch, unauthorizedKey)
+				batch.Miner = crypto.PubkeyToAddress(otherKey.PublicKey)
+				batch.AdmissionID = types.CommonTxAdmissionID(batch)
 				_, err = buildCommonAdmissionApprovers(config, []*types.CommonTxAdmissionBatch{batch}, refs, txs, genesisHash, keyBlockNumber, blockTimestamp)
 				return err
 			},
@@ -251,8 +251,6 @@ func TestCommonTxAdmissionReferenceConsensusValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	miner := crypto.PubkeyToAddress(key.PublicKey)
-	config.CommonRPCSigners = []common.Address{miner}
 	genesisHash := common.Hash{0xaa}
 	txA := types.NewTransaction(0, common.Address{1}, big.NewInt(1), params.TxGas, big.NewInt(1), nil)
 	txB := types.NewTransaction(1, common.Address{2}, big.NewInt(2), params.TxGas, big.NewInt(1), nil)

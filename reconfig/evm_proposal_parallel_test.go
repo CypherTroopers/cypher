@@ -26,7 +26,6 @@ func evmProposalParallelTestConfig(t *testing.T) *params.ChainConfig {
 		ChainID:             big.NewInt(9191),
 		FairHotstuff:        true,
 		FairHotstuffSeed:    common.HexToHash("0x9191"),
-		CommonRPCSigners:    []common.Address{common.HexToAddress("0x9191")},
 		HomesteadBlock:      zeroBlock,
 		EIP150Block:         zeroBlock,
 		EIP155Block:         zeroBlock,

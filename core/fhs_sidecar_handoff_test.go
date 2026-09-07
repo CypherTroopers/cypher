@@ -22,7 +22,6 @@ func fhsSidecarHandoffFixture(t *testing.T) (*params.ChainConfig, *types.Block, 
 		t.Fatal(err)
 	}
 	miner := crypto.PubkeyToAddress(key.PublicKey)
-	config.CommonRPCSigners = []common.Address{miner}
 	genesisHash := common.HexToHash("0xf001")
 	context := fhsSidecarValidationContext{genesisHash: genesisHash, keyBlockNumber: 7}
 	tx := types.NewTransaction(0, common.HexToAddress("0x2001"), big.NewInt(1), params.TxGas, big.NewInt(params.FixedTransferGasPricePerGas), nil)
@@ -118,8 +117,7 @@ func TestFHSSidecarHandoffBindsConsensusIdentity(t *testing.T) {
 	block.Header0().KeyHash = originalKeyHash
 
 	changedConfig := *config
-	changedConfig.CommonRPCSigners = append([]common.Address(nil), config.CommonRPCSigners...)
-	changedConfig.CommonRPCSigners[0][0] ^= 1
+	changedConfig.FairHotstuffSeed[0] ^= 1
 	if got := handoff.take(&changedConfig, block, context); got != nil {
 		t.Fatal("sidecars were reused under another consensus config")
 	}
@@ -136,7 +134,7 @@ func TestFHSSidecarHandoffFallbackValidatesAndReuseConsumes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cache-miss validation: %v", err)
 	}
-	if fallback == nil || len(fallback.approvers) != 1 || fallback.approvers[0] != config.CommonRPCSigners[0] {
+	if fallback == nil || len(fallback.approvers) != 1 || fallback.approvers[0] != block.CommonTxAdmissionBatches()[0].Miner {
 		t.Fatalf("fallback approvers = %#v", fallback)
 	}
 	if reward, ok := fallback.rewardForTransaction(block.Body(), 0); !ok || reward.TxHash != block.Transactions()[0].Hash() {

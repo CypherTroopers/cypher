@@ -1915,6 +1915,9 @@ func (q *TxQUICIngress) validateSecurityConfig() error {
 	if q.allowErr != nil {
 		return q.allowErr
 	}
+	if _, invalid := q.signers[common.Address{}]; invalid {
+		return fmt.Errorf("txquic signer allowlist contains the zero address")
+	}
 	q.routeMu.RLock()
 	hasRouteProvider := q.routeProvider != nil
 	q.routeMu.RUnlock()
@@ -1925,17 +1928,8 @@ func (q *TxQUICIngress) validateSecurityConfig() error {
 		if q.ingress == nil {
 			return fmt.Errorf("txquic ingress requires durable storage")
 		}
-		if len(q.allowIPs) == 0 && len(q.allowNets) == 0 {
-			return fmt.Errorf("txquic ingress requires an explicit source IP allowlist")
-		}
 		if q.canonicalTx == nil || q.finalizedTx == nil || q.obsoleteTxs == nil {
 			return fmt.Errorf("txquic ingress requires canonical and finalized transaction state lookups")
-		}
-		if len(q.signers) == 0 {
-			return fmt.Errorf("txquic ingress requires a non-empty signer allowlist")
-		}
-		if _, invalid := q.signers[common.Address{}]; invalid {
-			return fmt.Errorf("txquic signer allowlist contains the zero address")
 		}
 		if q.config.FairHotstuff && (q.receiptPublicKey == nil || q.receiptSigner == nil) {
 			return fmt.Errorf("Fair HotStuff TxQUIC ingress requires a committee BLS receipt signer")
@@ -3433,8 +3427,10 @@ func (q *TxQUICIngress) encodeSignedTxQUICPacket(batch *txQUICBatch, am *account
 	if sender == (common.Address{}) {
 		return nil, fmt.Errorf("txquic bridge signer coinbase is empty")
 	}
-	if _, allowed := q.signers[sender]; !allowed {
-		return nil, fmt.Errorf("txquic bridge signer %s is not genesis-authorized", sender)
+	if len(q.signers) > 0 {
+		if _, allowed := q.signers[sender]; !allowed {
+			return nil, fmt.Errorf("txquic bridge signer %s is not allowed", sender)
+		}
 	}
 	if am == nil {
 		am = q.am
@@ -3633,8 +3629,7 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 		return
 	}
 	// Charge authenticated senders before committee resolution, commitment
-	// hashing, admission signature checks, or database access. Internet clients
-	// without an allowed packet key cannot consume those expensive paths.
+	// hashing, admission signature checks, or database access.
 	if !q.takeTokens(remote, len(packet.Items)) {
 		log.Warn("TxQUIC rate limited", "remote", remote, "batch", packet.BatchID, "items", len(packet.Items))
 		return
@@ -4571,8 +4566,10 @@ func (q *TxQUICIngress) verifyPacket(pkt *txQUICPacket) (common.Address, error) 
 	if signer != pkt.Sender {
 		return signer, fmt.Errorf("ingress signer mismatch")
 	}
-	if _, ok := q.signers[signer]; !ok {
-		return signer, fmt.Errorf("ingress signer not allowed")
+	if len(q.signers) > 0 {
+		if _, ok := q.signers[signer]; !ok {
+			return signer, fmt.Errorf("ingress signer not allowed")
+		}
 	}
 	return signer, nil
 }

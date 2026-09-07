@@ -293,9 +293,6 @@ func (b *EthAPIBackend) shouldRecordCommonRPCAdmission() bool {
 	if miner == (common.Address{}) {
 		return false
 	}
-	if b.ChainConfig().FairHotstuff && !b.ChainConfig().IsCommonRPCSigner(miner) {
-		return false
-	}
 	if bftview.IamMember() >= 0 {
 		return false
 	}

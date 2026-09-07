@@ -747,7 +747,6 @@ func (p *fhsRecoveryProcess) initialize(command fhsProcessCommand) error {
 		return err
 	}
 	sender := crypto.PubkeyToAddress(clientKey.PublicKey)
-	config.CommonRPCSigners = []common.Address{sender}
 	genesis.Alloc = core.GenesisAlloc{sender: core.GenesisAccount{Balance: new(big.Int).Exp(big.NewInt(10), big.NewInt(27), nil)}}
 	genesis.Timestamp = command.Timestamp
 	genesis.Mixhash, err = params.FairHotstuffGenesisCommitment(config)

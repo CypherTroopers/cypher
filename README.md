@@ -151,6 +151,8 @@ This branch implements the FHS-C current-leader QC-broadcast change and the safe
 
 The supplied [`genesis.json`](genesis.json) commits the complete Fair HotStuff configuration in the genesis header `mixHash`, including the chain ID, committee, fork settings, transport policy, and `fairHotstuffSeed`. This intentionally changes the genesis block hash; existing databases from the old protocol must not be reused.
 
+Common RPC operators are no longer listed in genesis. Initialize every node from the updated genesis in a fresh data directory, including fresh transaction ingress and outbox databases.
+
 The finality-proof format, signed manifest envelope, and certificate recovery records in this experiment require a fresh genesis database. The [self-healing tests](docs/fhs-self-healing.md) include seven separate validator processes with fresh temporary keys and databases, selective message loss, and proposer termination over real QUIC. These tests supplement the signed-QC convergence, finality, and committee-handoff regression tests; they are not a proof of consensus correctness for all adversarial schedules.
 
 The committed seed is a trusted-genesis implementation of the paper's fair-election assumption for a static Byzantine set. It removes current-leader QC grinding, but the schedule is predictable after genesis and the seed creator must generate the seed honestly. Deployments that require resistance to a malicious seed ceremony, adaptive corruption, or targeted future-leader denial of service should replace it with a DKG-backed threshold beacon or an independently verified external beacon.
@@ -169,6 +171,8 @@ The committed seed is a trusted-genesis implementation of the paper's fair-elect
 ```
 ## get RPC owner rewards
 
+Common RPC operators use their own local account; no genesis registration is required. A Common RPC node can start before the account is created. Select and unlock the signing account before submitting transactions through it. Existing transaction submission APIs and wallets continue to work without an additional user signature.
+
 1. Create an account:
 
 ```javascript
@@ -181,22 +185,22 @@ personal.newAccount("your password")
 miner.start(5, "your address", "your password")
 ```
 
-3. Optionally change the mining reward wallet:
+3. Select the Common RPC signing and reward account:
 
 ```javascript
-miner.setEtherbase("")
+miner.setEtherbase("your address")
 ```
 
-4. Check the wallet balance:
-
-```javascript
-web3.fromWei(eth.getBalance("your address"), "ether")
-```
-
-5. Unlock the account for transaction-approval RPC rewards:
+4. Unlock the account for transaction-approval RPC rewards:
 
 ```javascript
 personal.unlockAccount("your address", "your password", 0)
+```
+
+5. Check the wallet balance after admitted transactions finalize:
+
+```javascript
+web3.fromWei(eth.getBalance("your address"), "ether")
 ```
 
 ## setting http/3 QUIC RPC port(example)
@@ -218,6 +222,8 @@ Common miner nodes are responsible for public transaction admission.
 They open public RPC endpoints, receive user transactions, create signed `CommonTxAdmission` records, and relay those admissions to the validator leader.
 
 Common miners do not replace validator consensus. They add a public RPC transaction admission layer in front of the validator network.
+
+TxQUIC verifies each sender's signature. Its optional `AllowedSigners` and `AllowIPs` settings restrict a local endpoint only when populated; empty lists accept any correctly signed sender from any source IP. The supplied configuration leaves both filters empty. Validator committee authentication remains required.
 
 ## Simple Difference
 

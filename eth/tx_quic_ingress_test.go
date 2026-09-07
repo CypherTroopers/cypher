@@ -536,16 +536,25 @@ func TestTxQUICAllowIPsUnsetPreservesAllowAllBehavior(t *testing.T) {
 	}
 }
 
-func TestTxQUICIngressRequiresExplicitSourceAllowlist(t *testing.T) {
+func TestTxQUICIngressStartsWithoutSourceOrSignerAllowlist(t *testing.T) {
 	config := testTxQUICConfig()
 	config.Enabled = true
 	config.FairHotstuff = true
 	q := NewTxQUICIngress(config, nil)
 	q.routeProvider = func() (TxQUICFHSRoute, error) { return TxQUICFHSRoute{}, nil }
 	q.ingress = &TxQUICIngressStore{}
-	err := q.validateSecurityConfig()
-	if err == nil || !strings.Contains(err.Error(), "source IP allowlist") {
-		t.Fatalf("missing ingress allowlist error = %v", err)
+	q.canonicalTx = func(common.Hash) bool { return false }
+	q.finalizedTx = func(common.Hash) bool { return false }
+	q.obsoleteTxs = func(txs types.Transactions) []bool { return make([]bool, len(txs)) }
+	q.receiptPublicKey = func() ([]byte, error) { return nil, nil }
+	q.receiptSigner = func(uint64, common.Hash, []byte) ([]byte, error) { return nil, nil }
+	t.Cleanup(q.cancel)
+	if err := q.validateSecurityConfig(); err != nil {
+		t.Fatalf("public ingress startup validation failed: %v", err)
+	}
+	q.signers[common.Address{}] = struct{}{}
+	if err := q.validateSecurityConfig(); err == nil || !strings.Contains(err.Error(), "zero address") {
+		t.Fatalf("invalid configured signer error = %v", err)
 	}
 }
 
@@ -2971,7 +2980,7 @@ func TestTxQUICPacketSignatureRejectsUnsignedAndMutatedEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ingress := &TxQUICIngress{signers: map[common.Address]struct{}{sender: {}}}
+	ingress := new(TxQUICIngress)
 	if recovered, err := ingress.verifyPacket(packet); err != nil || recovered != sender {
 		t.Fatalf("valid packet signature recovered %s, err=%v", recovered, err)
 	}

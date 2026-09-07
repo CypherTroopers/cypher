@@ -115,7 +115,7 @@ func TestValidateBodyRejectsPrematureFHSFinalityProof(t *testing.T) {
 }
 
 func TestFHSCommonRPCSidecarCoverageIsConsensusMandatory(t *testing.T) {
-	config := &params.ChainConfig{ChainID: big.NewInt(1), FairHotstuff: true, CommonRPCSigners: []common.Address{{2}}}
+	config := &params.ChainConfig{ChainID: big.NewInt(1), FairHotstuff: true}
 	tx := types.NewTransaction(0, common.Address{1}, big.NewInt(1), params.TxGas, big.NewInt(1), nil)
 	newBlock := func(blockType uint8) *types.Block {
 		return types.NewBlockWithHeader(&types.Header{
@@ -142,15 +142,13 @@ func TestFHSCommonRPCSidecarCoverageIsConsensusMandatory(t *testing.T) {
 	if err := validateFHSCommonRPCSidecarCoverage(config, complete); err != nil {
 		t.Fatalf("complete sidecars rejected: %v", err)
 	}
-	unauthorizedAdmission := *admission
-	unauthorizedAdmission.Miner = common.Address{3}
-	unauthorizedAdmission.AdmissionID = types.CommonTxAdmissionID(&unauthorizedAdmission)
-	unauthorizedReward := *reward
-	unauthorizedReward.Approver = unauthorizedAdmission.Miner
-	redirected := newBlock(types.FastTx_Block)
-	redirected.AttachCommonTxData([]*types.CommonTxAdmissionBatch{&unauthorizedAdmission}, refs, []*types.CommonTxReward{&unauthorizedReward})
-	if err := validateFHSCommonRPCSidecarCoverage(config, redirected); err == nil || !strings.Contains(err.Error(), "genesis-authorized") {
-		t.Fatalf("unauthorized reward redirect error = %v", err)
+	invalidAdmission := *admission
+	invalidAdmission.Miner = common.Address{}
+	invalidAdmission.AdmissionID = types.CommonTxAdmissionID(&invalidAdmission)
+	invalid := newBlock(types.FastTx_Block)
+	invalid.AttachCommonTxData([]*types.CommonTxAdmissionBatch{&invalidAdmission}, refs, []*types.CommonTxReward{reward})
+	if err := validateFHSCommonRPCSidecarCoverage(config, invalid); err == nil || !strings.Contains(err.Error(), "empty miner") {
+		t.Fatalf("empty admission miner error = %v", err)
 	}
 
 	keyBlock := newBlock(types.Key_Block)
