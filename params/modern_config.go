@@ -333,6 +333,8 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 	var evmParallel json.RawMessage
 	for key, value := range fields {
 		switch {
+		case strings.EqualFold(key, "commonRPCRewardRecipientBlock"):
+			return fmt.Errorf("chain config field %q is unsupported; Common RPC reward recipients are mandatory from genesis", key)
 		case strings.EqualFold(key, "nativeParallel"):
 			return fmt.Errorf("chain config field %q is unsupported; use evmParallel", key)
 		case strings.EqualFold(key, "evmParallel"):

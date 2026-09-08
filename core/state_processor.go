@@ -329,6 +329,9 @@ func validateCommonTxAdmissionLayout(config *params.ChainConfig, batches []*type
 		if batch == nil {
 			return nil, fmt.Errorf("common tx admission batch %d is nil", index)
 		}
+		if err := batch.ValidateVersion(); err != nil {
+			return nil, err
+		}
 		if batch.AdmissionID == (common.Hash{}) {
 			return nil, fmt.Errorf("common tx admission batch %d has empty admission id", index)
 		}
@@ -449,6 +452,9 @@ func buildCommonRewardIndex(rewards []*types.CommonTxReward, includedTransaction
 		if uint64(position) >= uint64(fhsRewardPositionMissing) {
 			return nil, fmt.Errorf("common tx reward position %d exceeds supported range", position)
 		}
+		if err := reward.ValidateVersion(); err != nil {
+			return nil, err
+		}
 		if reward.TxHash == (common.Hash{}) {
 			return nil, fmt.Errorf("invalid common tx reward: empty tx hash")
 		}
@@ -471,7 +477,7 @@ func buildCommonRewardIndex(rewards []*types.CommonTxReward, includedTransaction
 	return indexed, nil
 }
 
-func validateCommonRPCReward(reward *types.CommonTxReward, expectedApprover common.Address, tx *types.Transaction, gasUsed uint64, baseFee *big.Int) error {
+func validateCommonRPCReward(reward *types.CommonTxReward, expectedApprover common.Address, tx *types.Transaction, gasUsed uint64, baseFee *big.Int, admission *types.CommonTxAdmissionBatch) error {
 	if reward == nil {
 		return fmt.Errorf("missing common tx reward for admitted tx %s", tx.Hash())
 	}
@@ -483,6 +489,15 @@ func validateCommonRPCReward(reward *types.CommonTxReward, expectedApprover comm
 	}
 	if reward.Approver != expectedApprover {
 		return fmt.Errorf("invalid common tx reward approver for %s: have %s want %s", tx.Hash(), reward.Approver, expectedApprover)
+	}
+	if err := reward.ValidateVersion(); err != nil {
+		return err
+	}
+	if admission == nil || admission.Miner != reward.Approver || admission.Version != reward.Version || admission.RewardRecipient != reward.RewardRecipient {
+		return fmt.Errorf("common tx reward approver, version or recipient does not match selected admission for %s", tx.Hash())
+	}
+	if reward.ApproverReward == nil || reward.Burn == nil {
+		return fmt.Errorf("common tx reward has nil amount")
 	}
 	actualFee := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), effectiveTxGasPrice(tx, baseFee))
 	expectedReward := new(big.Int).Div(actualFee, big.NewInt(5))
@@ -496,35 +511,42 @@ func validateCommonRPCReward(reward *types.CommonTxReward, expectedApprover comm
 	return nil
 }
 
+// ApplyCommonRPCRewards applies already-validated Common TX rewards only after
+// all transactions have executed. Proposal construction and import share this
+// deterministic aggregation to prevent recipient or timing disagreements.
+func ApplyCommonRPCRewards(statedb *state.StateDB, rewards []*types.CommonTxReward) {
+	applyCommonRPCRewards(statedb, rewards)
+}
+
 func applyCommonRPCRewards(statedb *state.StateDB, rewards []*types.CommonTxReward) {
 	if statedb == nil || len(rewards) == 0 {
 		return
 	}
 	// Rewards become visible only after every transaction has executed, so
-	// additions for one approver are commutative. Collapse a maximum native
-	// block's 262,144 sidecars to at most the committee's distinct approvers
+	// additions for one recipient are commutative. Collapse a maximum native
+	// block's 262,144 sidecars to the distinct permissionless recipients
 	// before touching StateDB. Sorting keeps diagnostics and journal order
 	// deterministic even though the resulting trie root is order-independent.
 	totals := make(map[common.Address]*big.Int)
 	for _, reward := range rewards {
-		if reward == nil || reward.Approver == (common.Address{}) || reward.ApproverReward == nil || reward.ApproverReward.Sign() <= 0 {
+		if reward == nil || reward.EffectiveRewardRecipient() == (common.Address{}) || reward.ApproverReward == nil || reward.ApproverReward.Sign() <= 0 {
 			continue
 		}
-		if total := totals[reward.Approver]; total != nil {
+		if total := totals[reward.EffectiveRewardRecipient()]; total != nil {
 			total.Add(total, reward.ApproverReward)
 		} else {
-			totals[reward.Approver] = new(big.Int).Set(reward.ApproverReward)
+			totals[reward.EffectiveRewardRecipient()] = new(big.Int).Set(reward.ApproverReward)
 		}
 	}
-	approvers := make([]common.Address, 0, len(totals))
-	for approver := range totals {
-		approvers = append(approvers, approver)
+	recipients := make([]common.Address, 0, len(totals))
+	for recipient := range totals {
+		recipients = append(recipients, recipient)
 	}
-	sort.Slice(approvers, func(i, j int) bool {
-		return bytes.Compare(approvers[i][:], approvers[j][:]) < 0
+	sort.Slice(recipients, func(i, j int) bool {
+		return bytes.Compare(recipients[i][:], recipients[j][:]) < 0
 	})
-	for _, approver := range approvers {
-		statedb.AddBalance(approver, totals[approver])
+	for _, recipient := range recipients {
+		statedb.AddBalance(recipient, totals[recipient])
 	}
 	// Burn is represented by intentionally not crediting the remaining fee to any account.
 }
@@ -616,7 +638,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			if !hasReward {
 				return fmt.Errorf("common tx admission without reward for included tx: %s", txHash)
 			}
-			if err := validateCommonRPCReward(reward, admissionMiner, tx, receipt.GasUsed, header.BaseFee); err != nil {
+			if err := validateCommonRPCReward(reward, admissionMiner, tx, receipt.GasUsed, header.BaseFee, body.CommonTxAdmissionBatches[body.CommonTxAdmissionRefs[index].Batch]); err != nil {
 				return err
 			}
 		case hasReward:

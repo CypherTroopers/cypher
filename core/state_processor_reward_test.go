@@ -23,49 +23,52 @@ func TestCommonRPCRewardIsAppliedOnlyAfterTransactionExecution(t *testing.T) {
 	tx := types.NewTransaction(0, common.HexToAddress("0x2000000000000000000000000000000000000002"), new(big.Int), params.TxGas, big.NewInt(params.FixedTransferGasPricePerGas), nil)
 	actualFee := new(big.Int).Mul(new(big.Int).SetUint64(params.TxGas), big.NewInt(params.FixedTransferGasPricePerGas))
 	wantReward := new(big.Int).Div(new(big.Int).Set(actualFee), big.NewInt(5))
-	reward := &types.CommonTxReward{
+	reward := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		TxHash: tx.Hash(), Approver: approver,
 		ApproverReward: new(big.Int).Set(wantReward),
 		Burn:           new(big.Int).Sub(actualFee, wantReward),
 	}
 	statedb := newModernTestState(t)
-	if err := validateCommonRPCReward(reward, approver, tx, params.TxGas, big.NewInt(params.FixedBaseFeePerGas)); err != nil {
+	if err := validateCommonRPCReward(reward, approver, tx, params.TxGas, big.NewInt(params.FixedBaseFeePerGas), &types.CommonTxAdmissionBatch{Version: 2, Miner: reward.Approver, RewardRecipient: reward.RewardRecipient}); err != nil {
 		t.Fatal(err)
 	}
 	if got := statedb.GetBalance(approver); got.Sign() != 0 {
 		t.Fatalf("validation mutated approver balance before all tx execution: %v", got)
 	}
+	if got := statedb.GetBalance(reward.RewardRecipient); got.Sign() != 0 {
+		t.Fatalf("validation mutated recipient balance before all tx execution: %v", got)
+	}
 	applyCommonRPCRewards(statedb, []*types.CommonTxReward{reward})
-	if got := statedb.GetBalance(approver); got.Cmp(wantReward) != 0 {
-		t.Fatalf("settled approver reward = %v, want %v", got, wantReward)
+	if got := statedb.GetBalance(reward.RewardRecipient); got.Cmp(wantReward) != 0 {
+		t.Fatalf("settled recipient reward = %v, want %v", got, wantReward)
 	}
 }
 
-func TestCommonRPCRewardsAggregateByApproverWithoutChangingRoot(t *testing.T) {
-	approverA := common.HexToAddress("0x1000000000000000000000000000000000000001")
-	approverB := common.HexToAddress("0x1000000000000000000000000000000000000002")
+func TestCommonRPCRewardsAggregateByRecipientWithoutChangingRoot(t *testing.T) {
+	recipientA := common.HexToAddress("0x1000000000000000000000000000000000000001")
+	recipientB := common.HexToAddress("0x1000000000000000000000000000000000000002")
 	first := big.NewInt(7)
 	second := big.NewInt(11)
 	rewards := []*types.CommonTxReward{
-		{Approver: approverA, ApproverReward: first},
-		{Approver: approverB, ApproverReward: big.NewInt(13)},
-		{Approver: approverA, ApproverReward: second},
-		{Approver: approverA, ApproverReward: new(big.Int)},
+		{Version: 2, RewardRecipient: recipientA, Approver: common.Address{0xa1}, ApproverReward: first},
+		{Version: 2, RewardRecipient: recipientB, Approver: common.Address{0xa2}, ApproverReward: big.NewInt(13)},
+		{Version: 2, RewardRecipient: recipientA, Approver: common.Address{0xa3}, ApproverReward: second},
+		{Version: 2, RewardRecipient: recipientA, Approver: common.Address{0xa1}, ApproverReward: new(big.Int)},
 		nil,
 	}
 
 	aggregated := newModernTestState(t)
 	serial := newModernTestState(t)
 	applyCommonRPCRewards(aggregated, rewards)
-	serial.AddBalance(approverA, first)
-	serial.AddBalance(approverB, big.NewInt(13))
-	serial.AddBalance(approverA, second)
+	serial.AddBalance(recipientA, first)
+	serial.AddBalance(recipientB, big.NewInt(13))
+	serial.AddBalance(recipientA, second)
 
-	if got, want := aggregated.GetBalance(approverA), big.NewInt(18); got.Cmp(want) != 0 {
-		t.Fatalf("aggregated approver A balance = %v, want %v", got, want)
+	if got, want := aggregated.GetBalance(recipientA), big.NewInt(18); got.Cmp(want) != 0 {
+		t.Fatalf("aggregated recipient A balance = %v, want %v", got, want)
 	}
-	if got, want := aggregated.GetBalance(approverB), big.NewInt(13); got.Cmp(want) != 0 {
-		t.Fatalf("aggregated approver B balance = %v, want %v", got, want)
+	if got, want := aggregated.GetBalance(recipientB), big.NewInt(13); got.Cmp(want) != 0 {
+		t.Fatalf("aggregated recipient B balance = %v, want %v", got, want)
 	}
 	if first.Cmp(big.NewInt(7)) != 0 || second.Cmp(big.NewInt(11)) != 0 {
 		t.Fatal("reward aggregation mutated signed sidecar amounts")
@@ -77,7 +80,7 @@ func TestCommonRPCRewardsAggregateByApproverWithoutChangingRoot(t *testing.T) {
 
 func stateProcessorTestAdmissionBatch(t *testing.T, key *ecdsa.PrivateKey, chainID *big.Int, genesisHash common.Hash, keyBlockNumber, timestamp uint64, txHashes []common.Hash) *types.CommonTxAdmissionBatch {
 	t.Helper()
-	batch := &types.CommonTxAdmissionBatch{
+	batch := &types.CommonTxAdmissionBatch{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		ChainID:        new(big.Int).Set(chainID),
 		GenesisHash:    genesisHash,
 		Miner:          crypto.PubkeyToAddress(key.PublicKey),
@@ -294,11 +297,11 @@ func TestCommonTxAdmissionReferenceConsensusValidation(t *testing.T) {
 
 	actualFee := new(big.Int).Mul(new(big.Int).SetUint64(params.TxGas), big.NewInt(params.FixedTransferGasPricePerGas))
 	approverReward := new(big.Int).Div(new(big.Int).Set(actualFee), big.NewInt(5))
-	reward := &types.CommonTxReward{
+	reward := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		TxHash: txA.Hash(), Approver: common.Address{9}, ApproverReward: approverReward,
 		Burn: new(big.Int).Sub(actualFee, approverReward),
 	}
-	if err := validateCommonRPCReward(reward, batchA.Miner, txA, params.TxGas, big.NewInt(params.FixedBaseFeePerGas)); err == nil || !strings.Contains(err.Error(), "approver") {
+	if err := validateCommonRPCReward(reward, batchA.Miner, txA, params.TxGas, big.NewInt(params.FixedBaseFeePerGas), &types.CommonTxAdmissionBatch{Version: 2, Miner: reward.Approver, RewardRecipient: reward.RewardRecipient}); err == nil || !strings.Contains(err.Error(), "approver") {
 		t.Fatalf("reward approver substitution error = %v", err)
 	}
 }

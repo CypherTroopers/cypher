@@ -158,13 +158,15 @@ func TestOsakaPerTransactionBufferCoversCanonicalCommonSidecars(t *testing.T) {
 		refs[index] = types.CommonTxAdmissionRef{Batch: 0, Item: uint16(index)}
 	}
 	admission := &types.CommonTxAdmissionBatch{
-		ChainID:        big.NewInt(10_101_919),
-		GenesisHash:    common.Hash{2},
-		Miner:          approver,
-		KeyBlockNumber: math.MaxUint64,
-		Timestamp:      math.MaxUint64,
-		TxHashes:       txHashes,
-		Signature:      make([]byte, 65),
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0x43"),
+		ChainID:         big.NewInt(10_101_919),
+		GenesisHash:     common.Hash{2},
+		Miner:           approver,
+		KeyBlockNumber:  math.MaxUint64,
+		Timestamp:       math.MaxUint64,
+		TxHashes:        txHashes,
+		Signature:       make([]byte, 65),
 	}
 	admission.TxRoot = types.DeriveCommonTxAdmissionTxRoot(admission.TxHashes)
 	admission.AdmissionID = types.CommonTxAdmissionID(admission)
@@ -175,10 +177,12 @@ func TestOsakaPerTransactionBufferCoversCanonicalCommonSidecars(t *testing.T) {
 	rewards := make([]*types.CommonTxReward, len(txHashes))
 	for index, txHash := range txHashes {
 		rewards[index] = &types.CommonTxReward{
-			TxHash:         txHash,
-			Approver:       approver,
-			ApproverReward: new(big.Int).Set(maxFeeComponent),
-			Burn:           new(big.Int).Set(maxFeeComponent),
+			Version:         types.CommonRPCVersionV2,
+			RewardRecipient: common.HexToAddress("0x43"),
+			TxHash:          txHash,
+			Approver:        approver,
+			ApproverReward:  new(big.Int).Set(maxFeeComponent),
+			Burn:            new(big.Int).Set(maxFeeComponent),
 		}
 	}
 	encodedAdmission, err := rlp.EncodeToBytes([]interface{}{[]*types.CommonTxAdmissionBatch{admission}, refs})

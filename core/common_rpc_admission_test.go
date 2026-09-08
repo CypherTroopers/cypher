@@ -139,7 +139,7 @@ func signedAdmissionBatch(t *testing.T, txHashes []common.Hash, chainID *big.Int
 
 func signedAdmissionBatchWithKey(t *testing.T, key *ecdsa.PrivateKey, txHashes []common.Hash, chainID *big.Int, genesis common.Hash, keyBlock, timestamp uint64) *types.CommonTxAdmissionBatch {
 	t.Helper()
-	batch := &types.CommonTxAdmissionBatch{
+	batch := &types.CommonTxAdmissionBatch{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		ChainID: new(big.Int).Set(chainID), GenesisHash: genesis, Miner: crypto.PubkeyToAddress(key.PublicKey),
 		KeyBlockNumber: keyBlock, Timestamp: timestamp, TxHashes: append([]common.Hash(nil), txHashes...),
 	}
@@ -164,7 +164,7 @@ func TestCommonRPCAdmissionSigns512OnceAndGroupCommits(t *testing.T) {
 		hashes[i] = common.BigToHash(big.NewInt(int64(i + 1)))
 	}
 	db.reset()
-	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 7, uint64(time.Now().Unix()))
+	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 7, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestSignCommonRPCAdmissionsDoesNotPublishBeforeWALBoundary(t *testing.T) {
 	db, miner, chainID, genesis, signs := resetAdmissionTestState(t)
 	hashes := []common.Hash{{1}, {2}, {3}}
 	db.reset()
-	results, err := SignCommonRPCAdmissions(hashes, miner, chainID, genesis, 7, uint64(time.Now().Unix()))
+	results, err := SignCommonRPCAdmissions(hashes, miner, chainID, genesis, 7, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +298,7 @@ func TestCommonRPCAdmissionWinnerAndAdmissionIDTieBreak(t *testing.T) {
 func TestCommonRPCAdmissionRestoreSharesBatchPointer(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	hashes := []common.Hash{{1}, {2}, {3}}
-	if _, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 2, uint64(time.Now().Unix())); err != nil {
+	if _, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 2, uint64(time.Now().Unix()), common.Address{0xb7, 0x09}); err != nil {
 		t.Fatal(err)
 	}
 	SetCommonRPCAdmissionDatabase(db)
@@ -320,11 +320,11 @@ func TestBuildCommonTxAdmissionsSortsUniqueBatchesAndRefs(t *testing.T) {
 	_, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	tx0, tx1, tx2 := testTransaction(0), testTransaction(1), testTransaction(2)
 	now := uint64(time.Now().Unix())
-	first, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx0.Hash(), tx2.Hash()}, miner, chainID, genesis, 5, now)
+	first, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx0.Hash(), tx2.Hash()}, miner, chainID, genesis, 5, now, common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx1.Hash()}, miner, chainID, genesis, 5, now+1)
+	second, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx1.Hash()}, miner, chainID, genesis, 5, now+1, common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +355,7 @@ func TestCommonRPCAdmissionMillionMemoryHitsDoNotReadDBOrFinality(t *testing.T) 
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	tx := testTransaction(44)
 	now := uint64(time.Now().Unix())
-	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 1, now); err != nil {
+	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 1, now, common.Address{0xb7, 0x09}); err != nil {
 		t.Fatal(err)
 	}
 	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
@@ -388,7 +388,7 @@ func TestBuildCommonTxAdmissionsReusesFilteredResultsWithoutLookup(t *testing.T)
 		hashes[i] = tx.Hash()
 	}
 	now := uint64(time.Now().Unix())
-	if _, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 4, now); err != nil {
+	if _, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 4, now, common.Address{0xb7, 0x09}); err != nil {
 		t.Fatal(err)
 	}
 	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
@@ -441,7 +441,7 @@ func TestCommonRPCAdmissionConcurrentFinalizationTombstonesMemoryReaders(t *test
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	tx := testTransaction(54)
 	now := uint64(time.Now().Unix())
-	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 4, now); err != nil {
+	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 4, now, common.Address{0xb7, 0x09}); err != nil {
 		t.Fatal(err)
 	}
 	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
@@ -505,7 +505,7 @@ func TestCommonRPCAdmissionRemainsValidAcrossKeyBlocksAndRestart(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	tx := testTransaction(17)
 	const admittedAt = uint64(1_000)
-	results, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 2, admittedAt)
+	results, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 2, admittedAt, common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,7 +538,7 @@ func TestCommonRPCAdmissionRejectsFutureBoundary(t *testing.T) {
 	_, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	tx := testTransaction(18)
 	const admittedAt = uint64(10_000)
-	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 8, admittedAt); err != nil {
+	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 8, admittedAt, common.Address{0xb7, 0x09}); err != nil {
 		t.Fatal(err)
 	}
 	config := &params.ChainConfig{ChainID: chainID, FairHotstuff: true}
@@ -611,7 +611,7 @@ func bytesCompareHash(a, b common.Hash) int {
 func TestCommonRPCAdmissionPartialFinalizationKeepsBodyAndOtherIndexes(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	hashes := []common.Hash{{1}, {2}, {3}}
-	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 3, uint64(time.Now().Unix()))
+	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 3, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -644,7 +644,7 @@ func TestCommonRPCAdmissionConcurrentPartialFinalizationPreservesReferences(t *t
 	for i := range hashes {
 		hashes[i] = common.Hash{byte(i + 1)}
 	}
-	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 3, uint64(time.Now().Unix()))
+	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 3, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -698,7 +698,7 @@ func TestCommonRPCAdmissionWriteFailureDoesNotPublish(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	db.writeErr = errors.New("injected")
 	hash := common.Hash{1}
-	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{hash}, miner, chainID, genesis, 1, uint64(time.Now().Unix())); err == nil {
+	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{hash}, miner, chainID, genesis, 1, uint64(time.Now().Unix()), common.Address{0xb7, 0x09}); err == nil {
 		t.Fatal("expected persistence failure")
 	}
 	if HasCommonRPCAdmission(hash) {
@@ -709,7 +709,7 @@ func TestCommonRPCAdmissionWriteFailureDoesNotPublish(t *testing.T) {
 func TestCommonRPCAdmissionPendingSurvivesAgeAndRestart(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	hash := common.Hash{1}
-	results, err := SignAndRecordCommonRPCAdmissions([]common.Hash{hash}, miner, chainID, genesis, 1, uint64(time.Now().Unix()))
+	results, err := SignAndRecordCommonRPCAdmissions([]common.Hash{hash}, miner, chainID, genesis, 1, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -748,7 +748,7 @@ func TestCommonRPCAdmissionPendingSurvivesAgeAndRestart(t *testing.T) {
 func TestCommonRPCAdmissionBodyCollectedOnlyAfterLastReference(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	hashes := []common.Hash{{1}, {2}}
-	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 1, uint64(time.Now().Unix()))
+	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 1, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -806,12 +806,12 @@ func TestCommonRPCAdmissionBodyCollectedOnlyAfterLastReference(t *testing.T) {
 func TestCommonRPCAdmissionCapacityRejectsNewPendingWithoutEviction(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	existing := common.Hash{1}
-	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{existing}, miner, chainID, genesis, 1, uint64(time.Now().Unix())); err != nil {
+	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{existing}, miner, chainID, genesis, 1, uint64(time.Now().Unix()), common.Address{0xb7, 0x09}); err != nil {
 		t.Fatal(err)
 	}
 	atomic.StoreInt64(&commonRPCAdmissionCount, commonRPCAdmissionMaxEntries)
 	defer SetCommonRPCAdmissionDatabase(db)
-	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{{2}}, miner, chainID, genesis, 1, uint64(time.Now().Unix())); !errors.Is(err, ErrCommonRPCAdmissionCapacity) {
+	if _, err := SignAndRecordCommonRPCAdmissions([]common.Hash{{2}}, miner, chainID, genesis, 1, uint64(time.Now().Unix()), common.Address{0xb7, 0x09}); !errors.Is(err, ErrCommonRPCAdmissionCapacity) {
 		t.Fatalf("capacity error = %v", err)
 	}
 	if !HasCommonRPCAdmission(existing) {
@@ -842,7 +842,7 @@ func TestCommonRPCAdmissionPersistentEncodingRoundTrip(t *testing.T) {
 func TestRejectedCommonRPCAdmissionCleanupKeepsAcceptedBatchReferences(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	hashes := []common.Hash{{1}, {2}, {3}}
-	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 1, uint64(time.Now().Unix()))
+	results, err := SignAndRecordCommonRPCAdmissions(hashes, miner, chainID, genesis, 1, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -925,7 +925,7 @@ func TestRejectedCommonRPCAdmissionCleanupSkipsNewWinnerAndReplacement(t *testin
 func TestRejectedCommonRPCAdmissionCleanupWriteFailureRetainsState(t *testing.T) {
 	db, miner, chainID, genesis, _ := resetAdmissionTestState(t)
 	hash := common.Hash{7}
-	results, err := SignAndRecordCommonRPCAdmissions([]common.Hash{hash}, miner, chainID, genesis, 1, uint64(time.Now().Unix()))
+	results, err := SignAndRecordCommonRPCAdmissions([]common.Hash{hash}, miner, chainID, genesis, 1, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -954,7 +954,7 @@ func TestRejectedCommonRPCAdmissionCleanupDoesNotLeakUniqueReplacementHashes(t *
 		// every later hash as an underpriced replacement.
 		to := common.Address{byte(i), byte(i >> 8), 1}
 		tx := types.NewTransaction(0, to, big.NewInt(int64(i+1)), 21000, big.NewInt(1), nil)
-		results, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 1, uint64(time.Now().Unix()))
+		results, err := SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 1, uint64(time.Now().Unix()), common.Address{0xb7, 0x09})
 		if err != nil {
 			t.Fatal(err)
 		}

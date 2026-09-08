@@ -22,7 +22,7 @@ func makeSignedCommonTxAdmissionBatch(t *testing.T, count int) *CommonTxAdmissio
 	for index := range txHashes {
 		txHashes[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
 	}
-	batch := &CommonTxAdmissionBatch{
+	batch := &CommonTxAdmissionBatch{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		ChainID:        big.NewInt(99),
 		GenesisHash:    common.HexToHash("0x1234"),
 		Miner:          crypto.PubkeyToAddress(key.PublicKey),
@@ -203,7 +203,7 @@ func TestCommonTxRootsIndependentOfWorkerCount(t *testing.T) {
 	rewards := make([]*CommonTxReward, len(batches))
 	for index := range batches {
 		txHash := common.BigToHash(new(big.Int).SetUint64(uint64(index + 10_000)))
-		batch := &CommonTxAdmissionBatch{
+		batch := &CommonTxAdmissionBatch{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 			ChainID: big.NewInt(99), GenesisHash: common.HexToHash("0x1234"), Miner: common.HexToAddress("0x5678"),
 			KeyBlockNumber: 7, Timestamp: 1_700_000_000, TxHashes: []common.Hash{txHash}, Signature: []byte{1, 2, 3},
 		}
@@ -211,7 +211,7 @@ func TestCommonTxRootsIndependentOfWorkerCount(t *testing.T) {
 		batch.AdmissionID = CommonTxAdmissionID(batch)
 		batches[index] = batch
 		refs[index] = CommonTxAdmissionRef{Batch: uint32(index), Item: 0}
-		rewards[index] = &CommonTxReward{TxHash: txHash, Approver: batch.Miner, ApproverReward: big.NewInt(int64(index + 1)), Burn: big.NewInt(1)}
+		rewards[index] = &CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09}, TxHash: txHash, Approver: batch.Miner, ApproverReward: big.NewInt(int64(index + 1)), Burn: big.NewInt(1)}
 	}
 	previous := runtime.GOMAXPROCS(1)
 	t.Cleanup(func() { runtime.GOMAXPROCS(previous) })
@@ -235,7 +235,7 @@ func TestCommonTxAdmissionBlockRLPRoundTrip(t *testing.T) {
 	// The changed commitments invalidate the helper's signature. RLP round-trip
 	// tests encoding ownership; cryptographic validity is covered above.
 	ref := CommonTxAdmissionRef{Batch: 0, Item: 0}
-	reward := &CommonTxReward{
+	reward := &CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		TxHash: tx.Hash(), Approver: batch.Miner,
 		ApproverReward: big.NewInt(2), Burn: big.NewInt(8),
 	}

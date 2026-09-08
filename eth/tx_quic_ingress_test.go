@@ -172,12 +172,14 @@ func testTxQUICCertificate(t *testing.T, config TxQUICConfig, txs ...*types.Tran
 		hashes[index] = tx.Hash()
 	}
 	certificate := &types.CommonTxAdmissionBatch{
-		ChainID:        new(big.Int).SetUint64(config.ChainID),
-		GenesisHash:    config.GenesisHash,
-		Miner:          crypto.PubkeyToAddress(key.PublicKey),
-		KeyBlockNumber: testTxQUICKeyNumber,
-		Timestamp:      uint64(time.Now().Unix()),
-		TxHashes:       hashes,
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0xb1"),
+		ChainID:         new(big.Int).SetUint64(config.ChainID),
+		GenesisHash:     config.GenesisHash,
+		Miner:           crypto.PubkeyToAddress(key.PublicKey),
+		KeyBlockNumber:  testTxQUICKeyNumber,
+		Timestamp:       uint64(time.Now().Unix()),
+		TxHashes:        hashes,
 	}
 	certificate.TxRoot = types.DeriveCommonTxAdmissionTxRoot(certificate.TxHashes)
 	certificate.AdmissionID = types.CommonTxAdmissionID(certificate)
@@ -1140,6 +1142,40 @@ func TestTxQUICCertificateItemsAreFailClosed(t *testing.T) {
 	}
 }
 
+func TestTxQUICRewardRecipientRequiredIncludingDurableReuse(t *testing.T) {
+	config := testTxQUICConfig()
+	tx := testTxQUICTransaction(1, 0)
+	certificate := testTxQUICCertificate(t, config, tx)
+	q := &TxQUICIngress{config: config, hasAdmission: func(common.Hash) bool { return true }}
+	items := testTxQUICItems(tx)
+	if err := q.verifyAndStoreAdmissionCertificate(certificate, items, true); err != nil {
+		t.Fatalf("valid durable proof was not reusable: %v", err)
+	}
+	for _, test := range []struct {
+		name   string
+		mutate func(*types.CommonTxAdmissionBatch)
+	}{
+		{"recipient-less version", func(a *types.CommonTxAdmissionBatch) { a.Version = 0 }},
+		{"unsupported version", func(a *types.CommonTxAdmissionBatch) { a.Version = 3 }},
+		{"unset recipient", func(a *types.CommonTxAdmissionBatch) { a.RewardRecipient = common.Address{} }},
+		{"recipient equals signer", func(a *types.CommonTxAdmissionBatch) { a.RewardRecipient = a.Miner }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			invalid := copyCommonTxAdmissionBatchForQUIC(certificate)
+			test.mutate(invalid)
+			if err := validateTxQUICCertificateStructure(invalid, config.ChainID, config.GenesisHash); err == nil {
+				t.Fatal("invalid mandatory recipient format passed ingress validation")
+			}
+			if err := q.verifyAndStoreAdmissionCertificate(invalid, items, true); err == nil {
+				t.Fatal("durable reuse bypassed mandatory recipient format")
+			}
+			if _, err := rlp.EncodeToBytes(invalid); err == nil {
+				t.Fatal("invalid mandatory recipient format was persisted")
+			}
+		})
+	}
+}
+
 func TestTxQUICCertificateRejectsDuplicateNativeReplayIdentity(t *testing.T) {
 	config := testTxQUICConfig()
 	payer := common.HexToAddress("0x1200000000000000000000000000000000000012")
@@ -1230,12 +1266,14 @@ func TestTxQUICIngressRejectsInvalidAdmissionWithoutPublishingTransaction(t *tes
 	}
 	newAdmission := func(admissionChainID *big.Int) *types.CommonTxAdmissionBatch {
 		admission := &types.CommonTxAdmissionBatch{
-			ChainID:        new(big.Int).Set(admissionChainID),
-			GenesisHash:    config.GenesisHash,
-			Miner:          sender,
-			KeyBlockNumber: testTxQUICKeyNumber,
-			Timestamp:      uint64(time.Now().Unix()),
-			TxHashes:       []common.Hash{tx.Hash()},
+			Version:         types.CommonRPCVersionV2,
+			RewardRecipient: common.HexToAddress("0xb1"),
+			ChainID:         new(big.Int).Set(admissionChainID),
+			GenesisHash:     config.GenesisHash,
+			Miner:           sender,
+			KeyBlockNumber:  testTxQUICKeyNumber,
+			Timestamp:       uint64(time.Now().Unix()),
+			TxHashes:        []common.Hash{tx.Hash()},
 		}
 		admission.TxRoot = types.DeriveCommonTxAdmissionTxRoot(admission.TxHashes)
 		admission.AdmissionID = types.CommonTxAdmissionID(admission)

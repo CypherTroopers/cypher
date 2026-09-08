@@ -52,22 +52,26 @@ func downloaderBlobBodyFixture(t *testing.T, marker byte) (*types.Transaction, *
 
 func downloaderCommonTxBodyFixture(txHash common.Hash) ([]*types.CommonTxAdmissionBatch, []types.CommonTxAdmissionRef, []*types.CommonTxReward) {
 	batch := &types.CommonTxAdmissionBatch{
-		ChainID:        big.NewInt(777),
-		GenesisHash:    common.HexToHash("0x1111"),
-		Miner:          common.HexToAddress("0x2000000000000000000000000000000000000002"),
-		KeyBlockNumber: 7,
-		Timestamp:      1_725_000_123,
-		TxHashes:       []common.Hash{txHash},
-		Signature:      bytes.Repeat([]byte{0x5a}, 65),
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0xb1"),
+		ChainID:         big.NewInt(777),
+		GenesisHash:     common.HexToHash("0x1111"),
+		Miner:           common.HexToAddress("0x2000000000000000000000000000000000000002"),
+		KeyBlockNumber:  7,
+		Timestamp:       1_725_000_123,
+		TxHashes:        []common.Hash{txHash},
+		Signature:       bytes.Repeat([]byte{0x5a}, 65),
 	}
 	batch.TxRoot = types.DeriveCommonTxAdmissionTxRoot(batch.TxHashes)
 	batch.AdmissionID = types.CommonTxAdmissionID(batch)
 	refs := []types.CommonTxAdmissionRef{{Batch: 0, Item: 0}}
 	rewards := []*types.CommonTxReward{{
-		TxHash:         txHash,
-		Approver:       common.HexToAddress("0x3000000000000000000000000000000000000003"),
-		ApproverReward: big.NewInt(17),
-		Burn:           big.NewInt(3),
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: batch.RewardRecipient,
+		TxHash:          txHash,
+		Approver:        batch.Miner,
+		ApproverReward:  big.NewInt(17),
+		Burn:            big.NewInt(3),
 	}}
 	return []*types.CommonTxAdmissionBatch{batch}, refs, rewards
 }

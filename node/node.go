@@ -56,6 +56,7 @@ type Node struct {
 	ws            *httpServer //
 	ipc           *ipcServer  // Stores information about the ipc http server
 	inprocHandler *rpc.Server // In-process RPC request handler to process the API requests
+	publicHandler *rpc.Server // Restricted network handler, also used by HTTP/3
 
 	databases map[*closeTrackingDB]struct{} // All open databases
 }
@@ -98,6 +99,7 @@ func New(conf *Config) (*Node, error) {
 	node := &Node{
 		config:        conf,
 		inprocHandler: rpc.NewServer(),
+		publicHandler: rpc.NewServer(),
 		eventmux:      new(event.TypeMux),
 		log:           conf.Logger,
 		stop:          make(chan struct{}),
@@ -394,12 +396,13 @@ func (n *Node) startInProc() error {
 			return err
 		}
 	}
-	return nil
+	return RegisterApisFromWhitelist(n.rpcAPIs, n.config.HTTPModules, n.publicHandler, false)
 }
 
 // stopInProc terminates the in-process RPC endpoint.
 func (n *Node) stopInProc() {
 	n.inprocHandler.Stop()
+	n.publicHandler.Stop()
 }
 
 // Wait blocks until the node is closed.
@@ -472,6 +475,19 @@ func (n *Node) RPCHandler() (*rpc.Server, error) {
 		return nil, ErrNodeStopped
 	}
 	return n.inprocHandler, nil
+}
+
+// PublicRPCHandler returns the network handler used by additional transports such
+// as HTTP/3. It is created with the node and populated from the existing service
+// instances at Start. It has the same method boundary and modules as HTTP.
+// Callers must propagate errors, never fall back to RPCHandler.
+func (n *Node) PublicRPCHandler() (*rpc.Server, error) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	if n.state == closedState {
+		return nil, ErrNodeStopped
+	}
+	return n.publicHandler, nil
 }
 
 // Config returns the configuration of node.

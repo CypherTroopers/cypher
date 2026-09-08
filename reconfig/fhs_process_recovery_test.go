@@ -14,6 +14,7 @@ package reconfig
 
 import (
 	"bufio"
+	"crypto/ecdsa"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -48,6 +49,25 @@ import (
 
 const fhsProcessPrefix = "FHS_PROCESS "
 
+func fhsProcessFixtureTransaction(key *ecdsa.PrivateKey, chainID *big.Int, nonce uint64, contracts bool) (*types.Transaction, error) {
+	price := big.NewInt(params.FixedBaseFeePerGas * 2)
+	unsigned := types.NewTransaction(nonce, common.HexToAddress("0x1000"), big.NewInt(1), 21000, price, nil)
+	if contracts {
+		address := crypto.CreateAddress(crypto.PubkeyToAddress(key.PublicKey), 1)
+		switch nonce {
+		case 1:
+			// Runtime succeeds for zero calldata and reverts for nonzero data.
+			initcode := common.FromHex("0x600e600c600039600e6000f360003515600c5760006000fd5b00")
+			unsigned = types.NewContractCreation(nonce, new(big.Int), 100000, price, initcode)
+		case 2:
+			unsigned = types.NewTransaction(nonce, address, new(big.Int), 100000, price, nil)
+		case 3:
+			unsigned = types.NewTransaction(nonce, address, new(big.Int), 100000, price, []byte{1})
+		}
+	}
+	return types.SignTx(unsigned, types.NewEIP155Signer(chainID), key)
+}
+
 type fhsProcessGate struct {
 	// Split gates discard, never delay, messages. Dropped QUIC messages have
 	// already left the sender's retry queue; healing cannot replay them.
@@ -61,48 +81,62 @@ type fhsProcessGate struct {
 }
 
 type fhsProcessCommand struct {
-	ID        uint64
-	Op        string
-	Genesis   json.RawMessage
-	Committee []*common.Cnode
-	SenderKey string
-	Timestamp uint64
-	Gate      fhsProcessGate
-	Workload  bool
+	ID              uint64
+	Op              string
+	Genesis         json.RawMessage
+	Committee       []*common.Cnode
+	SenderKey       string
+	OperatorKey     string
+	RewardRecipient common.Address
+	NetworkIngress  bool
+	Timestamp       uint64
+	Gate            fhsProcessGate
+	Workload        bool
 }
 
 type fhsProcessReport struct {
-	ID                uint64
-	Error             string
-	PID               int
-	Address           string
-	Public            string
-	Genesis           common.Hash
-	KeyHash           common.Hash
-	CommitteeHash     common.Hash
-	View              uint64
-	TC                uint64
-	Certified         uint64
-	Height            uint64
-	Canonical         []common.Hash
-	NextLeader        string
-	DroppedTC         uint64
-	DroppedVotes      uint64
-	DroppedOther      uint64
-	DroppedDA         uint64
-	DataTimeouts      uint64
-	Manifests         uint64
-	RepairData        uint64
-	RepairTxs         uint64
-	RepairDonors      []string
-	FirstManifests    uint64
-	FirstRepairTxs    uint64
-	FirstRepairDonors []string
-	FixtureFirstTx    common.Hash
-	CanonicalFirstTx  common.Hash
-	Healed            bool
-	Submitted         uint64
-	WorkError         string
+	ID                     uint64
+	Error                  string
+	PID                    int
+	Address                string
+	Public                 string
+	Genesis                common.Hash
+	KeyHash                common.Hash
+	CommitteeHash          common.Hash
+	View                   uint64
+	TC                     uint64
+	Certified              uint64
+	Height                 uint64
+	Canonical              []common.Hash
+	NextLeader             string
+	DroppedTC              uint64
+	DroppedVotes           uint64
+	DroppedOther           uint64
+	DroppedDA              uint64
+	DataTimeouts           uint64
+	Manifests              uint64
+	RepairData             uint64
+	RepairTxs              uint64
+	RepairDonors           []string
+	FirstManifests         uint64
+	FirstRepairTxs         uint64
+	FirstRepairDonors      []string
+	FixtureFirstTx         common.Hash
+	CanonicalFirstTx       common.Hash
+	Healed                 bool
+	Submitted              uint64
+	WorkError              string
+	RewardApprover         common.Address
+	RewardRecipient        common.Address
+	RewardApproverBalance  *big.Int
+	RewardRecipientBalance *big.Int
+	RewardAmount           *big.Int
+	RewardBurn             *big.Int
+	RewardReceiptGas       uint64
+	RewardReceiptStatus    uint64
+	RewardStateRoot        common.Hash
+	ReceiptEndpoint        string
+	FinalizedFixtureTxs    uint64
 }
 
 type fhsRecoveryChild struct {
@@ -233,7 +267,15 @@ func (c *fhsRecoveryChild) call(t *testing.T, command fhsProcessCommand) fhsProc
 	return fhsProcessReport{}
 }
 
-func newFHSRecoveryProcesses(t *testing.T) ([]*fhsRecoveryChild, int) {
+// separateRewardFixture isolates the operator's balance from the user's fees
+// for payout assertions. Every fixture uses mandatory recipient-bearing proofs.
+func newFHSRecoveryProcesses(t *testing.T, separateRewardFixture ...bool) ([]*fhsRecoveryChild, int) {
+	separateRewards := len(separateRewardFixture) > 0 && separateRewardFixture[0]
+	children, laggard, _ := newFHSRecoveryProcessFixture(t, separateRewards, false)
+	return children, laggard
+}
+
+func newFHSRecoveryProcessFixture(t *testing.T, separateRewardFixture, networkIngress bool) ([]*fhsRecoveryChild, int, *FHSRewardNetworkFixture) {
 	t.Helper()
 	if os.Getenv("CYPHER_FHS_PROCESS_RECOVERY") != "1" {
 		t.Skip("set CYPHER_FHS_PROCESS_RECOVERY=1 for isolated seven-process QUIC trials")
@@ -263,6 +305,15 @@ func newFHSRecoveryProcesses(t *testing.T) ([]*fhsRecoveryChild, int) {
 	var rootGenesis core.Genesis
 	if err := json.Unmarshal(genesis, &rootGenesis); err != nil {
 		t.Fatal(err)
+	}
+	var operatorKey string
+	rewardRecipient := common.HexToAddress("0xb123")
+	if separateRewardFixture {
+		operator, err := crypto.GenerateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		operatorKey = hex.EncodeToString(crypto.FromECDSA(operator))
 	}
 	// Only fixture committee order is controlled; the root election seed and
 	// native timeout settings remain unchanged. The killed proposer and the
@@ -330,7 +381,7 @@ func newFHSRecoveryProcesses(t *testing.T) ([]*fhsRecoveryChild, int) {
 	}
 	var genesisHash common.Hash
 	for _, c := range children {
-		status := c.call(t, fhsProcessCommand{Op: "init", Genesis: genesis, Committee: committee, SenderKey: hex.EncodeToString(crypto.FromECDSA(key)), Timestamp: timestamp})
+		status := c.call(t, fhsProcessCommand{Op: "init", Genesis: genesis, Committee: committee, SenderKey: hex.EncodeToString(crypto.FromECDSA(key)), OperatorKey: operatorKey, RewardRecipient: rewardRecipient, Timestamp: timestamp, NetworkIngress: networkIngress})
 		if genesisHash == (common.Hash{}) {
 			genesisHash = status.Genesis
 		}
@@ -339,7 +390,36 @@ func newFHSRecoveryProcesses(t *testing.T) ([]*fhsRecoveryChild, int) {
 		}
 		c.info = status
 	}
-	return children, laggard
+	fixture := &FHSRewardNetworkFixture{Genesis: &rootGenesis, Committee: committee, SenderKey: key, OperatorKey: key, RewardRecipient: rewardRecipient}
+	if separateRewardFixture {
+		fixture.OperatorKey, err = crypto.HexToECDSA(operatorKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	rootGenesis.Config.GenCommittee = make(params.GenesisCommittee)
+	for i, n := range committee {
+		rootGenesis.Config.GenCommittee[i] = *n
+	}
+	rootGenesis.Timestamp = timestamp
+	rootGenesis.Alloc = core.GenesisAlloc{crypto.PubkeyToAddress(key.PublicKey): core.GenesisAccount{Balance: new(big.Int).Exp(big.NewInt(10), big.NewInt(27), nil)}}
+	if separateRewardFixture {
+		rootGenesis.Alloc[crypto.PubkeyToAddress(fixture.OperatorKey.PublicKey)] = core.GenesisAccount{Balance: big.NewInt(77)}
+		rootGenesis.Alloc[rewardRecipient] = core.GenesisAccount{Balance: big.NewInt(123)}
+	}
+	rootGenesis.Mixhash, err = params.FairHotstuffGenesisCommitment(rootGenesis.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.KeyBlock = types.NewKeyBlock(&types.KeyBlockHeader{Number: big.NewInt(0), Difficulty: big.NewInt(1), Time: timestamp, CommitteeHash: (&bftview.Committee{List: committee}).RlpHash()})
+	for nonce := uint64(0); nonce < 5; nonce++ {
+		tx, err := fhsProcessFixtureTransaction(key, rootGenesis.Config.ChainID, nonce, networkIngress)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixture.Transactions = append(fixture.Transactions, tx)
+	}
+	return children, laggard, fixture
 }
 
 func fhsProcessStatuses(t *testing.T, children []*fhsRecoveryChild) []fhsProcessReport {
@@ -597,19 +677,21 @@ func TestFHSProcessRecoveryOfflineProposer(t *testing.T) {
 }
 
 type fhsRecoveryProcess struct {
-	mu         sync.Mutex
-	dir        string
-	secret     bls.SecretKey
-	address    string
-	reserved   net.PacketConn
-	service    *Service
-	backend    *ReconfigBackend
-	gate       fhsProcessGate
-	stats      fhsProcessReport
-	workload   atomic.Bool
-	txs        []*types.Transaction
-	admissions []*types.CommonTxAdmissionBatch
-	quit       chan struct{}
+	mu           sync.Mutex
+	dir          string
+	secret       bls.SecretKey
+	address      string
+	reserved     net.PacketConn
+	service      *Service
+	backend      *ReconfigBackend
+	gate         fhsProcessGate
+	stats        fhsProcessReport
+	workload     atomic.Bool
+	txs          []*types.Transaction
+	admissions   []*types.CommonTxAdmissionBatch
+	quit         chan struct{}
+	startIngress func() error
+	stopIngress  func()
 }
 
 func TestFHSRecoveryProcessHelper(t *testing.T) {
@@ -654,6 +736,9 @@ func TestFHSRecoveryProcessHelper(t *testing.T) {
 		fhsWriteProcessReport(report)
 	}
 	if process.backend != nil {
+		if process.stopIngress != nil {
+			process.stopIngress()
+		}
 		_ = process.backend.Stop()
 	}
 }
@@ -680,7 +765,13 @@ func (p *fhsRecoveryProcess) command(command fhsProcessCommand) error {
 				coinbase = node.CoinBase
 			}
 		}
-		return p.service.start(&common.NodeConfig{Private: p.secret.SerializeToHexStr(), Public: p.secret.GetPublicKey().SerializeToHexStr(), Coinbase: coinbase})
+		if err := p.service.start(&common.NodeConfig{Private: p.secret.SerializeToHexStr(), Public: p.secret.GetPublicKey().SerializeToHexStr(), Coinbase: coinbase}); err != nil {
+			return err
+		}
+		if p.startIngress != nil {
+			return p.startIngress()
+		}
+		return nil
 	case "timeout":
 		p.service.enqueueFHSTimeout()
 	case "status":
@@ -701,6 +792,9 @@ func (p *fhsRecoveryProcess) report() fhsProcessReport {
 		return report
 	}
 	s := p.service
+	if FHSRewardReceiptEndpoint != nil {
+		report.ReceiptEndpoint = FHSRewardReceiptEndpoint(p.backend)
+	}
 	view := s.GetCurrentView()
 	report.View = view.ViewNumber
 	report.CommitteeHash = view.CommitteeHash
@@ -717,9 +811,27 @@ func (p *fhsRecoveryProcess) report() fhsProcessReport {
 	if len(p.txs) > 0 {
 		report.FixtureFirstTx = p.txs[0].Hash()
 	}
+	for _, tx := range p.txs {
+		if s.bc.IsFinalizedTransaction(tx.Hash()) {
+			report.FinalizedFixtureTxs++
+		}
+	}
 	if report.Height > 0 {
 		if first := s.bc.GetBlockByNumber(1); first != nil && len(first.Transactions()) > 0 {
 			report.CanonicalFirstTx = first.Transactions()[0].Hash()
+			if rewards := first.CommonTxRewards(); len(rewards) > 0 {
+				reward := rewards[0]
+				report.RewardApprover, report.RewardRecipient = reward.Approver, reward.RewardRecipient
+				report.RewardAmount, report.RewardBurn = reward.ApproverReward, reward.Burn
+				report.RewardStateRoot = first.Root()
+				if state, err := s.bc.StateAt(first.Root()); err == nil {
+					report.RewardApproverBalance = new(big.Int).Set(state.GetBalance(reward.Approver))
+					report.RewardRecipientBalance = new(big.Int).Set(state.GetBalance(reward.RewardRecipient))
+				}
+				if receipts := s.bc.GetReceiptsByHash(first.Hash()); len(receipts) > 0 {
+					report.RewardReceiptGas, report.RewardReceiptStatus = receipts[0].GasUsed, receipts[0].Status
+				}
+			}
 		}
 	}
 	for i := uint64(0); i <= report.Height; i++ {
@@ -748,6 +860,19 @@ func (p *fhsRecoveryProcess) initialize(command fhsProcessCommand) error {
 	}
 	sender := crypto.PubkeyToAddress(clientKey.PublicKey)
 	genesis.Alloc = core.GenesisAlloc{sender: core.GenesisAccount{Balance: new(big.Int).Exp(big.NewInt(10), big.NewInt(27), nil)}}
+	operatorKey := clientKey
+	if command.OperatorKey != "" {
+		operatorKey, err = crypto.HexToECDSA(command.OperatorKey)
+		if err != nil {
+			return err
+		}
+		operator := crypto.PubkeyToAddress(operatorKey.PublicKey)
+		genesis.Alloc[operator] = core.GenesisAccount{Balance: big.NewInt(77)}
+		genesis.Alloc[command.RewardRecipient] = core.GenesisAccount{Balance: big.NewInt(123)}
+	}
+	if command.RewardRecipient == (common.Address{}) || command.RewardRecipient == crypto.PubkeyToAddress(operatorKey.PublicKey) {
+		return fmt.Errorf("fixture requires a nonzero reward recipient distinct from its operator")
+	}
 	genesis.Timestamp = command.Timestamp
 	genesis.Mixhash, err = params.FairHotstuffGenesisCommitment(config)
 	if err != nil {
@@ -792,14 +917,14 @@ func (p *fhsRecoveryProcess) initialize(command fhsProcessCommand) error {
 	// The fixture client signs ordinary EVM transfers and admission records
 	// before faults begin. It never signs consensus messages or constructs QCs.
 	for nonce := uint64(0); nonce < 5; nonce++ {
-		tx, err := types.SignTx(types.NewTransaction(nonce, common.HexToAddress("0x1000"), big.NewInt(1), 21000, big.NewInt(params.FixedBaseFeePerGas*2), nil), types.NewEIP155Signer(config.ChainID), clientKey)
+		tx, err := fhsProcessFixtureTransaction(clientKey, config.ChainID, nonce, command.NetworkIngress)
 		if err != nil {
 			return err
 		}
-		admission := &types.CommonTxAdmissionBatch{ChainID: config.ChainID, GenesisHash: genesisBlock.Hash(), Miner: sender, Timestamp: command.Timestamp, TxHashes: []common.Hash{tx.Hash()}}
+		admission := &types.CommonTxAdmissionBatch{Version: types.CommonRPCVersionV2, RewardRecipient: command.RewardRecipient, ChainID: config.ChainID, GenesisHash: genesisBlock.Hash(), Miner: crypto.PubkeyToAddress(operatorKey.PublicKey), Timestamp: command.Timestamp, TxHashes: []common.Hash{tx.Hash()}}
 		admission.TxRoot = types.DeriveCommonTxAdmissionTxRoot(admission.TxHashes)
 		admission.AdmissionID = types.CommonTxAdmissionID(admission)
-		admission.Signature, err = crypto.Sign(types.CommonTxAdmissionSigningHash(admission).Bytes(), clientKey)
+		admission.Signature, err = crypto.Sign(types.CommonTxAdmissionSigningHash(admission).Bytes(), operatorKey)
 		if err != nil {
 			return err
 		}
@@ -812,6 +937,15 @@ func (p *fhsRecoveryProcess) initialize(command fhsProcessCommand) error {
 	}
 	p.service = newService("fhsProcessRecovery", p.address, config, backend)
 	backend.service = p.service
+	if command.NetworkIngress {
+		if FHSRewardIngressFactory == nil {
+			return fmt.Errorf("test TxQUIC ingress factory is unavailable")
+		}
+		p.startIngress, p.stopIngress, err = FHSRewardIngressFactory(backend, p.dir, p.address)
+		if err != nil {
+			return err
+		}
+	}
 	// This registered processor replaces only fault delivery, delegating every
 	// admitted envelope to the same production handler as a normal validator.
 	p.service.netService.server.RegisterProcessorFunc(network.RegisterMessage(&networkMsg{}), p.receive)

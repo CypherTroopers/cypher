@@ -124,7 +124,7 @@ func TestFHSCommonRPCSidecarCoverageIsConsensusMandatory(t *testing.T) {
 	}
 	admission := osakaTestCommonAdmissionBatch(config.ChainID, common.Hash{9}, common.Address{2}, []common.Hash{tx.Hash()})
 	refs := []types.CommonTxAdmissionRef{{Batch: 0, Item: 0}}
-	reward := &types.CommonTxReward{
+	reward := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		TxHash: tx.Hash(), Approver: admission.Miner, ApproverReward: new(big.Int), Burn: new(big.Int),
 	}
 
@@ -168,7 +168,7 @@ func TestFHSCommonRPCSidecarCoverageIsConsensusMandatory(t *testing.T) {
 }
 
 func osakaTestCommonAdmissionBatch(chainID *big.Int, genesisHash common.Hash, miner common.Address, txHashes []common.Hash) *types.CommonTxAdmissionBatch {
-	batch := &types.CommonTxAdmissionBatch{
+	batch := &types.CommonTxAdmissionBatch{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		ChainID:        new(big.Int).Set(chainID),
 		GenesisHash:    genesisHash,
 		Miner:          miner,
@@ -309,7 +309,7 @@ func TestFHSFullSimpleTransferSidecarsFitOsakaEnvelope(t *testing.T) {
 			txs[index] = tx
 			hashes[index-start] = txHash
 			refs[index] = types.CommonTxAdmissionRef{Batch: uint32(len(batches)), Item: uint16(index - start)}
-			rewards[index] = &types.CommonTxReward{
+			rewards[index] = &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 				TxHash: txHash, Approver: miner, ApproverReward: approverReward, Burn: new(big.Int).Sub(actualFee, approverReward),
 			}
 		}
@@ -458,8 +458,10 @@ func TestFHSBlockWorkMeterBoundariesAndOverflow(t *testing.T) {
 		if got := meter.signatureOperations - beforeSignatures; got != 1 {
 			t.Fatalf("one 512-capable batch used %d signature operations, want 1", got)
 		}
-		maxAmount := new(big.Int).Lsh(big.NewInt(1), 255) // 32-byte magnitude
-		reward := &types.CommonTxReward{ApproverReward: maxAmount, Burn: maxAmount}
+		// Keep amounts small enough that this exercises the count ceiling,
+		// independently of the recipient-bearing payload byte ceiling.
+		maxAmount := new(big.Int).Lsh(big.NewInt(1), 63) // 8-byte magnitude
+		reward := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09}, ApproverReward: maxAmount, Burn: maxAmount}
 		for index := uint64(0); index < limits.CommonTxRewards; index++ {
 			if err := meter.AddReward(int(index), reward); err != nil {
 				t.Fatalf("normal maximum reward sidecar %d rejected: %v", index, err)
@@ -506,7 +508,7 @@ func TestFHSBlockWorkMeterBoundariesAndOverflow(t *testing.T) {
 
 	t.Run("reward count relations", func(t *testing.T) {
 		tx := types.NewTransaction(0, common.Address{1}, new(big.Int), 1, big.NewInt(1), nil)
-		reward := &types.CommonTxReward{ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
+		reward := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09}, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
 
 		meter := NewFHSBlockWorkMeter()
 		if err := meter.AddTransaction(0, tx); err != nil {
@@ -538,10 +540,11 @@ func TestFHSBlockWorkMeterBoundariesAndOverflow(t *testing.T) {
 	})
 
 	t.Run("reward payload bytes", func(t *testing.T) {
-		// 52 fixed bytes + a 77-byte reward + a zero-byte burn = 129.
-		const entryBytes = uint64(129)
+		// 73 fixed bytes (including version and recipient) + a 77-byte
+		// reward + a zero-byte burn = 150.
+		const entryBytes = uint64(150)
 		amount := new(big.Int).Lsh(big.NewInt(1), 8*76)
-		reward := &types.CommonTxReward{ApproverReward: amount, Burn: new(big.Int)}
+		reward := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09}, ApproverReward: amount, Burn: new(big.Int)}
 		count := limits.CommonTxRewardPayloadBytes / entryBytes
 		needed := count + 1
 		meter := NewFHSBlockWorkMeter()
@@ -560,7 +563,7 @@ func TestFHSBlockWorkMeterBoundariesAndOverflow(t *testing.T) {
 			t.Fatalf("over-limit reward payload error = %v", err)
 		}
 
-		huge := &types.CommonTxReward{
+		huge := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 			ApproverReward: new(big.Int).Lsh(big.NewInt(1), uint(limits.CommonTxRewardBytesPerEntry*8)),
 			Burn:           new(big.Int),
 		}
@@ -604,7 +607,7 @@ func TestValidateFHSBlockWorkRejectsUnrelatedRewardSidecar(t *testing.T) {
 	refs := []types.CommonTxAdmissionRef{{Batch: 0, Item: 0}}
 	rewards := make([]*types.CommonTxReward, 64)
 	for index := range rewards {
-		rewards[index] = &types.CommonTxReward{ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
+		rewards[index] = &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09}, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
 	}
 	block := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(1)}).WithBody(types.Transactions{tx}, nil)
 	block.AttachCommonTxData([]*types.CommonTxAdmissionBatch{admission}, refs, rewards)
@@ -629,7 +632,7 @@ func TestFHSCommonSidecarSetEqualityBeforeEVM(t *testing.T) {
 	hashA, hashB, hashC := common.Hash{1}, common.Hash{2}, common.Hash{3}
 	approverA, approverB := common.Address{1}, common.Address{2}
 	reward := func(hash common.Hash, approver common.Address) *types.CommonTxReward {
-		return &types.CommonTxReward{TxHash: hash, Approver: approver, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
+		return &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09}, TxHash: hash, Approver: approver, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
 	}
 	batches := []*types.CommonTxAdmissionBatch{
 		osakaTestCommonAdmissionBatch(big.NewInt(1), common.Hash{9}, approverA, []common.Hash{hashA}),
@@ -671,7 +674,7 @@ func TestValidateFHSBlockWorkRejectsHugeRewardBeforeRoot(t *testing.T) {
 	approver := common.Address{2}
 	admission := osakaTestCommonAdmissionBatch(config.ChainID, common.Hash{9}, approver, []common.Hash{txHash})
 	refs := []types.CommonTxAdmissionRef{{Batch: 0, Item: 0}}
-	huge := &types.CommonTxReward{
+	huge := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		TxHash:         txHash,
 		Approver:       approver,
 		ApproverReward: new(big.Int).Lsh(big.NewInt(1), uint(params.MaxFHSCommonTxRewardBytesPerReward*8)),

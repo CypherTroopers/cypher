@@ -475,11 +475,11 @@ func (s *PrivateAccountAPI) ImportRawKey(privkey string, password string) (commo
 // the given password for duration seconds. If duration is nil it will use a
 // default of 300 seconds. It returns an indication if the account was unlocked.
 func (s *PrivateAccountAPI) UnlockAccount(ctx context.Context, addr common.Address, password string, duration *uint64) (bool, error) {
-	// When the API is exposed by external RPC(http, ws etc), unless the user
-	// explicitly specifies to allow the insecure account unlocking, otherwise
-	// it is disabled.
-	if s.b.ExtRPCEnabled() && !s.b.AccountManager().Config().InsecureUnlockAllowed {
-		return false, errors.New("account unlock with HTTP access is forbidden")
+	// The server assigns transport identity. Protected IPC and the trusted
+	// embedded console may unlock A while network RPC remains enabled. Unknown
+	// or network callers cannot elevate themselves with insecure-unlock flags.
+	if !rpc.IsLocal(ctx) {
+		return false, errors.New("account unlock requires a trusted local RPC connection")
 	}
 
 	const max = uint64(time.Duration(math.MaxInt64) / time.Second)
@@ -1755,6 +1755,7 @@ type RPCTransaction struct {
 	CommonTxAdmissionRoot           *common.Hash    `json:"commonTxAdmissionRoot,omitempty"`
 	CommonTxRewardRoot              *common.Hash    `json:"commonTxRewardRoot,omitempty"`
 	CommonTxApprover                *common.Address `json:"commonTxApprover,omitempty"`
+	CommonTxRewardRecipient         *common.Address `json:"commonTxRewardRecipient,omitempty"`
 	CommonTxApproverReward          *hexutil.Big    `json:"commonTxApproverReward,omitempty"`
 	CommonTxBurn                    *hexutil.Big    `json:"commonTxBurn,omitempty"`
 	CommonTxAdmissionID             *common.Hash    `json:"commonTxAdmissionId,omitempty"`
@@ -1891,6 +1892,8 @@ func fillCommonRPCTransactionFields(result *RPCTransaction, block *types.Block, 
 
 		approver := reward.Approver
 		result.CommonTxApprover = &approver
+		recipient := reward.EffectiveRewardRecipient()
+		result.CommonTxRewardRecipient = &recipient
 
 		if reward.ApproverReward != nil {
 			result.CommonTxApproverReward = (*hexutil.Big)(new(big.Int).Set(reward.ApproverReward))
@@ -1935,6 +1938,7 @@ func addCommonRPCReceiptFields(fields map[string]interface{}, block *types.Block
 		}
 
 		fields["commonTxApprover"] = reward.Approver
+		fields["commonTxRewardRecipient"] = reward.EffectiveRewardRecipient()
 
 		if reward.ApproverReward != nil {
 			fields["commonTxApproverReward"] = (*hexutil.Big)(new(big.Int).Set(reward.ApproverReward))

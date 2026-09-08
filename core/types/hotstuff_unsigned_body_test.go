@@ -52,7 +52,7 @@ func makeLargeSignedHotstuffBlockForTest(count int) *Block {
 		for index := range hashes {
 			hashes[index] = common.BigToHash(new(big.Int).SetUint64(uint64(batchIndex*8 + index + 1)))
 		}
-		block.commonTxAdmissionBatches[batchIndex] = &CommonTxAdmissionBatch{
+		block.commonTxAdmissionBatches[batchIndex] = &CommonTxAdmissionBatch{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 			ChainID: big.NewInt(10101919), TxHashes: hashes,
 			Signature: bytes.Repeat([]byte{byte(batchIndex)}, 96),
 		}
@@ -61,7 +61,7 @@ func makeLargeSignedHotstuffBlockForTest(count int) *Block {
 	block.commonTxRewards = make([]*CommonTxReward, count)
 	for index := 0; index < count; index++ {
 		block.commonTxAdmissionRefs[index] = CommonTxAdmissionRef{Batch: uint32(index / 8), Item: uint16(index % 8)}
-		block.commonTxRewards[index] = &CommonTxReward{
+		block.commonTxRewards[index] = &CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 			TxHash:         common.BigToHash(new(big.Int).SetUint64(uint64(index + 1))),
 			ApproverReward: big.NewInt(int64(index + 1)),
 			Burn:           big.NewInt(int64(index + 2)),

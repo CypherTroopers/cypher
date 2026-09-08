@@ -469,17 +469,17 @@ type ChainConfig struct {
 }
 type GenesisCommittee map[int]common.Cnode
 
-const fairHotstuffGenesisConfigDomain = "cypher-fhs-genesis-config-v2"
+const fairHotstuffGenesisConfigDomain = "cypher-fhs-genesis-config-v3"
 
 // MaxFairHotstuffCommitteeSize keeps the n-f NewView proof below the bounded
 // HotStuff control-message limit, even when every report carries the maximum
 // permitted candidate metadata.
 const MaxFairHotstuffCommitteeSize = 100
 
-// FairHotstuffGenesisCommitment binds every serialized chain-configuration
-// field (including the committee, chain ID, fork schedule, transport policy and
-// election seed) to the genesis header. Encoding/json deterministically sorts
-// map keys, so every conforming node derives the same commitment.
+// FairHotstuffGenesisCommitment binds the original chain configuration
+// (including committee, chain ID, EVM forks, transport and election seed) to
+// genesis. The v3 domain identifies the restarted network with mandatory
+// Common RPC reward recipients. Encoding/json sorts map keys.
 func FairHotstuffGenesisCommitment(c *ChainConfig) (common.Hash, error) {
 	if c == nil || !c.FairHotstuff {
 		return common.Hash{}, errors.New("fairHotstuff genesis commitment requires an enabled config")

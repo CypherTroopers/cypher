@@ -38,7 +38,7 @@ import (
 // block work already consumed by earlier transactions.
 var ErrFHSPerTransactionWorkLimit = errors.New("Fair HotStuff per-transaction work limit exceeded")
 
-const fhsCommonRewardFixedPayloadBytes = uint64(common.HashLength + common.AddressLength)
+const fhsCommonRewardFixedPayloadBytes = uint64(common.HashLength + 2*common.AddressLength + 1)
 
 // BlockValidator is responsible for validating block headers, uncles and
 // processed state.
@@ -350,13 +350,17 @@ func (m *FHSBlockWorkMeter) AddReward(index int, reward *types.CommonTxReward) e
 	if reward == nil {
 		return fmt.Errorf("Fair HotStuff common transaction reward %d is nil", index)
 	}
+	if err := reward.ValidateVersion(); err != nil {
+		return err
+	}
 	if reward.ApproverReward == nil || reward.Burn == nil {
 		return fmt.Errorf("Fair HotStuff common transaction reward %d has nil amount", index)
 	}
 	if reward.ApproverReward.Sign() < 0 || reward.Burn.Sign() < 0 {
 		return fmt.Errorf("Fair HotStuff common transaction reward %d has negative amount", index)
 	}
-	entryBytes, ok := params.AddFHSWork(fhsCommonRewardFixedPayloadBytes, fhsBigIntPayloadBytes(reward.ApproverReward), m.limits.CommonTxRewardBytesPerEntry)
+	fixedBytes := fhsCommonRewardFixedPayloadBytes
+	entryBytes, ok := params.AddFHSWork(fixedBytes, fhsBigIntPayloadBytes(reward.ApproverReward), m.limits.CommonTxRewardBytesPerEntry)
 	if !ok {
 		return fmt.Errorf("Fair HotStuff common transaction reward %d payload exceeds per-entry maximum %d", index, m.limits.CommonTxRewardBytesPerEntry)
 	}
@@ -445,6 +449,7 @@ func (m *FHSBlockWorkMeter) AddCommonSidecars(batches []*types.CommonTxAdmission
 	referenced := make([]bool, len(batches))
 	selectedRefs := make(map[uint64]struct{}, len(refs))
 	approverByTx := make(map[common.Hash]common.Address, len(refs))
+	batchByTx := make(map[common.Hash]*types.CommonTxAdmissionBatch, len(refs))
 	for index, ref := range refs {
 		if int(ref.Batch) >= len(batches) {
 			return fmt.Errorf("Fair HotStuff common transaction admission reference %d selects batch %d outside %d batches", index, ref.Batch, len(batches))
@@ -467,6 +472,7 @@ func (m *FHSBlockWorkMeter) AddCommonSidecars(batches []*types.CommonTxAdmission
 			return fmt.Errorf("Fair HotStuff common transaction admission reference %d duplicates transaction %s", index, txHash)
 		}
 		approverByTx[txHash] = batch.Miner
+		batchByTx[txHash] = batch
 	}
 	for index, used := range referenced {
 		if !used {
@@ -486,6 +492,10 @@ func (m *FHSBlockWorkMeter) AddCommonSidecars(batches []*types.CommonTxAdmission
 		}
 		if reward.Approver != approver {
 			return fmt.Errorf("Fair HotStuff common transaction reward %d approver %s does not match admission batch miner %s for transaction %s", index, reward.Approver, approver, reward.TxHash)
+		}
+		batch := batchByTx[reward.TxHash]
+		if batch.Version != reward.Version || batch.RewardRecipient != reward.RewardRecipient {
+			return fmt.Errorf("Fair HotStuff common transaction reward %d version or recipient does not match admission", index)
 		}
 		delete(approverByTx, reward.TxHash)
 	}
@@ -708,6 +718,11 @@ func validateFHSCommonRPCSidecarCoverage(config *params.ChainConfig, block *type
 		return nil
 	}
 	body := block.Body()
+	for _, batch := range body.CommonTxAdmissionBatches {
+		if err := batch.ValidateVersion(); err != nil {
+			return err
+		}
+	}
 	_, err := validateCommonTxAdmissionLayout(config, body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.Transactions, common.Hash{})
 	return err
 }

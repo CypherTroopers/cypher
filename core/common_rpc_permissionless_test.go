@@ -47,6 +47,7 @@ func TestCommonRPCIndependentOperatorsReceiveExecutionRewards(t *testing.T) {
 	txs := make(types.Transactions, 2)
 	operators := make([]common.Address, len(txs))
 	recipients := []common.Address{common.HexToAddress("0x2001"), common.HexToAddress("0x2002")}
+	rewardRecipients := []common.Address{{0xb1}, {0xb2}}
 	rewards := make([]*types.CommonTxReward, len(txs))
 	selections := make([]CommonRPCAdmissionResult, len(txs))
 	for index := range txs {
@@ -62,6 +63,8 @@ func TestCommonRPCIndependentOperatorsReceiveExecutionRewards(t *testing.T) {
 			t.Fatal(err)
 		}
 		certificate := stateProcessorTestAdmissionBatch(t, operatorKey, config.ChainID, genesisHash, keyBlock.NumberU64(), timestamp, []common.Hash{txs[index].Hash()})
+		certificate.RewardRecipient = rewardRecipients[index]
+		resealStateProcessorTestAdmissionBatch(t, certificate, operatorKey)
 		if _, err := VerifyAndStoreCommonRPCAdmissionBatch(certificate, config.ChainID, genesisHash); err != nil {
 			t.Fatalf("operator %d admission: %v", index, err)
 		}
@@ -72,7 +75,7 @@ func TestCommonRPCIndependentOperatorsReceiveExecutionRewards(t *testing.T) {
 		if selections[index].Batch.Miner != operators[index] {
 			t.Fatalf("operator %d admission attributed to %s", index, selections[index].Batch.Miner)
 		}
-		rewards[index] = &types.CommonTxReward{
+		rewards[index] = &types.CommonTxReward{Version: 2, RewardRecipient: rewardRecipients[index],
 			TxHash: txs[index].Hash(), Approver: operators[index],
 			ApproverReward: new(big.Int).Set(rewardAmount), Burn: new(big.Int).Set(burnAmount),
 		}
@@ -113,8 +116,11 @@ func TestCommonRPCIndependentOperatorsReceiveExecutionRewards(t *testing.T) {
 		if receipts[index].Status != types.ReceiptStatusSuccessful || receipts[index].GasUsed != params.TxGas {
 			t.Fatalf("operator %d transaction receipt: %+v", index, receipts[index])
 		}
-		if got := state.GetBalance(operator); got.Cmp(rewardAmount) != 0 {
-			t.Fatalf("operator %d reward balance = %v, want 20%% fee = %v", index, got, rewardAmount)
+		if got := state.GetBalance(operator); got.Sign() != 0 {
+			t.Fatalf("operator %d signing account received reward %v", index, got)
+		}
+		if got := state.GetBalance(rewardRecipients[index]); got.Cmp(rewardAmount) != 0 {
+			t.Fatalf("operator %d recipient balance = %v, want 20%% fee = %v", index, got, rewardAmount)
 		}
 		if got := state.GetBalance(recipients[index]); got.Cmp(big.NewInt(transferValue)) != 0 {
 			t.Fatalf("recipient %d balance = %v, want %d", index, got, transferValue)

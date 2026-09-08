@@ -404,7 +404,7 @@ func TestDecodeProposalDataManifestAppliesConsensusCountLimitsFirst(t *testing.T
 			name: "admission batches",
 			want: "admission batch count",
 			mutate: func(manifest *proposalDataManifest) {
-				batch := &types.CommonTxAdmissionBatch{ChainID: big.NewInt(1)}
+				batch := &types.CommonTxAdmissionBatch{Version: types.CommonRPCVersionV2, RewardRecipient: common.HexToAddress("0x43"), ChainID: big.NewInt(1)}
 				manifest.CommonTxAdmissionBatches = make([]*types.CommonTxAdmissionBatch, int(limits.CommonTxAdmissionBatches)+1)
 				for index := range manifest.CommonTxAdmissionBatches {
 					manifest.CommonTxAdmissionBatches[index] = batch
@@ -422,7 +422,7 @@ func TestDecodeProposalDataManifestAppliesConsensusCountLimitsFirst(t *testing.T
 			name: "rewards",
 			want: "reward count",
 			mutate: func(manifest *proposalDataManifest) {
-				reward := &types.CommonTxReward{ApproverReward: new(big.Int), Burn: new(big.Int)}
+				reward := &types.CommonTxReward{Version: types.CommonRPCVersionV2, RewardRecipient: common.HexToAddress("0x43"), ApproverReward: new(big.Int), Burn: new(big.Int)}
 				manifest.CommonTxRewards = make([]*types.CommonTxReward, int(limits.CommonTxRewards)+1)
 				for index := range manifest.CommonTxRewards {
 					manifest.CommonTxRewards[index] = reward

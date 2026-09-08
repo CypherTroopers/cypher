@@ -193,6 +193,9 @@ type CommonTxAdmissionBatch struct {
 	Timestamp      uint64
 	TxHashes       []common.Hash
 	Signature      []byte
+	// Version 2 and a distinct recipient are required from genesis.
+	Version         uint8
+	RewardRecipient common.Address
 }
 
 // CommonTxAdmissionRef is aligned with the block transaction at the same
@@ -205,12 +208,15 @@ type CommonTxAdmissionRef struct {
 }
 
 // CommonTxReward records the deterministic protocol-level split for one tx.
-// ApproverReward is paid to Approver and Burn is intentionally not credited to any account.
+// Approver remains the admission signer. RewardRecipient is paid directly;
+// Burn is not credited to any account.
 type CommonTxReward struct {
-	TxHash         common.Hash
-	Approver       common.Address
-	ApproverReward *big.Int
-	Burn           *big.Int
+	TxHash          common.Hash
+	Approver        common.Address
+	ApproverReward  *big.Int
+	Burn            *big.Int
+	Version         uint8
+	RewardRecipient common.Address
 }
 
 // HotstuffProposalRef is the canonical, compact HotStuff proposal object.
@@ -830,13 +836,15 @@ func DeriveCommonTxRewardRoot(rewards []*CommonTxReward) common.Hash {
 		if reward.Burn != nil {
 			burnAmount.Set(reward.Burn)
 		}
-		leaves[index] = blake3RLPHash([]interface{}{
+		payload := []interface{}{
 			[]byte(commonTxRewardDomain),
 			reward.TxHash,
 			reward.Approver,
 			rewardAmount,
 			burnAmount,
-		})
+		}
+		payload = append(payload, reward.Version, reward.RewardRecipient)
+		leaves[index] = blake3RLPHash(payload)
 	})
 	return blake3MerkleRoot(leaves)
 }

@@ -236,6 +236,13 @@ func TestCommonRPCNodeStartsBeforeAccountCreationAndPersistsIndependentAdmission
 		if !backend.shouldRecordCommonRPCAdmission() {
 			t.Fatalf("independent Common RPC key %d requires genesis registration", index)
 		}
+		if err := backend.SendTx(context.Background(), tx, true); err == nil || !strings.Contains(err.Error(), "not configured") {
+			t.Fatalf("missing mandatory recipient did not reject new admission: %v", err)
+		}
+		recipient := common.Address{0xb1, byte(index)}
+		if _, err := service.commonRPCRewards.Set(account.Address, recipient); err != nil {
+			t.Fatal(err)
+		}
 		if err := backend.SendTx(context.Background(), tx, true); !errors.Is(err, keystore.ErrLocked) {
 			t.Fatalf("locked RPC signing account error = %v, want %v", err, keystore.ErrLocked)
 		}
@@ -249,7 +256,7 @@ func TestCommonRPCNodeStartsBeforeAccountCreationAndPersistsIndependentAdmission
 			t.Fatalf("RPC key %d could not durably submit its transaction: %v", index, err)
 		}
 		admission, found := core.CommonRPCAdmissionForTransaction(tx.Hash())
-		if !found || admission.Batch.Miner != account.Address || service.txPool.Get(tx.Hash()) == nil {
+		if !found || admission.Batch.Miner != account.Address || admission.Batch.RewardRecipient != recipient || service.txPool.Get(tx.Hash()) == nil {
 			t.Fatalf("RPC key %d transaction/admission was not published under its own identity", index)
 		}
 		if err := types.VerifyCommonTxAdmissionSignature(admission.Batch); err != nil {

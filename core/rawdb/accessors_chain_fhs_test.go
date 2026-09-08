@@ -42,7 +42,7 @@ func TestHeaderRLPMatchesHashWithHotstuffSignInfo(t *testing.T) {
 func TestReadBlockRejectsCorruptCommonTransactionBody(t *testing.T) {
 	db := NewMemoryDatabase()
 	tx := types.NewTransaction(0, common.Address{1}, big.NewInt(1), 21_000, big.NewInt(1), nil)
-	batch := &types.CommonTxAdmissionBatch{
+	batch := &types.CommonTxAdmissionBatch{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		ChainID:     big.NewInt(1),
 		GenesisHash: common.Hash{1},
 		Miner:       common.Address{2},
@@ -53,7 +53,7 @@ func TestReadBlockRejectsCorruptCommonTransactionBody(t *testing.T) {
 	batch.TxRoot = types.DeriveCommonTxAdmissionTxRoot(batch.TxHashes)
 	batch.AdmissionID = types.CommonTxAdmissionID(batch)
 	refs := []types.CommonTxAdmissionRef{{}}
-	reward := &types.CommonTxReward{TxHash: tx.Hash(), Approver: batch.Miner, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
+	reward := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09}, TxHash: tx.Hash(), Approver: batch.Miner, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
 	block := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(1)}).WithBody(types.Transactions{tx}, nil)
 	block.AttachCommonTxData([]*types.CommonTxAdmissionBatch{batch}, refs, []*types.CommonTxReward{reward})
 	WriteBlock(db, block)

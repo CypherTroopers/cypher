@@ -206,7 +206,7 @@ func (h *httpServer) doStop() {
 
 	// Shut down the server.
 	httpHandler := h.httpHandler.Load().(*rpcHandler)
-	wsHandler := h.httpHandler.Load().(*rpcHandler)
+	wsHandler := h.wsHandler.Load().(*rpcHandler)
 	if httpHandler != nil {
 		h.httpHandler.Store((*rpcHandler)(nil))
 		httpHandler.server.Stop()
@@ -489,7 +489,7 @@ func RegisterApisFromWhitelist(apis []rpc.API, modules []string, srv *rpc.Server
 	// Register all the APIs exposed by the services
 	for _, api := range apis {
 		if exposeAll || whitelist[api.Namespace] || (len(whitelist) == 0 && api.Public) {
-			if err := srv.RegisterName(api.Namespace, api.Service); err != nil {
+			if err := srv.RegisterNameAllowed(api.Namespace, api.Service, allowPublicRPCMethod); err != nil {
 				return err
 			}
 		}

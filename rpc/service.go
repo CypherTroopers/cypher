@@ -59,6 +59,10 @@ type callback struct {
 }
 
 func (r *serviceRegistry) registerName(name string, rcvr interface{}) error {
+	return r.registerNameAllowed(name, rcvr, nil)
+}
+
+func (r *serviceRegistry) registerNameAllowed(name string, rcvr interface{}, allow func(string, bool) bool) error {
 	rcvrVal := reflect.ValueOf(rcvr)
 	if name == "" {
 		return fmt.Errorf("no service name for type %s", rcvrVal.Type().String())
@@ -66,6 +70,16 @@ func (r *serviceRegistry) registerName(name string, rcvr interface{}) error {
 	callbacks := suitableCallbacks(rcvrVal)
 	if len(callbacks) == 0 {
 		return fmt.Errorf("service %T doesn't have any suitable methods/subscriptions to expose", rcvr)
+	}
+	if allow != nil {
+		for method, cb := range callbacks {
+			if !allow(name+serviceMethodSeparator+method, cb.isSubscribe) {
+				delete(callbacks, method)
+			}
+		}
+		if len(callbacks) == 0 {
+			return nil
+		}
 	}
 
 	r.mu.Lock()

@@ -133,7 +133,7 @@ func TestFHSBodyCacheRepairSurvivesIndexEviction(t *testing.T) {
 	header := types.DecodeToBlock(body.EncodedBlock).Header()
 	header.GasLimit = 30_000_000
 	block := types.NewBlock(header, types.Transactions{tx}, nil, nil, new(trie.Trie))
-	reward := &types.CommonTxReward{TxHash: tx.Hash(), Approver: common.HexToAddress("0x42"), ApproverReward: big.NewInt(1), Burn: new(big.Int)}
+	reward := &types.CommonTxReward{Version: types.CommonRPCVersionV2, RewardRecipient: common.HexToAddress("0x43"), TxHash: tx.Hash(), Approver: common.HexToAddress("0x42"), ApproverReward: big.NewInt(1), Burn: new(big.Int)}
 	block.SetCommonTxData(nil, nil, []*types.CommonTxReward{reward})
 	body.EncodedBlock = block.EncodeToBytes()
 	ref, err := types.NewHotstuffProposalRefWithProof(99, body.ViewNumber, body.ViewID, body.LeaderID, block, body.EncodedBlock, body.Extra, common.Hash{})

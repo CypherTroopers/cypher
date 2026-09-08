@@ -27,7 +27,7 @@ func fhsSidecarHandoffFixture(t *testing.T) (*params.ChainConfig, *types.Block, 
 	tx := types.NewTransaction(0, common.HexToAddress("0x2001"), big.NewInt(1), params.TxGas, big.NewInt(params.FixedTransferGasPricePerGas), nil)
 	txs := types.Transactions{tx}
 	batch := stateProcessorTestAdmissionBatch(t, key, config.ChainID, genesisHash, context.keyBlockNumber, 100, []common.Hash{tx.Hash()})
-	reward := &types.CommonTxReward{
+	reward := &types.CommonTxReward{Version: 2, RewardRecipient: common.Address{0xb7, 0x09},
 		TxHash: tx.Hash(), Approver: miner,
 		ApproverReward: big.NewInt(1), Burn: big.NewInt(2),
 	}

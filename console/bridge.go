@@ -27,6 +27,7 @@ import (
 	"github.com/dop251/goja"
 	//??	"github.com/cypherium/cypher/accounts/scwallet"
 	//??	"github.com/cypherium/cypher/accounts/usbwallet"
+	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/console/prompt"
 	"github.com/cypherium/cypher/internal/jsre"
@@ -313,6 +314,39 @@ func (b *bridge) Sign(call jsre.Call) (goja.Value, error) {
 		return nil, fmt.Errorf("jeth.unlockAccount is not callable")
 	}
 	return sign(goja.Null(), message, account, passwd)
+}
+
+// SetCommonRPCRewardAddress prompts without echo when A's password is omitted.
+// The original RPC method is preserved in jeth and still enforces actual IPC.
+func (b *bridge) SetCommonRPCRewardAddress(call jsre.Call) (goja.Value, error) {
+	if len(call.Arguments) < 2 || len(call.Arguments) > 3 {
+		return nil, fmt.Errorf("usage: setCommonRPCRewardAddress(signer, recipient, [ password ])")
+	}
+	for i := 0; i < 2; i++ {
+		value := call.Argument(i)
+		if goja.IsUndefined(value) || goja.IsNull(value) || value.ExportType().Kind() != reflect.String {
+			return nil, fmt.Errorf("signer and recipient must be full hexadecimal addresses")
+		}
+		var address common.Address
+		if err := address.UnmarshalText([]byte(value.String())); err != nil {
+			return nil, err
+		}
+	}
+	password := call.Argument(2)
+	if goja.IsUndefined(password) || goja.IsNull(password) {
+		input, err := b.prompter.PromptPassword("Signing account password: ")
+		if err != nil {
+			return nil, err
+		}
+		password = call.VM.ToValue(input)
+	} else if password.ExportType().Kind() != reflect.String {
+		return nil, fmt.Errorf("password must be a string")
+	}
+	set, callable := goja.AssertFunction(getJeth(call.VM).Get("setCommonRPCRewardAddress"))
+	if !callable {
+		return nil, fmt.Errorf("jeth.setCommonRPCRewardAddress is not callable")
+	}
+	return set(goja.Null(), call.Argument(0), call.Argument(1), password)
 }
 
 // Sleep will block the console for the specified number of seconds.

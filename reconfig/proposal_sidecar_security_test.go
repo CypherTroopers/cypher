@@ -625,16 +625,18 @@ func TestProposalManifestRepairReconstructsExactBody(t *testing.T) {
 		GasLimit:   30_000_000,
 	}, types.Transactions{tx}, nil, nil, new(trie.Trie))
 	admission := &types.CommonTxAdmissionBatch{
-		ChainID:     big.NewInt(99),
-		GenesisHash: common.HexToHash("0x99"),
-		Miner:       common.HexToAddress("0x42"),
-		Timestamp:   1,
-		TxHashes:    []common.Hash{tx.Hash()},
-		Signature:   make([]byte, 65),
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0x43"),
+		ChainID:         big.NewInt(99),
+		GenesisHash:     common.HexToHash("0x99"),
+		Miner:           common.HexToAddress("0x42"),
+		Timestamp:       1,
+		TxHashes:        []common.Hash{tx.Hash()},
+		Signature:       make([]byte, 65),
 	}
 	admission.TxRoot = types.DeriveCommonTxAdmissionTxRoot(admission.TxHashes)
 	admission.AdmissionID = types.CommonTxAdmissionID(admission)
-	reward := &types.CommonTxReward{TxHash: tx.Hash(), Approver: admission.Miner, ApproverReward: new(big.Int), Burn: new(big.Int)}
+	reward := &types.CommonTxReward{Version: types.CommonRPCVersionV2, RewardRecipient: common.HexToAddress("0x43"), TxHash: tx.Hash(), Approver: admission.Miner, ApproverReward: new(big.Int), Burn: new(big.Int)}
 	block.SetCommonTxData([]*types.CommonTxAdmissionBatch{admission}, []types.CommonTxAdmissionRef{{}}, []*types.CommonTxReward{reward})
 	encodedBlock := block.EncodeToBytes()
 	extra := []byte("compact-proof")

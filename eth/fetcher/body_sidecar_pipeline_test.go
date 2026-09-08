@@ -49,22 +49,26 @@ func testFetcherV0BlobTransaction() (*types.Transaction, *types.BlobTxSidecar) {
 func testFetcherBlobBody() (*types.Body, *types.Header, *types.Block) {
 	tx, sidecar := testFetcherV0BlobTransaction()
 	batch := &types.CommonTxAdmissionBatch{
-		ChainID:        big.NewInt(777),
-		GenesisHash:    common.HexToHash("0x01"),
-		Miner:          common.HexToAddress("0x2000000000000000000000000000000000000002"),
-		KeyBlockNumber: 4,
-		Timestamp:      1_750_000_000,
-		TxHashes:       []common.Hash{tx.Hash()},
-		Signature:      []byte{0x01},
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0xb1"),
+		ChainID:         big.NewInt(777),
+		GenesisHash:     common.HexToHash("0x01"),
+		Miner:           common.HexToAddress("0x2000000000000000000000000000000000000002"),
+		KeyBlockNumber:  4,
+		Timestamp:       1_750_000_000,
+		TxHashes:        []common.Hash{tx.Hash()},
+		Signature:       []byte{0x01},
 	}
 	batch.TxRoot = types.DeriveCommonTxAdmissionTxRoot(batch.TxHashes)
 	batch.AdmissionID = common.HexToHash("0x02")
 	ref := types.CommonTxAdmissionRef{Batch: 0, Item: 0}
 	reward := &types.CommonTxReward{
-		TxHash:         tx.Hash(),
-		Approver:       common.HexToAddress("0x3000000000000000000000000000000000000003"),
-		ApproverReward: big.NewInt(7),
-		Burn:           big.NewInt(1),
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: batch.RewardRecipient,
+		TxHash:          tx.Hash(),
+		Approver:        batch.Miner,
+		ApproverReward:  big.NewInt(7),
+		Burn:            big.NewInt(1),
 	}
 	uncle := &types.Header{
 		ParentHash:  common.HexToHash("0x03"),

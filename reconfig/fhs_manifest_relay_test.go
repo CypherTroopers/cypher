@@ -53,13 +53,15 @@ func newManifestRelayFixture(t *testing.T) *manifestRelayFixture {
 		GasLimit: 30_000_000, KeyHash: f.current.Hash(),
 	}, types.Transactions{tx}, nil, nil, new(trie.Trie))
 	admission := &types.CommonTxAdmissionBatch{
-		ChainID: f.service.chainConfig.ChainID, GenesisHash: f.genesisHash,
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0x43"),
+		ChainID:         f.service.chainConfig.ChainID, GenesisHash: f.genesisHash,
 		Miner: common.HexToAddress("0x42"), Timestamp: 1,
 		TxHashes: []common.Hash{tx.Hash()}, Signature: make([]byte, 65),
 	}
 	admission.TxRoot = types.DeriveCommonTxAdmissionTxRoot(admission.TxHashes)
 	admission.AdmissionID = types.CommonTxAdmissionID(admission)
-	reward := &types.CommonTxReward{TxHash: tx.Hash(), Approver: admission.Miner, ApproverReward: new(big.Int), Burn: new(big.Int)}
+	reward := &types.CommonTxReward{Version: types.CommonRPCVersionV2, RewardRecipient: common.HexToAddress("0x43"), TxHash: tx.Hash(), Approver: admission.Miner, ApproverReward: new(big.Int), Burn: new(big.Int)}
 	block.SetCommonTxData([]*types.CommonTxAdmissionBatch{admission}, []types.CommonTxAdmissionRef{{}}, []*types.CommonTxReward{reward})
 	encoded := block.EncodeToBytes()
 	ref, err := types.NewHotstuffProposalRefWithProof(f.service.ChainID(), 21, common.HexToHash("0x21"), services[0].Self(), block, encoded, nil, common.Hash{})

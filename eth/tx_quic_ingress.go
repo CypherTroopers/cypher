@@ -286,6 +286,9 @@ func validateTxQUICCertificateStructure(certificate *types.CommonTxAdmissionBatc
 	if certificate.Miner == (common.Address{}) || certificate.Timestamp == 0 {
 		return fmt.Errorf("incomplete txquic admission certificate")
 	}
+	if err := certificate.ValidateVersion(); err != nil {
+		return fmt.Errorf("txquic admission certificate version: %w", err)
+	}
 	if len(certificate.TxHashes) == 0 || len(certificate.TxHashes) > types.MaxCommonTxAdmissionBatchItems {
 		return fmt.Errorf("invalid txquic admission certificate transaction count %d", len(certificate.TxHashes))
 	}
@@ -3721,6 +3724,9 @@ func (q *TxQUICIngress) handleStream(remote net.Addr, stream *quic.Stream) {
 func (q *TxQUICIngress) verifyAndStoreAdmissionCertificate(certificate *types.CommonTxAdmissionBatch, items []*txQUICItem, durableVerified bool) error {
 	if q == nil || certificate == nil {
 		return fmt.Errorf("missing txquic admission certificate")
+	}
+	if err := certificate.ValidateVersion(); err != nil {
+		return fmt.Errorf("txquic admission certificate format: %w", err)
 	}
 	if durableVerified {
 		allPresent := true

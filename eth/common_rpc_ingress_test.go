@@ -134,7 +134,7 @@ func recordAndAddCommonRPCTestTx(
 ) (core.CommonRPCAdmissionResult, error) {
 	release := lockCommonRPCSubmissionHashes([]common.Hash{tx.Hash()})
 	defer release()
-	admissions, err := core.SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 1, timestamp)
+	admissions, err := core.SignAndRecordCommonRPCAdmissions([]common.Hash{tx.Hash()}, miner, chainID, genesis, 1, timestamp, common.HexToAddress("0xb1"))
 	if err != nil {
 		return core.CommonRPCAdmissionResult{}, err
 	}

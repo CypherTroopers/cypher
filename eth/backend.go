@@ -30,6 +30,7 @@ import (
 	"github.com/cypherium/cypher/accounts"
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
+	"github.com/cypherium/cypher/commonrpcreward"
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core"
@@ -63,15 +64,16 @@ type Ethereum struct {
 	config *Config
 
 	// Handlers
-	txPool          *core.TxPool
-	blockchain      *core.BlockChain
-	keyBlockChain   *core.KeyBlockChain
-	protocolManager *ProtocolManager
-	candidatePool   *core.CandidatePool
-	dialCandidates  enode.Iterator
-	txQUICIngress   *TxQUICIngress
-	txIngressLife   *transactionIngressLifecycle
-	rawTxAPI        *ethapi.PublicTransactionPoolAPI
+	txPool           *core.TxPool
+	blockchain       *core.BlockChain
+	keyBlockChain    *core.KeyBlockChain
+	protocolManager  *ProtocolManager
+	candidatePool    *core.CandidatePool
+	dialCandidates   enode.Iterator
+	txQUICIngress    *TxQUICIngress
+	txIngressLife    *transactionIngressLifecycle
+	rawTxAPI         *ethapi.PublicTransactionPoolAPI
+	commonRPCRewards *commonrpcreward.Registry
 
 	// DB interfaces
 	chainDb        ethdb.Database // Block chain database
@@ -412,6 +414,7 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 			log.Info("Common RPC signing account is not configured yet", "err", err)
 		}
 	}
+	eth.commonRPCRewards = commonrpcreward.Open(stack.InstanceDir(), chainConfig.ChainID, genesisHash)
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), eth, nil, "hexNodeId", config.EVMCallTimeOut}
 	gpoParams := config.GPO
 	if gpoParams.Default == nil {
@@ -484,14 +487,14 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		}
 	}
 	if eth.txQUICIngress != nil && config.TxQUIC.HTTP3Enabled {
-		if rpcHandler, err := stack.RPCHandler(); err == nil {
+		if rpcHandler, err := stack.PublicRPCHandler(); err == nil {
 			vhosts := stack.Config().HTTPVirtualHosts
 			if len(vhosts) == 0 {
 				vhosts = []string{"*"}
 			}
 			eth.txQUICIngress.SetHTTP3RPCHandler(node.NewHTTPHandlerStack(rpcHandler, stack.Config().HTTPCors, vhosts))
 		} else {
-			log.Warn("Failed to attach HTTP/3 JSON-RPC handler", "err", err)
+			return nil, fmt.Errorf("attach public HTTP/3 JSON-RPC handler: %w", err)
 		}
 	}
 	return eth, nil

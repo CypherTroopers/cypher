@@ -139,6 +139,7 @@ type txIngressWAL struct {
 	digest              common.Hash
 	records             int
 	bytes               int64
+	localAdmissions     map[localRPCAdmissionKey]core.CommonRPCAdmissionResult
 	sinceCompactRecords int
 	sinceCompactBytes   int64
 	ctx                 context.Context
@@ -442,6 +443,7 @@ func writeTxIngressWALSync(batch ethdb.Batch, operation string) error {
 // recoverLocked validates the hash chain and repairs only a terminal torn
 // record/tail. Corruption before the final record is never silently skipped.
 func (w *txIngressWAL) recoverLocked() error {
+	w.localAdmissions = make(map[localRPCAdmissionKey]core.CommonRPCAdmissionResult)
 	recordPrefix := txIngressWALRecordPrefixForGeneration(w.generation)
 	tailKey := txIngressWALTailKeyForGeneration(w.generation)
 	iterator := w.db.NewIterator(recordPrefix, nil)
@@ -473,6 +475,9 @@ func (w *txIngressWAL) recoverLocked() error {
 			return fmt.Errorf("ingress WAL event index mismatch at record %d", frame.Sequence)
 		}
 		records++
+		if err := indexLocalRPCAdmission(w.localAdmissions, frame.Kind, frame.Payload); err != nil {
+			return err
+		}
 		totalBytes += recordBytes
 		expected++
 		previous = frame.Checksum
@@ -675,6 +680,15 @@ func (w *txIngressWAL) Append(ctx context.Context, kind txIngressWALEventKind, b
 			return 0, err
 		}
 		return 0, errors.New("ingress WAL stopped before append")
+	}
+	if kind == txIngressWALLocalIntent {
+		// The RPC exact-hash lease must outlive this durable operation. Returning
+		// an ambiguous timeout here could let a retry sign the same TX for a new
+		// recipient while the first certificate is still waiting for its fsync.
+		// Admission/backpressure remains cancellable before ownership transfers;
+		// the commit/shutdown loop always resolves queued requests.
+		result := <-request.result
+		return result.sequence, result.err
 	}
 	select {
 	case result := <-request.result:
@@ -919,6 +933,20 @@ func (w *txIngressWAL) commit(requests []*txIngressWALAppendRequest) {
 			w.sinceCompactBytes += addedBytes
 		}
 	}
+	if fatalErr == nil {
+		if w.localAdmissions == nil {
+			w.localAdmissions = make(map[localRPCAdmissionKey]core.CommonRPCAdmissionResult)
+		}
+		for index, request := range requests {
+			if results[index].err == nil {
+				if err := indexLocalRPCAdmission(w.localAdmissions, request.kind, request.payload); err != nil {
+					w.poison = fmt.Errorf("index durable local admission: %w", err)
+					fatalErr = w.poison
+					break
+				}
+			}
+		}
+	}
 	compact := fatalErr == nil && (capacityPressure || w.shouldCompactLocked(nil))
 	w.mu.Unlock()
 	if compact {
@@ -1063,9 +1091,10 @@ type txIngressWALCheckpoint struct {
 	// Delta records arrived after the canonical source snapshot. They are copied
 	// verbatim as events, preserving correctness without re-running an unbounded
 	// canonicalization while append traffic remains live.
-	deltaRecords int
-	deltaBytes   int64
-	seenEvents   map[common.Hash]struct{}
+	deltaRecords    int
+	deltaBytes      int64
+	seenEvents      map[common.Hash]struct{}
+	localAdmissions map[localRPCAdmissionKey]core.CommonRPCAdmissionResult
 }
 
 // Compact checkpoints the active immutable generation into a canonical live
@@ -1147,8 +1176,9 @@ func (w *txIngressWAL) compactGeneration(sourceGeneration, sourceSequence uint64
 		return err
 	}
 	checkpoint := &txIngressWALCheckpoint{
-		generation: newGeneration,
-		seenEvents: make(map[common.Hash]struct{}, len(events)),
+		generation:      newGeneration,
+		seenEvents:      make(map[common.Hash]struct{}, len(events)),
+		localAdmissions: make(map[localRPCAdmissionKey]core.CommonRPCAdmissionResult),
 	}
 	if err := w.appendCheckpointEvents(checkpoint, events, false); err != nil {
 		return err
@@ -1231,6 +1261,7 @@ func (w *txIngressWAL) compactGeneration(sourceGeneration, sourceSequence uint64
 		w.generation, w.sequence, w.digest = checkpoint.generation, checkpoint.sequence, checkpoint.digest
 		w.records, w.bytes = checkpoint.records, checkpoint.bytes
 		w.sinceCompactRecords, w.sinceCompactBytes = checkpoint.deltaRecords, checkpoint.deltaBytes
+		w.localAdmissions = checkpoint.localAdmissions
 		w.mu.Unlock()
 
 		// The manifest already names the complete target. Old keys are garbage and
@@ -1255,6 +1286,12 @@ func (w *txIngressWAL) appendCheckpointEvents(checkpoint *txIngressWALCheckpoint
 		return nil
 	}
 	for _, event := range events {
+		if checkpoint.localAdmissions == nil {
+			checkpoint.localAdmissions = make(map[localRPCAdmissionKey]core.CommonRPCAdmissionResult)
+		}
+		if err := indexLocalRPCAdmission(checkpoint.localAdmissions, event.kind, event.payload); err != nil {
+			return err
+		}
 		if event.kind < txIngressWALInboundReceived || event.kind > txIngressWALOutboxApplied || event.batchID == (common.Hash{}) || event.eventID == (common.Hash{}) || len(event.payload) == 0 {
 			return errors.New("invalid canonical ingress WAL event")
 		}

@@ -719,10 +719,8 @@ func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs t
 	releaseSubmissions := lockCommonRPCSubmissionHashes(hashes)
 	defer releaseSubmissions()
 	admissionStarted := time.Now()
-	admissionResults, err := core.SignCommonRPCAdmissions(
+	admissionResults, err := b.signOrReuseCommonRPCAdmissions(
 		hashes,
-		bftview.GetServerCoinBase(),
-		b.ChainConfig().ChainID,
 		genesisHash,
 		keyBlockNumber,
 		uint64(time.Now().Unix()),
@@ -778,8 +776,9 @@ func (b *EthAPIBackend) sendCommonRPCTransactionBatch(ctx context.Context, txs t
 	// The signed certificate is now owned by the WAL. Only after that fsync may
 	// its rebuildable admission index become visible in chaindata.
 	materializeStarted := time.Now()
-	materializedAdmissions, err := core.VerifyAndStoreCommonRPCAdmissionBatch(
-		admittedAdmissions[0].Batch,
+	materializedAdmissions, err := materializeCommonRPCAdmissions(
+		admittedAdmissions,
+		admittedTxs,
 		b.ChainConfig().ChainID,
 		genesisHash,
 	)

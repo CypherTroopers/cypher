@@ -181,6 +181,15 @@ func GetServerCoinBase() common.Address {
 	return m_config.serverInfo.coinbase
 }
 
+// WithServerCoinBase holds the identity stable while reading account-scoped
+// configuration. The callback must not change server identity or retain the
+// lock. Reward registry access follows the lock order server identity -> registry.
+func WithServerCoinBase(read func(common.Address)) {
+	m_config.muServerInfo.RLock()
+	defer m_config.muServerInfo.RUnlock()
+	read(m_config.serverInfo.coinbase)
+}
+
 func GetServerInfo(infoType ServerInfoType) string {
 	m_config.muServerInfo.RLock()
 	defer m_config.muServerInfo.RUnlock()

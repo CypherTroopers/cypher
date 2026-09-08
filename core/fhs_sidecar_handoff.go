@@ -240,6 +240,9 @@ func buildValidatedFHSSidecarLayout(config *params.ChainConfig, block *types.Blo
 			return nil, err
 		}
 		for _, batch := range batches {
+			if err := batch.ValidateVersion(); err != nil {
+				return nil, err
+			}
 			if err := validateCommonRPCAdmissionForBlock(batch, context.keyBlockNumber, block.Time()); err != nil {
 				return nil, err
 			}
@@ -266,6 +269,12 @@ func buildValidatedFHSSidecarLayout(config *params.ChainConfig, block *types.Blo
 			continue
 		}
 		rewardPositions[index] = position
+		if len(approvers) > index {
+			batch, reward := batches[refs[index].Batch], body.CommonTxRewards[position]
+			if reward.Approver != batch.Miner || reward.Version != batch.Version || reward.RewardRecipient != batch.RewardRecipient {
+				return nil, fmt.Errorf("common tx reward signer, version or recipient does not match selected admission for %s", tx.Hash())
+			}
+		}
 		delete(rewardIndex, tx.Hash())
 	}
 	if len(rewardIndex) != 0 {
@@ -316,15 +325,17 @@ func verifyAndPublishValidatedFHSSidecars(config *params.ChainConfig, block *typ
 // otherwise performs the exact deterministic fallback used by standalone
 // StateProcessor callers and concurrent cache misses.
 func takeOrValidateFHSSidecars(config *params.ChainConfig, block *types.Block, context fhsSidecarValidationContext, handoff *fhsSidecarHandoff) (*validatedFHSSidecars, error) {
+	// Verify the actual body commitments even on a cache hit; a stale block
+	// hash cache is not evidence that caller-supplied sidecars are unchanged.
+	if err := validateCommonTxSidecarRoots(block); err != nil {
+		return nil, err
+	}
 	if handoff != nil {
 		if validated := handoff.take(config, block, context); validated != nil {
 			return validated, nil
 		}
 	}
 	if err := validateFHSCommonRPCSidecarCardinality(config, block); err != nil {
-		return nil, err
-	}
-	if err := validateCommonTxSidecarRoots(block); err != nil {
 		return nil, err
 	}
 	validated, err := buildValidatedFHSSidecarLayout(config, block, context)

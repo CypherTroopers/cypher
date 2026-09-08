@@ -313,6 +313,9 @@ func buildCommonTxRewards(txs types.Transactions, receipts types.Receipts, batch
 			return nil, fmt.Errorf("Fair HotStuff transaction %s has invalid common RPC admission batch %d", txHash, ref.Batch)
 		}
 		batch := batches[ref.Batch]
+		if err := batch.ValidateVersion(); err != nil {
+			return nil, fmt.Errorf("Fair HotStuff transaction %s has invalid common RPC admission: %w", txHash, err)
+		}
 		if int(ref.Item) >= len(batch.TxHashes) || batch.TxHashes[ref.Item] != txHash || batch.Miner == (common.Address{}) {
 			return nil, fmt.Errorf("Fair HotStuff transaction %s has invalid common RPC admission item %d", txHash, ref.Item)
 		}
@@ -320,10 +323,12 @@ func buildCommonTxRewards(txs types.Transactions, receipts types.Receipts, batch
 		reward := new(big.Int).Div(actualFee, big.NewInt(5))
 		burn := new(big.Int).Sub(actualFee, reward)
 		rewards = append(rewards, &types.CommonTxReward{
-			TxHash:         txHash,
-			Approver:       batch.Miner,
-			ApproverReward: reward,
-			Burn:           burn,
+			Version:         batch.Version,
+			RewardRecipient: batch.RewardRecipient,
+			TxHash:          txHash,
+			Approver:        batch.Miner,
+			ApproverReward:  reward,
+			Burn:            burn,
 		})
 	}
 	return rewards, nil
@@ -339,15 +344,7 @@ func addFHSProposalSidecarWork(meter *core.FHSBlockWorkMeter, batches []*types.C
 }
 
 func applyCommonTxRewards(st *state.StateDB, rewards []*types.CommonTxReward) {
-	if st == nil {
-		return
-	}
-	for _, reward := range rewards {
-		if reward == nil || reward.Approver == (common.Address{}) || reward.ApproverReward == nil || reward.ApproverReward.Sign() <= 0 {
-			continue
-		}
-		st.AddBalance(reward.Approver, reward.ApproverReward)
-	}
+	core.ApplyCommonRPCRewards(st, rewards)
 }
 
 // currentProposalParent returns the exact parent whose state a new proposal

@@ -293,20 +293,22 @@ func TestFHSProposalMetersFinalRewardSidecar(t *testing.T) {
 	}
 	txHash := tx.Hash()
 	approver := common.Address{2}
-	admission := &types.CommonTxAdmissionBatch{ChainID: big.NewInt(1), GenesisHash: common.Hash{1}, Miner: approver, Timestamp: 1, TxHashes: []common.Hash{txHash}, Signature: make([]byte, 65)}
+	admission := &types.CommonTxAdmissionBatch{Version: types.CommonRPCVersionV2, RewardRecipient: common.HexToAddress("0x43"), ChainID: big.NewInt(1), GenesisHash: common.Hash{1}, Miner: approver, Timestamp: 1, TxHashes: []common.Hash{txHash}, Signature: make([]byte, 65)}
 	admission.TxRoot = types.DeriveCommonTxAdmissionTxRoot(admission.TxHashes)
 	admission.AdmissionID = types.CommonTxAdmissionID(admission)
 	refs := []types.CommonTxAdmissionRef{{Batch: 0, Item: 0}}
-	reward := &types.CommonTxReward{TxHash: txHash, Approver: approver, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
+	reward := &types.CommonTxReward{Version: types.CommonRPCVersionV2, RewardRecipient: common.HexToAddress("0x43"), TxHash: txHash, Approver: approver, ApproverReward: big.NewInt(1), Burn: big.NewInt(1)}
 	if err := addFHSProposalSidecarWork(seed(t), []*types.CommonTxAdmissionBatch{admission}, refs, []*types.CommonTxReward{reward}); err != nil {
 		t.Fatalf("normal final proposal sidecars rejected: %v", err)
 	}
 
 	huge := &types.CommonTxReward{
-		TxHash:         txHash,
-		Approver:       approver,
-		ApproverReward: new(big.Int).Lsh(big.NewInt(1), uint(params.MaxFHSCommonTxRewardBytesPerReward*8)),
-		Burn:           new(big.Int),
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0x43"),
+		TxHash:          txHash,
+		Approver:        approver,
+		ApproverReward:  new(big.Int).Lsh(big.NewInt(1), uint(params.MaxFHSCommonTxRewardBytesPerReward*8)),
+		Burn:            new(big.Int),
 	}
 	if err := addFHSProposalSidecarWork(seed(t), []*types.CommonTxAdmissionBatch{admission}, refs, []*types.CommonTxReward{huge}); err == nil || !strings.Contains(err.Error(), "reward 0 payload exceeds per-entry maximum") {
 		t.Fatalf("proposal accepted oversized final reward sidecar: %v", err)

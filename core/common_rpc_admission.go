@@ -12,6 +12,7 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
+	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
@@ -52,10 +53,11 @@ type CommonRPCAdmissionResult struct {
 }
 
 type commonRPCAdmissionIndexEntry struct {
-	batch     *types.CommonTxAdmissionBatch
-	item      uint16
-	storedAt  time.Time
-	updatedAt time.Time
+	batch              *types.CommonTxAdmissionBatch
+	verifiedCommitment common.Hash
+	item               uint16
+	storedAt           time.Time
+	updatedAt          time.Time
 	// finalized is published while the transaction's admission stripe is held,
 	// after the canonical DB batch commits and before the new head is exposed.
 	// Proposal readers can therefore reject a stale loaded pointer without a DB
@@ -63,12 +65,24 @@ type commonRPCAdmissionIndexEntry struct {
 	finalized atomic.Bool
 }
 
+func commonRPCVerifiedCommitment(batch *types.CommonTxAdmissionBatch) common.Hash {
+	if batch == nil {
+		return common.Hash{}
+	}
+	wire, err := rlp.EncodeToBytes(batch)
+	if err != nil {
+		return common.Hash{}
+	}
+	return crypto.Keccak256Hash(wire)
+}
+
 type commonRPCAdmissionBatchEntry struct {
-	batch          *types.CommonTxAdmissionBatch
-	storedAt       time.Time
-	updatedAt      time.Time
-	references     uint32
-	unreferencedAt time.Time
+	batch              *types.CommonTxAdmissionBatch
+	verifiedCommitment common.Hash
+	storedAt           time.Time
+	updatedAt          time.Time
+	references         uint32
+	unreferencedAt     time.Time
 }
 
 type commonRPCAdmissionDiskIndex struct {
@@ -223,6 +237,7 @@ func commonRPCAdmissionBatchesEqual(a, b *types.CommonTxAdmissionBatch) bool {
 		return a == b
 	}
 	if a.ChainID.Cmp(b.ChainID) != 0 || a.GenesisHash != b.GenesisHash || a.TxRoot != b.TxRoot ||
+		a.Version != b.Version || a.RewardRecipient != b.RewardRecipient ||
 		a.AdmissionID != b.AdmissionID || a.Miner != b.Miner || a.KeyBlockNumber != b.KeyBlockNumber ||
 		a.Timestamp != b.Timestamp || len(a.TxHashes) != len(b.TxHashes) {
 		return false
@@ -399,7 +414,8 @@ func loadPersistedCommonRPCAdmissionBatch(admissionID common.Hash, now time.Time
 	}
 	entry := &commonRPCAdmissionBatchEntry{
 		batch: copyCommonRPCAdmissionBatch(&disk.Batch), storedAt: storedAt, updatedAt: updatedAt,
-		references: disk.References, unreferencedAt: unreferencedAt,
+		verifiedCommitment: commonRPCVerifiedCommitment(&disk.Batch),
+		references:         disk.References, unreferencedAt: unreferencedAt,
 	}
 	actual, loaded := commonRPCAdmissionBatches.LoadOrStore(admissionID, entry)
 	if loaded {
@@ -430,7 +446,7 @@ func loadPersistedCommonRPCAdmissionIndexLocked(txHash common.Hash, now time.Tim
 	}
 	storedAt := unixTimeOr(disk.StoredAt, body.storedAt)
 	updatedAt := unixTimeOr(disk.UpdatedAt, storedAt)
-	entry := &commonRPCAdmissionIndexEntry{batch: body.batch, item: disk.Item, storedAt: storedAt, updatedAt: updatedAt}
+	entry := &commonRPCAdmissionIndexEntry{batch: body.batch, verifiedCommitment: body.verifiedCommitment, item: disk.Item, storedAt: storedAt, updatedAt: updatedAt}
 	actual, loaded := commonRPCAdmissionIndexes.LoadOrStore(txHash, entry)
 	if loaded {
 		existing, ok := actual.(*commonRPCAdmissionIndexEntry)
@@ -691,7 +707,8 @@ func copyCommonRPCAdmissionBatchEntry(entry *commonRPCAdmissionBatchEntry) *comm
 	}
 	return &commonRPCAdmissionBatchEntry{
 		batch: entry.batch, storedAt: entry.storedAt, updatedAt: entry.updatedAt,
-		references: entry.references, unreferencedAt: entry.unreferencedAt,
+		verifiedCommitment: entry.verifiedCommitment,
+		references:         entry.references, unreferencedAt: entry.unreferencedAt,
 	}
 }
 
@@ -775,7 +792,7 @@ func storeVerifiedCommonRPCAdmissionBatch(candidate *types.CommonTxAdmissionBatc
 		}
 		canonical = body.batch
 	} else {
-		body = &commonRPCAdmissionBatchEntry{batch: canonical, storedAt: now, updatedAt: now}
+		body = &commonRPCAdmissionBatchEntry{batch: canonical, verifiedCommitment: commonRPCVerifiedCommitment(canonical), storedAt: now, updatedAt: now}
 	}
 	bodyUpdates := make(map[common.Hash]*commonRPCAdmissionBatchEntry, len(affectedBatchIDs))
 	bodyUpdates[canonical.AdmissionID] = copyCommonRPCAdmissionBatchEntry(body)
@@ -789,6 +806,7 @@ func storeVerifiedCommonRPCAdmissionBatch(candidate *types.CommonTxAdmissionBatc
 		}
 		bodyUpdates[id] = copyCommonRPCAdmissionBatchEntry(entry)
 	}
+	verifiedCommitment := body.verifiedCommitment
 	for i, update := range changed {
 		if !update {
 			continue
@@ -813,6 +831,7 @@ func storeVerifiedCommonRPCAdmissionBatch(candidate *types.CommonTxAdmissionBatc
 		}
 		newBody.references++
 		planned[i].batch = canonical
+		planned[i].verifiedCommitment = verifiedCommitment
 		results[i].Batch = canonical
 	}
 	for _, update := range bodyUpdates {
@@ -880,7 +899,11 @@ func storeVerifiedCommonRPCAdmissionBatch(candidate *types.CommonTxAdmissionBatc
 // the crash-ordering boundary used by ingress: the certificate can first be
 // fsynced in the unified WAL, then materialized through
 // VerifyAndStoreCommonRPCAdmissionBatch.
-func SignCommonRPCAdmissions(txHashes []common.Hash, miner common.Address, chainID *big.Int, genesisHash common.Hash, keyBlockNumber, timestamp uint64) ([]CommonRPCAdmissionResult, error) {
+func SignCommonRPCAdmissions(txHashes []common.Hash, miner common.Address, chainID *big.Int, genesisHash common.Hash, keyBlockNumber, timestamp uint64, rewardRecipient common.Address) ([]CommonRPCAdmissionResult, error) {
+	version, recipient := types.CommonRPCVersionV2, rewardRecipient
+	if recipient == (common.Address{}) || recipient == miner {
+		return nil, fmt.Errorf("common RPC admission requires a configured reward recipient distinct from miner")
+	}
 	if len(txHashes) == 0 || len(txHashes) > types.MaxCommonTxAdmissionBatchItems {
 		return nil, fmt.Errorf("invalid common RPC admission transaction count %d", len(txHashes))
 	}
@@ -898,6 +921,7 @@ func SignCommonRPCAdmissions(txHashes []common.Hash, miner common.Address, chain
 		seen[txHash] = struct{}{}
 	}
 	batch := &types.CommonTxAdmissionBatch{
+		Version: version, RewardRecipient: recipient,
 		ChainID: copyAdmissionChainID(chainID), GenesisHash: genesisHash, Miner: miner,
 		KeyBlockNumber: keyBlockNumber, Timestamp: timestamp, TxHashes: append([]common.Hash(nil), txHashes...),
 	}
@@ -907,6 +931,7 @@ func SignCommonRPCAdmissions(txHashes []common.Hash, miner common.Address, chain
 		return nil, err
 	}
 	if batch.ChainID == nil || batch.ChainID.Cmp(chainID) != 0 || batch.GenesisHash != genesisHash || batch.Miner != miner ||
+		batch.Version != version || batch.RewardRecipient != recipient ||
 		batch.KeyBlockNumber != keyBlockNumber || batch.Timestamp != timestamp || len(batch.TxHashes) != len(txHashes) {
 		return nil, fmt.Errorf("common RPC admission signer modified signed batch fields")
 	}
@@ -929,8 +954,8 @@ func SignCommonRPCAdmissions(txHashes []common.Hash, miner common.Address, chain
 // SignAndRecordCommonRPCAdmissions retains the legacy single-call API for
 // non-ingress callers. New durable ingress must call SignCommonRPCAdmissions,
 // fsync its WAL intent, then call VerifyAndStoreCommonRPCAdmissionBatch.
-func SignAndRecordCommonRPCAdmissions(txHashes []common.Hash, miner common.Address, chainID *big.Int, genesisHash common.Hash, keyBlockNumber, timestamp uint64) ([]CommonRPCAdmissionResult, error) {
-	signed, err := SignCommonRPCAdmissions(txHashes, miner, chainID, genesisHash, keyBlockNumber, timestamp)
+func SignAndRecordCommonRPCAdmissions(txHashes []common.Hash, miner common.Address, chainID *big.Int, genesisHash common.Hash, keyBlockNumber, timestamp uint64, rewardRecipient common.Address) ([]CommonRPCAdmissionResult, error) {
+	signed, err := SignCommonRPCAdmissions(txHashes, miner, chainID, genesisHash, keyBlockNumber, timestamp, rewardRecipient)
 	if err != nil {
 		return nil, err
 	}
@@ -1116,7 +1141,7 @@ func validateCommonRPCAdmissionForBlock(batch *types.CommonTxAdmissionBatch, key
 	return nil
 }
 
-func commonRPCAdmissionForBlockTransaction(tx *types.Transaction, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, timestamp uint64, now time.Time) (CommonRPCAdmissionResult, error) {
+func commonRPCAdmissionForBlockTransaction(tx *types.Transaction, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, txBlockNumber, timestamp uint64, now time.Time) (CommonRPCAdmissionResult, error) {
 	if tx == nil {
 		return CommonRPCAdmissionResult{}, fmt.Errorf("nil transaction in common RPC admission set")
 	}
@@ -1133,6 +1158,9 @@ func commonRPCAdmissionForBlockTransaction(tx *types.Transaction, config *params
 		batch := entry.batch
 		if batch.ChainID == nil || batch.ChainID.Cmp(config.ChainID) != 0 || batch.GenesisHash != genesisHash {
 			return CommonRPCAdmissionResult{}, fmt.Errorf("common RPC admission for %s belongs to another chain genesis", txHash)
+		}
+		if err := batch.ValidateVersion(); err != nil {
+			return CommonRPCAdmissionResult{}, err
 		}
 		if err := validateCommonRPCAdmissionForBlock(batch, keyBlockNumber, timestamp); err != nil {
 			return CommonRPCAdmissionResult{}, err
@@ -1158,15 +1186,13 @@ func HasCommonRPCAdmissionForBlock(tx *types.Transaction, config *params.ChainCo
 // certificate selection in one lookup. Block number is intentionally not part
 // of the pre-admission certificate boundary.
 func CommonRPCAdmissionForBlockTransaction(tx *types.Transaction, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, txBlockNumber, timestamp uint64) (CommonRPCAdmissionResult, error) {
-	_ = txBlockNumber
-	return commonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, timestamp, time.Now())
+	return commonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, txBlockNumber, timestamp, time.Now())
 }
 
 // BuildCommonTxAdmissions returns unique certificates in AdmissionID order and
 // refs aligned with block transaction order. Failure is mandatory for missing,
 // future-boundary, unauthorized, wrong-chain, or wrong-genesis evidence.
 func BuildCommonTxAdmissions(txs types.Transactions, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, txBlockNumber, timestamp uint64) ([]*types.CommonTxAdmissionBatch, []types.CommonTxAdmissionRef, error) {
-	_ = txBlockNumber
 	if config == nil || !config.FairHotstuff || config.ChainID == nil || config.ChainID.Sign() <= 0 || genesisHash == (common.Hash{}) {
 		return nil, nil, fmt.Errorf("cannot build common RPC admissions without a valid Fair HotStuff chain identity")
 	}
@@ -1174,7 +1200,7 @@ func BuildCommonTxAdmissions(txs types.Transactions, config *params.ChainConfig,
 	maybeCleanupCommonRPCAdmissions(now, false)
 	selections := make([]CommonRPCAdmissionResult, len(txs))
 	for i, tx := range txs {
-		selection, err := commonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, timestamp, now)
+		selection, err := commonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, txBlockNumber, timestamp, now)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1189,7 +1215,6 @@ func BuildCommonTxAdmissions(txs types.Transactions, config *params.ChainConfig,
 // revalidating transaction alignment, chain identity, signer authorization,
 // temporal boundaries and the entry's atomic finalization tombstone.
 func BuildCommonTxAdmissionsFromResults(txs types.Transactions, selections []CommonRPCAdmissionResult, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber, txBlockNumber, timestamp uint64) ([]*types.CommonTxAdmissionBatch, []types.CommonTxAdmissionRef, error) {
-	_ = txBlockNumber
 	if config == nil || !config.FairHotstuff || config.ChainID == nil || config.ChainID.Sign() <= 0 || genesisHash == (common.Hash{}) {
 		return nil, nil, fmt.Errorf("cannot build common RPC admissions without a valid Fair HotStuff chain identity")
 	}
@@ -1211,11 +1236,17 @@ func BuildCommonTxAdmissionsFromResults(txs types.Transactions, selections []Com
 		if batch.ChainID == nil || batch.ChainID.Cmp(config.ChainID) != 0 || batch.GenesisHash != genesisHash {
 			return nil, nil, fmt.Errorf("common RPC admission for %s belongs to another chain genesis", tx.Hash())
 		}
+		if err := batch.ValidateVersion(); err != nil {
+			return nil, nil, err
+		}
 		if err := validateCommonRPCAdmissionForBlock(batch, keyBlockNumber, timestamp); err != nil {
 			return nil, nil, err
 		}
 		id := batch.AdmissionID
 		if _, exists := unique[id]; !exists {
+			if selection.entry.verifiedCommitment == (common.Hash{}) || commonRPCVerifiedCommitment(batch) != selection.entry.verifiedCommitment {
+				return nil, nil, fmt.Errorf("common RPC verified admission %s was modified after validation", id)
+			}
 			unique[id] = batch
 			ids = append(ids, id)
 		}

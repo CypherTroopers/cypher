@@ -4,6 +4,8 @@
 
 ### PoW x EVM (through OSAKA) x RPC reward x Mining Reward
 
+New to operating a Common RPC node? Start with the [beginner setup walkthrough](#beginner-setup-common-rpc-node-and-rewards) after building the executable.
+
 
 ## Preparations
 
@@ -18,7 +20,7 @@
 ### Clone
 
 ```bash
-git clone -b Fair-HotStuff-FHS-D --single-branch https://github.com/CypherTroopers/cypher.git
+git clone -b FHS-D --single-branch https://github.com/CypherTroopers/cypher.git
 cd cypher
 ```
 
@@ -149,7 +151,7 @@ This branch implements the FHS-C current-leader QC-broadcast change and the safe
 - Votes, timeout votes, QCs and safety watermarks are synchronously written before the corresponding message or state transition becomes visible. Reconstructable proposal bodies use a separate durable cache and can be repaired from peers. A persisted leader signature authenticates relayed manifests while missing transactions are fetched, including after the proposer stops. Ahead-of-receiver donors serve historical requests, and a temporary data retrieval timeout retries the retained HighQC. Restart restores the WAL and fails closed on corruption or conflicting same-view votes.
 - The QC producer cannot grind the next leader by choosing a signature or signer subset. Leader selection is a domain-separated PRF of the genesis seed, chain ID, absolute view, and historical committee hash, with unbiased rejection sampling.
 
-The supplied [`genesis.json`](genesis.json) commits the complete Fair HotStuff configuration in the genesis header `mixHash`, including the chain ID, committee, fork settings, transport policy, and `fairHotstuffSeed`. This intentionally changes the genesis block hash; existing databases from the old protocol must not be reused.
+The supplied [`genesis.json`](genesis.json) commits the complete Fair HotStuff configuration in the genesis header `mixHash`, including the chain ID, committee, EVM fork settings, transport policy, and `fairHotstuffSeed`. The `cypher-fhs-genesis-config-v3` commitment domain identifies the integrated Common RPC reward-recipient protocol. This changes the genesis block hash; existing databases from the old protocol must not be reused.
 
 Common RPC operators are no longer listed in genesis. Initialize every node from the updated genesis in a fresh data directory, including fresh transaction ingress and outbox databases.
 
@@ -157,50 +159,340 @@ The finality-proof format, signed manifest envelope, and certificate recovery re
 
 The committed seed is a trusted-genesis implementation of the paper's fair-election assumption for a static Byzantine set. It removes current-leader QC grinding, but the schedule is predictable after genesis and the seed creator must generate the seed honestly. Deployments that require resistance to a malicious seed ceremony, adaptive corruption, or targeted future-leader denial of service should replace it with a DKG-backed threshold beacon or an independently verified external beacon.
 
-## run a node on Linux
+## Beginner setup: Common RPC node and rewards
+
+This walkthrough sets up a **Common RPC node** that accepts users' signed transactions and earns their admission fees. It does not set up the validator committee. The network's validators must already be configured and running before transactions can finalize and rewards can appear.
+
+### 1. Understand the three accounts
+
+| Name used below | Purpose | Where its private key belongs |
+|---|---|---|
+| **A: signing account** | Your Common node signs admission proofs and delivery packets with A | In this node's encrypted keystore; unlock only A |
+| **B: reward address** | Receives this node's Common RPC transaction rewards directly | In a separate wallet/environment; never import B's key into the Common node |
+| **U: user account** | Signs and pays for the transactions submitted to public RPC | In the user's own wallet |
+
+Prepare B first. Copy its complete address: `0x` followed by 40 hexadecimal characters. B must be nonzero and different from A. B does not need an existing balance or a key on this server. An ordinary address or a contract address can receive rewards.
+
+You also need the new network's agreed **genesis.json** and **bootnode enode URLs** from its operator. Use the same genesis as the validators. A Common node alone cannot create a working network, and old-network balances or pending transactions do not automatically move to this new genesis.
+
+### 2. Build and initialize a fresh data directory
+
+Run the build instructions for your operating system above. Use an executable built from the updated FHS-D source; an older checked-in binary may not contain these RPC methods.
+
+The main commands below use **Bash on Linux or macOS**. Run them from the repository directory. Windows equivalents are provided below step 4.
+
+**Terminal 1 — normal shell:**
+
 ```bash
+CYPHER_BIN="$PWD/build/bin/cypher"
+CYPHER_DATA="$PWD/data-common-fhsd"
+umask 077
+mkdir -m 700 "$CYPHER_DATA" && \
+  "$CYPHER_BIN" --datadir "$CYPHER_DATA" init ./genesis.json
+```
+
+`Successfully wrote genesis state` means initialization succeeded. Do this once for a new directory. If `mkdir` reports that the directory already exists, the initialization command above is not run: choose a new name for a fresh network, or skip initialization when restarting this same network. Do not delete your old datadir, keystore, WAL, or outbox to make this command succeed.
+
+Keep the same datadir path in every later command. The node stores its chain, encrypted A key, and reward settings there. The private directory permissions also protect access to the IPC socket created inside it.
+
+### 3. Start the Common node
+
+Still in **Terminal 1**, paste the comma-separated bootnode enode URLs supplied by the network operator when prompted. These are public peer addresses, not private keys.
+
+```bash
+read -r -p "Paste the new network's bootnode enode URLs: " CYPHER_BOOTNODES
+CYPHER_RPC_BIND="127.0.0.1"
+
+"$CYPHER_BIN" \
+  --datadir "$CYPHER_DATA" \
+  --networkid 10101919 \
+  --syncmode full \
+  --rnetport 7200 \
+  --port 6000 \
+  --bootnodes "${CYPHER_BOOTNODES:?Enter the network bootnode URLs first}" \
+  --ipcpath cypher.ipc \
+  --http --http.addr "$CYPHER_RPC_BIND" --http.port 8000 \
+  --http.api eth,net,web3,txpool \
+  --ws --ws.addr "$CYPHER_RPC_BIND" --ws.port 9251 \
+  --ws.api eth,net,web3,txpool
+```
+
+Leave this terminal running. It displays node logs; it is not the JavaScript console. Do not start a second node against the same datadir.
+
+| Setting | Meaning in this example |
+|---|---|
+| `10101919` | Network ID used by the supplied network; its wallet chain ID is also 10101919 |
+| `--rnetport 7200` | Selects the Common bridge role with the supplied genesis, whose committee ports are 7102 through 7114 |
+| `6000` | P2P port for peer connectivity |
+| `8000` | HTTP JSON-RPC port |
+| `9251` | WebSocket JSON-RPC port |
+| `cypher.ipc` | Local administrative socket inside the datadir on Linux/macOS |
+| `127.0.0.1` | Allows the initial HTTP/WS checks from this computer only |
+
+For a customized genesis, obtain the matching network ID and a Common rnet port that is **not one of its committee ports**. With the supplied configuration, look for `TxQUIC auto role: common RPC FHS bridge` in the startup log. TxQUIC forwarding is selected automatically; public HTTP/3 is a separate optional service and is not needed for this walkthrough. A firewall must allow the required peer traffic and outbound UDP to the network's validator TxQUIC endpoints.
+
+Startup messages that the signing account is not configured yet are expected on the first run. A node can start and synchronize before A or B is configured. Do not add `--mine`, `--unlock`, a command-line password, or `--allow-insecure-unlock` for this Common RPC setup.
+
+### 4. Open the local IPC console
+
+Open **Terminal 2** on the same computer, change to the same repository directory, and attach to the socket belonging to Terminal 1:
+
+```bash
+./build/bin/cypher attach "$PWD/data-common-fhsd/cypher.ipc"
+```
+
+If you chose a different datadir, substitute its actual path. Successful attachment displays the JavaScript `>` prompt. The `personal.*`, `miner.*`, and `eth.*` commands below go at this prompt, not in Bash. Do not copy the `>` prompt itself.
+
+Use **IPC attach** here. Attaching to `http://127.0.0.1:8000` cannot register B. The embedded console started by the existing launcher scripts also uses an in-process connection, so open this separate IPC session when using those scripts.
+
+Type `exit` to close the attached console when finished. The node in Terminal 1 keeps running.
+
+<details>
+<summary>Windows: PowerShell equivalents for steps 2–4</summary>
+
+Build first in MSYS2 MINGW64 as described above. You can then run the resulting executable from PowerShell in the repository directory. Keep its companion DLLs next to the executable.
+
+**PowerShell window 1 — first initialization only:**
+
+```powershell
+$ErrorActionPreference = "Stop"
+$CYPHER_BIN = Join-Path $PWD "build\bin\cypher.exe"
+$CYPHER_DATA = Join-Path $PWD "data-common-fhsd"
+if (Test-Path $CYPHER_DATA) { throw "Choose a fresh directory, or skip initialization for a same-network restart." }
+New-Item -ItemType Directory -Path $CYPHER_DATA | Out-Null
+```
+
+Before proceeding, restrict this folder's Windows Security permissions to the operator account and the administrators required by your deployment. Keep the local named pipe under that account's access controls; never proxy it to TCP.
+
+```powershell
+& $CYPHER_BIN --datadir $CYPHER_DATA init .\genesis.json
+if ($LASTEXITCODE -ne 0) { throw "Genesis initialization failed; do not continue." }
+```
+
+**Start the node in the same window:**
+
+```powershell
+$CYPHER_BOOTNODES = Read-Host "Paste the new network's bootnode enode URLs"
+if ([string]::IsNullOrWhiteSpace($CYPHER_BOOTNODES)) { throw "Bootnode URLs are required." }
+& $CYPHER_BIN `
+  --datadir $CYPHER_DATA `
+  --networkid 10101919 `
+  --syncmode full `
+  --rnetport 7200 `
+  --port 6000 `
+  --bootnodes $CYPHER_BOOTNODES `
+  --ipcpath cypher-common-fhsd.ipc `
+  --http `
+  --http.addr 127.0.0.1 `
+  --http.port 8000 `
+  --http.api eth,net,web3,txpool `
+  --ws `
+  --ws.addr 127.0.0.1 `
+  --ws.port 9251 `
+  --ws.api eth,net,web3,txpool
+```
+
+**PowerShell window 2 — attach to the local named pipe:**
+
+```powershell
+.\build\bin\cypher.exe attach '\\.\pipe\cypher-common-fhsd.ipc'
+```
+
+Continue with the same JavaScript commands below. Use a unique pipe name for each local node. The Windows commands have been checked against the CLI and IPC implementation; this walkthrough has not been executed on Windows.
+
+</details>
+
+### 5. Create A, register B, and unlock A
+
+At the **IPC JavaScript prompt**, create A once:
+
+```javascript
+var A = personal.newAccount();
+A;
+```
+
+Enter a new password at `Passphrase:` and repeat it. The password is not displayed. Save A's returned public address and keep a protected backup of its encrypted keystore and password. You will need the same A after a restart.
+
+If you already created A in this datadir, do not create another account. Instead, list the local addresses and select the intended one:
+
+```javascript
+personal.listAccounts;
+var A = "0x<replace with your complete existing A address>";
+```
+
+Replace the placeholder below with B's actual address from your separate wallet, then register it:
+
+```javascript
+var B = "0x<replace with your complete B address>";
+personal.setCommonRPCRewardAddress(A, B);
+personal.getCommonRPCRewardAddress(A);
+```
+
+Enter **A's password** when prompted. B's password or private key is never requested. Successful output contains `configured: true`, `signer` equal to A, and `rewardRecipient` equal to B. It also identifies the chain. Registration is required from the first admission; no activation height is needed.
+
+Now select A as the node's internal signer and unlock it for one hour:
+
+```javascript
+miner.setEtherbase(A);
+personal.unlockAccount(A, null, 3600);
+eth.coinbase;
+```
+
+The first two commands should return `true`, and `eth.coinbase` should display A. Despite the existing `setEtherbase` name, B remains the Common RPC reward recipient. Registration does not unlock A or extend an existing unlock deadline.
+
+The `null` argument requests hidden password input; `3600` is seconds. After an hour, call the same unlock command again when you want new admissions to continue. No balance is required on A merely to sign admission proofs. U pays the submitted transaction's fee from U's own balance. Other uses of A, including separate mining rewards, are outside this walkthrough.
+
+The A-to-B setting is saved automatically under `data-common-fhsd/cypher/common-rpc-rewards/`, scoped to ChainID + GenesisHash + A. Do not edit the JSON file to change B; use the authenticated setter.
+
+### 6. Check connectivity, then provide your RPC URL
+
+In the **IPC console**, check:
+
+```javascript
+net.peerCount;
+eth.syncing;
+eth.blockNumber;
+eth.chainId();
+```
+
+Expect peers on a running network. `eth.syncing` returns progress while syncing and `false` when no sync is active; `false` alone does not prove that an isolated node is up to date. The supplied chain ID is `10101919` (hex `0x9a249f`). Confirm peer connectivity and chain progress with the network operator before expecting finality.
+
+For a separate HTTP check, open a **normal Bash terminal**, not the IPC console:
+
+```bash
+curl -sS http://127.0.0.1:8000 \
+  -H 'Content-Type: application/json' \
+  --data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'
+```
+
+The response should contain `"result":"0x9a249f"` for the supplied genesis.
+
+To serve users on other computers, set `CYPHER_RPC_BIND="0.0.0.0"` in the Bash startup settings for the next launch; on Windows, change both `--http.addr` and `--ws.addr` accordingly. Allow the intended HTTP/WS ports through your firewall and give users your actual reachable server address. `0.0.0.0` is a listening setting, not a URL to enter in a wallet. A remote wallet's `127.0.0.1` refers to the wallet's own computer.
+
+For an HTTPS service and browser dApps, configure TLS at your chosen endpoint and restrict the accepted hostname/origins to your own service. Example additional flags, with the example domains replaced by your actual domains:
+
+```text
+--http.vhosts rpc.example.com
+--http.corsdomain https://wallet.example.com
+--ws.origins https://wallet.example.com
+```
+
+These flags do not grant administrative access. HTTP, WS, and HTTP/3 reject node-wallet signing, sending, key management, and B registration even when A is unlocked. IPC stays local and must not be exposed through a public proxy.
+
+### 7. Send a user-signed transaction and check B's reward
+
+In U's own wallet, add the network using:
+
+| Wallet setting | Value for the supplied network |
+|---|---|
+| Network name | A descriptive name, such as `Cypher FHS-D` |
+| RPC URL | Your reachable HTTP/HTTPS RPC URL; `http://127.0.0.1:8000` only when the wallet runs on the node computer |
+| Chain ID | `10101919` |
+| Currency symbol | `CPH` |
+
+U needs funds on **this new chain** to pay transaction fees. Obtain test funds through the network's normal funding process. Do not import U's or B's private key into the Common node. Send a small test transaction from U's wallet; the wallet signs it locally and submits the signed transaction to RPC. Transfers, contract calls, and deployments use this same path.
+
+Before sending, you can record B's starting balance in the **IPC console**:
+
+```javascript
+var balanceBefore = eth.getBalance(B);
+```
+
+<details>
+<summary>Optional: submit an already signed raw TX with curl (Bash)</summary>
+
+This broadcasts the supplied transaction and uses U's funds for its fee. Obtain the signed transaction hex from U's own wallet, then run in a normal Bash terminal on the node computer:
+
+```bash
+read -r -p "Paste the user-signed raw TX hex: " SIGNED_RAW_TX
+curl -sS http://127.0.0.1:8000 \
+  -H 'Content-Type: application/json' \
+  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_sendRawTransaction\",\"params\":[\"$SIGNED_RAW_TX\"],\"id\":1}"
+```
+
+A successful result is the TX hash. It confirms admission, not block finality. Signed raw batches and options remain supported by `eth_sendRawTransactions` and `eth_sendRawTransactionWithOpts`.
+
+</details>
+
+Copy the TX hash returned by the wallet or RPC. In the **IPC console**, replace the placeholder and inspect its receipt:
+
+```javascript
+var txHash = "0x<replace with the complete transaction hash>";
+var receipt = eth.getTransactionReceipt(txHash);
+receipt;
+```
+
+If the result is `null`, wait for finality and repeat the receipt lookup. Once it is an object, check:
+
+```javascript
+receipt.commonTxApprover;
+receipt.commonTxRewardRecipient;
+receipt.commonTxApproverReward;
+receipt.commonTxBurn;
+web3.fromWei(eth.getBalance(B), "ether").toString(10);
+web3.fromWei(eth.getBalance(B).minus(balanceBefore), "ether").toString(10);
+```
+
+For a TX credited to your Common node, the first field identifies A and the second identifies B. The reward is `floor(gasUsed * effectiveGasPrice / 5)`, paid directly to B. A earns no part of this Common TX reward. `"ether"` is the web3 unit name for 10^18 wei; the balance here is in CPH. The balance change can also include other transfers/rewards, so distinguish those when checking the amount. If another Common operator's valid admission wins, the receipt identifies that operator and its recipient instead.
+
+### 8. Restart safely or change B later
+
+For a normal restart of this same network, reuse the datadir and repeat the node start command; do not run initialization again. In a new terminal, first restore the `CYPHER_BIN` and `CYPHER_DATA` assignments from step 2, then follow step 3. Skip the directory creation and genesis initialization commands. Reattach by IPC and select/unlock the existing A:
+
+```javascript
+var A = "0x<replace with your saved A address>";
+miner.setEtherbase(A);
+personal.getCommonRPCRewardAddress(A);
+personal.unlockAccount(A, null, 3600);
+```
+
+The B registration survives restart, but the unlocked state does not. `miner.setEtherbase(A)` changes the running process; to select A automatically on later launches, add `--miner.etherbase "0x<your actual A address>"` to your saved startup command. That public address is safe to put in configuration; its password is not. Continue unlocking through IPC.
+
+To direct future admissions to a new address C, prepare C separately and run in IPC:
+
+```javascript
+var C = "0x<replace with the complete new reward address>";
+personal.setCommonRPCRewardAddress(A, C);
+personal.getCommonRPCRewardAddress(A);
+```
+
+Enter A's password again. Already accepted transactions and retries retain their original B proof; only new transactions use C. This operation does not move B's existing funds.
+
+### Common problems
+
+| Symptom | What to check |
+|---|---|
+| `method not found` for reward registration | Use actual IPC attach and the newly built executable. HTTP/WS/HTTP/3 and the embedded in-process console cannot register B |
+| `Common RPC reward recipient is not configured` | Register B for the same A shown by `eth.coinbase`, on this chain and datadir |
+| `authentication needed`, locked account, or signing error | Select the intended A and unlock it through IPC; check whether the one-hour deadline expired |
+| Incorrect password or invalid recipient error | Enter A's password and a complete nonzero B address different from A; the old preference remains unchanged |
+| Cannot open IPC | Keep Terminal 1 running; use its actual socket/pipe path and operator account; check private-directory/pipe permissions |
+| Zero peers, delivery retries, or receipt stays `null` | Check the agreed genesis, bootnode URLs, synchronization, validator availability, and required TCP/UDP connectivity. An admission response alone is not finality |
+| Genesis mismatch on startup | Use the agreed updated genesis with a fresh datadir for the new network; preserve old data instead of deleting it |
+| Registry cannot be read or saved | Check datadir permissions and storage; repair the cause. Do not replace it with an empty file or expect fallback payment to A |
+| Node is running but no rewards appear | Rewards require submitted TXs that finalize with your selected admission; uptime alone does not earn this fee reward |
+
+The unlocked A key still exists inside the node process. Protect the OS account, keystore backups, and IPC access. These RPC restrictions do not protect against an attacker who controls that process or the operator account.
+
+For the exact API inventory, storage guarantees, and remaining platform limitations, see the [operation guide](docs/fhsd-rpc-reward-recipient.md) and [verification record](docs/fhsd-rpc-reward-verification.md).
+
+### Using the existing launcher scripts
+
+The scripts below are alternatives to the manual startup command. Review their datadir, binary, genesis, peer, and bind settings before running one; do not run it alongside the manual node against the same datadir. The Unix scripts set `DATADIR`, while the Windows script sets `DATADIR_NAME`. Their embedded console is not IPC, so use a separate IPC attach session for B registration as shown above.
+
+```bash
+# Linux
 ./colossusX_linux.sh
 ```
-## run a node on Mac
+
 ```bash
+# macOS
 ./colossusX_mac.sh
 ```
-## run a node on Windows
-```bash
-./colossusX_windows.ps1
-```
-## get RPC owner rewards
 
-Common RPC operators use their own local account; no genesis registration is required. A Common RPC node can start before the account is created. Select and unlock the signing account before submitting transactions through it. Existing transaction submission APIs and wallets continue to work without an additional user signature.
-
-1. Create an account:
-
-```javascript
-personal.newAccount("your password")
-```
-
-2. Start mining if required:
-
-```javascript
-miner.start(5, "your address", "your password")
-```
-
-3. Select the Common RPC signing and reward account:
-
-```javascript
-miner.setEtherbase("your address")
-```
-
-4. Unlock the account for transaction-approval RPC rewards:
-
-```javascript
-personal.unlockAccount("your address", "your password", 0)
-```
-
-5. Check the wallet balance after admitted transactions finalize:
-
-```javascript
-web3.fromWei(eth.getBalance("your address"), "ether")
+```powershell
+# Windows
+.\colossusX_windows.ps1
 ```
 
 ## setting http/3 QUIC RPC port(example)
@@ -237,228 +529,46 @@ Common miners can earn more transaction admission rewards if more users send tra
 
 ## Common RPC Reward Rule
 
-When a transaction admitted by a common miner is included in a finalized block, the actual transaction fee is split as follows:
+Every Common RPC admission identifies signing account A and a distinct reward recipient B. A signs the complete proof, including B. Validators require the matching A and B in the reward record; they do not use their local reward preference to decide block payouts.
+
+The actual transaction fee is split without changing its calculation or rounding:
 
 ```text
-20% → common RPC miner reward
-80% → burned
-```
-
-The actual transaction fee is calculated from the real execution result:
-
-```text
-actualTxFee = gasUsed × effectiveGasPrice
-commonRpcReward = actualTxFee / 5
+actualTxFee = gasUsed * effectiveGasPrice
+commonRpcReward = floor(actualTxFee / 5)
 commonRpcBurn = actualTxFee - commonRpcReward
 ```
 
-The validator verifies the reward values during state processing.
+After every transaction in the block executes, rewards are aggregated by recipient and credited directly to B. There is no intermediate credit to A, automatic transfer, contract call to B, or claim transaction. A missing B prevents a new admission; it never restores payment to A.
 
-If the included `CommonTxReward` does not match the actual gas used and effective gas price, the block is rejected.
+For a transaction using 21,000 gas at an effective gas price of 1 gwei, B receives 4,200,000,000,000 wei (0.0000042 CPH), and 16,800,000,000,000 wei is burned. Other reward types retain their existing recipients and amounts.
 
 ## RPC Output
 
-Common RPC admission and reward data can be checked through:
+Use `eth_getTransactionReceipt` and `eth_getTransactionByHash`, or the console equivalents `eth.getTransactionReceipt(txHash)` and `eth.getTransaction(txHash)`.
 
-```text
-eth_getTransactionReceipt
-eth_getTransactionByHash
+| Field | Meaning |
+|---|---|
+| `commonTxApprover` | Admission signer A |
+| `commonTxRewardRecipient` | Actual reward recipient B |
+| `commonTxApproverReward` | Common RPC fee reward credited to B; existing field name retained |
+| `commonTxBurn` | Burned remainder of the actual fee |
+| `commonTxAdmissionRoot` | Block commitment to the signed admissions and references |
+| `commonTxRewardRoot` | Block commitment to reward records |
+| `commonTxAdmissionChainId` | Chain ID bound to the proof |
+| `commonTxAdmissionKeyBlockNumber` | Admission's key-block boundary |
+| `commonTxAdmissionTimestamp` | Signed admission timestamp |
+| `commonTxAdmissionSignature` | A's signature over the admission payload |
+
+For a client connected to public RPC:
+
+```javascript
+var receipt = eth.getTransactionReceipt(txHash);
+receipt.commonTxApprover;
+receipt.commonTxRewardRecipient;
+receipt.commonTxApproverReward;
+receipt.commonTxBurn;
+eth.getBalance(receipt.commonTxRewardRecipient);
 ```
 
-JavaScript console equivalents:
-
-```text
-eth.getTransactionReceipt(txHash)
-eth.getTransaction(txHash)
-```
-
-Main additional fields:
-
-```text
-commonRpcMiner
-commonRpcReward
-commonRpcBurn
-commonTxAdmissionRoot
-commonTxRewardRoot
-commonTxAdmissionChainId
-commonTxAdmissionKeyBlockNumber
-commonTxAdmissionTxBlockNumber
-commonTxAdmissionTimestamp
-commonTxAdmissionSignature
-```
-
-Example:
-
-```json
-{
-  "transactionHash": "0xda4ae1a37dd98beaace23ba670280c26e410177ef8bc7cea78857a4775e17f4e",
-  "blockHash": "0xbda50a751138e7a0d5d3ae4275e1ef36698f362c4e320a54dc6a61b550fbd8d4",
-  "blockNumber": "0x2",
-  "transactionIndex": "0x0",
-  "commonRpcMiner": "0x946d4abb364716fd2f8403df28fa4f2b5e953d62",
-  "commonRpcReward": "0x3d1e3821000",
-  "commonRpcBurn": "0xf478e084000",
-  "commonTxAdmissionChainId": "0x9a249f",
-  "commonTxAdmissionRoot": "0x7b0ac32c2a18e85c754af34efe8ec8de14b77e754d323e28eddd6a896b17c9dd",
-  "commonTxRewardRoot": "0xdaf7c9c4144355ae34108fcf9fd9b2e1b5e113083f25d72c3ebe47cb3a47ff54",
-  "commonTxAdmissionSignature": "0x..."
-}
-```
-
-## Example Fee Calculation
-
-For a normal transfer:
-
-```text
-gasUsed = 21000
-effectiveGasPrice = 1,000,000,000 wei
-```
-
-Total transaction fee:
-
-```text
-21000 × 1,000,000,000
-= 21,000,000,000,000 wei
-= 0.000021 CPH
-```
-
-Common miner reward:
-
-```text
-20% = 4,200,000,000,000 wei
-    = 0.0000042 CPH
-```
-
-Burn:
-
-```text
-80% = 16,800,000,000,000 wei
-    = 0.0000168 CPH
-```
-
-Example hex values:
-
-```text
-commonRpcReward = 0x3d1e3821000
-commonRpcBurn   = 0xf478e084000
-```
-
-## Bash Test Commands
-
-Set RPC endpoint, transaction hash, and common miner address:
-
-```bash
-RPC_URL="http://167.86.76.166:8000"
-TX_HASH="0xee94ceccbb785ee41e479f6ad4a7c04b0a3f0bfe2362d90fa0a05e04afaddec5"
-MINER_ADDR="0x946d4abb364716fd2f8403df28fa4f2b5e953d62"
-```
-
-Check transaction receipt:
-
-```bash
-curl -s -X POST "$RPC_URL" \
-  -H "Content-Type: application/json" \
-  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$TX_HASH\"],\"id\":1}" | jq
-```
-
-Check transaction details:
-
-```bash
-curl -s -X POST "$RPC_URL" \
-  -H "Content-Type: application/json" \
-  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionByHash\",\"params\":[\"$TX_HASH\"],\"id\":1}" | jq
-```
-
-Check common miner balance:
-
-```bash
-curl -s -X POST "$RPC_URL" \
-  -H "Content-Type: application/json" \
-  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"$MINER_ADDR\",\"latest\"],\"id\":1}" | jq
-```
-
-Show only common RPC reward fields from the receipt:
-
-```bash
-curl -s -X POST "$RPC_URL" \
-  -H "Content-Type: application/json" \
-  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$TX_HASH\"],\"id\":1}" \
-| jq '.result | {
-  transactionHash,
-  blockHash,
-  blockNumber,
-  transactionIndex,
-  commonRpcMiner,
-  commonRpcReward,
-  commonRpcBurn,
-  commonTxAdmissionChainId,
-  commonTxAdmissionRoot,
-  commonTxRewardRoot,
-  commonTxAdmissionSignature
-}'
-```
-
-## All-in-One Bash Check
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-
-RPC_URL="http://167.86.76.166:8000"
-TX_HASH="0x065d4a9562d0cac21a4ea892336ac447e586cb1c2cd9e8a9595a0c618912b812"
-MINER_ADDR="0x946d4abb364716fd2f8403df28fa4f2b5e953d62"
-
-echo "===== Transaction Receipt ====="
-curl -s -X POST "$RPC_URL" \
-  -H "Content-Type: application/json" \
-  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$TX_HASH\"],\"id\":1}" \
-| jq
-
-echo
-echo "===== Transaction Details ====="
-curl -s -X POST "$RPC_URL" \
-  -H "Content-Type: application/json" \
-  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionByHash\",\"params\":[\"$TX_HASH\"],\"id\":1}" \
-| jq
-
-echo
-echo "===== Common Miner Balance ====="
-curl -s -X POST "$RPC_URL" \
-  -H "Content-Type: application/json" \
-  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"$MINER_ADDR\",\"latest\"],\"id\":1}" \
-| jq
-
-echo
-echo "===== Common RPC Reward Fields ====="
-curl -s -X POST "$RPC_URL" \
-  -H "Content-Type: application/json" \
-  --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getTransactionReceipt\",\"params\":[\"$TX_HASH\"],\"id\":1}" \
-| jq '.result | {
-  transactionHash,
-  blockHash,
-  blockNumber,
-  transactionIndex,
-  commonTxApprover,
-  commonTxApproverReward,
-  commonTxBurn,
-  commonTxAdmissionChainId,
-  commonTxAdmissionRoot,
-  commonTxRewardRoot,
-  commonTxAdmissionSignature
-}'
-```
-
-For one normal transfer with `gasUsed = 21000` and `effectiveGasPrice = 1 gwei`, the expected common miner balance increase is:
-
-```text
-4,200,000,000,000 wei
-= 0.0000042 CPH
-```
-
-## Notes
-
-This feature does not make common miners validator consensus members.
-
-Common miners only provide public RPC transaction admission and receive a fee share when their admitted transaction is included in a finalized block.
-
-Validator nodes still verify all admission records, reward records, roots, signatures, chain ID, and final state before accepting the block.
+Compare B's balance against its initial balance and ordinary transfers. Receiving Common RPC fees does not make B or the Common operator a validator. Validators still verify proofs, reward amounts, roots, signatures, chain identity, and final state.

@@ -19,6 +19,7 @@ const (
 	// MaxCommonTxAdmissionBatchItems is the consensus maximum number of ordered
 	// transaction hashes covered by one common-RPC admission signature.
 	MaxCommonTxAdmissionBatchItems = 512
+	CommonRPCVersionV2             = uint8(2)
 )
 
 // CommonTxAdmissionSigningPayload returns the canonical payload signed by the
@@ -27,8 +28,10 @@ func CommonTxAdmissionSigningPayload(admission *CommonTxAdmissionBatch) []byte {
 	if admission == nil {
 		return nil
 	}
-	payload, err := rlp.EncodeToBytes([]interface{}{
+	fields := []interface{}{
 		[]byte(commonTxAdmissionSignatureDomain),
+		admission.Version,
+		admission.RewardRecipient,
 		admission.ChainID,
 		admission.GenesisHash,
 		admission.TxRoot,
@@ -37,7 +40,8 @@ func CommonTxAdmissionSigningPayload(admission *CommonTxAdmissionBatch) []byte {
 		admission.KeyBlockNumber,
 		admission.Timestamp,
 		uint16(len(admission.TxHashes)),
-	})
+	}
+	payload, err := rlp.EncodeToBytes(fields)
 	if err != nil {
 		return nil
 	}
@@ -63,8 +67,10 @@ func CommonTxAdmissionID(admission *CommonTxAdmissionBatch) common.Hash {
 	if admission == nil {
 		return common.Hash{}
 	}
-	return blake3RLPHash([]interface{}{
+	fields := []interface{}{
 		[]byte(commonTxAdmissionIDDomain),
+		admission.Version,
+		admission.RewardRecipient,
 		admission.ChainID,
 		admission.GenesisHash,
 		DeriveCommonTxAdmissionTxRoot(admission.TxHashes),
@@ -72,7 +78,8 @@ func CommonTxAdmissionID(admission *CommonTxAdmissionBatch) common.Hash {
 		admission.KeyBlockNumber,
 		admission.Timestamp,
 		uint16(len(admission.TxHashes)),
-	})
+	}
+	return blake3RLPHash(fields)
 }
 
 // CommonTxAdmissionWinnerHash returns the deterministic ordering hash used when
@@ -92,6 +99,15 @@ func CommonTxAdmissionWinnerHash(admission *CommonTxAdmissionBatch, txHash commo
 	})
 }
 
+// CommonTxAdmissionOrderingHash orders batches from the same signer without
+// using their freely changeable recipient, recipient-bound ID or signature.
+func CommonTxAdmissionOrderingHash(a *CommonTxAdmissionBatch) common.Hash {
+	if a == nil {
+		return common.Hash{}
+	}
+	return blake3RLPHash([]interface{}{[]byte("CPH_COMMON_TX_ADMISSION_ORDER"), a.ChainID, a.GenesisHash, DeriveCommonTxAdmissionTxRoot(a.TxHashes), a.Miner, a.KeyBlockNumber, a.Timestamp, uint16(len(a.TxHashes))})
+}
+
 func IsBetterCommonTxAdmission(candidate, current *CommonTxAdmissionBatch, txHash common.Hash) bool {
 	if candidate == nil {
 		return false
@@ -104,11 +120,10 @@ func IsBetterCommonTxAdmission(candidate, current *CommonTxAdmissionBatch, txHas
 	if cmp := bytes.Compare(candidateHash.Bytes(), currentHash.Bytes()); cmp != 0 {
 		return cmp < 0
 	}
-	// The primary winner identity intentionally ignores batch composition and
-	// timestamp so an authorized miner cannot change its reward priority by
-	// grinding batches. AdmissionID provides a stable total-order tie-break when
-	// the same miner admitted the transaction in multiple valid batches.
-	return bytes.Compare(candidate.AdmissionID.Bytes(), current.AdmissionID.Bytes()) < 0
+	// Secondary ordering excludes the operator-controlled payout address too.
+	// An exact tie retains the existing proof, so changing B cannot improve it.
+	candidateID, currentID := CommonTxAdmissionOrderingHash(candidate), CommonTxAdmissionOrderingHash(current)
+	return bytes.Compare(candidateID[:], currentID[:]) < 0
 }
 
 // VerifyCommonTxAdmissionSignature recovers the ECDSA signer and verifies that
@@ -116,6 +131,9 @@ func IsBetterCommonTxAdmission(candidate, current *CommonTxAdmissionBatch, txHas
 func VerifyCommonTxAdmissionSignature(admission *CommonTxAdmissionBatch) error {
 	if admission == nil {
 		return fmt.Errorf("nil common tx admission batch")
+	}
+	if err := admission.ValidateVersion(); err != nil {
+		return err
 	}
 	if admission.ChainID == nil || admission.ChainID.Sign() <= 0 {
 		return fmt.Errorf("common tx admission %s has invalid chain id", admission.AdmissionID)

@@ -149,17 +149,21 @@ func proposalBlobTestBlock(t *testing.T, config *params.ChainConfig, tx *types.T
 	}
 	block := types.NewBlock(header, types.Transactions{tx}, nil, nil, new(trie.Trie))
 	admission := &types.CommonTxAdmissionBatch{
-		ChainID:     new(big.Int).Set(config.ChainID),
-		GenesisHash: common.HexToHash("0x99"),
-		Miner:       common.HexToAddress("0x42"),
-		Timestamp:   1,
-		TxHashes:    []common.Hash{tx.Hash()},
-		Signature:   make([]byte, 65),
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0x43"),
+		ChainID:         new(big.Int).Set(config.ChainID),
+		GenesisHash:     common.HexToHash("0x99"),
+		Miner:           common.HexToAddress("0x42"),
+		Timestamp:       1,
+		TxHashes:        []common.Hash{tx.Hash()},
+		Signature:       make([]byte, 65),
 	}
 	admission.TxRoot = types.DeriveCommonTxAdmissionTxRoot(admission.TxHashes)
 	admission.AdmissionID = types.CommonTxAdmissionID(admission)
 	reward := &types.CommonTxReward{
-		TxHash: tx.Hash(), Approver: admission.Miner,
+		Version:         types.CommonRPCVersionV2,
+		RewardRecipient: common.HexToAddress("0x43"),
+		TxHash:          tx.Hash(), Approver: admission.Miner,
 		ApproverReward: new(big.Int), Burn: new(big.Int),
 	}
 	block.AttachCommonTxData(

@@ -166,6 +166,7 @@ func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash 
 		}
 
 		fields["commonTxApprover"] = reward.Approver
+		fields["commonTxRewardRecipient"] = reward.EffectiveRewardRecipient()
 
 		if reward.ApproverReward != nil {
 			fields["commonTxApproverReward"] = (*hexutil.Big)(reward.ApproverReward)
