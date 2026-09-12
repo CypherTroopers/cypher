@@ -74,20 +74,14 @@ func TestGenesisNativeProposalUsesRaisedConsensusCeilings(t *testing.T) {
 func TestEVMOnlyProposalRoutesBothResourceLanesToStandardEVM(t *testing.T) {
 	strict := &params.ChainConfig{NativeParallel: params.SolanaScaleNativeParallelConfig()}
 	evmOnly := strict
-	if useNativeProposalBuilder(evmOnly, types.FastTx_Block) || useNativeProposalBuilder(evmOnly, types.SlowTx_Block) {
-		t.Fatal("EVM-only genesis selected the native builder for a transaction lane")
-	}
 	if !isEVMOnlyProposalMode(evmOnly) {
 		t.Fatal("EVM-only genesis did not select the EVM work limits and meter")
-	}
-	if useNativeProposalBuilder(&params.ChainConfig{}, types.FastTx_Block) {
-		t.Fatal("legacy network selected the native proposal builder")
 	}
 	retired := *evmOnly.NativeParallel
 	retired.RequireNativeTransactions = true
 	invalid := &params.ChainConfig{NativeParallel: &retired}
-	if useNativeProposalBuilder(invalid, types.FastTx_Block) || useNativeProposalBuilder(invalid, types.SlowTx_Block) || !isEVMOnlyProposalMode(invalid) {
-		t.Fatal("retired strict flag re-enabled the public native proposal builder")
+	if !isEVMOnlyProposalMode(invalid) {
+		t.Fatal("retired strict flag disabled EVM-only proposal limits")
 	}
 
 	wantLimit := params.FairHotstuffEVMWorkLimitsForConfig(evmOnly).Transactions
@@ -586,13 +580,13 @@ func TestProposalNoWorkWatermarkQuiescesIdenticalMaintenanceInputs(t *testing.T)
 }
 
 func TestProposalBodyWaitTimeoutScalesWithBody(t *testing.T) {
-	if got := proposalBodyWaitTimeout(0); got != 2*time.Second {
+	if got := proposalBodyWaitTimeoutForConfig(nil, 0); got != 2*time.Second {
 		t.Fatalf("empty body timeout = %s, want 2s", got)
 	}
-	if got := proposalBodyWaitTimeout(16 * 1024 * 1024); got != 10*time.Second {
+	if got := proposalBodyWaitTimeoutForConfig(nil, 16*1024*1024); got != 10*time.Second {
 		t.Fatalf("16MiB body timeout = %s, want 10s", got)
 	}
-	if got := proposalBodyWaitTimeout(256 * 1024 * 1024); got != 30*time.Second {
+	if got := proposalBodyWaitTimeoutForConfig(nil, 256*1024*1024); got != 30*time.Second {
 		t.Fatalf("large body timeout = %s, want 30s cap", got)
 	}
 }
@@ -854,13 +848,11 @@ func proposalValidationPublicationFixture() (*Service, *hotstuff.FHSProposalVali
 	service := &Service{
 		runningState:                 1,
 		proposalValidationGeneration: 1,
-		activeProposalValidations: map[common.Hash]*proposalValidationControl{
-			viewID: {key: key, generation: 1},
-		},
-		proposalBodies:       make(map[common.Hash]*proposalBodyMsg),
-		verifiedProposalByID: make(map[common.Hash]*core.VerifiedProposal),
-		fhsCertifiedByID:     make(map[common.Hash]*fhsCertifiedProposal),
-		pacetMakerTimer:      &paceMakerTimer{},
+		activeProposalValidation:     &proposalValidationControl{key: key, generation: 1},
+		proposalBodies:               make(map[common.Hash]*proposalBodyMsg),
+		verifiedProposalByID:         make(map[common.Hash]*core.VerifiedProposal),
+		fhsCertifiedByID:             make(map[common.Hash]*fhsCertifiedProposal),
+		pacetMakerTimer:              &paceMakerTimer{},
 	}
 	return service, &hotstuff.FHSProposalValidationResult{Key: key, ApplicationData: output}
 }
@@ -942,7 +934,6 @@ func TestProposalCadenceConcurrentWorkerReadAndPublish(t *testing.T) {
 			for i := 0; i < 1000; i++ {
 				now := time.Unix(0, int64(offset*1000+i+1))
 				service.muProposalCadence.Lock()
-				service.lastProposeTime = now
 				service.lastFastBlockTime = now
 				service.lastSlowBlockTime = now
 				service.muProposalCadence.Unlock()
@@ -975,10 +966,8 @@ func proposalBuildApplyFixture(key hotstuff.FHSProposalBuildKey) (*Service, *pro
 	body := &proposalBodyMsg{ProposalID: common.HexToHash("0x11"), BodyHash: common.HexToHash("0x12"), BodySize: 1}
 	manifest := &proposalBodyMsg{ProposalID: body.ProposalID, BodyHash: body.BodyHash, BodySize: 1, Type: proposalBodyMsgManifest}
 	output := &proposalBuildOutput{
+		stagedHotstuffProposal: stagedHotstuffProposal{proposalRef: []byte{0x01}, body: body, manifest: manifest},
 		key:                    key,
-		proposalRef:            []byte{0x01},
-		body:                   body,
-		manifest:               manifest,
 		serviceGeneration:      1,
 		constructionGeneration: 7,
 	}

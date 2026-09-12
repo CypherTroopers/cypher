@@ -24,7 +24,6 @@ import (
 	"io/ioutil"
 	"math/big"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1309,15 +1308,6 @@ func setDataDir(ctx *cli.Context, cfg *node.Config) {
 	case ctx.GlobalBool(YoloV1Flag.Name) && cfg.DataDir == node.DefaultDataDir():
 		cfg.DataDir = filepath.Join(node.DefaultDataDir(), "yolo-v1")
 	}
-}
-
-func urlReader(u *url.URL) (io.ReadCloser, error) {
-	s := u.Scheme
-	switch s {
-	case "file":
-		return os.Open(filepath.Join(u.Host, u.Path))
-	}
-	return nil, fmt.Errorf("unsupported scheme %s", s)
 }
 
 func setGPO(ctx *cli.Context, cfg *gasprice.Config, light bool) {

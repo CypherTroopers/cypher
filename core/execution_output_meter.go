@@ -93,9 +93,58 @@ func (m *blockExecutionOutputMeter) Add(index int, receipt *types.Receipt) error
 	return m.AddMeasured(index, measured)
 }
 
-func consensusLogListRLPSize(logs []*types.Log) (uint64, error) {
-	encoded, _, err := consensusLogMeasurements(logs)
-	return encoded, err
+// nativeLogObjectMemoryReserve covers the Go Log object, receipt/state slice
+// pointers and allocator overhead not represented by its consensus RLP. A
+// transaction's signed LogLimit is enforced against both exact wire bytes and
+// this retained-memory charge, so many zero-data LOG opcodes cannot turn a
+// small byte declaration into millions of heap objects.
+const nativeLogObjectMemoryReserve = uint64(256)
+
+// nativeRLPStringSize returns the exact encoded size of an RLP byte string.
+// Computing this directly avoids allocating a second copy of arbitrarily large
+// LOG data merely to enforce the signed NativeTxV1 byte budget.
+func nativeRLPStringSize(value []byte) uint64 {
+	size := uint64(len(value))
+	if size == 1 && value[0] < 0x80 {
+		return 1
+	}
+	if size < 56 {
+		return size + 1
+	}
+	lengthBytes := uint64(0)
+	for encodedLength := size; encodedLength > 0; encodedLength >>= 8 {
+		lengthBytes++
+	}
+	return size + 1 + lengthBytes
+}
+
+// nativeLogRLPSize matches types.Log.EncodeRLP exactly: the consensus fields
+// are [address, topics, data], while derived block/transaction metadata is not
+// encoded. The NativeTxV1 configuration bounds the practical values far below
+// uint64 overflow; the explicit checks keep the guard total for malformed
+// in-process callers as well.
+func nativeLogRLPSize(entry *types.Log) (uint64, bool) {
+	if entry == nil {
+		return 0, false
+	}
+	const encodedAddressSize = uint64(21) // 0x94 followed by 20 address bytes
+	const encodedTopicSize = uint64(33)   // 0xa0 followed by 32 hash bytes
+	topicCount := uint64(len(entry.Topics))
+	if topicCount > (^uint64(0)-9)/encodedTopicSize {
+		return 0, false
+	}
+	topicContentSize := topicCount * encodedTopicSize
+	encodedTopicsSize := rlp.ListSize(topicContentSize)
+	encodedDataSize := nativeRLPStringSize(entry.Data)
+	if encodedAddressSize > ^uint64(0)-encodedTopicsSize || encodedAddressSize+encodedTopicsSize > ^uint64(0)-encodedDataSize {
+		return 0, false
+	}
+	contentSize := encodedAddressSize + encodedTopicsSize + encodedDataSize
+	encodedSize := rlp.ListSize(contentSize)
+	if encodedSize < contentSize {
+		return 0, false
+	}
+	return encodedSize, true
 }
 
 func consensusLogMeasurements(logs []*types.Log) (uint64, uint64, error) {

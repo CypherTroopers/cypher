@@ -238,38 +238,39 @@ func (c *KCPConn) Send(msg Message) (uint64, error) {
 // whole message b in slices of size maxChunkSize.
 // In case of an error it aborts.
 func (c *KCPConn) sendRaw(b []byte) (uint64, error) {
+	return sendStreamFrame(c.conn, &c.counterSafe, b)
+}
+
+// sendStreamFrame writes the shared TCP/KCP framing and accounts for transmitted
+// bytes. The caller serializes writes with the connection send mutex.
+func sendStreamFrame(conn net.Conn, counter *counterSafe, b []byte) (uint64, error) {
 	if uint64(len(b)) > uint64(def_MaxPacketSize) {
 		return 0, NewPermanentSendError(SendErrorPacketTooLarge,
 			fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize))
 	}
 	packetSize := uint32(len(b))
-	_ = c.conn.SetWriteDeadline(time.Now().Add(fallbackFrameWriteTimeout(packetSize)))
-	defer c.conn.SetWriteDeadline(time.Time{})
+	_ = conn.SetWriteDeadline(time.Now().Add(fallbackFrameWriteTimeout(packetSize)))
+	defer conn.SetWriteDeadline(time.Time{})
 
-	// Keep the original 24-bit header for ordinary messages. Transaction block
-	// proposals above that limit use an extended 32-bit packet length.
 	headBuf := encodePacketHeader(packetSize)
 
-	if _, err := c.conn.Write(headBuf); err != nil {
+	if _, err := conn.Write(headBuf); err != nil {
 		return 0, err
 	}
 
-	// Then send everything through the connection
-	// Send chunk by chunk
-	//	log.Lvl5("Sending from", c.conn.LocalAddr(), "to", c.conn.RemoteAddr())
 	var sent uint32
 	for sent < packetSize {
-		n, err := c.conn.Write(b[sent:])
+		n, err := conn.Write(b[sent:])
 		if err != nil {
 			sentLen := uint64(len(headBuf)) + uint64(sent)
-			c.updateTx(sentLen)
+			counter.updateTx(sentLen)
 			return sentLen, handleError(err)
 		}
 		sent += uint32(n)
 	}
-	// Update stats on the connection, including the legacy or extended header.
+
 	sentLen := uint64(len(headBuf)) + uint64(sent)
-	c.updateTx(sentLen)
+	counter.updateTx(sentLen)
 	return sentLen, nil
 }
 

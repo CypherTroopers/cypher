@@ -15,7 +15,7 @@ var publicRPCMethods = func() map[string]bool {
 		"rpc":  "modules",
 		"web3": "clientVersion sha3",
 		"net":  "listening peerCount version",
-		"eth": `accounts gasPrice maxPriorityFeePerGas feeHistory protocolVersion syncing
+		"eth": `accounts config gasPrice maxPriorityFeePerGas feeHistory protocolVersion syncing
 			chainId blockNumber keyBlockNumber getBalance getProof getHeaderByNumber getHeaderByHash
 			getBlockByNumber getBlockByHash getUncleByBlockNumberAndIndex getKeyBlockByNumber
 			getKeyBlockByHash getKeyBlocksByNumbers getUncleByBlockHashAndIndex

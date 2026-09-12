@@ -49,12 +49,6 @@ var (
 	ByzantiumBlockReward = big.NewInt(3e+18)                                              // Block reward in wei for successfully mining a block upward from Byzantium
 	CommonNodePowReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Bonus reward in wei for accepted common-node PoW candidate
 
-	errLargeBlockTime    = errors.New("timestamp too big")
-	errZeroBlockTime     = errors.New("timestamp equals parent's")
-	errTooManyUncles     = errors.New("too many uncles")
-	errDuplicateUncle    = errors.New("duplicate uncle")
-	errUncleIsAncestor   = errors.New("uncle is ancestor")
-	errDanglingUncle     = errors.New("uncle's parent is not ancestor")
 	errInvalidDifficulty = errors.New("non-positive difficulty")
 	errInvalidMixDigest  = errors.New("invalid mix digest")
 	errInvalidPoW        = errors.New("invalid proof-of-work")
@@ -82,7 +76,6 @@ var (
 	big2          = big.NewInt(2)
 	big8          = big.NewInt(8)
 	big9          = big.NewInt(9)
-	big10         = big.NewInt(10)
 	big32         = big.NewInt(32)
 	bigMinus99    = big.NewInt(-99)
 

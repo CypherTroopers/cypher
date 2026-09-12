@@ -1590,57 +1590,6 @@ func TestFHSCertificateAtomicallyClearsSupersededTimeoutVote(t *testing.T) {
 	}
 }
 
-type fhsConsensusResumeRecorder struct {
-	events []string
-}
-
-func (recorder *fhsConsensusResumeRecorder) replayPendingFHSQCBroadcast() {
-	recorder.events = append(recorder.events, "replay")
-}
-
-func (recorder *fhsConsensusResumeRecorder) sendNewViewMsg(uint64) {
-	// This mirrors the Service contract: sendNewViewMsg performs the durable
-	// replay before it queues MsgStartNewView.
-	recorder.replayPendingFHSQCBroadcast()
-	recorder.events = append(recorder.events, "new-view")
-}
-
-func (recorder *fhsConsensusResumeRecorder) enqueueFHSTimeout() {
-	recorder.events = append(recorder.events, "timeout")
-}
-
-func TestFHSStartupAndDeferredResumeReplayDurableQCExactlyOnce(t *testing.T) {
-	tests := []struct {
-		name           string
-		pendingTimeout bool
-		want           []string
-	}{
-		{name: "normal new view", want: []string{"replay", "new-view"}},
-		{name: "durable timeout", pendingTimeout: true, want: []string{"replay", "timeout"}},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			recorder := new(fhsConsensusResumeRecorder)
-			resumeFHSConsensusMessaging(recorder, 17, test.pendingTimeout)
-			if len(recorder.events) != len(test.want) {
-				t.Fatalf("resume events = %v, want %v", recorder.events, test.want)
-			}
-			replays := 0
-			for index := range test.want {
-				if recorder.events[index] != test.want[index] {
-					t.Fatalf("resume events = %v, want %v", recorder.events, test.want)
-				}
-				if recorder.events[index] == "replay" {
-					replays++
-				}
-			}
-			if replays != 1 {
-				t.Fatalf("durable QC replay count = %d, want 1", replays)
-			}
-		})
-	}
-}
-
 func TestFHSQCBroadcastSuppressesOnlyMatchingImmediateReplay(t *testing.T) {
 	service, body := testProposalSidecar(t)
 	service.chainConfig.FairHotstuff = true
@@ -1668,7 +1617,7 @@ func TestFHSQCBroadcastSuppressesOnlyMatchingImmediateReplay(t *testing.T) {
 	if err := service.persistFHSCertificateWithBroadcast(ref, qc, body, body.Extra, true); err != nil {
 		t.Fatalf("persist leader QC outbox: %v", err)
 	}
-	if err := service.beginFHSQCBroadcast(qc); err != nil {
+	if err := service.beginFHSQCBroadcastForGeneration(qc, 0); err != nil {
 		t.Fatalf("begin initial QC broadcast: %v", err)
 	}
 	now := time.Now()
@@ -1679,7 +1628,7 @@ func TestFHSQCBroadcastSuppressesOnlyMatchingImmediateReplay(t *testing.T) {
 	if !service.fhsQCBroadcastReplaySuppressed(pending, now) {
 		t.Fatal("matching durable replay was not suppressed during the initial broadcast window")
 	}
-	if err := service.beginFHSQCBroadcast(hotstuff.CloneSignedState(qc)); err != nil {
+	if err := service.beginFHSQCBroadcastForGeneration(hotstuff.CloneSignedState(qc), 0); err != nil {
 		t.Fatalf("same QC did not re-enter its idempotent broadcast window: %v", err)
 	}
 	other := hotstuff.CloneSignedState(qc)
@@ -1687,7 +1636,7 @@ func TestFHSQCBroadcastSuppressesOnlyMatchingImmediateReplay(t *testing.T) {
 	if service.fhsQCBroadcastReplaySuppressed(other, now) {
 		t.Fatal("unrelated pending QC replay was suppressed")
 	}
-	if err := service.beginFHSQCBroadcast(other); err == nil {
+	if err := service.beginFHSQCBroadcastForGeneration(other, 0); err == nil {
 		t.Fatal("overlapping certification broadcast replaced the active QC")
 	}
 
@@ -1714,7 +1663,7 @@ func TestFHSQCBroadcastSuppressesOnlyMatchingImmediateReplay(t *testing.T) {
 	if service.fhsQCBroadcastReplaySuppressed(other, now.Add(time.Second)) {
 		t.Fatal("post-send window suppressed a different QC")
 	}
-	if err := service.beginFHSQCBroadcast(hotstuff.CloneSignedState(qc)); err != nil {
+	if err := service.beginFHSQCBroadcastForGeneration(hotstuff.CloneSignedState(qc), 0); err != nil {
 		t.Fatalf("post-send suppression blocked a direct physical broadcast retry: %v", err)
 	}
 	if err := service.abortFHSQCBroadcast(qc); err != nil {
@@ -1743,7 +1692,7 @@ func TestFHSQCBroadcastAbortDoesNotPretendPhysicalSend(t *testing.T) {
 		LeaderID: "leader",
 	}
 	service := &Service{}
-	if err := service.beginFHSQCBroadcast(qc); err != nil {
+	if err := service.beginFHSQCBroadcastForGeneration(qc, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.abortFHSQCBroadcast(qc); err != nil {
@@ -1852,13 +1801,13 @@ func TestFHSQCBroadcastMarkersResetAcrossMinerStopStart(t *testing.T) {
 		pacetMakerTimer: &paceMakerTimer{},
 	}
 	atomic.StoreInt32(&service.runningState, 1)
-	if err := service.beginFHSQCBroadcast(first); err != nil {
+	if err := service.beginFHSQCBroadcastForGeneration(first, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.completeFHSQCBroadcast(first, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.beginFHSQCBroadcast(second); err != nil {
+	if err := service.beginFHSQCBroadcastForGeneration(second, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1875,13 +1824,13 @@ func TestFHSQCBroadcastMarkersResetAcrossMinerStopStart(t *testing.T) {
 
 	// Exercise the independent MinerStart boundary too. A later startup failure
 	// must not restore stale process-local suppression ahead of durable WAL replay.
-	if err := service.beginFHSQCBroadcast(first); err != nil {
+	if err := service.beginFHSQCBroadcastForGeneration(first, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.completeFHSQCBroadcast(first, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.beginFHSQCBroadcast(second); err != nil {
+	if err := service.beginFHSQCBroadcastForGeneration(second, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.start(nil); err == nil {
@@ -2380,7 +2329,7 @@ func TestCertifiedUncommittedKeyCommitteeAuthenticatesNextEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := encodeProposalDataManifest(proposal)
+	manifest, err := encodeProposalDataManifestForConfig(nil, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}

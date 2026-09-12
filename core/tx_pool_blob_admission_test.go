@@ -61,6 +61,48 @@ func newBlobAdmissionPool(t *testing.T) *TxPool {
 	return pool
 }
 
+func TestTxPoolBlobAdmissionPaths(t *testing.T) {
+	valid, sidecar := signedPoolBlobTx(t, 0, false)
+	invalidSidecar := sidecar.Copy()
+	invalidSidecar.Proofs[0][0] ^= 0xff
+	paths := []struct {
+		name string
+		add  func(*TxPool, *types.BlobTxWithSidecar, types.BlobVerifier) error
+	}{
+		{"local", (*TxPool).AddLocalBlobTx},
+		{"remote", (*TxPool).AddRemoteBlobTx},
+		{"remote_sync", (*TxPool).AddRemoteBlobTxSync},
+	}
+	for _, path := range paths {
+		t.Run(path.name, func(t *testing.T) {
+			pool := newBlobAdmissionPool(t)
+			if err := path.add(pool, nil, nil); !errors.Is(err, types.ErrBlobVerifierMissing) {
+				t.Fatalf("missing verifier error = %v", err)
+			}
+			if err := path.add(pool, nil, &txpoolMockBlobVerifier{}); !errors.Is(err, types.ErrBlobTxSidecarOnNonBlobTx) {
+				t.Fatalf("missing bundle error = %v", err)
+			}
+			// A permissive caller-supplied verifier cannot bypass real-KZG
+			// admission, and a rejected bundle must leave no sidecar behind.
+			invalid := &types.BlobTxWithSidecar{Tx: valid, Sidecar: invalidSidecar}
+			if err := path.add(pool, invalid, &txpoolMockBlobVerifier{}); err == nil {
+				t.Fatal("accepted invalid proof from caller-supplied verifier")
+			}
+			if pool.Get(valid.Hash()) != nil || pool.getBlobSidecar(valid.Hash(), false) != nil {
+				t.Fatal("failed admission retained transaction or sidecar")
+			}
+			// Omitting the explicit sidecar uses the transaction's attached
+			// sidecar, which every admission path must preserve.
+			if err := path.add(pool, &types.BlobTxWithSidecar{Tx: valid}, types.KZGBlobVerifier{}); err != nil {
+				t.Fatalf("valid attached bundle rejected: %v", err)
+			}
+			if pool.Get(valid.Hash()) == nil || pool.GetBlobSidecar(valid.Hash()) == nil {
+				t.Fatal("successful admission failed to publish transaction and sidecar")
+			}
+		})
+	}
+}
+
 func TestTxPoolGenericAddAcceptsOnlyRealKZGBlobSidecar(t *testing.T) {
 	pool := newBlobAdmissionPool(t)
 	valid, expectedSidecar := signedPoolBlobTx(t, 0, false)

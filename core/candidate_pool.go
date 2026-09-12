@@ -1,21 +1,15 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"math/big"
+	"net"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
-
-	"golang.org/x/crypto/ed25519"
-
-	"bytes"
-	//	"net"
-	"sort"
 	"time"
-
-	"strconv"
-
-	"net"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
@@ -24,6 +18,7 @@ import (
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/reconfig/bftview"
+	"golang.org/x/crypto/ed25519"
 )
 
 var (
@@ -241,21 +236,6 @@ func (t *candidateLookup) ClearObsoleteFromTemp(keyHeadNumber *big.Int) {
 	}
 }
 func (t *candidateLookup) ClearCandidate(pubKey ed25519.PublicKey) {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-	changed := false
-	for k, candidate := range t.all {
-		if string(pubKey) == candidate.PubKey {
-			delete(t.all, k)
-			changed = true
-		}
-	}
-	if changed {
-		t.revision++
-	}
-}
-
-func (t *candidateLookup) ClearCandidateByIp(pubKey ed25519.PublicKey) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	changed := false

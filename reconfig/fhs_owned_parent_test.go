@@ -259,7 +259,6 @@ func testFHSPrepareWorkerOwnedParent(t *testing.T, missingState bool) {
 	atomic.StoreUint64(&s.proposalValidationGeneration, 1)
 	s.proposalValidationJobs = make(chan *proposalValidationJob, 1)
 	s.proposalValidationResults = make(chan *hotstuff.FHSProposalValidationResult, 1)
-	s.activeProposalValidations = make(map[common.Hash]*proposalValidationControl)
 	request := &hotstuff.FHSProposalValidationRequest{Key: hotstuff.FHSProposalValidationKey{RequestID: 1,
 		ViewNumber: child.ref.ViewNumber, ViewID: child.ref.ViewID, LeaderID: child.ref.LeaderID, ProposalID: child.ref.ProposalID()},
 		ProposalRef: child.ref.EncodeToBytes(), ParentQC: parent.qc}

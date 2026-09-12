@@ -339,18 +339,6 @@ func (t *UDPv5) RequestENR(n *enode.Node) (*enode.Node, error) {
 	return nodes[0], nil
 }
 
-// requestTicket calls REQUESTTICKET on a node and waits for a TICKET response.
-func (t *UDPv5) requestTicket(n *enode.Node) ([]byte, error) {
-	resp := t.call(n, p_ticketV5, &pingV5{})
-	defer t.callDone(resp)
-	select {
-	case response := <-resp.ch:
-		return response.(*ticketV5).Ticket, nil
-	case err := <-resp.err:
-		return nil, err
-	}
-}
-
 // findnode calls FINDNODE on a node and waits for responses.
 func (t *UDPv5) findnode(n *enode.Node, distance int) ([]*enode.Node, error) {
 	resp := t.call(n, p_nodesV5, &findnodeV5{Distance: uint(distance)})

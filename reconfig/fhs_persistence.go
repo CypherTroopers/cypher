@@ -49,7 +49,6 @@ const (
 	// the proposal cache. Jobs retain an immutable cache entry rather than taking
 	// another multi-megabyte body copy.
 	fhsContentQueueMaxEntries = proposalBodyCacheMaxEntries
-	fhsContentQueueMaxBytes   = proposalBodyCacheMaxBytes
 )
 
 type fhsContentWriteJob struct {
@@ -74,10 +73,6 @@ type fhsContentWriter struct {
 	done        chan struct{}
 	abortOnce   sync.Once
 	persist     func(*types.HotstuffProposalRef, *proposalBodyMsg) error
-}
-
-func newFHSContentWriter(persist func(*types.HotstuffProposalRef, *proposalBodyMsg) error) *fhsContentWriter {
-	return newFHSContentWriterWithLimits(fhsContentQueueMaxEntries, fhsContentQueueMaxBytes, persist)
 }
 
 func newFHSContentWriterForConfig(config *params.ChainConfig, persist func(*types.HotstuffProposalRef, *proposalBodyMsg) error) *fhsContentWriter {
@@ -1562,10 +1557,6 @@ func (s *Service) reconcileFHSCanonicalQCWatermark(block *types.Block, ownQC *ho
 	store.highestBlockHash = canonical.Hash()
 	store.pendingBroadcast = nextPending
 	return nil
-}
-
-func (s *Service) persistFHSCertificate(ref *types.HotstuffProposalRef, qc *hotstuff.SignedState, body *proposalBodyMsg, extra []byte) error {
-	return s.persistFHSCertificateWithBroadcast(ref, qc, body, extra, false)
 }
 
 func (s *Service) persistFHSCertificateWithBroadcast(ref *types.HotstuffProposalRef, qc *hotstuff.SignedState, body *proposalBodyMsg, extra []byte, pendingBroadcast bool) error {

@@ -1,9 +1,11 @@
 package reconfig
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/cypherium/cypher/accounts"
@@ -11,13 +13,14 @@ import (
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
-	"github.com/cypherium/cypher/eth/downloader"
+	"github.com/cypherium/cypher/crypto/bls"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/node"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
+	"github.com/cypherium/cypher/reconfig/hotstuff"
 	"github.com/cypherium/cypher/rpc"
 )
 
@@ -41,10 +44,8 @@ type ReconfigBackend struct {
 	blockchain     *core.BlockChain
 	keyBlockchain  *core.KeyBlockChain
 	chainDb        ethdb.Database // Block chain database
-	txMu           sync.Mutex
 	txPool         *core.TxPool
 	accountManager *accounts.Manager
-	downloader     *downloader.Downloader
 
 	// we need an event mux to instantiate the blockchain
 	eventMux         *event.TypeMux
@@ -67,12 +68,11 @@ type serviceI interface {
 	GetCurrentView() *bftview.View
 	getBestCandidate(refresh bool) *types.Candidate
 	syncCommittee(mb *bftview.Committee, keyblock *types.KeyBlock)
-	setNextLeader(isDone bool)
+	setNextLeader()
 	sendNewViewMsg(curN uint64)
 	LeaderAckTime() time.Time
 	HotstuffProgressTime() time.Time
 	ResetLeaderAckTime()
-	SwitchOK() bool
 }
 
 func signCommonRPCAdmission(am *accounts.Manager, admission *types.CommonTxAdmissionBatch) error {
@@ -207,4 +207,182 @@ func (backend *ReconfigBackend) Exceptions(blockNumber int64) []string {
 
 func (backend *ReconfigBackend) CheckMinerPort(addr string, blockN uint64, keyblockN uint64) {
 	backend.service.netService.CheckMinerPort(addr, blockN, keyblockN, 111)
+}
+
+// CurrentFHSRoute exposes the service route to subsystems (notably TxQUIC)
+// without exporting the Service field from ReconfigBackend.
+func (backend *ReconfigBackend) CurrentFHSRoute() (*FHSRoute, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("reconfig service is unavailable")
+	}
+	return backend.service.CurrentFHSRoute()
+}
+
+// TxQUICReceiptPublicKey returns the validator identity that signs durable
+// ingress acknowledgements. It is the same BLS identity committed in the FHS
+// committee, not a replaceable TLS certificate key.
+func (backend *ReconfigBackend) TxQUICReceiptPublicKey() ([]byte, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt identity is unavailable")
+	}
+	return backend.service.txQUICReceiptPublicKey()
+}
+
+// PoWResultTLSPublicKey returns the consensus BLS identity used to authenticate
+// the fixed-mode PoW result listener.
+func (backend *ReconfigBackend) PoWResultTLSPublicKey() ([]byte, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("PoW result TLS identity is unavailable")
+	}
+	return backend.service.txQUICReceiptPublicKey()
+}
+
+func (s *Service) txQUICReceiptPublicKey() ([]byte, error) {
+	if s == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt identity is unavailable")
+	}
+	s.muConsensusIdentity.RLock()
+	secret, public := s.txQUICReceiptSecret, s.txQUICReceiptPublic
+	s.muConsensusIdentity.RUnlock()
+	if secret == nil || public == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt identity is unavailable")
+	}
+	derived := secret.GetPublicKey()
+	if derived == nil || !derived.IsEqual(public) {
+		return nil, fmt.Errorf("Fair HotStuff receipt key pair is inconsistent")
+	}
+	return append([]byte(nil), public.Serialize()...), nil
+}
+
+// SignTxQUICReceipt signs one domain-separated TxQUIC acknowledgement digest
+// only while this node's BLS key is a member of the exact canonical committee
+// generation carried by the packet and acknowledgement.
+func (backend *ReconfigBackend) SignTxQUICReceipt(keyNumber uint64, committeeHash common.Hash, digest []byte) ([]byte, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt signer is unavailable")
+	}
+	return backend.service.signTxQUICReceiptForGeneration(keyNumber, committeeHash, digest)
+}
+
+// SignPoWResultTLS signs a PoW-result transport certificate digest while the
+// local consensus identity belongs to the canonical committee. Unlike a
+// TxQUIC receipt, the TLS host identity is the validator's long-lived BLS key,
+// so this check works for both legacy and Fair HotStuff fixed committees.
+func (backend *ReconfigBackend) SignPoWResultTLS(generation common.Hash, digest []byte) ([]byte, error) {
+	if backend == nil || backend.service == nil {
+		return nil, fmt.Errorf("PoW result TLS signer is unavailable")
+	}
+	return backend.service.signPoWResultTLS(generation, digest)
+}
+
+func (s *Service) signPoWResultTLS(generation common.Hash, digest []byte) ([]byte, error) {
+	if s == nil || generation == (common.Hash{}) || s.kbc == nil {
+		return nil, fmt.Errorf("PoW result TLS signer is unavailable")
+	}
+	// The BLS implementation is not safe for concurrent use. Share the receipt
+	// signer serialization because both protocols use the isolated receipt key.
+	s.txQUICReceiptSignMu.Lock()
+	defer s.txQUICReceiptSignMu.Unlock()
+	keyBlock := s.kbc.CurrentBlock()
+	if keyBlock == nil || keyBlock.Hash() != generation {
+		return nil, fmt.Errorf("PoW result TLS keyblock generation changed before signing")
+	}
+	committee := bftview.GetCurrentMember()
+	if committee == nil || len(committee.List) == 0 {
+		return nil, fmt.Errorf("canonical PoW result committee is unavailable")
+	}
+	signature, err := s.signTxQUICReceiptLocked(digest, committee.List)
+	if err != nil {
+		return nil, err
+	}
+	keyBlock = s.kbc.CurrentBlock()
+	if keyBlock == nil || keyBlock.Hash() != generation {
+		return nil, fmt.Errorf("PoW result TLS keyblock generation changed while signing")
+	}
+	return signature, nil
+}
+
+func (s *Service) signTxQUICReceiptForGeneration(keyNumber uint64, committeeHash common.Hash, digest []byte) ([]byte, error) {
+	if s == nil || committeeHash == (common.Hash{}) {
+		return nil, fmt.Errorf("invalid Fair HotStuff receipt generation")
+	}
+	// Serialize the non-thread-safe BLS secret before taking the view lock. ACK
+	// bursts then wait without blocking HotStuff view/QC transitions.
+	s.txQUICReceiptSignMu.Lock()
+	defer s.txQUICReceiptSignMu.Unlock()
+	// Hold the authoritative view lock through the short membership check and
+	// BLS operation. A key-block transition cannot move the committee between
+	// validation and signing.
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+	if err := s.refreshFHSRouteBaseLocked(); err != nil {
+		return nil, err
+	}
+	view := s.currentView
+	if view.KeyNumber != keyNumber || view.CommitteeHash != committeeHash {
+		return nil, fmt.Errorf("Fair HotStuff committee changed before TxQUIC receipt signing")
+	}
+	committee, err := s.loadViewCommittee(&view, true)
+	if err != nil {
+		return nil, err
+	}
+	if committee == nil || len(committee.List) == 0 || committee.RlpHash() != committeeHash {
+		return nil, fmt.Errorf("Fair HotStuff receipt committee is unavailable")
+	}
+	return s.signTxQUICReceiptLocked(digest, committee.List)
+}
+
+func (s *Service) signTxQUICReceiptLocked(digest []byte, committee []*common.Cnode) ([]byte, error) {
+	publicKey, err := s.txQUICReceiptPublicKey()
+	if err != nil {
+		return nil, err
+	}
+	if len(digest) != sha256.Size {
+		return nil, fmt.Errorf("invalid TxQUIC receipt digest length")
+	}
+	authorized := false
+	for _, member := range committee {
+		if member == nil {
+			continue
+		}
+		candidate := bls.GetPublicKey(common.FromHex(member.Public))
+		if candidate != nil && bytes.Equal(candidate.Serialize(), publicKey) {
+			authorized = true
+			break
+		}
+	}
+	if !authorized {
+		return nil, fmt.Errorf("local TxQUIC receipt signer is outside the active committee")
+	}
+	s.muConsensusIdentity.RLock()
+	secret := s.txQUICReceiptSecret
+	s.muConsensusIdentity.RUnlock()
+	if secret == nil {
+		return nil, fmt.Errorf("Fair HotStuff receipt signing key is unavailable")
+	}
+	signature := secret.SignHash(digest)
+	if signature == nil {
+		return nil, fmt.Errorf("failed to sign TxQUIC receipt")
+	}
+	return append([]byte(nil), signature.Serialize()...), nil
+}
+
+func (s *Service) Exceptions(blockNumber int64) []string {
+	block := s.bc.GetBlockByNumber(uint64(blockNumber))
+	if block == nil {
+		return nil
+	}
+	cm := s.kbc.GetCommitteeByHash(block.KeyHash())
+	if cm == nil {
+		return nil
+	}
+	indexs := hotstuff.MaskToExceptionIndexs(block.SignInfo().Exceptions, len(cm))
+	if indexs == nil {
+		return nil
+	}
+	var exs []string
+	for _, i := range indexs {
+		exs = append(exs, cm[i].CoinBase)
+	}
+	return exs
 }

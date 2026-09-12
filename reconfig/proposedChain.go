@@ -1,13 +1,12 @@
 package reconfig
 
 import (
-	mapset "github.com/deckarep/golang-set"
-	"gopkg.in/oleiade/lane.v1"
 	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
+	"gopkg.in/oleiade/lane.v1"
 )
 
 const proposedTxTTL = 500 * time.Millisecond
@@ -15,7 +14,6 @@ const proposedTxTTL = 500 * time.Millisecond
 type proposedChain struct {
 	head               *types.Block
 	unappliedBlocks    *lane.Deque
-	invalidBlockHashes mapset.Set // This is thread-safe. This set is referred to as our "guard" below.
 	proposedTxes       map[common.Hash]time.Time
 	certifiedTxes      map[common.Hash]struct{}
 	nextProposedExpiry time.Time
@@ -24,18 +22,16 @@ type proposedChain struct {
 
 func newProposedChain() *proposedChain {
 	return &proposedChain{
-		head:               nil,
-		unappliedBlocks:    lane.NewDeque(),
-		invalidBlockHashes: mapset.NewSet(),
-		proposedTxes:       make(map[common.Hash]time.Time),
-		certifiedTxes:      make(map[common.Hash]struct{}),
+		head:            nil,
+		unappliedBlocks: lane.NewDeque(),
+		proposedTxes:    make(map[common.Hash]time.Time),
+		certifiedTxes:   make(map[common.Hash]struct{}),
 	}
 }
 
 func (chain *proposedChain) clear(block *types.Block) {
 	chain.head = block
 	chain.unappliedBlocks = lane.NewDeque()
-	chain.invalidBlockHashes.Clear()
 	chain.proposedTxes = make(map[common.Hash]time.Time)
 	chain.certifiedTxes = make(map[common.Hash]struct{})
 	chain.nextProposedExpiry = time.Time{}
@@ -109,55 +105,6 @@ func (chain *proposedChain) accept(acceptedBlock *types.Block) {
 		log.Info("Another node minted; Clearing speculative state", "block", acceptedBlock.Hash())
 
 		chain.clear(acceptedBlock)
-	}
-}
-
-// Remove all blocks in the chain from the specified one until the end
-func (chain *proposedChain) unwindFrom(invalidHash common.Hash, headBlock *types.Block) {
-	chain.revision++
-
-	// check our "guard" to see if this is a (descendant) block we're
-	// expected to be ruled invalid. if we find it, remove from the guard
-	if chain.invalidBlockHashes.Contains(invalidHash) {
-		log.Info("Removing expected-invalid block from guard.", "block", invalidHash)
-
-		chain.invalidBlockHashes.Remove(invalidHash)
-
-		return
-	}
-
-	// pop from the RHS repeatedly, updating minter.parent each time. if not
-	// our block, add to guard. in all cases, call removeProposedTxes
-	for {
-		currBlockI := chain.unappliedBlocks.Pop()
-
-		if nil == currBlockI {
-			log.Info("(Popped all blocks from queue.)")
-
-			break
-		}
-
-		currBlock := currBlockI.(*types.Block)
-
-		log.Info("Popped block from queue RHS.", "block", currBlock.Hash())
-
-		// Maintain invariant: the parent always points the last speculative block or the head of the blockchain
-		// if there are not speculative blocks.
-		if parentI := chain.unappliedBlocks.Last(); nil != parentI {
-			chain.head = parentI.(*types.Block)
-		} else {
-			chain.head = headBlock
-		}
-
-		chain.removeProposedTxes(currBlock)
-
-		if currBlock.Hash() != invalidHash {
-			log.Info("Haven't yet found block; adding descendent to guard.\n", "invalid block", invalidHash, "descendant", currBlock.Hash())
-
-			chain.invalidBlockHashes.Add(currBlock.Hash())
-		} else {
-			break
-		}
 	}
 }
 
@@ -274,30 +221,4 @@ func (chain *proposedChain) withoutProposedTxes(addrTxes AddressTxes, now time.T
 	}
 
 	return addrTxes
-}
-
-// withoutProposedTransactions is the nonce-free NativeTxV1 counterpart of
-// withoutProposedTxes. PendingNative already returns an immutable deterministic
-// priority snapshot, so compact that fresh slice in place without imposing a
-// per-payer nonce window.
-func (chain *proposedChain) withoutProposedTransactions(txs types.Transactions, now time.Time) types.Transactions {
-	if chain.cleanupExpiredProposedTxes(now) {
-		chain.revision++
-	}
-	writeIndex := 0
-	for _, tx := range txs {
-		if tx == nil {
-			continue
-		}
-		hash := tx.Hash()
-		if _, blocked := chain.proposedTxes[hash]; blocked {
-			continue
-		}
-		if _, certified := chain.certifiedTxes[hash]; certified {
-			continue
-		}
-		txs[writeIndex] = tx
-		writeIndex++
-	}
-	return txs[:writeIndex]
 }

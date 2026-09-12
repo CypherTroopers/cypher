@@ -228,7 +228,7 @@ func TestTxQUICBlobSidecarBytesBindBatchIdentityAndKZG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyTxQUICPacketBlobSidecars(&txQUICPacket{Items: valid.Items}); err != nil {
+	if err := new(TxQUICIngress).verifyTxQUICPacketBlobSidecars(&txQUICPacket{Items: valid.Items}); err != nil {
 		t.Fatalf("valid sidecar failed KZG verification: %v", err)
 	}
 
@@ -244,7 +244,7 @@ func TestTxQUICBlobSidecarBytesBindBatchIdentityAndKZG(t *testing.T) {
 	if tampered.BatchID == valid.BatchID || tampered.TxRoot == valid.TxRoot || tamperedIDs[0] == validIDs[0] {
 		t.Fatal("sidecar mutation did not change TxQUIC commitments")
 	}
-	if err := verifyTxQUICPacketBlobSidecars(&txQUICPacket{Items: tampered.Items}); err == nil {
+	if err := new(TxQUICIngress).verifyTxQUICPacketBlobSidecars(&txQUICPacket{Items: tampered.Items}); err == nil {
 		t.Fatal("real KZG verifier accepted a mutated blob")
 	}
 	tampered.BatchID = valid.BatchID
@@ -265,7 +265,7 @@ func TestTxQUICBlobSidecarBytesBindBatchIdentityAndKZG(t *testing.T) {
 	if proofBatch.BatchID == valid.BatchID || proofBatch.TxRoot == valid.TxRoot || proofIDs[0] == validIDs[0] {
 		t.Fatal("proof mutation did not change TxQUIC commitments")
 	}
-	if err := verifyTxQUICPacketBlobSidecars(&txQUICPacket{Items: proofBatch.Items}); err == nil {
+	if err := new(TxQUICIngress).verifyTxQUICPacketBlobSidecars(&txQUICPacket{Items: proofBatch.Items}); err == nil {
 		t.Fatal("real KZG verifier accepted a mutated proof")
 	}
 }
@@ -557,7 +557,7 @@ func TestTxQUICKZGIsDeferredUntilAfterPacketAuthentication(t *testing.T) {
 	if err != nil || recovered != sender {
 		t.Fatalf("structurally valid packet did not reach the authenticated boundary: signer=%s err=%v", recovered, err)
 	}
-	if err := verifyTxQUICPacketBlobSidecars(authenticated); err == nil {
+	if err := new(TxQUICIngress).verifyTxQUICPacketBlobSidecars(authenticated); err == nil {
 		t.Fatal("post-authentication KZG gate accepted an invalid proof")
 	}
 

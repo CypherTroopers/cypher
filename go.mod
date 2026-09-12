@@ -48,7 +48,6 @@ require (
 	github.com/steakknife/bloomfilter v0.0.0-20180922174646-6819c0d2a570
 	github.com/stretchr/testify v1.11.1
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d
-	github.com/tv42/httpunix v0.0.0-20191220191345-2ba4b9c3382c
 	github.com/xtaci/kcp-go v5.4.20+incompatible
 	github.com/zeebo/blake3 v0.2.4
 	golang.org/x/crypto v0.53.0

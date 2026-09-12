@@ -382,12 +382,6 @@ func SignedStateSemanticEqual(a, b *SignedState) bool {
 	return aErr == nil && bErr == nil && aID == bID && bytes.Equal(a.State, b.State)
 }
 
-func (ctx *FHSViewContext) normalize() {
-	if ctx != nil && ctx.Version == 0 {
-		ctx.Version = fhsWireVersion
-	}
-}
-
 func (ctx FHSViewContext) Validate() error {
 	if ctx.Version != fhsWireVersion || ctx.ChainID == 0 || ctx.TargetView == 0 {
 		return fmt.Errorf("invalid FHS view context version/chain/view")

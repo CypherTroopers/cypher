@@ -34,7 +34,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	//"github.com/cypherium/cypher/accounts/scwallet"
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/common/math"
@@ -85,10 +84,6 @@ type FeeHistoryResult struct {
 	BaseFeePerGas []*hexutil.Big   `json:"baseFeePerGas"`
 	GasUsedRatio  []float64        `json:"gasUsedRatio"`
 	Reward        [][]*hexutil.Big `json:"reward,omitempty"`
-}
-
-type gasTipCapSuggester interface {
-	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
 }
 
 func fixedBaseFeePerGas() *big.Int {
@@ -507,8 +502,6 @@ func (s *PrivateAccountAPI) unlockAccount(addr common.Address, password string, 
 	}
 
 	switch b := backend.(type) {
-	//??	case *pluggable.Backend:
-	//??		return b.TimedUnlock(acct, password, duration)
 	case *keystore.KeyStore:
 		return b.TimedUnlock(acct, password, duration)
 	default:
@@ -535,8 +528,6 @@ func (s *PrivateAccountAPI) lockAccount(addr common.Address) error {
 	}
 
 	switch b := backend.(type) {
-	//??	case *pluggable.Backend:
-	//??		return b.Lock(acct)
 	case *keystore.KeyStore:
 		return b.Lock(addr)
 	default:
@@ -685,48 +676,6 @@ func (s *PrivateAccountAPI) UnlockAll(ctx context.Context, password string, dura
 	}
 	return true, nil
 }
-
-/*??
-// InitializeWallet initializes a new wallet at the provided URL, by generating and returning a new private key.
-func (s *PrivateAccountAPI) InitializeWallet(ctx context.Context, url string) (string, error) {
-	wallet, err := s.am.Wallet(url)
-	if err != nil {
-		return "", err
-	}
-
-	entropy, err := bip39.NewEntropy(256)
-	if err != nil {
-		return "", err
-	}
-
-	mnemonic, err := bip39.NewMnemonic(entropy)
-	if err != nil {
-		return "", err
-	}
-	seed := bip39.NewSeed(mnemonic, "")
-
-	switch wallet := wallet.(type) {
-	//?? case *scwallet.Wallet:
-	//??	return mnemonic, wallet.Initialize(seed)
-	default:
-		return "", fmt.Errorf("specified wallet does not support initialization")
-	}
-}
-// Unpair deletes a pairing between wallet and cypher.
-func (s *PrivateAccountAPI) Unpair(ctx context.Context, url string, pin string) error {
-	wallet, err := s.am.Wallet(url)
-	if err != nil {
-		return err
-	}
-
-	switch wallet := wallet.(type) {
-	 case *scwallet.Wallet:
-		return wallet.Unpair([]byte(pin))
-	default:
-		return fmt.Errorf("specified wallet does not support pairing")
-	}
-}
-*/
 
 // PublicBlockChainAPI provides an API to access the Ethereum blockchain.
 // It offers only methods that operate on public data that is freely available to anyone.
@@ -946,14 +895,10 @@ func (s *PublicBlockChainAPI) GetKeyBlocksByNumbers(ctx context.Context, blockNr
 	response := make([]interface{}, 0, len(blockNrs))
 
 	for _, blockNr := range blockNrs {
-		//log.Debug("GetKeyBlocksByNumbers", "block", blockNr)
-
 		block, _ := s.b.KeyBlockByNumber(ctx, rpc.BlockNumber(blockNr))
 		if block != nil {
-			//log.Debug("GetKeyBlocksByNumbers blockbynumber", "hash", block.Hash().Hex())
 			rpcBlock, err := s.rpcOutputKeyBlock(block)
 			if err != nil {
-				//log.Debug("GetKeyBlocksByNumbers rpcOutputKeyBlock error ", "error", err)
 				continue
 			}
 			response = append(response, rpcBlock)
@@ -2414,12 +2359,6 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 		return errors.New(`both "data" and "input" are set and not equal. Please use "input" to pass transaction call data`)
 	}
 	if args.requestsNativeTransaction(b) {
-		if !nativeTransactionsRequired(b) {
-			return errNativeTransactionsDisabled
-		}
-		return args.setNativeDefaults(ctx, b)
-	}
-	if args.hasNativeFields() || (args.Type != nil && uint64(*args.Type) == types.NativeTxType) {
 		return errNativeTransactionsDisabled
 	}
 	if args.ChainID != nil {
@@ -2723,10 +2662,8 @@ func emitSubmittedTransactionCheckpoint(tx *types.Transaction, from common.Addre
 	}
 	if tx.To() == nil {
 		addr := crypto.CreateAddress(from, tx.Nonce())
-		//log.Info("Submitted contract creation", "fullhash", tx.Hash().Hex(), "to", addr.Hex())
 		log.EmitCheckpoint(log.TxCreated, "tx", tx.Hash().Hex(), "to", addr.Hex())
 	} else {
-		//log.Info("Submitted transaction", "fullhash", tx.Hash().Hex(), "recipient", tx.To())
 		log.EmitCheckpoint(log.TxCreated, "tx", tx.Hash().Hex(), "to", tx.To().Hex())
 	}
 }
@@ -2734,38 +2671,7 @@ func emitSubmittedTransactionCheckpoint(tx *types.Transaction, from common.Addre
 // SendTransaction creates a transaction for the given argument, sign it and submit it to the
 // transaction pool.
 func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args SendTxArgs) (common.Hash, error) {
-	// Look up the wallet containing the requested signer
-	account := accounts.Account{Address: args.From}
-
-	wallet, err := s.b.AccountManager().Find(account)
-	if err != nil {
-		return common.Hash{}, err
-	}
-
-	if !args.requestsNativeTransaction(s.b) && args.Nonce == nil {
-		// Hold the addresse's mutex around signing to prevent concurrent assignment of
-		// the same nonce to multiple accounts.
-		s.nonceLock.LockAddr(args.From)
-		defer s.nonceLock.UnlockAddr(args.From)
-	}
-
-	// Set some sanity defaults and terminate on failure
-	if err := args.setDefaults(ctx, s.b); err != nil {
-		return common.Hash{}, err
-	}
-
-	// Assemble the transaction and sign with the wallet
-	chainID := args.transactionChainID(s.b)
-	tx := args.toTransaction(chainID)
-	if tx.RouteHint() == types.TxRouteAuto {
-		tx = tx.WithRouteHint(types.TxRouteFast)
-	}
-
-	signed, err := wallet.SignTx(account, tx, chainID)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return SubmitTransaction(ctx, s.b, signed, true)
+	return s.SendTransactionWithOpts(ctx, args, SendTxOpts{})
 }
 
 func (s *PublicTransactionPoolAPI) SendTransactionWithOpts(ctx context.Context, args SendTxArgs, opts SendTxOpts) (common.Hash, error) {
@@ -2778,6 +2684,7 @@ func (s *PublicTransactionPoolAPI) SendTransactionWithOpts(ctx context.Context, 
 	}
 
 	if !args.requestsNativeTransaction(s.b) && args.Nonce == nil {
+		// Hold the address lock through signing to prevent duplicate nonce assignment.
 		s.nonceLock.LockAddr(args.From)
 		defer s.nonceLock.UnlockAddr(args.From)
 	}
@@ -2832,16 +2739,6 @@ func (s *PublicTransactionPoolAPI) autoTrans(ctx context.Context, delay int) {
 	if len(addresses) < 2 {
 		return
 	}
-	/*
-		var (
-			headCh = make(chan core.ChainHeadEvent)
-		)
-		sub := s.b.SubscribeChainHeadEvent(headCh)
-		if sub == nil {
-			return
-		}
-		defer sub.Unsubscribe()
-	*/
 	delayTm := time.Duration(delay) * time.Millisecond
 	s.autoTransactionRunning = true
 	atomic.StoreInt32(&s.quitAutoTransaction, 0)
@@ -2880,42 +2777,15 @@ func (s *PublicTransactionPoolAPI) autoTrans(ctx context.Context, delay int) {
 		}
 		log.Debug("AutoTrans...1")
 		hash, err := SubmitTransaction(ctx, s.b, signed, true)
-		if err != nil || hash == (common.Hash{}) { //&& err != core.ErrAlreadyKnown {
+		if err != nil || hash == (common.Hash{}) {
 			log.Error("AutoTrans failed to submit transaction", "amount", amount, "nonce", txNonce, "submit error", err)
-			//if err == core.ErrReplaceUnderpriced {
-			//	txNonce = txNonce + 1
 			time.Sleep(delayTm)
 			txNonce, _ = s.b.GetPoolNonce(ctx, addrfrom)
 			noceMap[addrfrom] = txNonce
 			goto labelReSend
-			//}
-			//break
 		}
 		log.Debug("AutoTrans...2")
 		time.Sleep(delayTm)
-		/*
-			num := 0
-			for {
-				num++
-				if num > 1000 {
-					break
-				}
-				hasNewBlock := false
-				pending, _ := s.b.Stats()
-				if pending == 0 {
-					break
-				}
-				select {
-				case head := <-headCh:
-					log.Debug("AutoTrans", "number", head.Block.NumberU64())
-					hasNewBlock = true
-				}
-				if hasNewBlock {
-					break
-				}
-				time.Sleep(delayTm)
-			}
-		*/
 	}
 
 	s.autoTransactionRunning = false
@@ -2924,7 +2794,6 @@ func (s *PublicTransactionPoolAPI) autoTrans(ctx context.Context, delay int) {
 // AutoTransaction creates repeated transactions for the given argument, sign them and submit them to the
 // transaction pool,this api is ONLY used for test.
 func (s *PublicTransactionPoolAPI) AutoTransaction(ctx context.Context, run int, delay int) string {
-	//log.Info("Auto transaction: ","autoTx", fmt.Sprintf("run = %d , from = %s, to = %s", run, from.Hex(), to.Hex()))
 	if run > 0 {
 		if !s.autoTransactionRunning {
 			go s.autoTrans(ctx, delay)
@@ -4364,12 +4233,6 @@ func (s *PublicNetAPI) PeerCount() hexutil.Uint {
 // Version returns the current ethereum protocol version.
 func (s *PublicNetAPI) Version() string {
 	return fmt.Sprintf("%d", s.networkVersion)
-}
-
-// checkTxFee is an internal function used to check whether the fee of
-// the given transaction is _reasonable_(under the cap).
-func checkTxFee(gasPrice *big.Int, gas uint64, cap float64) error {
-	return checkTxFeeWithBlob(gasPrice, gas, nil, 0, cap)
 }
 
 // checkTxFeeWithBlob applies the RPC safety cap to the transaction's complete

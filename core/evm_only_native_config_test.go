@@ -124,39 +124,20 @@ func TestEVMOnlyDirectNativeAPIsRejectBeforeExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	newFundedState := func() *state.StateDB {
-		statedb := newEVMOnlyTestState(t)
-		statedb.SetBalance(payer, new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
-		return statedb
-	}
-
-	if _, err := NewNativeReplayAnchorSet(config, nil, 0); !errors.Is(err, ErrNativeTxDisabled) {
-		t.Fatalf("EVM-only replay anchor error = %v, want %v", err, ErrNativeTxDisabled)
-	}
-	statedb := newFundedState()
+	statedb := newEVMOnlyTestState(t)
+	statedb.SetBalance(payer, new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
 	rootBefore := statedb.IntermediateRoot(false)
-	if err := PrepareNativeReplaySequences(config, statedb, types.Transactions{native}); !errors.Is(err, ErrNativeTxDisabled) {
-		t.Fatalf("EVM-only replay prepass error = %v, want %v", err, ErrNativeTxDisabled)
-	}
-	if rootAfter := statedb.IntermediateRoot(false); rootAfter != rootBefore {
-		t.Fatalf("disabled replay prepass mutated state: root %s -> %s", rootBefore, rootAfter)
-	}
-	if _, err := NewNativeDependencyPlanner(config); !errors.Is(err, ErrNativeTxDisabled) {
-		t.Fatalf("EVM-only dependency planner error = %v, want %v", err, ErrNativeTxDisabled)
-	}
-
 	header := &types.Header{Number: big.NewInt(0), GasLimit: native.Gas(), BaseFee: big.NewInt(1)}
 	gasPool := new(GasPool).AddGas(header.GasLimit)
 	usedGas := uint64(0)
-	statedb = newFundedState()
 	if _, err := ApplyTransaction(config, nil, nil, gasPool, statedb, header, native, &usedGas, vm.Config{}); !errors.Is(err, ErrNativeTxDisabled) {
 		t.Fatalf("EVM-only direct ApplyTransaction error = %v, want %v", err, ErrNativeTxDisabled)
 	}
-	if _, err := ApplyNativeTransactionReference(config, nil, nil, gasPool, statedb, header, native, &usedGas, vm.Config{}); !errors.Is(err, ErrNativeTxDisabled) {
-		t.Fatalf("EVM-only native reference error = %v, want %v", err, ErrNativeTxDisabled)
+	if rootAfter := statedb.IntermediateRoot(false); rootAfter != rootBefore {
+		t.Fatalf("disabled ApplyTransaction mutated state: root %s -> %s", rootBefore, rootAfter)
 	}
-	if _, _, _, err := ExecuteNativeProposalTransactions(config, nil, header, types.Transactions{native}, statedb, vm.Config{}); !errors.Is(err, ErrNativeTxDisabled) {
-		t.Fatalf("EVM-only proposal executor error = %v, want %v", err, ErrNativeTxDisabled)
+	if gasPool.Gas() != header.GasLimit || usedGas != 0 {
+		t.Fatalf("disabled ApplyTransaction changed gas: remaining %d, used %d", gasPool.Gas(), usedGas)
 	}
 	message := types.NewMessageWithModernFields(
 		types.NativeTxType, payer, &payer, 0, new(big.Int), params.TxGas,
@@ -166,13 +147,15 @@ func TestEVMOnlyDirectNativeAPIsRejectBeforeExecution(t *testing.T) {
 		CanTransfer: CanTransfer, Transfer: Transfer, BlockNumber: big.NewInt(0),
 		Time: new(big.Int), GasLimit: params.TxGas, BaseFee: big.NewInt(1),
 	}, statedb, config, vm.Config{})
-	if _, err := ApplyMessage(evm, message, new(GasPool).AddGas(params.TxGas)); !errors.Is(err, ErrNativeTxDisabled) {
+	messageGasPool := new(GasPool).AddGas(params.TxGas)
+	if _, err := ApplyMessage(evm, message, messageGasPool); !errors.Is(err, ErrNativeTxDisabled) {
 		t.Fatalf("EVM-only direct ApplyMessage error = %v, want %v", err, ErrNativeTxDisabled)
 	}
-
-	pool := &TxPool{chainconfig: config, nativeSigner: types.NewNativeSigner(config.ChainID)}
-	if err := pool.validateNativeTxWithState(native, statedb); !errors.Is(err, ErrNativeTxDisabled) {
-		t.Fatalf("EVM-only direct native pool validation error = %v, want %v", err, ErrNativeTxDisabled)
+	if rootAfter := statedb.IntermediateRoot(false); rootAfter != rootBefore {
+		t.Fatalf("disabled ApplyMessage mutated state: root %s -> %s", rootBefore, rootAfter)
+	}
+	if messageGasPool.Gas() != params.TxGas {
+		t.Fatalf("disabled ApplyMessage changed remaining gas: %d", messageGasPool.Gas())
 	}
 }
 

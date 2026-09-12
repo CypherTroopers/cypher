@@ -4237,11 +4237,8 @@ func validateTxQUICAck(endpoint string, ack *txQUICAck, expectation txQUICAckExp
 	if len(ack.DurableBitmap) != bitmapBytes || len(ack.RetryableBitmap) != bitmapBytes {
 		return fmt.Errorf("txquic ack bitmap length mismatch from %s", endpoint)
 	}
-	if len(expectation.itemIDs)%8 != 0 && bitmapBytes > 0 {
-		unusedMask := byte(0xff << uint(len(expectation.itemIDs)%8))
-		if ack.DurableBitmap[bitmapBytes-1]&unusedMask != 0 || ack.RetryableBitmap[bitmapBytes-1]&unusedMask != 0 {
-			return fmt.Errorf("txquic ack bitmap padding is non-zero from %s", endpoint)
-		}
+	if !txQUICBitmapPaddingZero(ack.DurableBitmap, len(expectation.itemIDs)) || !txQUICBitmapPaddingZero(ack.RetryableBitmap, len(expectation.itemIDs)) {
+		return fmt.Errorf("txquic ack bitmap padding is non-zero from %s", endpoint)
 	}
 	covered := make([]bool, len(expectation.itemIDs))
 	rejects := make([]txQUICTransactionReject, 0)
@@ -4496,30 +4493,11 @@ func packetItemsToTxs(pkt *txQUICPacket) ([]*types.Transaction, error) {
 	return txs, nil
 }
 
-func verifyTxQUICBlobTransactions(txs types.Transactions) error {
-	return types.VerifyBlobSidecars(txs, types.KZGBlobVerifier{})
-}
-
 func (q *TxQUICIngress) verifyTxQUICBlobTransactions(txs types.Transactions) error {
 	if q != nil && q.txpool != nil {
 		return types.VerifyBlobSidecarsForVersion(txs, q.txpool.ActiveBlobSidecarVersion(), types.KZGBlobVerifier{})
 	}
-	return verifyTxQUICBlobTransactions(txs)
-}
-
-func verifyTxQUICPacketBlobSidecars(pkt *txQUICPacket) error {
-	txs, err := packetItemsToTxs(pkt)
-	if err != nil {
-		return err
-	}
-	return verifyTxQUICBlobTransactions(txs)
-}
-
-func verifyTxQUICBatchBlobSidecars(batch *txQUICBatch) error {
-	if batch == nil {
-		return fmt.Errorf("nil txquic batch")
-	}
-	return verifyTxQUICPacketBlobSidecars(&txQUICPacket{Certificate: batch.Certificate, Items: batch.Items})
+	return types.VerifyBlobSidecars(txs, types.KZGBlobVerifier{})
 }
 
 func (q *TxQUICIngress) verifyTxQUICPacketBlobSidecars(pkt *txQUICPacket) error {

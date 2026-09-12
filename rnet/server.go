@@ -2,13 +2,11 @@ package rnet
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/rnet/network"
-	"rsc.io/goversion/version"
 )
 
 // Server connects the Router and the Services together. It sets
@@ -123,10 +121,6 @@ func NewServerFallbackWithListenAddr(e *network.ServerIdentity, listenAddr strin
 	r, err := network.NewFallbackRouterWithListenAddr(e, listenAddr)
 	return newServerFromRouter(r, err, "fallback")
 }
-
-var gover version.Version
-var goverOnce sync.Once
-var goverOk = false
 
 // Close closes the  Router
 func (c *Server) Close() error {

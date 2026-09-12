@@ -630,26 +630,3 @@ func (t *freezerTable) Sync() error {
 	}
 	return t.head.Sync()
 }
-
-// printIndex is a debug print utility function for testing
-func (t *freezerTable) printIndex() {
-	buf := make([]byte, indexEntrySize)
-
-	fmt.Printf("|-----------------|\n")
-	fmt.Printf("| fileno | offset |\n")
-	fmt.Printf("|--------+--------|\n")
-
-	for i := uint64(0); ; i++ {
-		if _, err := t.index.ReadAt(buf, int64(i*indexEntrySize)); err != nil {
-			break
-		}
-		var entry indexEntry
-		entry.unmarshalBinary(buf)
-		fmt.Printf("|  %03d   |  %03d   | \n", entry.filenum, entry.offset)
-		if i > 100 {
-			fmt.Printf(" ... \n")
-			break
-		}
-	}
-	fmt.Printf("|-----------------|\n")
-}

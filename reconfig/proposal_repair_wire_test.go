@@ -36,7 +36,7 @@ func testSignedProposalRepairTransaction(t *testing.T) *types.Transaction {
 func testProposalRepairWireBody(t *testing.T) (*proposalBodyMsg, *types.Transaction) {
 	t.Helper()
 	tx := testSignedProposalRepairTransaction(t)
-	encodedTransaction, err := encodeProposalRepairTransaction(tx)
+	encodedTransaction, err := encodeProposalRepairTransactionForConfig(nil, tx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func testProposalRepairWireBody(t *testing.T) (*proposalBodyMsg, *types.Transact
 
 func TestProposalRepairNetworkRoundTrip(t *testing.T) {
 	body, tx := testProposalRepairWireBody(t)
-	if err := validateProposalBodyWireShape(body); err != nil {
+	if err := validateProposalBodyWireShapeForConfig(nil, body); err != nil {
 		t.Fatalf("valid repair payload rejected before network encoding: %v", err)
 	}
 	network.RegisterMessage(&networkMsg{})
@@ -77,13 +77,13 @@ func TestProposalRepairNetworkRoundTrip(t *testing.T) {
 	if !ok || decoded.Pmsg == nil {
 		t.Fatalf("repair transaction did not survive network round trip: %#v", decodedMessage)
 	}
-	if err := validateProposalBodyWireShape(decoded.Pmsg); err != nil {
+	if err := validateProposalBodyWireShapeForConfig(nil, decoded.Pmsg); err != nil {
 		t.Fatalf("network-decoded repair payload rejected: %v", err)
 	}
 	if len(decoded.Pmsg.TransactionBytes) != 1 || !bytes.Equal(decoded.Pmsg.TransactionBytes[0], body.TransactionBytes[0]) {
 		t.Fatalf("network round trip changed canonical transaction bytes")
 	}
-	decodedTransactions, err := decodeProposalRepairTransactions(decoded.Pmsg.MissingTxHashes, decoded.Pmsg.TransactionBytes)
+	decodedTransactions, err := decodeProposalRepairTransactionsForConfig(nil, decoded.Pmsg.MissingTxHashes, decoded.Pmsg.TransactionBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestProposalRepairWireValidationRejectsMalformedTransactions(t *testing.T) 
 		t.Run(name, func(t *testing.T) {
 			body := cloneProposalBodyMsg(valid)
 			mutate(body)
-			if err := validateProposalBodyWireShape(body); err == nil {
+			if err := validateProposalBodyWireShapeForConfig(nil, body); err == nil {
 				t.Fatal("malformed repair transaction payload was accepted")
 			}
 		})
@@ -150,7 +150,7 @@ func TestProposalRepairWireValidationRejectsMalformedTransactions(t *testing.T) 
 }
 
 func TestProposalRepairEncodingRejectsUninitializedTransaction(t *testing.T) {
-	if _, err := encodeProposalRepairTransaction(new(types.Transaction)); err == nil {
+	if _, err := encodeProposalRepairTransactionForConfig(nil, new(types.Transaction)); err == nil {
 		t.Fatal("uninitialized transaction was encoded for proposal repair")
 	}
 }
@@ -164,7 +164,7 @@ func TestProposalRepairResponseRejectsUninitializedResolvedTransaction(t *testin
 		GasLimit:   30_000_000,
 	}, types.Transactions{requested}, nil, nil, new(trie.Trie))
 	block.SetCommonTxData(nil, []types.CommonTxAdmissionRef{{}}, nil)
-	manifest, err := encodeProposalDataManifest(block)
+	manifest, err := encodeProposalDataManifestForConfig(nil, block)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,114 +178,53 @@ func TestProposalRepairResponseRejectsUninitializedResolvedTransaction(t *testin
 	}
 }
 
-func TestProposalRepairRequestTrackerCoversMaxCountWithDelayedResponses(t *testing.T) {
-	transactionLimit := int(params.FairHotstuffWorkLimits().Transactions)
-	missing := make([]common.Hash, transactionLimit)
-	for index := range missing {
-		missing[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
-	}
-
-	// Keep the complete missing set unchanged to model responses arriving only
-	// after every first-pass request has already been sent.
-	tracker := new(proposalRepairRequestTracker)
-	seen := make(map[common.Hash]struct{}, transactionLimit)
-	windowCount := (transactionLimit + proposalRepairMaxHashes - 1) / proposalRepairMaxHashes
-	for windowIndex := 0; windowIndex < windowCount; windowIndex++ {
-		window := tracker.nextWindow(missing)
-		wantSize := proposalRepairMaxHashes
-		if remaining := transactionLimit - windowIndex*proposalRepairMaxHashes; remaining < wantSize {
-			wantSize = remaining
-		}
-		if len(window) != wantSize {
-			t.Fatalf("repair window %d size = %d, want %d", windowIndex, len(window), wantSize)
-		}
-		for _, hash := range window {
-			if _, duplicate := seen[hash]; duplicate {
-				t.Fatalf("repair window %d repeated %s before covering the manifest", windowIndex, hash)
-			}
-			seen[hash] = struct{}{}
-		}
-	}
-	if len(seen) != transactionLimit {
-		t.Fatalf("first repair pass covered %d transactions, want %d", len(seen), transactionLimit)
-	}
-
-	rotated := tracker.nextWindow(missing)
-	wantRotated := transactionLimit
-	if wantRotated > proposalRepairMaxHashes {
-		wantRotated = proposalRepairMaxHashes
-	}
-	if len(rotated) != wantRotated {
-		t.Fatalf("rotated repair window size = %d, want %d", len(rotated), wantRotated)
-	}
-	for index := range rotated {
-		if rotated[index] != missing[index] {
-			t.Fatalf("rotated repair window[%d] = %s, want %s", index, rotated[index], missing[index])
-		}
-	}
-}
-
-func TestProposalRepairRequestTrackerRequeuesPartialResponseRemainder(t *testing.T) {
-	missing := make([]common.Hash, 2*proposalRepairMaxHashes)
-	for index := range missing {
-		missing[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
-	}
-
-	tracker := new(proposalRepairRequestTracker)
-	first := tracker.nextWindow(missing)
-	if len(first) != proposalRepairMaxHashes {
-		t.Fatalf("first repair window size = %d, want %d", len(first), proposalRepairMaxHashes)
-	}
-
-	// Model a byte-capped response which can return only the first transaction
-	// from a full hash window. The rest of that same request must become eligible
-	// immediately instead of waiting for a pass over every later manifest hash.
-	remaining := append([]common.Hash(nil), missing[1:]...)
-	second := tracker.nextWindow(remaining)
-	if len(second) != proposalRepairMaxHashes {
-		t.Fatalf("second repair window size = %d, want %d", len(second), proposalRepairMaxHashes)
-	}
-	for index := 0; index < proposalRepairMaxHashes-1; index++ {
-		if second[index] != missing[index+1] {
-			t.Fatalf("second repair window[%d] = %s, want partial remainder %s", index, second[index], missing[index+1])
-		}
-	}
-	if second[len(second)-1] != missing[proposalRepairMaxHashes] {
-		t.Fatalf("second repair window tail = %s, want next unrequested hash %s", second[len(second)-1], missing[proposalRepairMaxHashes])
-	}
-}
-
 func TestProposalRepairAssemblyTrackerPipelinesDisjointWindows(t *testing.T) {
-	transactionLimit := proposalRepairNativeRequestBurst*proposalRepairMaxHashes + 1
-	hashes := make([]common.Hash, transactionLimit)
-	for index := range hashes {
-		hashes[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
-	}
-	state := &proposalAssemblyState{
-		manifest:     &proposalDataManifest{TransactionHashes: hashes},
-		positions:    make(map[common.Hash]int, len(hashes)),
-		transactions: make(types.Transactions, len(hashes)),
-		missingCount: len(hashes),
-	}
-	for index, hash := range hashes {
-		state.positions[hash] = index
-	}
-	tracker := new(proposalRepairRequestTracker)
-	seen := make(map[common.Hash]struct{}, proposalRepairNativeRequestBurst*proposalRepairMaxHashes)
-	for request := 0; request < proposalRepairNativeRequestBurst; request++ {
-		window := tracker.nextAssemblyWindow(state)
-		if len(window) != proposalRepairMaxHashes {
-			t.Fatalf("window %d size = %d, want %d", request, len(window), proposalRepairMaxHashes)
-		}
-		for _, hash := range window {
-			if _, duplicate := seen[hash]; duplicate {
-				t.Fatalf("window %d repeated in-flight hash %s", request, hash)
+	for name, transactionLimit := range map[string]int{
+		"max_count":    int(params.FairHotstuffWorkLimits().Transactions),
+		"partial_tail": proposalRepairNativeRequestBurst*proposalRepairMaxHashes + 1,
+	} {
+		t.Run(name, func(t *testing.T) {
+			hashes := make([]common.Hash, transactionLimit)
+			state := &proposalAssemblyState{
+				manifest:     &proposalDataManifest{TransactionHashes: hashes},
+				positions:    make(map[common.Hash]int, len(hashes)),
+				transactions: make(types.Transactions, len(hashes)),
+				missingCount: len(hashes),
 			}
-			seen[hash] = struct{}{}
-		}
-	}
-	if len(seen) != proposalRepairNativeRequestBurst*proposalRepairMaxHashes {
-		t.Fatalf("pipelined windows covered %d hashes", len(seen))
+			for index := range hashes {
+				hashes[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
+				state.positions[hashes[index]] = index
+			}
+			// Delay every response until the complete first pass has been sent.
+			tracker := new(proposalRepairRequestTracker)
+			seen := make(map[common.Hash]struct{}, transactionLimit)
+			windowCount := (transactionLimit + proposalRepairMaxHashes - 1) / proposalRepairMaxHashes
+			for request := 0; request < windowCount; request++ {
+				window := tracker.nextAssemblyWindow(state)
+				wantSize := min(proposalRepairMaxHashes, transactionLimit-request*proposalRepairMaxHashes)
+				if len(window) != wantSize {
+					t.Fatalf("window %d size = %d, want %d", request, len(window), wantSize)
+				}
+				for _, hash := range window {
+					if _, duplicate := seen[hash]; duplicate {
+						t.Fatalf("window %d repeated in-flight hash %s", request, hash)
+					}
+					seen[hash] = struct{}{}
+				}
+			}
+			if len(seen) != transactionLimit {
+				t.Fatalf("first repair pass covered %d transactions, want %d", len(seen), transactionLimit)
+			}
+			rotated := tracker.nextAssemblyWindow(state)
+			if want := min(transactionLimit, proposalRepairMaxHashes); len(rotated) != want {
+				t.Fatalf("rotated repair window size = %d, want %d", len(rotated), want)
+			}
+			for index, hash := range rotated {
+				if hash != hashes[index] {
+					t.Fatalf("rotated repair window[%d] = %s, want %s", index, hash, hashes[index])
+				}
+			}
+		})
 	}
 	if got := proposalRepairRequestBurstForConfig(nativeProposalLimitTestConfig()); got != proposalRepairNativeRequestBurst {
 		t.Fatalf("native request burst = %d, want %d", got, proposalRepairNativeRequestBurst)
@@ -332,11 +271,11 @@ func TestProposalRepairAssemblyTrackerImmediatelyRetriesPartialWindow(t *testing
 func TestMergeProposalRepairRejectsOutsideHashAtomically(t *testing.T) {
 	valid := testSignedProposalRepairTransaction(t)
 	outside := testSignedProposalRepairTransaction(t)
-	validBytes, err := encodeProposalRepairTransaction(valid)
+	validBytes, err := encodeProposalRepairTransactionForConfig(nil, valid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	outsideBytes, err := encodeProposalRepairTransaction(outside)
+	outsideBytes, err := encodeProposalRepairTransactionForConfig(nil, outside)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,13 +314,13 @@ func TestProposalRepairWaitTimeoutCoversMaxCountRequestSchedule(t *testing.T) {
 	transactionLimit := int(params.FairHotstuffWorkLimits().Transactions)
 	windowCount := (transactionLimit + proposalRepairMaxHashes - 1) / proposalRepairMaxHashes
 	want := proposalBodyRequestAfter + time.Duration(windowCount-1)*proposalBodyRequestInterval + proposalRepairNetworkMargin
-	if got := proposalRepairWaitTimeout(transactionLimit); got != want {
+	if got := proposalRepairWaitTimeoutForConfig(nil, transactionLimit); got != want {
 		t.Fatalf("max-count repair timeout = %s, want %s", got, want)
 	}
 	if want > proposalBodyWaitMaxTimeout {
 		t.Fatalf("max-count repair timeout %s exceeds bounded wait %s", want, proposalBodyWaitMaxTimeout)
 	}
-	if got := proposalRepairWaitTimeout(transactionLimit + 1); got != want {
+	if got := proposalRepairWaitTimeoutForConfig(nil, transactionLimit+1); got != want {
 		t.Fatalf("over-limit repair timeout = %s, want bounded consensus maximum %s", got, want)
 	}
 }
@@ -442,7 +381,7 @@ func TestDecodeProposalDataManifestAppliesConsensusCountLimitsFirst(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := decodeProposalDataManifest(encoded); err == nil || !strings.Contains(err.Error(), test.want) {
+			if _, err := decodeProposalDataManifestForConfig(nil, encoded); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("oversized %s error = %v, want %q limit rejection", test.name, err, test.want)
 			}
 		})

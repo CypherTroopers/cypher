@@ -260,18 +260,9 @@ func testTxQUICAck(t *testing.T, packet *txQUICPacket, durable, retryable []int,
 	return ack
 }
 
-func cloneTxQUICAck(ack txQUICAck) txQUICAck {
-	ack.DurableBitmap = append([]byte(nil), ack.DurableBitmap...)
-	ack.RetryableBitmap = append([]byte(nil), ack.RetryableBitmap...)
-	ack.PermanentErrors = append([]txQUICPermanentError(nil), ack.PermanentErrors...)
-	ack.CommitteePublicKey = append([]byte(nil), ack.CommitteePublicKey...)
-	ack.Signature = append([]byte(nil), ack.Signature...)
-	return ack
-}
-
 func testTxQUICReceipt(endpoint string, committeePublicKey []byte, ack txQUICAck) *txQUICAckReceipt {
 	identity := sha256.Sum256(committeePublicKey)
-	ack = cloneTxQUICAck(ack)
+	ack = copyTxQUICAck(ack)
 	ack.CommitteePublicKey = append([]byte(nil), committeePublicKey...)
 	return &txQUICAckReceipt{
 		Endpoint: endpoint,
@@ -1081,7 +1072,7 @@ func TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem(t *testing.T) {
 	if err := validateTxQUICAckOutcome(&valid, expectation); err != nil {
 		t.Fatalf("valid per-item outcome rejected: %v", err)
 	}
-	invalidAdmission := cloneTxQUICAck(valid)
+	invalidAdmission := copyTxQUICAck(valid)
 	invalidAdmission.PermanentErrors[0].Code = txQUICPermanentInvalidAdmission
 	invalidAdmission.PermanentErrors[0].Reason = "invalid admission signature"
 	if err := validateTxQUICAckOutcome(&invalidAdmission, expectation); err != nil {
@@ -1106,7 +1097,7 @@ func TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			ack := cloneTxQUICAck(valid)
+			ack := copyTxQUICAck(valid)
 			test.mutate(&ack)
 			if err := validateTxQUICAckOutcome(&ack, expectation); err == nil {
 				t.Fatal("invalid acknowledgement outcome was accepted")
@@ -2555,13 +2546,13 @@ func TestTxOutboxPlacementPromotionRequiresTrustedPayloadBoundTerminalAggregate(
 	if err := outbox.promotePlacementSync(batchID, preMarked, aggregate); err == nil || !strings.Contains(err.Error(), "marker must be set by the durable writer") {
 		t.Fatalf("caller-forged promotion marker error = %v", err)
 	}
-	incomplete := cloneTxQUICAck(aggregate)
+	incomplete := copyTxQUICAck(aggregate)
 	txQUICBitmapClear(incomplete.DurableBitmap, 0)
 	txQUICBitmapSet(incomplete.RetryableBitmap, 0)
 	if err := outbox.promotePlacementSync(batchID, state, incomplete); err == nil || !strings.Contains(err.Error(), "aggregate is incomplete") {
 		t.Fatalf("incomplete aggregate promotion error = %v", err)
 	}
-	wrongBatch := cloneTxQUICAck(aggregate)
+	wrongBatch := copyTxQUICAck(aggregate)
 	wrongBatch.BatchID = common.HexToHash("0xbad7525")
 	if err := outbox.promotePlacementSync(batchID, state, wrongBatch); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
 		t.Fatalf("payload-mismatched aggregate promotion error = %v", err)
@@ -3075,17 +3066,17 @@ func TestTxQUICAckSignatureIsBoundToCanonicalCommitteeMember(t *testing.T) {
 	if err := verifyTxQUICAckSignature(otherPublic, &ack); err == nil {
 		t.Fatal("ACK from a different committee member was accepted")
 	}
-	mutated := cloneTxQUICAck(ack)
+	mutated := copyTxQUICAck(ack)
 	mutated.BatchID = common.HexToHash("0xdead")
 	if err := verifyTxQUICAckSignature(memberPublic, &mutated); err == nil {
 		t.Fatal("ACK signature survived a BatchID mutation")
 	}
-	mutated = cloneTxQUICAck(ack)
+	mutated = copyTxQUICAck(ack)
 	mutated.KeyNumber++
 	if err := verifyTxQUICAckSignature(memberPublic, &mutated); err == nil {
 		t.Fatal("ACK signature survived a key-generation mutation")
 	}
-	mutated = cloneTxQUICAck(ack)
+	mutated = copyTxQUICAck(ack)
 	mutated.CommitteeHash = common.HexToHash("0xbeef")
 	if err := verifyTxQUICAckSignature(memberPublic, &mutated); err == nil {
 		t.Fatal("ACK signature survived a committee-generation mutation")

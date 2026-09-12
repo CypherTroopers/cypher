@@ -58,7 +58,6 @@ func testProposalValidationService() *Service {
 		proposalValidationJobs:       make(chan *proposalValidationJob, proposalValidationQueueCapacity),
 		proposalValidationResults:    make(chan *hotstuff.FHSProposalValidationResult, proposalValidationWorkers+1),
 		highQCValidationResults:      make(chan *hotstuff.FHSHighQCValidationResult, proposalValidationWorkers+1),
-		activeProposalValidations:    make(map[common.Hash]*proposalValidationControl),
 		fhsCertifiedByHash:           make(map[common.Hash]*fhsCertifiedProposal),
 	}
 }
@@ -90,8 +89,12 @@ func TestHotstuffControlLoopDoesNotCancelProposalFromUnverifiedNumber(t *testing
 	if handleCall < 0 {
 		t.Fatal("could not locate serialized HotStuff message handler")
 	}
-	beforeVerifiedHandle := source[loopStart : loopStart+handleCall]
-	if bytes.Contains(beforeVerifiedHandle, []byte("cancelProposalValidationsBefore")) {
+	messageStart := bytes.Index(source[loopStart:loopStart+handleCall], []byte("msg := data"))
+	if messageStart < 0 {
+		t.Fatal("could not locate incoming HotStuff message processing")
+	}
+	beforeVerifiedHandle := source[loopStart+messageStart : loopStart+handleCall]
+	if bytes.Contains(beforeVerifiedHandle, []byte("cancelInactiveProposalValidations")) {
 		t.Fatal("unverified HotStuff message number can cancel proposal validation before protocol verification")
 	}
 }
@@ -145,7 +148,7 @@ func TestHighQCValidationSurvivesTargetAdvanceAndProducesResult(t *testing.T) {
 	// continuation target before body catch-up finishes. View cleanup does not
 	// own the semantic QC worker and must not invalidate its eventual result.
 	service.cancelInactiveProposalValidations(14)
-	service.cancelProposalValidationsBefore(15)
+	service.cancelInactiveProposalValidations(15)
 	if !service.isProposalValidationJobActive(job) {
 		t.Fatal("HighQC worker became inactive after the application passed its target view")
 	}
@@ -175,10 +178,8 @@ func TestHighQCValidationIgnoresInvalidFarViewCleanup(t *testing.T) {
 	}
 	job := <-service.proposalValidationJobs
 	invalidFarView := uint64(1) << 62
-	// These are the cleanup calls surrounding HandleMessage in the serialized
-	// control loop. An authenticated but invalid Number must not cancel the
-	// manager-owned HighQC worker before or after message rejection.
-	service.cancelProposalValidationsBefore(invalidFarView)
+	// Active-view cleanup after message verification must not cancel the
+	// manager-owned HighQC worker, even for a far-future view.
 	service.cancelInactiveProposalValidations(invalidFarView)
 	if !service.isProposalValidationJobActive(job) {
 		t.Fatal("invalid far view cleanup removed active HighQC validation")
@@ -233,7 +234,7 @@ func TestProposalValidationDoesNotCancelOrDrainActiveHighQC(t *testing.T) {
 	default:
 	}
 	queued := <-service.proposalValidationJobs
-	if queued != highQCJob || !service.isProposalValidationJobActive(highQCJob) || len(service.activeProposalValidations) != 0 {
+	if queued != highQCJob || !service.isProposalValidationJobActive(highQCJob) || service.activeProposalValidation != nil {
 		t.Fatal("proposal scheduling drained or replaced active HighQC job")
 	}
 }
@@ -456,7 +457,7 @@ func TestProposalManifestAuthorityBindsLeaderOrActivePrepare(t *testing.T) {
 		LeaderID:   body.LeaderID,
 		ProposalID: body.ProposalID,
 	}
-	service.activeProposalValidations[key.ViewID] = &proposalValidationControl{key: key, keyHash: body.SenderKeyHash, generation: 1}
+	service.activeProposalValidation = &proposalValidationControl{key: key, keyHash: body.SenderKeyHash, generation: 1}
 	if err := service.verifyProposalManifestAuthority(body); err != nil {
 		t.Fatalf("active Prepare repair manifest rejected: %v", err)
 	}
@@ -605,7 +606,7 @@ func TestProposalSidecarWireRejectsAboveOsakaBlockLimit(t *testing.T) {
 		AuthSig:    []byte{1},
 		Manifest:   make([]byte, params.MaxBlockSize+1),
 	}
-	if err := validateProposalBodyWireShape(body); err == nil {
+	if err := validateProposalBodyWireShapeForConfig(nil, body); err == nil {
 		t.Fatal("proposal sidecar above the Osaka block limit was accepted")
 	}
 }
@@ -644,7 +645,7 @@ func TestProposalManifestRepairReconstructsExactBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := encodeProposalDataManifest(block)
+	manifest, err := encodeProposalDataManifestForConfig(nil, block)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -751,7 +752,7 @@ func TestProposalManifestRepairReconstructsExactBody(t *testing.T) {
 func TestProposalRepairCannotExportTransactionOutsideManifest(t *testing.T) {
 	service, body := testProposalSidecar(t)
 	block := types.DecodeToBlock(body.EncodedBlock)
-	manifest, err := encodeProposalDataManifest(block)
+	manifest, err := encodeProposalDataManifestForConfig(nil, block)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -939,7 +940,7 @@ func TestProposalWireNeverAcceptsFullBlockBody(t *testing.T) {
 	_, body := testProposalSidecar(t)
 	body.AuthSig = []byte{1}
 	body.Manifest = []byte{1}
-	if err := validateProposalBodyWireShape(body); err == nil {
+	if err := validateProposalBodyWireShapeForConfig(nil, body); err == nil {
 		t.Fatal("wire proposal accepted a full block body")
 	}
 }
@@ -947,14 +948,13 @@ func TestProposalWireNeverAcceptsFullBlockBody(t *testing.T) {
 func TestProposalSidecarSignatureCoversAllProofFields(t *testing.T) {
 	service, body := testProposalSidecar(t)
 	repairTx := testSignedProposalRepairTransaction(t)
-	encodedRepairTx, err := encodeProposalRepairTransaction(repairTx)
+	encodedRepairTx, err := encodeProposalRepairTransactionForConfig(nil, repairTx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	body.TransactionBytes = [][]byte{encodedRepairTx}
 	var secret bls.SecretKey
 	secret.SetByCSPRNG()
-	service.consensusSecret = &secret
 	service.consensusPublic = secret.GetPublicKey()
 	service.proposalBodySecret = new(bls.SecretKey)
 	if err := service.proposalBodySecret.Deserialize(secret.Serialize()); err != nil {

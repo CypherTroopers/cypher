@@ -73,10 +73,9 @@ var (
 	SnapshotStoragePrefix = []byte("o") // SnapshotStoragePrefix + account hash + storage hash -> storage trie value
 	codePrefix            = []byte("c") // codePrefix + code hash -> account code
 
-	preimagePrefix        = []byte("secure-key-")      // preimagePrefix + hash -> preimage
-	configPrefix          = []byte("ethereum-config-") // config prefix for the db
-	committeePrefix       = []byte("cypherium-committee-")
-	epochPrivateKeyPrefix = []byte("epoch-private-")
+	preimagePrefix  = []byte("secure-key-")      // preimagePrefix + hash -> preimage
+	configPrefix    = []byte("ethereum-config-") // config prefix for the db
+	committeePrefix = []byte("cypherium-committee-")
 
 	// Chain index prefixes (use `i` + single byte to avoid mixing data types).
 	BloomBitsIndexPrefix = []byte("iB") // BloomBitsIndexPrefix is the data table of a chain indexer to track its progress

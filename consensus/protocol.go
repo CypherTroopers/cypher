@@ -7,7 +7,6 @@ package consensus
 const (
 	eth63      = 63
 	eth64      = 64
-	eth65      = 65
 	colossusX1 = 1
 	Istanbul64 = 64
 	Istanbul99 = 99

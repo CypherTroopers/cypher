@@ -870,7 +870,7 @@ func makeLog(size int) executionFunc {
 	}
 }
 
-// opPush1 is a specialized version of pushN
+// opPush1 is a specialized version of the instruction produced by makePush.
 func opPush1(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	var (
 		codeLen = uint64(len(callContext.contract.Code))

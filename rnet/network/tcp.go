@@ -155,34 +155,7 @@ func (c *TCPConn) Send(msg Message) (uint64, error) {
 }
 
 func (c *TCPConn) sendRaw(b []byte) (uint64, error) {
-	if uint64(len(b)) > uint64(def_MaxPacketSize) {
-		return 0, NewPermanentSendError(SendErrorPacketTooLarge,
-			fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize))
-	}
-	packetSize := uint32(len(b))
-	_ = c.conn.SetWriteDeadline(time.Now().Add(fallbackFrameWriteTimeout(packetSize)))
-	defer c.conn.SetWriteDeadline(time.Time{})
-
-	headBuf := encodePacketHeader(packetSize)
-
-	if _, err := c.conn.Write(headBuf); err != nil {
-		return 0, err
-	}
-
-	var sent uint32
-	for sent < packetSize {
-		n, err := c.conn.Write(b[sent:])
-		if err != nil {
-			sentLen := uint64(len(headBuf)) + uint64(sent)
-			c.updateTx(sentLen)
-			return sentLen, handleError(err)
-		}
-		sent += uint32(n)
-	}
-
-	sentLen := uint64(len(headBuf)) + uint64(sent)
-	c.updateTx(sentLen)
-	return sentLen, nil
+	return sendStreamFrame(c.conn, &c.counterSafe, b)
 }
 
 func (c *TCPConn) Remote() Address {

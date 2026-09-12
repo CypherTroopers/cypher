@@ -17,7 +17,6 @@
 package core
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -61,6 +60,10 @@ var (
 	ErrNativeReplayAnchor    = errors.New("invalid native transaction replay anchor")
 	ErrNativeResourceLimit   = errors.New("native transaction resource limit exceeded")
 )
+
+// ErrNativeReplaySequenceReserved retains the retired NativeTxV1 reservation
+// error identity used by ingress error classification.
+var ErrNativeReplaySequenceReserved = errors.New("native replay sequence is already reserved")
 
 var (
 	evictionInterval    = time.Minute
@@ -416,14 +419,7 @@ type TxPool struct {
 	beats   map[common.Address]time.Time
 	all     *txLookup
 	priced  *txPricedList
-	native  *nativeTxPool
 	seen    map[common.Hash]time.Time
-
-	// nativeCanonical is a bounded canonical hash ring derived from the
-	// canonical head. Admission checks RecentBlockHash+RecentBlockNumber with
-	// one map lookup instead of walking the chain for every transaction.
-	nativeCanonical  map[uint64]common.Hash
-	nativeHeadNumber uint64
 
 	pendingIndexVersion    uint64
 	pendingIndex           *pendingReadyIndex
@@ -462,9 +458,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 		queue:           make(map[common.Address]*txList),
 		beats:           make(map[common.Address]time.Time),
 		all:             newTxLookup(),
-		native:          newNativeTxPool(config, chainconfig),
 		seen:            make(map[common.Hash]time.Time),
-		nativeCanonical: make(map[uint64]common.Hash),
 		chainHeadCh:     make(chan ChainHeadEvent, chainHeadChanSize),
 		reqResetCh:      make(chan *txpoolResetRequest),
 		reqPromoteCh:    make(chan *txpoolPromoteRequest),
@@ -591,16 +585,7 @@ func (pool *TxPool) SetGasPrice(price *big.Int) {
 	for _, tx := range pool.priced.Cap(price, pool.locals) {
 		pool.removeTx(tx.Hash(), false)
 	}
-	pool.recordNativeRemovalsLocked(pool.native.removeUnderpriced(price), "below updated price threshold")
 	log.Info("Transaction pool price threshold updated", "price", price)
-}
-
-func (pool *TxPool) currentBaseFee() *big.Int {
-	block := pool.chain.CurrentBlock()
-	if block == nil || block.Header() == nil || block.Header().BaseFee == nil || block.Header().BaseFee.Sign() == 0 {
-		return big.NewInt(params.FixedBaseFeePerGas)
-	}
-	return new(big.Int).Set(block.Header().BaseFee)
 }
 
 func validate1559FeeCaps(tx *types.Transaction, baseFee *big.Int) error {
@@ -645,7 +630,7 @@ func (pool *TxPool) PendingRevision() uint64 {
 }
 
 func (pool *TxPool) stats() (int, int) {
-	pending := pool.native.count()
+	pending := 0
 	for _, list := range pool.pending {
 		pending += list.Len()
 	}
@@ -663,9 +648,6 @@ func (pool *TxPool) Content() (map[common.Address]types.Transactions, map[common
 	for addr, list := range pool.pending {
 		pending[addr] = list.Flatten()
 	}
-	for addr, txs := range pool.nativeByPayerLocked(false) {
-		pending[addr] = append(pending[addr], txs...)
-	}
 	queued := make(map[common.Address]types.Transactions)
 	for addr, list := range pool.queue {
 		queued[addr] = list.Flatten()
@@ -679,9 +661,6 @@ func (pool *TxPool) Pending() (map[common.Address]types.Transactions, error) {
 	pending := make(map[common.Address]types.Transactions)
 	for addr, list := range pool.pending {
 		pending[addr] = list.Flatten()
-	}
-	for addr, txs := range pool.nativeByPayerLocked(false) {
-		pending[addr] = append(pending[addr], txs...)
 	}
 	return pending, nil
 }
@@ -702,24 +681,14 @@ func (pool *TxPool) local() map[common.Address]types.Transactions {
 			txs[addr] = append(txs[addr], queued.Flatten()...)
 		}
 	}
-	for addr, native := range pool.native.localByPayer() {
-		txs[addr] = append(txs[addr], native...)
-	}
 	return txs
 }
 
-// nativeByPayerLocked returns a deterministic native snapshot grouped by fee
-// payer. The caller holds pool.mu; nativeTxPool uses its own lock so Get/Has
-// remain race-safe without recursively acquiring pool.mu.
-func (pool *TxPool) nativeByPayerLocked(localOnly bool) map[common.Address]types.Transactions {
-	if localOnly {
-		return pool.native.localByPayer()
+func saturatingAddUint64(a, b uint64) uint64 {
+	if b > ^uint64(0)-a {
+		return ^uint64(0)
 	}
-	grouped := make(map[common.Address]types.Transactions)
-	for _, tx := range pool.native.snapshot() {
-		grouped[tx.Payer()] = append(grouped[tx.Payer()], tx)
-	}
-	return grouped
+	return a + b
 }
 
 func ClassifyTxLane(tx *types.Transaction) TxLane {
@@ -1385,93 +1354,6 @@ func (pool *TxPool) validateTxWithView(tx *types.Transaction, local bool, stated
 	return nil
 }
 
-func (pool *TxPool) validateNativeTxWithState(tx *types.Transaction, statedb *state.StateDB) error {
-	if pool.chainconfig == nil || !pool.chainconfig.NativeParallelEnabled() || !pool.chainconfig.NativeParallel.RequireNativeTransactions {
-		return ErrNativeTxDisabled
-	}
-	if statedb == nil {
-		return errors.New("native transaction state snapshot is unavailable")
-	}
-	native := pool.chainconfig.NativeParallel
-	if uint64(tx.Size()) > native.MaxTransactionBytes {
-		return ErrOversizedData
-	}
-	// Keep pool and block-envelope admission identical for signed manifests,
-	// reserved state, and every declared resource ceiling.
-	if err := validateNativeParallelEnvelope(pool.chainconfig, types.Transactions{tx}); err != nil {
-		return fmt.Errorf("%w: %w", ErrNativeResourceLimit, err)
-	}
-	from, err := types.Sender(pool.nativeSigner, tx)
-	if err != nil || from != tx.Payer() {
-		return ErrInvalidSender
-	}
-
-	headNumber := pool.nativeHeadNumber
-	if headNumber == math.MaxUint64 {
-		return fmt.Errorf("%w: canonical head overflows proposal number", ErrNativeReplayAnchor)
-	}
-	recentNumber := tx.RecentBlockNumber()
-	if recentNumber > headNumber {
-		return fmt.Errorf("%w: recent block %d is ahead of canonical head %d", ErrNativeReplayAnchor, recentNumber, headNumber)
-	}
-	if headNumber-recentNumber >= native.ReplayWindowBlocks {
-		return fmt.Errorf("%w: recent block %d is outside replay window %d at head %d", ErrNativeReplayAnchor, recentNumber, native.ReplayWindowBlocks, headNumber)
-	}
-	if tx.ValidUntil() <= headNumber {
-		return fmt.Errorf("%w: transaction expires at %d before next block %d", ErrNativeReplayAnchor, tx.ValidUntil(), headNumber+1)
-	}
-	if tx.ValidUntil()-recentNumber > native.ReplayWindowBlocks {
-		return fmt.Errorf("%w: validity span %d exceeds replay window %d", ErrNativeReplayAnchor, tx.ValidUntil()-recentNumber, native.ReplayWindowBlocks)
-	}
-	if canonical, ok := pool.nativeCanonical[recentNumber]; !ok || canonical != tx.RecentBlockHash() {
-		return fmt.Errorf("%w: block %d/%s is not canonical", ErrNativeReplayAnchor, recentNumber, tx.RecentBlockHash())
-	}
-	if err := checkNativeReplaySequence(pool.chainconfig, statedb, tx); err != nil {
-		return err
-	}
-
-	rules := params.Rules{}
-	if head := pool.chain.CurrentBlock(); head != nil && head.Header() != nil {
-		header := head.Header()
-		rules = pool.chainconfig.CypheriumRules(new(big.Int).Add(header.Number, big.NewInt(1)), header.Time)
-	}
-	code := statedb.GetCode(from)
-	_, delegated := types.ParseDelegation(code)
-	if len(code) != 0 && !(rules.IsPrague && delegated) {
-		return ErrSenderNoEOA
-	}
-	if err := validate1559FeeCaps(tx, pool.currentBaseFee()); err != nil {
-		return err
-	}
-	if tx.GasPriceIntCmp(pool.gasPrice) < 0 {
-		return ErrUnderpriced
-	}
-	if statedb.GetBalance(from).Cmp(tx.Cost()) < 0 {
-		return ErrInsufficientFunds
-	}
-	// NativeTxV1 projects its signed resource manifest into the EVM access
-	// list. Admission must charge exactly the same intrinsic work as the serial
-	// reference executor; otherwise a transaction can enter the pool and later
-	// make every proposal containing it consensus-invalid.
-	intrinsic, err := IntrinsicGasWithRulesAndAuthorizations(tx.Data(), tx.AccessList(), nil, false, rules)
-	if err != nil {
-		return err
-	}
-	if tx.ComputeLimit() < intrinsic {
-		return ErrIntrinsicGas
-	}
-	if rules.IsPrague {
-		floorDataGas, err := FloorDataGas(tx.Data())
-		if err != nil {
-			return err
-		}
-		if tx.ComputeLimit() < floorDataGas {
-			return ErrFloorDataGas
-		}
-	}
-	return nil
-}
-
 func (pool *TxPool) add(tx *types.Transaction, local bool, blobProofVerified bool, view txPoolValidationView) (replaced bool, journal bool, event bool, err error) {
 	if err := tx.ValidateIntegerBounds(); err != nil {
 		return false, false, false, err
@@ -1487,32 +1369,6 @@ func (pool *TxPool) add(tx *types.Transaction, local bool, blobProofVerified boo
 		log.Trace("Discarding invalid transaction", "hash", hash, "err", err)
 		invalidTxMeter.Mark(1)
 		return false, false, false, err
-	}
-	if tx.Type() == types.NativeTxType {
-		victims, err := pool.native.add(tx, isLocal, pool.currentState.GetBalance(tx.Payer()))
-		if err != nil {
-			return false, false, false, err
-		}
-		for _, victim := range victims {
-			delete(pool.seen, victim.hash)
-			pendingGauge.Dec(1)
-			if victim.local {
-				localGauge.Dec(1)
-			}
-			log.Trace("Evicted lower-priority native transaction", "hash", victim.hash, "priority", victim.priority)
-		}
-		if local && !pool.locals.contains(tx.Payer()) {
-			pool.locals.add(tx.Payer())
-			log.Info("Setting new native transaction payer local", "address", tx.Payer())
-		}
-		pool.noteSeen(hash)
-		pool.markPendingIndexDirty()
-		pendingGauge.Inc(1)
-		if isLocal {
-			localGauge.Inc(1)
-		}
-		log.Trace("Pooled native transaction", "hash", hash, "payer", tx.Payer(), "priority", tx.PriorityFeePerCompute(), "validUntil", tx.ValidUntil())
-		return false, pool.journalWriter != nil && isLocal, true, nil
 	}
 	from, _ := types.Sender(pool.signer, tx)
 	txSlots := numSlots(tx)
@@ -2007,12 +1863,10 @@ func (pool *TxPool) localizeKnownTransactionsLocked(txs types.Transactions) type
 			continue
 		}
 		pool.locals.add(from)
-		pool.native.markPayerLocal(from)
 		newAccounts[from] = struct{}{}
 		log.Info("Setting known transaction account local", "address", from)
 	}
 	journalTxs := make(types.Transactions, 0, len(txs))
-	nativeLocals := pool.native.localByPayer()
 	for addr := range newAccounts {
 		if pending := pool.pending[addr]; pending != nil {
 			journalTxs = append(journalTxs, pending.Flatten()...)
@@ -2020,7 +1874,6 @@ func (pool *TxPool) localizeKnownTransactionsLocked(txs types.Transactions) type
 		if queued := pool.queue[addr]; queued != nil {
 			journalTxs = append(journalTxs, queued.Flatten()...)
 		}
-		journalTxs = append(journalTxs, nativeLocals[addr]...)
 	}
 	if len(journalTxs) > 0 {
 		localGauge.Inc(int64(len(journalTxs)))
@@ -2033,7 +1886,6 @@ func (pool *TxPool) addTxsLocked(txs []*types.Transaction, local, blobProofsVeri
 	errs := make([]error, len(txs))
 	journalTxs := make(types.Transactions, 0, len(txs))
 	queuedEvents := make(types.Transactions, 0, len(txs))
-	var validNative int64
 	needBlob := false
 	for _, tx := range txs {
 		if tx != nil && tx.IsInitialized() && tx.Type() == types.BlobTxType {
@@ -2055,7 +1907,7 @@ func (pool *TxPool) addTxsLocked(txs []*types.Transaction, local, blobProofsVeri
 				errs[i] = sidecarErr
 			}
 		}
-		if err == nil && !replaced && tx.Type() != types.NativeTxType {
+		if err == nil && !replaced {
 			dirty.addTx(tx)
 		}
 		if err == nil && journal {
@@ -2064,11 +1916,8 @@ func (pool *TxPool) addTxsLocked(txs []*types.Transaction, local, blobProofsVeri
 		if err == nil && event {
 			queuedEvents = append(queuedEvents, tx)
 		}
-		if err == nil && tx.Type() == types.NativeTxType {
-			validNative++
-		}
 	}
-	validTxMeter.Mark(int64(len(dirty.accounts)) + validNative)
+	validTxMeter.Mark(int64(len(dirty.accounts)))
 	return errs, dirty, journalTxs, queuedEvents
 }
 
@@ -2077,10 +1926,6 @@ func (pool *TxPool) Status(hashes []common.Hash) []TxStatus {
 	for i, hash := range hashes {
 		tx := pool.Get(hash)
 		if tx == nil {
-			continue
-		}
-		if tx.Type() == types.NativeTxType {
-			status[i] = TxStatusPending
 			continue
 		}
 		from, _ := types.Sender(pool.signer, tx)
@@ -2112,7 +1957,7 @@ func (pool *TxPool) getTx(hash common.Hash) *types.Transaction {
 			return tx
 		}
 	}
-	return pool.native.get(hash)
+	return nil
 }
 
 func (pool *TxPool) sender(tx *types.Transaction) (common.Address, error) {
@@ -2126,15 +1971,6 @@ func (pool *TxPool) sender(tx *types.Transaction) (common.Address, error) {
 }
 
 func (pool *TxPool) removeTx(hash common.Hash, outofbound bool) {
-	if native := pool.native.remove(hash); native != nil {
-		pool.markPendingIndexDirty()
-		delete(pool.seen, hash)
-		pendingGauge.Dec(1)
-		if native.local {
-			localGauge.Dec(1)
-		}
-		return
-	}
 	tx := pool.all.Get(hash)
 	if tx == nil {
 		return
@@ -2241,16 +2077,14 @@ func (pool *TxPool) scheduleReorgLoop() {
 		reset         *txpoolResetRequest
 		dirtyAccounts *accountSet
 		queuedEvents  = make(map[common.Address]*txSortedMap)
-		nativeEvents  = make(map[common.Hash]*types.Transaction)
 	)
 	for {
 		if curDone == nil && launchNextRun {
-			go pool.runReorg(nextDone, reset, dirtyAccounts, queuedEvents, nativeEvents)
+			go pool.runReorg(nextDone, reset, dirtyAccounts, queuedEvents)
 			curDone, nextDone = nextDone, make(chan struct{})
 			launchNextRun = false
 			reset, dirtyAccounts = nil, nil
 			queuedEvents = make(map[common.Address]*txSortedMap)
-			nativeEvents = make(map[common.Hash]*types.Transaction)
 		}
 		select {
 		case req := <-pool.reqResetCh:
@@ -2267,7 +2101,7 @@ func (pool *TxPool) scheduleReorgLoop() {
 			} else {
 				dirtyAccounts.merge(req.accounts)
 			}
-			pool.mergeQueuedTxEvents(queuedEvents, nativeEvents, req.events)
+			pool.mergeQueuedTxEvents(queuedEvents, req.events)
 			launchNextRun = true
 			req.reply <- nextDone
 		case <-curDone:
@@ -2282,13 +2116,9 @@ func (pool *TxPool) scheduleReorgLoop() {
 	}
 }
 
-func (pool *TxPool) mergeQueuedTxEvents(events map[common.Address]*txSortedMap, nativeEvents map[common.Hash]*types.Transaction, txs types.Transactions) {
+func (pool *TxPool) mergeQueuedTxEvents(events map[common.Address]*txSortedMap, txs types.Transactions) {
 	for _, tx := range txs {
 		if tx == nil {
-			continue
-		}
-		if tx.Type() == types.NativeTxType {
-			nativeEvents[tx.Hash()] = tx
 			continue
 		}
 		addr, err := types.Sender(pool.signer, tx)
@@ -2302,7 +2132,7 @@ func (pool *TxPool) mergeQueuedTxEvents(events map[common.Address]*txSortedMap, 
 	}
 }
 
-func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirtyAccounts *accountSet, events map[common.Address]*txSortedMap, nativeEvents map[common.Hash]*types.Transaction) {
+func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirtyAccounts *accountSet, events map[common.Address]*txSortedMap) {
 	defer close(done)
 	var promoteAddrs []common.Address
 	var resetJournal types.Transactions
@@ -2323,11 +2153,6 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 		for addr := range pool.queue {
 			promoteAddrs = append(promoteAddrs, addr)
 		}
-		for hash := range nativeEvents {
-			if pool.native.get(hash) == nil {
-				delete(nativeEvents, hash)
-			}
-		}
 	}
 	promoted := pool.promoteExecutables(promoteAddrs)
 	if reset != nil {
@@ -2344,21 +2169,11 @@ func (pool *TxPool) runReorg(done chan struct{}, reset *txpoolResetRequest, dirt
 	pool.changesSinceReorg = 0
 	pool.queueJournalTxs(resetJournal, false)
 	pool.mu.Unlock()
-	pool.mergeQueuedTxEvents(events, nativeEvents, append(resetEvents, promoted...))
-	if len(events) > 0 || len(nativeEvents) > 0 {
+	pool.mergeQueuedTxEvents(events, append(resetEvents, promoted...))
+	if len(events) > 0 {
 		var txs []*types.Transaction
 		for _, set := range events {
 			txs = append(txs, set.Flatten()...)
-		}
-		nativeHashes := make([]common.Hash, 0, len(nativeEvents))
-		for hash := range nativeEvents {
-			nativeHashes = append(nativeHashes, hash)
-		}
-		sort.Slice(nativeHashes, func(i, j int) bool {
-			return bytes.Compare(nativeHashes[i][:], nativeHashes[j][:]) < 0
-		})
-		for _, hash := range nativeHashes {
-			txs = append(txs, nativeEvents[hash])
 		}
 		pool.txFeed.Send(NewTxsEvent{txs})
 	}
@@ -2414,14 +2229,6 @@ func (pool *TxPool) Reset(oldHead, newHead *types.Header) (journalTxs types.Tran
 			reinject = types.TxDifference(discarded, included)
 		}
 	}
-	// Always include the new head body, including when deep-reorg reinjection is
-	// intentionally skipped. Duplicate hashes are harmless and ensure a native
-	// transaction consumed by the new canonical head cannot remain proposal-visible.
-	if newHead != nil {
-		if added := pool.chain.GetBlock(newHead.Hash(), newHead.Number.Uint64()); added != nil {
-			included = append(included, added.Transactions()...)
-		}
-	}
 	if newHead == nil {
 		newHead = pool.chain.CurrentBlock().Header()
 	}
@@ -2436,16 +2243,6 @@ func (pool *TxPool) Reset(oldHead, newHead *types.Header) (journalTxs types.Tran
 	pool.currentStateGeneration++
 	pool.pendingNonces = newTxNoncer(statedb)
 	pool.currentMaxGas = newHead.GasLimit
-	pool.pruneNativeLocked(oldHead, newHead)
-	includedNativePayers := make(map[common.Address]struct{})
-	for _, tx := range included {
-		if tx != nil && tx.Type() == types.NativeTxType {
-			includedNativePayers[tx.Payer()] = struct{}{}
-			pool.removeTx(tx.Hash(), false)
-		}
-	}
-	pool.recordNativeRemovalsLocked(pool.native.removeReplaySequences(included), "payer replay sequence consumed at canonical head")
-	pool.recordNativeRemovalsLocked(pool.native.removeUnfundedPayers(includedNativePayers, statedb.GetBalance), "payer balance changed at canonical head")
 	log.Debug("Reinjecting stale transactions", "count", len(reinject))
 	legacyReinject := make(types.Transactions, 0, len(reinject))
 	for _, tx := range reinject {
@@ -2475,19 +2272,6 @@ func (pool *TxPool) ResetHead(newHead *types.Header) {
 	pool.currentStateGeneration++
 	pool.pendingNonces = newTxNoncer(statedb)
 	pool.currentMaxGas = newHead.GasLimit
-	pool.pruneNativeLocked(nil, newHead)
-	if added := pool.chain.GetBlock(newHead.Hash(), newHead.Number.Uint64()); added != nil {
-		addedTxs := added.Transactions()
-		includedNativePayers := make(map[common.Address]struct{})
-		for _, tx := range addedTxs {
-			if tx != nil && tx.Type() == types.NativeTxType {
-				includedNativePayers[tx.Payer()] = struct{}{}
-				pool.removeTx(tx.Hash(), false)
-			}
-		}
-		pool.recordNativeRemovalsLocked(pool.native.removeReplaySequences(addedTxs), "payer replay sequence consumed at canonical head")
-		pool.recordNativeRemovalsLocked(pool.native.removeUnfundedPayers(includedNativePayers, statedb.GetBalance), "payer balance changed at canonical head")
-	}
 	accounts := make([]common.Address, 0, len(pool.queue))
 	for addr := range pool.queue {
 		accounts = append(accounts, addr)
@@ -2724,7 +2508,7 @@ func (pool *TxPool) demoteUnexecutables() {
 func (pool *TxPool) PendingCount() int {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
-	pending := pool.native.count()
+	pending := 0
 	for _, list := range pool.pending {
 		pending += list.Len()
 	}

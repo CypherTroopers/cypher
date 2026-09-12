@@ -1,7 +1,5 @@
 //go:build ignore
-//go:build none
 // +build ignore
-// +build none
 
 // Copyright 2016 The go-ethereum Authors
 // This file is part of the go-ethereum library.
@@ -82,7 +80,6 @@ var (
 		executablePath("puppeth"),
 		executablePath("rlpdump"),
 		executablePath("wnode"),
-		executablePath("clef"),
 	}
 
 	// A debian package is created for all executables listed here.
@@ -114,10 +111,6 @@ var (
 		{
 			BinaryName:  "wnode",
 			Description: "Ethereum Whisper diagnostic tool",
-		},
-		{
-			BinaryName:  "clef",
-			Description: "Ethereum account management tool.",
 		},
 	}
 

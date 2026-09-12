@@ -522,30 +522,6 @@ func (s *stateObject) deepCopyRuntimeMVCC(db *StateDB) *stateObject {
 	return stateObject
 }
 
-// deepCopyDeclared copies account metadata and the immutable trie handle but
-// intentionally starts with empty storage maps. CopyDeclared seeds only the
-// exact signed slots from the base's latest in-block view, avoiding repeated
-// copies of an ever-growing pendingStorage map for slot-parallel workloads.
-func (s *stateObject) deepCopyDeclared(db *StateDB, slots map[common.Hash]common.Hash) *stateObject {
-	data := s.data
-	if s.data.Balance != nil {
-		data.Balance = new(big.Int).Set(s.data.Balance)
-	}
-	data.CodeHash = common.CopyBytes(s.data.CodeHash)
-	stateObject := newObject(db, s.address, data)
-	if s.trie != nil {
-		stateObject.trie = db.db.CopyTrie(s.trie)
-	}
-	stateObject.code = common.CopyBytes(s.code)
-	for slot, value := range slots {
-		stateObject.originStorage[slot] = value
-	}
-	stateObject.suicided = s.suicided
-	stateObject.dirtyCode = s.dirtyCode
-	stateObject.deleted = s.deleted
-	return stateObject
-}
-
 //
 // Attribute accessors
 //

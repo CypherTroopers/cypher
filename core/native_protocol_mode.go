@@ -79,19 +79,8 @@ func ValidateNativeParallelBlockMode(config *params.ChainConfig, blockType uint8
 		if transaction.Type() > types.SetCodeTxType {
 			return mode, fmt.Errorf("%w: transaction %d unsupported type %#x in standard EVM lane", ErrNativeParallelLaneMismatch, index, transaction.Type())
 		}
-		isNative := transaction.Type() == types.NativeTxType
-		switch mode {
-		case NativeParallelBlockModeNative:
-			if !isNative {
-				return mode, fmt.Errorf("%w: transaction %d type %#x in NativeTxV1 lane", ErrNativeParallelLaneMismatch, index, transaction.Type())
-			}
-		case NativeParallelBlockModeEVM:
-			if isNative {
-				return mode, fmt.Errorf("%w: transaction %d NativeTxV1 in standard EVM lane", ErrNativeParallelLaneMismatch, index)
-			}
-			if size := uint64(transaction.Size()); size > config.NativeParallel.MaxTransactionBytes {
-				return mode, fmt.Errorf("standard EVM transaction %d encoded size %d exceeds maximum %d", index, size, config.NativeParallel.MaxTransactionBytes)
-			}
+		if size := uint64(transaction.Size()); size > config.NativeParallel.MaxTransactionBytes {
+			return mode, fmt.Errorf("standard EVM transaction %d encoded size %d exceeds maximum %d", index, size, config.NativeParallel.MaxTransactionBytes)
 		}
 	}
 	return mode, nil

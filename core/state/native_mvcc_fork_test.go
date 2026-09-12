@@ -21,80 +21,6 @@ func newNativeMVCCForkState(t *testing.T) *StateDB {
 	return statedb
 }
 
-func TestNativeDeclaredSnapshotIsVersionedAndDetached(t *testing.T) {
-	base := newNativeMVCCForkState(t)
-	address := common.Address{0x05}
-	slot := common.Hash{0x01}
-	base.CreateAccount(address)
-	base.SetBalance(address, big.NewInt(11))
-	base.SetState(address, slot, common.Hash{0xaa})
-	snapshot, err := base.PrepareNativeDeclaredSnapshot(
-		[]common.Address{address},
-		map[common.Address][]common.Hash{address: {slot}},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	base.SetBalance(address, big.NewInt(99))
-	base.SetState(address, slot, common.Hash{0xbb})
-	if err := base.AdvanceNativeMVCCVersion(); err != nil {
-		t.Fatal(err)
-	}
-	branch, err := snapshot.Branch([]common.Address{address}, map[common.Address][]common.Hash{address: {slot}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := branch.NativeMVCCVersion(); got != 0 {
-		t.Fatalf("snapshot branch version = %d, want 0", got)
-	}
-	if got := branch.GetBalance(address); got.Cmp(big.NewInt(11)) != 0 {
-		t.Fatalf("snapshot balance = %s, want 11", got)
-	}
-	if got := branch.GetState(address, slot); got != (common.Hash{0xaa}) {
-		t.Fatalf("snapshot slot = %s, want 0xaa", got)
-	}
-}
-
-func TestNativeDeclaredSnapshotBuildsBranchesConcurrently(t *testing.T) {
-	base := newNativeMVCCForkState(t)
-	address := common.Address{0x06}
-	base.CreateAccount(address)
-	base.SetNonce(address, 1)
-	const branches = 32
-	unionSlots := make([]common.Hash, branches)
-	for index := range unionSlots {
-		unionSlots[index] = common.BigToHash(new(big.Int).SetUint64(uint64(index + 1)))
-		base.SetState(address, unionSlots[index], common.Hash{byte(index + 1)})
-	}
-	snapshot, err := base.PrepareNativeDeclaredSnapshot(
-		[]common.Address{address},
-		map[common.Address][]common.Hash{address: unionSlots},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var group sync.WaitGroup
-	errorsByBranch := make([]error, branches)
-	group.Add(branches)
-	for index := 0; index < branches; index++ {
-		go func(index int) {
-			defer group.Done()
-			slot := unionSlots[index]
-			branch, err := snapshot.Branch([]common.Address{address}, map[common.Address][]common.Hash{address: {slot}})
-			if err == nil && branch.GetState(address, slot) != (common.Hash{byte(index + 1)}) {
-				err = errors.New("branch read the wrong prefetched slot")
-			}
-			errorsByBranch[index] = err
-		}(index)
-	}
-	group.Wait()
-	for index, err := range errorsByBranch {
-		if err != nil {
-			t.Fatalf("branch %d: %v", index, err)
-		}
-	}
-}
-
 func TestRuntimeMVCCSnapshotLoadsOnlyObservedStorageSlots(t *testing.T) {
 	base := newNativeMVCCForkState(t)
 	address := common.Address{0x08}
@@ -328,93 +254,6 @@ func TestPruneRuntimeMVCCOriginsDropsReadsAndPreservesPendingWrites(t *testing.T
 	}
 }
 
-func TestNativeDeclaredSnapshotFailsClosedOnStorageReadError(t *testing.T) {
-	base := newNativeMVCCForkState(t)
-	address := common.Address{0x07}
-	slot := common.Hash{0x01}
-	base.CreateAccount(address)
-	object := base.getStateObject(address)
-	object.dbErr = errors.New("missing storage trie node")
-	if _, err := base.PrepareNativeDeclaredSnapshot(
-		[]common.Address{address},
-		map[common.Address][]common.Hash{address: {slot}},
-	); err == nil || !strings.Contains(err.Error(), "missing storage trie node") {
-		t.Fatalf("prefetch error = %v", err)
-	}
-}
-
-func TestCopyDeclaredCopiesOnlyManifestAccountsAndIsolatesValues(t *testing.T) {
-	base := newNativeMVCCForkState(t)
-	declared := common.Address{0x01}
-	unrelated := common.Address{0x02}
-	base.CreateAccount(declared)
-	base.SetBalance(declared, big.NewInt(11))
-	base.CreateAccount(unrelated)
-	base.SetBalance(unrelated, big.NewInt(22))
-
-	fork := base.CopyDeclared([]common.Address{declared, declared})
-	if fork == nil {
-		t.Fatal("CopyDeclared returned nil")
-	}
-	if got := len(fork.stateObjects); got != 1 {
-		t.Fatalf("fork copied %d live objects, want one declared object", got)
-	}
-	if got := fork.GetBalance(declared); got.Cmp(big.NewInt(11)) != 0 {
-		t.Fatalf("declared balance = %s, want 11", got)
-	}
-	// Even direct mutation of the returned big.Int must not alias the base.
-	fork.GetBalance(declared).SetInt64(99)
-	if got := base.GetBalance(declared); got.Cmp(big.NewInt(11)) != 0 {
-		t.Fatalf("fork balance aliased base: %s", got)
-	}
-	if _, copied := fork.stateObjects[unrelated]; copied {
-		t.Fatal("fork copied an unrelated pending account")
-	}
-}
-
-func TestCopyDeclaredPreservesPendingDeletionTombstone(t *testing.T) {
-	base := newNativeMVCCForkState(t)
-	address := common.Address{0x03}
-	base.CreateAccount(address)
-	base.SetNonce(address, 1)
-	base.IntermediateRoot(true) // Put the live account into the fallback trie.
-	base.Suicide(address)
-	base.Finalise(true) // Leave deletion pending in memory, ahead of that trie.
-
-	fork := base.CopyDeclared([]common.Address{address})
-	if fork.Exist(address) {
-		t.Fatal("declared fork resurrected a base-version tombstone")
-	}
-	object, ok := fork.stateObjects[address]
-	if !ok || object == nil || !object.deleted {
-		t.Fatal("declared fork did not retain the deletion tombstone")
-	}
-}
-
-func TestCopyDeclaredSeedsOnlyExactStorageSlots(t *testing.T) {
-	base := newNativeMVCCForkState(t)
-	address := common.Address{0x04}
-	base.CreateAccount(address)
-	base.SetNonce(address, 1)
-	for index := 0; index < 4096; index++ {
-		slot := common.BigToHash(new(big.Int).SetUint64(uint64(index)))
-		base.SetState(address, slot, common.Hash{byte(index + 1)})
-	}
-	base.Finalise(true)
-	wanted := common.BigToHash(big.NewInt(2048))
-	fork := base.CopyDeclared([]common.Address{address}, map[common.Address][]common.Hash{address: {wanted}})
-	object := fork.stateObjects[address]
-	if object == nil {
-		t.Fatal("declared storage account was not copied")
-	}
-	if len(object.pendingStorage) != 0 || len(object.dirtyStorage) != 0 || len(object.originStorage) != 1 {
-		t.Fatalf("fork storage maps pending/dirty/origin=%d/%d/%d, want 0/0/1", len(object.pendingStorage), len(object.dirtyStorage), len(object.originStorage))
-	}
-	if got, want := fork.GetState(address, wanted), base.GetState(address, wanted); got != want {
-		t.Fatalf("seeded slot = %s, want %s", got, want)
-	}
-}
-
 func TestNativeBlockHashViewFollowsStateCopies(t *testing.T) {
 	base := newNativeMVCCForkState(t)
 	want := common.HexToHash("0x1234")
@@ -425,9 +264,17 @@ func TestNativeBlockHashViewFollowsStateCopies(t *testing.T) {
 	if !base.NativeBlockHashesPrepared() || base.NativeBlockHash(7) != want {
 		t.Fatalf("base BLOCKHASH view = %s, want %s", base.NativeBlockHash(7), want)
 	}
+	snapshot, err := base.PrepareRuntimeMVCCSnapshot(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	branch, err := snapshot.Branch()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for name, copied := range map[string]*StateDB{
-		"full":     base.Copy(),
-		"declared": base.CopyDeclared(nil),
+		"full":    base.Copy(),
+		"runtime": branch,
 	} {
 		if !copied.NativeBlockHashesPrepared() {
 			t.Fatalf("%s copy lost prepared BLOCKHASH marker", name)

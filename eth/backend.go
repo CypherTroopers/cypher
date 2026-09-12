@@ -22,14 +22,12 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/cypherium/cypher/accounts"
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/commonrpcreward"
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/consensus/colossusX"
@@ -54,7 +52,6 @@ import (
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig"
 	"github.com/cypherium/cypher/reconfig/bftview"
-	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
 	"golang.org/x/crypto/ed25519"
 )
@@ -498,22 +495,6 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		}
 	}
 	return eth, nil
-}
-
-func makeExtraData(extra []byte, hasPrivate bool) []byte {
-	if len(extra) == 0 {
-		extra, _ = rlp.EncodeToBytes([]interface{}{
-			uint(params.VersionMajor<<16 | params.VersionMinor<<8 | params.VersionPatch),
-			"cypher",
-			runtime.Version(),
-			runtime.GOOS,
-		})
-	}
-	if uint64(len(extra)) > params.GetMaximumExtraDataSize(hasPrivate) {
-		log.Warn("Miner extra data exceed limit", "extra", hexutil.Bytes(extra), "limit", params.GetMaximumExtraDataSize(hasPrivate))
-		extra = nil
-	}
-	return extra
 }
 
 // ResolveTxQUICTransaction exposes only authenticated, fsync-complete ingress

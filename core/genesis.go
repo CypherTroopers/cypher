@@ -58,7 +58,6 @@ type Genesis struct {
 	Alloc      GenesisAlloc        `json:"alloc"      gencodec:"required"`
 	BaseFee    *big.Int            `json:"baseFeePerGas,omitempty"`
 
-	// These fields are used for consensus tests.
 	// These fields are used for consensus tests. Please don't use them
 	// in actual genesis blocks.
 	Number     uint64      `json:"number"`

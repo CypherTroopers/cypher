@@ -17,8 +17,6 @@
 package discover
 
 import (
-	crand "crypto/rand"
-
 	"github.com/cypherium/cypher/common/mclock"
 	"github.com/cypherium/cypher/p2p/enode"
 	"github.com/hashicorp/golang-lru/simplelru"
@@ -40,9 +38,8 @@ type sessionID struct {
 
 // session contains session information
 type session struct {
-	writeKey     []byte
-	readKey      []byte
-	nonceCounter uint32
+	writeKey []byte
+	readKey  []byte
 }
 
 func newSessionCache(maxItems int, clock mclock.Clock) *sessionCache {
@@ -55,13 +52,6 @@ func newSessionCache(maxItems int, clock mclock.Clock) *sessionCache {
 		handshakes: make(map[sessionID]*whoareyouV5),
 		clock:      clock,
 	}
-}
-
-// nextNonce creates a nonce for encrypting a message to the given session.
-func (sc *sessionCache) nextNonce(id enode.ID, addr string) []byte {
-	n := make([]byte, gcmNonceSize)
-	crand.Read(n)
-	return n
 }
 
 // session returns the current session for the given node, if any.

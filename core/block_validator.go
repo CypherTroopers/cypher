@@ -23,7 +23,6 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
-	parallelstate "github.com/cypherium/cypher/core/parallel"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/params"
@@ -132,8 +131,7 @@ func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailabl
 	// Reject count/byte/list/gas bounds and nil entries before deriving body
 	// roots or scheduling any public-key recovery. This phase is linear, does
 	// not deep-copy transaction lists, and cannot execute EVM code.
-	nativeSchedule, err := validateFHSBlockWorkEnvelopeWithSchedule(v.config, block)
-	if err != nil {
+	if err := validateFHSBlockWorkEnvelope(v.config, block); err != nil {
 		return err
 	}
 	if err := validateFHSCommonRPCSidecarCardinality(v.config, block); err != nil {
@@ -198,12 +196,6 @@ func (v *BlockValidator) validateBody(block *types.Block, hotstuffParentAvailabl
 		if err := verifyAndPublishValidatedFHSSidecars(v.config, block, sidecarContext, validatedSidecars, handoff); err != nil {
 			return err
 		}
-	}
-	// Publish only after every body invariant has succeeded. The schedule is a
-	// node-local optimisation and is consumed exactly once by StateProcessor;
-	// a concurrent miss simply rebuilds it from the signed manifests.
-	if nativeSchedule != nil && v.bc != nil && v.bc.nativeSchedules != nil {
-		v.bc.nativeSchedules.publish(v.config, block, nativeSchedule)
 	}
 
 	return nil
@@ -520,18 +512,13 @@ func validateFHSBlockWork(config *params.ChainConfig, block *types.Block) error 
 }
 
 func validateFHSBlockWorkEnvelope(config *params.ChainConfig, block *types.Block) error {
-	_, err := validateFHSBlockWorkEnvelopeWithSchedule(config, block)
-	return err
-}
-
-func validateFHSBlockWorkEnvelopeWithSchedule(config *params.ChainConfig, block *types.Block) (*parallelstate.Schedule, error) {
 	if config == nil || block == nil {
-		return nil, nil
+		return nil
 	}
 	txs := block.Transactions()
 	mode, err := ValidateNativeParallelBlockMode(config, block.BlockType(), txs)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var meter *FHSBlockWorkMeter
 	if config.FairHotstuff {
@@ -542,129 +529,23 @@ func validateFHSBlockWorkEnvelopeWithSchedule(config *params.ChainConfig, block 
 			candidate = NewFHSEVMBlockWorkMeterForConfig(config)
 		}
 		if uint64(len(txs)) > limits.Transactions {
-			return nil, fmt.Errorf("Fair HotStuff transaction count %d exceeds maximum %d", len(txs), limits.Transactions)
+			return fmt.Errorf("Fair HotStuff transaction count %d exceeds maximum %d", len(txs), limits.Transactions)
 		}
 		meter = candidate
 		for index, tx := range txs {
 			if err := meter.AddTransaction(index, tx); err != nil {
-				return nil, err
+				return err
 			}
-		}
-	}
-	var nativeSchedule *parallelstate.Schedule
-	if mode == NativeParallelBlockModeNative {
-		nativeSchedule, err = validateNativeParallelEnvelopeWithSchedule(config, txs)
-		if err != nil {
-			return nil, err
-		}
-		if err := validateNativeGasReservations(txs, block.GasLimit()); err != nil {
-			return nil, err
 		}
 	}
 	if meter == nil {
-		return nativeSchedule, nil
+		return nil
 	}
 	body := block.Body()
 	if err := meter.AddCommonSidecars(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.CommonTxRewards); err != nil {
-		return nil, err
+		return err
 	}
-	return nativeSchedule, nil
-}
-
-// validateNativeParallelEnvelope derives the consensus dependency schedule
-// entirely from signed manifests. It runs before signature recovery and EVM
-// execution, bounding both aggregate work and a deliberately adversarial hot
-// resource chain independently of the validator's local worker count.
-func validateNativeParallelEnvelope(config *params.ChainConfig, txs types.Transactions) error {
-	_, err := validateNativeParallelEnvelopeWithSchedule(config, txs)
-	return err
-}
-
-func validateNativeParallelEnvelopeWithSchedule(config *params.ChainConfig, txs types.Transactions) (*parallelstate.Schedule, error) {
-	if config == nil || !config.NativeParallelEnabled() {
-		return nil, nil
-	}
-	native := config.NativeParallel
-	if !native.RequireNativeTransactions {
-		for index, tx := range txs {
-			if tx == nil || !tx.IsInitialized() {
-				return nil, fmt.Errorf("standard EVM transaction %d is nil or uninitialized", index)
-			}
-			if tx.Type() == types.NativeTxType {
-				return nil, fmt.Errorf("%w: transaction %d NativeTxV1 is disabled by genesis", ErrNativeParallelLaneMismatch, index)
-			}
-		}
-		return nil, nil
-	}
-	planningWeight := nativeDAGPlanningMemoryWeight(txs)
-	if planningWeight >= nativeExecutionMemoryBudget {
-		return nil, fmt.Errorf("native dependency plan memory exceeds budget %d", nativeExecutionMemoryBudget)
-	}
-	planningLease := nativeDAGMemoryLimiter.acquire(planningWeight)
-	defer nativeDAGMemoryLimiter.release(planningLease)
-	limits, err := nativeExecutionLimits(config)
-	if err != nil {
-		return nil, err
-	}
-	planner := parallelstate.NewPlanner(limits)
-	seenHashes := make(map[common.Hash]struct{}, len(txs))
-	for index, tx := range txs {
-		if tx == nil || !tx.IsInitialized() {
-			return nil, fmt.Errorf("native transaction %d is nil or uninitialized", index)
-		}
-		if native.RequireNativeTransactions && tx.Type() != types.NativeTxType {
-			return nil, fmt.Errorf("transaction %d has legacy type %#x on a genesis-native chain", index, tx.Type())
-		}
-		if tx.Type() != types.NativeTxType {
-			continue
-		}
-		hash := tx.Hash()
-		if _, duplicate := seenHashes[hash]; duplicate {
-			return nil, fmt.Errorf("native transaction %d repeats hash %s", index, hash)
-		}
-		seenHashes[hash] = struct{}{}
-		if txBytes := uint64(tx.Size()); txBytes > native.MaxTransactionBytes {
-			return nil, fmt.Errorf("native transaction %d encoded size %d exceeds maximum %d", index, txBytes, native.MaxTransactionBytes)
-		}
-		if err := tx.ValidateNativeManifest(); err != nil {
-			return nil, fmt.Errorf("native transaction %d manifest: %w", index, err)
-		}
-		if config.ChainID == nil || tx.ChainId().Cmp(config.ChainID) != 0 {
-			return nil, fmt.Errorf("native transaction %d has chain ID %v, want %v", index, tx.ChainId(), config.ChainID)
-		}
-		if tx.PriorityFeePerCompute().Cmp(tx.MaxFeePerCompute()) > 0 {
-			return nil, fmt.Errorf("native transaction %d priority fee exceeds maximum fee", index)
-		}
-		if tx.MemoryLimit() == 0 || tx.MemoryLimit() > native.MaxMemoryBytesPerTransaction {
-			return nil, fmt.Errorf("native transaction %d memory limit %d exceeds range 1..%d", index, tx.MemoryLimit(), native.MaxMemoryBytesPerTransaction)
-		}
-		if tx.LogLimit() == 0 || tx.LogLimit() > native.MaxLogBytesPerTransaction {
-			return nil, fmt.Errorf("native transaction %d log limit %d exceeds range 1..%d", index, tx.LogLimit(), native.MaxLogBytesPerTransaction)
-		}
-		if tx.OutputLimit() == 0 || tx.OutputLimit() > native.MaxOutputBytesPerTransaction {
-			return nil, fmt.Errorf("native transaction %d output limit %d exceeds range 1..%d", index, tx.OutputLimit(), native.MaxOutputBytesPerTransaction)
-		}
-		for accessIndex := uint64(0); accessIndex < tx.NativeAccessCount(); accessIndex++ {
-			access, _ := tx.NativeAccessAt(accessIndex)
-			if params.IsNativeReplayRegistryAddress(access.Resource.Address) {
-				return nil, fmt.Errorf("native transaction %d manifest accesses reserved replay registry", index)
-			}
-		}
-		if tx.To() != nil && params.IsNativeReplayRegistryAddress(*tx.To()) {
-			return nil, fmt.Errorf("native transaction %d targets reserved replay registry", index)
-		}
-		projection, err := nativeExecutionProjection(native, tx)
-		if err != nil {
-			return nil, fmt.Errorf("native transaction %d dependency projection: %w", index, err)
-		}
-		if err := planner.TryAdd(projection); err != nil {
-			return nil, fmt.Errorf("native dependency schedule transaction %d: %w", index, err)
-		}
-	}
-	if err := validateNativeDeclaredResultEnvelope(config, txs); err != nil {
-		return nil, err
-	}
-	return planner.TakeSchedule(), nil
+	return nil
 }
 
 // validateFHSCommonRPCSidecarCardinality performs the allocation-free coverage

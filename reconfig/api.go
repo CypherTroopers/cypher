@@ -127,7 +127,3 @@ func (s *PublicReconfigAPI) Members(ctx context.Context, blockNr rpc.BlockNumber
 func (s *PublicReconfigAPI) Exceptions(ctx context.Context, blockNr rpc.BlockNumber) []string {
 	return s.reconfig.Exceptions(int64(blockNr))
 }
-
-func (s *PublicReconfigAPI) takePartInBlocks(ctx context.Context, addr common.Address, blockNr rpc.BlockNumber) []string {
-	return s.reconfig.service.TakePartInBlocks(addr, int64(blockNr))
-}

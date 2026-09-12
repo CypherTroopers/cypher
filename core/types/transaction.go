@@ -340,13 +340,6 @@ func requiredAddress(x *common.Address) common.Address {
 	return *x
 }
 
-func requiredHash(x *common.Hash) common.Hash {
-	if x == nil {
-		return common.Hash{}
-	}
-	return *x
-}
-
 func validateJSONSignature(v, r, s *big.Int, typed bool) error {
 	if v == nil || r == nil || s == nil {
 		return nil

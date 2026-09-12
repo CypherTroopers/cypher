@@ -22,6 +22,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cypherium/cypher/common"
@@ -78,47 +79,6 @@ func (keyS *keyService) fixedModeEnabled() bool {
 
 func (keyS *keyService) fixedLeaderModeEnabled() bool {
 	return keyS.config != nil && keyS.config.FixedLeader && !keyS.config.FairHotstuff
-}
-
-func (keyS *keyService) promoteFallbackLeader(current uint) {
-	if !keyS.fixedLeaderModeEnabled() {
-		return
-	}
-	mb := bftview.GetCurrentMember()
-	if mb == nil || len(mb.List) == 0 {
-		return
-	}
-
-	keyS.muLeaderState.Lock()
-	defer keyS.muLeaderState.Unlock()
-
-	keyS.syncPrimaryLeaderLocked(mb)
-	size := uint(len(mb.List))
-	if size == 0 {
-		return
-	}
-	primary := keyS.primaryLeader % size
-	next := primary
-	if size > 1 {
-		next = primary + 1
-		if next >= size {
-			next = 0
-		}
-	}
-	keyS.activeLeader = next
-	log.Warn("fixed-mode leader fallback activated", "primary", keyS.primaryLeader, "active", keyS.activeLeader, "committeeSize", len(mb.List), "oldCurrent", current)
-}
-
-func (keyS *keyService) restorePrimaryLeader() {
-	if !keyS.fixedLeaderModeEnabled() {
-		return
-	}
-	keyS.muLeaderState.Lock()
-	defer keyS.muLeaderState.Unlock()
-	if keyS.activeLeader != keyS.primaryLeader {
-		log.Info("fixed-mode leader restored", "from", keyS.activeLeader, "to", keyS.primaryLeader)
-	}
-	keyS.activeLeader = keyS.primaryLeader
 }
 
 func (keyS *keyService) getPrimaryLeaderIndex() uint {
@@ -217,7 +177,12 @@ func keyBlockProposalTimestamp(parentTime, proposalTime uint64, exactCadence boo
 	return proposalTime
 }
 
-const fixedKeyBlockFutureClockSkew = 30 * time.Second
+const (
+	fixedKeyBlockFutureClockSkew       = 30 * time.Second
+	fixedModeKeyblockWakeupInterval    = 2 * time.Second
+	fixedModeKeyblockWatchdogInterval  = 250 * time.Millisecond
+	fixedModeKeyblockViewRoundDuration = 2 * params.CollectVoteInfoTimeout
+)
 
 func verifyKeyBlockInterval(keyblock, curKeyblock *types.KeyBlock, fixedMode bool) error {
 	return verifyKeyBlockIntervalAt(keyblock, curKeyblock, fixedMode, time.Now())
@@ -863,4 +828,420 @@ func (keyS *keyService) setBestCandidate(bestCandidates []*types.Candidate) {
 			keyS.muBestCandidate.Unlock()
 		}
 	}
+}
+
+// GetExtra call by hotstuff
+func (s *Service) GetExtra() []byte {
+	best := s.keyService.getBestCandidate(true)
+	if best == nil {
+		return nil
+	}
+	return best.EncodeToBytes()
+}
+
+// keyProposalPlan derives proposal eligibility from the canonical key-block interval.
+// Fixed mode deliberately ignores NoDone: it is local recovery state and may be
+// reset by an otherwise valid TC/QC transition while the key-block slot is due.
+func keyProposalPlan(fixedMode bool, leaderIndex uint, noDone, intervalElapsed bool) (attempt, isDone bool) {
+	if fixedMode {
+		return intervalElapsed, true
+	}
+	return leaderIndex > 0 && intervalElapsed, !noDone
+}
+
+func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+
+	if s.keyService == nil || !s.keyService.fixedModeEnabled() || s.currentView.NoDone {
+		return
+	}
+	log.Warn("fixed-mode keyblock proposal aborted; returning to tx proposal view",
+		"reason", reason,
+		"err", err,
+		"txNumber", s.currentView.TxNumber,
+		"keyNumber", s.currentView.KeyNumber,
+		"leaderIndex", s.currentView.LeaderIndex)
+	s.currentView.NoDone = true
+	// A failed fixed-mode keyblock proposal should not leave the service waiting
+	// for a keyblock that was never committed. Reset the waiting watermark so the
+	// next successful tx/key block can advance the view normally.
+	s.waittingView.TxNumber = s.currentView.TxNumber
+	s.waittingView.KeyNumber = s.currentView.KeyNumber
+}
+
+func (s *Service) fixedModeKeyblockIntervalElapsed(now time.Time) bool {
+	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
+		return false
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return false
+	}
+	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+	return now.Sub(lastKeyTime) >= params.KeyBlockMinInterval
+}
+
+func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
+	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
+		return false
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return false
+	}
+
+	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+	elapsed := now.Sub(lastKeyTime)
+	if elapsed < params.KeyBlockMinInterval {
+		return false
+	}
+
+	// handleHotStuffMsg wakes every 1ms. Refreshing CandidatePool on every idle
+	// loop floods logs and can burn CPU while the keyblock view is waiting.
+	if !s.lastCandidateRewardCheck.IsZero() && now.Sub(s.lastCandidateRewardCheck) < 2*time.Second {
+		return s.lastCandidateRewardReady
+	}
+
+	s.lastCandidateRewardCheck = now
+	s.lastCandidateRewardReady = s.getBestCandidate(true) != nil
+	return s.lastCandidateRewardReady
+}
+
+func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) {
+	if pendingTotal <= 0 || s.keyService == nil || !s.keyService.fixedModeEnabled() {
+		return
+	}
+	curKeyBlock := s.kbc.CurrentBlock()
+	if curKeyBlock == nil {
+		return
+	}
+
+	now := time.Now()
+	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
+	elapsed := now.Sub(lastKeyTime)
+
+	// If keyblock interval has elapsed, do not interfere with normal keyblock proposal.
+	if elapsed >= params.KeyBlockMinInterval {
+		return
+	}
+
+	// Do not repair immediately after a tx block proposal was generated.
+	// The proposal may still be in HotStuff consensus. Touching currentView /
+	// waittingView while a tx block is in-flight can make the next view wait
+	// for the wrong watermark.
+	s.muProposalCadence.RLock()
+	lastTxProposal := s.lastFastBlockTime
+	if s.lastSlowBlockTime.After(lastTxProposal) {
+		lastTxProposal = s.lastSlowBlockTime
+	}
+	s.muProposalCadence.RUnlock()
+	if !lastTxProposal.IsZero() && now.Sub(lastTxProposal) < 2*time.Second {
+		s.muCurrentView.Lock()
+		txNumber := s.currentView.TxNumber
+		keyNumber := s.currentView.KeyNumber
+		leaderIndex := s.currentView.LeaderIndex
+		noDone := s.currentView.NoDone
+		s.muCurrentView.Unlock()
+
+		log.Debug("skip fixed-mode tx proposal view repair; recent tx proposal in flight",
+			"pendingTotal", pendingTotal,
+			"sinceLastTxProposal", now.Sub(lastTxProposal),
+			"elapsed", elapsed,
+			"minimum", params.KeyBlockMinInterval,
+			"txNumber", txNumber,
+			"keyNumber", keyNumber,
+			"leaderIndex", leaderIndex,
+			"noDone", noDone)
+
+		return
+	}
+
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+
+	if !s.currentView.NoDone {
+		leaderIndex := s.keyService.getPrimaryLeaderIndex()
+		if s.fairHotstuffEnabled() {
+			leaderIndex = s.fairHotstuffLeaderIndexForCurrentLocked()
+		}
+		if mb := bftview.GetCurrentMember(); mb != nil && len(mb.List) > 0 && leaderIndex >= uint(len(mb.List)) {
+			leaderIndex = 0
+		}
+
+		log.Warn("fixed-mode pending txs while keyblock interval not elapsed; forcing tx proposal view",
+			"pendingTotal", pendingTotal,
+			"elapsed", elapsed,
+			"minimum", params.KeyBlockMinInterval,
+			"txNumber", s.currentView.TxNumber,
+			"keyNumber", s.currentView.KeyNumber,
+			"oldLeaderIndex", s.currentView.LeaderIndex,
+			"newLeaderIndex", leaderIndex)
+
+		s.currentView.NoDone = true
+		s.currentView.LeaderIndex = leaderIndex
+		s.waittingView.TxNumber = s.currentView.TxNumber
+		s.waittingView.KeyNumber = s.currentView.KeyNumber
+	}
+}
+
+func (s *Service) resetFixedModeKeyblockViewLocked() {
+	s.fixedKeyViewStartedAt = time.Time{}
+	s.fixedKeyViewTxNumber = 0
+	s.fixedKeyViewKeyNumber = 0
+	s.fixedKeyViewTxHash = common.Hash{}
+	s.fixedKeyViewKeyHash = common.Hash{}
+}
+
+func (s *Service) fixedModeKeyblockViewStateChangedLocked() bool {
+	return s.fixedKeyViewStartedAt.IsZero() ||
+		s.fixedKeyViewTxNumber != s.currentView.TxNumber ||
+		s.fixedKeyViewKeyNumber != s.currentView.KeyNumber ||
+		s.fixedKeyViewTxHash != s.currentView.TxHash ||
+		s.fixedKeyViewKeyHash != s.currentView.KeyHash
+}
+
+func (s *Service) fixedModeKeyblockViewStart(now time.Time) time.Time {
+	start := now
+	if block := s.bc.CurrentBlock(); block != nil {
+		start = time.Unix(int64(block.Time()), 0)
+	}
+	return fixedModeKeyblockViewStartFromHeads(now, start, s.kbc.CurrentBlock())
+}
+
+func fixedModeKeyblockViewStartFromHeads(now, start time.Time, keyBlock *types.KeyBlock) time.Time {
+	if keyBlock != nil {
+		if keyBlock.IsZeroTimeGenesis() {
+			return now
+		}
+		keyReadyAt := time.Unix(int64(keyBlock.Time()), 0).Add(params.KeyBlockMinInterval)
+		if keyReadyAt.After(start) {
+			start = keyReadyAt
+		}
+	}
+	if start.After(now) {
+		return now
+	}
+	return start
+}
+
+func (s *Service) prepareFixedModeKeyblockView(now time.Time) (oldView bftview.View, curView bftview.View, viewAge time.Duration) {
+	s.muCurrentView.Lock()
+	defer s.muCurrentView.Unlock()
+
+	oldView = s.currentView
+
+	primary := uint(0)
+	if s.fairHotstuffEnabled() {
+		primary = s.fairHotstuffLeaderIndexForCurrentLocked()
+	} else if s.keyService != nil {
+		primary = s.keyService.getPrimaryLeaderIndex()
+	}
+	primary = s.normalizeLeaderIndex(primary)
+
+	if s.fixedModeKeyblockViewStateChangedLocked() {
+		// Derive the timeout origin from committed chain data. Local ACK times and
+		// process start times are not consensus state and previously split nodes
+		// between the primary and fallback leaders for the same view.
+		s.fixedKeyViewStartedAt = s.fixedModeKeyblockViewStart(now)
+		s.fixedKeyViewTxNumber = s.currentView.TxNumber
+		s.fixedKeyViewKeyNumber = s.currentView.KeyNumber
+		s.fixedKeyViewTxHash = s.currentView.TxHash
+		s.fixedKeyViewKeyHash = s.currentView.KeyHash
+	}
+
+	viewAge = now.Sub(s.fixedKeyViewStartedAt)
+	if viewAge < 0 {
+		viewAge = 0
+	}
+	nextRound := uint64(viewAge / fixedModeKeyblockViewRoundDuration)
+	// Local heartbeat/ACK observations are not consensus state. Using them to
+	// select a fallback split healthy nodes across different LeaderIndex values.
+	// With protocol-level retransmission, a live primary self-recovers without a
+	// leader change. A future down-node fallback must be quorum-certified.
+	if s.keyService != nil {
+		s.keyService.setActiveLeader(primary)
+	}
+
+	s.currentView.LeaderIndex = primary
+	s.currentView.NoDone = false
+	if s.currentView.Round != nextRound {
+		log.Warn("fixed-mode keyblock advancing recovery round",
+			"oldRound", s.currentView.Round,
+			"round", nextRound,
+			"viewAge", viewAge,
+			"roundDuration", fixedModeKeyblockViewRoundDuration,
+			"currentBlock", s.bc.CurrentBlockN(),
+			"currentKey", s.kbc.CurrentBlockN())
+		s.currentView.Round = nextRound
+	}
+	s.waittingView.TxNumber = s.currentView.TxNumber + 1
+	s.waittingView.KeyNumber = s.currentView.KeyNumber + 1
+
+	curView = s.currentView
+	return oldView, curView, viewAge
+}
+
+func (s *Service) wakeFixedModeKeyblock(now time.Time, reason string, candidateRewardReady bool, pendingTotal, fastPending, slowPending int) bool {
+	if atomic.LoadInt32(&s.runningState) != 1 || bftview.IamMember() < 0 {
+		return false
+	}
+	if !s.fixedModeKeyblockIntervalElapsed(now) {
+		return false
+	}
+	s.clearProposalNoWork()
+
+	s.muCurrentView.Lock()
+	if !s.lastFixedKeyNewViewWakeup.IsZero() && now.Sub(s.lastFixedKeyNewViewWakeup) < fixedModeKeyblockWakeupInterval {
+		s.muCurrentView.Unlock()
+		return true
+	}
+	s.lastFixedKeyNewViewWakeup = now
+	s.muCurrentView.Unlock()
+
+	oldView, curView, viewAge := s.prepareFixedModeKeyblockView(now)
+	log.Warn("fixed-mode keyblock start-new-view wakeup",
+		"reason", reason,
+		"currentBlock", s.bc.CurrentBlockN(),
+		"currentKey", s.kbc.CurrentBlockN(),
+		"oldLeaderIndex", oldView.LeaderIndex,
+		"oldNoDone", oldView.NoDone,
+		"leaderIndex", curView.LeaderIndex,
+		"noDone", curView.NoDone,
+		"round", curView.Round,
+		"viewAge", viewAge,
+		"isLeader", bftview.IamLeader(curView.LeaderIndex),
+		"candidateReady", candidateRewardReady,
+		"pendingTotal", pendingTotal,
+		"fastPending", fastPending,
+		"slowPending", slowPending)
+
+	curN := s.bc.CurrentBlockN()
+	s.sendNewViewMsg(curN)
+	s.enqueueTimerPriority(curN)
+	return true
+}
+
+func (s *Service) keyblockLivenessLoop() {
+	ticker := time.NewTicker(fixedModeKeyblockWatchdogInterval)
+	defer ticker.Stop()
+	for now := range ticker.C {
+		if atomic.LoadInt32(&s.runningState) != 1 || bftview.IamMember() < 0 {
+			continue
+		}
+		if !s.fixedModeKeyblockIntervalElapsed(now) {
+			continue
+		}
+		if s.proposalNoWorkUnchanged(now) {
+			continue
+		}
+		fastPending, slowPending := s.lanePendingCounts()
+		pendingTotal := 0
+		if s.txPool != nil {
+			pendingTotal, _ = s.txPool.Stats()
+		}
+		s.purgeExpiredProposalCaches(now)
+		s.wakeFixedModeKeyblock(now, "watchdog", false, pendingTotal, fastPending, slowPending)
+	}
+}
+
+// Save committee by keyblock
+func (s *Service) saveCommittee(curKeyBlock *types.KeyBlock) {
+	mb := bftview.LoadMember(curKeyBlock.NumberU64(), curKeyBlock.Hash(), false)
+	if mb != nil {
+		return
+	}
+
+	var newNode *common.Cnode
+	if curKeyBlock.BlockType() == types.PowReconfig || curKeyBlock.BlockType() == types.PacePowReconfig {
+		newNode = &common.Cnode{
+			CoinBase: curKeyBlock.InAddress(),
+			Public:   curKeyBlock.InPubKey(),
+		}
+	}
+
+	mb, _ = bftview.GetCommittee(newNode, curKeyBlock, false)
+	mb.StoreWithoutCallback(curKeyBlock)
+}
+
+// Update committee by keyblock
+func (s *Service) updateCommittee(keyBlock *types.KeyBlock) bool {
+	bStore := false
+	curKeyBlock := keyBlock
+	if bftview.IamMember() < 0 {
+		return false
+	}
+	if curKeyBlock == nil {
+		curKeyBlock = s.kbc.CurrentBlock()
+	}
+	mb := bftview.LoadMember(curKeyBlock.NumberU64(), curKeyBlock.Hash(), true)
+	if mb != nil {
+		return bStore
+	}
+
+	s.muCommitteeInfo.Lock()
+	ac, ok := s.lastCmInfoMap[curKeyBlock.Hash()]
+	if ok {
+		if ac.committee != nil {
+			mb = ac.committee
+		} else if ac.node != nil {
+			mb, _ = bftview.GetCommittee(ac.node, curKeyBlock, true)
+		}
+	}
+	s.muCommitteeInfo.Unlock()
+
+	if mb == nil && !curKeyBlock.HasNewNode() {
+		mb, _ = bftview.GetCommittee(nil, curKeyBlock, true)
+	}
+
+	if mb != nil {
+		bStore = mb.Store(curKeyBlock)
+	} else {
+		log.Info("updateCommittee can't found committee", "txNumber", s.bc.CurrentBlockN(), "keyNumber", curKeyBlock.NumberU64())
+	}
+	return bStore
+}
+
+func (s *Service) Committee_OnStored(keyblock *types.KeyBlock, mb *bftview.Committee) {
+	log.Debug("store committee", "keyNumber", keyblock.NumberU64(), "ip0", mb.List[0].Address, "ipn", mb.List[len(mb.List)-1].Address)
+	if keyblock.HasNewNode() && keyblock.NumberU64() == s.kbc.CurrentBlockN() {
+		s.netService.AdjustConnect(keyblock.OutAddress(1))
+	}
+}
+
+// Request committee for keyblock
+func (s *Service) Committee_Request(kNumber uint64, hash common.Hash) {
+	if kNumber <= s.lastReqCmNumber || !bftview.IamMemberByNumber(kNumber, hash) {
+		return
+	}
+
+	log.Debug("Committee_Request", "keynumber", kNumber)
+
+	var parentMb *bftview.Committee
+	for i := 1; i < 10; i++ {
+		keyblock := s.kbc.GetBlockByNumber(kNumber - uint64(i))
+		if keyblock == nil {
+			return
+		}
+		mb := bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true)
+		if mb != nil {
+			parentMb = mb
+			break
+		}
+	}
+	if parentMb == nil {
+		return
+	}
+
+	for _, node := range parentMb.List {
+		if IsSelf(node.Address) {
+			continue
+		}
+		s.netService.SendRawData(node.Address, &networkMsg{Cmsg: &committeeInfo{Committee: nil, KeyHash: hash, KeyNumber: kNumber}})
+	}
+	s.lastReqCmNumber = kNumber
+}
+
+func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
+	return s.keyService.getBestCandidate(refresh)
 }

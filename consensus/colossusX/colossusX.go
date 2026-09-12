@@ -29,9 +29,6 @@ var (
 	// maxUint256 is a big integer representing 2^256-1
 	maxUint256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
 
-	// sharedCphash is a full instance that can be shared between multiple users.
-	sharedCphash = New(Config{"", 3, 0, "", 1, 0, ModeFullFake, false, false})
-
 	// algorithmRevision is the data structure version used for file naming.
 	algorithmRevision = 25
 

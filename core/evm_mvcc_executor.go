@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"sync"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/state"
@@ -13,6 +14,114 @@ import (
 	"github.com/cypherium/cypher/core/vm"
 	"github.com/cypherium/cypher/params"
 )
+
+const nativeExecutionMemoryBudget = uint64(params.NativeParallelExecutionMemoryBudget)
+
+const (
+	nativeBranchBaseMemoryReserve    = uint64(64 * 1024)
+	nativeBranchAccountMemoryReserve = uint64(2 * 1024)
+	nativeBranchStorageMemoryReserve = uint64(512)
+	// Geometric EVM memory growth can transiently retain old+new backing arrays,
+	// while call results coexist with a tight RETURNDATA copy. These local
+	// scheduling factors bound physical heap even though consensus MemoryLimit
+	// retains its stable logical-memory meaning.
+	nativeEVMMemoryPhysicalFactor = uint64(4)
+	nativeOutputPhysicalFactor    = uint64(2)
+)
+
+type nativeWeightedMemoryLimiter struct {
+	mu        sync.Mutex
+	condition *sync.Cond
+	available uint64
+	capacity  uint64
+}
+
+func newNativeWeightedMemoryLimiter(capacity uint64) *nativeWeightedMemoryLimiter {
+	limiter := &nativeWeightedMemoryLimiter{available: capacity, capacity: capacity}
+	limiter.condition = sync.NewCond(&limiter.mu)
+	return limiter
+}
+
+func (l *nativeWeightedMemoryLimiter) acquire(requested uint64) uint64 {
+	if requested == 0 {
+		return 0
+	}
+	weight := requested
+	if weight > l.capacity {
+		weight = l.capacity
+	}
+	l.mu.Lock()
+	for l.available < weight {
+		l.condition.Wait()
+	}
+	l.available -= weight
+	l.mu.Unlock()
+	return weight
+}
+
+func (l *nativeWeightedMemoryLimiter) release(weight uint64) {
+	if weight == 0 {
+		return
+	}
+	l.mu.Lock()
+	l.available += weight
+	l.condition.Broadcast()
+	l.mu.Unlock()
+}
+
+var nativeDAGMemoryLimiter = newNativeWeightedMemoryLimiter(nativeExecutionMemoryBudget)
+
+func addNativeMemoryWeight(total, amount uint64) uint64 {
+	if total >= nativeExecutionMemoryBudget || amount >= nativeExecutionMemoryBudget-total {
+		return nativeExecutionMemoryBudget
+	}
+	return total + amount
+}
+
+func addScaledNativeMemoryWeight(total, amount, factor uint64) uint64 {
+	for count := uint64(0); count < factor; count++ {
+		total = addNativeMemoryWeight(total, amount)
+	}
+	return total
+}
+
+type nativeAccountDelta struct {
+	address common.Address
+	exists  bool
+	created bool
+	balance *big.Int
+	nonce   uint64
+	code    []byte
+}
+
+type nativeStorageDelta struct {
+	address common.Address
+	slot    common.Hash
+	value   common.Hash
+}
+
+type nativePreimageDelta struct {
+	hash     common.Hash
+	preimage []byte
+}
+
+type nativeExecutionDelta struct {
+	accounts []nativeAccountDelta
+	storage  []nativeStorageDelta
+	preimage []nativePreimageDelta
+	logs     []*types.Log
+}
+
+// nativeParallelVMConfigSupported reports whether cfg can be shared by the
+// speculative executors. Tracers and interpreter overrides may contain mutable
+// process-local state, while ExtraEips is backed by a slice which the EVM may
+// rewrite when it encounters an unsupported activation. Keep those modes on
+// the canonical serial reference executor. This is deliberately the same
+// conservative boundary used by the legacy native-transfer parallel lane.
+func nativeParallelVMConfigSupported(cfg vm.Config) bool {
+	return !cfg.Debug && cfg.Tracer == nil && !cfg.EnablePreimageRecording &&
+		cfg.EVMInterpreter == "" && cfg.EWASMInterpreter == "" && len(cfg.ExtraEips) == 0
+}
 
 // evmOptimisticMicroBatch bounds the number of complete EVM branches retained
 // at once. Blocks may contain hundreds of thousands of transactions, but local

@@ -198,11 +198,31 @@ func TestTxPoolEVMOnlyAcceptsTypesZeroOneTwoAndFourAndRejectsTypeFive(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.AddRemote(native); !errors.Is(err, ErrNativeTxDisabled) {
-		t.Fatalf("EVM-only type-5 admission error = %v, want %v", err, ErrNativeTxDisabled)
-	}
-	if pool.Get(native.Hash()) != nil {
-		t.Fatal("EVM-only pool retained rejected type-5 transaction")
+	pendingBefore, queuedBefore := pool.Stats()
+	for _, admission := range []struct {
+		name string
+		add  func(*types.Transaction) error
+	}{
+		{"remote", pool.AddRemote},
+		{"local", pool.AddLocal},
+		{"remote_sync", pool.addRemoteSync},
+	} {
+		t.Run(admission.name, func(t *testing.T) {
+			if err := admission.add(unsignedNative); !errors.Is(err, ErrInvalidSender) {
+				t.Fatalf("unsigned type-5 admission error = %v, want %v", err, ErrInvalidSender)
+			}
+			if err := admission.add(native); !errors.Is(err, ErrNativeTxDisabled) {
+				t.Fatalf("signed type-5 admission error = %v, want %v", err, ErrNativeTxDisabled)
+			}
+			for _, tx := range (types.Transactions{unsignedNative, native}) {
+				if pool.Get(tx.Hash()) != nil || pool.Has(tx.Hash()) || pool.Status([]common.Hash{tx.Hash()})[0] != TxStatusUnknown {
+					t.Fatal("EVM-only pool retained rejected type-5 transaction")
+				}
+			}
+			if pending, queued := pool.Stats(); pending != pendingBefore || queued != queuedBefore {
+				t.Fatalf("type-5 rejection changed pool counts to %d/%d, want %d/%d", pending, queued, pendingBefore, queuedBefore)
+			}
+		})
 	}
 
 	limits := params.FairHotstuffEVMWorkLimitsForConfig(chainConfig)

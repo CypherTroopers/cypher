@@ -788,59 +788,6 @@ func (c *ChainConfig) CheckMaxCodeConfigData() error {
 	return nil
 }
 
-// checks if changes to maxCodeSizeConfig proposed are compatible
-// with already existing genesis data
-func isMaxCodeSizeConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (error, *big.Int, *big.Int) {
-	if len(c1.MaxCodeSizeConfig) == 0 && len(c2.MaxCodeSizeConfig) == 0 {
-		// maxCodeSizeConfig not used. return
-		return nil, big.NewInt(0), big.NewInt(0)
-	}
-
-	// existing config had maxCodeSizeConfig and new one does not have the same return error
-	if len(c1.MaxCodeSizeConfig) > 0 && len(c2.MaxCodeSizeConfig) == 0 {
-		return fmt.Errorf("genesis file missing max code size information"), head, head
-	}
-
-	if len(c2.MaxCodeSizeConfig) > 0 && len(c1.MaxCodeSizeConfig) == 0 {
-		return nil, big.NewInt(0), big.NewInt(0)
-	}
-
-	// check the number of records below current head in both configs
-	// if they do not match throw an error
-	c1RecsBelowHead := 0
-	for _, data := range c1.MaxCodeSizeConfig {
-		if data.Block.Cmp(head) <= 0 {
-			c1RecsBelowHead++
-		} else {
-			break
-		}
-	}
-
-	c2RecsBelowHead := 0
-	for _, data := range c2.MaxCodeSizeConfig {
-		if data.Block.Cmp(head) <= 0 {
-			c2RecsBelowHead++
-		} else {
-			break
-		}
-	}
-
-	// if the count of past records is not matching return error
-	if c1RecsBelowHead != c2RecsBelowHead {
-		return errors.New("maxCodeSizeConfig data incompatible. updating maxCodeSize for past"), head, head
-	}
-
-	// validate that each past record is matching exactly. if not return error
-	for i := 0; i < c1RecsBelowHead; i++ {
-		if c1.MaxCodeSizeConfig[i].Block.Cmp(c2.MaxCodeSizeConfig[i].Block) != 0 ||
-			c1.MaxCodeSizeConfig[i].Size != c2.MaxCodeSizeConfig[i].Size {
-			return errors.New("maxCodeSizeConfig data incompatible. maxCodeSize historical data does not match"), head, head
-		}
-	}
-
-	return nil, big.NewInt(0), big.NewInt(0)
-}
-
 // CheckConfigForkOrder checks that we don't "skip" any forks, cypher isn't pluggable enough
 // to guarantee that forks
 func (c *ChainConfig) CheckConfigForkOrder() error {
@@ -954,28 +901,12 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 	return nil
 }
 
-// isForkIncompatible returns true if a fork scheduled at s1 cannot be rescheduled to
-// block s2 because head is already past the fork.
-func isForkIncompatible(s1, s2, head *big.Int) bool {
-	return (isForked(s1, head) || isForked(s2, head)) && !configNumEqual(s1, s2)
-}
-
 // isForked returns whether a fork scheduled at block s is active at the given head block.
 func isForked(s, head *big.Int) bool {
 	if s == nil || head == nil {
 		return false
 	}
 	return s.Cmp(head) <= 0
-}
-
-func configNumEqual(x, y *big.Int) bool {
-	if x == nil {
-		return y == nil
-	}
-	if y == nil {
-		return x == nil
-	}
-	return x.Cmp(y) == 0
 }
 
 // ConfigCompatError is raised if the locally-stored blockchain is initialised with a
@@ -986,23 +917,6 @@ type ConfigCompatError struct {
 	StoredConfig, NewConfig *big.Int
 	// the block number to which the local chain must be rewound to correct the error
 	RewindTo uint64
-}
-
-func newCompatError(what string, storedblock, newblock *big.Int) *ConfigCompatError {
-	var rew *big.Int
-	switch {
-	case storedblock == nil:
-		rew = newblock
-	case newblock == nil || storedblock.Cmp(newblock) < 0:
-		rew = storedblock
-	default:
-		rew = newblock
-	}
-	err := &ConfigCompatError{what, storedblock, newblock, 0}
-	if rew != nil && rew.Sign() > 0 {
-		err.RewindTo = rew.Uint64() - 1
-	}
-	return err
 }
 
 func (err *ConfigCompatError) Error() string {

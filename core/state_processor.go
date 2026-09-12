@@ -566,8 +566,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		allLogs  []*types.Log
 		gp       = new(GasPool).AddGas(block.GasLimit())
 	)
-	blockMode, err := ValidateNativeParallelBlockMode(p.config, block.BlockType(), block.Transactions())
-	if err != nil {
+	if _, err := ValidateNativeParallelBlockMode(p.config, block.BlockType(), block.Transactions()); err != nil {
 		return nil, nil, 0, err
 	}
 	if err := ValidateBlockBlobGas(p.config, header, block.Transactions()); err != nil {
@@ -604,20 +603,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	if err := PrepareNativeBlockHashes(p.config, header, statedb); err != nil {
 		return nil, nil, 0, err
-	}
-	if blockMode == NativeParallelBlockModeNative {
-		replayAnchors, err := NewNativeReplayAnchorSet(p.config, statedb, block.NumberU64())
-		if err != nil {
-			return nil, nil, 0, err
-		}
-		for index, tx := range block.Transactions() {
-			if tx == nil || tx.Type() != types.NativeTxType {
-				continue
-			}
-			if err := replayAnchors.Validate(tx); err != nil {
-				return nil, nil, 0, fmt.Errorf("native transaction %d replay anchor: %w", index, err)
-			}
-		}
 	}
 	var totalGas uint64
 	outputMeter := newBlockExecutionOutputMeter(p.config)
@@ -667,11 +652,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	defer func() {
 		nativeExecutor.close()
 	}()
-	if blockMode == NativeParallelBlockModeNative && len(txs) > 0 {
-		if err := p.processNativeTransactions(block, statedb, gp, usedGas, cfg, recordReceipt); err != nil {
-			return nil, nil, 0, err
-		}
-	} else if len(txs) > 1 && evmOptimisticParallelEnabled(p.config, cfg) {
+	if len(txs) > 1 && evmOptimisticParallelEnabled(p.config, cfg) {
 		if err := p.processEVMOptimistic(block, statedb, gp, usedGas, cfg, recordReceipt); err != nil {
 			return nil, nil, 0, err
 		}
@@ -949,36 +930,6 @@ func tryApplyNativeTransfer(config *params.ChainConfig, gp *GasPool, statedb *st
 	return receipt, true, err
 }
 
-// ApplyNativeTransactionReference is the canonical serial execution oracle for
-// NativeTxV1. Parallel executors must produce byte-identical receipt, logs,
-// gas and state changes to this path before their deltas may be merged.
-func ApplyNativeTransactionReference(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, error) {
-	if tx == nil || tx.Type() != types.NativeTxType {
-		return nil, fmt.Errorf("serial native reference executor requires NativeTxV1")
-	}
-	if err := validateNativeTransactionExecutionMode(config, tx); err != nil {
-		return nil, err
-	}
-	// Standalone oracle callers prepare a singleton replay batch here. Normal
-	// block execution has already consumed every sequence in one payer-grouped
-	// prepass, and DAG branches inherit that immutable prepared set.
-	standaloneReplayBatch := false
-	if statedb == nil || !statedb.NativeReplayTransactionPrepared(tx.Hash()) {
-		if err := PrepareNativeReplaySequences(config, statedb, types.Transactions{tx}); err != nil {
-			return nil, err
-		}
-		standaloneReplayBatch = true
-	}
-	if standaloneReplayBatch {
-		// Do not leave the singleton marker installed after execution. The
-		// sequence state itself remains consumed, so accidentally applying the
-		// same transaction again to this StateDB must run the replay prepass and
-		// fail instead of treating the first call's marker as block preparation.
-		defer statedb.SetNativeReplayTransactions(nil)
-	}
-	return ApplyTransaction(config, bc, author, gp, statedb, header, tx, usedGas, cfg)
-}
-
 // ApplyTransaction attempts to apply a transaction to the given state database
 // and uses the input parameters for its environment. It returns the receipt
 // for the transaction, gas used and an error if the transaction failed,
@@ -1013,29 +964,12 @@ func applyTransactionWithEVMState(config *params.ChainConfig, bc ChainContext, a
 	if config != nil && config.NativeParallelEnabled() && statedb.NativeBlockHashesPrepared() {
 		context.GetHash = statedb.NativeBlockHash
 	}
-	var nativeGuard *nativeStateGuard
 	var evmGuard *evmResourceGuard
 	var accessRecorder *evmMVCCRecorder
 	var protocolGuard *protocolNamespaceGuard
 	standardSnapshot := -1
 	standardGas := uint64(0)
-	if tx.Type() == types.NativeTxType {
-		// Native consensus entry points prepare this immutable view before any
-		// transaction branches are created. Prefer it over the node-local header
-		// index so BLOCKHASH remains deterministic for an uncommitted certified
-		// HotStuff parent. Direct reference-executor tests which intentionally do
-		// not model EIP-2935 retain the legacy context as a test-only fallback.
-		if !statedb.NativeReplayTransactionPrepared(tx.Hash()) {
-			return nil, errors.New("native transaction sequence was not consumed by the block replay prepass")
-		}
-		if executionState != statedb {
-			return nil, errors.New("native transaction cannot use the standard EVM MVCC state override")
-		}
-		nativeGuard = newNativeStateGuardForTransaction(statedb, tx)
-		executionState = nativeGuard
-		cfg.MaxMemoryBytes = tx.MemoryLimit()
-		cfg.MaxReturnDataBytes = tx.OutputLimit()
-	} else if config != nil && config.NativeParallelEnabled() {
+	if config != nil && config.NativeParallelEnabled() {
 		standardSnapshot = statedb.Snapshot()
 		standardGas = gp.Gas()
 		if recorder, ok := executionState.(*evmMVCCRecorder); ok {
@@ -1085,27 +1019,6 @@ func applyTransactionWithEVMState(config *params.ChainConfig, bc ChainContext, a
 		statedb.RevertToSnapshot(standardSnapshot)
 		*gp = GasPool(standardGas)
 		return nil, result.Err
-	}
-	if nativeGuard != nil {
-		if err := nativeGuard.Error(); err != nil {
-			return nil, err
-		}
-		if errors.Is(result.Err, vm.ErrMemoryLimitExceeded) {
-			return nil, result.Err
-		}
-		if errors.Is(result.Err, vm.ErrReturnDataLimitExceeded) {
-			return nil, result.Err
-		}
-		if uint64(len(result.ReturnData)) > tx.OutputLimit() {
-			return nil, fmt.Errorf("native transaction output bytes %d exceed declared limit %d", len(result.ReturnData), tx.OutputLimit())
-		}
-		encodedLogs, err := consensusLogListRLPSize(statedb.GetLogs(tx.Hash()))
-		if err != nil {
-			return nil, fmt.Errorf("encode native transaction logs: %w", err)
-		}
-		if encodedLogs > tx.LogLimit() {
-			return nil, fmt.Errorf("native transaction log bytes %d exceed declared limit %d", encodedLogs, tx.LogLimit())
-		}
 	}
 	// Update the state with pending changes
 	var root []byte

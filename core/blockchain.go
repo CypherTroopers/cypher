@@ -223,13 +223,9 @@ type BlockChain struct {
 	processor  Processor  // Block transaction processor interface
 	vmConfig   vm.Config
 
-	// nativeSchedules is a bounded consume-once bridge between body validation
-	// and execution. It is strictly an optimisation; execution rebuilds on a
-	// cache miss and never depends on this node-local state for consensus.
-	nativeSchedules *nativeScheduleHandoff
 	// validatedFHSSidecars transfers the full common-RPC sidecar validation
-	// result from ValidateBody to the first StateProcessor consumer. Like the
-	// native schedule handoff, it is bounded, consume-once, and optional.
+	// result from ValidateBody to the first StateProcessor consumer. The handoff
+	// is bounded, consume-once, and optional.
 	validatedFHSSidecars *fhsSidecarHandoff
 
 	badBlocks       *lru.Cache                     // Bad block cache
@@ -355,7 +351,6 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 		vmConfig:             vmConfig,
 		badBlocks:            badBlocks,
 		keyBlockChain:        kbc,
-		nativeSchedules:      newNativeScheduleHandoff(),
 		validatedFHSSidecars: newFHSSidecarHandoff(),
 	}
 

@@ -311,44 +311,6 @@ func recoverPlain(sighash common.Hash, R, S, Vb *big.Int, homestead bool) (commo
 	return addr, nil
 }
 
-func recoverPlainWithChanId(sighash common.Hash, R, S, Vb *big.Int, homestead bool, id *big.Int) (common.Address, error) {
-	if Vb.BitLen() > 8 {
-		return common.Address{}, ErrInvalidSig
-	}
-	Vd := big.NewInt(0)
-	V := byte(0)
-	if Vb.Cmp(big.NewInt(28)) > 0 {
-		chainIdMul := new(big.Int).Mul(id, big.NewInt(2))
-		Vd = new(big.Int).Sub(Vb, chainIdMul)
-		Vd.Sub(Vb, big8)
-		if Vd.Cmp(big.NewInt(28)) > 0 {
-			return common.Address{}, ErrInvalidV
-		}
-	}
-
-	V = byte(Vb.Uint64() - 27)
-	if !crypto.ValidateSignatureValues(V, R, S, homestead) {
-		return common.Address{}, ErrInvalidSig
-	}
-	// encode the signature in uncompressed format
-	r, s := R.Bytes(), S.Bytes()
-	sig := make([]byte, crypto.SignatureLength)
-	copy(sig[32-len(r):32], r)
-	copy(sig[64-len(s):64], s)
-	sig[64] = V
-	// recover the public key from the signature
-	pub, err := crypto.Ecrecover(sighash[:], sig)
-	if err != nil {
-		return common.Address{}, err
-	}
-	if len(pub) == 0 || pub[0] != 4 {
-		return common.Address{}, errors.New("invalid public key")
-	}
-	var addr common.Address
-	copy(addr[:], crypto.Keccak256(pub[1:])[12:])
-	return addr, nil
-}
-
 // deriveChainId derives the chain id from the given v parameter
 func deriveChainId(v *big.Int) *big.Int {
 	if v.BitLen() <= 64 {

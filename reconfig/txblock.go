@@ -19,18 +19,19 @@ package reconfig
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core"
-	parallelstate "github.com/cypherium/cypher/core/parallel"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
@@ -43,18 +44,15 @@ import (
 )
 
 type txService struct {
-	s               serviceI
-	cph             *ReconfigBackend
-	txPool          *core.TxPool
-	bc              *core.BlockChain
-	kbc             *core.KeyBlockChain
-	config          *params.ChainConfig
-	pendingLogsFeed *event.Feed
-	mu              sync.Mutex
-	mux             *event.TypeMux
-	proposedChain   *proposedChain
-	chainEventChan  chan core.ChainEvent
-	chainEventSub   event.Subscription
+	s             serviceI
+	cph           *ReconfigBackend
+	txPool        *core.TxPool
+	bc            *core.BlockChain
+	kbc           *core.KeyBlockChain
+	config        *params.ChainConfig
+	mu            sync.Mutex
+	mux           *event.TypeMux
+	proposedChain *proposedChain
 }
 
 var (
@@ -153,18 +151,15 @@ func proposalTransactionSender(config *params.ChainConfig, blockNumber *big.Int,
 
 func newTxService(s serviceI, backend *ReconfigBackend, config *params.ChainConfig) *txService {
 	txS := &txService{
-		s:      s,
-		cph:    backend,
-		bc:     backend.BlockChain(),
-		kbc:    backend.KeyBlockChain(),
-		txPool: backend.TxPool(),
-		//		chainEventChan: make(chan core.ChainEvent, 1),
+		s:             s,
+		cph:           backend,
+		bc:            backend.BlockChain(),
+		kbc:           backend.KeyBlockChain(),
+		txPool:        backend.TxPool(),
 		config:        config,
 		proposedChain: newProposedChain(),
 		mux:           backend.EventMux(),
 	}
-
-	//	txS.chainEventSub = backend.BlockChain().SubscribeChainEvent(txS.chainEventChan)
 	txS.proposedChain.clear(txS.bc.CurrentBlock())
 
 	txS.bc.ProcInsertDone = txS.procBlockDone
@@ -181,8 +176,6 @@ func newTxService(s serviceI, backend *ReconfigBackend, config *params.ChainConf
 			lifecycle.finishFHSFinalizedSyncKeyCommit,
 		)
 	}
-
-	//go txS.eventLoop()
 
 	return txS
 }
@@ -409,308 +402,6 @@ func (txS *txService) proposalGenerationCurrentLocked(generation proposalGenerat
 	return generation.matches(txS.proposedChain.revision, core.CommonRPCAdmissionFinalityGeneration(), txS.currentProposalParent(), txS.kbc.CurrentBlock())
 }
 
-// Bound adversarial speculative retries per proposal. Reaching the bound emits
-// a valid cleanup proposal (possibly empty) whose generation-checked publish
-// quarantines the failed hashes, rather than returning an error and retrying
-// the same hostile pool prefix forever.
-const nativeProposalFailureQuarantineBatch = 64
-
-type nativeProposalFailureBudget struct {
-	failures uint64
-}
-
-func (budget *nativeProposalFailureBudget) record() bool {
-	if budget == nil {
-		return true
-	}
-	budget.failures++
-	return budget.failures >= nativeProposalFailureQuarantineBatch
-}
-
-// Scan the dedicated native pool's complete four-block count buffer. A fixed
-// two-block prefix lets adversarial hot-resource, stale-balance or expired
-// candidates hide an otherwise full valid block in the remaining half. The
-// maintained proposal max-heap still avoids a full copy-and-sort and bounds the
-// worst case to the pool's configured retention envelope.
-const nativeProposalCandidateOverscan = uint64(4)
-
-func nativeProposalCandidateLimit(config *params.ChainConfig) uint64 {
-	if config == nil || !config.NativeParallelEnabled() {
-		return 0
-	}
-	limit := config.NativeParallel.MaxTransactionsPerBlock
-	if limit > ^uint64(0)/nativeProposalCandidateOverscan {
-		return ^uint64(0)
-	}
-	return limit * nativeProposalCandidateOverscan
-}
-
-// selectNativeProposalTransactions greedily preserves the dedicated pool's
-// priority/hash order while applying every declared-work, critical-path, gas,
-// body-size and FHS validation budget. The incremental dependency planner is
-// transactional, so a skipped hot candidate cannot poison later independent
-// work or force an O(n) graph rebuild.
-func (env *work) selectNativeProposalTransactions(candidates types.Transactions, replayAnchors *core.NativeReplayAnchorSet) (types.Transactions, error) {
-	if env == nil || env.config == nil || !env.config.NativeParallelEnabled() || env.header == nil || env.header.Number == nil || env.publicState == nil || replayAnchors == nil {
-		return nil, fmt.Errorf("native proposal selection has incomplete work context")
-	}
-	planner, err := core.NewNativeDependencyPlanner(env.config)
-	if err != nil {
-		return nil, err
-	}
-	selected := make(types.Transactions, 0, len(candidates))
-	var declaredCompute uint64
-	payerReserved := make(map[common.Address]*big.Int)
-	payerInvalid := make(map[common.Address]bool)
-	rules := env.config.CypheriumRules(env.header.Number, env.header.Time)
-	for _, tx := range candidates {
-		if tx == nil || tx.Type() != types.NativeTxType {
-			return nil, fmt.Errorf("dedicated native pool returned a non-native transaction")
-		}
-		if env.maxTxCount > 0 && uint64(len(selected)) >= env.maxTxCount {
-			break
-		}
-		// Use the same exact-parent-ancestry rule as block validation. A certified
-		// side branch can differ from the local canonical number index.
-		if err := replayAnchors.Validate(tx); err != nil {
-			continue
-		}
-		if tx.ComputeLimit() > env.header.GasLimit-declaredCompute {
-			continue
-		}
-		payer := tx.Payer()
-		if invalid, checked := payerInvalid[payer]; checked && invalid {
-			continue
-		} else if !checked {
-			code := env.publicState.GetCode(payer)
-			_, delegated := types.ParseDelegation(code)
-			payerInvalid[payer] = len(code) != 0 && !(rules.IsPrague && delegated)
-			if payerInvalid[payer] {
-				continue
-			}
-		}
-		nextReservation := tx.Cost()
-		if reserved := payerReserved[payer]; reserved != nil {
-			nextReservation.Add(nextReservation, reserved)
-		}
-		if env.publicState.GetBalance(payer).Cmp(nextReservation) < 0 {
-			continue
-		}
-		if !env.txFitsBlockSize(tx) {
-			continue
-		}
-		candidateMeter, meterErr := env.nextFHSWorkMeter(len(selected), tx)
-		if meterErr != nil {
-			if errors.Is(meterErr, core.ErrFHSPerTransactionWorkLimit) {
-				continue
-			}
-			// Aggregate work can still leave room for a smaller later candidate.
-			continue
-		}
-		if err := planner.TryAdd(tx); err != nil {
-			if errors.Is(err, parallelstate.ErrWorkLimit) {
-				continue
-			}
-			return nil, err
-		}
-		selected = append(selected, tx)
-		payerReserved[payer] = nextReservation
-		declaredCompute += tx.ComputeLimit()
-		env.size += tx.Size() + osakaPerTxBodySizeBuffer
-		if candidateMeter != nil {
-			env.fhsWorkMeter = candidateMeter
-		}
-	}
-	return selected, nil
-}
-
-func (txS *txService) resetNativeProposalState(work *work, generation proposalGeneration) error {
-	if txS == nil || txS.bc == nil || work == nil || work.header == nil {
-		return fmt.Errorf("cannot reset incomplete native proposal state")
-	}
-	publicState, err := txS.bc.StateAt(generation.parentRoot)
-	if err != nil {
-		return err
-	}
-	if err := core.ProcessParentBlockHash(txS.config, work.header, publicState); err != nil {
-		return err
-	}
-	work.publicState = publicState
-	work.header.GasUsed = 0
-	return nil
-}
-
-func (txS *txService) buildNativeProposalNewBlock(blockType uint8) (*txProposalCandidate, error) {
-	pending := txS.txPool.PendingNative(nativeProposalCandidateLimit(txS.config))
-	var (
-		work                  *work
-		candidates            types.Transactions
-		admissionSelections   map[common.Hash]core.CommonRPCAdmissionResult
-		generation            proposalGeneration
-		allowFHSFinalityBlock bool
-	)
-	if err := func() error {
-		txS.mu.Lock()
-		defer txS.mu.Unlock()
-		var err error
-		work, err = txS.createWork(blockType)
-		if err != nil {
-			return err
-		}
-		candidates = txS.proposedChain.withoutProposedTransactions(pending, time.Now())
-		if txS.config != nil && txS.config.FairHotstuff {
-			if svc, ok := txS.s.(*Service); ok {
-				allowFHSFinalityBlock = svc.needsFHSFinalityBlock()
-			}
-		}
-		generation, err = txS.captureProposalGeneration(work)
-		return err
-	}(); err != nil {
-		return nil, err
-	}
-	if txS.config.FairHotstuff {
-		if txS.bc == nil || txS.bc.Genesis() == nil || txS.bc.Genesis().Hash() == (common.Hash{}) {
-			return nil, fmt.Errorf("cannot filter Fair HotStuff native admissions without genesis block")
-		}
-		candidates, admissionSelections = filterFHSAdmittedNativeTransactionsWithResults(
-			candidates,
-			txS.config,
-			txS.bc.Genesis().Hash(),
-			generation.keyNumber,
-			work.header.Number.Uint64(),
-			work.header.Time,
-		)
-	}
-	replayAnchors, err := core.NewNativeReplayAnchorSet(txS.config, work.publicState, work.header.Number.Uint64())
-	if err != nil {
-		return nil, err
-	}
-	selected, err := work.selectNativeProposalTransactions(candidates, replayAnchors)
-	if err != nil {
-		return nil, err
-	}
-	if proposalHasNoPublishableWork(len(selected), 0, allowFHSFinalityBlock) {
-		return nil, errProposalNoWork
-	}
-
-	// A pool transaction may become invalid against an uncommitted certified
-	// parent after the canonical admission snapshot. If the first failing index
-	// has a valid prefix, publish that prefix; if it is the first transaction,
-	// omit it and retry from a fresh parent-state instance. Normal operation is
-	// one parallel pass, while every adversarial execution failure is counted.
-	// Bounding only index-zero failures permits a descending sequence of failing
-	// prefixes to force O(n^2) speculative work.
-	var (
-		publicReceipts types.Receipts
-		logs           []*types.Log
-		usedGas        uint64
-		failedTxes     types.Transactions
-		failureBudget  nativeProposalFailureBudget
-	)
-	for {
-		if len(selected) == 0 {
-			publicReceipts, logs, usedGas = nil, nil, 0
-			break
-		}
-		publicReceipts, logs, usedGas, err = core.ExecuteNativeProposalTransactions(txS.config, txS.bc, work.header, selected, work.publicState, vm.Config{})
-		if err == nil {
-			break
-		}
-		var txErr *core.NativeTransactionExecutionError
-		if !errors.As(err, &txErr) || txErr.Index < 0 || txErr.Index >= len(selected) {
-			return nil, err
-		}
-		failedTxes = append(failedTxes, selected[txErr.Index])
-		limitReached := failureBudget.record()
-		if txErr.Index > 0 {
-			selected = selected[:txErr.Index]
-		} else {
-			selected = selected[1:]
-		}
-		if err := txS.resetNativeProposalState(work, generation); err != nil {
-			return nil, err
-		}
-		if limitReached {
-			selected = nil
-			publicReceipts, logs, usedGas = nil, nil, 0
-			break
-		}
-	}
-	if proposalHasNoPublishableWork(len(selected), len(failedTxes), allowFHSFinalityBlock) {
-		return nil, errProposalNoWork
-	}
-	work.header.GasUsed = usedGas
-	work.header.BlobGasUsed = 0
-	work.header.KeyHash = generation.keyHash
-	work.header.BlockType = blockType
-
-	if txS.bc == nil || txS.bc.Genesis() == nil {
-		return nil, fmt.Errorf("cannot build Fair HotStuff native admissions without genesis block")
-	}
-	admissionResults, err := commonRPCAdmissionResultsForTransactions(selected, admissionSelections)
-	if err != nil {
-		return nil, err
-	}
-	commonAdmissionBatches, commonAdmissionRefs, err := core.BuildCommonTxAdmissionsFromResults(selected, admissionResults, txS.config, txS.bc.Genesis().Hash(), generation.keyNumber, work.header.Number.Uint64(), work.header.Time)
-	if err != nil {
-		return nil, fmt.Errorf("build complete native Fair HotStuff admission set: %w", err)
-	}
-	commonRewards, err := buildCommonTxRewards(selected, publicReceipts, commonAdmissionBatches, commonAdmissionRefs, work.header.BaseFee)
-	if err != nil {
-		return nil, err
-	}
-	// Rebuild the meter after any execution-time omission, then add sidecars.
-	work.fhsWorkMeter = core.NewFHSBlockWorkMeterForConfig(txS.config)
-	for index, tx := range selected {
-		if err := work.fhsWorkMeter.AddTransaction(index, tx); err != nil {
-			return nil, err
-		}
-	}
-	if err := addFHSProposalSidecarWork(work.fhsWorkMeter, commonAdmissionBatches, commonAdmissionRefs, commonRewards); err != nil {
-		return nil, fmt.Errorf("locally constructed native Fair HotStuff sidecar work is invalid: %w", err)
-	}
-	applyCommonTxRewards(work.publicState, commonRewards)
-	colossusX.AccumulateRewards(txS.bc.Config(), work.publicState, work.header, selected, nil)
-	work.header.Root = work.publicState.IntermediateRoot(false)
-
-	block := types.NewBlock(work.header, selected, nil, publicReceipts, new(trie.Trie))
-	block.AttachCommonTxData(commonAdmissionBatches, commonAdmissionRefs, commonRewards)
-	encodedBlock := block.EncodeToBytes()
-	if len(encodedBlock) == 0 {
-		return nil, fmt.Errorf("failed to encode native tx block proposal")
-	}
-	if txS.config.IsOsaka(work.header.Number, work.header.Time) {
-		maxProposalSize := txS.config.EffectiveMaxBlockBytes() - uint64(params.FairHotstuffFinalityProofReserveBytes)
-		if uint64(len(encodedBlock)) > maxProposalSize {
-			return nil, fmt.Errorf("native Osaka tx block proposal too large after finality-proof reserve: bytes=%d limit=%d", len(encodedBlock), maxProposalSize)
-		}
-	}
-	if limit := proposalByteLimit(txS.config, blockType); limit > 0 && uint64(len(encodedBlock)) > limit {
-		return nil, fmt.Errorf("native tx block proposal too large: txs=%d bytes=%d limit=%d", len(selected), len(encodedBlock), limit)
-	}
-	headerHash := block.Hash()
-	for _, entry := range logs {
-		entry.BlockHash = headerHash
-	}
-	return &txProposalCandidate{
-		block:               block,
-		encoded:             append([]byte(nil), encodedBlock...),
-		generation:          generation,
-		failedTxes:          append(types.Transactions(nil), failedTxes...),
-		blockType:           blockType,
-		admissionCount:      len(commonAdmissionRefs),
-		admissionBatchCount: len(commonAdmissionBatches),
-		rewardCount:         len(commonRewards),
-	}, nil
-}
-
-// useNativeProposalBuilder is retained as an explicit public-boundary guard.
-// NativeTxV1 is not a valid genesis consensus format; both transaction lanes
-// always use the standard EVM builder.
-func useNativeProposalBuilder(config *params.ChainConfig, blockType uint8) bool {
-	return false
-}
-
 func isEVMOnlyProposalMode(config *params.ChainConfig) bool {
 	return config != nil && config.NativeParallelEnabled()
 }
@@ -719,9 +410,6 @@ func isEVMOnlyProposalMode(config *params.ChainConfig) bool {
 func (txS *txService) buildProposalNewBlock(blockType uint8) (*txProposalCandidate, error) {
 	if txS.config != nil && txS.config.FairHotstuff && blockType != types.FastTx_Block && blockType != types.SlowTx_Block {
 		return nil, fmt.Errorf("cannot build Fair HotStuff transaction proposal with block type %d", blockType)
-	}
-	if useNativeProposalBuilder(txS.config, blockType) {
-		return txS.buildNativeProposalNewBlock(blockType)
 	}
 	allAddrTxes, err := txS.loadPendingAddressTxes(blockType)
 	if err != nil {
@@ -797,8 +485,6 @@ func (txS *txService) buildProposalNewBlock(blockType uint8) (*txProposalCandida
 		if proposalHasNoPublishableWork(txCount, len(failedTxes), allowFHSFinalityBlock) {
 			return nil, errProposalNoWork
 		}
-
-		//txS.firePendingBlockEvents(logs)
 
 		header := work.header
 		header.KeyHash = generation.keyHash
@@ -905,20 +591,40 @@ func (txS *txService) installProposalCandidate(candidate *txProposalCandidate, b
 	return nil
 }
 
-// Try proposal new txBlock for synchronous non-FHS callers.
-func (txS *txService) tryProposalNewBlock(blockType uint8) ([]byte, error) {
-	candidate, err := txS.buildProposalNewBlock(blockType)
-	if err != nil {
-		return nil, err
+// prepareTxProposal tries the preferred lane and then its fallback. Synchronous
+// callers publish each candidate before accepting its lane; FHS workers leave
+// publication and failed-transaction cleanup to the serialized Apply path.
+func (txS *txService) prepareTxProposal(blockType uint8, publish bool) (*txProposalCandidate, error) {
+	build := func(lane uint8) (*txProposalCandidate, error) {
+		candidate, err := txS.buildProposalNewBlock(lane)
+		if err == nil && publish {
+			err = txS.installProposalCandidate(candidate, nil)
+		}
+		return candidate, err
 	}
-	if err := txS.installProposalCandidate(candidate, nil); err != nil {
-		return nil, err
+	candidate, primaryErr := build(blockType)
+	if primaryErr != nil {
+		fallbackType := uint8(types.FastTx_Block)
+		if blockType == types.FastTx_Block {
+			fallbackType = types.SlowTx_Block
+		}
+		if publish && !errors.Is(primaryErr, errProposalNoWork) {
+			log.Warn("Primary tx block proposal failed, trying fallback lane",
+				"primary", readableTxBlockType(blockType),
+				"fallback", readableTxBlockType(fallbackType),
+				"err", primaryErr)
+		}
+		var fallbackErr error
+		candidate, fallbackErr = build(fallbackType)
+		if fallbackErr != nil {
+			return nil, proposalLaneBuildError(primaryErr, fallbackErr)
+		}
 	}
-	if len(candidate.failedTxes) > 0 {
+	if publish && len(candidate.failedTxes) > 0 {
 		txS.txPool.RemoveBatch(candidate.failedTxes)
 		log.Warn("Removed failed proposal txs from txpool", "count", len(candidate.failedTxes))
 	}
-	return append([]byte(nil), candidate.encoded...), nil
+	return candidate, nil
 }
 
 // verifyHotstuffProposal is the production HotStuff proposal validation path.
@@ -933,21 +639,6 @@ func (txS *txService) verifyHotstuffProposal(ref *types.HotstuffProposalRef, txb
 		}
 	}
 	return txS.verifyHotstuffProposalWithParent(ref, txblock, extra, parentVerified)
-}
-
-// verifyHistoricalCertifiedProposal executes a proposal whose QC has already
-// been verified against the committee identified by ref.KeyHash. This is used
-// only for FHS catch-up and WAL replay: a pipelined block may have been
-// certified immediately before a key-block commit and therefore legitimately
-// refer to the previous canonical committee after the live key head advances.
-func (txS *txService) verifyHistoricalCertifiedProposal(ref *types.HotstuffProposalRef, txblock *types.Block, extra []byte) (*core.VerifiedProposal, error) {
-	var parentVerified *core.VerifiedProposal
-	if ref != nil && txS.config != nil && txS.config.FairHotstuff {
-		if svc, ok := txS.s.(*Service); ok {
-			parentVerified = svc.getFHSCertifiedVerified(ref.ParentHash)
-		}
-	}
-	return txS.verifyHistoricalCertifiedProposalWithParent(ref, txblock, extra, parentVerified)
 }
 
 // verifyHotstuffProposalWithParent is also used by fail-closed WAL recovery,
@@ -1181,35 +872,6 @@ func (txS *txService) procBlockDone(newBlock *types.Block) {
 	txS.s.procBlockDone(newBlock)
 
 }
-func (txS *txService) eventLoop() {
-	defer txS.chainEventSub.Unsubscribe()
-
-	for {
-		select {
-		case ev := <-txS.chainEventChan:
-			newBlock := ev.Block
-			log.Info("chainBlockEvent...", "number", newBlock.NumberU64())
-
-			if txS.s.isRunning() {
-				txS.updateChainPerNewHead(newBlock)
-			} else {
-				txS.mu.Lock()
-				txS.proposedChain.setHead(newBlock)
-				txS.mu.Unlock()
-			}
-
-			txS.s.procBlockDone(newBlock)
-			//if newBlock.BlockType() == types.Key_Block {
-			//	txS.txPool.ResetHead(newBlock.Header())
-			//}
-			//txS.txPool.RemoveBatch(newBlock.Transactions())
-
-		// system stopped
-		case <-txS.chainEventSub.Err():
-			return
-		}
-	}
-}
 
 type AddressTxes map[common.Address]types.Transactions
 
@@ -1368,15 +1030,6 @@ func limitAddressTxes(addrTxes AddressTxes, perAccount int) AddressTxes {
 	return limited
 }
 
-// filterFHSAdmittedAddressTxes keeps only each sender's contiguous nonce prefix
-// whose admissions are valid for the proposal boundary. Later nonces cannot be
-// executed when an earlier nonce lacks proof, so retaining a suffix would only
-// create repeated speculative EVM work and invalid proposals.
-func filterFHSAdmittedAddressTxes(addrTxes AddressTxes, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) AddressTxes {
-	filtered, _ := filterFHSAdmittedAddressTxesWithResults(addrTxes, config, genesisHash, keyBlockNumber, txBlockNumber, timestamp)
-	return filtered
-}
-
 func filterFHSAdmittedAddressTxesWithResults(addrTxes AddressTxes, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) (AddressTxes, map[common.Hash]core.CommonRPCAdmissionResult) {
 	candidates := make(map[common.Hash]core.CommonRPCAdmissionResult)
 	maxBatches := params.FairHotstuffWorkLimitsForConfig(config).CommonTxAdmissionBatches
@@ -1392,44 +1045,6 @@ func filterFHSAdmittedAddressTxesWithResults(addrTxes AddressTxes, config *param
 		return selection.Batch.AdmissionID, true
 	})
 	return filtered, candidates
-}
-
-// filterFHSAdmittedNativeTransactions validates each nonce-free candidate
-// independently while retaining the pool's deterministic priority order. The
-// unique admission-certificate count is bounded by the config-aware consensus
-// work meter; there is no per-payer prefix because NativeTxV1 has no nonce.
-func filterFHSAdmittedNativeTransactions(txs types.Transactions, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) types.Transactions {
-	filtered, _ := filterFHSAdmittedNativeTransactionsWithResults(txs, config, genesisHash, keyBlockNumber, txBlockNumber, timestamp)
-	return filtered
-}
-
-func filterFHSAdmittedNativeTransactionsWithResults(txs types.Transactions, config *params.ChainConfig, genesisHash common.Hash, keyBlockNumber uint64, txBlockNumber uint64, timestamp uint64) (types.Transactions, map[common.Hash]core.CommonRPCAdmissionResult) {
-	if len(txs) == 0 || config == nil {
-		return nil, nil
-	}
-	maxBatches := params.FairHotstuffWorkLimitsForConfig(config).CommonTxAdmissionBatches
-	if maxBatches == 0 {
-		return nil, nil
-	}
-	selectedBatches := make(map[common.Hash]struct{})
-	filtered := make(types.Transactions, 0, len(txs))
-	selections := make(map[common.Hash]core.CommonRPCAdmissionResult)
-	for _, tx := range txs {
-		selection, err := core.CommonRPCAdmissionForBlockTransaction(tx, config, genesisHash, keyBlockNumber, txBlockNumber, timestamp)
-		if err != nil || selection.Batch == nil || selection.Batch.AdmissionID == (common.Hash{}) {
-			continue
-		}
-		admissionID := selection.Batch.AdmissionID
-		if _, exists := selectedBatches[admissionID]; !exists {
-			if uint64(len(selectedBatches)) >= maxBatches {
-				continue
-			}
-			selectedBatches[admissionID] = struct{}{}
-		}
-		filtered = append(filtered, tx)
-		selections[tx.Hash()] = selection
-	}
-	return filtered, selections
 }
 
 func commonRPCAdmissionResultsForTransactions(txs types.Transactions, selections map[common.Hash]core.CommonRPCAdmissionResult) ([]core.CommonRPCAdmissionResult, error) {
@@ -1539,35 +1154,6 @@ func limitFHSAdmissionBatchPrefixes(addrTxes AddressTxes, maxBatches int, admiss
 		}
 	}
 	return filtered
-}
-
-func fastEligibleTx(tx *types.Transaction) bool {
-	return core.IsFastLaneEligible(tx)
-}
-
-func selectTxsForBlockType(addrTxes AddressTxes, blockType uint8, perAccount int) AddressTxes {
-	fastPath := isFastBlockType(blockType)
-	if !fastPath && perAccount <= 0 {
-		return addrTxes
-	}
-
-	selected := make(AddressTxes, len(addrTxes))
-	for addr, txs := range addrTxes {
-		picked := make(types.Transactions, 0, len(txs))
-		for _, tx := range txs {
-			if fastPath && !fastEligibleTx(tx) {
-				break
-			}
-			picked = append(picked, tx)
-			if perAccount > 0 && len(picked) >= perAccount {
-				break
-			}
-		}
-		if len(picked) > 0 {
-			selected[addr] = picked
-		}
-	}
-	return selected
 }
 
 func classifyCommitTxError(err error) failedTxAction {
@@ -1954,8 +1540,6 @@ func (txS *txService) filterProposalTransactions(blockType uint8, allAddrTxes Ad
 	return addrTxes
 }
 
-// Sends-off events asynchronously.
-
 func precheckTxForProposal(config *params.ChainConfig, st *state.StateDB, header *types.Header, tx *types.Transaction, from common.Address) error {
 	if st.GetNonce(from) == math.MaxUint64 {
 		return core.ErrNonceMax
@@ -2032,20 +1616,6 @@ func precheckTxForProposal(config *params.ChainConfig, st *state.StateDB, header
 		}
 	}
 	return nil
-}
-
-func (txS *txService) firePendingBlockEvents(logs []*types.Log) {
-	// Copy logs before we mutate them, adding a block hash.
-	copiedLogs := make([]*types.Log, len(logs))
-	for i, l := range logs {
-		copiedLogs[i] = new(types.Log)
-		*copiedLogs[i] = *l
-	}
-
-	go func() {
-		txS.cph.pendingLogsFeed.Send(copiedLogs)
-		txS.cph.eventMux.Post(core.PendingStateEvent{})
-	}()
 }
 
 type txResourceBudget struct {
@@ -2658,4 +2228,776 @@ func (env *work) commitTransaction(tx *types.Transaction, bc *core.BlockChain, g
 	//log.EmitCheckpoint(log.TxCompleted, "tx", tx.Hash().Hex(), "time", time.Since(txnStart))
 
 	return publicReceipt, nil
+}
+
+type proposalValidationOutput struct {
+	ref                  *types.HotstuffProposalRef
+	verified             *core.VerifiedProposal
+	extra                []byte
+	parentQC             *hotstuff.SignedState
+	serviceGeneration    uint64
+	validationGeneration uint64
+}
+
+type proposalBuildOutput struct {
+	stagedHotstuffProposal
+	key                    hotstuff.FHSProposalBuildKey
+	extra                  []byte
+	txCandidate            *txProposalCandidate
+	keyCandidate           *keyProposalCandidate
+	keyBlock               *types.KeyBlock
+	committee              *bftview.Committee
+	blockType              uint8
+	fixedMode              bool
+	keyProposalAttempt     bool
+	serviceGeneration      uint64
+	constructionGeneration uint64
+	publicationLocksHeld   bool
+	workStamp              proposalWorkStamp
+	workStampValid         bool
+}
+
+type stagedHotstuffProposal struct {
+	proposalRef  []byte
+	body         *proposalBodyMsg
+	manifest     *proposalBodyMsg
+	destinations []string
+}
+
+func (s *Service) stageHotstuffProposal(viewNumber uint64, viewID common.Hash, leaderID string, encodedBlock, extra []byte, parentQC *hotstuff.SignedState) (*stagedHotstuffProposal, error) {
+	if len(encodedBlock) == 0 {
+		return nil, fmt.Errorf("empty encoded block proposal")
+	}
+	bodyLimit := proposalBodyLimitForConfig(s.chainConfig)
+	if len(encodedBlock) > bodyLimit {
+		return nil, fmt.Errorf("encoded block proposal too large: bytes=%d limit=%d", len(encodedBlock), bodyLimit)
+	}
+	block := types.DecodeToBlock(encodedBlock)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode encoded block proposal")
+	}
+	if s.fairHotstuffEnabled() {
+		current := s.GetCurrentView()
+		if viewNumber != current.ViewNumber+1 {
+			return nil, fmt.Errorf("FHS proposal view mismatch: have %d want %d", viewNumber, current.ViewNumber+1)
+		}
+		if block.ParentHash() != current.TxHash {
+			return nil, fmt.Errorf("FHS proposal does not extend highest certified block: parent=%s highest=%s", block.ParentHash(), current.TxHash)
+		}
+	}
+	parentQCID, err := fhsQCIdentityHash(parentQC)
+	if err != nil {
+		return nil, err
+	}
+	encodedParentQC, err := hotstuff.EncodeSignedState(parentQC)
+	if err != nil {
+		return nil, err
+	}
+	ref, err := types.NewHotstuffProposalRefWithProof(s.ChainID(), viewNumber, viewID, leaderID, block, encodedBlock, extra, parentQCID)
+	if err != nil {
+		return nil, err
+	}
+	proposalID := ref.ProposalID()
+	body := &proposalBodyMsg{
+		Type:               proposalBodyMsgManifest,
+		ProposalID:         proposalID,
+		BodyHash:           ref.BodyHash,
+		BodySize:           ref.BodySize,
+		Number:             ref.Number,
+		ViewNumber:         ref.ViewNumber,
+		ViewID:             ref.ViewID,
+		LeaderID:           ref.LeaderID,
+		From:               s.Self(),
+		ProposalKeyHash:    ref.KeyHash,
+		EncodedBlock:       encodedBlock,
+		Extra:              append([]byte(nil), extra...),
+		ParentQC:           encodedParentQC,
+		KeyActivationProof: s.canonicalFHSKeyActivationProof(ref.KeyHash),
+		CreatedAtUnixNano:  time.Now().UnixNano(),
+	}
+	manifest, err := encodeProposalDataManifestForConfig(s.chainConfig, block)
+	if err != nil {
+		return nil, err
+	}
+	refBytes := ref.EncodeToBytes()
+	if len(refBytes) == 0 {
+		return nil, fmt.Errorf("failed to encode hotstuff proposal ref")
+	}
+	log.Info("HOTSTUFF PROPOSAL REF",
+		"number", ref.Number,
+		"viewID", ref.ViewID,
+		"proposalID", proposalID,
+		"blockHash", ref.BlockHash,
+		"bodyHash", ref.BodyHash,
+		"bodySize", ref.BodySize,
+		"refBytes", len(refBytes))
+	wireBody := cloneProposalBodyEnvelope(body)
+	wireBody.Type = proposalBodyMsgManifest
+	wireBody.From = s.Self()
+	wireBody.Manifest = append([]byte(nil), manifest...)
+	if err := s.sealProposalBody(wireBody); err != nil {
+		return nil, fmt.Errorf("sign proposal manifest: %w", err)
+	}
+	// Attach the relayable leader proof before caching and queuing durable
+	// content, so a donor that retains this body can serve the same proof after
+	// its original leader becomes unavailable, including after a donor restart.
+	body.ManifestAuthSig = append([]byte(nil), wireBody.ManifestAuthSig...)
+	if err := s.storeProposalBody(body); err != nil {
+		return nil, err
+	}
+	_, committee, _, err := s.resolveExactFHSCommittee(ref.KeyHash, true)
+	if err != nil || committee == nil || len(committee.List) == 0 {
+		return nil, fmt.Errorf("proposal committee unavailable %s: %w", ref.KeyHash, err)
+	}
+	destinations := make([]string, 0, len(committee.List)-1)
+	for _, node := range committee.List {
+		if node == nil || node.Address == "" || IsSelf(node.Address) {
+			continue
+		}
+		destinations = append(destinations, node.Address)
+	}
+	return &stagedHotstuffProposal{
+		proposalRef:  refBytes,
+		body:         body,
+		manifest:     wireBody,
+		destinations: destinations,
+	}, nil
+}
+
+func (s *Service) prepareHotstuffProposal(viewNumber uint64, viewID common.Hash, leaderID string, encodedBlock, extra []byte) ([]byte, error) {
+	staged, err := s.stageHotstuffProposal(viewNumber, viewID, leaderID, encodedBlock, extra, s.SelectedFHSProposalParent())
+	if err != nil {
+		return nil, err
+	}
+	s.dispatchProposalManifest(staged.manifest, staged.destinations, 0)
+	return staged.proposalRef, nil
+}
+
+// OnPropose is retained for non-FHS callers. Production FHS nodes schedule the
+// same validation on the bounded worker pool below and install its result on
+// the serialized HotStuff control loop.
+func (s *Service) OnPropose(state []byte, extra []byte, viewNumber uint64, parentQC *hotstuff.SignedState) error {
+	output, err := s.validateHotstuffProposalApplication(context.Background(), state, extra, viewNumber, parentQC, nil, 0, 0)
+	if err != nil {
+		return err
+	}
+	return s.installHotstuffProposalValidation(output)
+}
+
+func (s *Service) validateHotstuffProposalApplication(ctx context.Context, state []byte, extra []byte, viewNumber uint64, parentQC *hotstuff.SignedState, parentVerified *core.VerifiedProposal, serviceGeneration, validationGeneration uint64) (*proposalValidationOutput, error) {
+	if !s.isRunning() {
+		return nil, types.ErrNotRunning
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, hotstuff.ErrOldState
+	}
+	if len(state) == 0 {
+		err := fmt.Errorf("empty hotstuff proposal ref")
+		log.Error("OnPropose", "error", err)
+		return nil, err
+	}
+
+	ref, err := types.DecodeHotstuffProposalRef(state)
+	if err != nil {
+		log.Error("OnPropose decode proposal ref", "err", err)
+		return nil, err
+	}
+	if ref.ChainID != s.ChainID() {
+		return nil, fmt.Errorf("hotstuff proposal chain id mismatch: have %d want %d", ref.ChainID, s.ChainID())
+	}
+	if ref.ViewNumber != viewNumber {
+		return nil, fmt.Errorf("hotstuff proposal view number mismatch: have %d want %d", ref.ViewNumber, viewNumber)
+	}
+	if s.fairHotstuffEnabled() {
+		if ref.ExtraHash != types.HotstuffProposalExtraHash(extra) {
+			return nil, fmt.Errorf("hotstuff proposal extra proof is not bound to the signed reference")
+		}
+		parentQCID, err := fhsQCIdentityHash(parentQC)
+		if err != nil {
+			return nil, err
+		}
+		if ref.ParentQCID != parentQCID {
+			return nil, fmt.Errorf("hotstuff proposal parent QC is not bound to the signed reference")
+		}
+		if err := s.validateFHSProposalParent(ref, parentQC); err != nil {
+			return nil, err
+		}
+	}
+	proposalID := ref.ProposalID()
+	log.Info("OnPropose",
+		"number", ref.Number,
+		"proposalID", proposalID,
+		"blockHash", ref.BlockHash,
+		"bodyHash", ref.BodyHash,
+		"bodySize", ref.BodySize)
+
+	body, err := s.waitProposalBodyForValidation(ctx, ref, serviceGeneration)
+	if err != nil {
+		log.Error("OnPropose wait proposal body", "number", ref.Number, "proposalID", proposalID, "err", err)
+		return nil, err
+	}
+	block := types.DecodeToBlock(body.EncodedBlock)
+	if block == nil {
+		err := fmt.Errorf("DecodeToBlock(proposal body) error")
+		log.Error("OnPropose", "proposalID", proposalID, "error", err)
+		return nil, err
+	}
+	if err := ref.VerifyAgainstBlock(block, body.EncodedBlock); err != nil {
+		log.Error("OnPropose proposal ref mismatch", "number", ref.Number, "proposalID", proposalID, "err", err)
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, hotstuff.ErrOldState
+	}
+
+	var verified *core.VerifiedProposal
+	if parentVerified != nil {
+		// Only ScheduleFHSProposalValidation supplies a non-nil parent here;
+		// snapshotFHSCertifiedVerified has already isolated it from the cache.
+		// An empty parent may legitimately have no execution state. Preserve
+		// the existing StateAt fallback; there is no mutable state to transfer.
+		if parentVerified.StateDB == nil {
+			verified, err = s.txService.verifyHotstuffProposalWithParent(ref, block, extra, parentVerified)
+		} else {
+			verified, err = s.txService.verifyHotstuffProposalWithOwnedParent(ref, block, extra, parentVerified)
+		}
+	} else {
+		verified, err = s.txService.verifyHotstuffProposal(ref, block, extra)
+	}
+	if err != nil {
+		log.Error("verify hotstuff proposal", "number", block.NumberU64(), "proposalID", proposalID, "err", err)
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, hotstuff.ErrOldState
+	}
+	if block.BlockType() == types.Key_Block {
+		kblock := types.DecodeToKeyBlock(block.KeyInfo())
+		if kblock == nil {
+			return nil, fmt.Errorf("Block's extra (keyblock) is error format!")
+		}
+		if s.hasConflictingUncommittedFHSKeyBlock(block) {
+			return nil, fmt.Errorf("reject competing key block while a certified key transition is uncommitted: proposal=%s", block.Hash())
+		}
+		if block.NumberU64() == 0 {
+			return nil, fmt.Errorf("key block carrier cannot be transaction genesis")
+		}
+	}
+	return &proposalValidationOutput{
+		ref:                  ref,
+		verified:             verified,
+		extra:                append([]byte(nil), extra...),
+		parentQC:             hotstuff.CloneSignedState(parentQC),
+		serviceGeneration:    serviceGeneration,
+		validationGeneration: validationGeneration,
+	}, nil
+}
+
+func (s *Service) installHotstuffProposalValidation(output *proposalValidationOutput) error {
+	if output == nil || output.ref == nil || output.verified == nil || output.verified.ProposalID != output.ref.ProposalID() {
+		return fmt.Errorf("invalid hotstuff proposal validation output")
+	}
+	if output.serviceGeneration != 0 && (atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != output.serviceGeneration) {
+		return hotstuff.ErrOldState
+	}
+	if atomic.LoadInt32(&s.fhsEpochTransition) != 0 {
+		return hotstuff.ErrOldState
+	}
+	if output.validationGeneration != 0 && !s.isProposalValidationOutputActive(output) {
+		return hotstuff.ErrOldState
+	}
+	if err := output.verified.SanityCheck(); err != nil || output.verified.BlockHash() != output.ref.BlockHash ||
+		output.verified.ViewNumber != output.ref.ViewNumber || output.verified.ViewID != output.ref.ViewID || output.verified.LeaderID != output.ref.LeaderID ||
+		output.verified.ParentHash != output.ref.ParentHash {
+		return fmt.Errorf("invalid verified proposal artifact: %v", err)
+	}
+	if output.ref.ExtraHash != types.HotstuffProposalExtraHash(output.extra) {
+		return fmt.Errorf("validated proposal extra commitment changed")
+	}
+	parentQCID, err := fhsQCIdentityHash(output.parentQC)
+	if err != nil {
+		return err
+	}
+	if output.ref.ParentQCID != parentQCID {
+		return fmt.Errorf("validated proposal parent QC commitment changed")
+	}
+	if s.fairHotstuffEnabled() {
+		if err := s.validateFHSProposalParent(output.ref, output.parentQC); err != nil {
+			return err
+		}
+	}
+	if output.verified.Block != nil && output.verified.Block.BlockType() == types.Key_Block {
+		block := output.verified.Block
+		kblock := types.DecodeToKeyBlock(block.KeyInfo())
+		if kblock == nil || block.NumberU64() == 0 || s.hasConflictingUncommittedFHSKeyBlock(block) {
+			return fmt.Errorf("validated key block is no longer admissible")
+		}
+		if err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(output.extra), block.NumberU64()-1); err != nil {
+			return err
+		}
+	}
+	if err := s.updateProposalBodyProof(output.ref.ProposalID(), output.extra, output.parentQC); err != nil {
+		return err
+	}
+	s.storeVerifiedProposal(output.ref.ProposalID(), output.verified)
+	s.pacetMakerTimer.start()
+	return nil
+}
+
+func (s *Service) ApplyFHSProposalValidation(result *hotstuff.FHSProposalValidationResult) error {
+	if result == nil || result.Err != nil {
+		return fmt.Errorf("invalid FHS proposal validation result")
+	}
+	output, ok := result.ApplicationData.(*proposalValidationOutput)
+	if !ok || output == nil || output.ref == nil || output.ref.ViewNumber != result.Key.ViewNumber ||
+		output.ref.ViewID != result.Key.ViewID || output.ref.LeaderID != result.Key.LeaderID || output.ref.ProposalID() != result.Key.ProposalID {
+		return fmt.Errorf("FHS proposal validation result context mismatch")
+	}
+	if err := s.acquireFHSValidationPublication(fhsValidationPublicationProposal); err != nil {
+		return err
+	}
+	transferred := false
+	defer func() {
+		if !transferred {
+			s.releaseFHSValidationPublication(fhsValidationPublicationProposal)
+		}
+	}()
+	if err := s.installHotstuffProposalValidation(output); err != nil {
+		return err
+	}
+	s.activeProposalValidationPublish = result
+	transferred = true
+	return nil
+}
+
+// FinishFHSProposalValidation releases the publication barrier only after the
+// manager has durably persisted, signed and sent (or rejected) the vote.
+func (s *Service) FinishFHSProposalValidation(result *hotstuff.FHSProposalValidationResult) {
+	if s == nil || result == nil ||
+		atomic.LoadInt32(&s.fhsValidationPublicationOwner) != int32(fhsValidationPublicationProposal) ||
+		s.activeProposalValidationPublish != result {
+		return
+	}
+	s.activeProposalValidationPublish = nil
+	if !s.releaseFHSValidationPublication(fhsValidationPublicationProposal) {
+		atomic.StoreInt32(&s.fhsEpochTransition, 1)
+		s.setRunState(0)
+		log.Error("Fair HotStuff proposal validation failed to release its publication barrier")
+	}
+}
+
+func (s *Service) stageFHSProposalBuild(job *proposalBuildJob) (*proposalBuildOutput, error) {
+	request := job.request
+	output := &proposalBuildOutput{
+		key:                    request.Key,
+		serviceGeneration:      job.serviceGeneration,
+		constructionGeneration: job.constructionGeneration,
+	}
+	if !s.isProposalBuildJobActive(job) {
+		return output, hotstuff.ErrOldState
+	}
+	state, leaderID, number := s.CurrentState()
+	if number != request.Key.ViewNumber || leaderID != request.Key.LeaderID || !bytes.Equal(state, request.CurrentState) {
+		return output, hotstuff.ErrOldState
+	}
+
+	s.muCurrentView.Lock()
+	leaderIndex := s.currentView.LeaderIndex
+	noDone := s.currentView.NoDone
+	replicaMatches := s.replicaView != nil && s.replicaView.EqualConsensus(&s.currentView)
+	s.muCurrentView.Unlock()
+	if !replicaMatches || !bftview.IamLeader(leaderIndex) {
+		return output, hotstuff.ErrOldState
+	}
+
+	fixedMode := s.keyService.fixedModeEnabled()
+	keyBlockIntervalElapsed := true
+	if curKeyblock := s.kbc.CurrentBlock(); curKeyblock != nil {
+		keyBlockIntervalElapsed = time.Since(time.Unix(int64(curKeyblock.Time()), 0)) >= params.KeyBlockMinInterval
+	}
+	keyProposalAttempt, keyProposalIsDone := keyProposalPlan(fixedMode, leaderIndex, noDone, keyBlockIntervalElapsed)
+	if keyProposalAttempt && s.hasUncommittedFHSKeyBlock() {
+		keyProposalAttempt = false
+	}
+	output.fixedMode = fixedMode
+	output.keyProposalAttempt = keyProposalAttempt
+
+	if output.keyProposalAttempt {
+		txParentNumber := fhsProposalParentNumber(s.bc.CurrentBlockN(), s.highestFHSCertifiedProposal())
+		keyblock, committee, bestCandidate, err := s.keyService.tryProposalChangeCommittee(leaderIndex, keyProposalIsDone, txParentNumber)
+		if err != nil || keyblock == nil || committee == nil {
+			if err == nil {
+				err = fmt.Errorf("incomplete key block proposal")
+			}
+			return output, err
+		}
+		if bestCandidate != nil {
+			output.extra = bestCandidate.EncodeToBytes()
+		}
+		candidate, err := s.txService.buildProposalNewKeyBlock(keyblock)
+		if err != nil {
+			return output, err
+		}
+		staged, err := s.stageHotstuffProposal(request.Key.ViewNumber, request.Key.ViewID, request.Key.LeaderID,
+			candidate.encoded, output.extra, request.ParentQC)
+		if err != nil {
+			return output, err
+		}
+		output.stagedHotstuffProposal = *staged
+		output.keyCandidate = candidate
+		output.keyBlock = keyblock
+		output.committee = committee
+		output.blockType = types.Key_Block
+		return output, nil
+	}
+
+	output.workStamp, output.workStampValid = s.captureProposalWorkStamp(
+		time.Now(), request.Key.ViewNumber, request.Key.ViewID, request.Key.LeaderID,
+	)
+	candidate, err := s.txService.prepareTxProposal(s.chooseTxBlockType(), false)
+	if err != nil {
+		return output, err
+	}
+	staged, err := s.stageHotstuffProposal(request.Key.ViewNumber, request.Key.ViewID, request.Key.LeaderID,
+		candidate.encoded, nil, request.ParentQC)
+	if err != nil {
+		return output, err
+	}
+	output.stagedHotstuffProposal = *staged
+	output.txCandidate = candidate
+	output.blockType = candidate.blockType
+	return output, nil
+}
+
+// proposalBuildRouteMatchesLocked requires muCurrentView. It binds the manager
+// request to the exact service route and to the block/key generation captured by
+// the worker. Apply keeps this lock until candidate publication completes, so a
+// timeout-only route change cannot slip between this check and install.
+func (s *Service) proposalBuildRouteMatchesLocked(output *proposalBuildOutput) bool {
+	if output == nil || output.key.ViewNumber != s.currentView.ViewNumber+1 ||
+		hotstuff.StateDigest(s.currentView.EncodeConsensusToBytes()) != output.key.CurrentStateDigest ||
+		s.replicaView == nil || !s.replicaView.EqualConsensus(&s.currentView) {
+		return false
+	}
+	committee, err := s.loadViewCommittee(&s.currentView, true)
+	if err != nil || s.currentView.LeaderIndex >= uint(len(committee.List)) || committee.List[s.currentView.LeaderIndex] == nil {
+		return false
+	}
+	leader := committee.List[s.currentView.LeaderIndex]
+	if bftview.GetNodeID(leader.Address, leader.Public) != output.key.LeaderID || output.key.LeaderID != s.Self() {
+		return false
+	}
+	var generation proposalGeneration
+	switch {
+	case output.txCandidate != nil && output.keyCandidate == nil:
+		generation = output.txCandidate.generation
+	case output.keyCandidate != nil && output.txCandidate == nil:
+		generation = output.keyCandidate.generation
+	default:
+		return false
+	}
+	return generation.parentHash == s.currentView.TxHash && generation.parentNumber == s.currentView.TxNumber &&
+		generation.keyHash == s.currentView.KeyHash && generation.keyNumber == s.currentView.KeyNumber
+}
+
+func (s *Service) ApplyFHSProposalBuild(result *hotstuff.FHSProposalBuildResult) error {
+	if result == nil || result.Err != nil {
+		return fmt.Errorf("invalid FHS proposal construction result")
+	}
+	output, ok := result.ApplicationData.(*proposalBuildOutput)
+	if !ok || output == nil || output.key != result.Key || !bytes.Equal(output.proposalRef, result.TProposal) ||
+		!bytes.Equal(output.extra, result.Extra) || output.manifest == nil || output.body == nil {
+		return fmt.Errorf("FHS proposal construction result context mismatch")
+	}
+	s.muProposalBuild.Lock()
+	buildLockTransferred := false
+	defer func() {
+		if !buildLockTransferred {
+			s.muProposalBuild.Unlock()
+		}
+	}()
+	active := s.activeProposalBuild
+	activeMatch := active != nil && active.key == result.Key && active.generation == output.constructionGeneration
+	if !activeMatch || atomic.LoadInt32(&s.runningState) != 1 ||
+		atomic.LoadUint64(&s.proposalValidationGeneration) != output.serviceGeneration {
+		return hotstuff.ErrOldState
+	}
+	if err := s.reserveProposalManifestDispatch(); err != nil {
+		return err
+	}
+	manifestReserved := true
+	defer func() {
+		if manifestReserved {
+			s.releaseProposalManifestDispatch()
+		}
+	}()
+	cleanupReserved := false
+	if output.txCandidate != nil && len(output.txCandidate.failedTxes) > 0 {
+		if err := s.reserveProposalFailedTxCleanup(); err != nil {
+			return err
+		}
+		cleanupReserved = true
+		defer func() {
+			if cleanupReserved {
+				s.releaseProposalFailedTxCleanup()
+			}
+		}()
+	}
+
+	// Lock order is muProposalBuild -> muCurrentView -> txService.mu. No
+	// txService publication path acquires muCurrentView while holding txService.mu.
+	s.muCurrentView.Lock()
+	currentViewLockTransferred := false
+	defer func() {
+		if !currentViewLockTransferred {
+			s.muCurrentView.Unlock()
+		}
+	}()
+	if !s.proposalBuildRouteMatchesLocked(output) || atomic.LoadInt32(&s.runningState) != 1 ||
+		atomic.LoadUint64(&s.proposalValidationGeneration) != output.serviceGeneration {
+		return hotstuff.ErrOldState
+	}
+
+	switch {
+	case output.txCandidate != nil && output.keyCandidate == nil:
+		if err := s.txService.installProposalCandidate(output.txCandidate, nil); err != nil {
+			return err
+		}
+	case output.keyCandidate != nil && output.txCandidate == nil && output.keyBlock != nil && output.committee != nil:
+		if err := s.txService.installKeyProposalCandidate(output.keyCandidate, func() error {
+			if output.committee.RlpHash() != output.keyBlock.CommitteeHash() {
+				return fmt.Errorf("key proposal committee commitment changed")
+			}
+			// A proposed (not committed) committee must be available for proposal
+			// verification/recovery, but Committee_OnStored only adjusts live peer
+			// connections for an already-canonical key block. Defer that callback to
+			// the normal commit/verification path.
+			if !output.committee.StoreWithoutCallback(output.keyBlock) {
+				return fmt.Errorf("failed to persist proposed committee for key block %d/%s", output.keyBlock.NumberU64(), output.keyBlock.Hash())
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("FHS proposal construction result has ambiguous candidate")
+	}
+
+	s.proposalManifestJobs <- &proposalManifestDispatch{
+		body:              cloneProposalBodyMsg(output.manifest),
+		destinations:      append([]string(nil), output.destinations...),
+		serviceGeneration: output.serviceGeneration,
+	}
+	manifestReserved = false
+	if cleanupReserved {
+		s.proposalFailedTxJobs <- &proposalFailedTxCleanup{
+			txs:               append(types.Transactions(nil), output.txCandidate.failedTxes...),
+			serviceGeneration: output.serviceGeneration,
+		}
+		cleanupReserved = false
+	}
+	now := time.Now()
+	s.muProposalCadence.Lock()
+	if output.blockType == types.SlowTx_Block {
+		s.lastSlowBlockTime = now
+	} else if output.blockType == types.FastTx_Block {
+		s.lastFastBlockTime = now
+	}
+	s.muProposalCadence.Unlock()
+	output.publicationLocksHeld = true
+	currentViewLockTransferred = true
+	buildLockTransferred = true
+	return nil
+}
+
+// FinishFHSProposalBuild releases the publication barrier after the manager has
+// cached, phase-transitioned and submitted the sealed Prepare. Apply transfers
+// these locks only on success, and the manager defers this callback immediately,
+// so Stop cannot linearize in the Apply-to-Broadcast gap.
+func (s *Service) FinishFHSProposalBuild(result *hotstuff.FHSProposalBuildResult) {
+	if result == nil {
+		return
+	}
+	output, _ := result.ApplicationData.(*proposalBuildOutput)
+	if output == nil || !output.publicationLocksHeld {
+		return
+	}
+	output.publicationLocksHeld = false
+	s.muCurrentView.Unlock()
+	s.muProposalBuild.Unlock()
+}
+
+// Propose call by hotstuff
+func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string) (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
+	if s.fairHotstuffEnabled() {
+		return fmt.Errorf("Fair HotStuff proposal construction is asynchronous"), nil, nil, nil
+	}
+	log.Debug("Propose..", "number", s.GetCurrentView().TxNumber)
+
+	proposeOK := false
+	defer func() {
+		if !proposeOK && !errors.Is(e, errProposalNoWork) {
+			go func() {
+				time.Sleep(failedProposalRetry)
+				curView := s.GetCurrentView()
+				if bftview.IamLeader(curView.LeaderIndex) {
+					s.triggerTryPropose(s.bc.CurrentBlockN())
+				}
+			}()
+		}
+	}()
+
+	if !s.isRunning() {
+		err := fmt.Errorf("not running for propose")
+		return err, nil, nil, nil
+	}
+
+	s.muCurrentView.Lock()
+	leaderIndex := s.currentView.LeaderIndex
+	noDone := s.currentView.NoDone
+	if !s.replicaView.EqualConsensus(&s.currentView) {
+		log.Error("Propose", "replica view not equal to local current view txNumber", s.currentView.TxNumber, "keyNumber", s.currentView.KeyNumber, "LeaderIndex", leaderIndex, "NoDone",
+			s.currentView.NoDone, "replica txNumber", s.replicaView.TxNumber, "keyNumber", s.replicaView.KeyNumber, "LeaderIndex", s.replicaView.LeaderIndex, "NoDone", s.replicaView.NoDone)
+		s.muCurrentView.Unlock()
+		return fmt.Errorf("replica view not equal to local current view"), nil, nil, nil
+	}
+	if !bftview.IamLeader(leaderIndex) {
+		//proposeOK = true
+		err := fmt.Errorf("not leader for propose")
+		log.Error("Propose", "leaderIndex", leaderIndex, "error", err)
+		s.muCurrentView.Unlock()
+		return err, nil, nil, nil
+	}
+	s.muCurrentView.Unlock()
+
+	fixedMode := s.keyService.fixedModeEnabled()
+	keyBlockIntervalElapsed := true
+	if curKeyblock := s.kbc.CurrentBlock(); curKeyblock != nil {
+		lastKeyTime := time.Unix(int64(curKeyblock.Time()), 0)
+		keyBlockIntervalElapsed = time.Since(lastKeyTime) >= params.KeyBlockMinInterval
+		legacyKeyProposalSelected := leaderIndex > 0
+		if fixedMode {
+			legacyKeyProposalSelected = !noDone
+		}
+		if legacyKeyProposalSelected && !keyBlockIntervalElapsed {
+			log.Debug("Propose keyblock suppressed by minimum interval",
+				"elapsed", time.Since(lastKeyTime),
+				"minimum", params.KeyBlockMinInterval,
+				"lastKeyTime", lastKeyTime)
+		}
+	}
+
+	keyProposalAttempt, keyProposalIsDone := keyProposalPlan(fixedMode, leaderIndex, noDone, keyBlockIntervalElapsed)
+
+	if keyProposalAttempt {
+		txParentNumber := s.bc.CurrentBlockN()
+		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, keyProposalIsDone, txParentNumber)
+		if err == nil && keyblock != nil && mb != nil {
+			if bestCandi != nil {
+				extra = bestCandi.EncodeToBytes()
+			}
+			data, err := s.txService.tryProposalNewKeyBlock(keyblock)
+			if err != nil {
+				log.Warn("tryProposalNewKeyBlock", "error", err)
+				if fixedMode {
+					s.abortFixedModeKeyProposal("assemble failed", err)
+				}
+				return err, nil, nil, nil
+			}
+			proposalRef, err := s.prepareHotstuffProposal(viewNumber, viewID, leaderID, data, extra)
+			if err != nil {
+				log.Warn("prepare keyblock hotstuff proposal", "error", err)
+				if fixedMode {
+					s.abortFixedModeKeyProposal("prepare proposal failed", err)
+				}
+				return err, nil, nil, nil
+			}
+			if !mb.Store(keyblock) {
+				return fmt.Errorf("failed to persist proposed committee for key block %d/%s", keyblock.NumberU64(), keyblock.Hash()), nil, nil, nil
+			}
+			proposeOK = true
+			return nil, nil, proposalRef, extra
+		} else {
+			log.Error("tryProposalChangeCommittee failed", "error", err)
+			if fixedMode {
+				s.abortFixedModeKeyProposal("change committee failed", err)
+			}
+			return fmt.Errorf("tryProposalChangeCommittee failed"), nil, nil, nil
+		}
+	}
+	workStamp, workStampValid := s.captureProposalWorkStamp(time.Now(), viewNumber, viewID, leaderID)
+	candidate, err := s.txService.prepareTxProposal(s.chooseTxBlockType(), true)
+	if err != nil {
+		if errors.Is(err, errProposalNoWork) {
+			s.rememberProposalNoWork(workStamp, workStampValid)
+		} else {
+			s.clearProposalNoWork()
+			log.Warn("tryProposalNewBlock", "error", err)
+		}
+		return err, nil, nil, nil
+	}
+	proposalRef, err := s.prepareHotstuffProposal(viewNumber, viewID, leaderID, append([]byte(nil), candidate.encoded...), nil)
+	if err != nil {
+		s.clearProposalNoWork()
+		log.Warn("prepare txblock hotstuff proposal", "error", err)
+		return err, nil, nil, nil
+	}
+	now := time.Now()
+	s.muProposalCadence.Lock()
+	if candidate.blockType == types.SlowTx_Block {
+		s.lastSlowBlockTime = now
+	} else if candidate.blockType == types.FastTx_Block {
+		s.lastFastBlockTime = now
+	}
+	s.muProposalCadence.Unlock()
+	s.clearProposalNoWork()
+	proposeOK = true
+	return nil, nil, proposalRef, nil
+}
+
+// OnViewDone call by hotstuff
+func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
+	if !s.isRunning() {
+		return types.ErrNotRunning
+	}
+	if tSign == nil {
+		log.Warn("OnViewDone nil!")
+		return nil
+	}
+	if s.fairHotstuffEnabled() {
+		return fmt.Errorf("MsgDecide commit is disabled in FHS 2-chain mode")
+	}
+	ref, err := types.DecodeHotstuffProposalRef(tSign.State)
+	if err != nil {
+		log.Error("OnViewDone decode proposal ref", "err", err)
+		return err
+	}
+	proposalID := ref.ProposalID()
+	verified := s.getVerifiedProposal(proposalID)
+	if verified == nil {
+		log.Warn("OnViewDone verified proposal cache miss; revalidating before commit", "number", ref.Number, "proposalID", proposalID)
+		body, err := s.waitProposalBody(ref)
+		if err != nil {
+			return err
+		}
+		block := types.DecodeToBlock(body.EncodedBlock)
+		if block == nil {
+			return fmt.Errorf("DecodeToBlock(proposal body) error")
+		}
+		if err := ref.VerifyAgainstBlock(block, body.EncodedBlock); err != nil {
+			return err
+		}
+		verified, err = s.txService.verifyHotstuffProposal(ref, block, nil)
+		if err != nil {
+			return err
+		}
+	}
+	if err := s.txService.decideVerifiedProposal(ref, verified, tSign.Sign, tSign.Mask, tSign.Number, tSign.ViewID, tSign.LeaderID); err != nil {
+		return err
+	}
+	s.deleteProposalCaches(proposalID)
+	return nil
 }

@@ -526,12 +526,7 @@ func (st *StateTransition) preCheck() error {
 			return ErrNonceMax
 		}
 	}
-	// NativeTxV1 deliberately omits an account nonce, but its fee payer still
-	// follows the same EOA/delegated-account rule as a nonce-bearing sender.
-	// Tying this check to CheckNonce would make pool admission stricter than
-	// consensus execution and allow a Byzantine proposer to include a native
-	// transaction from arbitrary contract code.
-	if (transactionChecks || st.txType == types.NativeTxType) && rules.IsLondon {
+	if transactionChecks && rules.IsLondon {
 		code := st.state.GetCode(st.msg.From())
 		_, delegated := types.ParseDelegation(code)
 		if len(code) != 0 && !(rules.IsPrague && delegated) {
@@ -598,12 +593,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if contractCreation {
 		ret, _, st.gas, vmerr = st.evm.Create(sender, st.data, st.gas, st.value)
 	} else {
-		// NativeTxV1 has no account nonce. Its replay domain is the signed recent
-		// block plus expiry window, so mutating an unrelated legacy account nonce
-		// would make otherwise independent native transactions conflict.
-		if st.txType != types.NativeTxType {
-			st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
-		}
+		st.state.SetNonce(msg.From(), st.state.GetNonce(sender.Address())+1)
 		if rules.IsPrague && st.txType == types.SetCodeTxType {
 			for i := range st.authList {
 				// Invalid tuples are ignored as required by EIP-7702. Stateless

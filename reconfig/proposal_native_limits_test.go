@@ -23,9 +23,6 @@ func nativeProposalLimitTestConfig() *params.ChainConfig {
 
 func TestNativeProposalLimitsFollowGenesisConfig(t *testing.T) {
 	config := nativeProposalLimitTestConfig()
-	if got, want := nativeProposalCandidateLimit(config), uint64(4)*config.NativeParallel.MaxTransactionsPerBlock; got != want {
-		t.Fatalf("native candidate scan = %d, want complete four-block pool buffer %d", got, want)
-	}
 	if got, want := proposalBodyLimitForConfig(config), int(config.NativeParallel.MaxBlockBytes); got != want {
 		t.Fatalf("proposal body limit = %d, want %d", got, want)
 	}
@@ -116,21 +113,6 @@ func TestNativeProposalAssemblyMemoryIsBounded(t *testing.T) {
 	}
 }
 
-func TestNativeProposalFailureBudgetBoundsEveryRetry(t *testing.T) {
-	var budget nativeProposalFailureBudget
-	for failure := uint64(1); failure < nativeProposalFailureQuarantineBatch; failure++ {
-		if budget.record() {
-			t.Fatalf("failure budget exhausted early at %d", failure)
-		}
-	}
-	if !budget.record() {
-		t.Fatalf("failure budget did not stop retry %d", nativeProposalFailureQuarantineBatch)
-	}
-	if !budget.record() {
-		t.Fatal("exhausted failure budget became reusable")
-	}
-}
-
 func TestNativeManifestExceedsLegacyTransactionCount(t *testing.T) {
 	const count = params.MaxTxCountPerBlock + 1
 	hashes := make([]common.Hash, count)
@@ -149,7 +131,7 @@ func TestNativeManifestExceedsLegacyTransactionCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := decodeProposalDataManifest(encoded); err == nil {
+	if _, err := decodeProposalDataManifestForConfig(nil, encoded); err == nil {
 		t.Fatal("legacy manifest decoder accepted a transaction count above 16,384")
 	}
 	config := nativeProposalLimitTestConfig()

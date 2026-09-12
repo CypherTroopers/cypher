@@ -132,7 +132,7 @@ func TestFHSKeyActivationManifestCarriesAncestorFinality(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest, err := encodeProposalDataManifest(proposal)
+	manifest, err := encodeProposalDataManifestForConfig(nil, proposal)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -18,6 +18,7 @@ package reconfig
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"sync"
@@ -27,6 +28,7 @@ import (
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/math"
 	"github.com/cypherium/cypher/core"
+	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
@@ -631,7 +633,6 @@ func (q *peerQueues) pushFrontClass(msg *networkMsg) bool {
 	if msg == nil || msg.queueSince.IsZero() || time.Since(msg.queueSince) > outboundMessageRetryTTL(msg) {
 		return false
 	}
-	msg.queueAttempts++
 	return q.pushMessage(msg, false)
 }
 
@@ -1410,4 +1411,563 @@ func rlpHash(x interface{}) (h common.Hash) {
 
 func IsSelf(addr string) bool {
 	return addr == bftview.GetServerAddress()
+}
+
+type committeeInfo struct {
+	Committee *bftview.Committee
+	KeyHash   common.Hash
+	KeyNumber uint64
+}
+
+type bestCandidateInfo struct {
+	Node      *common.Cnode
+	KeyHash   common.Hash
+	KeyNumber uint64
+}
+
+type cachedCommitteeInfo struct {
+	keyNumber uint64
+	committee *bftview.Committee
+	node      *common.Cnode
+}
+
+type committeeMsg struct {
+	sid   *network.ServerIdentity
+	cinfo *committeeInfo
+	best  *bestCandidateInfo
+}
+
+type networkMsg struct {
+	MsgFlag uint32
+	Hmsg    *hotstuff.HotstuffMessage
+	Cmsg    *committeeInfo
+	Bmsg    *bestCandidateInfo
+	Pmsg    *proposalBodyMsg
+
+	queueSince time.Time
+}
+
+func (msg *networkMsg) NetworkClass() uint8 {
+	if msg == nil {
+		return network.NetClassBulkGossip
+	}
+	if msg.Hmsg != nil {
+		return network.NetClassHotstuffControl
+	}
+	if msg.Pmsg != nil {
+		switch msg.Pmsg.Type {
+		case proposalBodyMsgRepairRequest:
+			return network.NetClassProposalBodyControl
+		case proposalBodyMsgManifest, proposalBodyMsgRepairData:
+			payloadBytes := proposalBodyMsgPayloadBytes(msg.Pmsg)
+			if payloadBytes <= proposalBodyControlMaxBytes {
+				return network.NetClassProposalBodyControl
+			}
+			// The dedicated proposal-body QUIC class intentionally retains its
+			// legacy 9 MiB packet cap. Genesis-native manifests can be larger, so
+			// route only those bounded messages through the 257 MiB large-data
+			// class. Both classes remain bulk-priority in the peer scheduler.
+			if payloadBytes > proposalBodySidecarMaxBytes {
+				return network.NetClassBulkGossip
+			}
+			return network.NetClassProposalBodyBulk
+		default:
+			return network.NetClassProposalBodyControl
+		}
+	}
+	if msg.Cmsg != nil || msg.Bmsg != nil {
+		return network.NetClassCommitteeControl
+	}
+	return network.NetClassBulkGossip
+}
+
+func (msg *networkMsg) GetCommittee() *bftview.Committee {
+	var mb *bftview.Committee
+	if msg.Cmsg != nil {
+		mb = bftview.LoadMember(msg.Cmsg.KeyNumber, msg.Cmsg.KeyHash, true)
+	} else if msg.Bmsg != nil {
+		mb = bftview.LoadMember(msg.Bmsg.KeyNumber, msg.Bmsg.KeyHash, true)
+	} else if msg.Hmsg != nil {
+		mb = bftview.GetCurrentMember()
+	} else if msg.Pmsg != nil {
+		mb = bftview.GetCurrentMember()
+	}
+	return mb
+}
+
+func (s *Service) dispatchProposalManifest(body *proposalBodyMsg, destinations []string, generation uint64) {
+	if body == nil {
+		return
+	}
+	for _, address := range destinations {
+		if generation != 0 && (atomic.LoadInt32(&s.runningState) != 1 || atomic.LoadUint64(&s.proposalValidationGeneration) != generation) {
+			return
+		}
+		if err := s.netService.SendRawData(address, &networkMsg{Pmsg: body}); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL MANIFEST dispatch failed", "to", address,
+				"number", body.Number, "proposalID", body.ProposalID, "err", err)
+		}
+	}
+}
+
+func (s *Service) proposalRepairTarget(ref *types.HotstuffProposalRef, attempt uint64) *common.Cnode {
+	if s == nil || s.kbc == nil || ref == nil || ref.KeyHash == (common.Hash{}) {
+		return nil
+	}
+	// Repair follows the committee generation committed by the certified
+	// proposal, not the receiver's current committee. A catch-up chain may cross
+	// a key-block transition before the local application publishes that view.
+	_, mb, _, err := s.resolveExactFHSCommittee(ref.KeyHash, true)
+	if err != nil || mb == nil || len(mb.List) == 0 {
+		return nil
+	}
+	if attempt == 0 {
+		if leader, _ := mb.Get(ref.LeaderID, bftview.ID); leader != nil && leader.Address != "" && !IsSelf(leader.Address) {
+			return leader
+		}
+	}
+	proposalID := ref.ProposalID()
+	seed := binary.BigEndian.Uint64(proposalID[:8]) + attempt
+	committeeSize := uint64(len(mb.List))
+	base := seed % committeeSize
+	for offset := 0; offset < len(mb.List); offset++ {
+		index := int((base + uint64(offset)) % committeeSize)
+		node := mb.List[index]
+		if node != nil && node.Address != "" && !IsSelf(node.Address) {
+			return node
+		}
+	}
+	return nil
+}
+
+func (s *Service) sendProposalRepairRequest(ref *types.HotstuffProposalRef, missing []common.Hash, attempt uint64) {
+	if ref == nil {
+		return
+	}
+	if len(missing) > proposalRepairMaxHashes {
+		missing = missing[:proposalRepairMaxHashes]
+	}
+	req := &proposalBodyMsg{
+		Type:              proposalBodyMsgRepairRequest,
+		ProposalID:        ref.ProposalID(),
+		BodyHash:          ref.BodyHash,
+		BodySize:          ref.BodySize,
+		Number:            ref.Number,
+		ViewNumber:        ref.ViewNumber,
+		ViewID:            ref.ViewID,
+		LeaderID:          ref.LeaderID,
+		From:              s.Self(),
+		ProposalKeyHash:   ref.KeyHash,
+		MissingTxHashes:   append([]common.Hash(nil), missing...),
+		CreatedAtUnixNano: time.Now().UnixNano(),
+	}
+	if err := s.sealProposalBody(req); err != nil {
+		log.Warn("HOTSTUFF PROPOSAL BODY REQUEST signing failed", "number", ref.Number, "err", err)
+		return
+	}
+
+	node := s.proposalRepairTarget(ref, attempt)
+	if node == nil {
+		return
+	}
+	log.Info("HOTSTUFF PROPOSAL REPAIR REQUEST",
+		"to", node.Address,
+		"number", ref.Number,
+		"proposalID", req.ProposalID,
+		"missing", len(req.MissingTxHashes),
+		"attempt", attempt)
+	if err := s.netService.SendRawData(node.Address, &networkMsg{Pmsg: req}); err != nil {
+		log.Warn("HOTSTUFF PROPOSAL REPAIR request failed", "to", node.Address, "number", ref.Number, "proposalID", req.ProposalID, "err", err)
+	}
+}
+
+func (s *Service) handleProposalBodyMsg(si *network.ServerIdentity, msg *proposalBodyMsg) {
+	if msg == nil {
+		return
+	}
+	if err := validateProposalBodyWireShapeForConfig(s.chainConfig, msg); err != nil {
+		log.Warn("HOTSTUFF PROPOSAL BODY malformed", "from", msg.From, "number", msg.Number, "err", err)
+		return
+	}
+	if err := s.verifyProposalBodySender(si, msg); err != nil {
+		log.Warn("HOTSTUFF PROPOSAL BODY sender rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+		return
+	}
+	if msg.Type == proposalBodyMsgManifest {
+		if err := s.verifyProposalManifestAuthority(msg); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL MANIFEST authority rejected", "from", msg.From, "leader", msg.LeaderID, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+			return
+		}
+		if err := s.verifyProposalManifestSignature(msg); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL MANIFEST leader signature rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+			return
+		}
+	}
+	switch msg.Type {
+	case proposalBodyMsgManifest:
+		missing, err := s.storeProposalManifest(msg)
+		if err != nil {
+			s.discardIncompletePeerManifest(msg)
+			log.Warn("HOTSTUFF PROPOSAL MANIFEST rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+			return
+		}
+		log.Info("HOTSTUFF PROPOSAL MANIFEST stored", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID,
+			"manifestBytes", len(msg.Manifest), "missing", len(missing), "bodyBytes", msg.BodySize)
+	case proposalBodyMsgRepairRequest:
+		body, fromDurable, err := s.proposalBodyForRepairRequest(msg)
+		if err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR request rejected", "from", msg.From, "number", msg.Number,
+				"proposalID", msg.ProposalID, "durable", fromDurable, "err", err)
+			return
+		}
+		if body == nil {
+			log.Debug("HOTSTUFF PROPOSAL REPAIR request miss", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID)
+			return
+		}
+		if si == nil {
+			return
+		}
+		address := si.Address.String()
+		if address == "" {
+			return
+		}
+		if len(msg.MissingTxHashes) == 0 {
+			manifest, err := s.proposalManifestForRepair(body.ProposalID, body)
+			if err != nil {
+				log.Warn("HOTSTUFF PROPOSAL MANIFEST response assembly failed", "to", address, "proposalID", body.ProposalID, "err", err)
+				return
+			}
+			response := cloneProposalBodyEnvelope(body)
+			response.Type = proposalBodyMsgManifest
+			response.From = s.Self()
+			response.Manifest = manifest
+			if err := s.sealProposalBody(response); err != nil {
+				log.Warn("HOTSTUFF PROPOSAL MANIFEST RESPONSE signing failed", "to", address, "number", body.Number, "err", err)
+				return
+			}
+			if err := s.netService.SendRawData(address, &networkMsg{Pmsg: response}); err != nil {
+				log.Warn("HOTSTUFF PROPOSAL MANIFEST response failed", "to", address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
+			}
+			return
+		}
+		hashes, encodedTransactions, err := s.proposalRepairTransactions(body, msg.MissingTxHashes)
+		if err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR lookup failed", "to", address, "proposalID", body.ProposalID, "err", err)
+			return
+		}
+		if len(encodedTransactions) == 0 {
+			return
+		}
+		response := &proposalBodyMsg{
+			Type:              proposalBodyMsgRepairData,
+			ProposalID:        body.ProposalID,
+			BodyHash:          body.BodyHash,
+			BodySize:          body.BodySize,
+			Number:            body.Number,
+			ViewNumber:        body.ViewNumber,
+			ViewID:            body.ViewID,
+			LeaderID:          body.LeaderID,
+			From:              s.Self(),
+			ProposalKeyHash:   body.ProposalKeyHash,
+			MissingTxHashes:   hashes,
+			TransactionBytes:  encodedTransactions,
+			CreatedAtUnixNano: time.Now().UnixNano(),
+		}
+		if err := s.sealProposalBody(response); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR RESPONSE signing failed", "to", address, "number", body.Number, "err", err)
+			return
+		}
+		if err := validateProposalBodyWireShapeForConfig(s.chainConfig, response); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR RESPONSE invalid", "to", address, "number", body.Number, "err", err)
+			return
+		}
+		if err := s.netService.SendRawData(address, &networkMsg{Pmsg: response}); err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR response failed", "to", address, "number", body.Number, "proposalID", body.ProposalID, "err", err)
+		}
+	case proposalBodyMsgRepairData:
+		remaining, err := s.mergeProposalRepair(msg)
+		if err != nil {
+			log.Warn("HOTSTUFF PROPOSAL REPAIR rejected", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID, "err", err)
+			return
+		}
+		log.Info("HOTSTUFF PROPOSAL REPAIR stored", "from", msg.From, "number", msg.Number, "proposalID", msg.ProposalID,
+			"transactions", len(msg.TransactionBytes), "remaining", remaining)
+	default:
+		log.Warn("HOTSTUFF PROPOSAL BODY unknown type", "type", msg.Type, "number", msg.Number, "proposalID", msg.ProposalID)
+	}
+}
+
+// Write call by hotstuff------------------------------------------------------------------------------------------------
+func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		return types.ErrNotRunning
+	}
+	log.Info("Write", "to id", id, "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
+
+	if id == s.Self() {
+		if !s.enqueueHotstuffPriority(&hotstuffMsg{sid: nil, hMsg: cloneHotstuffMessage(data)}) {
+			return fmt.Errorf("local HotStuff priority queue is full")
+		}
+		return nil
+	}
+
+	mb := bftview.GetCurrentMember()
+	if mb == nil {
+		return fmt.Errorf("can't find current committee,id %s", id)
+	}
+	node, _ := mb.Get(id, bftview.ID)
+	if node == nil || len(node.Address) < 7 { //1.1.1.1
+		err := fmt.Errorf("can't find id %s in current committee", id)
+		log.Error("Couldn't send", "err", err)
+		return err
+	}
+
+	if err := s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// Broadcast call by hotstuff
+func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
+	if atomic.LoadInt32(&s.runningState) != 1 {
+		return []error{types.ErrNotRunning}
+	}
+	if data == nil {
+		return []error{fmt.Errorf("nil hotstuff message")}
+	}
+	log.Debug("Broadcast", "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
+	log.Info("HOTSTUFF BROADCAST",
+		"code", hotstuff.ReadableMsgType(data.Code),
+		"number", data.Number,
+		"viewID", data.ViewId,
+		"dataA", len(data.DataA),
+		"dataB", len(data.DataB),
+		"dataC", len(data.DataC),
+		"dataD", len(data.DataD),
+		"dataE", len(data.DataE),
+		"dataF", len(data.DataF),
+		"dataG", len(data.DataG))
+
+	// Local delivery is retained for protocol correctness. Leader self-vote
+	// optimization belongs in hotstuff.go and must preserve quorum accounting.
+	s.enqueueHotstuffPriority(&hotstuffMsg{sid: nil, hMsg: cloneHotstuffMessage(data)})
+
+	// Production rule: HotStuff control messages use direct committee delivery.
+	// Large proposal bodies are distributed as proposalBodyMsg sidecars, not in
+	// MsgPrepare.DataB.
+	switch data.Code {
+	case hotstuff.MsgPrepare, hotstuff.MsgQCBroadcast, hotstuff.MsgDecide, hotstuff.MsgTimeout, hotstuff.MsgTimeoutQC:
+		return s.broadcastHotstuffToCommittee(data)
+	default:
+		s.netService.broadcast("", &networkMsg{Hmsg: data})
+		return nil
+	}
+}
+
+func (s *Service) broadcastHotstuffToCommittee(data *hotstuff.HotstuffMessage) []error {
+	mb, err := s.hotstuffBroadcastCommittee(data)
+	if err != nil {
+		return []error{err}
+	}
+	if mb == nil {
+		return []error{fmt.Errorf("can't find current committee")}
+	}
+	var errs []error
+	for _, node := range mb.List {
+		if node == nil || node.Address == "" || IsSelf(node.Address) {
+			continue
+		}
+		log.Info("HOTSTUFF DIRECT SEND",
+			"to", node.Address,
+			"code", hotstuff.ReadableMsgType(data.Code),
+			"number", data.Number,
+			"viewID", data.ViewId,
+			"dataB", len(data.DataB))
+		if err := s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data}); err != nil {
+			errs = append(errs, err)
+			log.Warn("HOTSTUFF DIRECT SEND failed", "to", node.Address, "number", data.Number, "err", err)
+		}
+	}
+	return errs
+}
+
+// hotstuffBroadcastCommittee pins Prepare delivery to the committee generation
+// committed by its proposal reference. A concurrent finalized-sync key change
+// must never redirect an old-epoch Prepare to the newly current committee.
+func (s *Service) hotstuffBroadcastCommittee(data *hotstuff.HotstuffMessage) (*bftview.Committee, error) {
+	if data == nil {
+		return nil, fmt.Errorf("nil hotstuff broadcast")
+	}
+	if data.Code == hotstuff.MsgQCBroadcast && s.fairHotstuffEnabled() {
+		return s.fhsQCBroadcastCommittee(data)
+	}
+	if data.Code != hotstuff.MsgPrepare {
+		return bftview.GetCurrentMember(), nil
+	}
+	ref, err := types.DecodeHotstuffProposalRef(data.DataB)
+	if err != nil || ref == nil {
+		return nil, fmt.Errorf("decode Prepare proposal committee: %w", err)
+	}
+	if s.kbc == nil || ref.KeyHash == (common.Hash{}) {
+		return nil, fmt.Errorf("missing Prepare proposal committee %s", ref.KeyHash)
+	}
+	_, committee, _, err := s.resolveExactFHSCommittee(ref.KeyHash, true)
+	if err != nil || committee == nil || len(committee.List) == 0 {
+		return nil, fmt.Errorf("can't find Prepare committee %s: %w", ref.KeyHash, err)
+	}
+	return committee, nil
+}
+
+func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
+	if msg == nil {
+		return
+	}
+	if msg.Pmsg != nil {
+		s.handleProposalBodyMsg(si, msg.Pmsg)
+		return
+	}
+	if msg.Hmsg != nil {
+		if err := hotstuff.ValidateHotstuffWireMessage(msg.Hmsg); err != nil {
+			log.Warn("reject malformed hotstuff wire message", "code", hotstuff.ReadableMsgType(msg.Hmsg.Code), "err", err)
+			return
+		}
+		if err := s.validateHotstuffTransportSender(si, msg.Hmsg); err != nil {
+			log.Warn("reject unauthenticated hotstuff transport sender", "from", msg.Hmsg.Id, "code", hotstuff.ReadableMsgType(msg.Hmsg.Code), "err", err)
+			return
+		}
+		s.enqueueHotstuff(&hotstuffMsg{sid: si, hMsg: msg.Hmsg})
+		return
+	}
+	s.feed1.Send(committeeMsg{sid: si, cinfo: msg.Cmsg, best: msg.Bmsg})
+}
+
+func (s *Service) validateHotstuffTransportSender(si *network.ServerIdentity, msg *hotstuff.HotstuffMessage) error {
+	if msg == nil {
+		return fmt.Errorf("nil hotstuff message")
+	}
+	if si == nil {
+		if hotstuff.IsHotstuffWireCode(msg.Code) && msg.Id != s.Self() {
+			return fmt.Errorf("local hotstuff origin %q is not self", msg.Id)
+		}
+		return nil
+	}
+	if !hotstuff.IsHotstuffWireCode(msg.Code) {
+		return fmt.Errorf("remote pseudo hotstuff message")
+	}
+	if si.Address.String() == "" || si.Address.String() != msg.Id {
+		return fmt.Errorf("transport identity %q does not match envelope %q", si.Address.String(), msg.Id)
+	}
+	return nil
+}
+
+// -------------------------------------------------------------------------------------------------------------------------
+func (s *Service) syncCommittee(mb *bftview.Committee, keyblock *types.KeyBlock) {
+	if !keyblock.HasNewNode() {
+		return
+	}
+
+	in := mb.In()
+	s.netService.SendRawData(in.Address, &networkMsg{Cmsg: &committeeInfo{Committee: mb, KeyHash: keyblock.Hash(), KeyNumber: keyblock.NumberU64()}})
+
+	msg := &bestCandidateInfo{Node: in, KeyHash: keyblock.Hash(), KeyNumber: keyblock.NumberU64()}
+	//s.netService.broadcast("", &networkMsg{Bmsg: msg})
+	for i, r := range mb.List {
+		if i == 0 || IsSelf(r.Address) {
+			continue
+		}
+		log.Debug("syncBestCandidate", "send to", r.Address)
+		s.netService.SendRawData(r.Address, &networkMsg{Bmsg: msg})
+	}
+}
+
+func (s *Service) storeCommitteeInCache(cmInfo *committeeInfo, best *bestCandidateInfo) {
+	s.muCommitteeInfo.Lock()
+	defer s.muCommitteeInfo.Unlock()
+	var (
+		keyHash   common.Hash
+		keyNumber uint64
+		committee *bftview.Committee
+		node      *common.Cnode
+	)
+	if cmInfo != nil {
+		keyHash = cmInfo.KeyHash
+		keyNumber = cmInfo.KeyNumber
+		committee = cmInfo.Committee
+	} else if best != nil {
+		keyHash = best.KeyHash
+		keyNumber = best.KeyNumber
+		node = best.Node
+	}
+
+	ac, ok := s.lastCmInfoMap[keyHash]
+	if ok {
+		if cmInfo != nil {
+			ac.committee = cmInfo.Committee
+		}
+		if best != nil {
+			ac.node = best.Node
+		}
+		return
+	}
+	//clear prev map
+	maxNumber := s.kbc.CurrentBlockN()
+	for hash, ac := range s.lastCmInfoMap {
+		if ac.keyNumber < maxNumber-9 {
+			delete(s.lastCmInfoMap, hash)
+		}
+	}
+	log.Info("@@storeCommitteeInCache", "key number", keyNumber)
+
+	s.lastCmInfoMap[keyHash] = &cachedCommitteeInfo{keyNumber: keyNumber, committee: committee, node: node}
+}
+
+// handle committee sync message
+func (s *Service) handleCommitteeMsg() {
+	for {
+		select {
+		case msg := <-s.msgCh1:
+			if msg.best != nil {
+				if bftview.LoadMember(msg.best.KeyNumber, msg.best.KeyHash, true) != nil {
+					continue
+				}
+				log.Info("bestCandidate", "best KeyNumber", msg.best.KeyNumber)
+				s.storeCommitteeInCache(nil, msg.best)
+				continue
+			}
+			cInfo := msg.cinfo
+			if cInfo == nil {
+				continue
+			}
+			if cInfo.Committee == nil {
+				mb := bftview.LoadMember(cInfo.KeyNumber, cInfo.KeyHash, true)
+				if mb == nil {
+					continue
+				}
+				msgAddress := msg.sid.Address.String()
+				log.Debug("committeeInfo answer", "number", cInfo.KeyNumber, "adddress", msgAddress)
+				r, _ := mb.Get(msgAddress, bftview.Address)
+				if r != nil {
+					log.Debug("committeeInfo answer..ok", "number", cInfo.KeyNumber)
+					s.netService.SendRawData(msgAddress, &networkMsg{Cmsg: &committeeInfo{Committee: mb, KeyHash: cInfo.KeyHash, KeyNumber: cInfo.KeyNumber}})
+				}
+				continue
+			}
+
+			if bftview.LoadMember(cInfo.KeyNumber, cInfo.KeyHash, true) != nil {
+				continue
+			}
+			log.Debug("committeeInfo", "number", cInfo.KeyNumber, "adddress", msg.sid.Address)
+			keyblock := s.kbc.GetBlock(cInfo.KeyHash, cInfo.KeyNumber)
+			if keyblock != nil {
+				cInfo.Committee.Store(keyblock)
+			} else {
+				s.storeCommitteeInCache(cInfo, nil)
+			}
+
+		case <-s.msgSub1.Err():
+			log.Error("handleHotStuffMsg Feed error")
+			return
+		}
+	}
 }

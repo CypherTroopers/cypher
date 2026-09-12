@@ -94,7 +94,7 @@ func TestFHSBodyCacheEvictionRetainsRepairableCertifiedProposal(t *testing.T) {
 	}
 	s.muProposalBody.Lock()
 	for s.proposalBodies[child.ref.ProposalID()] != nil {
-		if !s.evictOldestProposalBodyLocked() {
+		if !s.evictOldestProposalBodyExceptLocked(common.Hash{}) {
 			s.muProposalBody.Unlock()
 			t.Fatal("certified body cannot be evicted")
 		}
@@ -226,5 +226,20 @@ func TestFHSBodyCachePreservesOriginalHeaderMetadata(t *testing.T) {
 				t.Fatalf("certified reconstruction changed original header bytes: found=%t err=%v", found, err)
 			}
 		})
+	}
+}
+
+func TestFHSBodyCacheRestoreReusesEmptyEntry(t *testing.T) {
+	s := &Service{proposalBodies: make(map[common.Hash]*proposalBodyMsg)}
+	for i := 1; i <= proposalBodyCacheMaxEntries; i++ {
+		id := common.BigToHash(big.NewInt(int64(i)))
+		s.proposalBodies[id] = &proposalBodyMsg{ProposalID: id}
+	}
+	id := common.BigToHash(big.NewInt(1))
+	s.proposalBodies[id] = nil
+	restored := &proposalBodyMsg{ProposalID: id}
+	s.cacheRestoredFHSBodyLocked(restored)
+	if s.proposalBodies[id] != restored || len(s.proposalBodies) != proposalBodyCacheMaxEntries {
+		t.Fatal("restoring an existing empty entry evicted another proposal")
 	}
 }

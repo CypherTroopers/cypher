@@ -257,11 +257,6 @@ func txIngressWALRecordKeyForGeneration(generation, sequence uint64) []byte {
 	return key
 }
 
-func txIngressWALEventKey(eventID common.Hash) []byte {
-	return txIngressWALEventKeyForGeneration(0, eventID)
-
-}
-
 func txIngressWALEventKeyForGeneration(generation uint64, eventID common.Hash) []byte {
 	prefix := txIngressWALEventPrefixForGeneration(generation)
 	key := make([]byte, len(prefix)+common.HashLength)
@@ -1924,10 +1919,6 @@ func (w *txIngressWAL) appendOutboxNonce(ctx context.Context, state txOutboxNonc
 	}
 	_, err = w.Append(ctx, txIngressWALOutboxNonce, state.Epoch, txIngressWALEventID(txIngressWALOutboxNonce, state.Epoch, payload), payload)
 	return err
-}
-
-func ingressWALDatabasePrefixes() [][]byte {
-	return [][]byte{txIngressWALIdentityKey, txIngressWALManifestKey, txIngressWALTailKey, txIngressWALRecordPrefix, txIngressWALEventPrefix, txIngressWALGenerationPrefix}
 }
 
 type txIngressWALOutboxProjection struct {
