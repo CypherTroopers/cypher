@@ -10,7 +10,7 @@ import (
 
 func testBlobSidecarWrapper(commitment KZGCommitment) *BlobTxSidecar {
 	return &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}

@@ -1,8 +1,8 @@
 package types
 
 import (
-	"bytes"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/cypherium/cypher/rlp"
@@ -12,6 +12,16 @@ import (
 // transactions remain plain RLP. Typed transactions are encoded as
 // type || rlp(payload), following EIP-2718.
 func (tx *Transaction) MarshalBinary() ([]byte, error) {
+	if tx != nil {
+		if err := tx.ValidateIntegerBounds(); err != nil {
+			return nil, err
+		}
+		if inner, ok := tx.data.(*NativeTxV1); ok {
+			if err := ValidateNativeManifest(inner); err != nil {
+				return nil, err
+			}
+		}
+	}
 	switch inner := tx.data.(type) {
 	case *txdata:
 		return rlp.EncodeToBytes(inner)
@@ -23,6 +33,8 @@ func (tx *Transaction) MarshalBinary() ([]byte, error) {
 		return encodeTypedEnvelope(BlobTxType, inner)
 	case *SetCodeTx:
 		return encodeTypedEnvelope(SetCodeTxType, inner)
+	case *NativeTxV1:
+		return encodeTypedEnvelope(NativeTxType, inner)
 	default:
 		return nil, fmt.Errorf("unsupported transaction inner type %T", tx.data)
 	}
@@ -60,30 +72,137 @@ func (tx *Transaction) decodeTypedEnvelope(input []byte) error {
 		if err := decodeTypedPayload(payload, &inner); err != nil {
 			return err
 		}
+		if err := validateTypedIntegerBounds(&inner); err != nil {
+			return err
+		}
 		tx.data = &inner
 	case DynamicFeeTxType:
 		var inner DynamicFeeTx
 		if err := decodeTypedPayload(payload, &inner); err != nil {
 			return err
 		}
-		tx.data = &inner
-	case BlobTxType:
-		var inner BlobTx
-		if err := decodeTypedPayload(payload, &inner); err != nil {
+		if err := validateTypedIntegerBounds(&inner); err != nil {
 			return err
 		}
 		tx.data = &inner
+	case BlobTxType:
+		inner, err := decodeBlobTypedPayload(payload)
+		if err != nil {
+			return err
+		}
+		tx.data = inner
 	case SetCodeTxType:
 		var inner SetCodeTx
 		if err := decodeTypedPayload(payload, &inner); err != nil {
 			return err
 		}
+		if err := validateTypedIntegerBounds(&inner); err != nil {
+			return err
+		}
 		tx.data = &inner
 	default:
-		return fmt.Errorf("unsupported transaction type %d", typ)
+		return fmt.Errorf("unsupported transaction type %d; EVM consensus accepts only types 0 through 4", typ)
 	}
 	tx.setDecodedDefaults()
 	return nil
+}
+
+func validateTypedUint256(name string, value *big.Int) error {
+	if value == nil {
+		return nil
+	}
+	if value.Sign() < 0 || value.BitLen() > 256 {
+		return fmt.Errorf("%s: %w", name, ErrTxIntegerOutOfRange)
+	}
+	return nil
+}
+
+func validateTypedValues(values ...struct {
+	name  string
+	value *big.Int
+}) error {
+	for _, field := range values {
+		if err := validateTypedUint256(field.name, field.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTypedIntegerBounds preserves the Ethereum wire contract despite the
+// local transaction structs using big.Int instead of uint256.Int. Without this
+// check, a peer can encode 257-bit fee/value/signature fields that canonical
+// Ethereum decoders reject.
+func validateTypedIntegerBounds(data TxData) error {
+	field := func(name string, value *big.Int) struct {
+		name  string
+		value *big.Int
+	} {
+		return struct {
+			name  string
+			value *big.Int
+		}{name, value}
+	}
+	var fields []struct {
+		name  string
+		value *big.Int
+	}
+	switch tx := data.(type) {
+	case *txdata:
+		fields = []struct {
+			name  string
+			value *big.Int
+		}{field("gasPrice", tx.Price), field("value", tx.Amount), field("v", tx.V), field("r", tx.R), field("s", tx.S)}
+	case *AccessListTx:
+		fields = []struct {
+			name  string
+			value *big.Int
+		}{field("chainId", tx.ChainID), field("gasPrice", tx.GasPrice), field("value", tx.Value), field("v", tx.V), field("r", tx.R), field("s", tx.S)}
+	case *DynamicFeeTx:
+		fields = []struct {
+			name  string
+			value *big.Int
+		}{field("chainId", tx.ChainID), field("maxPriorityFeePerGas", tx.GasTipCap), field("maxFeePerGas", tx.GasFeeCap), field("value", tx.Value), field("v", tx.V), field("r", tx.R), field("s", tx.S)}
+	case *BlobTx:
+		fields = []struct {
+			name  string
+			value *big.Int
+		}{field("chainId", tx.ChainID), field("maxPriorityFeePerGas", tx.GasTipCap), field("maxFeePerGas", tx.GasFeeCap), field("maxFeePerBlobGas", tx.BlobFeeCap), field("value", tx.Value), field("v", tx.V), field("r", tx.R), field("s", tx.S)}
+	case *SetCodeTx:
+		fields = []struct {
+			name  string
+			value *big.Int
+		}{field("chainId", tx.ChainID), field("maxPriorityFeePerGas", tx.GasTipCap), field("maxFeePerGas", tx.GasFeeCap), field("value", tx.Value), field("v", tx.V), field("r", tx.R), field("s", tx.S)}
+		for i := range tx.AuthList {
+			auth := &tx.AuthList[i]
+			if err := validateTypedValues(
+				field(fmt.Sprintf("authorization[%d].chainId", i), auth.ChainID),
+				field(fmt.Sprintf("authorization[%d].r", i), auth.R),
+				field(fmt.Sprintf("authorization[%d].s", i), auth.S),
+			); err != nil {
+				return err
+			}
+			if auth.V != nil && (auth.V.Sign() < 0 || auth.V.BitLen() > 8) {
+				return fmt.Errorf("authorization[%d].yParity exceeds uint8", i)
+			}
+		}
+	case *NativeTxV1:
+		fields = []struct {
+			name  string
+			value *big.Int
+		}{
+			field("chainId", tx.ChainID),
+			field("value", tx.Value),
+			field("maxFeePerCompute", tx.MaxFeePerCompute),
+			field("maxPriorityFeePerCompute", tx.PriorityFeePerCompute),
+			field("v", tx.V),
+			field("r", tx.R),
+			field("s", tx.S),
+		}
+	default:
+		return nil
+	}
+	return validateTypedValues(fields...)
 }
 
 func (tx *Transaction) setDecodedDefaults() {
@@ -102,5 +221,8 @@ func decodeTypedPayload(input []byte, out interface{}) error {
 	if len(input) == 0 {
 		return fmt.Errorf("missing typed transaction payload")
 	}
-	return rlp.Decode(bytes.NewReader(input), out)
+	// DecodeBytes additionally rejects trailing RLP values. Accepting a valid
+	// payload followed by ignored bytes would make multiple wire encodings
+	// collapse to the same transaction hash.
+	return rlp.DecodeBytes(input, out)
 }

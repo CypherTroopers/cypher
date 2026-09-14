@@ -222,6 +222,13 @@ func (b *KeyBlock) ParentHash() common.Hash      { return b.header.ParentHash }
 func (b *KeyBlock) BlockType() uint8             { return b.header.BlockType }
 func (b *KeyBlock) SetBlockType(blockType uint8) { b.header.BlockType = blockType }
 
+// IsZeroTimeGenesis reports the legacy devnet bootstrap sentinel. Its first
+// child establishes the wall-clock cadence anchor; later fixed-mode children
+// use exact KeyBlockMinInterval slots.
+func (b *KeyBlock) IsZeroTimeGenesis() bool {
+	return b != nil && b.NumberU64() == 0 && b.Time() == 0 && b.BlockType() == Initialization
+}
+
 func (b *KeyBlock) CommitteeHash() common.Hash        { return b.header.CommitteeHash }
 func (b *KeyBlock) SetCommitteeHash(hash common.Hash) { b.header.CommitteeHash = hash }
 func GetCommitteeHash(x interface{}) common.Hash      { return rlpHash(x) }

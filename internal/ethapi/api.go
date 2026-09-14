@@ -27,11 +27,13 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"math/big"
 	"net"
+	"runtime"
+	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	//"github.com/cypherium/cypher/accounts/scwallet"
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/common/math"
@@ -41,6 +43,7 @@ import (
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
 	"github.com/cypherium/cypher/crypto"
+	kzg "github.com/cypherium/cypher/crypto/kzg4844"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/p2p"
 	"github.com/cypherium/cypher/params"
@@ -83,27 +86,24 @@ type FeeHistoryResult struct {
 	Reward        [][]*hexutil.Big `json:"reward,omitempty"`
 }
 
-type gasTipCapSuggester interface {
-	SuggestGasTipCap(ctx context.Context) (*big.Int, error)
-}
-
 func fixedBaseFeePerGas() *big.Int {
-	return big.NewInt(params.GWei)
+	return big.NewInt(params.FixedBaseFeePerGas)
 }
 
 func fixedGasPricePerGas() *big.Int {
 	// Keep public eth_gasPrice stable for normal wallet transfers.
 	// Normal transfer fee: 21000 gas * 1 gwei = 0.000021.
-	return new(big.Int).Set(big.NewInt(params.GWei))
+	return big.NewInt(params.FixedTransferGasPricePerGas)
 }
 
 func fixedMaxPriorityFeePerGas() *big.Int {
-	return new(big.Int)
+	return big.NewInt(params.FixedPriorityFeePerGas)
 }
 
 func suggestGasTipCap(ctx context.Context, b Backend) (*big.Int, error) {
-	// Fixed-fee EIP-1559 policy for MetaMask:
-	// baseFeePerGas = 1 gwei, maxPriorityFeePerGas = 0.
+	// Fixed-fee policy for MetaMask-compatible RPC:
+	// eth_gasPrice stays 1 gwei, and the suggested priority fee is 0.2 gwei.
+	// The canonical block baseFeePerGas is handled separately by block/header code.
 	return fixedMaxPriorityFeePerGas(), nil
 }
 
@@ -470,11 +470,11 @@ func (s *PrivateAccountAPI) ImportRawKey(privkey string, password string) (commo
 // the given password for duration seconds. If duration is nil it will use a
 // default of 300 seconds. It returns an indication if the account was unlocked.
 func (s *PrivateAccountAPI) UnlockAccount(ctx context.Context, addr common.Address, password string, duration *uint64) (bool, error) {
-	// When the API is exposed by external RPC(http, ws etc), unless the user
-	// explicitly specifies to allow the insecure account unlocking, otherwise
-	// it is disabled.
-	if s.b.ExtRPCEnabled() && !s.b.AccountManager().Config().InsecureUnlockAllowed {
-		return false, errors.New("account unlock with HTTP access is forbidden")
+	// The server assigns transport identity. Protected IPC and the trusted
+	// embedded console may unlock A while network RPC remains enabled. Unknown
+	// or network callers cannot elevate themselves with insecure-unlock flags.
+	if !rpc.IsLocal(ctx) {
+		return false, errors.New("account unlock requires a trusted local RPC connection")
 	}
 
 	const max = uint64(time.Duration(math.MaxInt64) / time.Second)
@@ -502,8 +502,6 @@ func (s *PrivateAccountAPI) unlockAccount(addr common.Address, password string, 
 	}
 
 	switch b := backend.(type) {
-	//??	case *pluggable.Backend:
-	//??		return b.TimedUnlock(acct, password, duration)
 	case *keystore.KeyStore:
 		return b.TimedUnlock(acct, password, duration)
 	default:
@@ -530,8 +528,6 @@ func (s *PrivateAccountAPI) lockAccount(addr common.Address) error {
 	}
 
 	switch b := backend.(type) {
-	//??	case *pluggable.Backend:
-	//??		return b.Lock(acct)
 	case *keystore.KeyStore:
 		return b.Lock(addr)
 	default:
@@ -564,7 +560,7 @@ func (s *PrivateAccountAPI) signTransaction(ctx context.Context, args *SendTxArg
 // tries to sign it with the key associated with args.To. If the given passwd isn't
 // able to decrypt the key it fails.
 func (s *PrivateAccountAPI) SendTransaction(ctx context.Context, args SendTxArgs, passwd string) (common.Hash, error) {
-	if args.Nonce == nil {
+	if !args.requestsNativeTransaction(s.b) && args.Nonce == nil {
 		// Hold the addresse's mutex around signing to prevent concurrent assignment of
 		// the same nonce to multiple accounts.
 		s.nonceLock.LockAddr(args.From)
@@ -585,17 +581,17 @@ func (s *PrivateAccountAPI) SendTransaction(ctx context.Context, args SendTxArgs
 func (s *PrivateAccountAPI) SignTransaction(ctx context.Context, args SendTxArgs, passwd string) (*SignTransactionResult, error) {
 	// No need to obtain the noncelock mutex, since we won't be sending this
 	// tx into the transaction pool, but right back to the user
-	if args.Gas == nil {
+	if !args.requestsNativeTransaction(s.b) && args.Gas == nil {
 		return nil, fmt.Errorf("gas not specified")
 	}
-	if args.Nonce == nil {
+	if !args.requestsNativeTransaction(s.b) && args.Nonce == nil {
 		return nil, fmt.Errorf("nonce not specified")
 	}
 	if err := args.setDefaults(ctx, s.b); err != nil {
 		return nil, err
 	}
 	// Before actually sign the transaction, ensure the transaction fee is reasonable.
-	if err := checkTxFee(args.txFeeCapForValidation(), uint64(*args.Gas), s.b.RPCTxFeeCap()); err != nil {
+	if err := checkTxFeeWithBlob(args.txFeeCapForValidation(), args.feeWorkForValidation(), args.blobFeeCapForValidation(), args.blobGasForFeeValidation(), s.b.RPCTxFeeCap()); err != nil {
 		return nil, err
 	}
 	signed, err := s.signTransaction(ctx, &args, passwd)
@@ -603,7 +599,7 @@ func (s *PrivateAccountAPI) SignTransaction(ctx context.Context, args SendTxArgs
 		log.Warn("Failed transaction sign attempt", "from", args.From, "to", args.To, "value", args.Value.ToInt(), "err", err)
 		return nil, err
 	}
-	data, err := rlp.EncodeToBytes(signed)
+	data, err := marshalTransactionForRPC(signed)
 	if err != nil {
 		return nil, err
 	}
@@ -646,7 +642,7 @@ func (s *PrivateAccountAPI) Sign(ctx context.Context, data hexutil.Bytes, addr c
 // Note, the signature must conform to the secp256k1 curve R, S and V values, where
 // the V value must be 27 or 28 for legacy reasons.
 //
-// https://github.com/cypherium/cypher/wiki/Management-APIs#personal_ecRecover
+// https://github.com/ethereum/wiki/wiki/JSON-RPC#personal_ecRecover
 func (s *PrivateAccountAPI) EcRecover(ctx context.Context, data, sig hexutil.Bytes) (common.Address, error) {
 	if len(sig) != crypto.SignatureLength {
 		return common.Address{}, fmt.Errorf("signature must be %d bytes long", crypto.SignatureLength)
@@ -680,48 +676,6 @@ func (s *PrivateAccountAPI) UnlockAll(ctx context.Context, password string, dura
 	}
 	return true, nil
 }
-
-/*??
-// InitializeWallet initializes a new wallet at the provided URL, by generating and returning a new private key.
-func (s *PrivateAccountAPI) InitializeWallet(ctx context.Context, url string) (string, error) {
-	wallet, err := s.am.Wallet(url)
-	if err != nil {
-		return "", err
-	}
-
-	entropy, err := bip39.NewEntropy(256)
-	if err != nil {
-		return "", err
-	}
-
-	mnemonic, err := bip39.NewMnemonic(entropy)
-	if err != nil {
-		return "", err
-	}
-	seed := bip39.NewSeed(mnemonic, "")
-
-	switch wallet := wallet.(type) {
-	//?? case *scwallet.Wallet:
-	//??	return mnemonic, wallet.Initialize(seed)
-	default:
-		return "", fmt.Errorf("specified wallet does not support initialization")
-	}
-}
-// Unpair deletes a pairing between wallet and cypher.
-func (s *PrivateAccountAPI) Unpair(ctx context.Context, url string, pin string) error {
-	wallet, err := s.am.Wallet(url)
-	if err != nil {
-		return err
-	}
-
-	switch wallet := wallet.(type) {
-	 case *scwallet.Wallet:
-		return wallet.Unpair([]byte(pin))
-	default:
-		return fmt.Errorf("specified wallet does not support pairing")
-	}
-}
-*/
 
 // PublicBlockChainAPI provides an API to access the Ethereum blockchain.
 // It offers only methods that operate on public data that is freely available to anyone.
@@ -941,14 +895,10 @@ func (s *PublicBlockChainAPI) GetKeyBlocksByNumbers(ctx context.Context, blockNr
 	response := make([]interface{}, 0, len(blockNrs))
 
 	for _, blockNr := range blockNrs {
-		//log.Debug("GetKeyBlocksByNumbers", "block", blockNr)
-
 		block, _ := s.b.KeyBlockByNumber(ctx, rpc.BlockNumber(blockNr))
 		if block != nil {
-			//log.Debug("GetKeyBlocksByNumbers blockbynumber", "hash", block.Hash().Hex())
 			rpcBlock, err := s.rpcOutputKeyBlock(block)
 			if err != nil {
-				//log.Debug("GetKeyBlocksByNumbers rpcOutputKeyBlock error ", "error", err)
 				continue
 			}
 			response = append(response, rpcBlock)
@@ -1023,15 +973,55 @@ func (s *PublicBlockChainAPI) GetStorageAt(ctx context.Context, address common.A
 
 // CallArgs represents the arguments for a call.
 type CallArgs struct {
-	From                 *common.Address   `json:"from"`
-	To                   *common.Address   `json:"to"`
-	Gas                  *hexutil.Uint64   `json:"gas"`
-	GasPrice             *hexutil.Big      `json:"gasPrice"`
-	MaxFeePerGas         *hexutil.Big      `json:"maxFeePerGas"`
-	MaxPriorityFeePerGas *hexutil.Big      `json:"maxPriorityFeePerGas"`
-	Value                *hexutil.Big      `json:"value"`
-	Data                 *hexutil.Bytes    `json:"data"`
-	AccessList           *types.AccessList `json:"accessList"`
+	From                 *common.Address              `json:"from"`
+	To                   *common.Address              `json:"to"`
+	Gas                  *hexutil.Uint64              `json:"gas"`
+	GasPrice             *hexutil.Big                 `json:"gasPrice"`
+	MaxFeePerGas         *hexutil.Big                 `json:"maxFeePerGas"`
+	MaxPriorityFeePerGas *hexutil.Big                 `json:"maxPriorityFeePerGas"`
+	Value                *hexutil.Big                 `json:"value"`
+	Nonce                *hexutil.Uint64              `json:"nonce"`
+	Data                 *hexutil.Bytes               `json:"data"`
+	Input                *hexutil.Bytes               `json:"input"`
+	AccessList           *types.AccessList            `json:"accessList"`
+	ChainID              *hexutil.Big                 `json:"chainId"`
+	MaxFeePerBlobGas     *hexutil.Big                 `json:"maxFeePerBlobGas"`
+	BlobVersionedHashes  []common.Hash                `json:"blobVersionedHashes"`
+	AuthorizationList    []types.SetCodeAuthorization `json:"authorizationList"`
+}
+
+func (args *CallArgs) callData() []byte {
+	if args.Input != nil {
+		return *args.Input
+	}
+	if args.Data != nil {
+		return *args.Data
+	}
+	return nil
+}
+
+// validateCallArgs rejects ambiguous call objects instead of silently
+// simulating a different EVM envelope than the wallet supplied.
+func (args *CallArgs) validateCallArgs(b Backend) error {
+	if args.Data != nil && args.Input != nil && !bytes.Equal(*args.Data, *args.Input) {
+		return errors.New(`both "data" and "input" are set and not equal. Please use "input" to pass transaction call data`)
+	}
+	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
+		return errors.New(`both "gasPrice" and EIP-1559 fee fields are set`)
+	}
+	if args.GasPrice != nil && args.AuthorizationList != nil {
+		return errors.New(`both "gasPrice" and "authorizationList" are set`)
+	}
+	if args.ChainID != nil {
+		if b == nil || b.ChainConfig() == nil || b.ChainConfig().ChainID == nil {
+			return errors.New("chainId cannot be validated because the node chain ID is unavailable")
+		}
+		have, want := args.ChainID.ToInt(), b.ChainConfig().ChainID
+		if have.Cmp(want) != 0 {
+			return fmt.Errorf("chainId does not match node's (have=%v, want=%v)", have, want)
+		}
+	}
+	return nil
 }
 
 // ToMessage converts CallArgs to the Message type used by the core evm
@@ -1077,16 +1067,32 @@ func (args *CallArgs) ToMessage(globalGasCap uint64) types.Message {
 		value = args.Value.ToInt()
 	}
 
-	var data []byte
-	if args.Data != nil {
-		data = []byte(*args.Data)
-	}
+	data := args.callData()
 
 	var accessList types.AccessList
 	if args.AccessList != nil {
 		accessList = *args.AccessList
 	}
-	msg := types.NewMessageWithFeeFields(addr, args.To, 0, value, gas, gasPrice, gasFeeCap, gasTipCap, data, accessList, false)
+	var blobFeeCap *big.Int
+	if args.MaxFeePerBlobGas != nil {
+		blobFeeCap = args.MaxFeePerBlobGas.ToInt()
+	}
+	txType := uint8(types.LegacyTxType)
+	switch {
+	case len(args.AuthorizationList) > 0:
+		txType = types.SetCodeTxType
+	case args.MaxFeePerBlobGas != nil || len(args.BlobVersionedHashes) > 0:
+		txType = types.BlobTxType
+	case args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil:
+		txType = types.DynamicFeeTxType
+	case args.AccessList != nil:
+		txType = types.AccessListTxType
+	}
+	var nonce uint64
+	if args.Nonce != nil {
+		nonce = uint64(*args.Nonce)
+	}
+	msg := types.NewMessageWithModernFields(txType, addr, args.To, nonce, value, gas, gasPrice, gasFeeCap, gasTipCap, blobFeeCap, data, accessList, args.BlobVersionedHashes, args.AuthorizationList, false)
 	return msg
 }
 
@@ -1106,6 +1112,9 @@ type account struct {
 
 func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides map[common.Address]account, vmCfg vm.Config, timeout time.Duration, globalGasCap uint64) (*core.ExecutionResult, error) {
 	defer func(start time.Time) { log.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
+	if err := args.validateCallArgs(b); err != nil {
+		return nil, err
+	}
 
 	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	if state == nil || err != nil {
@@ -1157,6 +1166,12 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 	if err != nil {
 		return nil, err
 	}
+	// eth_call/estimateGas messages default to a zero gas price. Lower the
+	// execution base fees as well, otherwise the London fee-cap invariant
+	// (feeCap >= baseFee) rejects an otherwise valid simulation before the EVM
+	// runs. This mirrors geth's NoBaseFee call semantics and also makes BASEFEE
+	// and BLOBBASEFEE return zero for an unpriced simulation.
+	lowerUnpricedCallFees(evm, msg)
 	// Wait for the context to be done and cancel the evm. Even if the
 	// EVM has finished, cancelling may be done (repeatedly)
 	go func() {
@@ -1179,6 +1194,13 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 		return result, fmt.Errorf("err: %w (supplied gas %d)", err, msg.Gas())
 	}
 	return result, nil
+}
+
+func lowerUnpricedCallFees(evm *vm.EVM, msg core.Message) {
+	if evm != nil && msg != nil && msg.GasPrice().Sign() == 0 {
+		evm.Context.BaseFee = new(big.Int)
+		evm.Context.BlobBaseFee = new(big.Int)
+	}
 }
 
 func newRevertError(result *core.ExecutionResult) *revertError {
@@ -1236,7 +1258,72 @@ func (s *PublicBlockChainAPI) Call(ctx context.Context, args CallArgs, blockNrOr
 	return result.Return(), result.Err
 }
 
+func hasCallData(data *hexutil.Bytes) bool {
+	return data != nil && len(*data) > 0
+}
+
+func hasAccessList(accessList *types.AccessList) bool {
+	return accessList != nil && len(*accessList) > 0
+}
+
+func hasModernExecutionFields(blobFeeCap *hexutil.Big, blobHashes []common.Hash, authList []types.SetCodeAuthorization) bool {
+	return blobFeeCap != nil || len(blobHashes) > 0 || len(authList) > 0
+}
+
+func isActivePrecompile(b Backend, header *types.Header, address common.Address) bool {
+	if header == nil {
+		header = b.CurrentHeader()
+	}
+	config := b.ChainConfig()
+	if config == nil || header == nil || header.Number == nil {
+		return false
+	}
+	return vm.IsPrecompiledContract(address, config.CypheriumRules(header.Number, header.Time))
+}
+
+func isPlainValueTransferCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
+	if args.To == nil {
+		return false, nil
+	}
+	if hasCallData(args.Data) || hasCallData(args.Input) || hasAccessList(args.AccessList) ||
+		hasModernExecutionFields(args.MaxFeePerBlobGas, args.BlobVersionedHashes, args.AuthorizationList) {
+		return false, nil
+	}
+	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	if state == nil || err != nil {
+		return false, err
+	}
+	if isActivePrecompile(b, header, *args.To) || len(state.GetCode(*args.To)) > 0 {
+		return false, nil
+	}
+	return true, nil
+}
+
+func isPlainValueTransferSendTx(ctx context.Context, b Backend, args *SendTxArgs, blockNrOrHash rpc.BlockNumberOrHash) (bool, error) {
+	if args == nil {
+		return false, nil
+	}
+	if args.To == nil {
+		return false, nil
+	}
+	if hasCallData(args.Data) || hasCallData(args.Input) || hasAccessList(args.AccessList) ||
+		hasModernExecutionFields(args.MaxFeePerBlobGas, args.BlobVersionedHashes, args.AuthorizationList) || args.hasBlobSidecarFields() {
+		return false, nil
+	}
+	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	if state == nil || err != nil {
+		return false, err
+	}
+	if isActivePrecompile(b, header, *args.To) || len(state.GetCode(*args.To)) > 0 {
+		return false, nil
+	}
+	return true, nil
+}
+
 func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.BlockNumberOrHash, gasCap uint64) (hexutil.Uint64, error) {
+	if err := args.validateCallArgs(b); err != nil {
+		return 0, err
+	}
 	// Binary search the gas requirement, as it may be higher than the amount used
 	var (
 		lo  uint64 = params.TxGas - 1
@@ -1247,6 +1334,18 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 	if args.From == nil {
 		args.From = new(common.Address)
 	}
+
+	// Keep normal EOA-to-EOA native coin transfers fixed at 21000 gas regardless of txpool load.
+	// Contract calls, contract creation, data transactions, and access-list transactions still use
+	// the regular EVM binary-search estimator below.
+	plainValueTransfer, err := isPlainValueTransferCall(ctx, b, args, blockNrOrHash)
+	if err != nil {
+		return 0, err
+	}
+	if plainValueTransfer {
+		return hexutil.Uint64(params.TxGas), nil
+	}
+
 	// Determine the highest gas limit can be used during the estimation.
 	if args.Gas != nil && uint64(*args.Gas) >= params.TxGas {
 		hi = uint64(*args.Gas)
@@ -1258,8 +1357,14 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 		}
 		hi = block.GasLimit()
 	}
-	// Recap the highest gas limit with account's available balance.
-	if args.GasPrice != nil && args.GasPrice.ToInt().BitLen() != 0 {
+	// Recap the highest gas allowance with the account's available balance.
+	// Dynamic-fee transactions reserve the fee cap during pre-check, so use the
+	// same cap here instead of treating a nil legacy gasPrice as unlimited.
+	feeCap := args.GasPrice
+	if args.MaxFeePerGas != nil {
+		feeCap = args.MaxFeePerGas
+	}
+	if feeCap != nil && feeCap.ToInt().BitLen() != 0 {
 		state, _, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 		if err != nil {
 			return 0, err
@@ -1272,7 +1377,18 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 			}
 			available.Sub(available, args.Value.ToInt())
 		}
-		allowance := new(big.Int).Div(available, args.GasPrice.ToInt())
+		if args.MaxFeePerBlobGas != nil && len(args.BlobVersionedHashes) > 0 {
+			blobGas := new(big.Int).Mul(
+				new(big.Int).SetUint64(params.BlobTxBlobGasPerBlob),
+				new(big.Int).SetUint64(uint64(len(args.BlobVersionedHashes))),
+			)
+			blobCost := blobGas.Mul(blobGas, args.MaxFeePerBlobGas.ToInt())
+			if blobCost.Cmp(available) >= 0 {
+				return 0, errors.New("insufficient funds for blob fee")
+			}
+			available.Sub(available, blobCost)
+		}
+		allowance := new(big.Int).Div(available, feeCap.ToInt())
 
 		// If the allowance is larger than maximum uint64, skip checking
 		if allowance.IsUint64() && hi > allowance.Uint64() {
@@ -1281,7 +1397,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNrOrHash 
 				transfer = new(hexutil.Big)
 			}
 			log.Warn("Gas estimation capped by limited funds", "original", hi, "balance", balance,
-				"sent", transfer.ToInt(), "gasprice", args.GasPrice.ToInt(), "fundable", allowance)
+				"sent", transfer.ToInt(), "gasprice", feeCap.ToInt(), "fundable", allowance)
 			hi = allowance.Uint64()
 		}
 	}
@@ -1416,7 +1532,7 @@ func RPCMarshalHeader(head *types.Header) map[string]interface{} {
 	if baseFee == nil || baseFee.Sign() == 0 {
 		baseFee = fixedBaseFeePerGas()
 	}
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"number":           (*hexutil.Big)(head.Number),
 		"hash":             head.Hash(),
 		"parentHash":       head.ParentHash,
@@ -1438,6 +1554,12 @@ func RPCMarshalHeader(head *types.Header) map[string]interface{} {
 		"transactionsRoot": head.TxHash,
 		"receiptsRoot":     head.ReceiptHash,
 	}
+	result["withdrawalsRoot"] = head.WithdrawalsHash
+	result["blobGasUsed"] = hexutil.Uint64(head.BlobGasUsed)
+	result["excessBlobGas"] = hexutil.Uint64(head.ExcessBlobGas)
+	result["parentBeaconBlockRoot"] = head.ParentBeaconRoot
+	result["requestsHash"] = head.RequestsHash
+	return result
 }
 
 // RPCMarshalBlock converts the given block to the RPC output which depends on fullTx. If inclTx is true transactions are
@@ -1538,27 +1660,58 @@ func (s *PublicBlockChainAPI) rpcOutputKeyBlock(b *types.KeyBlock) (map[string]i
 
 // RPCTransaction represents a transaction that will serialize to the RPC representation of a transaction
 type RPCTransaction struct {
-	BlockHash           *common.Hash      `json:"blockHash"`
-	BlockNumber         *hexutil.Big      `json:"blockNumber"`
-	From                common.Address    `json:"from"`
-	Gas                 hexutil.Uint64    `json:"gas"`
-	GasPrice            *hexutil.Big      `json:"gasPrice"`
-	Hash                common.Hash       `json:"hash"`
-	Input               hexutil.Bytes     `json:"input"`
-	Nonce               hexutil.Uint64    `json:"nonce"`
-	To                  *common.Address   `json:"to"`
-	TransactionIndex    *hexutil.Uint64   `json:"transactionIndex"`
-	Value               *hexutil.Big      `json:"value"`
-	Type                hexutil.Uint64    `json:"type"`
-	ChainID             *hexutil.Big      `json:"chainId,omitempty"`
-	GasFeeCap           *hexutil.Big      `json:"maxFeePerGas,omitempty"`
-	GasTipCap           *hexutil.Big      `json:"maxPriorityFeePerGas,omitempty"`
-	Accesses            *types.AccessList `json:"accessList,omitempty"`
-	BlobGasFeeCap       *hexutil.Big      `json:"maxFeePerBlobGas,omitempty"`
-	BlobVersionedHashes []common.Hash     `json:"blobVersionedHashes,omitempty"`
-	V                   *hexutil.Big      `json:"v"`
-	R                   *hexutil.Big      `json:"r"`
-	S                   *hexutil.Big      `json:"s"`
+	BlockHash                *common.Hash                 `json:"blockHash"`
+	BlockNumber              *hexutil.Big                 `json:"blockNumber"`
+	From                     common.Address               `json:"from"`
+	Gas                      hexutil.Uint64               `json:"gas"`
+	GasPrice                 *hexutil.Big                 `json:"gasPrice"`
+	Hash                     common.Hash                  `json:"hash"`
+	TransactionHash          common.Hash                  `json:"transactionHash"`
+	Input                    hexutil.Bytes                `json:"input"`
+	Nonce                    hexutil.Uint64               `json:"nonce"`
+	To                       *common.Address              `json:"to"`
+	TransactionIndex         *hexutil.Uint64              `json:"transactionIndex"`
+	Value                    *hexutil.Big                 `json:"value"`
+	Type                     hexutil.Uint64               `json:"type"`
+	ChainID                  *hexutil.Big                 `json:"chainId,omitempty"`
+	GasFeeCap                *hexutil.Big                 `json:"maxFeePerGas,omitempty"`
+	GasTipCap                *hexutil.Big                 `json:"maxPriorityFeePerGas,omitempty"`
+	Accesses                 *types.AccessList            `json:"accessList,omitempty"`
+	BlobGasFeeCap            *hexutil.Big                 `json:"maxFeePerBlobGas,omitempty"`
+	BlobVersionedHashes      []common.Hash                `json:"blobVersionedHashes,omitempty"`
+	AuthorizationList        []types.SetCodeAuthorization `json:"authorizationList,omitempty"`
+	Payer                    *common.Address              `json:"payer,omitempty"`
+	ReplaySequence           *hexutil.Uint64              `json:"replaySequence,omitempty"`
+	RecentBlockHash          *common.Hash                 `json:"recentBlockHash,omitempty"`
+	RecentBlockNumber        *hexutil.Uint64              `json:"recentBlockNumber,omitempty"`
+	ValidUntil               *hexutil.Uint64              `json:"validUntil,omitempty"`
+	NativeAccesses           []types.NativeAccess         `json:"accesses,omitempty"`
+	MaxFeePerCompute         *hexutil.Big                 `json:"maxFeePerCompute,omitempty"`
+	MaxPriorityFeePerCompute *hexutil.Big                 `json:"maxPriorityFeePerCompute,omitempty"`
+	ComputeLimit             *hexutil.Uint64              `json:"computeLimit,omitempty"`
+	MemoryLimit              *hexutil.Uint64              `json:"memoryLimit,omitempty"`
+	LogLimit                 *hexutil.Uint64              `json:"logLimit,omitempty"`
+	OutputLimit              *hexutil.Uint64              `json:"outputLimit,omitempty"`
+	YParity                  *hexutil.Uint64              `json:"yParity,omitempty"`
+	V                        *hexutil.Big                 `json:"v"`
+	R                        *hexutil.Big                 `json:"r"`
+	S                        *hexutil.Big                 `json:"s"`
+
+	CommonTxAdmissionRoot           *common.Hash    `json:"commonTxAdmissionRoot,omitempty"`
+	CommonTxRewardRoot              *common.Hash    `json:"commonTxRewardRoot,omitempty"`
+	CommonTxApprover                *common.Address `json:"commonTxApprover,omitempty"`
+	CommonTxRewardRecipient         *common.Address `json:"commonTxRewardRecipient,omitempty"`
+	CommonTxApproverReward          *hexutil.Big    `json:"commonTxApproverReward,omitempty"`
+	CommonTxBurn                    *hexutil.Big    `json:"commonTxBurn,omitempty"`
+	CommonTxAdmissionID             *common.Hash    `json:"commonTxAdmissionId,omitempty"`
+	CommonTxAdmissionTxRoot         *common.Hash    `json:"commonTxAdmissionTxRoot,omitempty"`
+	CommonTxAdmissionGenesisHash    *common.Hash    `json:"commonTxAdmissionGenesisHash,omitempty"`
+	CommonTxAdmissionBatchIndex     *hexutil.Uint64 `json:"commonTxAdmissionBatchIndex,omitempty"`
+	CommonTxAdmissionItemIndex      *hexutil.Uint64 `json:"commonTxAdmissionItemIndex,omitempty"`
+	CommonTxAdmissionChainID        *hexutil.Big    `json:"commonTxAdmissionChainId,omitempty"`
+	CommonTxAdmissionKeyBlockNumber *hexutil.Uint64 `json:"commonTxAdmissionKeyBlockNumber,omitempty"`
+	CommonTxAdmissionTimestamp      *hexutil.Uint64 `json:"commonTxAdmissionTimestamp,omitempty"`
+	CommonTxAdmissionSignature      hexutil.Bytes   `json:"commonTxAdmissionSignature,omitempty"`
 }
 
 func rpcTransactionSigner(tx *types.Transaction) types.Signer {
@@ -1571,6 +1724,178 @@ func rpcTransactionSigner(tx *types.Transaction) types.Signer {
 	return types.HomesteadSigner{}
 }
 
+func isEIP1559Transaction(tx *types.Transaction) bool {
+	if tx == nil {
+		return false
+	}
+	switch tx.Type() {
+	case types.DynamicFeeTxType, types.BlobTxType, types.SetCodeTxType:
+		return true
+	default:
+		return false
+	}
+}
+
+func effectiveTransactionGasPrice(tx *types.Transaction, baseFee *big.Int) *big.Int {
+	if tx == nil {
+		return new(big.Int)
+	}
+	price := new(big.Int).Set(tx.GasPrice())
+	if !isEIP1559Transaction(tx) || baseFee == nil {
+		return price
+	}
+	if tip, err := tx.EffectiveGasTip(baseFee); err == nil {
+		return new(big.Int).Add(new(big.Int).Set(baseFee), tip)
+	}
+	return price
+}
+
+func setRPCTransactionEffectiveGasPrice(result *RPCTransaction, tx *types.Transaction, baseFee *big.Int) {
+	if result != nil && isEIP1559Transaction(tx) && baseFee != nil {
+		result.GasPrice = (*hexutil.Big)(effectiveTransactionGasPrice(tx, baseFee))
+	}
+}
+
+func commonRPCAdmissionForBlockTransaction(block *types.Block, txHash common.Hash) (*types.CommonTxAdmissionBatch, uint32, uint16, bool) {
+	if block == nil {
+		return nil, 0, 0, false
+	}
+	txIndex := -1
+	for index, tx := range block.Transactions() {
+		if tx != nil && tx.Hash() == txHash {
+			txIndex = index
+			break
+		}
+	}
+	refs := block.CommonTxAdmissionRefs()
+	if txIndex < 0 || txIndex >= len(refs) {
+		return nil, 0, 0, false
+	}
+	ref := refs[txIndex]
+	batches := block.CommonTxAdmissionBatches()
+	if int(ref.Batch) >= len(batches) || batches[ref.Batch] == nil {
+		return nil, 0, 0, false
+	}
+	batch := batches[ref.Batch]
+	if int(ref.Item) >= len(batch.TxHashes) || batch.TxHashes[ref.Item] != txHash {
+		return nil, 0, 0, false
+	}
+	return batch, ref.Batch, ref.Item, true
+}
+
+func addBlobRPCReceiptFields(fields map[string]interface{}, config *params.ChainConfig, block *types.Block, tx *types.Transaction) {
+	if fields == nil || tx == nil || tx.Type() != types.BlobTxType {
+		return
+	}
+	fields["blobGasUsed"] = hexutil.Uint64(tx.BlobGas())
+	if block != nil {
+		header := block.Header()
+		fields["blobGasPrice"] = (*hexutil.Big)(params.CalcBlobBaseFeeAtTime(config, header.Time, header.ExcessBlobGas))
+	}
+}
+
+func fillCommonRPCTransactionFields(result *RPCTransaction, block *types.Block, txHash common.Hash) {
+	if result == nil || block == nil {
+		return
+	}
+
+	header := block.Header()
+	admissionRoot := header.CommonTxAdmissionRoot
+	rewardRoot := header.CommonTxRewardRoot
+
+	result.CommonTxAdmissionRoot = &admissionRoot
+	result.CommonTxRewardRoot = &rewardRoot
+
+	if admission, batchIndexValue, itemIndexValue, ok := commonRPCAdmissionForBlockTransaction(block, txHash); ok {
+		approver := admission.Miner
+		admissionID := admission.AdmissionID
+		txRoot := admission.TxRoot
+		genesisHash := admission.GenesisHash
+		batchIndex := hexutil.Uint64(batchIndexValue)
+		itemIndex := hexutil.Uint64(itemIndexValue)
+		keyBlockNumber := hexutil.Uint64(admission.KeyBlockNumber)
+		timestamp := hexutil.Uint64(admission.Timestamp)
+
+		result.CommonTxApprover = &approver
+		result.CommonTxAdmissionID = &admissionID
+		result.CommonTxAdmissionTxRoot = &txRoot
+		result.CommonTxAdmissionGenesisHash = &genesisHash
+		result.CommonTxAdmissionBatchIndex = &batchIndex
+		result.CommonTxAdmissionItemIndex = &itemIndex
+		if admission.ChainID != nil {
+			result.CommonTxAdmissionChainID = (*hexutil.Big)(new(big.Int).Set(admission.ChainID))
+		}
+		result.CommonTxAdmissionKeyBlockNumber = &keyBlockNumber
+		result.CommonTxAdmissionTimestamp = &timestamp
+		result.CommonTxAdmissionSignature = hexutil.Bytes(admission.Signature)
+	}
+
+	for _, reward := range block.CommonTxRewards() {
+		if reward == nil || reward.TxHash != txHash {
+			continue
+		}
+
+		approver := reward.Approver
+		result.CommonTxApprover = &approver
+		recipient := reward.EffectiveRewardRecipient()
+		result.CommonTxRewardRecipient = &recipient
+
+		if reward.ApproverReward != nil {
+			result.CommonTxApproverReward = (*hexutil.Big)(new(big.Int).Set(reward.ApproverReward))
+		}
+		if reward.Burn != nil {
+			result.CommonTxBurn = (*hexutil.Big)(new(big.Int).Set(reward.Burn))
+		}
+
+		break
+	}
+}
+
+func addCommonRPCReceiptFields(fields map[string]interface{}, block *types.Block, txHash common.Hash) {
+	if fields == nil || block == nil {
+		return
+	}
+
+	header := block.Header()
+	fields["commonTxAdmissionRoot"] = header.CommonTxAdmissionRoot
+	fields["commonTxRewardRoot"] = header.CommonTxRewardRoot
+
+	if admission, batchIndex, itemIndex, ok := commonRPCAdmissionForBlockTransaction(block, txHash); ok {
+		fields["commonTxApprover"] = admission.Miner
+		fields["commonTxAdmissionId"] = admission.AdmissionID
+		fields["commonTxAdmissionTxRoot"] = admission.TxRoot
+		fields["commonTxAdmissionGenesisHash"] = admission.GenesisHash
+		fields["commonTxAdmissionBatchIndex"] = hexutil.Uint64(batchIndex)
+		fields["commonTxAdmissionItemIndex"] = hexutil.Uint64(itemIndex)
+
+		if admission.ChainID != nil {
+			fields["commonTxAdmissionChainId"] = (*hexutil.Big)(new(big.Int).Set(admission.ChainID))
+		}
+
+		fields["commonTxAdmissionKeyBlockNumber"] = hexutil.Uint64(admission.KeyBlockNumber)
+		fields["commonTxAdmissionTimestamp"] = hexutil.Uint64(admission.Timestamp)
+		fields["commonTxAdmissionSignature"] = hexutil.Bytes(admission.Signature)
+	}
+
+	for _, reward := range block.CommonTxRewards() {
+		if reward == nil || reward.TxHash != txHash {
+			continue
+		}
+
+		fields["commonTxApprover"] = reward.Approver
+		fields["commonTxRewardRecipient"] = reward.EffectiveRewardRecipient()
+
+		if reward.ApproverReward != nil {
+			fields["commonTxApproverReward"] = (*hexutil.Big)(new(big.Int).Set(reward.ApproverReward))
+		}
+		if reward.Burn != nil {
+			fields["commonTxBurn"] = (*hexutil.Big)(new(big.Int).Set(reward.Burn))
+		}
+
+		break
+	}
+}
+
 // newRPCTransaction returns a transaction that will serialize to the RPC
 // representation, with the given location metadata set (if available).
 func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber uint64, index uint64) *RPCTransaction {
@@ -1580,18 +1905,27 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 	txType := hexutil.Uint64(tx.Type())
 
 	result := &RPCTransaction{
-		From:     from,
-		Gas:      hexutil.Uint64(tx.Gas()),
-		GasPrice: (*hexutil.Big)(tx.GasPrice()),
-		Hash:     tx.Hash(),
-		Input:    hexutil.Bytes(tx.Data()),
-		Nonce:    hexutil.Uint64(tx.Nonce()),
-		To:       tx.To(),
-		Type:     txType,
-		Value:    (*hexutil.Big)(tx.Value()),
-		V:        (*hexutil.Big)(v),
-		R:        (*hexutil.Big)(r),
-		S:        (*hexutil.Big)(s),
+		From:            from,
+		Gas:             hexutil.Uint64(tx.Gas()),
+		GasPrice:        (*hexutil.Big)(tx.GasPrice()),
+		Hash:            tx.Hash(),
+		TransactionHash: tx.Hash(),
+		Input:           hexutil.Bytes(tx.Data()),
+		Nonce:           hexutil.Uint64(tx.Nonce()),
+		To:              tx.To(),
+		Type:            txType,
+		Value:           (*hexutil.Big)(tx.Value()),
+		V:               (*hexutil.Big)(v),
+		R:               (*hexutil.Big)(r),
+		S:               (*hexutil.Big)(s),
+	}
+	// EIP-2718 typed transactions expose their 0/1 recovery identifier through
+	// yParity. Keep v as well for compatibility with older wallet clients, while
+	// omitting yParity from legacy transactions whose V also carries EIP-155's
+	// chain-id encoding.
+	if tx.Type() >= types.AccessListTxType && tx.Type() <= types.SetCodeTxType && v != nil {
+		yParity := hexutil.Uint64(v.Uint64())
+		result.YParity = &yParity
 	}
 	if chainID := tx.ChainId(); chainID != nil && (tx.Type() != types.LegacyTxType || tx.Protected()) {
 		result.ChainID = (*hexutil.Big)(new(big.Int).Set(chainID))
@@ -1612,6 +1946,34 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 		result.BlobVersionedHashes = tx.BlobHashes()
 		accessList := tx.AccessList()
 		result.Accesses = &accessList
+	case types.SetCodeTxType:
+		result.GasFeeCap = (*hexutil.Big)(tx.GasFeeCap())
+		result.GasTipCap = (*hexutil.Big)(tx.GasTipCap())
+		accessList := tx.AccessList()
+		result.Accesses = &accessList
+		result.AuthorizationList = tx.SetCodeAuthorizations()
+	case types.NativeTxType:
+		payer := tx.Payer()
+		replaySequence := hexutil.Uint64(tx.ReplaySequence())
+		recentBlockHash := tx.RecentBlockHash()
+		recentBlockNumber := hexutil.Uint64(tx.RecentBlockNumber())
+		validUntil := hexutil.Uint64(tx.ValidUntil())
+		computeLimit := hexutil.Uint64(tx.ComputeLimit())
+		memoryLimit := hexutil.Uint64(tx.MemoryLimit())
+		logLimit := hexutil.Uint64(tx.LogLimit())
+		outputLimit := hexutil.Uint64(tx.OutputLimit())
+		result.Payer = &payer
+		result.ReplaySequence = &replaySequence
+		result.RecentBlockHash = &recentBlockHash
+		result.RecentBlockNumber = &recentBlockNumber
+		result.ValidUntil = &validUntil
+		result.NativeAccesses = tx.NativeAccesses()
+		result.MaxFeePerCompute = (*hexutil.Big)(tx.MaxFeePerCompute())
+		result.MaxPriorityFeePerCompute = (*hexutil.Big)(tx.PriorityFeePerCompute())
+		result.ComputeLimit = &computeLimit
+		result.MemoryLimit = &memoryLimit
+		result.LogLimit = &logLimit
+		result.OutputLimit = &outputLimit
 	}
 	if blockHash != (common.Hash{}) {
 		result.BlockHash = &blockHash
@@ -1632,7 +1994,11 @@ func newRPCTransactionFromBlockIndex(b *types.Block, index uint64) *RPCTransacti
 	if index >= uint64(len(txs)) {
 		return nil
 	}
-	return newRPCTransaction(txs[index], b.Hash(), b.NumberU64(), index)
+	tx := txs[index]
+	result := newRPCTransaction(tx, b.Hash(), b.NumberU64(), index)
+	setRPCTransactionEffectiveGasPrice(result, tx, b.Header().BaseFee)
+	fillCommonRPCTransactionFields(result, b, tx.Hash())
+	return result
 }
 
 // newRPCRawTransactionFromBlockIndex returns the bytes of a transaction given a block and a transaction index.
@@ -1661,6 +2027,27 @@ type PublicTransactionPoolAPI struct {
 	am        *accounts.Manager
 	nonceLock *AddrLocker
 
+	// The single-request coalescer and batch RPCs share one bounded ingress
+	// scheduler. Pending accounting includes coalescer, queued, and in-flight
+	// work, so no request shape can bypass the node-global limits.
+	singleRawTxMu              sync.Mutex
+	singleRawTxQueue           []*singleRawTxRequest
+	singleRawTxPendingCount    int
+	singleRawTxPendingBytes    int
+	singleRawTxWorkerRunning   bool
+	singleRawTxCoalesceDelay   time.Duration
+	singleRawTxQueueCountLimit int
+	singleRawTxQueueBytesLimit int
+	rawTxIngressQueue          []*rawTxIngressJob
+	rawTxIngressWorkers        int
+	rawTxIngressActiveJobs     int
+	rawTxBackendWorkers        int
+	rawTxActiveSenders         map[common.Address]uint32
+	rawTxAccepting             bool
+	rawTxLifecycleWG           sync.WaitGroup
+	rawTxWorkerWG              sync.WaitGroup
+	rawTxStopOnce              sync.Once
+
 	// Only used for AutoTransaction API
 	autoTransactionRunning bool
 	quitAutoTransaction    int32
@@ -1668,7 +2055,16 @@ type PublicTransactionPoolAPI struct {
 
 // NewPublicTransactionPoolAPI creates a new RPC service with methods specific for the transaction pool.
 func NewPublicTransactionPoolAPI(b Backend, nonceLock *AddrLocker) *PublicTransactionPoolAPI {
-	return &PublicTransactionPoolAPI{b, b.AccountManager(), nonceLock, false, 0}
+	return &PublicTransactionPoolAPI{
+		b:                          b,
+		am:                         b.AccountManager(),
+		nonceLock:                  nonceLock,
+		singleRawTxCoalesceDelay:   singleRawTxDefaultCoalesceDelay,
+		singleRawTxQueueCountLimit: singleRawTxDefaultQueueCountLimit,
+		singleRawTxQueueBytesLimit: singleRawTxDefaultQueueBytesLimit,
+		rawTxBackendWorkers:        defaultRawTxBackendWorkers(),
+		rawTxAccepting:             true,
+	}
 }
 
 // GetBlockTransactionCountByNumber returns the number of transactions in the block with the given block number.
@@ -1748,7 +2144,12 @@ func (s *PublicTransactionPoolAPI) GetTransactionByHash(ctx context.Context, has
 		return nil, err
 	}
 	if tx != nil {
-		return newRPCTransaction(tx, blockHash, blockNumber, index), nil
+		result := newRPCTransaction(tx, blockHash, blockNumber, index)
+		if block, blockErr := s.b.BlockByHash(ctx, blockHash); blockErr == nil && block != nil {
+			setRPCTransactionEffectiveGasPrice(result, tx, block.Header().BaseFee)
+			fillCommonRPCTransactionFields(result, block, hash)
+		}
+		return result, nil
 	}
 	// No finalized transaction, try to retrieve it from the pool
 	if tx := s.b.GetPoolTransaction(hash); tx != nil {
@@ -1782,6 +2183,9 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	if err != nil {
 		return nil, nil
 	}
+	if tx == nil || blockHash == (common.Hash{}) {
+		return nil, nil
+	}
 	receipts, err := s.b.GetReceipts(ctx, blockHash)
 	if err != nil {
 		return nil, err
@@ -1791,14 +2195,16 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	}
 	receipt := receipts[index]
 
+	block, _ := s.b.BlockByHash(ctx, blockHash)
+
 	signer := rpcTransactionSigner(tx)
 	from, _ := types.Sender(signer, tx)
 
 	effectiveGasPrice := new(big.Int).Set(tx.GasPrice())
-	if tx.Type() == types.DynamicFeeTxType {
+	if isEIP1559Transaction(tx) {
 		baseFee := fixedBaseFeePerGas()
-		if block, err := s.b.BlockByHash(ctx, blockHash); err == nil && block != nil {
-			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil && headerBaseFee.Sign() > 0 {
+		if block != nil {
+			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil {
 				baseFee = new(big.Int).Set(headerBaseFee)
 			}
 		}
@@ -1824,6 +2230,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	}
 
 	fields["status"] = hexutil.Uint(receipt.Status)
+	addBlobRPCReceiptFields(fields, s.b.ChainConfig(), block, tx)
 
 	if receipt.Logs == nil {
 		fields["logs"] = [][]*types.Log{}
@@ -1832,6 +2239,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	if receipt.ContractAddress != (common.Address{}) {
 		fields["contractAddress"] = receipt.ContractAddress
 	}
+	addCommonRPCReceiptFields(fields, block, hash)
 	return fields, nil
 }
 
@@ -1850,20 +2258,43 @@ func (s *PublicTransactionPoolAPI) sign(addr common.Address, tx *types.Transacti
 
 // SendTxArgs represents the arguments to sumbit a new transaction into the transaction pool.
 type SendTxArgs struct {
-	From                 common.Address    `json:"from"`
-	To                   *common.Address   `json:"to"`
-	Gas                  *hexutil.Uint64   `json:"gas"`
-	GasPrice             *hexutil.Big      `json:"gasPrice"`
-	MaxFeePerGas         *hexutil.Big      `json:"maxFeePerGas"`
-	MaxPriorityFeePerGas *hexutil.Big      `json:"maxPriorityFeePerGas"`
-	AccessList           *types.AccessList `json:"accessList"`
-	Type                 *hexutil.Uint64   `json:"type"`
-	Value                *hexutil.Big      `json:"value"`
-	Nonce                *hexutil.Uint64   `json:"nonce"`
+	From                     common.Address               `json:"from"`
+	To                       *common.Address              `json:"to"`
+	Gas                      *hexutil.Uint64              `json:"gas"`
+	GasPrice                 *hexutil.Big                 `json:"gasPrice"`
+	MaxFeePerGas             *hexutil.Big                 `json:"maxFeePerGas"`
+	MaxPriorityFeePerGas     *hexutil.Big                 `json:"maxPriorityFeePerGas"`
+	AccessList               *types.AccessList            `json:"accessList"`
+	ChainID                  *hexutil.Big                 `json:"chainId"`
+	MaxFeePerBlobGas         *hexutil.Big                 `json:"maxFeePerBlobGas"`
+	BlobVersionedHashes      []common.Hash                `json:"blobVersionedHashes"`
+	Blobs                    []kzg.Blob                   `json:"blobs"`
+	Commitments              []kzg.Commitment             `json:"commitments"`
+	Proofs                   []kzg.Proof                  `json:"proofs"`
+	AuthorizationList        []types.SetCodeAuthorization `json:"authorizationList"`
+	Type                     *hexutil.Uint64              `json:"type"`
+	Value                    *hexutil.Big                 `json:"value"`
+	Nonce                    *hexutil.Uint64              `json:"nonce"`
+	Payer                    *common.Address              `json:"payer"`
+	ReplaySequence           *hexutil.Uint64              `json:"replaySequence"`
+	RecentBlockHash          *common.Hash                 `json:"recentBlockHash"`
+	RecentBlockNumber        *hexutil.Uint64              `json:"recentBlockNumber"`
+	ValidUntil               *hexutil.Uint64              `json:"validUntil"`
+	NativeAccesses           *[]types.NativeAccess        `json:"accesses"`
+	MaxFeePerCompute         *hexutil.Big                 `json:"maxFeePerCompute"`
+	MaxPriorityFeePerCompute *hexutil.Big                 `json:"maxPriorityFeePerCompute"`
+	ComputeLimit             *hexutil.Uint64              `json:"computeLimit"`
+	MemoryLimit              *hexutil.Uint64              `json:"memoryLimit"`
+	LogLimit                 *hexutil.Uint64              `json:"logLimit"`
+	OutputLimit              *hexutil.Uint64              `json:"outputLimit"`
 	// We accept "data" and "input" for backwards-compatibility reasons. "input" is the
 	// newer name and should be preferred by clients.
 	Data  *hexutil.Bytes `json:"data"`
 	Input *hexutil.Bytes `json:"input"`
+
+	// blobSidecarVersion is derived from the active fork by setDefaults. It is
+	// not user-controlled JSON input.
+	blobSidecarVersion byte
 }
 
 type SendTxOpts struct {
@@ -1871,6 +2302,9 @@ type SendTxOpts struct {
 }
 
 func (args *SendTxArgs) txFeeCapForValidation() *big.Int {
+	if args.MaxFeePerCompute != nil {
+		return args.MaxFeePerCompute.ToInt()
+	}
 	if args.MaxFeePerGas != nil {
 		return args.MaxFeePerGas.ToInt()
 	}
@@ -1878,6 +2312,24 @@ func (args *SendTxArgs) txFeeCapForValidation() *big.Int {
 		return args.GasPrice.ToInt()
 	}
 	return new(big.Int)
+}
+
+func (args *SendTxArgs) blobFeeCapForValidation() *big.Int {
+	if args != nil && args.MaxFeePerBlobGas != nil {
+		return args.MaxFeePerBlobGas.ToInt()
+	}
+	return new(big.Int)
+}
+
+func (args *SendTxArgs) blobGasForFeeValidation() uint64 {
+	if args == nil {
+		return 0
+	}
+	count := len(args.BlobVersionedHashes)
+	if count == 0 {
+		count = len(args.Blobs)
+	}
+	return uint64(count) * params.BlobTxBlobGasPerBlob
 }
 
 func (args *SendTxArgs) transactionChainID(b Backend) *big.Int {
@@ -1889,7 +2341,7 @@ func (args *SendTxArgs) transactionChainID(b Backend) *big.Int {
 	if args.Type != nil {
 		txType = uint64(*args.Type)
 	}
-	if args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.AccessList != nil || txType != types.LegacyTxType {
+	if args.requestsNativeTransaction(b) || args.ChainID != nil || args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.AccessList != nil || args.MaxFeePerBlobGas != nil || len(args.BlobVersionedHashes) > 0 || args.hasBlobSidecarFields() || len(args.AuthorizationList) > 0 || txType != types.LegacyTxType {
 		return config.ChainID
 	}
 	if block := b.CurrentBlock(); block != nil && config.IsEIP155(block.Number()) {
@@ -1903,6 +2355,21 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 	if args.Value == nil {
 		args.Value = new(hexutil.Big)
 	}
+	if args.Data != nil && args.Input != nil && !bytes.Equal(*args.Data, *args.Input) {
+		return errors.New(`both "data" and "input" are set and not equal. Please use "input" to pass transaction call data`)
+	}
+	if args.requestsNativeTransaction(b) {
+		return errNativeTransactionsDisabled
+	}
+	if args.ChainID != nil {
+		if b == nil || b.ChainConfig() == nil || b.ChainConfig().ChainID == nil {
+			return errors.New("chainId cannot be validated because the node chain ID is unavailable")
+		}
+		have, want := args.ChainID.ToInt(), b.ChainConfig().ChainID
+		if have.Cmp(want) != 0 {
+			return fmt.Errorf("chainId does not match node's (have=%v, want=%v)", have, want)
+		}
+	}
 	if args.Nonce == nil {
 		nonce, err := b.GetPoolNonce(ctx, args.From)
 		if err != nil {
@@ -1910,14 +2377,22 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 		}
 		args.Nonce = (*hexutil.Uint64)(&nonce)
 	}
-	if args.Data != nil && args.Input != nil && !bytes.Equal(*args.Data, *args.Input) {
-		return errors.New(`both "data" and "input" are set and not equal. Please use "input" to pass transaction call data`)
+
+	pendingBlockNr := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
+	plainValueTransfer, err := isPlainValueTransferSendTx(ctx, b, args, pendingBlockNr)
+	if err != nil {
+		return err
 	}
+	if plainValueTransfer && args.Gas == nil {
+		gas := hexutil.Uint64(params.TxGas)
+		args.Gas = &gas
+	}
+
 	txType := uint64(types.LegacyTxType)
 	if args.Type != nil {
 		txType = uint64(*args.Type)
 		switch txType {
-		case types.LegacyTxType, types.AccessListTxType, types.DynamicFeeTxType:
+		case types.LegacyTxType, types.AccessListTxType, types.DynamicFeeTxType, types.BlobTxType, types.SetCodeTxType:
 		default:
 			return fmt.Errorf("unsupported transaction type %d", txType)
 		}
@@ -1925,21 +2400,58 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 	forceLegacy := args.Type != nil && txType == types.LegacyTxType
 	forceAccessList := args.Type != nil && txType == types.AccessListTxType
 	forceDynamic := args.Type != nil && txType == types.DynamicFeeTxType
-	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
+	forceBlob := args.Type != nil && txType == types.BlobTxType
+	forceSetCode := args.Type != nil && txType == types.SetCodeTxType
+	blobRequested := forceBlob || args.MaxFeePerBlobGas != nil || len(args.BlobVersionedHashes) > 0 || args.hasBlobSidecarFields()
+	setCodeRequested := forceSetCode || len(args.AuthorizationList) > 0
+	if blobRequested && setCodeRequested {
+		return errors.New("blob and set-code transaction fields cannot be combined")
+	}
+	if plainValueTransfer && args.GasPrice == nil && args.MaxFeePerGas == nil && args.MaxPriorityFeePerGas == nil && args.Type == nil && !blobRequested && !setCodeRequested {
+		args.GasPrice = (*hexutil.Big)(fixedGasPricePerGas())
+	}
+	if args.GasPrice != nil && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || blobRequested || setCodeRequested) {
 		return errors.New(`both "gasPrice" and EIP-1559 fee fields are set`)
 	}
-	if forceLegacy && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.AccessList != nil) {
-		return errors.New(`legacy transaction type does not support EIP-1559 fee fields or accessList`)
+	if forceLegacy && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.AccessList != nil || blobRequested || setCodeRequested) {
+		return errors.New(`legacy transaction type does not support typed transaction fields`)
 	}
-	if forceAccessList && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil) {
-		return errors.New(`access list transaction type does not support EIP-1559 fee fields`)
+	if forceAccessList && (args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || blobRequested || setCodeRequested) {
+		return errors.New(`access list transaction type does not support dynamic fee fields`)
+	}
+	if forceDynamic && (blobRequested || setCodeRequested) {
+		return errors.New(`dynamic fee transaction type does not support blob or authorization fields`)
+	}
+	if blobRequested {
+		if args.To == nil {
+			return errors.New("blob transaction requires a recipient")
+		}
+		if args.MaxFeePerBlobGas == nil || args.MaxFeePerBlobGas.ToInt().Sign() <= 0 {
+			return errors.New("blob transaction requires a positive maxFeePerBlobGas")
+		}
+		if err := args.setBlobSidecarDefaults(ctx, blobSidecarVersionForBackend(b)); err != nil {
+			return err
+		}
+		for _, hash := range args.BlobVersionedHashes {
+			if hash[0] != types.BlobCommitmentVersionKZG {
+				return errors.New("blobVersionedHashes contains an unsupported version")
+			}
+		}
+	}
+	if setCodeRequested {
+		if args.To == nil {
+			return errors.New("set-code transaction requires a recipient")
+		}
+		if len(args.AuthorizationList) == 0 {
+			return errors.New("set-code transaction requires authorizationList")
+		}
 	}
 	head, _ := b.HeaderByNumber(ctx, rpc.PendingBlockNumber)
 	if head == nil {
 		head = b.CurrentHeader()
 	}
 	londonActive := head != nil && b.ChainConfig().IsLondon(head.Number)
-	dynamicRequested := args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || forceDynamic
+	dynamicRequested := args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || forceDynamic || blobRequested || setCodeRequested
 	autoDynamic := londonActive && args.GasPrice == nil && !forceLegacy && !forceAccessList && !dynamicRequested
 	if dynamicRequested || autoDynamic {
 		tip, _ := suggestGasTipCap(ctx, b)
@@ -2005,6 +2517,9 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 			Value:                args.Value,
 			Data:                 input,
 			AccessList:           args.AccessList,
+			MaxFeePerBlobGas:     args.MaxFeePerBlobGas,
+			BlobVersionedHashes:  args.BlobVersionedHashes,
+			AuthorizationList:    args.AuthorizationList,
 		}
 		pendingBlockNr := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
 		estimated, err := DoEstimateGas(ctx, b, callArgs, pendingBlockNr, b.RPCGasCap())
@@ -2031,6 +2546,50 @@ func (args *SendTxArgs) toTransaction(chainID *big.Int) *types.Transaction {
 	txType := uint64(types.LegacyTxType)
 	if args.Type != nil {
 		txType = uint64(*args.Type)
+	}
+	if txType == types.NativeTxType {
+		return args.toNativeTransaction(chainIDCopy, input)
+	}
+	setCodeRequested := txType == types.SetCodeTxType || len(args.AuthorizationList) > 0
+	if setCodeRequested {
+		inner := &types.SetCodeTx{
+			ChainID:   chainIDCopy,
+			Nonce:     uint64(*args.Nonce),
+			GasTipCap: (*big.Int)(args.MaxPriorityFeePerGas),
+			GasFeeCap: (*big.Int)(args.MaxFeePerGas),
+			Gas:       uint64(*args.Gas),
+			To:        *args.To,
+			Value:     (*big.Int)(args.Value),
+			Data:      input,
+			AuthList:  args.AuthorizationList,
+		}
+		if args.AccessList != nil {
+			inner.AccessList = *args.AccessList
+		}
+		return types.NewTx(inner)
+	}
+	blobRequested := txType == types.BlobTxType || args.MaxFeePerBlobGas != nil || len(args.BlobVersionedHashes) > 0 || args.hasBlobSidecarFields()
+	if blobRequested {
+		inner := &types.BlobTx{
+			ChainID:    chainIDCopy,
+			Nonce:      uint64(*args.Nonce),
+			GasTipCap:  (*big.Int)(args.MaxPriorityFeePerGas),
+			GasFeeCap:  (*big.Int)(args.MaxFeePerGas),
+			Gas:        uint64(*args.Gas),
+			To:         *args.To,
+			Value:      (*big.Int)(args.Value),
+			Data:       input,
+			BlobFeeCap: (*big.Int)(args.MaxFeePerBlobGas),
+			BlobHashes: args.BlobVersionedHashes,
+		}
+		if args.AccessList != nil {
+			inner.AccessList = *args.AccessList
+		}
+		tx := types.NewTx(inner)
+		if sidecar := args.blobSidecar(); sidecar != nil {
+			tx = tx.WithBlobSidecar(sidecar)
+		}
+		return tx
 	}
 	dynamicRequested := args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || txType == types.DynamicFeeTxType
 	if dynamicRequested {
@@ -2073,14 +2632,19 @@ func (args *SendTxArgs) toTransaction(chainID *big.Int) *types.Transaction {
 
 // SubmitTransaction is a helper function that submits tx to txPool and logs a message.
 func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction, sync bool) (common.Hash, error) {
-	log.Info("SubmitTransaction", "tx chainid", tx.ChainId(), "tx ", tx.V())
+	if tx == nil {
+		return common.Hash{}, errors.New("transaction is nil")
+	}
+	if tx.Type() == types.NativeTxType {
+		return common.Hash{}, errNativeTransactionsDisabled
+	}
+	log.Trace("SubmitTransaction", "tx chainid", tx.ChainId(), "tx", tx.V())
 	// If the transaction fee cap is already specified, ensure the
 	// fee of the given transaction is _reasonable_.
-	if err := checkTxFee(tx.GasFeeCap(), tx.Gas(), b.RPCTxFeeCap()); err != nil {
+	if err := checkTxFeeWithBlob(tx.GasFeeCap(), tx.Gas(), tx.BlobGasFeeCap(), tx.BlobGas(), b.RPCTxFeeCap()); err != nil {
 		return common.Hash{}, err
 	}
-	var signer types.Signer
-	signer = types.MakeSignerAutoJudgement(b.ChainConfig(), b.CurrentBlock().Number(), tx.V())
+	signer := types.MakeSignerAutoJudgement(b.ChainConfig(), b.CurrentBlock().Number(), tx.V())
 	from, err := types.Sender(signer, tx)
 	if err != nil {
 		return common.Hash{}, err
@@ -2088,52 +2652,26 @@ func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction, sy
 	if err := b.SendTx(ctx, tx, sync); err != nil {
 		return common.Hash{}, err
 	}
+	emitSubmittedTransactionCheckpoint(tx, from)
+	return tx.Hash(), nil
+}
+
+func emitSubmittedTransactionCheckpoint(tx *types.Transaction, from common.Address) {
+	if tx == nil {
+		return
+	}
 	if tx.To() == nil {
 		addr := crypto.CreateAddress(from, tx.Nonce())
-		//log.Info("Submitted contract creation", "fullhash", tx.Hash().Hex(), "to", addr.Hex())
 		log.EmitCheckpoint(log.TxCreated, "tx", tx.Hash().Hex(), "to", addr.Hex())
 	} else {
-		//log.Info("Submitted transaction", "fullhash", tx.Hash().Hex(), "recipient", tx.To())
 		log.EmitCheckpoint(log.TxCreated, "tx", tx.Hash().Hex(), "to", tx.To().Hex())
 	}
-	return tx.Hash(), nil
 }
 
 // SendTransaction creates a transaction for the given argument, sign it and submit it to the
 // transaction pool.
 func (s *PublicTransactionPoolAPI) SendTransaction(ctx context.Context, args SendTxArgs) (common.Hash, error) {
-	// Look up the wallet containing the requested signer
-	account := accounts.Account{Address: args.From}
-
-	wallet, err := s.b.AccountManager().Find(account)
-	if err != nil {
-		return common.Hash{}, err
-	}
-
-	if args.Nonce == nil {
-		// Hold the addresse's mutex around signing to prevent concurrent assignment of
-		// the same nonce to multiple accounts.
-		s.nonceLock.LockAddr(args.From)
-		defer s.nonceLock.UnlockAddr(args.From)
-	}
-
-	// Set some sanity defaults and terminate on failure
-	if err := args.setDefaults(ctx, s.b); err != nil {
-		return common.Hash{}, err
-	}
-
-	// Assemble the transaction and sign with the wallet
-	chainID := args.transactionChainID(s.b)
-	tx := args.toTransaction(chainID)
-	if tx.RouteHint() == types.TxRouteAuto {
-		tx = tx.WithRouteHint(types.TxRouteFast)
-	}
-
-	signed, err := wallet.SignTx(account, tx, chainID)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	return SubmitTransaction(ctx, s.b, signed, true)
+	return s.SendTransactionWithOpts(ctx, args, SendTxOpts{})
 }
 
 func (s *PublicTransactionPoolAPI) SendTransactionWithOpts(ctx context.Context, args SendTxArgs, opts SendTxOpts) (common.Hash, error) {
@@ -2145,7 +2683,8 @@ func (s *PublicTransactionPoolAPI) SendTransactionWithOpts(ctx context.Context, 
 		return common.Hash{}, err
 	}
 
-	if args.Nonce == nil {
+	if !args.requestsNativeTransaction(s.b) && args.Nonce == nil {
+		// Hold the address lock through signing to prevent duplicate nonce assignment.
 		s.nonceLock.LockAddr(args.From)
 		defer s.nonceLock.UnlockAddr(args.From)
 	}
@@ -2178,7 +2717,7 @@ func (s *PublicTransactionPoolAPI) FillTransaction(ctx context.Context, args Sen
 	}
 	// Assemble the transaction and obtain rlp
 	tx := args.toTransaction(args.transactionChainID(s.b))
-	data, err := tx.MarshalBinary()
+	data, err := marshalTransactionForRPC(tx)
 	if err != nil {
 		return nil, err
 	}
@@ -2200,16 +2739,6 @@ func (s *PublicTransactionPoolAPI) autoTrans(ctx context.Context, delay int) {
 	if len(addresses) < 2 {
 		return
 	}
-	/*
-		var (
-			headCh = make(chan core.ChainHeadEvent)
-		)
-		sub := s.b.SubscribeChainHeadEvent(headCh)
-		if sub == nil {
-			return
-		}
-		defer sub.Unsubscribe()
-	*/
 	delayTm := time.Duration(delay) * time.Millisecond
 	s.autoTransactionRunning = true
 	atomic.StoreInt32(&s.quitAutoTransaction, 0)
@@ -2248,42 +2777,15 @@ func (s *PublicTransactionPoolAPI) autoTrans(ctx context.Context, delay int) {
 		}
 		log.Debug("AutoTrans...1")
 		hash, err := SubmitTransaction(ctx, s.b, signed, true)
-		if err != nil || hash == (common.Hash{}) { //&& err != core.ErrAlreadyKnown {
+		if err != nil || hash == (common.Hash{}) {
 			log.Error("AutoTrans failed to submit transaction", "amount", amount, "nonce", txNonce, "submit error", err)
-			//if err == core.ErrReplaceUnderpriced {
-			//	txNonce = txNonce + 1
 			time.Sleep(delayTm)
 			txNonce, _ = s.b.GetPoolNonce(ctx, addrfrom)
 			noceMap[addrfrom] = txNonce
 			goto labelReSend
-			//}
-			//break
 		}
 		log.Debug("AutoTrans...2")
 		time.Sleep(delayTm)
-		/*
-			num := 0
-			for {
-				num++
-				if num > 1000 {
-					break
-				}
-				hasNewBlock := false
-				pending, _ := s.b.Stats()
-				if pending == 0 {
-					break
-				}
-				select {
-				case head := <-headCh:
-					log.Debug("AutoTrans", "number", head.Block.NumberU64())
-					hasNewBlock = true
-				}
-				if hasNewBlock {
-					break
-				}
-				time.Sleep(delayTm)
-			}
-		*/
 	}
 
 	s.autoTransactionRunning = false
@@ -2292,7 +2794,6 @@ func (s *PublicTransactionPoolAPI) autoTrans(ctx context.Context, delay int) {
 // AutoTransaction creates repeated transactions for the given argument, sign them and submit them to the
 // transaction pool,this api is ONLY used for test.
 func (s *PublicTransactionPoolAPI) AutoTransaction(ctx context.Context, run int, delay int) string {
-	//log.Info("Auto transaction: ","autoTx", fmt.Sprintf("run = %d , from = %s, to = %s", run, from.Hex(), to.Hex()))
 	if run > 0 {
 		if !s.autoTransactionRunning {
 			go s.autoTrans(ctx, delay)
@@ -2310,44 +2811,1143 @@ func (s *PublicTransactionPoolAPI) AutoTransaction(ctx context.Context, run int,
 	}
 }
 
-// SendRawTransaction will add the signed transaction to the transaction pool.
-// The sender is responsible for signing the transaction and using the correct nonce.
-func (s *PublicTransactionPoolAPI) SendRawTransaction(ctx context.Context, encodedTx hexutil.Bytes) (common.Hash, error) {
-	log.Info("SendRawTransaction")
+const (
+	// A public request is bounded independently from the transport batches it
+	// produces. The million-item envelope covers a five-second 200k TPS burst
+	// without ever constructing an unbounded TxPool/TxQUIC operation.
+	MaxRawTxRequestCount = params.NativeParallelHardMaxTransactions
+	// Hex JSON doubles the wire size. Sixty MiB leaves framing headroom below
+	// the RPC server's 128 MiB request ceiling.
+	MaxRawTxRequestBytes = 60 * 1024 * 1024
+
+	// Backend and TxQUIC work remains bounded to fixed micro-batches. These are
+	// scheduling limits, not the public request limit above.
+	MaxRawTxBatchCount = 512
+	MaxRawTxBatchBytes = 4 * 1024 * 1024
+	// Backend calls overlap so independent admission signatures and durable
+	// outbox writes can be group-committed. TxPool mutation remains serialized
+	// by the pool lock, and the fixed bound prevents an RPC burst from creating
+	// one goroutine per micro-batch.
+	rawTxBackendMinWorkers = 8
+	rawTxBackendMaxWorkers = 64
+	// A bulk RPC keeps at most two backend waves admitted at once. This keeps a
+	// million-item request from materializing one scheduler job per sender while
+	// leaving one full wave queued behind the active workers.
+	rawTxIngressOutstandingWaves = 2
+
+	// Parallel eth_sendRawTransaction calls share this short collection window.
+	// Pending work includes both queued and currently submitted transactions so
+	// a slow backend cannot turn the coalescer into unbounded memory storage.
+	singleRawTxDefaultCoalesceDelay   = 2 * time.Millisecond
+	singleRawTxDefaultQueueCountLimit = MaxRawTxRequestCount
+	// The node-global queue is independent from one public request and can absorb
+	// a five-second million-transfer burst without relaxing the 60 MiB request
+	// ceiling. Count and byte limits both apply to queued plus in-flight work.
+	singleRawTxDefaultQueueBytesLimit = 256 * 1024 * 1024
+)
+
+var errRawTxIngressStopped = errors.New("raw transaction ingress is stopped")
+
+func defaultRawTxBackendWorkers() int {
+	return rawTxBackendWorkersForCPU(runtime.GOMAXPROCS(0))
+}
+
+func rawTxBackendWorkersForCPU(workers int) int {
+	if workers < rawTxBackendMinWorkers {
+		return rawTxBackendMinWorkers
+	}
+	if workers > rawTxBackendMaxWorkers {
+		return rawTxBackendMaxWorkers
+	}
+	return workers
+}
+
+// Stop closes raw-transaction admission, drains every job that already crossed
+// the node-owned boundary, and joins the coalescer and backend workers. It is
+// safe to call concurrently and must complete before the TxQUIC/WAL lifecycle
+// is stopped.
+func (s *PublicTransactionPoolAPI) Stop() {
+	if s == nil {
+		return
+	}
+	s.rawTxStopOnce.Do(func() {
+		s.singleRawTxMu.Lock()
+		s.rawTxAccepting = false
+		s.singleRawTxMu.Unlock()
+
+		// Producers and accepted single calls keep this counter positive while
+		// they are allowed to add node-owned jobs. Waiting for it first makes the
+		// subsequent worker wait immune to WaitGroup Add/Wait races.
+		s.rawTxLifecycleWG.Wait()
+		s.rawTxWorkerWG.Wait()
+	})
+}
+
+// RawTxResult is aligned with one eth_sendRawTransactions input. A decoded
+// transaction retains its hash even when fee, sender, pool, or outbox handling
+// fails, allowing clients to reconcile partial batches safely.
+type RawTxResult struct {
+	Hash  *common.Hash `json:"hash,omitempty"`
+	Error string       `json:"error,omitempty"`
+}
+
+type rawTxSubmissionResult struct {
+	hash    common.Hash
+	decoded bool
+	err     error
+}
+
+type rawTxPreparedTransaction struct {
+	tx      *types.Transaction
+	sender  common.Address
+	decoded bool
+	err     error
+}
+
+type rawTxPreparationStats struct {
+	decode         time.Duration
+	prepare        time.Duration
+	senderRecovery time.Duration
+	totalBytes     int
+}
+
+type singleRawTxRequest struct {
+	encoded   hexutil.Bytes
+	routeHint types.TxRouteHint
+	response  chan singleRawTxResponse
+}
+
+type singleRawTxResponse struct {
+	result rawTxSubmissionResult
+	err    error
+}
+
+type rawTxMicroBatch struct {
+	start     int
+	end       int
+	bytes     int
+	oversized bool
+}
+
+type rawTxIngressJob struct {
+	encoded        []hexutil.Bytes
+	routeHints     []types.TxRouteHint
+	prepared       []rawTxPreparedTransaction
+	single         []*singleRawTxRequest
+	senders        []common.Address
+	resultIndexes  []int
+	current        *types.Block
+	ctx            context.Context
+	completion     chan<- rawTxIngressCompletion
+	pendingCount   int
+	pendingBytes   int
+	lifecycleUnits int
+}
+
+type rawTxIngressCompletion struct {
+	indexes []int
+	results []rawTxSubmissionResult
+}
+
+func validateRawTransactionSignatureSize(tx *types.Transaction, config *params.ChainConfig) error {
+	if tx == nil {
+		return types.ErrInvalidSig
+	}
+	v, r, s := tx.RawSignatureValues()
+	if v == nil || r == nil || s == nil || v.Sign() < 0 || r.Sign() < 0 || s.Sign() < 0 {
+		return types.ErrInvalidSig
+	}
+	// R and S are secp256k1 scalars. Legacy V additionally carries chain ID,
+	// whose configured size is allowed, but an unauthenticated raw RPC must not
+	// feed megabyte-sized integers into signer selection or decimal logging.
+	if r.BitLen() > 256 || s.BitLen() > 256 {
+		return types.ErrInvalidSig
+	}
+	maxVBits := 256
+	if config != nil && config.ChainID != nil && config.ChainID.BitLen()+2 > maxVBits {
+		maxVBits = config.ChainID.BitLen() + 2
+	}
+	if v.BitLen() > maxVBits {
+		return types.ErrInvalidSig
+	}
+	return nil
+}
+
+// rawTransactionSignerClass mirrors MakeSignerAutoJudgement, whose result can
+// only be the active fork signer or EIP-155 signer. Keeping this bounded class
+// avoids attacker-controlled big.Int string keys and per-transaction logging.
+func rawTransactionSignerClass(config *params.ChainConfig, v *big.Int) uint8 {
+	if config == nil || config.ChainID == nil || v == nil || v.Cmp(big.NewInt(28)) <= 0 {
+		return 0
+	}
+	maxRecoverV := new(big.Int).Lsh(new(big.Int).Set(config.ChainID), 1)
+	maxRecoverV.Add(maxRecoverV, big.NewInt(36))
+	if v.Cmp(maxRecoverV) <= 0 {
+		return 1
+	}
+	return 0
+}
+
+func decodeRawTransaction(encodedTx hexutil.Bytes, routeHint types.TxRouteHint) (*types.Transaction, error) {
+	if len(encodedTx) > 0 && encodedTx[0] == types.NativeTxType {
+		return nil, errNativeTransactionsDisabled
+	}
 	tx := new(types.Transaction)
 	if len(encodedTx) > 0 && encodedTx[0] < 0x80 {
 		if err := tx.UnmarshalBinary(encodedTx); err != nil {
-			return common.Hash{}, err
+			return nil, err
 		}
 	} else if err := rlp.DecodeBytes(encodedTx, tx); err != nil {
-		return common.Hash{}, err
+		return nil, err
+	}
+	if routeHint == types.TxRouteAuto {
+		routeHint = types.TxRouteFast
+	}
+	return tx.WithRouteHint(routeHint), nil
+}
+
+func validateRawTransactionRequest(encoded []hexutil.Bytes) error {
+	if len(encoded) == 0 {
+		return fmt.Errorf("raw transaction batch is empty")
+	}
+	if len(encoded) > MaxRawTxRequestCount {
+		return fmt.Errorf("raw transaction request count %d exceeds limit %d", len(encoded), MaxRawTxRequestCount)
+	}
+	totalBytes := 0
+	for _, raw := range encoded {
+		if len(raw) > MaxRawTxRequestBytes-totalBytes {
+			return fmt.Errorf("raw transaction request bytes exceed limit %d", MaxRawTxRequestBytes)
+		}
+		totalBytes += len(raw)
+	}
+	return nil
+}
+
+func (s *PublicTransactionPoolAPI) prepareRawTransactions(encoded []hexutil.Bytes, routeHints []types.TxRouteHint, current *types.Block) ([]rawTxPreparedTransaction, rawTxPreparationStats) {
+	type uniqueRawTransactionKey struct {
+		hash      common.Hash
+		routeHint types.TxRouteHint
 	}
 
-	// MetaMask uses standard eth_sendRawTransaction and cannot pass Cypherium
-	// route options. Default external raw transactions to the fast lane so they
-	// are eligible for normal tx block production.
-	if tx.RouteHint() == types.TxRouteAuto {
-		tx = tx.WithRouteHint(types.TxRouteFast)
+	started := time.Now()
+	prepared := make([]rawTxPreparedTransaction, len(encoded))
+	decodedTxs := make([]*types.Transaction, len(encoded))
+	decodeErrs := make([]error, len(encoded))
+	core.RunBoundedCryptoJobs(len(encoded), func(index int) {
+		routeHint := types.TxRouteFast
+		if index < len(routeHints) && routeHints[index] != types.TxRouteAuto {
+			routeHint = routeHints[index]
+		}
+		decodedTxs[index], decodeErrs[index] = decodeRawTransaction(encoded[index], routeHint)
+	})
+	stats := rawTxPreparationStats{decode: time.Since(started)}
+
+	representativeByKey := make(map[uniqueRawTransactionKey]int, len(encoded))
+	duplicateOf := make([]int, len(encoded))
+	for index := range duplicateOf {
+		duplicateOf[index] = -1
 	}
-	return SubmitTransaction(ctx, s.b, tx, true)
+	signers := make([]types.Signer, len(encoded))
+	recoverable := make([]int, 0, len(encoded))
+	signerCache := make(map[uint8]types.Signer, 2)
+	for index, raw := range encoded {
+		stats.totalBytes += len(raw)
+		tx, err := decodedTxs[index], decodeErrs[index]
+		if err != nil {
+			prepared[index].err = err
+			continue
+		}
+		prepared[index].tx = tx
+		prepared[index].decoded = true
+		key := uniqueRawTransactionKey{hash: tx.Hash(), routeHint: tx.RouteHint()}
+		if representative, exists := representativeByKey[key]; exists {
+			duplicateOf[index] = representative
+			continue
+		}
+		representativeByKey[key] = index
+		if err := validateRawTransactionSignatureSize(tx, s.b.ChainConfig()); err != nil {
+			prepared[index].err = err
+			continue
+		}
+		if err := checkTxFeeWithBlob(tx.GasFeeCap(), tx.Gas(), tx.BlobGasFeeCap(), tx.BlobGas(), s.b.RPCTxFeeCap()); err != nil {
+			prepared[index].err = err
+			continue
+		}
+		class := rawTransactionSignerClass(s.b.ChainConfig(), tx.V())
+		signer := signerCache[class]
+		if signer == nil {
+			switch class {
+			case 1:
+				signer = types.NewEIP155Signer(s.b.ChainConfig().ChainID)
+			default:
+				signer = types.MakeSigner(s.b.ChainConfig(), current.Number())
+			}
+			signerCache[class] = signer
+		}
+		signers[index] = signer
+		recoverable = append(recoverable, index)
+	}
+	stats.prepare = time.Since(started) - stats.decode
+
+	recoveryStarted := time.Now()
+	core.RunBoundedCryptoJobs(len(recoverable), func(position int) {
+		index := recoverable[position]
+		prepared[index].sender, prepared[index].err = types.Sender(signers[index], prepared[index].tx)
+	})
+	stats.senderRecovery = time.Since(recoveryStarted)
+	for index, representative := range duplicateOf {
+		if representative < 0 {
+			continue
+		}
+		prepared[index].tx = prepared[representative].tx
+		prepared[index].sender = prepared[representative].sender
+		prepared[index].decoded = prepared[representative].decoded
+		prepared[index].err = prepared[representative].err
+	}
+	return prepared, stats
+}
+
+func (s *PublicTransactionPoolAPI) submitPreparedRawTransactionMicroBatch(ctx context.Context, prepared []rawTxPreparedTransaction) ([]rawTxSubmissionResult, int, time.Duration) {
+	type uniqueRawTransaction struct {
+		tx      *types.Transaction
+		sender  common.Address
+		indexes []int
+		err     error
+	}
+	type uniqueRawTransactionKey struct {
+		hash      common.Hash
+		routeHint types.TxRouteHint
+	}
+
+	results := make([]rawTxSubmissionResult, len(prepared))
+	validTxs := make(types.Transactions, 0, len(prepared))
+	validEntries := make([]*uniqueRawTransaction, 0, len(prepared))
+	entries := make([]*uniqueRawTransaction, 0, len(prepared))
+	entryByKey := make(map[uniqueRawTransactionKey]*uniqueRawTransaction, len(prepared))
+	for index, item := range prepared {
+		if !item.decoded || item.tx == nil {
+			results[index].err = item.err
+			continue
+		}
+		results[index].decoded = true
+		results[index].hash = item.tx.Hash()
+		key := uniqueRawTransactionKey{hash: results[index].hash, routeHint: item.tx.RouteHint()}
+		if entry := entryByKey[key]; entry != nil {
+			entry.indexes = append(entry.indexes, index)
+			continue
+		}
+		entry := &uniqueRawTransaction{tx: item.tx, sender: item.sender, indexes: []int{index}, err: item.err}
+		entryByKey[key] = entry
+		entries = append(entries, entry)
+		if entry.err == nil {
+			validTxs = append(validTxs, entry.tx)
+			validEntries = append(validEntries, entry)
+		}
+	}
+
+	backendElapsed := time.Duration(0)
+	if len(validTxs) > 0 {
+		backendStarted := time.Now()
+		backendResults := s.b.SendTxBatch(ctx, validTxs)
+		backendElapsed = time.Since(backendStarted)
+		if len(backendResults) != len(validTxs) {
+			log.Error("Transaction backend returned misaligned batch results", "transactions", len(validTxs), "results", len(backendResults))
+		}
+		for index, entry := range validEntries {
+			if index >= len(backendResults) {
+				entry.err = fmt.Errorf("transaction backend omitted batch result")
+				continue
+			}
+			entry.err = backendResults[index]
+			if entry.err == nil {
+				emitSubmittedTransactionCheckpoint(entry.tx, entry.sender)
+			}
+		}
+	}
+	for _, entry := range entries {
+		for _, index := range entry.indexes {
+			results[index].err = entry.err
+		}
+	}
+	return results, len(validTxs), backendElapsed
+}
+
+func (s *PublicTransactionPoolAPI) submitRawTransactionMicroBatch(ctx context.Context, encoded []hexutil.Bytes, routeHints []types.TxRouteHint, current *types.Block) []rawTxSubmissionResult {
+	started := time.Now()
+	prepared, stats := s.prepareRawTransactions(encoded, routeHints, current)
+	results, validCount, backendElapsed := s.submitPreparedRawTransactionMicroBatch(ctx, prepared)
+	log.Debug("Submitted raw transaction batch", "requested", len(encoded), "decoded", validCount, "bytes", stats.totalBytes,
+		"decode", stats.decode, "prepare", stats.prepare, "senderRecovery", stats.senderRecovery,
+		"backend", backendElapsed, "total", time.Since(started))
+	return results
+}
+
+func splitRawTransactionMicroBatches(encoded []hexutil.Bytes) []rawTxMicroBatch {
+	microBatches := make([]rawTxMicroBatch, 0, (len(encoded)+MaxRawTxBatchCount-1)/MaxRawTxBatchCount)
+	for start := 0; start < len(encoded); {
+		if len(encoded[start]) > MaxRawTxBatchBytes {
+			microBatches = append(microBatches, rawTxMicroBatch{
+				start: start, end: start + 1, bytes: len(encoded[start]), oversized: true,
+			})
+			start++
+			continue
+		}
+		end, batchBytes := start, 0
+		for end < len(encoded) && end-start < MaxRawTxBatchCount {
+			nextBytes := len(encoded[end])
+			if end > start && nextBytes > MaxRawTxBatchBytes-batchBytes {
+				break
+			}
+			batchBytes += nextBytes
+			end++
+		}
+		microBatches = append(microBatches, rawTxMicroBatch{start: start, end: end, bytes: batchBytes})
+		start = end
+	}
+	return microBatches
+}
+
+func (s *PublicTransactionPoolAPI) beginRawTxIngressProducer() error {
+	s.singleRawTxMu.Lock()
+	defer s.singleRawTxMu.Unlock()
+	if !s.rawTxAccepting {
+		return errRawTxIngressStopped
+	}
+	// The accepting gate and the first positive Add share the same lock. Stop
+	// closes the gate before waiting, so a zero counter can never race a new Add.
+	s.rawTxLifecycleWG.Add(1)
+	return nil
+}
+
+func (s *PublicTransactionPoolAPI) rawTxIngressCapacityErrorLocked(count, bytes int) error {
+	if count < 0 || s.singleRawTxPendingCount > s.singleRawTxQueueCountLimit || count > s.singleRawTxQueueCountLimit-s.singleRawTxPendingCount {
+		return fmt.Errorf("raw transaction ingress busy: queue count exceeds limit %d", s.singleRawTxQueueCountLimit)
+	}
+	if bytes < 0 || s.singleRawTxPendingBytes > s.singleRawTxQueueBytesLimit || bytes > s.singleRawTxQueueBytesLimit-s.singleRawTxPendingBytes {
+		return fmt.Errorf("raw transaction ingress busy: queue bytes exceed limit %d", s.singleRawTxQueueBytesLimit)
+	}
+	return nil
+}
+
+func (s *PublicTransactionPoolAPI) startRawTxIngressWorkersLocked() int {
+	available := s.rawTxBackendWorkers - s.rawTxIngressWorkers
+	if available <= 0 || len(s.rawTxIngressQueue) == 0 {
+		return 0
+	}
+	reservedSenders := make(map[common.Address]struct{}, len(s.rawTxActiveSenders))
+	for sender := range s.rawTxActiveSenders {
+		reservedSenders[sender] = struct{}{}
+	}
+	runnable := 0
+	for _, job := range s.rawTxIngressQueue {
+		blocked := false
+		for _, sender := range job.senders {
+			if _, exists := reservedSenders[sender]; exists {
+				blocked = true
+				break
+			}
+		}
+		if !blocked {
+			runnable++
+		}
+		// A blocked multi-sender job still owns its place for every sender.
+		// Reserving all of them prevents a younger job from bypassing it on
+		// a sender that was not the immediate cause of the block.
+		for _, sender := range job.senders {
+			reservedSenders[sender] = struct{}{}
+		}
+	}
+	waitingWorkers := s.rawTxIngressWorkers - s.rawTxIngressActiveJobs
+	start := runnable - waitingWorkers
+	if start <= 0 {
+		return 0
+	}
+	if start > available {
+		start = available
+	}
+	s.rawTxIngressWorkers += start
+	return start
+}
+
+func (s *PublicTransactionPoolAPI) enqueueReservedRawTxIngressJobs(jobs []*rawTxIngressJob) {
+	if len(jobs) == 0 {
+		return
+	}
+	s.singleRawTxMu.Lock()
+	s.rawTxIngressQueue = append(s.rawTxIngressQueue, jobs...)
+	startWorkers := s.startRawTxIngressWorkersLocked()
+	if startWorkers > 0 {
+		s.rawTxWorkerWG.Add(startWorkers)
+	}
+	s.singleRawTxMu.Unlock()
+	for worker := 0; worker < startWorkers; worker++ {
+		go s.runRawTxIngressWorker()
+	}
+}
+
+func (s *PublicTransactionPoolAPI) reserveRawTxIngressCapacity(count, bytes int) error {
+	s.singleRawTxMu.Lock()
+	defer s.singleRawTxMu.Unlock()
+	if err := s.rawTxIngressCapacityErrorLocked(count, bytes); err != nil {
+		return err
+	}
+	s.singleRawTxPendingCount += count
+	s.singleRawTxPendingBytes += bytes
+	return nil
+}
+
+func (s *PublicTransactionPoolAPI) releaseRawTxIngressCapacity(count, bytes int) {
+	s.singleRawTxMu.Lock()
+	s.singleRawTxPendingCount -= count
+	s.singleRawTxPendingBytes -= bytes
+	s.singleRawTxMu.Unlock()
+}
+
+func (s *PublicTransactionPoolAPI) dequeueRawTxIngressJobLocked() *rawTxIngressJob {
+	reservedSenders := make(map[common.Address]struct{}, len(s.rawTxActiveSenders))
+	for sender := range s.rawTxActiveSenders {
+		reservedSenders[sender] = struct{}{}
+	}
+	for queueIndex, job := range s.rawTxIngressQueue {
+		runnable := true
+		for _, sender := range job.senders {
+			if _, reserved := reservedSenders[sender]; reserved {
+				runnable = false
+				break
+			}
+		}
+		for _, sender := range job.senders {
+			reservedSenders[sender] = struct{}{}
+		}
+		if !runnable {
+			continue
+		}
+		if s.rawTxActiveSenders == nil && len(job.senders) > 0 {
+			s.rawTxActiveSenders = make(map[common.Address]uint32)
+		}
+		for _, sender := range job.senders {
+			s.rawTxActiveSenders[sender]++
+		}
+		s.rawTxIngressActiveJobs++
+		copy(s.rawTxIngressQueue[queueIndex:], s.rawTxIngressQueue[queueIndex+1:])
+		last := len(s.rawTxIngressQueue) - 1
+		s.rawTxIngressQueue[last] = nil
+		s.rawTxIngressQueue = s.rawTxIngressQueue[:last]
+		if len(s.rawTxIngressQueue) == 0 {
+			s.rawTxIngressQueue = nil
+		}
+		return job
+	}
+	return nil
+}
+
+func (s *PublicTransactionPoolAPI) finishRawTxIngressJob(job *rawTxIngressJob) {
+	s.singleRawTxMu.Lock()
+	for _, sender := range job.senders {
+		users := s.rawTxActiveSenders[sender]
+		if users <= 1 {
+			delete(s.rawTxActiveSenders, sender)
+		} else {
+			s.rawTxActiveSenders[sender] = users - 1
+		}
+	}
+	s.singleRawTxPendingCount -= job.pendingCount
+	s.singleRawTxPendingBytes -= job.pendingBytes
+	s.rawTxIngressActiveJobs--
+	startWorkers := 0
+	if len(job.senders) > 1 {
+		// Completing one multi-sender job can unblock several independent
+		// successor chains. The current worker covers one; start any additional
+		// lanes now instead of serializing them until another enqueue arrives.
+		startWorkers = s.startRawTxIngressWorkersLocked()
+	}
+	if startWorkers > 0 {
+		s.rawTxWorkerWG.Add(startWorkers)
+	}
+	s.singleRawTxMu.Unlock()
+	for worker := 0; worker < startWorkers; worker++ {
+		go s.runRawTxIngressWorker()
+	}
+}
+
+func (s *PublicTransactionPoolAPI) executeRawTxIngressJob(job *rawTxIngressJob) (results []rawTxSubmissionResult) {
+	results = make([]rawTxSubmissionResult, len(job.encoded))
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err := fmt.Errorf("raw transaction backend panicked: %v", recovered)
+			for index := range results {
+				if index < len(job.prepared) && job.prepared[index].decoded && job.prepared[index].tx != nil {
+					results[index].decoded = true
+					results[index].hash = job.prepared[index].tx.Hash()
+				}
+				results[index].err = err
+			}
+		}
+	}()
+	if job.prepared == nil {
+		return s.submitRawTransactionMicroBatch(job.ctx, job.encoded, job.routeHints, job.current)
+	}
+	if len(job.prepared) != len(job.encoded) {
+		err := fmt.Errorf("prepared raw transaction count %d does not match encoded count %d", len(job.prepared), len(job.encoded))
+		for index := range results {
+			results[index].err = err
+		}
+		return results
+	}
+	started := time.Now()
+	var validCount int
+	var backendElapsed time.Duration
+	results, validCount, backendElapsed = s.submitPreparedRawTransactionMicroBatch(job.ctx, job.prepared)
+	log.Debug("Submitted raw transaction batch", "requested", len(job.encoded), "decoded", validCount, "bytes", job.pendingBytes,
+		"decode", time.Duration(0), "prepare", time.Duration(0), "senderRecovery", time.Duration(0),
+		"backend", backendElapsed, "total", time.Since(started))
+	return results
+}
+
+func deliverSingleRawTxResponses(requests []*singleRawTxRequest, results []rawTxSubmissionResult, err error) {
+	for index, request := range requests {
+		response := singleRawTxResponse{err: err}
+		if err == nil {
+			if index < len(results) {
+				response.result = results[index]
+			} else {
+				response.err = fmt.Errorf("raw transaction backend returned %d results for %d transactions", len(results), len(requests))
+			}
+		}
+		request.response <- response
+	}
+}
+
+func (s *PublicTransactionPoolAPI) runRawTxIngressWorker() {
+	defer s.rawTxWorkerWG.Done()
+	for {
+		s.singleRawTxMu.Lock()
+		job := s.dequeueRawTxIngressJobLocked()
+		if job == nil {
+			s.rawTxIngressWorkers--
+			s.singleRawTxMu.Unlock()
+			return
+		}
+		s.singleRawTxMu.Unlock()
+
+		results := s.executeRawTxIngressJob(job)
+		s.finishRawTxIngressJob(job)
+		if job.single != nil {
+			deliverSingleRawTxResponses(job.single, results, nil)
+		} else if job.completion != nil {
+			// Bulk callers may stop waiting after request cancellation. The
+			// request-scoped channel is sized for every admitted job, so node-owned
+			// completion and capacity release never depend on a live RPC waiter.
+			job.completion <- rawTxIngressCompletion{indexes: job.resultIndexes, results: results}
+		}
+		if job.lifecycleUnits > 0 {
+			s.rawTxLifecycleWG.Add(-job.lifecycleUnits)
+		}
+	}
+}
+
+func (s *PublicTransactionPoolAPI) partitionPreparedRawTransactions(encoded []hexutil.Bytes, prepared []rawTxPreparedTransaction) [][]int {
+	microBatches := splitRawTransactionMicroBatches(encoded)
+	if len(microBatches) != 1 || microBatches[0].oversized || len(encoded) < 2 {
+		partitions := make([][]int, 0, len(microBatches))
+		for _, batch := range microBatches {
+			indexes := make([]int, batch.end-batch.start)
+			for index := range indexes {
+				indexes[index] = batch.start + index
+			}
+			partitions = append(partitions, indexes)
+		}
+		return partitions
+	}
+
+	type senderKey struct {
+		known  bool
+		sender common.Address
+	}
+	type senderGroup struct {
+		indexes []int
+		bytes   int
+	}
+	groups := make([]senderGroup, 0)
+	groupBySender := make(map[senderKey]int)
+	for index, item := range prepared {
+		key := senderKey{}
+		if item.err == nil && item.tx != nil {
+			key.known = true
+			key.sender = item.sender
+		}
+		groupIndex, exists := groupBySender[key]
+		if !exists {
+			groupIndex = len(groups)
+			groupBySender[key] = groupIndex
+			groups = append(groups, senderGroup{})
+		}
+		groups[groupIndex].indexes = append(groups[groupIndex].indexes, index)
+		groups[groupIndex].bytes += len(encoded[index])
+	}
+	workerCount := s.rawTxBackendWorkers
+	if workerCount > len(groups) {
+		workerCount = len(groups)
+	}
+	if workerCount <= 1 {
+		indexes := make([]int, len(encoded))
+		for index := range indexes {
+			indexes[index] = index
+		}
+		return [][]int{indexes}
+	}
+
+	// Place the heaviest sender groups first, then restore input order inside
+	// each backend batch. A sender never crosses batches, so nonce/replacement
+	// ordering stays serial while independent senders fill the available lanes.
+	sort.SliceStable(groups, func(left, right int) bool {
+		if groups[left].bytes != groups[right].bytes {
+			return groups[left].bytes > groups[right].bytes
+		}
+		return len(groups[left].indexes) > len(groups[right].indexes)
+	})
+	partitions := make([][]int, workerCount)
+	partitionBytes := make([]int, workerCount)
+	for _, group := range groups {
+		target := 0
+		for candidate := 1; candidate < workerCount; candidate++ {
+			if partitionBytes[candidate] < partitionBytes[target] ||
+				(partitionBytes[candidate] == partitionBytes[target] && len(partitions[candidate]) < len(partitions[target])) {
+				target = candidate
+			}
+		}
+		partitions[target] = append(partitions[target], group.indexes...)
+		partitionBytes[target] += group.bytes
+	}
+	for _, partition := range partitions {
+		sort.Ints(partition)
+	}
+	return partitions
+}
+
+func rawTxPreparedSenders(prepared []rawTxPreparedTransaction) []common.Address {
+	seen := make(map[common.Address]struct{})
+	senders := make([]common.Address, 0)
+	for _, item := range prepared {
+		if item.err != nil || item.tx == nil {
+			continue
+		}
+		if _, exists := seen[item.sender]; exists {
+			continue
+		}
+		seen[item.sender] = struct{}{}
+		senders = append(senders, item.sender)
+	}
+	return senders
+}
+
+func (s *PublicTransactionPoolAPI) prepareRawTxIngressJob(encoded []hexutil.Bytes, routeHints []types.TxRouteHint, current *types.Block) (prepared []rawTxPreparedTransaction, stats rawTxPreparationStats, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			prepared = nil
+			stats = rawTxPreparationStats{}
+			err = fmt.Errorf("prepare raw transaction batch: %v", recovered)
+		}
+	}()
+	prepared, stats = s.prepareRawTransactions(encoded, routeHints, current)
+	return prepared, stats, nil
+}
+
+func (s *PublicTransactionPoolAPI) prepareSingleRawTxIngressJobs(batch []*singleRawTxRequest, current *types.Block) (jobs []*rawTxIngressJob, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			jobs = nil
+			err = fmt.Errorf("prepare raw transaction coalescer wave: %v", recovered)
+		}
+	}()
+	encoded := make([]hexutil.Bytes, len(batch))
+	routeHints := make([]types.TxRouteHint, len(batch))
+	for index, request := range batch {
+		encoded[index] = request.encoded
+		routeHints[index] = request.routeHint
+	}
+	started := time.Now()
+	prepared, stats := s.prepareRawTransactions(encoded, routeHints, current)
+	log.Debug("Prepared raw transaction coalescer wave", "requested", len(encoded), "bytes", stats.totalBytes,
+		"decode", stats.decode, "prepare", stats.prepare, "senderRecovery", stats.senderRecovery, "total", time.Since(started))
+	partitions := s.partitionPreparedRawTransactions(encoded, prepared)
+	jobs = make([]*rawTxIngressJob, 0, len(partitions))
+	for _, partition := range partitions {
+		job := &rawTxIngressJob{
+			encoded:  make([]hexutil.Bytes, len(partition)),
+			prepared: make([]rawTxPreparedTransaction, len(partition)),
+			single:   make([]*singleRawTxRequest, len(partition)),
+			current:  current,
+			ctx:      context.Background(),
+		}
+		for position, index := range partition {
+			job.encoded[position] = encoded[index]
+			job.prepared[position] = prepared[index]
+			job.single[position] = batch[index]
+			job.pendingBytes += len(encoded[index])
+		}
+		job.pendingCount = len(partition)
+		job.senders = rawTxPreparedSenders(job.prepared)
+		// Each single request acquired one lifecycle unit at admission. The
+		// backend job releases those units only after all responses are delivered.
+		job.lifecycleUnits = len(partition)
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
+}
+
+func (s *PublicTransactionPoolAPI) submitRawTransactionBatch(ctx context.Context, encoded []hexutil.Bytes) ([]rawTxSubmissionResult, error) {
+	if err := s.beginRawTxIngressProducer(); err != nil {
+		return nil, err
+	}
+	defer s.rawTxLifecycleWG.Done()
+	if err := validateRawTransactionRequest(encoded); err != nil {
+		return nil, err
+	}
+	current := s.b.CurrentBlock()
+	if current == nil {
+		return nil, fmt.Errorf("current block is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	results := make([]rawTxSubmissionResult, len(encoded))
+	resolved := make([]bool, len(encoded))
+	workerCount := s.rawTxBackendWorkers
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	maxOutstanding := workerCount * rawTxIngressOutstandingWaves
+	completions := make(chan rawTxIngressCompletion, maxOutstanding)
+	outstanding := 0
+	workCtx := context.WithoutCancel(ctx)
+
+	applyCompletion := func(completion rawTxIngressCompletion) {
+		for position, resultIndex := range completion.indexes {
+			if resultIndex < 0 || resultIndex >= len(results) {
+				continue
+			}
+			if position < len(completion.results) {
+				results[resultIndex] = completion.results[position]
+			} else {
+				results[resultIndex].err = fmt.Errorf("raw transaction backend omitted scheduled result")
+			}
+			resolved[resultIndex] = true
+		}
+		outstanding--
+	}
+	cancelUnresolved := func(err error) {
+		for index := range results {
+			if !resolved[index] {
+				results[index].err = err
+			}
+		}
+	}
+	waitForCompletion := func() bool {
+		select {
+		case completion := <-completions:
+			applyCompletion(completion)
+			return true
+		case <-ctx.Done():
+			cancelUnresolved(ctx.Err())
+			return false
+		}
+	}
+
+	for _, batch := range splitRawTransactionMicroBatches(encoded) {
+		// Do not decode an unbounded tail while two complete backend waves are
+		// already node-owned. At most one 512-item prepared micro-batch exists
+		// outside this fixed-size completion window.
+		for outstanding >= maxOutstanding {
+			if !waitForCompletion() {
+				return results, nil
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			cancelUnresolved(err)
+			return results, nil
+		}
+		// A transaction larger than one transport batch cannot be forwarded
+		// durably. Reject just that item without affecting neighboring items.
+		if batch.oversized {
+			results[batch.start].err = fmt.Errorf("raw transaction bytes %d exceed per-transaction limit %d", batch.bytes, MaxRawTxBatchBytes)
+			resolved[batch.start] = true
+			continue
+		}
+		if err := s.reserveRawTxIngressCapacity(batch.end-batch.start, batch.bytes); err != nil {
+			for index := batch.start; index < len(results); index++ {
+				results[index].err = err
+				resolved[index] = true
+			}
+			break
+		}
+		batchEncoded := encoded[batch.start:batch.end]
+		prepareStarted := time.Now()
+		prepared, stats, err := s.prepareRawTxIngressJob(batchEncoded, nil, current)
+		if err != nil {
+			s.releaseRawTxIngressCapacity(batch.end-batch.start, batch.bytes)
+			for index := batch.start; index < len(results); index++ {
+				results[index].err = err
+				resolved[index] = true
+			}
+			break
+		}
+		log.Debug("Prepared raw transaction batch", "requested", len(batchEncoded), "bytes", stats.totalBytes,
+			"decode", stats.decode, "prepare", stats.prepare, "senderRecovery", stats.senderRecovery, "total", time.Since(prepareStarted))
+
+		partitions := s.partitionPreparedRawTransactions(batchEncoded, prepared)
+		if len(partitions) == 0 || len(partitions) > maxOutstanding {
+			s.releaseRawTxIngressCapacity(batch.end-batch.start, batch.bytes)
+			err := fmt.Errorf("raw transaction scheduler produced %d partitions for limit %d", len(partitions), maxOutstanding)
+			for index := batch.start; index < len(results); index++ {
+				results[index].err = err
+				resolved[index] = true
+			}
+			break
+		}
+		for outstanding+len(partitions) > maxOutstanding {
+			if !waitForCompletion() {
+				s.releaseRawTxIngressCapacity(batch.end-batch.start, batch.bytes)
+				return results, nil
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			s.releaseRawTxIngressCapacity(batch.end-batch.start, batch.bytes)
+			cancelUnresolved(err)
+			return results, nil
+		}
+
+		jobs := make([]*rawTxIngressJob, 0, len(partitions))
+		for _, partition := range partitions {
+			job := &rawTxIngressJob{
+				encoded:        make([]hexutil.Bytes, len(partition)),
+				prepared:       make([]rawTxPreparedTransaction, len(partition)),
+				resultIndexes:  make([]int, len(partition)),
+				current:        current,
+				ctx:            workCtx,
+				completion:     completions,
+				pendingCount:   len(partition),
+				lifecycleUnits: 1,
+			}
+			for position, localIndex := range partition {
+				job.encoded[position] = batchEncoded[localIndex]
+				job.prepared[position] = prepared[localIndex]
+				job.resultIndexes[position] = batch.start + localIndex
+				job.pendingBytes += len(batchEncoded[localIndex])
+			}
+			job.senders = rawTxPreparedSenders(job.prepared)
+			jobs = append(jobs, job)
+		}
+		// Seed hashes and deterministic preflight errors before enqueue. If the
+		// RPC is cancelled while the backend is still running, the caller can
+		// reconcile every admitted transaction without waiting for node work.
+		for localIndex, item := range prepared {
+			resultIndex := batch.start + localIndex
+			if item.decoded && item.tx != nil {
+				results[resultIndex].decoded = true
+				results[resultIndex].hash = item.tx.Hash()
+			}
+			if item.err != nil {
+				results[resultIndex].err = item.err
+				resolved[resultIndex] = true
+			}
+		}
+		// The producer lifecycle unit remains held while jobs are added, so a
+		// concurrent Stop cannot begin its zero-counter Wait before these jobs
+		// become visible to the scheduler.
+		s.rawTxLifecycleWG.Add(len(jobs))
+		s.enqueueReservedRawTxIngressJobs(jobs)
+		outstanding += len(jobs)
+	}
+	// Work that crossed enqueue is node-owned and runs with cancellation
+	// detached. The caller may abandon this wait; every admitted completion has
+	// a buffered slot and the worker releases shared capacity before delivery.
+	for outstanding > 0 {
+		if !waitForCompletion() {
+			return results, nil
+		}
+	}
+	return results, nil
+}
+
+func (s *PublicTransactionPoolAPI) enqueueSingleRawTransaction(encodedTx hexutil.Bytes, routeHint types.TxRouteHint) (<-chan singleRawTxResponse, error) {
+	if len(encodedTx) > MaxRawTxBatchBytes {
+		return nil, fmt.Errorf("raw transaction bytes %d exceed per-transaction limit %d", len(encodedTx), MaxRawTxBatchBytes)
+	}
+
+	s.singleRawTxMu.Lock()
+	if !s.rawTxAccepting {
+		s.singleRawTxMu.Unlock()
+		return nil, errRawTxIngressStopped
+	}
+	if err := s.rawTxIngressCapacityErrorLocked(1, len(encodedTx)); err != nil {
+		s.singleRawTxMu.Unlock()
+		return nil, err
+	}
+	// The RPC decoder owns encodedTx only for the lifetime of this call. Keep an
+	// independent copy because cancellation stops waiting, not node-side work.
+	request := &singleRawTxRequest{routeHint: routeHint, response: make(chan singleRawTxResponse, 1)}
+	request.encoded = append(hexutil.Bytes(nil), encodedTx...)
+	s.singleRawTxQueue = append(s.singleRawTxQueue, request)
+	s.singleRawTxPendingCount++
+	s.singleRawTxPendingBytes += len(request.encoded)
+	s.rawTxLifecycleWG.Add(1)
+	startWorker := !s.singleRawTxWorkerRunning
+	if startWorker {
+		s.singleRawTxWorkerRunning = true
+		s.rawTxWorkerWG.Add(1)
+	}
+	s.singleRawTxMu.Unlock()
+
+	if startWorker {
+		go s.runSingleRawTxCoalescer()
+	}
+	return request.response, nil
+}
+
+func (s *PublicTransactionPoolAPI) takeSingleRawTxBatch() []*singleRawTxRequest {
+	s.singleRawTxMu.Lock()
+	defer s.singleRawTxMu.Unlock()
+
+	if len(s.singleRawTxQueue) == 0 {
+		s.singleRawTxWorkerRunning = false
+		return nil
+	}
+	waveCount := s.rawTxBackendWorkers * MaxRawTxBatchCount
+	waveBytes := s.rawTxBackendWorkers * MaxRawTxBatchBytes
+	end, batchBytes := 0, 0
+	for end < len(s.singleRawTxQueue) && end < waveCount {
+		nextBytes := len(s.singleRawTxQueue[end].encoded)
+		if end > 0 && nextBytes > waveBytes-batchBytes {
+			break
+		}
+		batchBytes += nextBytes
+		end++
+	}
+	batch := append([]*singleRawTxRequest(nil), s.singleRawTxQueue[:end]...)
+	for index := 0; index < end; index++ {
+		s.singleRawTxQueue[index] = nil
+	}
+	if end == len(s.singleRawTxQueue) {
+		s.singleRawTxQueue = nil
+	} else {
+		s.singleRawTxQueue = s.singleRawTxQueue[end:]
+	}
+	return batch
+}
+
+func (s *PublicTransactionPoolAPI) runSingleRawTxCoalescer() {
+	defer s.rawTxWorkerWG.Done()
+	if delay := s.singleRawTxCoalesceDelay; delay > 0 {
+		timer := time.NewTimer(delay)
+		<-timer.C
+	}
+	for {
+		batch := s.takeSingleRawTxBatch()
+		if len(batch) == 0 {
+			return
+		}
+		// RPC cancellation only abandons the response wait. Once admitted to this
+		// bounded scheduler, durable pool/outbox submission belongs to the node.
+		current := s.b.CurrentBlock()
+		if current == nil {
+			err := fmt.Errorf("current block is unavailable")
+			batchBytes := 0
+			for _, request := range batch {
+				batchBytes += len(request.encoded)
+			}
+			s.releaseRawTxIngressCapacity(len(batch), batchBytes)
+			deliverSingleRawTxResponses(batch, nil, err)
+			s.rawTxLifecycleWG.Add(-len(batch))
+			continue
+		}
+		jobs, err := s.prepareSingleRawTxIngressJobs(batch, current)
+		if err != nil || len(jobs) == 0 {
+			if err == nil {
+				err = errors.New("raw transaction coalescer produced no backend jobs")
+			}
+			batchBytes := 0
+			for _, request := range batch {
+				batchBytes += len(request.encoded)
+			}
+			s.releaseRawTxIngressCapacity(len(batch), batchBytes)
+			deliverSingleRawTxResponses(batch, nil, err)
+			s.rawTxLifecycleWG.Add(-len(batch))
+			continue
+		}
+		// Jobs retain direct request/result alignment and release their reserved
+		// count and bytes independently. The collector immediately proceeds to the
+		// next wave instead of waiting for this wave's backend completions.
+		s.enqueueReservedRawTxIngressJobs(jobs)
+	}
+}
+
+// SendRawTransactions accepts a bounded burst and submits it as fixed-size
+// backend micro-batches. Structural request errors have no side effects;
+// transaction-specific failures are returned in input order.
+func (s *PublicTransactionPoolAPI) SendRawTransactions(ctx context.Context, encoded []hexutil.Bytes) ([]RawTxResult, error) {
+	submissions, err := s.submitRawTransactionBatch(ctx, encoded)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]RawTxResult, len(submissions))
+	for i, submission := range submissions {
+		if submission.decoded {
+			hash := submission.hash
+			results[i].Hash = &hash
+		}
+		if submission.err != nil {
+			results[i].Error = submission.err.Error()
+		}
+	}
+	return results, nil
+}
+
+// SendRawTransaction will add the signed transaction to the transaction pool.
+// The sender is responsible for signing the transaction and using the correct nonce.
+func (s *PublicTransactionPoolAPI) SendRawTransaction(ctx context.Context, encodedTx hexutil.Bytes) (common.Hash, error) {
+	return s.sendRawTransactionWithRoute(ctx, encodedTx, types.TxRouteFast)
+}
+
+func (s *PublicTransactionPoolAPI) sendRawTransactionWithRoute(ctx context.Context, encodedTx hexutil.Bytes, routeHint types.TxRouteHint) (common.Hash, error) {
+	// A request cancelled before admission has not crossed the node-side work
+	// boundary. Reject it without consuming coalescer capacity or creating
+	// admission/outbox state. Cancellation after enqueue remains intentionally
+	// detached so accepted durable work is never abandoned with the client.
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return common.Hash{}, err
+		}
+	}
+	responseCh, err := s.enqueueSingleRawTransaction(encodedTx, routeHint)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case response := <-responseCh:
+		if response.err != nil {
+			return common.Hash{}, response.err
+		}
+		if response.result.err != nil {
+			return common.Hash{}, response.result.err
+		}
+		return response.result.hash, nil
+	case <-ctx.Done():
+		return common.Hash{}, ctx.Err()
+	}
 }
 
 func (s *PublicTransactionPoolAPI) SendRawTransactionWithOpts(ctx context.Context, encodedTx hexutil.Bytes, opts SendTxOpts) (common.Hash, error) {
 	log.Info("SendRawTransactionWithOpts")
-	tx := new(types.Transaction)
-	if len(encodedTx) > 0 && encodedTx[0] < 0x80 {
-		if err := tx.UnmarshalBinary(encodedTx); err != nil {
-			return common.Hash{}, err
-		}
-	} else if err := rlp.DecodeBytes(encodedTx, tx); err != nil {
-		return common.Hash{}, err
-	}
+	routeHint := types.TxRouteFast
 	if opts.UseSlowLane {
-		tx = tx.WithRouteHint(types.TxRouteSlow)
-	} else {
-		tx = tx.WithRouteHint(types.TxRouteFast)
+		routeHint = types.TxRouteSlow
 	}
-	return SubmitTransaction(ctx, s.b, tx, true)
+	return s.sendRawTransactionWithRoute(ctx, encodedTx, routeHint)
 }
 
 // Sign calculates an ECDSA signature for:
@@ -2385,24 +3985,24 @@ type SignTransactionResult struct {
 // The node needs to have the private key of the account corresponding with
 // the given from address and it needs to be unlocked.
 func (s *PublicTransactionPoolAPI) SignTransaction(ctx context.Context, args SendTxArgs) (*SignTransactionResult, error) {
-	if args.Gas == nil {
+	if !args.requestsNativeTransaction(s.b) && args.Gas == nil {
 		return nil, fmt.Errorf("gas not specified")
 	}
-	if args.Nonce == nil {
+	if !args.requestsNativeTransaction(s.b) && args.Nonce == nil {
 		return nil, fmt.Errorf("nonce not specified")
 	}
 	if err := args.setDefaults(ctx, s.b); err != nil {
 		return nil, err
 	}
 	// Before actually sign the transaction, ensure the transaction fee is reasonable.
-	if err := checkTxFee(args.txFeeCapForValidation(), uint64(*args.Gas), s.b.RPCTxFeeCap()); err != nil {
+	if err := checkTxFeeWithBlob(args.txFeeCapForValidation(), args.feeWorkForValidation(), args.blobFeeCapForValidation(), args.blobGasForFeeValidation(), s.b.RPCTxFeeCap()); err != nil {
 		return nil, err
 	}
 	tx, err := s.sign(args.From, args.toTransaction(args.transactionChainID(s.b)))
 	if err != nil {
 		return nil, err
 	}
-	data, err := tx.MarshalBinary()
+	data, err := marshalTransactionForRPC(tx)
 	if err != nil {
 		return nil, err
 	}
@@ -2453,7 +4053,7 @@ func (s *PublicTransactionPoolAPI) Resend(ctx context.Context, sendArgs SendTxAr
 	if gasLimit != nil {
 		gas = uint64(*gasLimit)
 	}
-	if err := checkTxFee(price, gas, s.b.RPCTxFeeCap()); err != nil {
+	if err := checkTxFeeWithBlob(price, gas, matchTx.BlobGasFeeCap(), matchTx.BlobGas(), s.b.RPCTxFeeCap()); err != nil {
 		return common.Hash{}, err
 	}
 	// Iterate the pending list for replacement
@@ -2635,14 +4235,23 @@ func (s *PublicNetAPI) Version() string {
 	return fmt.Sprintf("%d", s.networkVersion)
 }
 
-// checkTxFee is an internal function used to check whether the fee of
-// the given transaction is _reasonable_(under the cap).
-func checkTxFee(gasPrice *big.Int, gas uint64, cap float64) error {
+// checkTxFeeWithBlob applies the RPC safety cap to the transaction's complete
+// maximum fee exposure. EIP-4844 blob gas is a separate fee market, but it is
+// still part of the amount a managed-account caller authorizes.
+func checkTxFeeWithBlob(gasPrice *big.Int, gas uint64, blobGasPrice *big.Int, blobGas uint64, cap float64) error {
 	// Short circuit if there is no cap for transaction fee at all.
 	if cap == 0 {
 		return nil
 	}
-	feeEth := new(big.Float).Quo(new(big.Float).SetInt(new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(gas))), new(big.Float).SetInt(big.NewInt(params.Ether)))
+	feeWei := new(big.Int)
+	if gasPrice != nil && gas != 0 {
+		feeWei.Mul(gasPrice, new(big.Int).SetUint64(gas))
+	}
+	if blobGasPrice != nil && blobGas != 0 {
+		blobFee := new(big.Int).Mul(blobGasPrice, new(big.Int).SetUint64(blobGas))
+		feeWei.Add(feeWei, blobFee)
+	}
+	feeEth := new(big.Float).Quo(new(big.Float).SetInt(feeWei), new(big.Float).SetInt(big.NewInt(params.Ether)))
 	feeFloat, _ := feeEth.Float64()
 	if feeFloat > cap {
 		return fmt.Errorf("tx fee (%.2f ether) exceeds the configured cap (%.2f ether)", feeFloat, cap)

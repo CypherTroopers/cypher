@@ -30,6 +30,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
+	"runtime/trace"
 	"strings"
 	"sync"
 	"time"
@@ -141,6 +142,42 @@ func (h *HandlerT) GoTrace(file string, nsec uint) error {
 	return nil
 }
 
+// StartGoTrace turns on tracing, writing to the given file.
+func (h *HandlerT) StartGoTrace(file string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.traceW != nil {
+		return errors.New("trace already in progress")
+	}
+	f, err := os.Create(expandHome(file))
+	if err != nil {
+		return err
+	}
+	if err := trace.Start(f); err != nil {
+		f.Close()
+		return err
+	}
+	h.traceW = f
+	h.traceFile = file
+	log.Info("Go tracing started", "dump", h.traceFile)
+	return nil
+}
+
+// StopGoTrace stops an ongoing trace.
+func (h *HandlerT) StopGoTrace() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	trace.Stop()
+	if h.traceW == nil {
+		return errors.New("trace not in progress")
+	}
+	log.Info("Done writing Go trace", "dump", h.traceFile)
+	h.traceW.Close()
+	h.traceW = nil
+	h.traceFile = ""
+	return nil
+}
+
 // BlockProfile turns on goroutine profiling for nsec seconds and writes profile data to
 // file. It uses a profile rate of 1 for most accurate information. If a different rate is
 // desired, set the rate and write the profile manually.
@@ -205,6 +242,12 @@ func (*HandlerT) FreeOSMemory() {
 // setting. A negative value disables GC.
 func (*HandlerT) SetGCPercent(v int) int {
 	return debug.SetGCPercent(v)
+}
+
+// LoudPanic panics in a way that gets all goroutine stacks printed on stderr.
+func LoudPanic(x interface{}) {
+	debug.SetTraceback("all")
+	panic(x)
 }
 
 func writeProfile(name, file string) error {

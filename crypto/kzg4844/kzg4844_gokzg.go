@@ -43,6 +43,7 @@ func gokzgInit() {
 	if err != nil {
 		panic(err)
 	}
+	gokzgReady.Store(true)
 }
 
 // gokzgBlobToCommitment creates a small commitment out of a data blob.

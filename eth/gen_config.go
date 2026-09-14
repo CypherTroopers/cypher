@@ -47,6 +47,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		colossusX               colossusX.Config
 		TxPool                  core.TxPoolConfig
 		GPO                     gasprice.Config
+		TxQUIC                  TxQUICConfig
 		EnablePreimageRecording bool
 		DocRoot                 string `toml:"-"`
 		EWASMInterpreter        string
@@ -87,6 +88,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.colossusX = c.colossusX
 	enc.TxPool = c.TxPool
 	enc.GPO = c.GPO
+	enc.TxQUIC = c.TxQUIC
 	enc.EnablePreimageRecording = c.EnablePreimageRecording
 	enc.DocRoot = c.DocRoot
 	enc.EWASMInterpreter = c.EWASMInterpreter
@@ -131,6 +133,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		colossusX               *colossusX.Config
 		TxPool                  *core.TxPoolConfig
 		GPO                     *gasprice.Config
+		TxQUIC                  *TxQUICConfig
 		EnablePreimageRecording *bool
 		DocRoot                 *string `toml:"-"`
 		EWASMInterpreter        *string
@@ -233,6 +236,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.GPO != nil {
 		c.GPO = *dec.GPO
+	}
+	if dec.TxQUIC != nil {
+		c.TxQUIC = *dec.TxQUIC
 	}
 	if dec.EnablePreimageRecording != nil {
 		c.EnablePreimageRecording = *dec.EnablePreimageRecording

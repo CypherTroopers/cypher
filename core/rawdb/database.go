@@ -374,9 +374,9 @@ func InspectDatabase(db ethdb.Database) error {
 		{"Light client", "Bloom trie nodes", bloomTrieNodes.String()},
 	}
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Database", "Category", "Size"})
-	table.SetFooter([]string{"", "Total", total.String()})
-	table.AppendBulk(stats)
+	table.Header([]string{"Database", "Category", "Size"})
+	table.Footer([]string{"", "Total", total.String()})
+	table.Bulk(stats)
 	table.Render()
 
 	if unaccounted > 0 {

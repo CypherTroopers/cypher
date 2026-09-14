@@ -448,6 +448,12 @@ func (b *batch) Write() error {
 	return b.db.Write(b.b, nil)
 }
 
+// WriteSync commits the batch and asks LevelDB to fsync its journal before
+// returning. Fair HotStuff uses this for vote/timeout write-ahead records.
+func (b *batch) WriteSync() error {
+	return b.db.Write(b.b, &opt.WriteOptions{Sync: true})
+}
+
 // Reset resets the batch for reuse.
 func (b *batch) Reset() {
 	b.b.Reset()

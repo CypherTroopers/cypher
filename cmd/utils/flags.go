@@ -23,7 +23,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/big"
-	"net/url"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1310,15 +1310,6 @@ func setDataDir(ctx *cli.Context, cfg *node.Config) {
 	}
 }
 
-func urlReader(u *url.URL) (io.ReadCloser, error) {
-	s := u.Scheme
-	switch s {
-	case "file":
-		return os.Open(filepath.Join(u.Host, u.Path))
-	}
-	return nil, fmt.Errorf("unsupported scheme %s", s)
-}
-
 func setGPO(ctx *cli.Context, cfg *gasprice.Config, light bool) {
 	// If we are running the light client, apply another group
 	// settings for gas oracle.
@@ -1805,7 +1796,11 @@ func SetupMetrics(ctx *cli.Context) {
 		}
 
 		if ctx.GlobalIsSet(MetricsHTTPFlag.Name) {
-			address := fmt.Sprintf("%s:%d", ctx.GlobalString(MetricsHTTPFlag.Name), ctx.GlobalInt(MetricsPortFlag.Name))
+			host := strings.TrimSpace(ctx.GlobalString(MetricsHTTPFlag.Name))
+			if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+				host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+			}
+			address := net.JoinHostPort(host, strconv.Itoa(ctx.GlobalInt(MetricsPortFlag.Name)))
 			log.Info("Enabling stand-alone metrics HTTP endpoint", "address", address)
 			exp.Setup(address)
 		}

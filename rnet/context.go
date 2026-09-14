@@ -6,20 +6,18 @@ import (
 
 // Context represents the methods that are available to a service.
 type Context struct {
-	server     *Server
-	serviceID  ServiceID
-	manager    *serviceManager
-	bucketName []byte
+	server    *Server
+	serviceID ServiceID
+	manager   *serviceManager
 }
 
 // defaultContext is the implementation of the Context interface. It is
 // instantiated for each Service.
 func newContext(c *Server, servID ServiceID, manager *serviceManager) *Context {
 	return &Context{
-		server:     c,
-		serviceID:  servID,
-		manager:    manager,
-		bucketName: []byte(ServiceFactory.Name(servID)),
+		server:    c,
+		serviceID: servID,
+		manager:   manager,
 	}
 }
 

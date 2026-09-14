@@ -235,6 +235,12 @@ func (b *batch) Write() error {
 	return nil
 }
 
+// WriteSync is identical to Write for an in-memory database and exists so the
+// same safety-store code can be exercised in deterministic tests.
+func (b *batch) WriteSync() error {
+	return b.Write()
+}
+
 // Reset resets the batch for reuse.
 func (b *batch) Reset() {
 	b.writes = b.writes[:0]

@@ -37,11 +37,11 @@ import (
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/internal/ethapi"
 	"github.com/cypherium/cypher/log"
+	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
 	"github.com/cypherium/cypher/trie"
-	//"github.com/cypherium/cypher/params"
-	"github.com/cypherium/cypher/reconfig/bftview"
 	"golang.org/x/crypto/ed25519"
 )
 
@@ -51,9 +51,37 @@ type PublicEthereumAPI struct {
 	e *Ethereum
 }
 
+func receiptEffectiveGasPrice(tx *types.Transaction, header *types.Header) *big.Int {
+	price := new(big.Int).Set(tx.GasPrice())
+	switch tx.Type() {
+	case types.DynamicFeeTxType, types.BlobTxType, types.SetCodeTxType:
+		baseFee := big.NewInt(params.FixedBaseFeePerGas)
+		if header != nil && header.BaseFee != nil {
+			baseFee = new(big.Int).Set(header.BaseFee)
+		}
+		if tip, err := tx.EffectiveGasTip(baseFee); err == nil {
+			return new(big.Int).Add(baseFee, tip)
+		}
+	}
+	return price
+}
+
 // NewPublicEthereumAPI creates a new Ethereum protocol API for full nodes.
 func NewPublicEthereumAPI(e *Ethereum) *PublicEthereumAPI {
 	return &PublicEthereumAPI{e}
+}
+
+// addRPCTransactionYParity exposes the EIP-2718 recovery identifier expected
+// by standard Ethereum wallets for typed transactions. Legacy V may also carry
+// EIP-155's chain-id encoding, so type 0 intentionally omits yParity.
+func addRPCTransactionYParity(fields map[string]interface{}, tx *types.Transaction, v *big.Int) {
+	if fields == nil || tx == nil || v == nil {
+		return
+	}
+	switch tx.Type() {
+	case types.AccessListTxType, types.DynamicFeeTxType, types.BlobTxType, types.SetCodeTxType:
+		fields["yParity"] = hexutil.Uint64(v.Uint64())
+	}
 }
 
 // Etherbase is the address that mining rewards will be send to
@@ -75,6 +103,245 @@ func (api *PublicEthereumAPI) Hashrate() hexutil.Uint64 {
 func (api *PublicEthereumAPI) ChainId() hexutil.Uint64 {
 	chainID := api.e.blockchain.Config().ChainID
 	return (hexutil.Uint64)(chainID.Uint64())
+}
+
+func commonRPCAdmissionForBlockTransaction(block *types.Block, hash common.Hash) (*types.CommonTxAdmissionBatch, uint32, uint16, bool) {
+	if block == nil {
+		return nil, 0, 0, false
+	}
+	txIndex := -1
+	for index, tx := range block.Transactions() {
+		if tx != nil && tx.Hash() == hash {
+			txIndex = index
+			break
+		}
+	}
+	refs := block.CommonTxAdmissionRefs()
+	if txIndex < 0 || txIndex >= len(refs) {
+		return nil, 0, 0, false
+	}
+	ref := refs[txIndex]
+	batches := block.CommonTxAdmissionBatches()
+	if int(ref.Batch) >= len(batches) || batches[ref.Batch] == nil {
+		return nil, 0, 0, false
+	}
+	batch := batches[ref.Batch]
+	if int(ref.Item) >= len(batch.TxHashes) || batch.TxHashes[ref.Item] != hash {
+		return nil, 0, 0, false
+	}
+	return batch, ref.Batch, ref.Item, true
+}
+
+// addCommonRPCFields appends Cypherium common RPC admission/reward fields to
+// eth_getTransactionByHash / eth_getTransactionReceipt responses.
+func addCommonRPCFields(fields map[string]interface{}, block *types.Block, hash common.Hash) {
+	if fields == nil || block == nil {
+		return
+	}
+
+	header := block.Header()
+	fields["commonTxAdmissionRoot"] = header.CommonTxAdmissionRoot
+	fields["commonTxRewardRoot"] = header.CommonTxRewardRoot
+
+	if admission, batchIndex, itemIndex, ok := commonRPCAdmissionForBlockTransaction(block, hash); ok {
+		fields["commonTxApprover"] = admission.Miner
+		fields["commonTxAdmissionId"] = admission.AdmissionID
+		fields["commonTxAdmissionTxRoot"] = admission.TxRoot
+		fields["commonTxAdmissionGenesisHash"] = admission.GenesisHash
+		fields["commonTxAdmissionBatchIndex"] = hexutil.Uint64(batchIndex)
+		fields["commonTxAdmissionItemIndex"] = hexutil.Uint64(itemIndex)
+
+		if admission.ChainID != nil {
+			fields["commonTxAdmissionChainId"] = (*hexutil.Big)(admission.ChainID)
+		}
+
+		fields["commonTxAdmissionKeyBlockNumber"] = hexutil.Uint64(admission.KeyBlockNumber)
+		fields["commonTxAdmissionTimestamp"] = hexutil.Uint64(admission.Timestamp)
+		fields["commonTxAdmissionSignature"] = hexutil.Bytes(admission.Signature)
+	}
+
+	for _, reward := range block.CommonTxRewards() {
+		if reward == nil || reward.TxHash != hash {
+			continue
+		}
+
+		fields["commonTxApprover"] = reward.Approver
+		fields["commonTxRewardRecipient"] = reward.EffectiveRewardRecipient()
+
+		if reward.ApproverReward != nil {
+			fields["commonTxApproverReward"] = (*hexutil.Big)(reward.ApproverReward)
+		}
+		if reward.Burn != nil {
+			fields["commonTxBurn"] = (*hexutil.Big)(reward.Burn)
+		}
+
+		break
+	}
+}
+
+func (api *PublicEthereumAPI) rpcTransactionFields(tx *types.Transaction, block *types.Block, blockHash common.Hash, blockNumber uint64, index uint64) map[string]interface{} {
+	header := api.e.blockchain.CurrentHeader()
+	if block != nil {
+		header = block.Header()
+	}
+
+	signer := types.MakeSignerAutoJudgement(api.e.blockchain.Config(), header.Number, tx.V())
+	from, _ := types.Sender(signer, tx)
+	v, r, s := tx.RawSignatureValues()
+
+	fields := map[string]interface{}{
+		"transactionHash": tx.Hash(),
+		"hash":            tx.Hash(),
+
+		"nonce":            hexutil.Uint64(tx.Nonce()),
+		"blockHash":        nil,
+		"blockNumber":      nil,
+		"transactionIndex": nil,
+
+		"from":     from,
+		"to":       tx.To(),
+		"value":    (*hexutil.Big)(tx.Value()),
+		"gas":      hexutil.Uint64(tx.Gas()),
+		"gasPrice": (*hexutil.Big)(tx.GasPrice()),
+		"input":    hexutil.Bytes(tx.Data()),
+		"type":     hexutil.Uint64(tx.Type()),
+
+		"v": (*hexutil.Big)(v),
+		"r": (*hexutil.Big)(r),
+		"s": (*hexutil.Big)(s),
+	}
+	addRPCTransactionYParity(fields, tx, v)
+
+	if chainID := tx.ChainId(); chainID != nil && (tx.Type() != types.LegacyTxType || tx.Protected()) {
+		fields["chainId"] = (*hexutil.Big)(new(big.Int).Set(chainID))
+	}
+
+	switch tx.Type() {
+	case types.AccessListTxType:
+		accessList := tx.AccessList()
+		fields["accessList"] = accessList
+
+	case types.DynamicFeeTxType:
+		accessList := tx.AccessList()
+		fields["accessList"] = accessList
+		fields["maxFeePerGas"] = (*hexutil.Big)(tx.GasFeeCap())
+		fields["maxPriorityFeePerGas"] = (*hexutil.Big)(tx.GasTipCap())
+
+	case types.BlobTxType:
+		accessList := tx.AccessList()
+		fields["accessList"] = accessList
+		fields["maxFeePerGas"] = (*hexutil.Big)(tx.GasFeeCap())
+		fields["maxPriorityFeePerGas"] = (*hexutil.Big)(tx.GasTipCap())
+		fields["maxFeePerBlobGas"] = (*hexutil.Big)(tx.BlobGasFeeCap())
+		fields["blobVersionedHashes"] = tx.BlobHashes()
+
+	case types.SetCodeTxType:
+		fields["accessList"] = tx.AccessList()
+		fields["maxFeePerGas"] = (*hexutil.Big)(tx.GasFeeCap())
+		fields["maxPriorityFeePerGas"] = (*hexutil.Big)(tx.GasTipCap())
+		fields["authorizationList"] = tx.SetCodeAuthorizations()
+	}
+
+	if block != nil && blockHash != (common.Hash{}) {
+		fields["blockHash"] = blockHash
+		fields["blockNumber"] = (*hexutil.Big)(new(big.Int).SetUint64(blockNumber))
+		fields["transactionIndex"] = hexutil.Uint64(index)
+		fields["gasPrice"] = (*hexutil.Big)(receiptEffectiveGasPrice(tx, header))
+
+		addCommonRPCFields(fields, block, tx.Hash())
+	}
+
+	return fields
+}
+
+// GetTransactionByHash is used by eth_getTransactionByHash / eth.getTransaction.
+// It keeps the normal transaction fields and appends Cypherium common RPC fields.
+func (api *PublicEthereumAPI) GetTransactionByHash(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
+	tx, blockHash, blockNumber, index, err := api.e.APIBackend.GetTransaction(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+
+	if tx != nil {
+		block := api.e.blockchain.GetBlock(blockHash, blockNumber)
+		return api.rpcTransactionFields(tx, block, blockHash, blockNumber, index), nil
+	}
+
+	if tx := api.e.txPool.Get(hash); tx != nil {
+		return api.rpcTransactionFields(tx, nil, common.Hash{}, 0, 0), nil
+	}
+
+	return nil, nil
+}
+
+// GetTransactionReceipt is used by eth_getTransactionReceipt / eth.getTransactionReceipt.
+// It keeps the normal receipt fields and appends Cypherium common RPC fields.
+func (api *PublicEthereumAPI) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
+	tx, blockHash, blockNumber, index, err := api.e.APIBackend.GetTransaction(ctx, hash)
+	if err != nil {
+		return nil, nil
+	}
+	if tx == nil || blockHash == (common.Hash{}) {
+		return nil, nil
+	}
+
+	receipts, err := api.e.APIBackend.GetReceipts(ctx, blockHash)
+	if err != nil {
+		return nil, err
+	}
+	if len(receipts) <= int(index) {
+		return nil, nil
+	}
+
+	receipt := receipts[index]
+
+	block := api.e.blockchain.GetBlock(blockHash, blockNumber)
+	if block == nil {
+		return nil, nil
+	}
+
+	signer := types.MakeSignerAutoJudgement(api.e.blockchain.Config(), block.Header().Number, tx.V())
+	from, _ := types.Sender(signer, tx)
+
+	effectiveGasPrice := receiptEffectiveGasPrice(tx, block.Header())
+
+	fields := map[string]interface{}{
+		"transactionHash": hash,
+		"blockHash":       blockHash,
+		"blockNumber":     hexutil.Uint64(blockNumber),
+
+		"transactionIndex": hexutil.Uint64(index),
+		"type":             hexutil.Uint64(tx.Type()),
+
+		"effectiveGasPrice": (*hexutil.Big)(effectiveGasPrice),
+
+		"from": from,
+		"to":   tx.To(),
+
+		"gasUsed":           hexutil.Uint64(receipt.GasUsed),
+		"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
+
+		"contractAddress": nil,
+		"logs":            receipt.Logs,
+		"logsBloom":       receipt.Bloom,
+		"status":          hexutil.Uint(receipt.Status),
+	}
+
+	if receipt.Logs == nil {
+		fields["logs"] = [][]*types.Log{}
+	}
+
+	if receipt.ContractAddress != (common.Address{}) {
+		fields["contractAddress"] = receipt.ContractAddress
+	}
+	if tx.Type() == types.BlobTxType {
+		fields["blobGasUsed"] = hexutil.Uint64(tx.BlobGas())
+		fields["blobGasPrice"] = (*hexutil.Big)(params.CalcBlobBaseFeeAtTime(api.e.blockchain.Config(), block.Time(), block.Header().ExcessBlobGas))
+	}
+
+	addCommonRPCFields(fields, block, hash)
+
+	return fields, nil
 }
 
 func (api *PublicEthereumAPI) Status() string {
@@ -103,8 +370,8 @@ func (api *PublicEthereumAPI) Status() string {
 	}
 	return s
 }
-func (api *PublicEthereumAPI) CommitteeMembers(ctx context.Context, blockNr rpc.BlockNumber) ([]*common.Cnode, error) {
 
+func (api *PublicEthereumAPI) CommitteeMembers(ctx context.Context, blockNr rpc.BlockNumber) ([]*common.Cnode, error) {
 	c, err := api.e.APIBackend.CommitteeMembers(ctx, blockNr)
 	return c, err
 }
@@ -151,6 +418,8 @@ func (api *PrivateMinerAPI) Start(threads *int) error {
 
 */
 func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password string) (string, error) {
+	api.e.miningLifecycleMu.Lock()
+	defer api.e.miningLifecycleMu.Unlock()
 	miningThreads := runtime.NumCPU()
 	if threads != nil {
 		miningThreads = *threads
@@ -200,22 +469,21 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 	server.Ip = api.e.ExtIP().String()
 	server.Port = api.e.config.RnetPort
 	server.Coinbase = eb.Hex()
-	api.e.reconfig.MinerStart(server)
-	// Start the miner and return
-	// Set the number of threads if the seal engine supports it
-	//if threads == nil {
-	//	threads = new(int)
-	//} else if *threads == 0 {
-	//	*threads = -1 // Disable the miner from within
-	//}
-	//type threaded interface {
-	//	SetThreads(threads int)
-	//}
-	//if th, ok := api.e.engine.(threaded); ok {
-	//	log.Info("Updated mining threads", "threads", *threads)
-	//	th.SetThreads(*threads)
-	//}
+	if err := api.e.reconfig.MinerStart(server); err != nil {
+		return "", err
+	}
+	if err := api.e.startPoWResultTransport(); err != nil {
+		if stopErr := api.e.reconfig.MinerStop(); stopErr != nil {
+			log.Warn("Failed to roll back reconfig after PoW result transport start failure", "err", stopErr)
+		}
+		return "", fmt.Errorf("start fixed-mode PoW result transport: %w", err)
+	}
+
 	if err := api.e.StartMining(miningThreads, true, eb, pubKey); err != nil {
+		api.e.stopPoWResultTransport()
+		if stopErr := api.e.reconfig.MinerStop(); stopErr != nil {
+			log.Warn("Failed to roll back reconfig after mining start failure", "err", stopErr)
+		}
 		return "", err
 	}
 	return "Mining started", nil
@@ -224,12 +492,15 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 // Stop terminates the miner, both at the consensus engine level as well as at
 // the block creation level.
 func (api *PrivateMinerAPI) Stop() {
+	api.e.miningLifecycleMu.Lock()
+	defer api.e.miningLifecycleMu.Unlock()
 	type threaded interface {
 		SetThreads(threads int)
 	}
 	if th, ok := api.e.engine.(threaded); ok {
 		th.SetThreads(-1)
 	}
+	api.e.stopPoWResultTransport()
 	api.e.StopMining()
 	api.e.reconfig.MinerStop()
 }
@@ -355,7 +626,7 @@ func (api *PrivateAdminAPI) ExportChain(file string, first *uint64, last *uint64
 		// since the 'file' may point to arbitrary paths on the drive
 		return false, errors.New("location would overwrite an existing file")
 	}
-	// Make sure we can create the file to export into
+
 	out, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
 	if err != nil {
 		return false, err
@@ -368,7 +639,6 @@ func (api *PrivateAdminAPI) ExportChain(file string, first *uint64, last *uint64
 		defer writer.(*gzip.Writer).Close()
 	}
 
-	// Export the blockchain
 	if first != nil {
 		if err := api.eth.BlockChain().ExportN(writer, *first, *last); err != nil {
 			return false, err
@@ -391,7 +661,6 @@ func hasAllBlocks(chain *core.BlockChain, bs []*types.Block) bool {
 
 // ImportChain imports a blockchain from a local file.
 func (api *PrivateAdminAPI) ImportChain(file string) (bool, error) {
-	// Make sure the can access the file to import
 	in, err := os.Open(file)
 	if err != nil {
 		return false, err
@@ -405,12 +674,10 @@ func (api *PrivateAdminAPI) ImportChain(file string) (bool, error) {
 		}
 	}
 
-	// Run actual the import in pre-configured batches
 	stream := rlp.NewStream(reader, 0)
 
 	blocks, index := make([]*types.Block, 0, 2500), 0
 	for batch := 0; ; batch++ {
-		// Load a batch of blocks from the input file
 		for len(blocks) < cap(blocks) {
 			block := new(types.Block)
 			if err := stream.Decode(block); err == io.EOF {
@@ -429,7 +696,7 @@ func (api *PrivateAdminAPI) ImportChain(file string) (bool, error) {
 			blocks = blocks[:0]
 			continue
 		}
-		// Import the batch and reset the buffer
+
 		if _, err := api.eth.BlockChain().InsertChain(blocks); err != nil {
 			return false, fmt.Errorf("batch %d: failed to insert: %v", batch, err)
 		}
@@ -453,9 +720,6 @@ func NewPublicDebugAPI(eth *Ethereum) *PublicDebugAPI {
 // DumpBlock retrieves the entire state of the database at a given block.
 func (api *PublicDebugAPI) DumpBlock(blockNr rpc.BlockNumber) (state.Dump, error) {
 	if blockNr == rpc.PendingBlockNumber {
-		// If we're dumping the pending state, we need to request
-		// both the pending block as well as the pending state from
-		// the miner and operate on those
 		_, stateDb := api.eth.miner.Pending()
 		return stateDb.RawDump(false, false, true), nil
 	}
@@ -514,7 +778,7 @@ func (api *PrivateDebugAPI) GetBadBlocks(ctx context.Context) ([]*BadBlockArgs, 
 			Hash: block.Hash(),
 		}
 		if rlpBytes, err := rlp.EncodeToBytes(block); err != nil {
-			results[i].RLP = err.Error() // Hacky, but hey, it works
+			results[i].RLP = err.Error()
 		} else {
 			results[i].RLP = fmt.Sprintf("0x%x", rlpBytes)
 		}
@@ -535,9 +799,6 @@ func (api *PublicDebugAPI) AccountRange(blockNrOrHash rpc.BlockNumberOrHash, sta
 
 	if number, ok := blockNrOrHash.Number(); ok {
 		if number == rpc.PendingBlockNumber {
-			// If we're dumping the pending state, we need to request
-			// both the pending block as well as the pending state from
-			// the miner and operate on those
 			_, stateDb = api.eth.miner.Pending()
 		} else {
 			var block *types.Block
@@ -574,7 +835,7 @@ func (api *PublicDebugAPI) AccountRange(blockNrOrHash rpc.BlockNumberOrHash, sta
 // StorageRangeResult is the result of a debug_storageRangeAt API call.
 type StorageRangeResult struct {
 	Storage storageMap   `json:"storage"`
-	NextKey *common.Hash `json:"nextKey"` // nil if Storage includes the last key in the trie.
+	NextKey *common.Hash `json:"nextKey"`
 }
 
 type storageMap map[common.Hash]storageEntry
@@ -612,7 +873,6 @@ func storageRangeAt(st state.Trie, start []byte, maxResult int) (StorageRangeRes
 		}
 		result.Storage[common.BytesToHash(it.Key)] = e
 	}
-	// Add the 'next key' so clients can continue downloading.
 	if it.Next() {
 		next := common.BytesToHash(it.Key)
 		result.NextKey = &next

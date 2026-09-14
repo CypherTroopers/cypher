@@ -34,18 +34,19 @@ const (
 	eth63 = 63
 	eth64 = 64
 	eth65 = 65
+	eth66 = 66
 )
 
 // protocolName is the official short name of the protocol used during capability negotiation.
 const protocolName = "eth"
 
 // ProtocolVersions are the supported versions of the eth protocol (first is primary).
-var ProtocolVersions = []uint{eth64, eth63}
+var ProtocolVersions = []uint{eth66}
 
 // protocolLengths are the number of implemented message corresponding to different protocol versions.
-var protocolLengths = map[uint]uint64{eth64: 17, eth63: 17}
+var protocolLengths = map[uint]uint64{eth66: 17}
 
-const protocolMaxMsgSize = 10 * 1024 * 1024 // Maximum cap on the size of a protocol message
+const protocolMaxMsgSize = 257 * 1024 * 1024 // Maximum cap on the size of a protocol message
 
 // eth protocol message codes
 const (
@@ -72,6 +73,9 @@ const (
 	PooledTransactionsMsg         = 0x0a
 
 	CandidateMsg = 0x0b
+	// DisabledAdmissionOnlyMsg is permanently rejected. Keeping the code point
+	// explicit prevents it from being accidentally reused for a naked sidecar.
+	DisabledAdmissionOnlyMsg = 0x0c
 )
 
 type errCode int
@@ -87,6 +91,7 @@ const (
 	ErrNoStatusMsg
 	ErrExtraStatusMsg
 	ErrCandidate
+	ErrCommonTxAdmission
 )
 
 func (e errCode) String() string {
@@ -105,6 +110,7 @@ var errorToString = map[int]string{
 	ErrNoStatusMsg:             "No status message",
 	ErrExtraStatusMsg:          "Extra status message",
 	ErrCandidate:               "Invalid candidate,can't telnet it's ip and port",
+	ErrCommonTxAdmission:       "Invalid common tx admission",
 }
 
 type txPool interface {
@@ -153,13 +159,28 @@ type newBlockHashesData []struct {
 	Number uint64      // Number of one particular block being announced
 }
 
-// getBlockHeadersData represents a block header query.
-type getBlockHeadersData struct {
-	Origin  hashOrNumber // Block from which to retrieve headers
-	Amount  uint64       // Maximum number of headers to retrieve
-	Skip    uint64       // Blocks to skip between consecutive headers
-	Reverse bool         // Query direction (false = rising towards latest, true = falling towards genesis)
+// newBlockData is the network packet for the block propagation message.
+type newBlockData struct {
+	Block *types.Block
+	TD    *big.Int
 }
+
+// sanityCheck verifies that the values are reasonable, as a DoS protection
+func (request *newBlockData) sanityCheck() error {
+	if err := request.Block.SanityCheck(); err != nil {
+		return err
+	}
+	//TD at mainnet block #7753254 is 76 bits. If it becomes 100 million times
+	// larger, it will still fit within 100 bits
+	if tdlen := request.TD.BitLen(); tdlen > 100 {
+		return fmt.Errorf("too large block TD: bitlen %d", tdlen)
+	}
+	return nil
+}
+
+// blockBodiesData uses the canonical genesis-native body type directly so
+// database bodies and BlockBodiesMsg can never drift in field count or order.
+type blockBodiesData []*types.Body
 
 // hashOrNumber is a combined field for specifying an origin block.
 type hashOrNumber struct {
@@ -182,45 +203,24 @@ func (hn *hashOrNumber) EncodeRLP(w io.Writer) error {
 // DecodeRLP is a specialized decoder for hashOrNumber to decode the contents
 // into either a block hash or a block number.
 func (hn *hashOrNumber) DecodeRLP(s *rlp.Stream) error {
-	_, size, _ := s.Kind()
-	origin, err := s.Raw()
-	if err == nil {
-		switch {
-		case size == 32:
-			err = rlp.DecodeBytes(origin, &hn.Hash)
-		case size <= 8:
-			err = rlp.DecodeBytes(origin, &hn.Number)
-		default:
-			err = fmt.Errorf("invalid input size %d for origin", size)
-		}
-	}
-	return err
-}
-
-// newBlockData is the network packet for the block propagation message.
-type newBlockData struct {
-	Block *types.Block
-	TD    *big.Int
-}
-
-// sanityCheck verifies that the values are reasonable, as a DoS protection
-func (request *newBlockData) sanityCheck() error {
-	if err := request.Block.SanityCheck(); err != nil {
+	_, size, err := s.Kind()
+	if err != nil {
 		return err
 	}
-	//TD at mainnet block #7753254 is 76 bits. If it becomes 100 million times
-	// larger, it will still fit within 100 bits
-	if tdlen := request.TD.BitLen(); tdlen > 100 {
-		return fmt.Errorf("too large block TD: bitlen %d", tdlen)
+
+	switch {
+	case size == 32:
+		return s.Decode(&hn.Hash)
+	case size <= 8:
+		return s.Decode(&hn.Number)
+	default:
+		return fmt.Errorf("invalid input size %d for origin", size)
 	}
-	return nil
 }
 
-// blockBody represents the data content of a single block.
-type blockBody struct {
-	Transactions []*types.Transaction // Transactions contained within a block
-	Uncles       []*types.Header      // Uncles contained within a block
+type getBlockHeadersData struct {
+	Origin  hashOrNumber // Block from which to retrieve headers
+	Amount  uint64       // Maximum number of headers to retrieve
+	Skip    uint64       // Blocks to skip between consecutive headers
+	Reverse bool         // Query direction: false = rising towards latest, true = falling towards genesis
 }
-
-// blockBodiesData is the network packet for block content distribution.
-type blockBodiesData []*blockBody

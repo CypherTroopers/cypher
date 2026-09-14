@@ -44,17 +44,31 @@ import (
 )
 
 const (
-	softResponseLimit = 2 * 1024 * 1024 // Target maximum size of returned blocks, headers or node data.
-	estHeaderRlpSize  = 500             // Approximate size of an RLP encoded block header
+	softResponseLimit = 256 * 1024 * 1024 // Target maximum size of returned blocks, headers or node data.
 
 	// txChanSize is the size of channel listening to NewTxsEvent.
-	// The number is referenced from the size of tx pool.
+	// The number is referenced from the size of the tx pool.
 	txChanSize = 4096
 )
 
 var (
 	syncChallengeTimeout = 15 * time.Second // Time allowance for a node to reply to the sync progress challenge
 )
+
+// responseItemFits keeps the encoded payload below the soft envelope before
+// append. Checking only at the top of the loop can place two near-limit Native
+// bodies in one RLPx message and cross the protocol's hard frame cap. A first
+// item is still permitted up to the envelope so maximum-size blocks remain
+// synchronizable.
+func responseItemFits(bytesUsed, itemCount, itemBytes int) bool {
+	if bytesUsed < 0 || itemCount < 0 || itemBytes < 0 || itemBytes > softResponseLimit {
+		return false
+	}
+	if itemCount == 0 {
+		return true
+	}
+	return bytesUsed <= softResponseLimit-itemBytes
+}
 
 func errResp(code errCode, format string, v ...interface{}) error {
 	return fmt.Errorf("%v - %v", code, fmt.Sprintf(format, v...))
@@ -124,7 +138,11 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 		quitSync:      make(chan struct{}),
 	}
 
-	if mode == downloader.FullSync {
+	if config != nil && config.FairHotstuff {
+		// Receipt-only fast sync cannot validate FHS finality proofs or execute
+		// their blocks. A fast head must not override this consensus requirement.
+		log.Info("Using full sync for Fair HotStuff")
+	} else if mode == downloader.FullSync {
 		// The database seems empty as the current block is the genesis. Yet the fast
 		// block is ahead, so fast sync was enabled for this node at a certain point.
 		// The scenarios where this can happen is
@@ -172,20 +190,10 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 	}
 	inserter := func(blocks types.Blocks) (int, error) {
 		// If sync hasn't reached the checkpoint yet, deny importing weird blocks.
-		//
-		// Ideally we would also compare the head block's timestamp and similarly reject
-		// the propagated block if the head is too old. Unfortunately there is a corner
-		// case when starting new networks, where the genesis might be ancient (0 unix)
-		// which would prevent full nodes from accepting it.
 		if manager.blockchain.CurrentBlock().NumberU64() < manager.checkpointNumber {
 			log.Warn("Unsynced yet, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
 			return 0, nil
 		}
-		// If fast sync is running, deny importing weird blocks. This is a problematic
-		// clause when starting up a new network, because fast-syncing miners might not
-		// accept each others' blocks until a restart. Unfortunately we haven't figured
-		// out a way yet where nodes can decide unilaterally whether the network is new
-		// or not. This should be fixed if we figure out a solution.
 		if atomic.LoadUint32(&manager.fastSync) == 1 {
 			log.Warn("Fast syncing, discarded propagated block", "number", blocks[0].Number(), "hash", blocks[0].Hash())
 			return 0, nil
@@ -223,7 +231,7 @@ func (pm *ProtocolManager) makeProtocol(version uint) p2p.Protocol {
 		Version: version,
 		Length:  length,
 		Run: func(p *p2p.Peer, rw p2p.MsgReadWriter) error {
-			return pm.runPeer(pm.newPeer(int(version), p, rw, pm.txpool.Get))
+			return pm.runPeer(pm.newPeer(int(version), p, rw, pm.pooledTransactionForP2P))
 		},
 		NodeInfo: func() interface{} {
 			return pm.NodeInfo()
@@ -235,6 +243,21 @@ func (pm *ProtocolManager) makeProtocol(version uint) p2p.Protocol {
 			return nil
 		},
 	}
+}
+
+// pooledTransactionForP2P is the final tx-only egress gate used by peer write
+// loops. Fair HotStuff transactions are delivered exclusively as authenticated
+// transaction+admission pairs over TxQUIC, so resolving a queued hash for the
+// ordinary eth protocol must fail closed. Rechecking here also closes the race
+// between queueing a hash and the asynchronous peer writer resolving it.
+func (pm *ProtocolManager) pooledTransactionForP2P(hash common.Hash) *types.Transaction {
+	if pm != nil && pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+		return nil
+	}
+	if pm == nil || pm.txpool == nil {
+		return nil
+	}
+	return pm.txpool.Get(hash)
 }
 
 func (pm *ProtocolManager) removePeer(id string) {
@@ -444,7 +467,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 				break
 			}
 			headers = append(headers, origin)
-			bytes += estHeaderRlpSize
+			bytes += origin.Size()
 
 			// Advance to the next header of the query
 			switch {
@@ -500,6 +523,17 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		var headers []*types.Header
 		if err := msg.Decode(&headers); err != nil {
 			return errResp(ErrDecode, "msg %v: %v", msg, err)
+		}
+		if len(headers) > downloader.MaxHeaderFetch {
+			return errResp(ErrDecode, "too many block headers: %d", len(headers))
+		}
+		for index, header := range headers {
+			if header == nil {
+				return errResp(ErrDecode, "nil block header at index %d", index)
+			}
+			if err := header.SanityCheck(); err != nil {
+				return errResp(ErrDecode, "insane block header at index %d: %v", index, err)
+			}
 		}
 		// If no headers were received, but we're expencting a checkpoint header, consider it that
 		if len(headers) == 0 && p.syncDrop != nil {
@@ -569,6 +603,9 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			}
 			// Retrieve the requested block body, stopping if enough was found
 			if data := pm.blockchain.GetBodyRLP(hash); len(data) != 0 {
+				if !responseItemFits(bytes, len(bodies), len(data)) {
+					break
+				}
 				bodies = append(bodies, data)
 				bytes += len(data)
 			}
@@ -581,21 +618,13 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		if err := msg.Decode(&request); err != nil {
 			return errResp(ErrDecode, "msg %v: %v", msg, err)
 		}
-		// Deliver them all to the downloader for queuing
-		transactions := make([][]*types.Transaction, len(request))
-		uncles := make([][]*types.Header, len(request))
-
-		for i, body := range request {
-			transactions[i] = body.Transactions
-			uncles[i] = body.Uncles
-		}
 		// Filter out any explicitly requested bodies, deliver the rest to the downloader
-		filter := len(transactions) > 0 || len(uncles) > 0
+		filter := len(request) > 0
 		if filter {
-			transactions, uncles = pm.blockFetcher.FilterBodies(p.id, transactions, uncles, time.Now())
+			request = pm.blockFetcher.FilterBodies(p.id, request, time.Now())
 		}
-		if len(transactions) > 0 || len(uncles) > 0 || !filter {
-			err := pm.downloader.DeliverBodies(p.id, transactions, uncles)
+		if len(request) > 0 || !filter {
+			err := pm.downloader.DeliverBodies(p.id, request)
 			if err != nil {
 				log.Debug("Failed to deliver bodies", "err", err)
 			}
@@ -680,6 +709,9 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			if encoded, err := rlp.EncodeToBytes(results); err != nil {
 				log.Error("Failed to encode receipt", "err", err)
 			} else {
+				if !responseItemFits(bytes, len(receipts), len(encoded)) {
+					break
+				}
 				receipts = append(receipts, encoded)
 				bytes += len(encoded)
 			}
@@ -754,6 +786,11 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		}
 
 	case msg.Code == NewPooledTransactionHashesMsg && p.version >= eth65:
+		// FHS accepts user transactions only through the authenticated TxQUIC
+		// transaction+admission path. Hash-only eth gossip cannot prove admission.
+		if pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+			return errResp(ErrCommonTxAdmission, "transaction-hash P2P is disabled in Fair HotStuff")
+		}
 		// New transaction announcement arrived, make sure we have
 		// a valid and fresh chain to handle them
 		if atomic.LoadUint32(&pm.acceptTxs) == 0 {
@@ -770,6 +807,11 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		pm.txFetcher.Notify(p.id, hashes)
 
 	case msg.Code == GetPooledTransactionsMsg && p.version >= eth65:
+		// FHS has no transaction-only response path. Reject immediately without
+		// decoding an attacker-controlled hash list whose result must be empty.
+		if pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+			return errResp(ErrCommonTxAdmission, "pooled-transaction P2P is disabled in Fair HotStuff")
+		}
 		// Decode the retrieval message
 		msgStream := rlp.NewStream(msg.Payload, uint64(msg.Size))
 		if _, err := msgStream.List(); err != nil {
@@ -790,7 +832,7 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 				return errResp(ErrDecode, "msg %v: %v", msg, err)
 			}
 			// Retrieve the requested transaction, skipping if unknown to us
-			tx := pm.txpool.Get(hash)
+			tx := pm.pooledTransactionForP2P(hash)
 			if tx == nil {
 				continue
 			}
@@ -806,6 +848,11 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 		return p.SendPooledTransactionsRLP(hashes, txs)
 
 	case msg.Code == TransactionMsg || (msg.Code == PooledTransactionsMsg && p.version >= eth65):
+		// A transaction-only message cannot satisfy the FHS admission invariant.
+		// Disconnect the sender without decoding it; TxQUIC is the sole ingress.
+		if pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+			return errResp(ErrCommonTxAdmission, "transaction-only P2P is disabled in Fair HotStuff")
+		}
 		// Transactions arrived, make sure we have a valid and fresh chain to handle them
 		if atomic.LoadUint32(&pm.acceptTxs) == 0 {
 			break
@@ -836,6 +883,10 @@ func (pm *ProtocolManager) handleMsg(p *peer) error {
 			p.MarkCandidate(candidate.Hash())
 			pm.eventMux.Post(core.RemoteCandidateEvent{Candidate: &candidate})
 		}
+
+	case msg.Code == DisabledAdmissionOnlyMsg:
+		return errResp(ErrCommonTxAdmission, "admission-only P2P is disabled in Fair HotStuff; use authenticated TxQUIC")
+
 	default:
 		return errResp(ErrInvalidMsgCode, "%v", msg.Code)
 	}
@@ -878,6 +929,11 @@ func (pm *ProtocolManager) BroadcastBlock(block *types.Block, propagate bool) {
 // BroadcastTransactions will propagate a batch of transactions to all peers which are not known to
 // already have the given transaction.
 func (pm *ProtocolManager) BroadcastTransactions(txs types.Transactions, propagate bool) {
+	// In Fair HotStuff there is no valid transaction-only wire representation:
+	// every user transaction must remain coupled to its admission in TxQUIC.
+	if pm != nil && pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+		return
+	}
 	var (
 		txset = make(map[*peer][]common.Hash)
 		annos = make(map[*peer][]common.Hash)
@@ -934,6 +990,11 @@ func (pm *ProtocolManager) txBroadcastLoop() {
 	for {
 		select {
 		case event := <-pm.txsCh:
+			if pm.chainConfig != nil && pm.chainConfig.FairHotstuff {
+				// TxQUIC has already durably accepted or restored the paired item.
+				// Never mirror its transaction onto an admission-less eth path.
+				continue
+			}
 			// For testing purpose only, disable propagation
 			if pm.broadcastTxAnnouncesOnly {
 				pm.BroadcastTransactions(event.Txs, false)
@@ -986,7 +1047,7 @@ type NodeInfo struct {
 	Difficulty *big.Int            `json:"difficulty"` // Total difficulty of the host's blockchain
 	Genesis    common.Hash         `json:"genesis"`    // SHA3 hash of the host's genesis block
 	Config     *params.ChainConfig `json:"config"`     // Chain configuration for the fork rules
-	Head       common.Hash         `json:"head"`       // SHA3 hash of the host's best owned block
+	Head       common.Hash         `json:"head"`
 }
 
 // NodeInfo retrieves some protocol metadata about the running host node.

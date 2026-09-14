@@ -22,7 +22,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -275,14 +274,6 @@ func PubKeyToAddressCypherium(publicKey []byte) common.Address {
 	addr160.Write(addrSha[:])
 
 	return common.BytesToAddress(addr160.Sum(nil))
-}
-
-func hashSeed(seed []byte) (hash [64]byte) {
-	hash = sha512.Sum512(seed)
-	hash[0] &= 0xf8
-	hash[31] &= 0x3f
-	hash[31] |= 0x40
-	return
 }
 
 type Seed struct {

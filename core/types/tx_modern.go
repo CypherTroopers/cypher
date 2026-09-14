@@ -12,6 +12,10 @@ const (
 	DynamicFeeTxType = 0x02
 	BlobTxType       = 0x03
 	SetCodeTxType    = 0x04
+	// NativeTxType is the retired type-5 marker retained only for fail-closed
+	// boundary checks and old test fixtures. Public decoding and consensus admit
+	// only the standard EVM transaction types 0 through 4.
+	NativeTxType = 0x05
 )
 
 type AccessTuple struct {
@@ -66,7 +70,9 @@ type SetCodeAuthorization struct {
 	ChainID *big.Int       `json:"chainId"`
 	Address common.Address `json:"address"`
 	Nonce   uint64         `json:"nonce"`
-	V, R, S *big.Int       `json:"-"`
+	V       *big.Int       `json:"yParity"`
+	R       *big.Int       `json:"r"`
+	S       *big.Int       `json:"s"`
 }
 
 type SetCodeTx struct {

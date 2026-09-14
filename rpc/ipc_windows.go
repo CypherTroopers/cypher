@@ -47,3 +47,8 @@ func newIPCConnection(ctx context.Context, endpoint string) (net.Conn, error) {
 	}
 	return npipe.DialTimeout(endpoint, timeout)
 }
+
+func isIPCConnection(conn net.Conn) bool {
+	_, ok := conn.(*npipe.PipeConn)
+	return ok
+}

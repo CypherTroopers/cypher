@@ -29,7 +29,41 @@ import (
 type txNoncer struct {
 	fallback *state.StateDB
 	nonces   map[common.Address]uint64
-	lock     sync.Mutex
+	lock     sync.RWMutex
+}
+
+// peek returns only an explicitly tracked pool nonce. It deliberately avoids
+// the mutable StateDB fallback so callers which already own an immutable head
+// snapshot can use that snapshot's nonce without serializing unrelated senders
+// behind txNoncer.lock.
+func (txn *txNoncer) peek(addr common.Address) (uint64, bool) {
+	if txn == nil {
+		return 0, false
+	}
+	txn.lock.RLock()
+	defer txn.lock.RUnlock()
+
+	nonce, ok := txn.nonces[addr]
+	return nonce, ok
+}
+
+// snapshot returns an immutable subset of explicitly tracked pool nonces. The
+// fallback StateDB is intentionally excluded: callers pair absent entries with
+// the nonce from their own head-root StateDB instance.
+func (txn *txNoncer) snapshot(addrs []common.Address) map[common.Address]uint64 {
+	nonces := make(map[common.Address]uint64, len(addrs))
+	if txn == nil || len(addrs) == 0 {
+		return nonces
+	}
+	txn.lock.RLock()
+	defer txn.lock.RUnlock()
+
+	for _, addr := range addrs {
+		if nonce, ok := txn.nonces[addr]; ok {
+			nonces[addr] = nonce
+		}
+	}
+	return nonces
 }
 
 // newTxNoncer creates a new virtual state database to track the pool nonces.

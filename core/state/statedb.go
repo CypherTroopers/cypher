@@ -18,10 +18,13 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/cypherium/cypher/common"
@@ -36,8 +39,9 @@ import (
 )
 
 type revision struct {
-	id           int
-	journalIndex int
+	id                int
+	journalIndex      int
+	nativeBlockHashes map[uint64]common.Hash
 }
 
 var (
@@ -95,12 +99,34 @@ type StateDB struct {
 
 	transientStorage transientStorage
 	createdContracts map[common.Address]struct{}
+	accessList       *accessListState
 
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
 	journal        *journal
 	validRevisions []revision
 	nextRevisionId int
+
+	// parallelRootMu protects process-local metrics and the outer snapshot
+	// storage map while independent account storage tries are hashed in
+	// parallel. It is never held across trie hashing.
+	parallelRootMu sync.Mutex
+
+	// nativeBlockHashes is a proposal-local, immutable BLOCKHASH view populated
+	// from the state-rooted EIP-2935 history before EVM execution starts. It
+	// is deliberately process-local (and therefore excluded from the trie/root),
+	// but Copy and RuntimeMVCCSnapshot retain the same immutable view so every
+	// branch observes the certified parent ancestry even when that parent is not
+	// present in the node's canonical header database yet. A nil map means the
+	// view has not been prepared; a non-nil empty map is valid for genesis.
+	nativeBlockHashes map[uint64]common.Hash
+
+	// runtimeMVCCAccounts is a read-only seed table owned by one immutable
+	// RuntimeMVCCSnapshot. It contains canonical objects whose code/storage trie
+	// changes are not committed to the backing database yet. A standard-EVM
+	// branch deep-copies only a seed it actually touches, avoiding both stale DB
+	// reads and O(all block writes) memory per speculative transaction.
+	runtimeMVCCAccounts map[common.Address]*stateObject
 
 	// Measurements gathered during execution for debugging purposes
 	AccountReads         time.Duration
@@ -133,6 +159,7 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		preimages:           make(map[common.Hash][]byte),
 		transientStorage:    newTransientStorage(),
 		createdContracts:    make(map[common.Address]struct{}),
+		accessList:          newAccessListState(),
 		journal:             newJournal(),
 	}
 	if sdb.snaps != nil {
@@ -156,6 +183,83 @@ func (s *StateDB) Error() error {
 	return s.dbErr
 }
 
+// RuntimeMVCCError surfaces database errors memoized by the StateDB or by the
+// exact account objects touched by a standard-EVM execution branch. The EVM
+// StateDB interface cannot return read errors directly, so optimistic execution
+// must check this before publishing a speculative delta. Supplying addresses
+// keeps serial conflict fallback proportional to that transaction's observed
+// working set; an empty list checks every materialized object in a sparse branch.
+func (s *StateDB) RuntimeMVCCError(addresses ...common.Address) error {
+	if s == nil {
+		return errors.New("cannot inspect runtime MVCC error on nil state")
+	}
+	if s.dbErr != nil {
+		return s.dbErr
+	}
+	if len(addresses) == 0 {
+		addresses = make([]common.Address, 0, len(s.stateObjects))
+		for address := range s.stateObjects {
+			addresses = append(addresses, address)
+		}
+	} else {
+		unique := make(map[common.Address]struct{}, len(addresses))
+		filtered := make([]common.Address, 0, len(addresses))
+		for _, address := range addresses {
+			if _, duplicate := unique[address]; duplicate {
+				continue
+			}
+			unique[address] = struct{}{}
+			filtered = append(filtered, address)
+		}
+		addresses = filtered
+	}
+	sort.Slice(addresses, func(i, j int) bool { return bytes.Compare(addresses[i][:], addresses[j][:]) < 0 })
+	for _, address := range addresses {
+		if object := s.stateObjects[address]; object != nil && object.dbErr != nil {
+			return fmt.Errorf("runtime MVCC account %s: %w", address, object.dbErr)
+		}
+	}
+	return nil
+}
+
+// PruneRuntimeMVCCOrigins releases exact storage values cached by a serial EVM
+// execution after its transaction boundary. Slots still dirty or pending are
+// retained because updateTrieWithWorkers needs their original values to detect
+// no-op writes before publication. The boundary check prevents callers from
+// dropping values that an open EVM snapshot could still revert or reuse.
+func (s *StateDB) PruneRuntimeMVCCOrigins(slots map[common.Address][]common.Hash) error {
+	if s == nil {
+		return errors.New("cannot prune runtime MVCC origins on nil state")
+	}
+	if s.journal == nil || s.journal.length() != 0 || len(s.validRevisions) != 0 {
+		return errors.New("runtime MVCC origins may only be pruned at a finalized transaction boundary")
+	}
+	for address, keys := range slots {
+		object := s.stateObjects[address]
+		if object == nil {
+			continue
+		}
+		for _, key := range keys {
+			if _, pending := object.pendingStorage[key]; pending {
+				continue
+			}
+			if dirty, exists := object.dirtyStorage[key]; exists {
+				origin, loaded := object.originStorage[key]
+				if !loaded || dirty != origin {
+					continue
+				}
+				// StateDB journal reversion restores the old value in dirtyStorage.
+				// If the account has no surviving journal dirties, Finalise does not
+				// visit it. At a closed transaction boundary this exact no-op is safe
+				// to discard together with its cached origin.
+				delete(object.dirtyStorage, key)
+			}
+			delete(object.originStorage, key)
+		}
+	}
+	return nil
+}
+
 // Reset clears out all ephemeral state objects from the state db, but keeps
 // the underlying state trie to avoid reloading data for the next operations.
 func (s *StateDB) Reset(root common.Hash) error {
@@ -175,6 +279,8 @@ func (s *StateDB) Reset(root common.Hash) error {
 	s.preimages = make(map[common.Hash][]byte)
 	s.transientStorage = newTransientStorage()
 	s.createdContracts = make(map[common.Address]struct{})
+	s.accessList = newAccessListState()
+	s.nativeBlockHashes = nil
 	s.clearJournalAndRefund()
 
 	if s.snaps != nil {
@@ -307,6 +413,18 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 	return common.BytesToHash(stateObject.CodeHash())
 }
 
+// GetStorageRoot retrieves an account's storage root. A missing account has no
+// root; an existing account with empty storage has the canonical empty trie
+// root. CREATE collision checks need to distinguish both from non-empty
+// storage (EIP-7610).
+func (s *StateDB) GetStorageRoot(addr common.Address) common.Hash {
+	stateObject := s.getStateObject(addr)
+	if stateObject == nil {
+		return common.Hash{}
+	}
+	return stateObject.data.Root
+}
+
 // GetState retrieves a value from the given account's storage trie.
 func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
@@ -314,6 +432,36 @@ func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 		return stateObject.GetState(s.db, hash)
 	}
 	return common.Hash{}
+}
+
+// SetNativeBlockHashes publishes a proposal-local immutable BLOCKHASH view.
+// The input is cloned so callers cannot mutate a view concurrently with EVM
+// workers. Subsequent StateDB copies may safely share the cloned map.
+func (s *StateDB) SetNativeBlockHashes(hashes map[uint64]common.Hash) {
+	if s == nil {
+		return
+	}
+	view := make(map[uint64]common.Hash, len(hashes))
+	for number, hash := range hashes {
+		view[number] = hash
+	}
+	s.nativeBlockHashes = view
+}
+
+// NativeBlockHashesPrepared reports whether the proposal-local BLOCKHASH view
+// has been installed. It distinguishes an unprepared StateDB from the valid
+// empty view used while executing genesis.
+func (s *StateDB) NativeBlockHashesPrepared() bool {
+	return s != nil && s.nativeBlockHashes != nil
+}
+
+// NativeBlockHash resolves one hash from the immutable proposal-local view.
+// Numbers outside the EVM's retained window return the zero hash.
+func (s *StateDB) NativeBlockHash(number uint64) common.Hash {
+	if s == nil {
+		return common.Hash{}
+	}
+	return s.nativeBlockHashes[number]
 }
 
 // GetProof returns the MerkleProof for a given Account
@@ -450,45 +598,6 @@ func (s *StateDB) Suicide(addr common.Address) bool {
 // Setting, updating & deleting state object methods.
 //
 
-// updateStateObject writes the given object to the trie.
-func (s *StateDB) updateStateObject(obj *stateObject) {
-	// Track the amount of time wasted on updating the account from the trie
-	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.AccountUpdates += time.Since(start) }(time.Now())
-	}
-	// Encode the account and update the account trie
-	addr := obj.Address()
-
-	data, err := rlp.EncodeToBytes(obj)
-	if err != nil {
-		panic(fmt.Errorf("can't encode object at %x: %v", addr[:], err))
-	}
-	if err = s.trie.TryUpdate(addr[:], data); err != nil {
-		s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
-	}
-
-	// If state snapshotting is active, cache the data til commit. Note, this
-	// update mechanism is not symmetric to the deletion, because whereas it is
-	// enough to track account updates at commit time, deletions need tracking
-	// at transaction boundary level to ensure we capture state clearing.
-	if s.snap != nil {
-		s.snapAccounts[obj.addrHash] = snapshot.SlimAccountRLP(obj.data.Nonce, obj.data.Balance, obj.data.Root, obj.data.CodeHash)
-	}
-}
-
-// deleteStateObject removes the given object from the state trie.
-func (s *StateDB) deleteStateObject(obj *stateObject) {
-	// Track the amount of time wasted on deleting the account from the trie
-	if metrics.EnabledExpensive {
-		defer func(start time.Time) { s.AccountUpdates += time.Since(start) }(time.Now())
-	}
-	// Delete the account from the trie
-	addr := obj.Address()
-	if err := s.trie.TryDelete(addr[:]); err != nil {
-		s.setError(fmt.Errorf("deleteStateObject (%x) error: %v", addr[:], err))
-	}
-}
-
 // getStateObject retrieves a state object given by the address, returning nil if
 // the object is not found or was deleted in this execution context. If you need
 // to differentiate between non-existent/just-deleted, use getDeletedStateObject.
@@ -506,6 +615,15 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 func (s *StateDB) getDeletedStateObject(addr common.Address) *stateObject {
 	// Prefer live objects if any is available
 	if obj := s.stateObjects[addr]; obj != nil {
+		return obj
+	}
+	// Runtime MVCC snapshots publish pending account/storage changes into the
+	// copied trie, but newly created code and uncommitted storage trie nodes may
+	// not exist in the backing database yet. Seed those objects from the frozen
+	// canonical version and immediately detach them before any branch mutation.
+	if seed, ok := s.runtimeMVCCAccounts[addr]; ok && seed != nil {
+		obj := seed.deepCopyRuntimeMVCC(s)
+		s.setStateObject(obj)
 		return obj
 	}
 	// If no live objects are available, attempt to use snapshots
@@ -673,7 +791,9 @@ func (s *StateDB) Copy() *StateDB {
 		preimages:           make(map[common.Hash][]byte, len(s.preimages)),
 		transientStorage:    newTransientStorage(),
 		createdContracts:    make(map[common.Address]struct{}, len(s.createdContracts)),
+		accessList:          s.accessList.copy(),
 		journal:             newJournal(),
+		nativeBlockHashes:   s.nativeBlockHashes,
 	}
 	// Copy the dirty states, logs, and preimages
 	for addr := range s.journal.dirties {
@@ -729,11 +849,91 @@ func (s *StateDB) Copy() *StateDB {
 	return state
 }
 
+// RuntimeMVCCSnapshot is an immutable block-local state version used by the
+// standard-EVM optimistic executor. Each branch starts with an empty object
+// cache over an independent copy of the already-updated account trie and
+// records the resources it actually observes while executing.
+//
+// The snapshot must be prepared before workers start. PrepareRuntimeMVCCSnapshot
+// first publishes all pending objects into the in-memory trie, then borrows the
+// canonical object table for the read-only worker phase. Branches detach that
+// table before canonical merging resumes, avoiding an O(all block accounts)
+// map copy at every fixed-size microbatch.
+type RuntimeMVCCSnapshot struct {
+	db                Database
+	trie              Trie
+	dbErr             error
+	nativeBlockHashes map[uint64]common.Hash
+	accounts          map[common.Address]*stateObject
+}
+
+// PrepareRuntimeMVCCSnapshot freezes the current canonical state into an
+// immutable trie view. IntermediateRoot is a process-local publication step;
+// it does not commit a block or alter consensus state, and its deterministic
+// root is computed from the same finalized transaction boundary as the serial
+// executor.
+func (s *StateDB) PrepareRuntimeMVCCSnapshot(deleteEmptyObjects bool) (*RuntimeMVCCSnapshot, error) {
+	if s == nil {
+		return nil, errors.New("cannot snapshot a nil runtime MVCC state")
+	}
+	s.IntermediateRoot(deleteEmptyObjects)
+	if s.dbErr != nil {
+		return nil, s.dbErr
+	}
+	return &RuntimeMVCCSnapshot{
+		db:                s.db,
+		trie:              s.db.CopyTrie(s.trie),
+		dbErr:             s.dbErr,
+		nativeBlockHashes: s.nativeBlockHashes,
+		accounts:          s.stateObjects,
+	}, nil
+}
+
+// ReleaseRuntimeMVCCSnapshot drops a branch's borrowed read-only seed table.
+// The optimistic executor calls this before it resumes canonical StateDB
+// mutation. Objects already touched by the branch were deep-copied into its
+// private stateObjects map and remain available for delta capture.
+func (s *StateDB) ReleaseRuntimeMVCCSnapshot() {
+	if s != nil {
+		s.runtimeMVCCAccounts = nil
+	}
+}
+
+// Branch creates an isolated standard-EVM transaction view. Branches share
+// only immutable snapshot metadata; their tries, object caches, journals,
+// transient storage, logs and preimages are independent and may be mutated by
+// separate workers concurrently.
+func (snapshot *RuntimeMVCCSnapshot) Branch() (*StateDB, error) {
+	if snapshot == nil || snapshot.db == nil || snapshot.trie == nil {
+		return nil, errors.New("runtime MVCC snapshot is unavailable")
+	}
+	return &StateDB{
+		db:                  snapshot.db,
+		trie:                snapshot.db.CopyTrie(snapshot.trie),
+		stateObjects:        make(map[common.Address]*stateObject),
+		stateObjectsPending: make(map[common.Address]struct{}),
+		stateObjectsDirty:   make(map[common.Address]struct{}),
+		logs:                make(map[common.Hash][]*types.Log),
+		preimages:           make(map[common.Hash][]byte),
+		transientStorage:    newTransientStorage(),
+		createdContracts:    make(map[common.Address]struct{}),
+		accessList:          newAccessListState(),
+		journal:             newJournal(),
+		dbErr:               snapshot.dbErr,
+		nativeBlockHashes:   snapshot.nativeBlockHashes,
+		runtimeMVCCAccounts: snapshot.accounts,
+	}, nil
+}
+
 // Snapshot returns an identifier for the current revision of the state.
 func (s *StateDB) Snapshot() int {
 	id := s.nextRevisionId
 	s.nextRevisionId++
-	s.validRevisions = append(s.validRevisions, revision{id, s.journal.length()})
+	s.validRevisions = append(s.validRevisions, revision{
+		id:                id,
+		journalIndex:      s.journal.length(),
+		nativeBlockHashes: s.nativeBlockHashes,
+	})
 	return id
 }
 
@@ -746,10 +946,11 @@ func (s *StateDB) RevertToSnapshot(revid int) {
 	if idx == len(s.validRevisions) || s.validRevisions[idx].id != revid {
 		panic(fmt.Errorf("revision id %v cannot be reverted", revid))
 	}
-	snapshot := s.validRevisions[idx].journalIndex
+	revision := s.validRevisions[idx]
 
 	// Replay the journal to undo changes and remove invalidated snapshots
-	s.journal.revert(s, snapshot)
+	s.journal.revert(s, revision.journalIndex)
+	s.nativeBlockHashes = revision.nativeBlockHashes
 	s.validRevisions = s.validRevisions[:idx]
 }
 
@@ -799,18 +1000,95 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 // It is called in between transactions to get the root hash that
 // goes into transaction receipts.
 func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 64 {
+		workers = 64
+	}
+	return s.intermediateRootWithWorkers(deleteEmptyObjects, workers)
+}
+
+// intermediateRootWithWorkers computes independent account storage roots and
+// account RLPs in bounded worker pools, then atomically updates independent
+// first-nibble account-trie subtrees. Worker count is a local choice and cannot
+// affect consensus output.
+func (s *StateDB) intermediateRootWithWorkers(deleteEmptyObjects bool, workers int) common.Hash {
 	// Finalise all the dirty storage states and write them into the tries
 	s.Finalise(deleteEmptyObjects)
 
+	addresses := make([]common.Address, 0, len(s.stateObjectsPending))
 	for addr := range s.stateObjectsPending {
-		obj := s.stateObjects[addr]
-		if obj.deleted {
-			s.deleteStateObject(obj)
-		} else {
-			obj.updateRoot(s.db)
-			s.updateStateObject(obj)
+		addresses = append(addresses, addr)
+	}
+	sort.Slice(addresses, func(i, j int) bool { return bytes.Compare(addresses[i][:], addresses[j][:]) < 0 })
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 64 {
+		workers = 64
+	}
+	// Split one process-local worker budget between account-level jobs and the
+	// storage batches inside hot accounts. Without this split, a single contract
+	// remains serial; naively giving every account its own full pool oversubscribes
+	// validators by O(accounts*GOMAXPROCS).
+	storageAccounts := 0
+	for _, addr := range addresses {
+		if obj := s.stateObjects[addr]; obj != nil && !obj.deleted && len(obj.pendingStorage) > 1 {
+			storageAccounts++
 		}
 	}
+	outerWorkers := workers
+	storageWorkers := 1
+	if storageAccounts > 0 && workers > 1 {
+		outerWorkers = workers / 2
+		if outerWorkers < 1 {
+			outerWorkers = 1
+		}
+		if outerWorkers > len(addresses) {
+			outerWorkers = len(addresses)
+		}
+		innerBudget := workers - outerWorkers
+		if innerBudget > 0 {
+			storageWorkers = innerBudget / storageAccounts
+			if storageWorkers < 1 {
+				storageWorkers = 1
+			}
+		}
+	}
+	if outerWorkers > len(addresses) {
+		outerWorkers = len(addresses)
+	}
+	updateRoot := func(addr common.Address) {
+		if obj := s.stateObjects[addr]; obj != nil && !obj.deleted {
+			innerWorkers := 1
+			if len(obj.pendingStorage) > 1 {
+				innerWorkers = storageWorkers
+			}
+			obj.updateRootWithWorkers(s.db, innerWorkers)
+		}
+	}
+	if outerWorkers <= 1 {
+		for _, addr := range addresses {
+			updateRoot(addr)
+		}
+	} else {
+		jobs := make(chan common.Address, outerWorkers)
+		var group sync.WaitGroup
+		group.Add(outerWorkers)
+		for worker := 0; worker < outerWorkers; worker++ {
+			go func() {
+				defer group.Done()
+				for addr := range jobs {
+					updateRoot(addr)
+				}
+			}()
+		}
+		for _, addr := range addresses {
+			jobs <- addr
+		}
+		close(jobs)
+		group.Wait()
+	}
+	s.updateAccountTrieBatch(addresses, workers)
 	if len(s.stateObjectsPending) > 0 {
 		s.stateObjectsPending = make(map[common.Address]struct{})
 	}
@@ -819,6 +1097,92 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 		defer func(start time.Time) { s.AccountHashes += time.Since(start) }(time.Now())
 	}
 	return s.trie.Hash()
+}
+
+// updateAccountTrieBatch prepares consensus account encodings in parallel and
+// applies them through SecureTrie's deterministic first-nibble batch API. The
+// mutation list remains address-sorted for reproducible diagnostics and
+// duplicate-free state-object semantics.
+func (s *StateDB) updateAccountTrieBatch(addresses []common.Address, workers int) {
+	objects := make([]*stateObject, 0, len(addresses))
+	for _, address := range addresses {
+		if obj := s.stateObjects[address]; obj != nil {
+			objects = append(objects, obj)
+		}
+	}
+	if len(objects) == 0 {
+		return
+	}
+	if metrics.EnabledExpensive {
+		defer func(start time.Time) { s.AccountUpdates += time.Since(start) }(time.Now())
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 64 {
+		workers = 64
+	}
+	if workers > len(objects) {
+		workers = len(objects)
+	}
+	mutations := make([]trie.BatchMutation, len(objects))
+	encodeErrors := make([]error, len(objects))
+	slimAccounts := make([][]byte, len(objects))
+	prepare := func(index int) {
+		obj := objects[index]
+		key := make([]byte, len(obj.address))
+		copy(key, obj.address[:])
+		if obj.deleted {
+			mutations[index] = trie.BatchMutation{Key: key, Delete: true}
+			return
+		}
+		encoded, err := rlp.EncodeToBytes(obj)
+		if err != nil {
+			encodeErrors[index] = err
+			return
+		}
+		mutations[index] = trie.BatchMutation{Key: key, Value: encoded}
+		if s.snap != nil {
+			slimAccounts[index] = snapshot.SlimAccountRLP(obj.data.Nonce, obj.data.Balance, obj.data.Root, obj.data.CodeHash)
+		}
+	}
+	if workers <= 1 {
+		for index := range objects {
+			prepare(index)
+		}
+	} else {
+		jobs := make(chan int, workers)
+		var group sync.WaitGroup
+		group.Add(workers)
+		for worker := 0; worker < workers; worker++ {
+			go func() {
+				defer group.Done()
+				for index := range jobs {
+					prepare(index)
+				}
+			}()
+		}
+		for index := range objects {
+			jobs <- index
+		}
+		close(jobs)
+		group.Wait()
+	}
+	for index, err := range encodeErrors {
+		if err != nil {
+			panic(fmt.Errorf("can't encode object at %x: %v", objects[index].address[:], err))
+		}
+	}
+	if err := s.trie.TryUpdateBatch(mutations, workers); err != nil {
+		s.setError(fmt.Errorf("update account trie batch: %v", err))
+	}
+	if s.snap != nil {
+		for index, obj := range objects {
+			if !obj.deleted {
+				s.snapAccounts[obj.addrHash] = slimAccounts[index]
+			}
+		}
+	}
 }
 
 // Prepare sets the current transaction hash and index and block hash which is
@@ -866,17 +1230,64 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 
 	// Commit objects to the trie, measuring the elapsed time
 	codeWriter := s.db.TrieDB().DiskDB().NewBatch()
+	dirtyAddresses := make([]common.Address, 0, len(s.stateObjectsDirty))
 	for addr := range s.stateObjectsDirty {
-		if obj := s.stateObjects[addr]; !obj.deleted {
+		dirtyAddresses = append(dirtyAddresses, addr)
+	}
+	sort.Slice(dirtyAddresses, func(i, j int) bool { return bytes.Compare(dirtyAddresses[i][:], dirtyAddresses[j][:]) < 0 })
+	dirtyObjects := make([]*stateObject, 0, len(dirtyAddresses))
+	committedAddresses := make([]common.Address, 0, len(dirtyAddresses))
+	for _, addr := range dirtyAddresses {
+		if obj := s.stateObjects[addr]; obj != nil && !obj.deleted {
 			// Write any contract code associated with the state object
 			if obj.code != nil && obj.dirtyCode {
 				rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)
 				obj.dirtyCode = false
 			}
-			// Write any storage changes in the state object to its storage trie
-			if err := obj.CommitTrie(s.db); err != nil {
-				return common.Hash{}, err
-			}
+			dirtyObjects = append(dirtyObjects, obj)
+			committedAddresses = append(committedAddresses, addr)
+		}
+	}
+	// Storage tries are independent after IntermediateRoot has finalized every
+	// mutation. Trie.Database serializes its node-cache insertions internally,
+	// while hashing/collapsing each account trie can proceed in parallel. Errors
+	// are consumed in sorted account order so worker timing is never observable.
+	commitErrors := make([]error, len(dirtyObjects))
+	workers := runtime.GOMAXPROCS(0)
+	if workers > 64 {
+		workers = 64
+	}
+	if workers > len(dirtyObjects) {
+		workers = len(dirtyObjects)
+	}
+	commitStorage := func(index int) {
+		commitErrors[index] = dirtyObjects[index].CommitTrie(s.db)
+	}
+	if workers <= 1 {
+		for index := range dirtyObjects {
+			commitStorage(index)
+		}
+	} else {
+		jobs := make(chan int, workers)
+		var group sync.WaitGroup
+		group.Add(workers)
+		for worker := 0; worker < workers; worker++ {
+			go func() {
+				defer group.Done()
+				for index := range jobs {
+					commitStorage(index)
+				}
+			}()
+		}
+		for index := range dirtyObjects {
+			jobs <- index
+		}
+		close(jobs)
+		group.Wait()
+	}
+	for index, err := range commitErrors {
+		if err != nil {
+			return common.Hash{}, fmt.Errorf("commit storage trie for %s: %w", committedAddresses[index], err)
 		}
 	}
 	if len(s.stateObjectsDirty) > 0 {

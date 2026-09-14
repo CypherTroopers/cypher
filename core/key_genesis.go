@@ -115,8 +115,6 @@ type keyGenesisAccountMarshaling struct {
 	Storage map[storageJSON]storageJSON
 }
 
-//type storageJSON common.Hash
-
 // KeyGenesisMismatchError is raised when trying to overwrite an existing
 // genesis block with an incompatible one.
 type KeyGenesisMismatchError struct {
@@ -163,7 +161,7 @@ func SetupGenesisKeyBlock(db ethdb.Database, genesis *GenesisKey) (*params.Chain
 		keyblock := genesis.ToBlock()
 		gc := genesis.Config.GenCommittee
 		cnodes := make([]*common.Cnode, len(gc))
-		for k, _ := range gc {
+		for k := range gc {
 			node := gc[k]
 			cnodes[k] = &node
 		}
@@ -210,12 +208,6 @@ func (g *GenesisKey) configOrDefault(ghash common.Hash) *params.ChainConfig {
 	switch {
 	case g != nil:
 		return g.Config
-		/*
-			case ghash == params.MainnetGenesisHash:
-				return params.MainnetChainConfig
-			case ghash == params.TestnetGenesisHash:
-				return params.TestnetChainConfig
-		*/
 	default:
 		return params.AllcolossusXProtocolChanges
 	}
@@ -270,7 +262,7 @@ func (g *GenesisKey) Commit(db ethdb.Database) (*types.KeyBlock, error) {
 	gc := g.Config.GenCommittee
 
 	cnodes := make([]*common.Cnode, len(gc))
-	for k, _ := range gc {
+	for k := range gc {
 		node := gc[k]
 		cnodes[k] = &node
 	}

@@ -100,10 +100,7 @@ go influxdb.InfluxDB(metrics.DefaultRegistry,
 )
 ```
 
-Periodically upload every metric to Librato using the [Librato client](https://github.com/mihasya/go-metrics-librato):
-
-**Note**: the client included with this repository under the `librato` package
-has been deprecated and moved to the repository linked above.
+Periodically upload every metric to Librato using the [external Librato client](https://github.com/mihasya/go-metrics-librato):
 
 ```go
 import "github.com/mihasya/go-metrics-librato"

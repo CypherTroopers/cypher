@@ -49,12 +49,6 @@ var (
 	ByzantiumBlockReward = big.NewInt(3e+18)                                              // Block reward in wei for successfully mining a block upward from Byzantium
 	CommonNodePowReward  = new(big.Int).Mul(big.NewInt(100000), big.NewInt(params.Ether)) // Bonus reward in wei for accepted common-node PoW candidate
 
-	errLargeBlockTime    = errors.New("timestamp too big")
-	errZeroBlockTime     = errors.New("timestamp equals parent's")
-	errTooManyUncles     = errors.New("too many uncles")
-	errDuplicateUncle    = errors.New("duplicate uncle")
-	errUncleIsAncestor   = errors.New("uncle is ancestor")
-	errDanglingUncle     = errors.New("uncle's parent is not ancestor")
 	errInvalidDifficulty = errors.New("non-positive difficulty")
 	errInvalidMixDigest  = errors.New("invalid mix digest")
 	errInvalidPoW        = errors.New("invalid proof-of-work")
@@ -82,7 +76,6 @@ var (
 	big2          = big.NewInt(2)
 	big8          = big.NewInt(8)
 	big9          = big.NewInt(9)
-	big10         = big.NewInt(10)
 	big32         = big.NewInt(32)
 	bigMinus99    = big.NewInt(-99)
 
@@ -264,12 +257,35 @@ func (colossusX *colossusX) Author0(header *types.Header) (common.PublicKey25519
 	return common.PublicKey25519{}, nil
 }
 
+// VerifyFHSBlockTimestamp bounds the timestamp before a proposal can receive a
+// QC. The allowance covers clock skew and short bursts of subsecond production;
+// a proposer at the limit must retry after the wall clock advances.
+func VerifyFHSBlockTimestamp(timestamp uint64, now time.Time) error {
+	seconds := now.Unix()
+	if seconds < 0 {
+		return consensus.ErrFutureBlock
+	}
+	current := uint64(seconds)
+	// Subtract only in the forward direction so neither a malicious timestamp
+	// nor the allowance can wrap the comparison.
+	if timestamp > current && timestamp-current > uint64(allowedFutureBlockTime/time.Second) {
+		return consensus.ErrFutureBlock
+	}
+	return nil
+}
+
 // VerifyHeader checks whether a header conforms to the consensus rules of the
 // stock Ethereum colossusX engine.
 func (colossusX *colossusX) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
 	// If we're running a full engine faking, accept any input as valid
 	if colossusX.config.PowMode == ModeFullFake {
 		return nil
+	}
+	if config := chain.Config(); config != nil && config.FairHotstuff {
+		// A hash-known header must not bypass the gate used before FHS voting.
+		if err := VerifyFHSBlockTimestamp(header.Time, time.Now()); err != nil {
+			return err
+		}
 	}
 	// Short circuit if the header is known, or its parent not
 	number := header.Number.Uint64()
@@ -350,6 +366,11 @@ func (colossusX *colossusX) VerifyHeaders(chain consensus.ChainHeaderReader, hea
 }
 
 func (colossusX *colossusX) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, index int) error {
+	if config := chain.Config(); config != nil && config.FairHotstuff {
+		if err := VerifyFHSBlockTimestamp(headers[index].Time, time.Now()); err != nil {
+			return err
+		}
+	}
 	var parent *types.Header
 	if index == 0 {
 		parent = chain.GetHeader(headers[0].ParentHash, headers[0].Number.Uint64()-1)
@@ -373,13 +394,8 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 	if uint64(len(header.Extra)) > params.MaximumExtraDataSize {
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), params.MaximumExtraDataSize)
 	}
-	// Verify the header's timestamp
-	//if !uncle {
-	//	log.Info("verifyHeader", "header.Time", header.Time, "future time", uint64(time.Now().Add(allowedFutureBlockTime).Unix()))
-	//	if header.Time > uint64(time.Now().Add(allowedFutureBlockTime).Unix()) {
-	//		return consensus.ErrFutureBlock
-	//	}
-	//}
+	// The FHS future-time bound is checked before the public entry points'
+	// known-header shortcuts. Every new header must also advance its parent.
 	if header.Time <= parent.Time {
 		return errOlderBlockTime
 	}
@@ -441,7 +457,7 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 // setting the final state on the header
 func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, totalGas uint64) {
 	// Accumulate any block and uncle rewards and commit the final state root
-	accumulateRewards(chain.Config(), state, header, uncles)
+	accumulateRewards(chain.Config(), state, header, txs, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
 	}
@@ -453,7 +469,7 @@ func (colossusX *colossusX) Finalize(chain consensus.ChainHeaderReader, header *
 // uncle rewards, setting the final state and assembling the block.
 func (colossusX *colossusX) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt) (*types.Block, error) {
 	// Accumulate any block and uncle rewards and commit the final state root
-	accumulateRewards(chain.Config(), state, header, uncles)
+	accumulateRewards(chain.Config(), state, header, txs, uncles)
 	if header.BlockType == types.Key_Block {
 		ApplyKeyblockPowRewardByKeyInfo(state, header.KeyInfo)
 	}
@@ -510,10 +526,14 @@ func calcDifficultyFrontier(time uint64, parent *types.Header) *big.Int {
 	return diff
 }
 
-// AccumulateRewards credits the coinbase of the given block with the mining
-// reward. The total reward consists of the static block reward and rewards for
-// included uncles. The coinbase of each uncle block is also rewarded.
-func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, uncles []*types.Header) {
+// accumulateRewards applies the protocol rewards for a block. Empty FastTx and
+// SlowTx blocks are intentionally entirely rewardless. Key block carriers keep
+// the existing static and PoW reward flow even though they contain no
+// transactions.
+func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, txs []*types.Transaction, uncles []*types.Header) {
+	if len(txs) == 0 && (header.BlockType == types.FastTx_Block || header.BlockType == types.SlowTx_Block) {
+		return
+	}
 	// Select the correct block reward based on chain progression
 	blockReward := FrontierBlockReward
 	// Accumulate the rewards for the miner and any included uncles
@@ -532,9 +552,9 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 	state.AddBalance(header.Coinbase, reward)
 }
 
-// wrapper for accumulateRewards to be called by raft minter
-func AccumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, uncles []*types.Header) {
-	accumulateRewards(config, state, header, uncles)
+// AccumulateRewards exposes the shared reward rule to the proposal builders.
+func AccumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, txs []*types.Transaction, uncles []*types.Header) {
+	accumulateRewards(config, state, header, txs, uncles)
 }
 
 // ApplyFixedModeKeyblockPowReward credits CommonNodePowReward to keyblock outAddress

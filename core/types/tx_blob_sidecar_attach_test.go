@@ -9,7 +9,7 @@ func TestBlobTxWithBlobSidecarDoesNotChangeHash(t *testing.T) {
 	tx := testVerifyBlobTx(KZGToVersionedHash(commitment))
 	before := tx.Hash()
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}
@@ -25,7 +25,7 @@ func TestBlobTxWithBlobSidecarDoesNotChangeHash(t *testing.T) {
 func TestBlobTxSidecarCopyIsDeep(t *testing.T) {
 	commitment := testKZGCommitment(22)
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}

@@ -21,7 +21,7 @@ func blobGasTestHash(n byte) common.Hash {
 
 func blobGasTestConfig(cancunTime uint64) *params.ChainConfig {
 	cfg := &params.ChainConfig{}
-	cfg.SetModernForkConfig(&params.ModernForkConfig{CancunTime: &cancunTime})
+	cfg.SetModernForkConfig(&params.ModernForkConfig{BerlinBlock: big.NewInt(0), LondonBlock: big.NewInt(0), CancunTime: &cancunTime})
 	return cfg
 }
 

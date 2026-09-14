@@ -550,7 +550,12 @@ func (l *txPricedList) Discard(slots int, local *accountSet) types.Transactions 
 		discardable := 0
 		for _, tx := range *l.items {
 			if !local.containsTx(tx) {
-				discardable++
+				charge := numSlots(tx)
+				if charge > math.MaxInt-discardable {
+					discardable = math.MaxInt
+				} else {
+					discardable += charge
+				}
 			}
 			if discardable >= slots {
 				break
@@ -563,8 +568,15 @@ func (l *txPricedList) Discard(slots int, local *accountSet) types.Transactions 
 	if slots == 0 {
 		return nil
 	}
-	drop := make(types.Transactions, 0, slots)               // Remote underpriced transactions to drop
-	save := make(types.Transactions, 0, len(*l.items)-slots) // Local underpriced transactions to keep
+	// slots is a byte-charge unit, not a transaction count. A single large
+	// transaction may satisfy many requested slots, so using it directly in
+	// transaction-slice capacities can over-allocate or produce a negative cap.
+	dropCapacity := slots
+	if itemCount := len(*l.items); dropCapacity > itemCount {
+		dropCapacity = itemCount
+	}
+	drop := make(types.Transactions, 0, dropCapacity)  // Remote underpriced transactions to drop
+	save := make(types.Transactions, 0, len(*l.items)) // Local underpriced transactions to keep
 
 	for len(*l.items) > 0 && slots > 0 {
 		// Discard stale transactions if found during cleanup

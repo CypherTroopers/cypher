@@ -22,25 +22,20 @@ import (
 	"fmt"
 	"math/big"
 	"net"
-	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 
-	//	"time"
-
 	"github.com/cypherium/cypher/accounts"
 	"github.com/cypherium/cypher/common"
-	"github.com/cypherium/cypher/common/hexutil"
+	"github.com/cypherium/cypher/commonrpcreward"
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/consensus/colossusX"
-
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/bloombits"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
-
-	//	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/eth/downloader"
 	"github.com/cypherium/cypher/eth/filters"
 	"github.com/cypherium/cypher/eth/gasprice"
@@ -49,19 +44,16 @@ import (
 	"github.com/cypherium/cypher/internal/ethapi"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/miner"
-	"github.com/cypherium/cypher/reconfig/bftview"
-	"golang.org/x/crypto/ed25519"
-
 	"github.com/cypherium/cypher/node"
 	"github.com/cypherium/cypher/p2p"
 	"github.com/cypherium/cypher/p2p/enode"
 	"github.com/cypherium/cypher/p2p/enr"
-
 	p2pnat "github.com/cypherium/cypher/p2p/nat"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig"
-	"github.com/cypherium/cypher/rlp"
+	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/rpc"
+	"golang.org/x/crypto/ed25519"
 )
 
 // Ethereum implements the Ethereum full node service.
@@ -69,15 +61,22 @@ type Ethereum struct {
 	config *Config
 
 	// Handlers
-	txPool          *core.TxPool
-	blockchain      *core.BlockChain
-	keyBlockChain   *core.KeyBlockChain
-	protocolManager *ProtocolManager
-	candidatePool   *core.CandidatePool
-	dialCandidates  enode.Iterator
+	txPool           *core.TxPool
+	blockchain       *core.BlockChain
+	keyBlockChain    *core.KeyBlockChain
+	protocolManager  *ProtocolManager
+	candidatePool    *core.CandidatePool
+	dialCandidates   enode.Iterator
+	txQUICIngress    *TxQUICIngress
+	txIngressLife    *transactionIngressLifecycle
+	rawTxAPI         *ethapi.PublicTransactionPoolAPI
+	commonRPCRewards *commonrpcreward.Registry
 
 	// DB interfaces
-	chainDb ethdb.Database // Block chain database
+	chainDb        ethdb.Database // Block chain database
+	txOutboxDb     ethdb.Database // Rebuildable TxQUIC outbox projection (bridge nodes only)
+	txIngressDb    ethdb.Database // Rebuildable TxQUIC receiver projection (committee nodes only)
+	txIngressWALDb ethdb.Database // Role-independent transaction ingress authority
 
 	eventMux       *event.TypeMux
 	engine         consensus.Engine
@@ -100,14 +99,72 @@ type Ethereum struct {
 	p2pServer *p2p.Server
 	extIP     net.IP
 	lock      sync.RWMutex // Protects the variadic fields (e.g. gas price and etherbase)
+	// Serializes the RPC-visible reconfig/PoW-listener/miner state transition.
+	miningLifecycleMu sync.Mutex
 
 	consensusServicePendingLogsFeed *event.Feed
 }
 
-// New creates a new Ethereum object (including the
-// initialisation of the common Ethereum object)
+// powResultTransportLifecycle is registered after reconfig so shutdown closes
+// PoW ingress before reconfig tears down committee activity.
+// The listener itself is started only by miner.start after validator identity
+// and membership have been established.
+type powResultTransportLifecycle struct {
+	pool *core.CandidatePool
+}
+
+func (l *powResultTransportLifecycle) Start() error { return nil }
+
+func (l *powResultTransportLifecycle) Stop() error {
+	if l != nil && l.pool != nil {
+		l.pool.StopPoWResultTransport()
+	}
+	return nil
+}
+
+// transactionIngressLifecycle is registered after reconfig. Node lifecycles
+// stop in reverse registration order, so this drains RPC/QUIC producers and
+// their WAL before reconfig tears down consensus activity. Ethereum.Stop calls
+// the same idempotent wrapper later, before closing the ingress databases.
+type transactionIngressLifecycle struct {
+	once    sync.Once
+	stopAPI func()
+	stop    func()
+}
+
+func newTransactionIngressLifecycle(api *ethapi.PublicTransactionPoolAPI, ingress *TxQUICIngress) *transactionIngressLifecycle {
+	return &transactionIngressLifecycle{
+		stopAPI: func() {
+			if api != nil {
+				api.Stop()
+			}
+		},
+		stop: func() {
+			if ingress != nil {
+				ingress.Stop()
+			}
+		},
+	}
+}
+
+func (l *transactionIngressLifecycle) Start() error { return nil }
+
+func (l *transactionIngressLifecycle) Stop() error {
+	if l != nil {
+		l.once.Do(func() {
+			if l.stopAPI != nil {
+				l.stopAPI()
+			}
+			if l.stop != nil {
+				l.stop()
+			}
+		})
+	}
+	return nil
+}
+
+// New creates a new Ethereum object (including the initialisation of the common Ethereum object).
 func New(stack *node.Node, config *Config) (*Ethereum, error) {
-	// Ensure configuration values are compatible and sane
 	if config.SyncMode == downloader.LightSync {
 		return nil, errors.New("can't run eth.Ethereum in light sync mode, use les.LightEthereum")
 	}
@@ -129,31 +186,48 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	}
 	log.Info("Allocated trie memory caches", "clean", common.StorageSize(config.TrieCleanCache)*1024*1024, "dirty", common.StorageSize(config.TrieDirtyCache)*1024*1024)
 
-	// Assemble the Ethereum object
 	chainDb, err := stack.OpenDatabaseWithFreezer("chaindata", config.DatabaseCache, config.DatabaseHandles, config.DatabaseFreezer, "eth/db/chaindata/")
 	if err != nil {
 		return nil, err
 	}
-	_, _, genesisErr := core.SetupGenesisKeyBlock(chainDb, config.GenesisKey)
-	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
-		return nil, genesisErr
+	core.SetCommonRPCAdmissionDatabase(chainDb)
+	_, _, keyGenesisErr := core.SetupGenesisKeyBlock(chainDb, config.GenesisKey)
+	if keyGenesisErr != nil {
+		return nil, keyGenesisErr
 	}
-	chainConfig, genesisHash, _ := core.SetupGenesisBlock(chainDb, config.Genesis)
-	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
-		return nil, genesisErr
+	chainConfig, genesisHash, blockGenesisErr := core.SetupGenesisBlock(chainDb, config.Genesis)
+	if blockGenesisErr != nil {
+		return nil, blockGenesisErr
+	}
+	if chainConfig.FairHotstuff && config.SyncMode != downloader.FullSync {
+		log.Warn("Fair HotStuff requires full sync", "requested", config.SyncMode)
+		config.SyncMode = downloader.FullSync
+	}
+	if chainConfig != nil && chainConfig.ChainID != nil && chainConfig.ChainID.IsUint64() {
+		// Bind every TxQUIC packet and acknowledgement to this chain before
+		// auto-role selection can enable either side of the transport.
+		config.TxQUIC.ChainID = chainConfig.ChainID.Uint64()
+		config.TxQUIC.GenesisHash = genesisHash
+		config.TxQUIC.FairHotstuff = chainConfig.FairHotstuff
+	} else if config.TxQUIC.Enabled || config.TxQUIC.BridgeEnabled {
+		return nil, fmt.Errorf("TxQUIC requires a non-negative uint64 chain ID")
 	}
 	log.Info("Initialised chain configuration", "config", chainConfig)
 	chainConfig.RnetPort = config.RnetPort
 	chainConfig.EnabledTPS = config.EnableTPS
+	config.TxQUIC.ApplyFixedCommitteeAutoRole(chainConfig)
+	config.TxQUIC.ApplyHTTP3RPCDefaults(stack.Config().HTTPHost, stack.Config().HTTPPort)
 
 	log.Info("Initialised chain configuration", "config id", chainConfig.ChainID)
-	var extIP net.IP
-	extIP = net.ParseIP(config.ExternalIp).To4()
+	extIP := net.ParseIP(config.ExternalIp)
 	if extIP == nil {
 		extIP = net.ParseIP(p2pnat.GetExternalIp())
 	}
-
-	log.Info("extIP address", "IP", extIP.String())
+	if extIP != nil {
+		log.Info("extIP address", "IP", extIP.String())
+	} else {
+		log.Warn("extIP address is not configured")
+	}
 
 	eth := &Ethereum{
 		config:                          config,
@@ -187,23 +261,23 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 			rawdb.WriteDatabaseVersion(chainDb, core.BlockChainVersion)
 		}
 	}
-	var (
-		vmConfig = vm.Config{
-			EnablePreimageRecording: config.EnablePreimageRecording,
-			EWASMInterpreter:        config.EWASMInterpreter,
-			EVMInterpreter:          config.EVMInterpreter,
-		}
-		cacheConfig = &core.CacheConfig{
-			TrieCleanLimit:      config.TrieCleanCache,
-			TrieCleanJournal:    stack.ResolvePath(config.TrieCleanCacheJournal),
-			TrieCleanRejournal:  config.TrieCleanCacheRejournal,
-			TrieCleanNoPrefetch: config.NoPrefetch,
-			TrieDirtyLimit:      config.TrieDirtyCache,
-			TrieDirtyDisabled:   config.NoPruning,
-			TrieTimeLimit:       config.TrieTimeout,
-			SnapshotLimit:       config.SnapshotCache,
-		}
-	)
+
+	vmConfig := vm.Config{
+		EnablePreimageRecording: config.EnablePreimageRecording,
+		EWASMInterpreter:        config.EWASMInterpreter,
+		EVMInterpreter:          config.EVMInterpreter,
+	}
+	cacheConfig := &core.CacheConfig{
+		TrieCleanLimit:      config.TrieCleanCache,
+		TrieCleanJournal:    stack.ResolvePath(config.TrieCleanCacheJournal),
+		TrieCleanRejournal:  config.TrieCleanCacheRejournal,
+		TrieCleanNoPrefetch: config.NoPrefetch,
+		TrieDirtyLimit:      config.TrieDirtyCache,
+		TrieDirtyDisabled:   config.NoPruning,
+		TrieTimeLimit:       config.TrieTimeout,
+		SnapshotLimit:       config.SnapshotCache,
+	}
+
 	eth.candidatePool = core.NewCandidatePool(eth, eth.EventMux(), chainDb)
 	eth.keyBlockChain, err = core.NewKeyBlockChain(eth, chainDb, cacheConfig, chainConfig, eth.engine, eth.EventMux())
 	if err != nil {
@@ -213,38 +287,131 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Rewind the chain in case of an incompatible config upgrade.
-	if compat, ok := genesisErr.(*params.ConfigCompatError); ok {
-		log.Warn("Rewinding chain to upgrade configuration", "err", compat)
-		eth.blockchain.SetHead(compat.RewindTo)
-		rawdb.WriteChainConfig(chainDb, genesisHash, chainConfig)
+	if chainConfig != nil && chainConfig.FairHotstuff {
+		core.SetCommonRPCAdmissionFinalizedLookup(func(hash common.Hash) bool {
+			return eth.blockchain.IsFinalizedTransaction(hash)
+		})
+	} else {
+		core.SetCommonRPCAdmissionFinalizedLookup(nil)
 	}
 	eth.bloomIndexer.Start(eth.blockchain)
 
+	if config.TxQUIC.BridgeEnabled {
+		// The unified ingress WAL is the sole recovery owner for admission-enabled
+		// local transactions. Keep local priority semantics, but disable the legacy
+		// transactions.rlp writer so a high-rate RPC batch is not serialized and
+		// duplicated through a second journal after its WAL fsync.
+		if config.TxPool.NoLocals {
+			log.Warn("Disabling txpool.nolocals for durable common RPC ingress")
+			config.TxPool.NoLocals = false
+		}
+		if config.TxPool.Journal != "" {
+			log.Info("Disabling legacy transaction journal in favor of unified ingress WAL", "journal", config.TxPool.Journal)
+			config.TxPool.Journal = ""
+		}
+		outboxCache, outboxHandles := config.DatabaseCache/16, config.DatabaseHandles/16
+		if outboxCache < 16 {
+			outboxCache = 16
+		}
+		if outboxCache > 128 {
+			outboxCache = 128
+		}
+		if outboxHandles < 16 {
+			outboxHandles = 16
+		}
+		if outboxHandles > 128 {
+			outboxHandles = 128
+		}
+		eth.txOutboxDb, err = stack.OpenDatabase("txoutbox", outboxCache, outboxHandles, "eth/db/txoutbox/")
+		if err != nil {
+			return nil, fmt.Errorf("open TxQUIC outbox database: %w", err)
+		}
+	}
+	if config.TxQUIC.Enabled {
+		ingressCache, ingressHandles := config.DatabaseCache/16, config.DatabaseHandles/16
+		if ingressCache < 16 {
+			ingressCache = 16
+		}
+		if ingressCache > 128 {
+			ingressCache = 128
+		}
+		if ingressHandles < 16 {
+			ingressHandles = 16
+		}
+		if ingressHandles > 128 {
+			ingressHandles = 128
+		}
+		eth.txIngressDb, err = stack.OpenDatabase("txingress", ingressCache, ingressHandles, "eth/db/txingress/")
+		if err != nil {
+			return nil, fmt.Errorf("open TxQUIC ingress database: %w", err)
+		}
+	}
+	if config.TxQUIC.BridgeEnabled || config.TxQUIC.Enabled {
+		walCache, walHandles := config.DatabaseCache/16, config.DatabaseHandles/16
+		if walCache < 16 {
+			walCache = 16
+		}
+		if walCache > 128 {
+			walCache = 128
+		}
+		if walHandles < 16 {
+			walHandles = 16
+		}
+		if walHandles > 128 {
+			walHandles = 128
+		}
+		eth.txIngressWALDb, err = stack.OpenDatabase("txingresswal", walCache, walHandles, "eth/db/txingresswal/")
+		if err != nil {
+			return nil, fmt.Errorf("open transaction ingress WAL database: %w", err)
+		}
+	}
 	if config.TxPool.Journal != "" {
 		config.TxPool.Journal = stack.ResolvePath(config.TxPool.Journal)
 	}
 	eth.txPool = core.NewTxPool(config.TxPool, chainConfig, eth.blockchain)
-	// Permit the downloader to use the trie cache allowance during fast sync
+	eth.txQUICIngress = NewTxQUICIngress(config.TxQUIC, eth.txPool)
+	if eth.txIngressWALDb != nil {
+		eth.txQUICIngress.SetIngressWALDatabase(eth.txIngressWALDb)
+	}
+	eth.txQUICIngress.SetCanonicalTxLookup(func(hash common.Hash) bool {
+		return eth.blockchain.GetTransactionLookup(hash) != nil
+	})
+	if chainConfig != nil && chainConfig.FairHotstuff {
+		// Receipt sync may publish lookup entries ahead of the FHS state head;
+		// require exact canonical membership at or below the finalized head.
+		eth.txQUICIngress.SetFinalizedTxLookup(func(hash common.Hash) bool {
+			return eth.blockchain.IsFinalizedTransaction(hash)
+		})
+		nonceLookup := newTxQUICFinalizedNonceLookup(eth.blockchain, chainConfig.ChainID)
+		eth.txQUICIngress.SetObsoleteTxLookup(nonceLookup.Lookup)
+	}
+	if eth.txOutboxDb != nil {
+		eth.txQUICIngress.SetDurableOutbox(NewTxOutbox(eth.txOutboxDb, config.TxQUIC), eth.accountManager)
+	}
+	if eth.txIngressDb != nil {
+		eth.txQUICIngress.SetDurableIngress(NewTxQUICIngressStore(eth.txIngressDb, config.TxQUIC))
+	}
+
 	cacheLimit := cacheConfig.TrieCleanLimit + cacheConfig.TrieDirtyLimit + cacheConfig.SnapshotLimit
 	checkpoint := config.Checkpoint
 	if checkpoint == nil {
 		checkpoint = params.TrustedCheckpoints[genesisHash]
 	}
-
 	if eth.protocolManager, err = NewProtocolManager(chainConfig, checkpoint, config.SyncMode, config.NetworkId, eth.eventMux, eth.txPool, eth.engine, eth.blockchain, chainDb, cacheLimit, config.Whitelist, eth.candidatePool); err != nil {
 		return nil, err
 	}
-	if chainConfig != nil && (chainConfig.FixedLeader || chainConfig.FixedCommittee) {
-		if err := eth.candidatePool.StartPoWResultUDP(chainConfig.RnetPort); err != nil {
-			return nil, err
+	eth.miner = miner.New(eth, chainConfig, eth.EventMux(), eth.engine, extIP)
+	// Publish an existing bridge identity before RPC becomes visible. A new node
+	// may create or import its signing account through RPC after startup; admission
+	// signing still rejects submissions until that account is configured and ready.
+	if config.TxQUIC.BridgeEnabled {
+		if etherbase, err := eth.Etherbase(); err == nil {
+			eth.SetEtherbase(etherbase)
+		} else {
+			log.Info("Common RPC signing account is not configured yet", "err", err)
 		}
 	}
-
-	//eth.miner = miner.New(eth, &config.Miner, chainConfig, eth.EventMux(), eth.engine, eth.isLocalBlock)
-	eth.miner = miner.New(eth, chainConfig, eth.EventMux(), eth.engine, extIP)
-
-	//hexNodeId := fmt.Sprintf("%x", crypto.FromECDSAPub(&stack.GetNodeKey().PublicKey)[1:]) // ??Cypher
+	eth.commonRPCRewards = commonrpcreward.Open(stack.InstanceDir(), chainConfig.ChainID, genesisHash)
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), eth, nil, "hexNodeId", config.EVMCallTimeOut}
 	gpoParams := config.GPO
 	if gpoParams.Default == nil {
@@ -256,38 +423,90 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	// Start the RPC service
 	eth.netRPCService = ethapi.NewPublicNetAPI(eth.p2pServer, eth.NetVersion())
 
-	// Register the backend on the node
 	stack.RegisterAPIs(eth.APIs())
+	eth.txIngressLife = newTransactionIngressLifecycle(eth.rawTxAPI, eth.txQUICIngress)
 	stack.RegisterProtocols(eth.Protocols())
 	stack.RegisterLifecycle(eth)
 
-	eth.reconfig, _ = reconfig.New(stack, chainConfig, eth)
-
+	eth.reconfig, err = reconfig.New(stack, chainConfig, eth)
+	if err != nil {
+		return nil, err
+	}
+	// This lifecycle must be registered after reconfig: node shutdown is LIFO,
+	// making transaction ingress the first stateful service to stop and drain.
+	stack.RegisterLifecycle(eth.txIngressLife)
+	if chainConfig != nil && (chainConfig.FixedLeader || chainConfig.FixedCommittee) {
+		if err := eth.candidatePool.ConfigurePoWResultTLS(eth.reconfig.PoWResultTLSPublicKey, func() (common.Hash, error) {
+			keyBlock := eth.keyBlockChain.CurrentBlock()
+			if keyBlock == nil {
+				return common.Hash{}, fmt.Errorf("current key block is unavailable")
+			}
+			return keyBlock.Hash(), nil
+		}, eth.reconfig.SignPoWResultTLS); err != nil {
+			return nil, err
+		}
+		stack.RegisterLifecycle(&powResultTransportLifecycle{pool: eth.candidatePool})
+	}
+	if eth.txQUICIngress != nil && eth.reconfig != nil && chainConfig != nil && chainConfig.FairHotstuff {
+		eth.txQUICIngress.SetFHSRouteProvider(func() (TxQUICFHSRoute, error) {
+			route, err := eth.reconfig.CurrentFHSRoute()
+			if err != nil {
+				return TxQUICFHSRoute{}, err
+			}
+			if route == nil || route.Leader == nil {
+				return TxQUICFHSRoute{}, fmt.Errorf("Fair HotStuff route has no leader")
+			}
+			committeeAddresses := make([]string, len(route.Committee))
+			committeePublicKeys := make([]string, len(route.Committee))
+			for index, member := range route.Committee {
+				if member == nil || strings.TrimSpace(member.Address) == "" || strings.TrimSpace(member.Public) == "" {
+					return TxQUICFHSRoute{}, fmt.Errorf("Fair HotStuff route has invalid committee member %d", index)
+				}
+				committeeAddresses[index] = member.Address
+				committeePublicKeys[index] = member.Public
+			}
+			return TxQUICFHSRoute{
+				ProposalView:        route.ProposalView,
+				KeyNumber:           route.KeyNumber,
+				CommitteeHash:       route.CommitteeHash,
+				LeaderIndex:         route.LeaderIndex,
+				LeaderAddress:       route.Leader.Address,
+				CommitteeAddresses:  committeeAddresses,
+				CommitteePublicKeys: committeePublicKeys,
+			}, nil
+		})
+		if config.TxQUIC.Enabled {
+			if err := eth.txQUICIngress.SetFHSReceiptSigner(eth.reconfig.TxQUICReceiptPublicKey, eth.reconfig.SignTxQUICReceipt); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if eth.txQUICIngress != nil && config.TxQUIC.HTTP3Enabled {
+		if rpcHandler, err := stack.PublicRPCHandler(); err == nil {
+			vhosts := stack.Config().HTTPVirtualHosts
+			if len(vhosts) == 0 {
+				vhosts = []string{"*"}
+			}
+			eth.txQUICIngress.SetHTTP3RPCHandler(node.NewHTTPHandlerStack(rpcHandler, stack.Config().HTTPCors, vhosts))
+		} else {
+			return nil, fmt.Errorf("attach public HTTP/3 JSON-RPC handler: %w", err)
+		}
+	}
 	return eth, nil
 }
 
-func makeExtraData(extra []byte, hasPrivate bool) []byte {
-	if len(extra) == 0 {
-		// create default extradata
-		extra, _ = rlp.EncodeToBytes([]interface{}{
-			uint(params.VersionMajor<<16 | params.VersionMinor<<8 | params.VersionPatch),
-			"cypher",
-			runtime.Version(),
-			runtime.GOOS,
-		})
+// ResolveTxQUICTransaction exposes only authenticated, fsync-complete ingress
+// data to the consensus proposal data-availability layer.
+func (s *Ethereum) ResolveTxQUICTransaction(hash common.Hash) (*types.Transaction, error) {
+	if s == nil || s.txQUICIngress == nil {
+		return nil, nil
 	}
-	if uint64(len(extra)) > params.GetMaximumExtraDataSize(hasPrivate) {
-		log.Warn("Miner extra data exceed limit", "extra", hexutil.Bytes(extra), "limit", params.GetMaximumExtraDataSize(hasPrivate))
-		extra = nil
-	}
-	return extra
+	return s.txQUICIngress.ResolveTransaction(hash)
 }
 
-// CreateConsensusEngine creates the required type of consensus engine instance for an Ethereum service
+// CreateConsensusEngine creates the required type of consensus engine instance for an Ethereum service.
 func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, config *Config) consensus.Engine {
 	s := config.colossusX
 	engine := colossusX.New(colossusX.Config{
@@ -298,89 +517,44 @@ func CreateConsensusEngine(stack *node.Node, chainConfig *params.ChainConfig, co
 		DatasetsInMem:  s.DatasetsInMem,
 		DatasetsOnDisk: s.DatasetsOnDisk,
 	})
-	//	engine := colossusX.NewNormal()
-	engine.SetThreads(-1) // Disable CPU mining
+	engine.SetThreads(-1)
 	return engine
 }
 
 // APIs return the collection of RPC services the ethereum package offers.
-// NOTE, some of these services probably need to be moved to somewhere else.
 func (s *Ethereum) APIs() []rpc.API {
-	apis := ethapi.GetAPIs(s.APIBackend)
-
-	// Append any APIs exposed explicitly by the consensus engine
+	apis, rawTxAPI := ethapi.GetAPIsWithTransactionPool(s.APIBackend)
+	s.rawTxAPI = rawTxAPI
 	apis = append(apis, s.engine.APIs(s.BlockChain())...)
-
-	// Append all the local APIs and return
 	apis = append(apis, []rpc.API{
-		{
-			Namespace: "eth",
-			Version:   "1.0",
-			Service:   NewPublicEthereumAPI(s),
-			Public:    true,
-		}, {
-			Namespace: "eth",
-			Version:   "1.0",
-			Service:   NewPublicMinerAPI(s),
-			Public:    true,
-		}, {
-			Namespace: "eth",
-			Version:   "1.0",
-			Service:   downloader.NewPublicDownloaderAPI(s.protocolManager.downloader, s.eventMux),
-			Public:    true,
-		}, {
-			Namespace: "miner",
-			Version:   "1.0",
-			Service:   NewPrivateMinerAPI(s),
-			Public:    false,
-		}, {
-			Namespace: "eth",
-			Version:   "1.0",
-			Service:   filters.NewPublicFilterAPI(s.APIBackend, false),
-			Public:    true,
-		}, {
-			Namespace: "admin",
-			Version:   "1.0",
-			Service:   NewPrivateAdminAPI(s),
-		}, {
-			Namespace: "debug",
-			Version:   "1.0",
-			Service:   NewPublicDebugAPI(s),
-			Public:    true,
-		}, {
-			Namespace: "debug",
-			Version:   "1.0",
-			Service:   NewPrivateDebugAPI(s),
-		}, {
-			Namespace: "net",
-			Version:   "1.0",
-			Service:   s.netRPCService,
-			Public:    true,
-		},
+		{Namespace: "eth", Version: "1.0", Service: NewPublicEthereumAPI(s), Public: true},
+		{Namespace: "eth", Version: "1.0", Service: NewPublicMinerAPI(s), Public: true},
+		{Namespace: "eth", Version: "1.0", Service: downloader.NewPublicDownloaderAPI(s.protocolManager.downloader, s.eventMux), Public: true},
+		{Namespace: "miner", Version: "1.0", Service: NewPrivateMinerAPI(s), Public: false},
+		{Namespace: "eth", Version: "1.0", Service: filters.NewPublicFilterAPI(s.APIBackend, false), Public: true},
+		{Namespace: "admin", Version: "1.0", Service: NewPrivateAdminAPI(s)},
+		{Namespace: "debug", Version: "1.0", Service: NewPublicDebugAPI(s), Public: true},
+		{Namespace: "debug", Version: "1.0", Service: NewPrivateDebugAPI(s)},
+		{Namespace: "net", Version: "1.0", Service: s.netRPCService, Public: true},
 	}...)
 	return apis
 }
 
-func (s *Ethereum) ResetWithGenesisBlock(gb *types.Block) {
-	s.blockchain.ResetWithGenesisBlock(gb)
-}
+func (s *Ethereum) ResetWithGenesisBlock(gb *types.Block) { s.blockchain.ResetWithGenesisBlock(gb) }
 
 func (s *Ethereum) Etherbase() (eb common.Address, err error) {
 	s.lock.RLock()
 	etherbase := s.etherbase
 	s.lock.RUnlock()
-
 	if etherbase != (common.Address{}) {
 		return etherbase, nil
 	}
 	if wallets := s.AccountManager().Wallets(); len(wallets) > 0 {
 		if accounts := wallets[0].Accounts(); len(accounts) > 0 {
 			etherbase := accounts[0].Address
-
 			s.lock.Lock()
 			s.etherbase = etherbase
 			s.lock.Unlock()
-
 			log.Info("Etherbase automatically configured", "address", etherbase)
 			return etherbase, nil
 		}
@@ -388,148 +562,21 @@ func (s *Ethereum) Etherbase() (eb common.Address, err error) {
 	return common.Address{}, fmt.Errorf("etherbase must be explicitly specified")
 }
 
-/*
-??
-// isLocalBlock checks whether the specified block is mined
-// by local miner accounts.
-//
-// We regard two types of accounts as local miner account: etherbase
-// and accounts specified via `txpool.locals` flag.
-
-	func (s *Ethereum) isLocalBlock(block *types.Block) bool {
-		author, err := s.engine.Author(block.Header())
-		if err != nil {
-			log.Warn("Failed to retrieve block author", "number", block.NumberU64(), "hash", block.Hash(), "err", err)
-			return false
-		}
-		// Check whether the given address is etherbase.
-		s.lock.RLock()
-		etherbase := s.etherbase
-		s.lock.RUnlock()
-		if author == etherbase {
-			return true
-		}
-		// Check whether the given address is specified by `txpool.local`
-		// CLI flag.
-		for _, account := range s.config.TxPool.Locals {
-			if account == author {
-				return true
-			}
-		}
-		return false
-	}
-
-// shouldPreserve checks whether we should preserve the given block
-// during the chain reorg depending on whether the author of block
-// is a local account.
-
-	func (s *Ethereum) shouldPreserve(block *types.Block) bool {
-		// The reason we need to disable the self-reorg preserving for clique
-		// is it can be probable to introduce a deadlock.
-		//
-		// e.g. If there are 7 available signers
-		//
-		// r1   A
-		// r2     B
-		// r3       C
-		// r4         D
-		// r5   A      [X] F G
-		// r6    [X]
-		//
-		// In the round5, the inturn signer E is offline, so the worst case
-		// is A, F and G sign the block of round5 and reject the block of opponents
-		// and in the round6, the last available signer B is offline, the whole
-		// network is stuck.
-		if _, ok := s.engine.(*clique.Clique); ok {
-			return false
-		}
-		return s.isLocalBlock(block)
-	}
-*/
-func (s *Ethereum) shouldPreserve(block *types.Block) bool {
-	return false
-}
+func (s *Ethereum) shouldPreserve(block *types.Block) bool { return false }
 
 // SetEtherbase sets the mining reward address.
 func (s *Ethereum) SetEtherbase(etherbase common.Address) {
 	s.lock.Lock()
 	s.etherbase = etherbase
 	s.lock.Unlock()
-
 	s.miner.SetCoinbase(etherbase)
-
 	bftview.SetServerCoinBase(etherbase)
 }
 
-/*
-// StartMining starts the miner with the given number of CPU threads. If mining
-// is already running, this method adjust the number of threads allowed to use
-// and updates the minimum price required by the transaction pool.
-
-	func (s *Ethereum) StartMining(threads int) error {
-		// Update the thread count within the consensus engine
-		type threaded interface {
-			SetThreads(threads int)
-		}
-		if th, ok := s.engine.(threaded); ok {
-			log.Info("Updated mining threads", "threads", threads)
-			if threads == 0 {
-				threads = -1 // Disable the miner from within
-			}
-			th.SetThreads(threads)
-		}
-		// If the miner was not running, initialize it
-		if !s.IsMining() {
-			// Propagate the initial price point to the transaction pool
-			s.lock.RLock()
-			price := s.gasPrice
-			s.lock.RUnlock()
-			s.txPool.SetGasPrice(price)
-
-			// Configure the local mining address
-			eb, err := s.Etherbase()
-			if err != nil {
-				log.Error("Cannot start mining without etherbase", "err", err)
-				return fmt.Errorf("etherbase missing: %v", err)
-			}
-			if clique, ok := s.engine.(*clique.Clique); ok {
-				wallet, err := s.accountManager.Find(accounts.Account{Address: eb})
-				if wallet == nil || err != nil {
-					log.Error("Etherbase account unavailable locally", "err", err)
-					return fmt.Errorf("signer missing: %v", err)
-				}
-				clique.Authorize(eb, wallet.SignData)
-			}
-			// If mining is started, we can disable the transaction rejection mechanism
-			// introduced to speed sync times.
-			atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
-
-			go s.miner.Start(eb)
-		}
-		return nil
-	}
-
-// StopMining terminates the miner, both at the consensus engine level as well as
-// at the block creation level.
-
-	func (s *Ethereum) StopMining() {
-		// Update the thread count within the consensus engine
-		type threaded interface {
-			SetThreads(threads int)
-		}
-		if th, ok := s.engine.(threaded); ok {
-			th.SetThreads(-1)
-		}
-		// Stop the block creating itself
-		s.miner.Stop()
-	}
-*/
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
 
 func (s *Ethereum) setMiningThreads(threads int) {
-	type threaded interface {
-		SetThreads(threads int)
-	}
+	type threaded interface{ SetThreads(threads int) }
 	if th, ok := s.engine.(threaded); ok {
 		log.Info("Updated mining threads", "threads", threads)
 		th.SetThreads(threads)
@@ -538,26 +585,27 @@ func (s *Ethereum) setMiningThreads(threads int) {
 
 func (s *Ethereum) StartMining(threads int, local bool, eb common.Address, pubKey ed25519.PublicKey) error {
 	s.setMiningThreads(threads)
-
-	// If the miner was not running, initialize it
 	if !s.IsMining() {
 		s.lock.RLock()
 		price := s.gasPrice
 		s.lock.RUnlock()
 		s.txPool.SetGasPrice(price)
 		atomic.StoreUint32(&s.protocolManager.acceptTxs, 1)
-		go s.miner.Start(pubKey, eb)
+		// Miner.Start only installs worker state and starts its own long-lived
+		// goroutines. Run it synchronously so a concurrent miner.start cannot
+		// observe IsMining=false after the surrounding lifecycle transition has
+		// already installed the PoW listener.
+		s.miner.Start(pubKey, eb)
+		if !s.miner.Mining() {
+			return errors.New("miner worker failed to start")
+		}
 	}
 	return nil
 }
 
-func (s *Ethereum) StopMining() {
-	s.miner.Stop()
-}
-
-func (s *Ethereum) IsMining() bool      { return s.miner.Mining() }
-func (s *Ethereum) Miner() *miner.Miner { return s.miner }
-
+func (s *Ethereum) StopMining()                                      { s.miner.Stop() }
+func (s *Ethereum) IsMining() bool                                   { return s.miner.Mining() }
+func (s *Ethereum) Miner() *miner.Miner                              { return s.miner }
 func (s *Ethereum) AccountManager() *accounts.Manager                { return s.accountManager }
 func (s *Ethereum) BlockChain() *core.BlockChain                     { return s.blockchain }
 func (s *Ethereum) KeyBlockChain() *core.KeyBlockChain               { return s.keyBlockChain }
@@ -565,7 +613,7 @@ func (s *Ethereum) TxPool() *core.TxPool                             { return s.
 func (s *Ethereum) EventMux() *event.TypeMux                         { return s.eventMux }
 func (s *Ethereum) Engine() consensus.Engine                         { return s.engine }
 func (s *Ethereum) ChainDb() ethdb.Database                          { return s.chainDb }
-func (s *Ethereum) IsListening() bool                                { return true } // Always listening
+func (s *Ethereum) IsListening() bool                                { return true }
 func (s *Ethereum) EthVersion() int                                  { return int(ProtocolVersions[0]) }
 func (s *Ethereum) NetVersion() uint64                               { return s.networkID }
 func (s *Ethereum) Downloader() *downloader.Downloader               { return s.protocolManager.downloader }
@@ -577,8 +625,7 @@ func (s *Ethereum) ExtIP() net.IP                                    { return s.
 func (s *Ethereum) PublicKey() ed25519.PublicKey                     { return s.miner.GetPubKey() }
 func (s *Ethereum) GetCalcGasLimit() func(block *types.Block) uint64 { return s.CalcGasLimit }
 
-// Protocols returns all the currently configured
-// network protocols to start.
+// Protocols returns all the currently configured network protocols to start.
 func (s *Ethereum) Protocols() []p2p.Protocol {
 	protos := make([]p2p.Protocol, len(ProtocolVersions))
 	for i, vsn := range ProtocolVersions {
@@ -589,15 +636,32 @@ func (s *Ethereum) Protocols() []p2p.Protocol {
 	return protos
 }
 
-// Start implements node.Lifecycle, starting all internal goroutines needed by the
-// Ethereum protocol implementation.
+func (s *Ethereum) startPoWResultTransport() error {
+	if s == nil || s.candidatePool == nil || s.blockchain == nil {
+		return nil
+	}
+	chainConfig := s.blockchain.Config()
+	if chainConfig == nil || !(chainConfig.FixedLeader || chainConfig.FixedCommittee) {
+		return nil
+	}
+	// A common miner is a transport client only. Reconfig.MinerStart establishes
+	// the local BLS identity and updates this membership before this method runs.
+	if bftview.IamMember() < 0 {
+		return nil
+	}
+	return s.candidatePool.StartPoWResultTransport(chainConfig.RnetPort)
+}
+
+func (s *Ethereum) stopPoWResultTransport() {
+	if s != nil && s.candidatePool != nil {
+		s.candidatePool.StopPoWResultTransport()
+	}
+}
+
+// Start implements node.Lifecycle, starting all internal goroutines needed by the Ethereum protocol implementation.
 func (s *Ethereum) Start() error {
 	s.startEthEntryUpdate(s.p2pServer.LocalNode())
-
-	// Start the bloom bits servicing goroutines
 	s.startBloomHandlers(params.BloomBitsBlocks)
-
-	// Figure out a max peers count based on the server limits
 	maxPeers := s.p2pServer.MaxPeers
 	if s.config.LightServ > 0 {
 		if s.config.LightPeers >= s.p2pServer.MaxPeers {
@@ -605,19 +669,48 @@ func (s *Ethereum) Start() error {
 		}
 		maxPeers -= s.config.LightPeers
 	}
-	// Start the networking layer and the light server if requested
 	s.protocolManager.Start(maxPeers)
+	if s.txQUICIngress != nil {
+		if err := s.txQUICIngress.Start(); err != nil {
+			s.protocolManager.Stop()
+			return err
+		}
+	}
 	return nil
 }
 
-// Stop implements node.Lifecycle, terminating all internal goroutines used by the
-// Ethereum protocol.
+// Stop implements node.Lifecycle, terminating all internal goroutines used by the Ethereum protocol.
 func (s *Ethereum) Stop() error {
-	// Stop all the peer-related stuff first.
+	// Stop ingress before reconfig/chain state can become unavailable. The
+	// dedicated lifecycle also invokes this first during normal node shutdown;
+	// the operation is intentionally idempotent for partial-start cleanup.
+	s.stopPoWResultTransport()
+	if s.txIngressLife != nil {
+		_ = s.txIngressLife.Stop()
+	} else {
+		if s.rawTxAPI != nil {
+			s.rawTxAPI.Stop()
+		}
+		if s.txQUICIngress != nil {
+			s.txQUICIngress.Stop()
+		}
+	}
+	if s.txOutboxDb != nil {
+		if err := s.txOutboxDb.Close(); err != nil {
+			log.Warn("Failed to close TxQUIC outbox database", "err", err)
+		}
+	}
+	if s.txIngressDb != nil {
+		if err := s.txIngressDb.Close(); err != nil {
+			log.Warn("Failed to close TxQUIC ingress database", "err", err)
+		}
+	}
+	if s.txIngressWALDb != nil {
+		if err := s.txIngressWALDb.Close(); err != nil {
+			log.Warn("Failed to close transaction ingress WAL database", "err", err)
+		}
+	}
 	s.protocolManager.Stop()
-	s.candidatePool.StopPoWResultUDP()
-
-	// Then stop everything else.
 	s.bloomIndexer.Close()
 	close(s.closeBloomHandler)
 	s.txPool.Stop()
@@ -625,25 +718,20 @@ func (s *Ethereum) Stop() error {
 	s.blockchain.Stop()
 	s.keyBlockChain.Stop()
 	s.engine.Close()
+	core.SetCommonRPCAdmissionFinalizedLookup(nil)
+	core.SetCommonRPCAdmissionDatabase(nil)
 	s.chainDb.Close()
 	s.eventMux.Stop()
 	return nil
 }
 
 func (s *Ethereum) CalcGasLimit(block *types.Block) uint64 {
-	return core.CalcGasLimit(block, s.config.Miner.GasFloor, s.config.Miner.GasCeil)
+	floor, ceil := nativeMinerGasBounds(s.blockchain.Config(), s.config.Miner.GasFloor, s.config.Miner.GasCeil)
+	return core.CalcGasLimit(block, floor, ceil)
 }
-
-// ConsensusServicePendingLogsFeed returns an event.Feed.  When the consensus protocol does not use eth.worker (e.g. raft), the event.Feed should be used to send logs from transactions included in the pending block
 func (s *Ethereum) ConsensusServicePendingLogsFeed() *event.Feed {
 	return s.consensusServicePendingLogsFeed
 }
-
-// SubscribePendingLogs starts delivering logs from transactions included in the consensus engine's pending block to the given channel.
 func (s *Ethereum) SubscribePendingLogs(ch chan<- []*types.Log) event.Subscription {
 	return s.consensusServicePendingLogsFeed.Subscribe(ch)
-	//if s.config.RaftMode {
-	//	return s.consensusServicePendingLogsFeed.Subscribe(ch)
-	//}
-	//	return s.miner.SubscribePendingLogs(ch)
 }

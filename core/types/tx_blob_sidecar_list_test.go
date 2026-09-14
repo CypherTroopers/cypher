@@ -38,7 +38,7 @@ func TestVerifyBlobSidecarsVerifiesAttachedSidecars(t *testing.T) {
 	commitment := testKZGCommitment(1)
 	hash := KZGToVersionedHash(commitment)
 	tx := testBlobTxWithHash(hash).WithBlobSidecar(&BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	})
@@ -65,7 +65,7 @@ func TestVerifyBlobSidecarsPropagatesVerifierError(t *testing.T) {
 	commitment := testKZGCommitment(1)
 	hash := KZGToVersionedHash(commitment)
 	tx := testBlobTxWithHash(hash).WithBlobSidecar(&BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	})

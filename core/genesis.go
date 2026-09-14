@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"strings"
 
 	"github.com/cypherium/cypher/common"
@@ -57,7 +58,6 @@ type Genesis struct {
 	Alloc      GenesisAlloc        `json:"alloc"      gencodec:"required"`
 	BaseFee    *big.Int            `json:"baseFeePerGas,omitempty"`
 
-	// These fields are used for consensus tests.
 	// These fields are used for consensus tests. Please don't use them
 	// in actual genesis blocks.
 	Number     uint64      `json:"number"`
@@ -137,6 +137,49 @@ type GenesisMismatchError struct {
 	Stored, New common.Hash
 }
 
+func validateFairHotstuffGenesisCommitment(header *types.Header, config *params.ChainConfig) error {
+	if config == nil || !config.FairHotstuff {
+		return nil
+	}
+	if header == nil {
+		return fmt.Errorf("missing stored genesis header for Fair HotStuff")
+	}
+	commitment, err := params.FairHotstuffGenesisCommitment(config)
+	if err != nil {
+		return err
+	}
+	if header.MixDigest != commitment {
+		return fmt.Errorf("stored genesis mixHash does not commit the complete Fair HotStuff configuration")
+	}
+	return nil
+}
+
+func validateFairHotstuffConfigTransition(header *types.Header, stored, next *params.ChainConfig) error {
+	if err := validateFairHotstuffGenesisCommitment(header, stored); err != nil {
+		return err
+	}
+	if err := validateFairHotstuffGenesisCommitment(header, next); err != nil {
+		return err
+	}
+	if stored == nil || next == nil {
+		return nil
+	}
+	if stored.FairHotstuff != next.FairHotstuff {
+		return fmt.Errorf("cannot change Fair HotStuff activation after genesis")
+	}
+	return nil
+}
+
+func validateModernForkConfigTransition(stored, next *params.ChainConfig, head uint64) error {
+	if head == 0 || stored == nil || next == nil {
+		return nil
+	}
+	if !reflect.DeepEqual(stored.ModernForkConfig(), next.ModernForkConfig()) {
+		return fmt.Errorf("cannot change modern fork schedule after chain advanced to block %d", head)
+	}
+	return nil
+}
+
 func (e *GenesisMismatchError) Error() string {
 	return fmt.Sprintf("database contains incompatible genesis (have %x, new %x)", e.Stored, e.New)
 }
@@ -187,6 +230,9 @@ func SetupGenesisBlock(db ethdb.Database, genesis *Genesis) (*params.ChainConfig
 	// We have the genesis block in database(perhaps in ancient database)
 	// but the corresponding state is missing.
 	header := rawdb.ReadHeader(db, stored, 0)
+	if header == nil {
+		return genesis.configOrDefault(stored), stored, fmt.Errorf("missing stored genesis header %s", stored)
+	}
 	if _, err := state.New(header.Root, state.NewDatabaseWithCache(db, 0, ""), nil); err != nil {
 		if genesis == nil {
 			genesis = DefaultGenesisBlock()
@@ -216,14 +262,15 @@ func SetupGenesisBlock(db ethdb.Database, genesis *Genesis) (*params.ChainConfig
 	}
 	storedcfg := rawdb.ReadChainConfig(db, stored)
 	if storedcfg == nil {
-		log.Warn("Found genesis block without chain config")
-		rawdb.WriteChainConfig(db, stored, newcfg)
-		return newcfg, stored, nil
+		return newcfg, stored, fmt.Errorf("missing stored chain config; cannot verify genesis consensus commitment")
 	}
 	// Special case: don't change the existing config of a non-mainnet chain if no new
 	// config is supplied. These chains would get AllProtocolChanges (and a compat error)
 	// if we just continued here.
 	if genesis == nil && stored != params.MainnetGenesisHash {
+		if err := validateFairHotstuffConfigTransition(header, storedcfg, storedcfg); err != nil {
+			return storedcfg, stored, err
+		}
 		return storedcfg, stored, nil
 	}
 	// Check config compatibility and write the config. Compatibility errors
@@ -231,6 +278,12 @@ func SetupGenesisBlock(db ethdb.Database, genesis *Genesis) (*params.ChainConfig
 	height := rawdb.ReadHeaderNumber(db, rawdb.ReadHeadHeaderHash(db))
 	if height == nil {
 		return newcfg, stored, fmt.Errorf("missing block number for head header hash")
+	}
+	if err := validateFairHotstuffConfigTransition(header, storedcfg, newcfg); err != nil {
+		return newcfg, stored, err
+	}
+	if err := validateModernForkConfigTransition(storedcfg, newcfg, *height); err != nil {
+		return newcfg, stored, err
 	}
 	rawdb.WriteChainConfig(db, stored, newcfg)
 
@@ -264,12 +317,43 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 	}
 	statedb, _ := state.New(common.Hash{}, state.NewDatabase(db), nil)
 	for addr, account := range g.Alloc {
-		statedb.AddBalance(addr, account.Balance)
+		// Balance is required by the JSON schema, but programmatically assembled
+		// genesis specifications may leave it nil. Treat that as zero here so an
+		// invalid specification can be rejected by Commit without panicking.
+		if account.Balance != nil {
+			statedb.AddBalance(addr, account.Balance)
+		}
 		statedb.SetCode(addr, account.Code)
 		statedb.SetNonce(addr, account.Nonce)
 		for key, value := range account.Storage {
 			statedb.SetState(addr, key, value)
 		}
+	}
+	// Reserve all replay-registry shards in the genesis state. Nonce one is the
+	// protocol account marker consumed by the NativeTxV1 replay reader; creating
+	// every shard up front prevents an ordinary EVM transfer from defining its
+	// initial shape differently on first use.
+	if g.Config != nil && g.Config.NativeParallelEnabled() && g.Config.NativeParallel.RequireNativeTransactions {
+		for shard := 0; shard < 256; shard++ {
+			var payer common.Address
+			payer[0] = byte(shard)
+			statedb.SetNonce(params.NativeReplayRegistryAddressForPayer(payer), 1)
+		}
+	}
+	// Prague is active from genesis on the Cypherium network. Install the
+	// canonical EIP-2935 contract before deriving the genesis state root so all
+	// nodes commit to exactly the same system-code account.
+	if g.Config != nil && g.Config.IsPrague(new(big.Int).SetUint64(g.Number), g.Timestamp) {
+		statedb.SetNonce(params.HistoryStorageAddress, 1)
+		statedb.SetCode(params.HistoryStorageAddress, params.HistoryStorageCode)
+		for _, addr := range []common.Address{params.WithdrawalRequestAddress, params.ConsolidationRequestAddress} {
+			statedb.SetNonce(addr, 1)
+			statedb.SetCode(addr, params.UnsupportedCLSystemCode)
+		}
+	}
+	if g.Config != nil && g.Config.IsCancun(new(big.Int).SetUint64(g.Number), g.Timestamp) {
+		statedb.SetNonce(params.BeaconRootsAddress, 1)
+		statedb.SetCode(params.BeaconRootsAddress, params.UnsupportedCLSystemCode)
 	}
 	root := statedb.IntermediateRoot(false)
 	head := &types.Header{
@@ -293,7 +377,13 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 		head.Difficulty = params.GenesisDifficulty
 	}
 	if head.BaseFee == nil && g.Config != nil && g.Config.IsLondon(head.Number) {
-		head.BaseFee = big.NewInt(params.GWei)
+		head.BaseFee = big.NewInt(params.FixedBaseFeePerGas)
+	}
+	if g.Config != nil && g.Config.IsShanghai(head.Number, head.Time) {
+		head.WithdrawalsHash = types.EmptyWithdrawalsHash
+	}
+	if g.Config != nil && g.Config.IsPrague(head.Number, head.Time) {
+		head.RequestsHash = types.EmptyRequestsHash
 	}
 	statedb.Commit(false)
 	statedb.Database().TrieDB().Commit(root, true, nil)
@@ -304,16 +394,34 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 // Commit writes the block and state of a genesis specification to the database.
 // The block is committed as the canonical head block.
 func (g *Genesis) Commit(db ethdb.Database) (*types.Block, error) {
-	block := g.ToBlock(db)
-	if block.Number().Sign() != 0 {
-		return nil, fmt.Errorf("can't commit genesis block with number > 0")
-	}
 	config := g.Config
 	if config == nil {
 		config = params.AllcolossusXProtocolChanges
 	}
 	if err := config.CheckConfigForkOrder(); err != nil {
 		return nil, err
+	}
+	if config.NativeParallelEnabled() && config.NativeParallel.RequireNativeTransactions {
+		if addr, ok := firstReservedNativeGenesisAccount(g.Alloc); ok {
+			return nil, fmt.Errorf("genesis-native alloc contains reserved replay registry account %s", addr)
+		}
+		if addr, ok := firstEmptyGenesisAccount(g.Alloc); ok {
+			return nil, fmt.Errorf("genesis-native alloc contains empty account %s", addr)
+		}
+	}
+	if config.FairHotstuff {
+		commitment, err := params.FairHotstuffGenesisCommitment(config)
+		if err != nil {
+			return nil, err
+		}
+		if g.Mixhash != commitment {
+			return nil, fmt.Errorf("genesis mixHash must commit the complete Fair HotStuff configuration: have %s want %s", g.Mixhash, commitment)
+		}
+	}
+	// Validate the FHS security configuration before ToBlock commits trie state.
+	block := g.ToBlock(db)
+	if block.Number().Sign() != 0 {
+		return nil, fmt.Errorf("can't commit genesis block with number > 0")
 	}
 	rawdb.WriteTd(db, block.Hash(), block.NumberU64(), g.Difficulty)
 	rawdb.WriteBlock(db, block)
@@ -324,6 +432,52 @@ func (g *Genesis) Commit(db ethdb.Database) (*types.Block, error) {
 	rawdb.WriteHeadHeaderHash(db, block.Hash())
 	rawdb.WriteChainConfig(db, block.Hash(), config)
 	return block, nil
+}
+
+// firstReservedNativeGenesisAccount prevents alloc data from attaching
+// balance, code or storage to an account whose complete shape is owned by the
+// NativeTxV1 replay protocol. ToBlock creates every shard canonically.
+func firstReservedNativeGenesisAccount(alloc GenesisAlloc) (common.Address, bool) {
+	var first common.Address
+	found := false
+	for address := range alloc {
+		if !params.IsNativeReplayRegistryAddress(address) {
+			continue
+		}
+		if !found || bytes.Compare(address[:], first[:]) < 0 {
+			first = address
+			found = true
+		}
+	}
+	return first, found
+}
+
+// firstEmptyGenesisAccount enforces the genesis-native account model. The
+// parallel guard deliberately treats zero-value touches as no-ops; admitting an
+// already-empty account at genesis would otherwise make that rule differ from
+// EIP-161 deletion semantics. Rejecting the ambiguous state at the genesis
+// boundary keeps serial and DAG execution identical without legacy exceptions.
+func firstEmptyGenesisAccount(alloc GenesisAlloc) (common.Address, bool) {
+	var first common.Address
+	found := false
+	for addr, account := range alloc {
+		nonZeroStorage := false
+		for _, value := range account.Storage {
+			if value != (common.Hash{}) {
+				nonZeroStorage = true
+				break
+			}
+		}
+		emptyBalance := account.Balance == nil || account.Balance.Sign() == 0
+		if !emptyBalance || account.Nonce != 0 || len(account.Code) != 0 || nonZeroStorage {
+			continue
+		}
+		if !found || bytes.Compare(addr[:], first[:]) < 0 {
+			first = addr
+			found = true
+		}
+	}
+	return first, found
 }
 
 // MustCommit writes the genesis block and state to db, panicking on error.

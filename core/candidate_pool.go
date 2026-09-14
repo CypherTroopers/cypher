@@ -1,21 +1,15 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"math/big"
+	"net"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
-
-	"golang.org/x/crypto/ed25519"
-
-	"bytes"
-	//	"net"
-	"sort"
 	"time"
-
-	"strconv"
-
-	"net"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
@@ -24,6 +18,7 @@ import (
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/reconfig/bftview"
+	"golang.org/x/crypto/ed25519"
 )
 
 var (
@@ -38,6 +33,7 @@ var (
 type candidateLookup struct {
 	all              map[common.Hash]*types.Candidate
 	temp             map[common.Hash]*types.Candidate
+	revision         uint64
 	DisableIpEncrypt bool
 	lock             sync.Mutex
 	backend          Backend
@@ -55,6 +51,12 @@ func newCandidateLookup(cph Backend) *candidateLookup {
 // // sorted internal representation. The result of the sorting is cached in case
 // // it's requested again before any modifications are made to the contents.
 func (t *candidateLookup) Flatten() types.CandsByNonce {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.flattenLocked()
+}
+
+func (t *candidateLookup) flattenLocked() types.CandsByNonce {
 	// If the sorting was not cached yet, create and cache it
 	candidates := make(types.CandsByNonce, 0)
 	for _, cand := range t.all {
@@ -72,14 +74,19 @@ func (t *candidateLookup) Flatten() types.CandsByNonce {
 	return cands
 }
 func (t *candidateLookup) SortAndBestCandidate(determintype uint8, delete bool) (types.CandsByNonce, *types.Candidate, error) {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.sortAndBestCandidateLocked(determintype, delete)
+}
+
+func (t *candidateLookup) sortAndBestCandidateLocked(determintype uint8, delete bool) (types.CandsByNonce, *types.Candidate, error) {
 	var index uint64
 	var bestCand *types.Candidate
 	sortedCandidates := make(types.CandsByNonce, 0)
-	itemLen := len(t.all)
-	if itemLen <= 0 {
+	if len(t.all) <= 0 {
 		return nil, nil, errors.New("no candidate exist")
 	}
-	sortedCandidates = t.Flatten()
+	sortedCandidates = t.flattenLocked()
 	if len(sortedCandidates) == 0 {
 		return nil, nil, errors.New("no candidate exist")
 	}
@@ -87,14 +94,14 @@ func (t *candidateLookup) SortAndBestCandidate(determintype uint8, delete bool) 
 	case types.DeterminByMinNonce:
 		index = 0
 	case types.DeterminByMaxNonce:
-		index = uint64(itemLen - 1)
+		index = uint64(len(sortedCandidates) - 1)
 	default:
 		return nil, nil, errors.New("this type exist not")
 	}
 	bestCand = sortedCandidates[index]
 	if delete {
 		log.Info("delete")
-		if !t.Remove(bestCand) {
+		if !t.removeLocked(bestCand) {
 			return sortedCandidates, bestCand, errors.New("candidate do not found")
 		}
 
@@ -103,9 +110,6 @@ func (t *candidateLookup) SortAndBestCandidate(determintype uint8, delete bool) 
 }
 
 func (t *candidateLookup) Content() []*types.Candidate {
-	t.lock.Lock()
-	defer t.lock.Unlock()
-
 	sortedCandidates := make(types.CandsByNonce, 0)
 	var err error
 	var bestCandidate *types.Candidate
@@ -165,6 +169,7 @@ func (t *candidateLookup) Add(c *types.Candidate) bool {
 	}
 
 	t.all[c.Hash()] = c
+	t.revision++
 
 	return false
 }
@@ -185,11 +190,17 @@ func (t *candidateLookup) AddToTemp(c *types.Candidate) bool {
 // Remove deletes a candidate from the maintained map, returning whether the
 // candidate was found.
 func (t *candidateLookup) Remove(c *types.Candidate) bool {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.removeLocked(c)
+}
 
+func (t *candidateLookup) removeLocked(c *types.Candidate) bool {
 	for k, v := range t.all {
 
 		if v.PubKey == c.PubKey && bytes.Equal(v.KeyCandidate.Nonce[:], c.KeyCandidate.Nonce[:]) {
 			delete(t.all, k)
+			t.revision++
 			return true
 		}
 	}
@@ -201,10 +212,15 @@ func (t *candidateLookup) ClearObsolete(keyHeadNumber *big.Int) {
 	defer t.lock.Unlock()
 
 	//log.Info("Clear candidates older than", "number", keyHeadNumber.Uint64())
+	changed := false
 	for k, v := range t.all {
 		if keyHeadNumber.Cmp(v.KeyCandidate.Number) >= 0 {
 			delete(t.all, k)
+			changed = true
 		}
+	}
+	if changed {
+		t.revision++
 	}
 }
 
@@ -222,21 +238,22 @@ func (t *candidateLookup) ClearObsoleteFromTemp(keyHeadNumber *big.Int) {
 func (t *candidateLookup) ClearCandidate(pubKey ed25519.PublicKey) {
 	t.lock.Lock()
 	defer t.lock.Unlock()
+	changed := false
 	for k, candidate := range t.all {
 		if string(pubKey) == candidate.PubKey {
 			delete(t.all, k)
+			changed = true
 		}
+	}
+	if changed {
+		t.revision++
 	}
 }
 
-func (t *candidateLookup) ClearCandidateByIp(pubKey ed25519.PublicKey) {
+func (t *candidateLookup) Revision() uint64 {
 	t.lock.Lock()
 	defer t.lock.Unlock()
-	for k, candidate := range t.all {
-		if string(pubKey) == candidate.PubKey {
-			delete(t.all, k)
-		}
-	}
+	return t.revision
 }
 
 func (t *candidateLookup) FoundCandidate(number *big.Int, pubKey string) bool {
@@ -277,16 +294,18 @@ type ExternalIpConfig struct {
 
 // /////////////////////////////////////////////
 type CandidatePool struct {
-	candidates     *candidateLookup
-	mu             sync.Mutex
-	feed           event.Feed
-	scope          event.SubscriptionScope
-	txFeed         event.Feed
-	backend        Backend
-	mux            *event.TypeMux
-	db             ethdb.Database
-	CheckMinerPort func(addr string, blockN uint64, keyblockN uint64)
-	powResultUDP   *powResultUDPServer
+	candidates         *candidateLookup
+	mu                 sync.Mutex
+	feed               event.Feed
+	scope              event.SubscriptionScope
+	txFeed             event.Feed
+	backend            Backend
+	mux                *event.TypeMux
+	db                 ethdb.Database
+	CheckMinerPort     func(addr string, blockN uint64, keyblockN uint64)
+	powResultLifecycle sync.Mutex
+	powResultTLS       *powResultTLSIdentityProvider
+	powResultTransport *powResultTransportServer
 }
 
 // Backend wraps all methods required for candidate pool.
@@ -344,7 +363,7 @@ func (cp *CandidatePool) add(candidate *types.Candidate, local bool, isPlaintext
 			"pubkey", candidate.PubKey,
 			"hash", candidate.Hash(),
 		)
-		cp.CheckMinerPort(net.IP(candidate.IP).String()+":"+strconv.Itoa(candidate.Port), cp.backend.BlockChain().CurrentBlockN(), cp.backend.KeyBlockChain().CurrentBlockN())
+		cp.CheckMinerPort(net.JoinHostPort(net.IP(candidate.IP).String(), strconv.Itoa(candidate.Port)), cp.backend.BlockChain().CurrentBlockN(), cp.backend.KeyBlockChain().CurrentBlockN())
 	}
 	return nil
 }
@@ -375,6 +394,16 @@ func (cp *CandidatePool) CheckMinerMsgAck(address string, blockN uint64, keybloc
 
 func (cp *CandidatePool) Content() []*types.Candidate {
 	return cp.candidates.Content()
+}
+
+// Revision returns an O(1) generation for the proposal-visible candidate set.
+// Temporary candidates do not affect proposal construction and therefore do
+// not advance it until they are acknowledged into the active set.
+func (cp *CandidatePool) Revision() uint64 {
+	if cp == nil || cp.candidates == nil {
+		return 0
+	}
+	return cp.candidates.Revision()
 }
 
 func (cp *CandidatePool) AddLocal(candidate *types.Candidate) error {

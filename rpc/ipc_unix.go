@@ -53,3 +53,8 @@ func ipcListen(endpoint string) (net.Listener, error) {
 func newIPCConnection(ctx context.Context, endpoint string) (net.Conn, error) {
 	return new(net.Dialer).DialContext(ctx, "unix", endpoint)
 }
+
+func isIPCConnection(conn net.Conn) bool {
+	_, ok := conn.(*net.UnixConn)
+	return ok
+}

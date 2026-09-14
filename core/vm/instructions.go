@@ -477,6 +477,10 @@ func opNumber(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]
 }
 
 func opDifficulty(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
+	if interpreter.evm.Random != nil {
+		callContext.stack.push(new(uint256.Int).SetBytes(interpreter.evm.Random[:]))
+		return nil, nil
+	}
 	v, _ := uint256.FromBig(interpreter.evm.Difficulty)
 	callContext.stack.push(v)
 	return nil, nil
@@ -866,7 +870,7 @@ func makeLog(size int) executionFunc {
 	}
 }
 
-// opPush1 is a specialized version of pushN
+// opPush1 is a specialized version of the instruction produced by makePush.
 func opPush1(pc *uint64, interpreter *EVMInterpreter, callContext *callCtx) ([]byte, error) {
 	var (
 		codeLen = uint64(len(callContext.contract.Code))

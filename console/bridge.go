@@ -27,6 +27,7 @@ import (
 	"github.com/dop251/goja"
 	//??	"github.com/cypherium/cypher/accounts/scwallet"
 	//??	"github.com/cypherium/cypher/accounts/usbwallet"
+	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
 	"github.com/cypherium/cypher/console/prompt"
 	"github.com/cypherium/cypher/internal/jsre"
@@ -121,110 +122,7 @@ func (b *bridge) OpenWallet(call jsre.Call) (goja.Value, error) {
 	if err == nil {
 		return val, nil
 	}
-	/*??
-	// Wallet open failed, report error unless it's a PIN or PUK entry
-	switch {
-	case strings.HasSuffix(err.Error(), usbwallet.ErrTrezorPINNeeded.Error()):
-		val, err = b.readPinAndReopenWallet(call)
-		if err == nil {
-			return val, nil
-		}
-		val, err = b.readPassphraseAndReopenWallet(call)
-		if err != nil {
-			return nil, err
-		}
-
-	case strings.HasSuffix(err.Error(), scwallet.ErrPairingPasswordNeeded.Error()):
-		// PUK input requested, fetch from the user and call open again
-		input, err := b.prompter.PromptPassword("Please enter the pairing password: ")
-		if err != nil {
-			return nil, err
-		}
-		passwd = call.VM.ToValue(input)
-		if val, err = openWallet(goja.Null(), wallet, passwd); err != nil {
-			if !strings.HasSuffix(err.Error(), scwallet.ErrPINNeeded.Error()) {
-				return nil, err
-			} else {
-				// PIN input requested, fetch from the user and call open again
-				input, err := b.prompter.PromptPassword("Please enter current PIN: ")
-				if err != nil {
-					return nil, err
-				}
-				if val, err = openWallet(goja.Null(), wallet, call.VM.ToValue(input)); err != nil {
-					return nil, err
-				}
-			}
-		}
-
-	case strings.HasSuffix(err.Error(), scwallet.ErrPINUnblockNeeded.Error()):
-		// PIN unblock requested, fetch PUK and new PIN from the user
-		var pukpin string
-		input, err := b.prompter.PromptPassword("Please enter current PUK: ")
-		if err != nil {
-			return nil, err
-		}
-		pukpin = input
-		input, err = b.prompter.PromptPassword("Please enter new PIN: ")
-		if err != nil {
-			return nil, err
-		}
-		pukpin += input
-
-		if val, err = openWallet(goja.Null(), wallet, call.VM.ToValue(pukpin)); err != nil {
-			return nil, err
-		}
-
-	case strings.HasSuffix(err.Error(), scwallet.ErrPINNeeded.Error()):
-		// PIN input requested, fetch from the user and call open again
-		input, err := b.prompter.PromptPassword("Please enter current PIN: ")
-		if err != nil {
-			return nil, err
-		}
-		if val, err = openWallet(goja.Null(), wallet, call.VM.ToValue(input)); err != nil {
-			return nil, err
-		}
-
-	default:
-		// Unknown error occurred, drop to the user
-		return nil, err
-	}
-	*/
 	return nil, err
-	//return val, nil
-}
-
-func (b *bridge) readPassphraseAndReopenWallet(call jsre.Call) (goja.Value, error) {
-	wallet := call.Argument(0)
-	input, err := b.prompter.PromptPassword("Please enter your passphrase: ")
-	if err != nil {
-		return nil, err
-	}
-	openWallet, callable := goja.AssertFunction(getJeth(call.VM).Get("openWallet"))
-	if !callable {
-		return nil, fmt.Errorf("jeth.openWallet is not callable")
-	}
-	return openWallet(goja.Null(), wallet, call.VM.ToValue(input))
-}
-
-func (b *bridge) readPinAndReopenWallet(call jsre.Call) (goja.Value, error) {
-	wallet := call.Argument(0)
-	// Trezor PIN matrix input requested, display the matrix to the user and fetch the data
-	fmt.Fprintf(b.printer, "Look at the device for number positions\n\n")
-	fmt.Fprintf(b.printer, "7 | 8 | 9\n")
-	fmt.Fprintf(b.printer, "--+---+--\n")
-	fmt.Fprintf(b.printer, "4 | 5 | 6\n")
-	fmt.Fprintf(b.printer, "--+---+--\n")
-	fmt.Fprintf(b.printer, "1 | 2 | 3\n\n")
-
-	input, err := b.prompter.PromptPassword("Please enter current PIN: ")
-	if err != nil {
-		return nil, err
-	}
-	openWallet, callable := goja.AssertFunction(getJeth(call.VM).Get("openWallet"))
-	if !callable {
-		return nil, fmt.Errorf("jeth.openWallet is not callable")
-	}
-	return openWallet(goja.Null(), wallet, call.VM.ToValue(input))
 }
 
 // UnlockAccount is a wrapper around the personal.unlockAccount RPC method that
@@ -313,6 +211,39 @@ func (b *bridge) Sign(call jsre.Call) (goja.Value, error) {
 		return nil, fmt.Errorf("jeth.unlockAccount is not callable")
 	}
 	return sign(goja.Null(), message, account, passwd)
+}
+
+// SetCommonRPCRewardAddress prompts without echo when A's password is omitted.
+// The original RPC method is preserved in jeth and still enforces actual IPC.
+func (b *bridge) SetCommonRPCRewardAddress(call jsre.Call) (goja.Value, error) {
+	if len(call.Arguments) < 2 || len(call.Arguments) > 3 {
+		return nil, fmt.Errorf("usage: setCommonRPCRewardAddress(signer, recipient, [ password ])")
+	}
+	for i := 0; i < 2; i++ {
+		value := call.Argument(i)
+		if goja.IsUndefined(value) || goja.IsNull(value) || value.ExportType().Kind() != reflect.String {
+			return nil, fmt.Errorf("signer and recipient must be full hexadecimal addresses")
+		}
+		var address common.Address
+		if err := address.UnmarshalText([]byte(value.String())); err != nil {
+			return nil, err
+		}
+	}
+	password := call.Argument(2)
+	if goja.IsUndefined(password) || goja.IsNull(password) {
+		input, err := b.prompter.PromptPassword("Signing account password: ")
+		if err != nil {
+			return nil, err
+		}
+		password = call.VM.ToValue(input)
+	} else if password.ExportType().Kind() != reflect.String {
+		return nil, fmt.Errorf("password must be a string")
+	}
+	set, callable := goja.AssertFunction(getJeth(call.VM).Get("setCommonRPCRewardAddress"))
+	if !callable {
+		return nil, fmt.Errorf("jeth.setCommonRPCRewardAddress is not callable")
+	}
+	return set(goja.Null(), call.Argument(0), call.Argument(1), password)
 }
 
 // Sleep will block the console for the specified number of seconds.

@@ -1,0 +1,138 @@
+package reconfig
+
+import (
+	"testing"
+	"time"
+
+	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/reconfig/bftview"
+	"github.com/cypherium/cypher/reconfig/hotstuff"
+)
+
+func TestValidateViewUsesCurrentViewSnapshot(t *testing.T) {
+	s := &Service{}
+	s.currentView = bftview.View{
+		TxNumber:  301,
+		KeyNumber: 1,
+	}
+
+	future := bftview.View{
+		TxNumber:  302,
+		KeyNumber: 1,
+	}
+
+	// ValidateView must classify against currentView, which is the state encoded
+	// by CurrentState. The blockchain may already be at 302 while procBlockDone
+	// has not advanced currentView yet.
+	_, number, err := validateViewAgainstSnapshot(future.EncodeToBytes(), s.currentView, false)
+	if err != hotstuff.ErrFutureState {
+		t.Fatalf("ValidateView snapshot error = %v, want %v", err, hotstuff.ErrFutureState)
+	}
+	if number != 302 {
+		t.Fatalf("expected number = %d, want 302", number)
+	}
+}
+
+func TestFHSProposalReadinessSnapshotUsesCachedConsensusState(t *testing.T) {
+	current := bftview.View{
+		TxNumber:      301,
+		TxHash:        common.HexToHash("0x301"),
+		KeyNumber:     7,
+		KeyHash:       common.HexToHash("0x700"),
+		CommitteeHash: common.HexToHash("0x701"),
+		LeaderIndex:   2,
+		ViewNumber:    41,
+	}
+	// Deliberately omit the blockchain, committee store and network service.
+	// The readiness snapshot must be a cached-state read; CurrentState would
+	// attempt committee resolution and recovery side effects on this fixture.
+	s := &Service{currentView: current}
+	state, number, highest := s.FHSProposalReadinessSnapshot()
+	if string(state) != string(current.EncodeConsensusToBytes()) {
+		t.Fatal("proposal readiness snapshot returned different consensus state")
+	}
+	if number != current.ViewNumber+1 {
+		t.Fatalf("proposal readiness view = %d, want %d", number, current.ViewNumber+1)
+	}
+	if highest != nil {
+		t.Fatal("proposal readiness snapshot invented a highest certificate")
+	}
+}
+
+func TestObserveHotstuffProgressAcceptsDifferentCanonicalView(t *testing.T) {
+	s := &Service{
+		lastProgressN:      10,
+		lastProgressViewID: common.HexToHash("0xffff"),
+		lastProgressRank:   3,
+		hotstuffProgressAt: time.Now().Add(-time.Minute),
+	}
+	nextView := common.HexToHash("0x01")
+
+	s.observeHotstuffProgress(&hotstuff.HotstuffMessage{
+		Code:   hotstuff.MsgPrepare,
+		Number: 10,
+		ViewId: nextView,
+	})
+
+	if s.lastProgressViewID != nextView {
+		t.Fatalf("progress view = %s, want %s", s.lastProgressViewID, nextView)
+	}
+	if time.Since(s.hotstuffProgressAt) > time.Second {
+		t.Fatalf("progress timestamp was not refreshed: %s", s.hotstuffProgressAt)
+	}
+}
+
+func TestValidateViewNormalizesProposalMode(t *testing.T) {
+	current := bftview.View{
+		TxNumber:      974,
+		TxHash:        common.HexToHash("0x01"),
+		KeyNumber:     15,
+		KeyHash:       common.HexToHash("0x02"),
+		CommitteeHash: common.HexToHash("0x03"),
+		LeaderIndex:   0,
+		NoDone:        true,
+	}
+	wire := current
+	wire.NoDone = false
+
+	expected, number, err := validateViewAgainstSnapshot(wire.EncodeConsensusToBytes(), current, false)
+	if err != nil {
+		t.Fatalf("proposal-mode-only difference rejected: %v", err)
+	}
+	if number != current.TxNumber+1 {
+		t.Fatalf("expected number = %d, want %d", number, current.TxNumber+1)
+	}
+	if string(expected) != string(current.EncodeConsensusToBytes()) {
+		t.Fatal("validation returned non-canonical consensus state")
+	}
+}
+
+func TestValidateViewNormalizesRecoveryRound(t *testing.T) {
+	current := bftview.View{
+		TxNumber:      5196,
+		TxHash:        common.HexToHash("0x11"),
+		KeyNumber:     304,
+		KeyHash:       common.HexToHash("0x22"),
+		CommitteeHash: common.HexToHash("0x33"),
+		LeaderIndex:   0,
+		NoDone:        false,
+		Round:         1020,
+	}
+	wire := current
+	wire.Round = 0
+
+	expected, number, err := validateViewAgainstSnapshot(wire.EncodeConsensusToBytes(), current, false)
+	if err != nil {
+		t.Fatalf("recovery-round-only difference rejected: %v", err)
+	}
+	if number != current.TxNumber+1 {
+		t.Fatalf("expected number = %d, want %d", number, current.TxNumber+1)
+	}
+	decoded := bftview.DecodeToView(expected)
+	if decoded == nil {
+		t.Fatal("validation returned undecodable consensus state")
+	}
+	if decoded.Round != 0 {
+		t.Fatalf("validation returned round = %d, want 0", decoded.Round)
+	}
+}

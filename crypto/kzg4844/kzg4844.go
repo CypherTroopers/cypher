@@ -22,6 +22,7 @@ import (
 	"errors"
 	"hash"
 	"reflect"
+	"sync"
 	"sync/atomic"
 
 	"github.com/cypherium/cypher/common/hexutil"
@@ -104,23 +105,73 @@ type Claim [32]byte
 // useCKZG controls whether the cryptography should use the Go or C backend.
 var useCKZG atomic.Bool
 
+// The trusted setup contexts are process-wide immutable infrastructure. Keep
+// explicit readiness bits so resource-bounded transaction execution can refuse
+// to trigger their comparatively large one-time allocation lazily.
+var (
+	gokzgReady atomic.Bool
+	ckzgReady  atomic.Bool
+	backendMu  sync.Mutex
+	// backendFrozen is guarded by backendMu. Native consensus freezes the
+	// selected backend after startup preload so readiness checking and proof
+	// verification cannot observe different implementations.
+	backendFrozen bool
+)
+
+// Preload initializes the currently selected KZG backend. Nodes call this
+// during chain construction, before any resource-bounded transaction can enter
+// the point-evaluation precompile.
+func Preload() {
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	preloadSelectedBackend()
+}
+
+// PreloadAndFreeze initializes and permanently selects the current backend for
+// this process. Native nodes use this startup-only boundary before accepting
+// transactions, eliminating a readiness/verification backend switch race.
+func PreloadAndFreeze() {
+	backendMu.Lock()
+	defer backendMu.Unlock()
+	preloadSelectedBackend()
+	backendFrozen = true
+}
+
+func preloadSelectedBackend() {
+	if useCKZG.Load() {
+		ckzgIniter.Do(ckzgInit)
+		return
+	}
+	gokzgIniter.Do(gokzgInit)
+}
+
+// Preloaded reports whether the currently selected backend's immutable trusted
+// setup context is ready. It is safe to query concurrently with initialization.
+func Preloaded() bool {
+	if useCKZG.Load() {
+		return ckzgReady.Load()
+	}
+	return gokzgReady.Load()
+}
+
 // UseCKZG can be called to switch the default Go implementation of KZG to the C
 // library if for some reason the user wishes to do so (e.g. consensus bug in one
 // or the other).
 func UseCKZG(use bool) error {
+	backendMu.Lock()
+	defer backendMu.Unlock()
 	if use && !ckzgAvailable {
 		return errors.New("CKZG unavailable on your platform")
+	}
+	if backendFrozen && use != useCKZG.Load() {
+		return errors.New("KZG backend is frozen after native chain startup")
 	}
 	useCKZG.Store(use)
 
 	// Initializing the library can take 2-4 seconds - and can potentially crash
 	// on CKZG and non-ADX CPUs - so might as well do it now and don't wait until
 	// a crypto operation is actually needed live.
-	if use {
-		ckzgIniter.Do(ckzgInit)
-	} else {
-		gokzgIniter.Do(gokzgInit)
-	}
+	preloadSelectedBackend()
 	return nil
 }
 

@@ -17,13 +17,17 @@
 package params
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/crypto/bls"
 )
 
 // Genesis hashes to enforce below configs on.
@@ -255,6 +259,7 @@ var (
 		RnetPort:               "",
 		FixedCommittee:         false,
 		FixedLeader:            false,
+		FairHotstuff:           false,
 		EnabledTPS:             false,
 	}
 
@@ -291,6 +296,7 @@ var (
 		RnetPort:               "",
 		FixedCommittee:         false,
 		FixedLeader:            false,
+		FairHotstuff:           false,
 		EnabledTPS:             false,
 	}
 
@@ -322,6 +328,7 @@ var (
 		RnetPort:               "",
 		FixedCommittee:         false,
 		FixedLeader:            false,
+		FairHotstuff:           false,
 		EnabledTPS:             false,
 	}
 	TestRules = TestChainConfig.Rules(new(big.Int))
@@ -354,6 +361,7 @@ var (
 		RnetPort:               "",
 		FixedCommittee:         false,
 		FixedLeader:            false,
+		FairHotstuff:           false,
 		EnabledTPS:             false,
 	}
 )
@@ -446,13 +454,72 @@ type ChainConfig struct {
 	// to track multiple changes to maxCodeSize
 	MaxCodeSizeConfig []MaxCodeConfigStruct `json:"maxCodeSizeConfig,omitempty"`
 
-	GenCommittee   GenesisCommittee `json:"committee"      gencodec:"required"`
-	RnetPort       string           `json:"rnetport,omitempty"`
-	FixedCommittee bool             `json:"fixedCommittee,omitempty"`
-	FixedLeader    bool             `json:"fixedLeader,omitempty"`
+	GenCommittee          GenesisCommittee `json:"committee"      gencodec:"required"`
+	RnetPort              string           `json:"rnetport,omitempty"`
+	RnetTransport         string           `json:"rnettransport,omitempty"`
+	RnetFallbackTransport string           `json:"rnetfallbacktransport,omitempty"`
+	FixedCommittee        bool             `json:"fixedCommittee,omitempty"`
+	FixedLeader           bool             `json:"fixedLeader,omitempty"`
+	FairHotstuff          bool             `json:"fairHotstuff,omitempty"`
+	FairHotstuffSeed      common.Hash      `json:"fairHotstuffSeed,omitempty"`
+	// NativeParallel retains its internal name while the public genesis schema
+	// calls this EVM execution-capacity profile "evmParallel".
+	NativeParallel *NativeParallelConfig `json:"evmParallel,omitempty"`
 	EnabledTPS     bool
 }
 type GenesisCommittee map[int]common.Cnode
+
+const fairHotstuffGenesisConfigDomain = "cypher-fhs-genesis-config-v3"
+
+// MaxFairHotstuffCommitteeSize keeps the n-f NewView proof below the bounded
+// HotStuff control-message limit, even when every report carries the maximum
+// permitted candidate metadata.
+const MaxFairHotstuffCommitteeSize = 100
+
+// FairHotstuffGenesisCommitment binds the original chain configuration
+// (including committee, chain ID, EVM forks, transport and election seed) to
+// genesis. The v3 domain identifies the restarted network with mandatory
+// Common RPC reward recipients. Encoding/json sorts map keys.
+func FairHotstuffGenesisCommitment(c *ChainConfig) (common.Hash, error) {
+	if c == nil || !c.FairHotstuff {
+		return common.Hash{}, errors.New("fairHotstuff genesis commitment requires an enabled config")
+	}
+	// Commit semantic transport values, not their optional JSON spelling. This
+	// prevents a future change to code-side defaults from changing the network
+	// security policy while retaining the same genesis hash.
+	normalized := *c
+	normalized.RnetTransport = c.EffectiveRnetTransport()
+	normalized.RnetFallbackTransport = c.EffectiveRnetFallbackTransport()
+	// Modern fork fields live in a pointer-keyed side table so that the legacy
+	// ChainConfig struct remains wire compatible. A value copy therefore loses
+	// them unless the cloned pointer is explicitly registered. Omitting this
+	// step would let two Fair HotStuff nodes retain the same genesis mixHash
+	// while running different Shanghai/Cancun/Prague/Osaka rules.
+	normalized.SetModernForkConfig(c.ModernForkConfig())
+	defer normalized.SetModernForkConfig(nil)
+	encoded, err := json.Marshal(&normalized)
+	if err != nil {
+		return common.Hash{}, fmt.Errorf("encode fairHotstuff genesis config: %w", err)
+	}
+	return crypto.Keccak256Hash([]byte(fairHotstuffGenesisConfigDomain), encoded), nil
+}
+
+func (c *ChainConfig) EffectiveRnetTransport() string {
+	if c == nil || c.RnetTransport == "" {
+		return "quic"
+	}
+	return c.RnetTransport
+}
+
+func (c *ChainConfig) EffectiveRnetFallbackTransport() string {
+	if c != nil && c.FairHotstuff && c.RnetFallbackTransport == "" {
+		return "none"
+	}
+	if c == nil || c.RnetFallbackTransport == "" {
+		return "tcp"
+	}
+	return c.RnetFallbackTransport
+}
 
 // colossusXConfig is the consensus engine configs for proof-of-work based sealing.
 type colossusXConfig struct{}
@@ -509,6 +576,11 @@ func (c *ChainConfig) String() string {
 		cancunTime        *uint64
 		pragueTime        *uint64
 		osakaTime         *uint64
+		bpo1Time          *uint64
+		bpo2Time          *uint64
+		bpo3Time          *uint64
+		bpo4Time          *uint64
+		bpo5Time          *uint64
 		blobSchedule      *BlobScheduleConfig
 	)
 	if modern := c.ModernForkConfig(); modern != nil {
@@ -520,6 +592,11 @@ func (c *ChainConfig) String() string {
 		cancunTime = modern.CancunTime
 		pragueTime = modern.PragueTime
 		osakaTime = modern.OsakaTime
+		bpo1Time = modern.BPO1Time
+		bpo2Time = modern.BPO2Time
+		bpo3Time = modern.BPO3Time
+		bpo4Time = modern.BPO4Time
+		bpo5Time = modern.BPO5Time
 		blobSchedule = modern.BlobSchedule
 	}
 
@@ -539,10 +616,13 @@ func (c *ChainConfig) String() string {
 		if v == nil {
 			return nil
 		}
-		return fmt.Sprintf("{Cancun:%v Prague:%v Osaka:%v}", formatBlobConfig(v.Cancun), formatBlobConfig(v.Prague), formatBlobConfig(v.Osaka))
+		return fmt.Sprintf("{Cancun:%v Prague:%v Osaka:%v BPO1:%v BPO2:%v BPO3:%v BPO4:%v BPO5:%v}",
+			formatBlobConfig(v.Cancun), formatBlobConfig(v.Prague), formatBlobConfig(v.Osaka),
+			formatBlobConfig(v.BPO1), formatBlobConfig(v.BPO2), formatBlobConfig(v.BPO3),
+			formatBlobConfig(v.BPO4), formatBlobConfig(v.BPO5))
 	}
 
-	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Berlin: %v London: %v ArrowGlacier: %v GrayGlacier: %v ShanghaiTime: %v CancunTime: %v PragueTime: %v OsakaTime: %v BlobSchedule: %v Engine: %v}",
+	return fmt.Sprintf("{ChainID: %v Homestead: %v DAO: %v DAOSupport: %v EIP150: %v EIP155: %v EIP158: %v Byzantium: %v HasPrivate: %v Constantinople: %v TransactionSizeLimit: %v MaxCodeSize: %v Petersburg: %v Istanbul: %v, Muir Glacier: %v YOLO v1: %v Berlin: %v London: %v ArrowGlacier: %v GrayGlacier: %v ShanghaiTime: %v CancunTime: %v PragueTime: %v OsakaTime: %v BPO1Time: %v BPO2Time: %v BPO3Time: %v BPO4Time: %v BPO5Time: %v BlobSchedule: %v FairHotstuff: %v Engine: %v}",
 		c.ChainID,
 		c.HomesteadBlock,
 		c.DAOForkBlock,
@@ -567,7 +647,13 @@ func (c *ChainConfig) String() string {
 		formatUint64Ptr(cancunTime),
 		formatUint64Ptr(pragueTime),
 		formatUint64Ptr(osakaTime),
+		formatUint64Ptr(bpo1Time),
+		formatUint64Ptr(bpo2Time),
+		formatUint64Ptr(bpo3Time),
+		formatUint64Ptr(bpo4Time),
+		formatUint64Ptr(bpo5Time),
 		formatBlobSchedule(blobSchedule),
+		c.FairHotstuff,
 		engine,
 	)
 }
@@ -702,62 +788,76 @@ func (c *ChainConfig) CheckMaxCodeConfigData() error {
 	return nil
 }
 
-// checks if changes to maxCodeSizeConfig proposed are compatible
-// with already existing genesis data
-func isMaxCodeSizeConfigCompatible(c1, c2 *ChainConfig, head *big.Int) (error, *big.Int, *big.Int) {
-	if len(c1.MaxCodeSizeConfig) == 0 && len(c2.MaxCodeSizeConfig) == 0 {
-		// maxCodeSizeConfig not used. return
-		return nil, big.NewInt(0), big.NewInt(0)
-	}
-
-	// existing config had maxCodeSizeConfig and new one does not have the same return error
-	if len(c1.MaxCodeSizeConfig) > 0 && len(c2.MaxCodeSizeConfig) == 0 {
-		return fmt.Errorf("genesis file missing max code size information"), head, head
-	}
-
-	if len(c2.MaxCodeSizeConfig) > 0 && len(c1.MaxCodeSizeConfig) == 0 {
-		return nil, big.NewInt(0), big.NewInt(0)
-	}
-
-	// check the number of records below current head in both configs
-	// if they do not match throw an error
-	c1RecsBelowHead := 0
-	for _, data := range c1.MaxCodeSizeConfig {
-		if data.Block.Cmp(head) <= 0 {
-			c1RecsBelowHead++
-		} else {
-			break
-		}
-	}
-
-	c2RecsBelowHead := 0
-	for _, data := range c2.MaxCodeSizeConfig {
-		if data.Block.Cmp(head) <= 0 {
-			c2RecsBelowHead++
-		} else {
-			break
-		}
-	}
-
-	// if the count of past records is not matching return error
-	if c1RecsBelowHead != c2RecsBelowHead {
-		return errors.New("maxCodeSizeConfig data incompatible. updating maxCodeSize for past"), head, head
-	}
-
-	// validate that each past record is matching exactly. if not return error
-	for i := 0; i < c1RecsBelowHead; i++ {
-		if c1.MaxCodeSizeConfig[i].Block.Cmp(c2.MaxCodeSizeConfig[i].Block) != 0 ||
-			c1.MaxCodeSizeConfig[i].Size != c2.MaxCodeSizeConfig[i].Size {
-			return errors.New("maxCodeSizeConfig data incompatible. maxCodeSize historical data does not match"), head, head
-		}
-	}
-
-	return nil, big.NewInt(0), big.NewInt(0)
-}
-
 // CheckConfigForkOrder checks that we don't "skip" any forks, cypher isn't pluggable enough
 // to guarantee that forks
 func (c *ChainConfig) CheckConfigForkOrder() error {
+	if c.NativeParallel != nil && c.NativeParallel.RequireNativeTransactions {
+		return errors.New("evmParallel supports only Ethereum transaction types 0 through 4")
+	}
+	if err := c.NativeParallel.Validate(); err != nil {
+		return err
+	}
+	if err := c.validateEVMParallelBlobMemory(); err != nil {
+		return err
+	}
+	if c.NativeParallelEnabled() {
+		if !c.FairHotstuff {
+			return errors.New("native parallel execution requires fairHotstuff")
+		}
+		genesis := new(big.Int)
+		if !c.IsEIP158(genesis) || !c.IsByzantium(genesis) || !c.IsBerlin(genesis) || !c.IsLondon(genesis) || !c.IsPrague(genesis, 0) || !c.IsOsaka(genesis, 0) {
+			return errors.New("genesis-native parallel execution for EVM transaction types 0 through 4 requires EIP-158, Byzantium, Berlin, London, Prague and Osaka active at genesis")
+		}
+	}
+	if c.FairHotstuff {
+		if c.ChainID == nil || c.ChainID.Sign() <= 0 || !c.ChainID.IsUint64() {
+			return errors.New("fairHotstuff requires a positive uint64 chain ID")
+		}
+		if c.FairHotstuffSeed == (common.Hash{}) {
+			return errors.New("fairHotstuff requires a non-zero genesis-committed fairHotstuffSeed")
+		}
+		if c.EffectiveRnetTransport() != "quic" {
+			return fmt.Errorf("fairHotstuff requires authenticated QUIC transport")
+		}
+		if fallback := c.EffectiveRnetFallbackTransport(); fallback != "none" {
+			return fmt.Errorf("fairHotstuff forbids unauthenticated transport fallback %q", fallback)
+		}
+		if len(c.GenCommittee) < 4 || len(c.GenCommittee) > MaxFairHotstuffCommitteeSize || (len(c.GenCommittee)-1)%3 != 0 {
+			return fmt.Errorf("fairHotstuff committee size %d is invalid: require n=3f+1 and 4<=n<=%d", len(c.GenCommittee), MaxFairHotstuffCommitteeSize)
+		}
+		seenAddress := make(map[string]struct{}, len(c.GenCommittee))
+		seenPublic := make(map[string]struct{}, len(c.GenCommittee))
+		for index := 0; index < len(c.GenCommittee); index++ {
+			node, exists := c.GenCommittee[index]
+			if !exists || node.Address == "" || node.Public == "" {
+				return fmt.Errorf("fairHotstuff committee index %d is missing or incomplete", index)
+			}
+			if _, duplicate := seenAddress[node.Address]; duplicate {
+				return fmt.Errorf("fairHotstuff committee contains duplicate address %q", node.Address)
+			}
+			serialized, err := hex.DecodeString(node.Public)
+			if err != nil || len(serialized) != 64 {
+				return fmt.Errorf("fairHotstuff committee index %d has an invalid BLS public key encoding", index)
+			}
+			allZero := true
+			for _, value := range serialized {
+				allZero = allZero && value == 0
+			}
+			if allZero {
+				return fmt.Errorf("fairHotstuff committee index %d has a zero BLS public key", index)
+			}
+			public := bls.GetPublicKey(serialized)
+			if public == nil || !bytes.Equal(public.Serialize(), serialized) {
+				return fmt.Errorf("fairHotstuff committee index %d has an invalid or non-canonical BLS public key", index)
+			}
+			publicID := string(serialized)
+			if _, duplicate := seenPublic[publicID]; duplicate {
+				return errors.New("fairHotstuff committee contains duplicate public key")
+			}
+			seenAddress[node.Address] = struct{}{}
+			seenPublic[publicID] = struct{}{}
+		}
+	}
 	type fork struct {
 		name     string
 		block    *big.Int
@@ -795,13 +895,10 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 			lastFork = cur
 		}
 	}
+	if err := c.checkModernForkOrder(); err != nil {
+		return err
+	}
 	return nil
-}
-
-// isForkIncompatible returns true if a fork scheduled at s1 cannot be rescheduled to
-// block s2 because head is already past the fork.
-func isForkIncompatible(s1, s2, head *big.Int) bool {
-	return (isForked(s1, head) || isForked(s2, head)) && !configNumEqual(s1, s2)
 }
 
 // isForked returns whether a fork scheduled at block s is active at the given head block.
@@ -812,16 +909,6 @@ func isForked(s, head *big.Int) bool {
 	return s.Cmp(head) <= 0
 }
 
-func configNumEqual(x, y *big.Int) bool {
-	if x == nil {
-		return y == nil
-	}
-	if y == nil {
-		return x == nil
-	}
-	return x.Cmp(y) == 0
-}
-
 // ConfigCompatError is raised if the locally-stored blockchain is initialised with a
 // ChainConfig that would alter the past.
 type ConfigCompatError struct {
@@ -830,23 +917,6 @@ type ConfigCompatError struct {
 	StoredConfig, NewConfig *big.Int
 	// the block number to which the local chain must be rewound to correct the error
 	RewindTo uint64
-}
-
-func newCompatError(what string, storedblock, newblock *big.Int) *ConfigCompatError {
-	var rew *big.Int
-	switch {
-	case storedblock == nil:
-		rew = newblock
-	case newblock == nil || storedblock.Cmp(newblock) < 0:
-		rew = storedblock
-	default:
-		rew = newblock
-	}
-	err := &ConfigCompatError{what, storedblock, newblock, 0}
-	if rew != nil && rew.Sign() > 0 {
-		err.RewindTo = rew.Uint64() - 1
-	}
-	return err
 }
 
 func (err *ConfigCompatError) Error() string {

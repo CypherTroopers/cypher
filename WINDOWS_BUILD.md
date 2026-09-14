@@ -81,7 +81,7 @@ Operating System: windows
 Initialize the chain data:
 
 ```powershell
-.\build\bin\cypher.exe --datadir chaindbname init .\genesistest.json
+.\build\bin\cypher.exe --datadir chaindbname init .\genesis.json
 ```
 
 Then start the node:

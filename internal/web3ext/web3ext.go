@@ -693,6 +693,18 @@ web3._extend({
 	property: 'personal',
 	methods: [
 		new web3._extend.Method({
+			name: 'setCommonRPCRewardAddress',
+			call: 'personal_setCommonRPCRewardAddress',
+			params: 3,
+			inputFormatter: [null, null, null]
+		}),
+		new web3._extend.Method({
+			name: 'getCommonRPCRewardAddress',
+			call: 'personal_getCommonRPCRewardAddress',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
 			name: 'importRawKey',
 			call: 'personal_importRawKey',
 			params: 2

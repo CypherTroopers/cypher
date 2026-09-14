@@ -30,6 +30,19 @@ type Conn interface {
 	Rx() uint64
 }
 
+// AuthenticatedConn exposes the cryptographic identity bound to a transport
+// connection. Router compares it with the first ServerIdentity handshake.
+type AuthenticatedConn interface {
+	AuthenticatedPeer() (address string, publicKey []byte, ok bool)
+}
+
+// PeerAuthConfigurer installs the local BLS identity used to attest transport
+// certificates. QUIC and composite hosts implement it.
+type PeerAuthConfigurer interface {
+	ConfigurePeerAuthentication(chainID uint64, address, privateKeyHex, publicKeyHex string, authorizedPeers map[string][]byte) error
+	UpdatePeerAuthorization(authorizedPeers map[string][]byte) error
+}
+
 // Listener is responsible for listening for incoming Conns on a particular
 // address. It can only accept one type of incoming Conn.
 type Listener interface {

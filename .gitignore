@@ -10,3 +10,12 @@ chaindb*/
 
 # Local start scripts
 start-cypher*.sh
+reset-chain.sh
+status.sh
+start-cyphermine.sh
+unlock.sh
+# Ephemeral native-build staging
+build/stage/
+
+# Local mining script
+start-mining.sh

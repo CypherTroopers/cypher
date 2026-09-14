@@ -2,6 +2,7 @@ package network
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -18,8 +19,11 @@ import (
 
 // ----------------------------------------------------------------------------------------------------
 const (
-	def_headerSize    = 6
-	def_MaxPacketSize = 10 * 1024 * 1024
+	def_headerSize           = 6
+	def_extendedSize         = 4
+	def_extendedPacketMarker = uint32(0)
+	def_legacyMaxPacketSize  = uint32(0xFFFFFF)
+	def_MaxPacketSize        = 257 * 1024 * 1024
 )
 
 var (
@@ -31,6 +35,26 @@ var (
 // a connection will return an io.EOF after ReadTimeout if nothing has been
 // sent.
 var ReadTimeout = 3 * time.Minute // 60 * time.Second
+var WriteTimeout = 5 * time.Second
+
+const (
+	fallbackTransferBytesPerSecond = 2 * 1024 * 1024
+	fallbackTransferTimeoutSlack   = 5 * time.Second
+)
+
+// fallbackFrameWriteTimeout preserves the legacy deadline for small control
+// messages and scales bounded large-frame writes to the same 2 MiB/s service
+// model as QUIC bulk gossip.
+func fallbackFrameWriteTimeout(size uint32) time.Duration {
+	if size > def_MaxPacketSize {
+		size = def_MaxPacketSize
+	}
+	serviceTime := time.Duration(size) * time.Second / fallbackTransferBytesPerSecond
+	if serviceTime <= WriteTimeout {
+		return WriteTimeout
+	}
+	return fallbackTransferTimeoutSlack + serviceTime
+}
 
 // Global lock for 'ReadTimeout'
 // Using a 'RWMutex' to be as efficient as possible, because it will be used
@@ -143,12 +167,26 @@ func (c *KCPConn) receiveRaw() ([]byte, error) {
 		return nil, err
 	}
 
-	// Check the message header
-	total := readInt24(headBuf)
-	if headBuf[3] != def_headerMagic[0] || headBuf[4] != def_headerMagic[1] || headBuf[5] != def_headerMagic[2] {
+	// Check the message header. Large packets use the reserved 24-bit length
+	// value followed by a 32-bit length, while ordinary packets retain the
+	// original wire format.
+	total, extended, validHeader := decodePacketHeader(headBuf)
+	if !validHeader {
 		err := fmt.Errorf("Buffer head not match! ")
 		log.Info("receiveRaw", "header check fail", "error", err)
 		return nil, err
+	}
+	headerSize := uint64(def_headerSize)
+	if extended {
+		extendedBuf := make([]byte, def_extendedSize)
+		c.setReadDeadline(ReadTimeout)
+		_, err := io.ReadFull(c.conn, extendedBuf)
+		c.setReadDeadline(0)
+		if err != nil {
+			return nil, err
+		}
+		total = binary.BigEndian.Uint32(extendedBuf)
+		headerSize += def_extendedSize
 	}
 
 	if total > def_MaxPacketSize {
@@ -166,7 +204,7 @@ func (c *KCPConn) receiveRaw() ([]byte, error) {
 		c.setReadDeadline(0)
 		// Quit if there is an error.
 		if err != nil {
-			c.updateRx(def_headerSize + uint64(read))
+			c.updateRx(headerSize + uint64(read))
 			return nil, handleError(err)
 		}
 		// Append the read bytes into the buffer.
@@ -177,9 +215,8 @@ func (c *KCPConn) receiveRaw() ([]byte, error) {
 		b = b[n:]
 	}
 
-	// register how many bytes we read. (4 is for the frame size
-	// that we read up above).
-	c.updateRx(def_headerSize + uint64(read))
+	// Register the payload and framing bytes read from the connection.
+	c.updateRx(headerSize + uint64(read))
 	return buffer.Bytes(), nil
 }
 
@@ -192,7 +229,7 @@ func (c *KCPConn) Send(msg Message) (uint64, error) {
 
 	b, err := Marshal(msg)
 	if err != nil {
-		return 0, fmt.Errorf("Error marshaling  message: %s", err.Error())
+		return 0, fmt.Errorf("error marshaling message: %w", err)
 	}
 	return c.sendRaw(b)
 }
@@ -201,33 +238,39 @@ func (c *KCPConn) Send(msg Message) (uint64, error) {
 // whole message b in slices of size maxChunkSize.
 // In case of an error it aborts.
 func (c *KCPConn) sendRaw(b []byte) (uint64, error) {
-	// First write the size
+	return sendStreamFrame(c.conn, &c.counterSafe, b)
+}
+
+// sendStreamFrame writes the shared TCP/KCP framing and accounts for transmitted
+// bytes. The caller serializes writes with the connection send mutex.
+func sendStreamFrame(conn net.Conn, counter *counterSafe, b []byte) (uint64, error) {
+	if uint64(len(b)) > uint64(def_MaxPacketSize) {
+		return 0, NewPermanentSendError(SendErrorPacketTooLarge,
+			fmt.Errorf("packet too large: %d>%d", len(b), def_MaxPacketSize))
+	}
 	packetSize := uint32(len(b))
+	_ = conn.SetWriteDeadline(time.Now().Add(fallbackFrameWriteTimeout(packetSize)))
+	defer conn.SetWriteDeadline(time.Time{})
 
-	headBuf := make([]byte, def_headerSize)
-	putInt24(packetSize, headBuf)
-	copy(headBuf[3:], def_headerMagic)
+	headBuf := encodePacketHeader(packetSize)
 
-	if _, err := c.conn.Write(headBuf); err != nil {
+	if _, err := conn.Write(headBuf); err != nil {
 		return 0, err
 	}
 
-	// Then send everything through the connection
-	// Send chunk by chunk
-	//	log.Lvl5("Sending from", c.conn.LocalAddr(), "to", c.conn.RemoteAddr())
 	var sent uint32
 	for sent < packetSize {
-		n, err := c.conn.Write(b[sent:])
+		n, err := conn.Write(b[sent:])
 		if err != nil {
-			sentLen := def_headerSize + uint64(sent)
-			c.updateTx(sentLen)
+			sentLen := uint64(len(headBuf)) + uint64(sent)
+			counter.updateTx(sentLen)
 			return sentLen, handleError(err)
 		}
 		sent += uint32(n)
 	}
-	// update stats on the connection. Plus 4 for the uint32 for the frame size.
-	sentLen := def_headerSize + uint64(sent)
-	c.updateTx(sentLen)
+
+	sentLen := uint64(len(headBuf)) + uint64(sent)
+	counter.updateTx(sentLen)
 	return sentLen, nil
 }
 
@@ -463,23 +506,25 @@ func getListenAddress(addr Address, listenAddr string) (string, error) {
 		return "", err
 	}
 
-	// If 'listenAddr' only contains the host, combine it with the port
-	// of 'addr'.
-	splitted := strings.Split(listenAddr, ":")
-	if len(splitted) == 1 && port != "" {
-		return splitted[0] + ":" + port, nil
-	}
-
 	// If host and port in `listenAddr`, choose this one.
 	hostListen, portListen, err := net.SplitHostPort(listenAddr)
-	if err != nil {
-		return "", err
-	}
-	if hostListen != "" && portListen != "" {
-		return listenAddr, nil
+	if err == nil {
+		if portListen != "" {
+			return net.JoinHostPort(hostListen, portListen), nil
+		}
+		return "", fmt.Errorf("Invalid combination of 'addr' (%s) and 'listenAddr' (%s)", addr.NetworkAddress(), listenAddr)
 	}
 
-	return "", fmt.Errorf("Invalid combination of 'addr' (%s) and 'listenAddr' (%s)", addr.NetworkAddress(), listenAddr)
+	// If 'listenAddr' only contains the host, combine it with the port
+	// of 'addr'. IPv6 literals may be passed either as "::1" or "[::1]".
+	hostListen = strings.TrimSpace(listenAddr)
+	if strings.HasPrefix(hostListen, "[") && strings.HasSuffix(hostListen, "]") {
+		hostListen = strings.TrimPrefix(strings.TrimSuffix(hostListen, "]"), "[")
+	}
+	if hostListen == "" {
+		return "", fmt.Errorf("Invalid combination of 'addr' (%s) and 'listenAddr' (%s)", addr.NetworkAddress(), listenAddr)
+	}
+	return net.JoinHostPort(hostListen, port), nil
 }
 
 // KCPHost implements the Host interface using KCP connections.
@@ -513,6 +558,30 @@ func (t *KCPHost) Connect(si *ServerIdentity) (Conn, error) {
 		return nil, errors.New("This address is not correctly formatted: " + si.Address.String())
 	}
 	return nil, fmt.Errorf("KCPHost %s can't handle this type of connection: %s", si.Address, si.Address.ConnType())
+}
+
+func encodePacketHeader(size uint32) []byte {
+	header := make([]byte, def_headerSize, def_headerSize+def_extendedSize)
+	encodedSize := size
+	if size > def_legacyMaxPacketSize {
+		encodedSize = def_extendedPacketMarker
+	}
+	putInt24(encodedSize, header)
+	copy(header[3:], def_headerMagic)
+	if encodedSize == def_extendedPacketMarker {
+		extended := make([]byte, def_extendedSize)
+		binary.BigEndian.PutUint32(extended, size)
+		header = append(header, extended...)
+	}
+	return header
+}
+
+func decodePacketHeader(header []byte) (size uint32, extended bool, valid bool) {
+	if len(header) != def_headerSize || !bytes.Equal(header[3:], def_headerMagic) {
+		return 0, false, false
+	}
+	size = readInt24(header)
+	return size, size == def_extendedPacketMarker, true
 }
 
 func readInt24(b []byte) uint32 {

@@ -33,19 +33,20 @@ import (
 	"github.com/cypherium/cypher/params"
 )
 
-// DefaultFullGPOConfig contains default gasprice oracle settings for full node.
-var DefaultFullGPOConfig = gasprice.Config{
-	Blocks:     20,
-	Percentile: 60,
+var DefaultFullGPOConfig = gasprice.Config{Blocks: 20, Percentile: 60}
+var DefaultLightGPOConfig = gasprice.Config{Blocks: 2, Percentile: 60}
+
+func nativeMinerGasBounds(chainConfig *params.ChainConfig, floor, ceil uint64) (uint64, uint64) {
+	if chainConfig == nil || !chainConfig.NativeParallelEnabled() {
+		return floor, ceil
+	}
+	// Genesis-native execution uses one consensus capacity target. Leaving the
+	// legacy 3.37G default ceiling in place would slowly decay a 2^44 genesis
+	// header until even a maximum native transaction could never be proposed.
+	target := chainConfig.NativeParallel.MaxComputePerBlock
+	return target, target
 }
 
-// DefaultLightGPOConfig contains default gasprice oracle settings for light client.
-var DefaultLightGPOConfig = gasprice.Config{
-	Blocks:     2,
-	Percentile: 60,
-}
-
-// DefaultConfig contains default settings for use on the Ethereum main net.
 var DefaultConfig = Config{
 	SyncMode: downloader.FastSync,
 	colossusX: colossusX.Config{
@@ -76,7 +77,51 @@ var DefaultConfig = Config{
 	TxPool:      core.DefaultTxPoolConfig,
 	RPCGasCap:   9000000000000000000,
 	GPO:         DefaultFullGPOConfig,
-	RPCTxFeeCap: 100, // 1 ether
+	RPCTxFeeCap: 100,
+	TxQUIC: TxQUICConfig{
+		Enabled:       false,
+		AutoRole:      true,
+		BridgeEnabled: false,
+		// Retain a five-second burst at the 200k TPS architecture target.
+		// Bytes remain independently bounded so large calldata/blob traffic
+		// applies backpressure before count capacity is exhausted.
+		BridgeQueueSize:          int(params.NativeParallelHardMaxTransactions),
+		BridgeQueueMaxBytes:      defaultTxQUICBridgeQueueMaxBytes,
+		BridgeWorkers:            64,
+		BridgeBatchInterval:      10 * time.Millisecond,
+		OutboxMaxRecords:         defaultTxOutboxMaxRecords,
+		OutboxMaxBytes:           defaultTxOutboxMaxBytes,
+		OutboxWorkers:            64,
+		OutboxRetryMin:           defaultTxOutboxRetryMin,
+		OutboxRetryMax:           defaultTxOutboxRetryMax,
+		IngressWorkers:           256,
+		MaxInflightPayloadBytes:  512 * 1024 * 1024,
+		ReplayWindow:             65536,
+		MaxClockSkew:             30 * time.Second,
+		MaxPacketAge:             10 * time.Minute,
+		NonceReservation:         4096,
+		IngressCommitInterval:    time.Millisecond,
+		IngressCommitMaxRequests: 64,
+		IngressCommitMaxBytes:    16 * 1024 * 1024,
+		// Keep duplicate ACKs for the full accepted packet-age window without
+		// retaining burst manifests for a day. Replay nonces remain durable after
+		// the ACK body is collected.
+		IngressAckRetention:  10 * time.Minute,
+		HTTP3Enabled:         false,
+		Addr:                 "0.0.0.0",
+		Port:                 4444,
+		PortOffset:           2000,
+		MaxIncomingStreams:   256,
+		MaxIncomingConns:     256,
+		ReadTimeout:          10 * time.Second,
+		WriteTimeout:         10 * time.Second,
+		ForwardTimeout:       15 * time.Second,
+		ForwardHedgeDelay:    100 * time.Millisecond,
+		MaxTxsPerIPPerSecond: 500000,
+		BurstTxsPerIP:        1000000,
+		RateBucketMaxEntries: 65536,
+		RateBucketIdleTTL:    10 * time.Minute,
+	},
 }
 
 func init() {
@@ -100,97 +145,145 @@ func init() {
 	}
 }
 
-// ColossusX returns the consensus-engine configuration.
-func (c *Config) ColossusX() *colossusX.Config {
-	return &c.colossusX
-}
+func (c *Config) ColossusX() *colossusX.Config { return &c.colossusX }
 
 //go:generate gencodec -type Config -formats toml -out gen_config.go
 
+type TxQUICConfig struct {
+	ChainID      uint64      `toml:"-"`
+	GenesisHash  common.Hash `toml:"-"`
+	FairHotstuff bool        `toml:"-"`
+
+	Enabled       bool `toml:",omitempty"`
+	AutoRole      bool `toml:",omitempty"`
+	BridgeEnabled bool `toml:",omitempty"`
+
+	BridgeQueueSize         int           `toml:",omitempty"`
+	BridgeQueueMaxBytes     int64         `toml:",omitempty"`
+	BridgeWorkers           int           `toml:",omitempty"`
+	BridgeBatchInterval     time.Duration `toml:",omitempty"`
+	OutboxMaxRecords        int           `toml:",omitempty"`
+	OutboxMaxBytes          int64         `toml:",omitempty"`
+	OutboxWorkers           int           `toml:",omitempty"`
+	OutboxRetryMin          time.Duration `toml:",omitempty"`
+	OutboxRetryMax          time.Duration `toml:",omitempty"`
+	IngressWorkers          int           `toml:",omitempty"`
+	MaxInflightPayloadBytes int64         `toml:",omitempty"`
+	ReplayWindow            uint64        `toml:",omitempty"`
+	MaxClockSkew            time.Duration `toml:",omitempty"`
+	MaxPacketAge            time.Duration `toml:",omitempty"`
+	NonceReservation        uint64        `toml:",omitempty"`
+
+	IngressCommitInterval    time.Duration `toml:",omitempty"`
+	IngressCommitMaxRequests int           `toml:",omitempty"`
+	IngressCommitMaxBytes    int64         `toml:",omitempty"`
+	IngressAckRetention      time.Duration `toml:",omitempty"`
+
+	HTTP3Enabled  bool   `toml:",omitempty"`
+	HTTP3Addr     string `toml:",omitempty"`
+	HTTP3Port     int    `toml:",omitempty"`
+	HTTP3CertFile string `toml:",omitempty"`
+	HTTP3KeyFile  string `toml:",omitempty"`
+
+	Addr       string `toml:",omitempty"`
+	Port       int    `toml:",omitempty"`
+	PortOffset int    `toml:",omitempty"`
+
+	MaxIncomingStreams int64 `toml:",omitempty"`
+	MaxIncomingConns   int   `toml:",omitempty"`
+
+	ReadTimeout    time.Duration `toml:",omitempty"`
+	WriteTimeout   time.Duration `toml:",omitempty"`
+	ForwardTimeout time.Duration `toml:",omitempty"`
+	// ForwardHedgeDelay staggers one additional committee request when the
+	// quorum-sized initial window is blocked by a straggler.
+	ForwardHedgeDelay time.Duration `toml:",omitempty"`
+
+	MaxTxsPerIPPerSecond int           `toml:",omitempty"`
+	BurstTxsPerIP        int           `toml:",omitempty"`
+	RateBucketMaxEntries int           `toml:",omitempty"`
+	RateBucketIdleTTL    time.Duration `toml:",omitempty"`
+
+	AllowIPs []string `toml:",omitempty"`
+
+	AllowedSigners []common.Address `toml:",omitempty"`
+}
+
+// UnmarshalTOML preserves security-sensitive defaults when an operator sets
+// only part of [Eth.TxQUIC]. Without this merge, omitted booleans such as
+// AutoRole silently become false because the generated parent decoder replaces
+// the complete nested struct.
+func (c *TxQUICConfig) UnmarshalTOML(unmarshal func(interface{}) error) error {
+	type plain TxQUICConfig
+	decoded := plain(DefaultConfig.TxQUIC)
+	if err := unmarshal(&decoded); err != nil {
+		return err
+	}
+	*c = TxQUICConfig(decoded)
+	return nil
+}
+
 type Config struct {
-	// The genesis block, which is inserted if the database is empty.
-	// If nil, the Cypherium main net block is used.
 	GenesisKey *core.GenesisKey `toml:",omitempty"`
 	Genesis    *core.Genesis    `toml:",omitempty"`
 
-	// Protocol options
-	NetworkId uint64 // Network ID to use for selecting peers to connect to
+	NetworkId uint64
 	SyncMode  downloader.SyncMode
 
-	// This can be set to list of enrtree:// URLs which will be queried for
-	// for nodes to connect to.
 	DiscoveryURLs []string
 
-	NoPruning  bool // Whether to disable pruning and flush everything to disk
-	NoPrefetch bool // Whether to disable prefetching and only load state on demand
+	NoPruning  bool
+	NoPrefetch bool
 
-	TxLookupLimit uint64 `toml:",omitempty"` // The maximum number of blocks from head whose tx indices are reserved.
+	TxLookupLimit uint64 `toml:",omitempty"`
 
-	// Whitelist of required block number -> hash values to accept
 	Whitelist map[uint64]common.Hash `toml:"-"`
 
-	// Light client options
-	LightServ    int  `toml:",omitempty"` // Maximum percentage of time allowed for serving LES requests
-	LightIngress int  `toml:",omitempty"` // Incoming bandwidth limit for light servers
-	LightEgress  int  `toml:",omitempty"` // Outgoing bandwidth limit for light servers
-	LightPeers   int  `toml:",omitempty"` // Maximum number of LES client peers
-	LightNoPrune bool `toml:",omitempty"` // Whether to disable light chain pruning
+	LightServ    int  `toml:",omitempty"`
+	LightIngress int  `toml:",omitempty"`
+	LightEgress  int  `toml:",omitempty"`
+	LightPeers   int  `toml:",omitempty"`
+	LightNoPrune bool `toml:",omitempty"`
 
-	// Ultra Light client options
-	UltraLightServers      []string `toml:",omitempty"` // List of trusted ultra light servers
-	UltraLightFraction     int      `toml:",omitempty"` // Percentage of trusted servers to accept an announcement
-	UltraLightOnlyAnnounce bool     `toml:",omitempty"` // Whether to only announce headers, or also serve them
+	UltraLightServers      []string `toml:",omitempty"`
+	UltraLightFraction     int      `toml:",omitempty"`
+	UltraLightOnlyAnnounce bool     `toml:",omitempty"`
 
-	// Database options
 	SkipBcVersionCheck bool `toml:"-"`
 	DatabaseHandles    int  `toml:"-"`
 	DatabaseCache      int
 	DatabaseFreezer    string
 
 	TrieCleanCache          int
-	TrieCleanCacheJournal   string        `toml:",omitempty"` // Disk journal directory for trie cache to survive node restarts
-	TrieCleanCacheRejournal time.Duration `toml:",omitempty"` // Time interval to regenerate the journal for clean cache
+	TrieCleanCacheJournal   string        `toml:",omitempty"`
+	TrieCleanCacheRejournal time.Duration `toml:",omitempty"`
 	TrieDirtyCache          int
 	TrieTimeout             time.Duration
 	SnapshotCache           int
 
-	// Mining options
 	Miner miner.Config
 
-	// colossusX options
 	colossusX colossusX.Config
 
-	// Transaction pool options
 	TxPool core.TxPoolConfig
 
-	// Gas Price Oracle options
 	GPO gasprice.Config
 
-	// Enables tracking of SHA3 preimages in the VM
+	TxQUIC TxQUICConfig
+
 	EnablePreimageRecording bool
 
-	// Miscellaneous options
-	DocRoot string `toml:"-"`
-	// Type of the EWASM interpreter ("" for default)
+	DocRoot          string `toml:"-"`
 	EWASMInterpreter string
+	EVMInterpreter   string
 
-	// Type of the EVM interpreter ("" for default)
-	EVMInterpreter string
-
-	// RPCGasCap is the global gas cap for eth-call variants.
 	RPCGasCap uint64 `toml:",omitempty"`
 
-	// RPCTxFeeCap is the global transaction fee(price * gaslimit) cap for
-	// send-transction variants. The unit is ether.
 	RPCTxFeeCap float64 `toml:",omitempty"`
 
-	// Checkpoint is a hardcoded checkpoint which can be nil.
-	Checkpoint *params.TrustedCheckpoint `toml:",omitempty"`
-
-	// CheckpointOracle is the configuration for checkpoint oracle.
+	Checkpoint       *params.TrustedCheckpoint      `toml:",omitempty"`
 	CheckpointOracle *params.CheckpointOracleConfig `toml:",omitempty"`
 
-	// timeout value for call
 	EVMCallTimeOut time.Duration
 
 	EnableMultitenancy bool

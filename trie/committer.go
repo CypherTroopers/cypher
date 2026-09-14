@@ -99,6 +99,20 @@ func (c *committer) commit(n node, db *Database, force bool) (node, error) {
 	if hash != nil && !dirty {
 		return hash, nil
 	}
+	// Speculative state copies can still mark a subtree dirty after another
+	// copy has persisted it. Reuse that immutable subtree before walking its
+	// children; otherwise every descendant re-inserts the parent's trie.
+	// Only disk presence proves durability. An in-memory cache entry may
+	// still depend on unpersisted children and must follow the normal path.
+	if hash != nil {
+		persisted, err := db.diskdb.Has(hash)
+		if err != nil {
+			return nil, err
+		}
+		if persisted {
+			return hash, nil
+		}
+	}
 	// Commit children, then parent, and remove remove the dirty flag.
 	switch cn := n.(type) {
 	case *shortNode:

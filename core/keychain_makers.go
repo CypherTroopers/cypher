@@ -137,21 +137,3 @@ func makeKeyHeader(chain types.KeyChainReader, parent *types.KeyBlock, engine co
 		Time:   time,
 	}
 }
-
-// makeHeaderChain creates a deterministic chain of headers rooted at parent.
-func makeKeyHeaderChain(parent *types.KeyBlockHeader, n int, engine consensus.Engine, db ethdb.Database, seed int) []*types.KeyBlockHeader {
-	blocks := makeKeyBlockChain(types.NewKeyBlockWithHeader(parent), n, engine, db, seed)
-	headers := make([]*types.KeyBlockHeader, len(blocks))
-	for i, block := range blocks {
-		headers[i] = block.Header()
-	}
-	return headers
-}
-
-// makeBlockChain creates a deterministic chain of blocks rooted at parent.
-func makeKeyBlockChain(parent *types.KeyBlock, n int, engine consensus.Engine, db ethdb.Database, seed int) []*types.KeyBlock {
-	blocks := GenerateKeyChain(params.TestChainConfig, parent, engine, db, n, func(i int, b *KeyBlockGen) {
-
-	})
-	return blocks
-}

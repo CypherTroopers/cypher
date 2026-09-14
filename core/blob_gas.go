@@ -68,7 +68,13 @@ func ValidateExcessBlobGas(config *params.ChainConfig, parent, header *types.Hea
 		return nil
 	}
 	blobCfg := config.ActiveBlobConfig(header.Time)
-	expected := params.CalcExcessBlobGas(parent.ExcessBlobGas, parent.BlobGasUsed, blobCfg)
+	expected := params.CalcExcessBlobGasForFork(
+		modern.IsOsaka,
+		parent.ExcessBlobGas,
+		parent.BlobGasUsed,
+		parent.BaseFee,
+		blobCfg,
+	)
 	if header.ExcessBlobGas != expected {
 		return fmt.Errorf("%w: have %d want %d", ErrExcessBlobGasMismatch, header.ExcessBlobGas, expected)
 	}

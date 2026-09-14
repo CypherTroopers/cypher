@@ -35,7 +35,7 @@ func testVerifyBlobTx(hash common.Hash) *Transaction {
 func TestVerifyBlobSidecarCallsVerifier(t *testing.T) {
 	commitment := testKZGCommitment(7)
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}
@@ -52,7 +52,7 @@ func TestVerifyBlobSidecarCallsVerifier(t *testing.T) {
 func TestVerifyBlobSidecarRejectsBadHashBeforeVerifier(t *testing.T) {
 	commitment := testKZGCommitment(8)
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1}},
+		Blobs:       []Blob{{1}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}
@@ -69,7 +69,7 @@ func TestVerifyBlobSidecarRejectsBadHashBeforeVerifier(t *testing.T) {
 func TestVerifyBlobSidecarPropagatesVerifierError(t *testing.T) {
 	commitment := testKZGCommitment(9)
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1}},
+		Blobs:       []Blob{{1}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}

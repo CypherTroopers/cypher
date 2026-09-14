@@ -50,11 +50,11 @@ func Handler(reg metrics.Registry) http.Handler {
 			case metrics.GaugeFloat64:
 				c.addGaugeFloat64(name, m.Snapshot())
 			case metrics.Histogram:
-				c.addHistogram(name, m.Snapshot())
+				c.addSummary(name, m.Snapshot())
 			case metrics.Meter:
 				c.addMeter(name, m.Snapshot())
 			case metrics.Timer:
-				c.addTimer(name, m.Snapshot())
+				c.addSummary(name, m.Snapshot())
 			case metrics.ResettingTimer:
 				c.addResettingTimer(name, m.Snapshot())
 			default:

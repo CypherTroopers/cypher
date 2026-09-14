@@ -1,3 +1,6 @@
+//go:build ignore
+// +build ignore
+
 // Copyright 2018 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
@@ -13,9 +16,6 @@
 //
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
-
-//go:build none
-// +build none
 
 /*
 This command generates GPL license headers on top of all source files.
@@ -75,7 +75,6 @@ var (
 		"internal/jsre/deps",
 		"log/",
 		"metrics/",
-		"signer/rules/deps",
 
 		// skip special licenses
 		"crypto/secp256k1", // Relicensed to BSD-3 via https://github.com/cypherium/cypher/pull/17225
