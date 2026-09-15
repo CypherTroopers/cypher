@@ -3489,6 +3489,17 @@ func (s *PublicTransactionPoolAPI) partitionPreparedRawTransactions(encoded []he
 	if workerCount > len(groups) {
 		workerCount = len(groups)
 	}
+	// Amortize admission certificates and durable transport over collected
+	// transactions instead of creating one tiny job per available worker.
+	// This caps partition count only; it does not wait for more transactions.
+	const rawTxTargetItemsPerPartition = 64
+	partitionLimit := len(encoded) / rawTxTargetItemsPerPartition
+	if partitionLimit < 1 {
+		partitionLimit = 1
+	}
+	if workerCount > partitionLimit {
+		workerCount = partitionLimit
+	}
 	if workerCount <= 1 {
 		indexes := make([]int, len(encoded))
 		for index := range indexes {

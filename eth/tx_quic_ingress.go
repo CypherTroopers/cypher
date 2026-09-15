@@ -8911,6 +8911,12 @@ func (o *TxOutbox) scheduleRecord(batchID common.Hash, due uint64) {
 }
 
 func (o *TxOutbox) scheduleRecordLocked(batchID common.Hash, due uint64) {
+	// Immediate work must use the same time domain as retries. A zero heap
+	// deadline always outranks an overdue retry and orders new work by hash.
+	// Timestamp new work so overdue retries are not hidden by a live backlog.
+	if due == 0 {
+		due = uint64(time.Now().UnixNano())
+	}
 	o.scheduled[batchID] = due
 	heap.Push(&o.schedule, txOutboxScheduleItem{batchID: batchID, due: due})
 }
