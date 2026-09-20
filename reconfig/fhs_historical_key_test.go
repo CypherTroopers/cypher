@@ -158,3 +158,67 @@ func TestFHSHistoricalKeyCarrierRejectsInvalidAuthenticatedContext(t *testing.T)
 		})
 	}
 }
+
+func TestFixedPoWRewardRecipientInLiveAndCertifiedKeyValidation(t *testing.T) {
+	f, carrier, key := historicalKeyFixture(t)
+	s := f.replicas[0]
+	s.chainConfig.FixedCommittee = true
+	s.currentView.LeaderIndex = 6
+	s.keyService.engine = colossusX.NewFaker()
+	committee := bftview.LoadMember(0, key.ParentHash(), true)
+	committeeDB := rawdb.NewMemoryDatabase()
+	serverAddress, serverPublic := bftview.GetServerInfo(bftview.Address), bftview.GetServerInfo(bftview.PublicKey)
+	bftview.SetServerInfo("", "") // Exercise follower verification instead of the local leader shortcut.
+	bftview.SetCommitteeConfig(committeeDB, s.kbc, nil)
+	t.Cleanup(func() {
+		bftview.SetServerInfo(serverAddress, serverPublic)
+		bftview.SetCommitteeConfig(nil, nil, nil)
+		committeeDB.Close()
+	})
+	if !bftview.WriteCommittee(0, key.ParentHash(), committee) {
+		t.Fatal("store signing committee")
+	}
+	for _, test := range []struct {
+		name      string
+		recipient string
+	}{
+		{name: "external B", recipient: common.HexToAddress("0xb").Hex()},
+		{name: "B matches existing validator", recipient: committee.List[1].CoinBase},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candidate := types.NewCandidate(key.ParentHash(), key.Difficulty(), key.NumberU64(), key.T_Number(),
+				nil, []byte{192, 0, 2, 1}, "common-miner-public-key", test.recipient, 7102)
+			candidate.KeyCandidate.Time = key.Time()
+			rewardKey := key.WithBody(key.InPubKey(), key.InAddress(), candidate.PubKey, candidate.Coinbase,
+				key.LeaderPubKey(), key.LeaderAddress())
+			for _, path := range []struct {
+				name   string
+				verify func(*types.KeyBlock, *types.Candidate) error
+			}{
+				{name: "live", verify: func(block *types.KeyBlock, candidate *types.Candidate) error {
+					return s.keyService.verifyKeyBlock(block, candidate, 0)
+				}},
+				{name: "certified replay", verify: func(block *types.KeyBlock, candidate *types.Candidate) error {
+					return s.keyService.verifyCertifiedFHSKeyBlock(carrier.ref, block, candidate)
+				}},
+			} {
+				t.Run(path.name, func(t *testing.T) {
+					if err := path.verify(rewardKey, candidate); err != nil {
+						t.Fatalf("B reward candidate rejected: %v", err)
+					}
+					if rewardKey.CommitteeHash() != key.CommitteeHash() || rewardKey.HasNewNode() {
+						t.Fatal("B reward changed fixed committee membership")
+					}
+					invalid := rewardKey.WithBody(key.InPubKey(), key.InAddress(), candidate.PubKey,
+						common.HexToAddress("0xa").Hex(), key.LeaderPubKey(), key.LeaderAddress())
+					if err := path.verify(invalid, candidate); err == nil || !strings.Contains(err.Error(), "mismatch") {
+						t.Fatalf("keyblock recipient differing from candidate accepted: %v", err)
+					}
+					if err := path.verify(rewardKey, nil); err == nil {
+						t.Fatal("B reward without PoW candidate accepted")
+					}
+				})
+			}
+		})
+	}
+}

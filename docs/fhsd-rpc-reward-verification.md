@@ -155,6 +155,27 @@ The newly built executable also initialized the supplied `genesis.json` successf
 
 This check did not reuse or modify any existing chain database. Final `git diff --check` passed, all 78 changed/new Go source files had no `gofmt -l` output, and the repository scan found no remaining Japanese text in source or documentation.
 
+## Fixed-mode PoW recipient follow-up (2026-09-20)
+
+Fixed-mode mining now selects B from the existing account-scoped registry when constructing a candidate, or keeps A only when that registration is absent. Registry errors refuse new work. The worker retains its operating identity and captures recipients per candidate. This uses existing source/test files and existing wire fields; the PoW algorithm and consensus validation rules are unchanged.
+
+Focused tests passed on Linux amd64 with Go 1.27.1, `GO111MODULE=on`, `GOCACHE=/tmp/cypher-pow-go-cache`, `-mod=readonly`, and `-count=1`:
+
+- `miner`: fixed committee/fixed leader B selection, unset A fallback, nonfixed isolation, registry failures, immutable recipient snapshots, concurrent account changes, and existing cadence tests.
+- `eth`: PoW registry lookups, restart/update behavior, unavailable/malformed registry errors, and the existing identity snapshot lock test.
+- `consensus/colossusX`: static reward eligibility, exact A/B/shared-producer balances and matching state roots across proposal/finalize/assemble, and real PoW acceptance after existing candidate/compact-result encoding round trips.
+- `reconfig` and `reconfig/bftview`: live/certified key validation, recipient mismatch/missing candidate rejection, and unchanged fixed committee reconstruction with shared or validator-owned B.
+- `core`: existing Common RPC V2 payout, tampering, snapshot, serial/parallel/import, deferred credit, and aggregation tests.
+- `commonrpcreward`: existing registry tests.
+
+The recipient selection, registry error, concurrent account change, and identity snapshot lock tests also passed with `-race` in `miner` and `eth`. These were focused regression runs, not full-package or full-repository suites. No operational chain, running node, genesis, or distribution binary was changed by this follow-up.
+
+The existing `TestCommonRPCRewardConcurrentIPCSnapshots` also passed with `-race` using actual test-only IPC. Its initial sandbox run failed because Unix socket `setsockopt` was prohibited; the rerun with local socket permission passed.
+
+During this follow-up, a real `NewTester` seal test exposed an existing consensus defect: `Candidate.HashNoNonce` passes `candidate` by value to `rlpHash`, while `Candidate.EncodeRLP` has a pointer receiver. `rlp.makeEncoderWriter` rejects that non-addressable value. `rlpHash` ignores the error, leaving the input empty; consequently `HashNoNonce` returns `Keccak256(empty)` (`0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470`) for different recipients. The attempted tamper-rejection test failed on both full candidate and compact PoW-result round trips: changing the sealed Coinbase still returned nil from `VerifyCandidate`.
+
+This is separate from payout routing and also affects the previous A-only path. A simple pointer correction would invalidate existing seals and change consensus; it is not included without a coordinated chain transition. The retained real-seal regression verifies compatibility and B preservation through existing encodings, not cryptographic binding. Live/certified keyblock tests separately verify that keyblock and candidate recipients agree. These passing checks must not be interpreted as protection against changing an uncertified candidate's recipient while reusing its PoW.
+
 ## Known baseline issues and limits
 
 The starting HEAD independently reproduces seven keystore test failures caused by missing fixtures: `very-light-scrypt.json`, `v3_test_vector.json`, `v1_test_vector.json`, and a V1 key fixture. The affected tests are `TestKeyEncryptDecrypt`, `TestV3_30_Byte_Key`, `TestV3_31_Byte_Key`, `TestV3_PBKDF2_1`, `TestV3_Scrypt_1`, `TestV1_1`, and `TestV1_2`. The baseline record is `build/stage/fhsd-work/keystore-baseline.log`; existing tests were not weakened or replaced to hide those failures.

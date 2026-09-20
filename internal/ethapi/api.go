@@ -2179,9 +2179,12 @@ func (s *PublicTransactionPoolAPI) GetRawTransactionByHash(ctx context.Context, 
 
 // GetTransactionReceipt returns the transaction receipt for the given transaction hash.
 func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
-	tx, blockHash, blockNumber, index, err := s.b.GetTransaction(ctx, hash)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	tx, blockHash, _, index, err := s.b.GetTransaction(ctx, hash)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
 	if tx == nil || blockHash == (common.Hash{}) {
 		return nil, nil
@@ -2190,57 +2193,17 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	if err != nil {
 		return nil, err
 	}
-	if len(receipts) <= int(index) {
+	if index >= uint64(len(receipts)) {
 		return nil, nil
 	}
-	receipt := receipts[index]
-
-	block, _ := s.b.BlockByHash(ctx, blockHash)
-
-	signer := rpcTransactionSigner(tx)
-	from, _ := types.Sender(signer, tx)
-
-	effectiveGasPrice := new(big.Int).Set(tx.GasPrice())
-	if isEIP1559Transaction(tx) {
-		baseFee := fixedBaseFeePerGas()
-		if block != nil {
-			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil {
-				baseFee = new(big.Int).Set(headerBaseFee)
-			}
-		}
-		if tip, tipErr := tx.EffectiveGasTip(baseFee); tipErr == nil {
-			effectiveGasPrice = new(big.Int).Add(new(big.Int).Set(baseFee), tip)
-		}
+	block, err := s.b.BlockByHash(ctx, blockHash)
+	if err != nil {
+		return nil, err
 	}
-
-	fields := map[string]interface{}{
-		"blockHash":         blockHash,
-		"blockNumber":       hexutil.Uint64(blockNumber),
-		"transactionHash":   hash,
-		"transactionIndex":  hexutil.Uint64(index),
-		"type":              hexutil.Uint64(tx.Type()),
-		"effectiveGasPrice": (*hexutil.Big)(effectiveGasPrice),
-		"from":              from,
-		"to":                tx.To(),
-		"gasUsed":           hexutil.Uint64(receipt.GasUsed),
-		"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
-		"contractAddress":   nil,
-		"logs":              receipt.Logs,
-		"logsBloom":         receipt.Bloom,
+	if block == nil {
+		return nil, nil
 	}
-
-	fields["status"] = hexutil.Uint(receipt.Status)
-	addBlobRPCReceiptFields(fields, s.b.ChainConfig(), block, tx)
-
-	if receipt.Logs == nil {
-		fields["logs"] = [][]*types.Log{}
-	}
-	// If the ContractAddress is 20 0x0 bytes, assume it is not a contract creation
-	if receipt.ContractAddress != (common.Address{}) {
-		fields["contractAddress"] = receipt.ContractAddress
-	}
-	addCommonRPCReceiptFields(fields, block, hash)
-	return fields, nil
+	return marshalBlockscoutReceipt(s.b, block, tx, receipts[index], index)
 }
 
 // sign is a helper function that signs a transaction with the private key of the given address.
@@ -4315,4 +4278,61 @@ func (s *PublicPowCandidateAPI) Content() []RPCCandidate {
 	}
 
 	return result
+}
+
+// marshalBlockscoutReceipt is shared by both receipt RPCs. The formatter below
+// is taken from this checkout's original GetTransactionReceipt, retaining blob
+// and Common RPC admission/reward fields rather than inventing a new schema.
+func marshalBlockscoutReceipt(backend Backend, block *types.Block, tx *types.Transaction, receipt *types.Receipt, index uint64) (map[string]interface{}, error) {
+	if block == nil || tx == nil || receipt == nil {
+		return nil, errors.New("missing block, transaction or receipt")
+	}
+	blockHash, blockNumber, hash := block.Hash(), block.NumberU64(), tx.Hash()
+	signer := rpcTransactionSigner(tx)
+	from, err := types.Sender(signer, tx)
+	if err != nil {
+		return nil, err
+	}
+
+	effectiveGasPrice := new(big.Int).Set(tx.GasPrice())
+	if isEIP1559Transaction(tx) {
+		baseFee := fixedBaseFeePerGas()
+		if block != nil {
+			if headerBaseFee := block.Header().BaseFee; headerBaseFee != nil {
+				baseFee = new(big.Int).Set(headerBaseFee)
+			}
+		}
+		if tip, tipErr := tx.EffectiveGasTip(baseFee); tipErr == nil {
+			effectiveGasPrice = new(big.Int).Add(new(big.Int).Set(baseFee), tip)
+		}
+	}
+
+	fields := map[string]interface{}{
+		"blockHash":         blockHash,
+		"blockNumber":       hexutil.Uint64(blockNumber),
+		"transactionHash":   hash,
+		"transactionIndex":  hexutil.Uint64(index),
+		"type":              hexutil.Uint64(tx.Type()),
+		"effectiveGasPrice": (*hexutil.Big)(effectiveGasPrice),
+		"from":              from,
+		"to":                tx.To(),
+		"gasUsed":           hexutil.Uint64(receipt.GasUsed),
+		"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
+		"contractAddress":   nil,
+		"logs":              receipt.Logs,
+		"logsBloom":         receipt.Bloom,
+	}
+
+	fields["status"] = hexutil.Uint(receipt.Status)
+	addBlobRPCReceiptFields(fields, backend.ChainConfig(), block, tx)
+
+	if receipt.Logs == nil {
+		fields["logs"] = [][]*types.Log{}
+	}
+	// If the ContractAddress is 20 0x0 bytes, assume it is not a contract creation
+	if receipt.ContractAddress != (common.Address{}) {
+		fields["contractAddress"] = receipt.ContractAddress
+	}
+	addCommonRPCReceiptFields(fields, block, hash)
+	return fields, nil
 }

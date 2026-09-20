@@ -23,7 +23,7 @@ var publicRPCMethods = func() map[string]bool {
 			call estimateGas getBlockTransactionCountByNumber getBlockTransactionCountByHash
 			getTransactionByBlockNumberAndIndex getTransactionByBlockHashAndIndex
 			getRawTransactionByBlockNumberAndIndex getRawTransactionByBlockHashAndIndex
-			getTransactionCount getTransactionByHash getRawTransactionByHash getTransactionReceipt
+			getTransactionCount getTransactionByHash getRawTransactionByHash getTransactionReceipt getBlockReceipts
 			fillTransaction sendRawTransactions sendRawTransaction sendRawTransactionWithOpts pendingTransactions
 			etherbase coinbase hashrate status committeeMembers mining
 			newPendingTransactionFilter newBlockFilter newFilter getLogs uninstallFilter getFilterLogs getFilterChanges`,
@@ -31,7 +31,7 @@ var publicRPCMethods = func() map[string]bool {
 		"personal": "listAccounts listWallets ecRecover",
 		"miner":    "status getHashrate content",
 		"admin":    "peers nodeInfo datadir",
-		"debug": `getBlockRlp printBlock seedHash chaindbProperty dumpBlock accountRange preimage getBadBlocks
+		"debug": `traceTransaction traceBlockByNumber traceBlockByHash getBlockRlp printBlock seedHash chaindbProperty dumpBlock accountRange preimage getBadBlocks
 			storageRangeAt getModifiedAccountsByNumber getModifiedAccountsByHash memStats gcStats stacks`,
 		"clique":   "getSnapshot getSnapshotAtHash getSigners getSignersAtHash proposals status",
 		"reconfig": "role leader fhsStatus roleList id members exceptions",

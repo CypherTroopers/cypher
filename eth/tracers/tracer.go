@@ -643,8 +643,7 @@ func (jst *Tracer) GetResult() (json.RawMessage, error) {
 		jst.err = wrapError("result", err)
 	}
 	// Clean up the JavaScript environment
-	jst.vm.DestroyHeap()
-	jst.vm.Destroy()
+	jst.Close()
 
 	return result, jst.err
 }

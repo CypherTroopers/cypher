@@ -3,6 +3,7 @@ package colossusX
 import (
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/core/rawdb"
@@ -87,20 +88,16 @@ func TestStaticBlockRewardEligibility(t *testing.T) {
 func TestKeyBlockPowRewardIsRetained(t *testing.T) {
 	chain := rewardTestChain{}
 	coinbase := common.HexToAddress("0x1000000000000000000000000000000000000001")
-	submitter := common.HexToAddress("0x2000000000000000000000000000000000000002")
-	keyblock := types.NewKeyBlock(&types.KeyBlockHeader{
-		Number:     big.NewInt(1),
-		Difficulty: big.NewInt(1),
-	}).WithBody("", "", "", submitter.Hex(), "", "")
-	keyInfo := keyblock.EncodeToBytes()
+	signer := common.HexToAddress("0x2000000000000000000000000000000000000002")
+	recipient := common.HexToAddress("0x3000000000000000000000000000000000000003")
 	want := new(big.Int).Mul(big.NewInt(100_000), big.NewInt(params.Ether))
 	paths := []struct {
 		name  string
-		apply func(*state.StateDB, *types.Header) error
+		apply func(*state.StateDB, *types.Header, *types.KeyBlock) error
 	}{
 		{
 			name: "proposal",
-			apply: func(statedb *state.StateDB, header *types.Header) error {
+			apply: func(statedb *state.StateDB, header *types.Header, keyblock *types.KeyBlock) error {
 				AccumulateRewards(chain.Config(), statedb, header, nil, nil)
 				ApplyKeyblockPowReward(statedb, keyblock)
 				return nil
@@ -108,42 +105,110 @@ func TestKeyBlockPowRewardIsRetained(t *testing.T) {
 		},
 		{
 			name: "finalize",
-			apply: func(statedb *state.StateDB, header *types.Header) error {
+			apply: func(statedb *state.StateDB, header *types.Header, _ *types.KeyBlock) error {
 				new(colossusX).Finalize(chain, header, statedb, nil, nil, 0)
 				return nil
 			},
 		},
 		{
 			name: "assemble",
-			apply: func(statedb *state.StateDB, header *types.Header) error {
+			apply: func(statedb *state.StateDB, header *types.Header, _ *types.KeyBlock) error {
 				_, err := new(colossusX).FinalizeAndAssemble(chain, header, statedb, nil, nil, nil)
 				return err
 			},
 		},
 	}
-	for _, path := range paths {
-		t.Run(path.name, func(t *testing.T) {
-			statedb, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			header := &types.Header{
-				Coinbase:   coinbase,
+	for _, test := range []struct {
+		name      string
+		recipient common.Address
+	}{
+		{name: "A fallback", recipient: signer},
+		{name: "registered B", recipient: recipient},
+		{name: "B equals block producer", recipient: coinbase},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			keyblock := types.NewKeyBlock(&types.KeyBlockHeader{
 				Number:     big.NewInt(1),
 				Difficulty: big.NewInt(1),
-				BlockType:  types.Key_Block,
-				KeyInfo:    keyInfo,
+				BlockType:  types.TimeReconfig,
+			}).WithBody("", "", "common-miner-public-key", test.recipient.Hex(), "", "")
+			var proposalRoot common.Hash
+			for _, path := range paths {
+				t.Run(path.name, func(t *testing.T) {
+					statedb, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					header := &types.Header{
+						Coinbase:   coinbase,
+						Number:     big.NewInt(1),
+						Difficulty: big.NewInt(1),
+						BlockType:  types.Key_Block,
+						KeyInfo:    keyblock.EncodeToBytes(),
+					}
+					if err := path.apply(statedb, header, keyblock); err != nil {
+						t.Fatal(err)
+					}
+					for _, address := range []common.Address{coinbase, signer, recipient} {
+						balance := new(big.Int)
+						if address == coinbase {
+							balance.Add(balance, want)
+						}
+						if address == test.recipient {
+							balance.Add(balance, want)
+						}
+						if got := statedb.GetBalance(address); got.Cmp(balance) != 0 {
+							t.Errorf("balance of %s = %v, want %v", address, got, balance)
+						}
+					}
+					if header.Coinbase != coinbase {
+						t.Fatal("PoW recipient changed the block producer")
+					}
+					root := statedb.IntermediateRoot(chain.Config().IsEIP158(header.Number))
+					if path.name == "proposal" {
+						proposalRoot = root
+					} else if root != proposalRoot || header.Root != proposalRoot {
+						t.Fatalf("finalized root differs from proposal: state=%s header=%s proposal=%s", root, header.Root, proposalRoot)
+					}
+				})
 			}
+		})
+	}
+}
 
-			if err := path.apply(statedb, header); err != nil {
-				t.Fatal(err)
+func TestCandidatePoWRewardRecipientSurvivesExistingEncodings(t *testing.T) {
+	engine := NewTester()
+	engine.SetThreads(1)
+	t.Cleanup(func() { engine.Close() })
+	recipient := common.HexToAddress("0x3000000000000000000000000000000000000003")
+	candidate := types.NewCandidate(common.HexToHash("0x1234"), big.NewInt(1), 1, 0,
+		nil, []byte{192, 0, 2, 1}, "common-miner-public-key", recipient.Hex(), 7102)
+	stop := make(chan struct{})
+	timer := time.AfterFunc(5*time.Second, func() { close(stop) })
+	defer timer.Stop()
+	sealed, err := engine.SealCandidate(candidate, stop)
+	if err != nil || sealed == nil {
+		t.Fatalf("seal B reward candidate: candidate=%v err=%v", sealed, err)
+	}
+	compact := types.NewPoWResultFromCandidate(sealed).ToCandidate()
+	compact.KeyCandidate.Difficulty.Set(sealed.KeyCandidate.Difficulty)
+	for _, test := range []struct {
+		name      string
+		candidate *types.Candidate
+	}{
+		{name: "candidate RLP", candidate: types.DecodeToCandidate(sealed.EncodeToBytes())},
+		{name: "compact PoW result", candidate: compact},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if test.candidate == nil || test.candidate.Coinbase != recipient.Hex() {
+				t.Fatal("existing candidate encoding lost B")
 			}
-			if got := statedb.GetBalance(coinbase); got.Cmp(want) != 0 {
-				t.Fatalf("key block coinbase reward = %v, want %v", got, want)
+			if err := engine.VerifyCandidate(nil, test.candidate); err != nil {
+				t.Fatalf("encoded B candidate failed PoW verification: %v", err)
 			}
-			if got := statedb.GetBalance(submitter); got.Cmp(want) != 0 {
-				t.Fatalf("key block PoW reward = %v, want %v", got, want)
-			}
+			// This checks compatibility and recipient preservation, not seal
+			// binding. The pre-existing HashNoNonce encoding error requires a
+			// separately coordinated consensus fix (see the verification record).
 		})
 	}
 }

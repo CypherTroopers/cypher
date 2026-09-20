@@ -332,13 +332,11 @@ func (self *worker) commitNewWork() {
 			return
 		}
 	}
-	port, _ := strconv.Atoi(self.config.RnetPort)
-	candidate := types.NewCandidate(keyBlock.Hash(), nil, keyBlock.Number().Uint64()+uint64(1), txBlock.NumberU64(), nil, self.IP, common.HexString(self.pubKey), self.coinBase.String(), port)
-	// Every fixed-mode mining attempt for this key height uses the same consensus
-	// slot, including attempts that start after the slot has elapsed. Non-fixed
-	// mining keeps the legacy minimum-timestamp behavior.
-	fixedMode := self.config != nil && (self.config.FixedLeader || self.config.FixedCommittee)
-	candidate.KeyCandidate.Time = keyBlockCandidateTimestamp(keyBlock, tstart, fixedMode)
+	candidate, err := self.newCandidate(keyBlock, txBlock.NumberU64(), tstart)
+	if err != nil {
+		log.Error("Failed to select PoW reward recipient", "err", err)
+		return
+	}
 	committeeSize := len(self.eth.KeyBlockChain().CurrentCommittee())
 
 	if err := self.engine.PrepareCandidate(self.chain, candidate, committeeSize); err != nil {
@@ -355,6 +353,28 @@ func (self *worker) commitNewWork() {
 	}
 }
 
+// newCandidate captures the recipient before sealing. The caller holds mu so
+// the account used for the registry lookup belongs to this work template.
+// Keep the worker's identity at A: non-fixed candidates also use Coinbase for
+// committee membership, whereas fixed-mode candidates use it only for rewards.
+func (self *worker) newCandidate(keyBlock *types.KeyBlock, txNumber uint64, startedAt time.Time) (*types.Candidate, error) {
+	fixedMode := self.config != nil && (self.config.FixedLeader || self.config.FixedCommittee)
+	recipient := self.coinBase
+	if fixedMode {
+		var err error
+		recipient, err = self.eth.PoWRewardRecipient(self.coinBase)
+		if err != nil {
+			return nil, err
+		}
+	}
+	port, _ := strconv.Atoi(self.config.RnetPort)
+	candidate := types.NewCandidate(keyBlock.Hash(), nil, keyBlock.NumberU64()+1, txNumber, nil, self.IP, common.HexString(self.pubKey), recipient.String(), port)
+	// Every fixed-mode attempt uses the same slot, including late starts.
+	// Non-fixed mining keeps the legacy minimum-timestamp behavior.
+	candidate.KeyCandidate.Time = keyBlockCandidateTimestamp(keyBlock, startedAt, fixedMode)
+	return candidate, nil
+}
+
 func keyBlockCandidateTimestamp(parent *types.KeyBlock, startedAt time.Time, fixedMode bool) uint64 {
 	if parent == nil || fixedMode && parent.IsZeroTimeGenesis() {
 		return uint64(startedAt.Unix())
@@ -367,10 +387,14 @@ func keyBlockCandidateTimestamp(parent *types.KeyBlock, startedAt time.Time, fix
 }
 
 func (self *worker) SetPubKey(pubKey ed25519.PublicKey) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
 	self.pubKey = pubKey
 }
 
 func (self *worker) SetCoinbase(eb common.Address) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
 	self.coinBase = eb
 }
 func (self *worker) LocalMockAutoTrigNextTermPow(cand *types.Candidate) { //for debug

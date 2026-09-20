@@ -29,6 +29,7 @@ type Backend interface {
 	CandidatePool() *core.CandidatePool
 	TxPool() *core.TxPool
 	ChainDb() ethdb.Database
+	PoWRewardRecipient(signer common.Address) (common.Address, error)
 }
 
 // Config is the configuration parameters of mining.

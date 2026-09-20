@@ -573,6 +573,24 @@ func (s *Ethereum) SetEtherbase(etherbase common.Address) {
 	bftview.SetServerCoinBase(etherbase)
 }
 
+// PoWRewardRecipient snapshots the local preference for a new fixed-mode PoW
+// candidate. Only an absent registration falls back to the mining account;
+// unreadable or uncertain preferences must not silently redirect rewards to A.
+// Validators use the recipient carried by the candidate, never this registry.
+func (s *Ethereum) PoWRewardRecipient(signer common.Address) (common.Address, error) {
+	if s.commonRPCRewards == nil {
+		return common.Address{}, errors.New("PoW reward registry unavailable")
+	}
+	recipient, err := s.commonRPCRewards.Recipient(signer)
+	if errors.Is(err, commonrpcreward.ErrNotConfigured) {
+		return signer, nil
+	}
+	if err != nil {
+		return common.Address{}, fmt.Errorf("read PoW reward recipient: %w", err)
+	}
+	return recipient, nil
+}
+
 func (s *Ethereum) ServiceIsRunning() bool { return s.reconfig.ServiceIsRunning() }
 
 func (s *Ethereum) setMiningThreads(threads int) {

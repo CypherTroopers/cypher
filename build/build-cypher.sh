@@ -355,6 +355,13 @@ SUM_BEFORE="$(git hash-object go.sum)"
 
 "${GO_BIN}" test -mod=readonly -a ./crypto/bls -count=1
 
+# Run adapter tests in the same native-library environment used by this build.
+# They execute before a new binary is installed into BINDIR.
+if [[ "${CYPHER_BLOCKSCOUT_TESTS:-0}" == "1" ]]; then
+  "${GO_BIN}" test -mod=readonly ./internal/ethapi ./eth ./eth/tracers ./node \
+    -run '^TestBlockscout' -count=1 -timeout 10m
+fi
+
 HEAD_SHA="$(git rev-parse HEAD)"
 SOURCE_SHA="${SOURCE_SHA:-${HEAD_SHA}}"
 [[ "${HEAD_SHA}" == "${SOURCE_SHA}" ]] ||

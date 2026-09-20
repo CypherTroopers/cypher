@@ -328,3 +328,92 @@ func TestCommonRPCRewardSnapshotExcludesIdentityWriter(t *testing.T) {
 		t.Fatalf("incoherent snapshot: signer=%s recipient=%s error=%v", gotSigner, gotRecipient, readErr)
 	}
 }
+
+func TestCommonRPCPoWRewardRecipient(t *testing.T) {
+	previous := bftview.GetServerCoinBase()
+	t.Cleanup(func() { bftview.SetServerCoinBase(previous) })
+	a, d := common.HexToAddress("0xa1"), common.HexToAddress("0xd1")
+	b, c, e := common.HexToAddress("0xb1"), common.HexToAddress("0xc1"), common.HexToAddress("0xe1")
+	root, chainID, genesis := t.TempDir(), big.NewInt(1337), common.HexToHash("0x01")
+	registry := commonrpcreward.Open(root, chainID, genesis)
+	// No account manager or unlocked key is needed to select a PoW recipient.
+	// A supplied mining identity must not be replaced with the active TX signer.
+	service := &Ethereum{etherbase: a, commonRPCRewards: registry}
+	bftview.SetServerCoinBase(d)
+	assertRecipient := func(signer, want common.Address) common.Address {
+		t.Helper()
+		got, err := service.PoWRewardRecipient(signer)
+		if err != nil || got != want {
+			t.Fatalf("PoW recipient for %s: got %s, error %v, want %s", signer, got, err, want)
+		}
+		if service.etherbase != a || bftview.GetServerCoinBase() != d {
+			t.Fatal("PoW recipient lookup changed an operating or signing identity")
+		}
+		return got
+	}
+	assertRecipient(a, a)
+	assertRecipient(d, d)
+	if _, err := registry.Set(a, b); err != nil {
+		t.Fatal(err)
+	}
+	captured := assertRecipient(a, b)
+	assertRecipient(d, d)
+	if _, err := registry.Set(d, e); err != nil {
+		t.Fatal(err)
+	}
+	assertRecipient(a, b)
+	assertRecipient(d, e)
+	if _, err := registry.Set(a, c); err != nil {
+		t.Fatal(err)
+	}
+	assertRecipient(a, c)
+	if captured != b {
+		t.Fatal("recipient update changed an already captured PoW recipient")
+	}
+	service.commonRPCRewards = commonrpcreward.Open(root, chainID, genesis)
+	assertRecipient(a, c)
+	assertRecipient(d, e)
+	assertRecipient(common.HexToAddress("0xf1"), common.HexToAddress("0xf1"))
+}
+
+func TestCommonRPCPoWRewardRecipientRegistryErrors(t *testing.T) {
+	a, b := common.HexToAddress("0xa1"), common.HexToAddress("0xb1")
+	chainID, genesis := big.NewInt(1337), common.HexToHash("0x01")
+	for _, fixture := range []string{"nil_registry", "no_datadir", "malformed_registry", "unreadable_registry_path"} {
+		t.Run(fixture, func(t *testing.T) {
+			service := &Ethereum{etherbase: a}
+			switch fixture {
+			case "no_datadir":
+				service.commonRPCRewards = commonrpcreward.Open("", chainID, genesis)
+			case "malformed_registry", "unreadable_registry_path":
+				root := t.TempDir()
+				registry := commonrpcreward.Open(root, chainID, genesis)
+				if _, err := registry.Set(a, b); err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(root, "common-rpc-rewards", chainID.String()+"-"+genesis.Hex()+".json")
+				if fixture == "malformed_registry" {
+					if err := os.WriteFile(path, []byte("{"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					// A directory cannot be read as a registry file even when tests
+					// run as root, which can bypass ordinary permission denial.
+					if err := os.Remove(path); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Mkdir(path, 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				service.commonRPCRewards = commonrpcreward.Open(root, chainID, genesis)
+			}
+			if got, err := service.PoWRewardRecipient(a); err == nil || got != (common.Address{}) {
+				t.Fatalf("unavailable registry allowed PoW payout: recipient=%s error=%v", got, err)
+			}
+			if service.etherbase != a {
+				t.Fatal("failed recipient lookup changed etherbase")
+			}
+		})
+	}
+}

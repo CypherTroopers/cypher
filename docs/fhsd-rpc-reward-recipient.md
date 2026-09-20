@@ -1,6 +1,6 @@
 # FHS-D: public RPC and Common RPC reward recipients
 
-FHS-D uses a single Common RPC admission and reward format from genesis. The signing account A and reward recipient B are always separate. There is no activation height, legacy payout mode, or fallback to A when B is missing. The obsolete `commonRPCRewardRecipientBlock` setting is rejected. The public RPC restrictions, IPC registration, signed recipient, and direct payout form one implementation.
+FHS-D uses a single Common RPC admission and reward format from genesis. For Common TX rewards, the signing account A and reward recipient B are always separate. There is no activation height, legacy payout mode, or Common TX fallback to A when B is missing. The obsolete `commonRPCRewardRecipientBlock` setting is rejected. The public RPC restrictions, IPC registration, signed recipient, and direct payout form one implementation. In fixed mode (`fixedCommittee` or `fixedLeader`), the same registered B also receives Common PoW rewards from newly created mining candidates; without a registered B, PoW retains its existing payout to A.
 
 ## Start a fresh network
 
@@ -80,9 +80,9 @@ Preferences are stored at `<datadir>/<instance>/common-rpc-rewards/<decimal-chai
 
 On Unix, the dedicated directory is private (0700) and the file is private (0600). A replacement file is written and fsynced, atomically renamed, and the directory fsynced before the new setting becomes visible in memory. Windows uses file Sync and `MoveFileEx(REPLACE_EXISTING | WRITE_THROUGH)`; access restrictions depend on the datadir ACL. Windows runtime behavior has not been tested here.
 
-Authentication, validation, and ordinary persistence failures preserve the previous setting. If persistence fails after replacement and restoring the previous file also fails, the old memory snapshot is retained, the uncertainty is reported, and new admissions are refused until storage is repaired. Do not treat that error as a successful registration.
+Authentication, validation, and ordinary persistence failures preserve the previous setting. If persistence fails after replacement and restoring the previous file also fails, the old memory snapshot is retained, the uncertainty is reported, and new admissions and new fixed-mode Common PoW work are refused until storage is repaired. Do not treat that error as a successful registration.
 
-A missing or unreadable registry does not prevent startup, synchronization, or read RPCs. It prevents new admissions that require a recipient. An unreadable registry is not silently replaced by an empty one; repair it and restart. A node without a persistent datadir cannot save registrations.
+A missing or unreadable registry does not prevent startup, synchronization, or read RPCs. It prevents new admissions that require a recipient. An absent registry file is a valid empty registry: fixed-mode Common PoW can still use A. An unreadable or malformed registry, unavailable persistent datadir, or uninitialized registry blocks creation of new fixed-mode Common PoW work instead of falling back to A. An unreadable registry is not silently replaced by an empty one; repair it and restart. A node without a persistent datadir cannot save registrations.
 
 Protect both the IPC socket and its parent directory on Unix. On Windows, restrict the local named pipe and datadir ACL to the operator. Do not expose IPC through TCP or a public proxy. Authorization uses the transport identified by the server; localhost, Origin, Host, and X-Forwarded-For do not grant administrator privileges. Existing trusted in-process operations remain available, but both new reward methods require actual IPC.
 
@@ -136,6 +136,18 @@ burn      = actualFee - rpcReward
 
 Existing fee rules, failed receipts, and rounding remain intact. Later transactions in the block cannot spend earlier transactions' rewards. B does not affect the primary winner priority or the semantic tie-break; an exact tie retains the existing proof. This does not establish additional Sybil resistance.
 
+## Common PoW rewards in fixed mode
+
+With fixed mode (`fixedCommittee` or `fixedLeader`) enabled, a new mining candidate looks up the registered recipient for its configured etherbase A before PoW starts. A registered B becomes the candidate's `Coinbase`; an unset mapping retains A. This selection does not change etherbase, the Common TX admission signer, node identity, or committee membership. Keep `miner.setEtherbase(A)` as shown above. Reading the PoW recipient needs neither an unlocked A nor B's private key; registering or changing B still requires IPC authentication with A's password.
+
+The existing candidate encoding carries its selected `Coinbase` through the keyblock `OutAddress` and reward-credit path. Live and certified keyblock validation require the candidate and keyblock recipient to match. The Common PoW reward remains 100,000 coins and is credited directly to the selected recipient. No new candidate, keyblock, or network fields are introduced, and validators do not consult their local recipient registries to validate or pay an imported candidate. Candidate `coinbase`, keyblock `outAddress`, and block RPC `miner` fields derived from that address therefore show B when B was selected.
+
+Changing B to C affects newly created mining candidates. Candidates already being mined, submitted, or included in a keyblock keep their captured recipient. A registry error prevents creation of new work but does not rewrite existing candidates or rewards. After restart, new work uses the durably stored mapping.
+
+Testing found a pre-existing error in `Candidate.HashNoNonce`: it passes a non-addressable value to a pointer-only RLP encoder, and the hashing helper ignores the error. The existing PoW input is therefore the hash of empty input, so PoW alone does not detect recipient tampering. The recipient-routing change preserves existing consensus rules and does not fix that defect. Correcting it changes valid PoW proofs and requires a coordinated consensus transition; see the verification record for details.
+
+This recipient selection applies only to Common PoW in fixed mode. Non-fixed-mode mining keeps its existing Coinbase behavior because that field also participates in committee registration. Committee rewards, the ordinary block producer reward, uncle rewards, and reward amounts are unchanged. Common TX admission rules also remain unchanged: new TX admissions require B even when PoW can fall back to A.
+
 ## Updating B, retries, and restarts
 
 Use the same setter to change B to C. A new batch captures a consistent A/B snapshot. A TX already durably accepted by that A reuses its original proof, including its B and Admission ID. New TXs use C. Another operator's valid proof is not overwritten with local preferences. Mixed retries/new batches retain their distinct certificates.
@@ -148,8 +160,8 @@ These retry guarantees apply within the new network. They do not migrate old-net
 
 ## Remaining trust boundaries
 
-A's unlocked key remains inside the node process. This change does not protect against OS/process compromise or stolen IPC privileges. Trusted local wallet operations remain available. PoW, committee, and other out-of-scope rewards keep their existing recipients and amounts; settings that pay those rewards to A still apply.
+A's unlocked key remains inside the node process. This change does not protect against OS/process compromise or stolen IPC privileges. Trusted local wallet operations remain available. Non-fixed-mode PoW, committee, and other out-of-scope rewards keep their existing recipients and amounts; settings that pay those rewards to A still apply.
 
-Control over B's existing funds is separate from authority to change future Common RPC reward preferences. An attacker controlling A and IPC may redirect future rewards, but registration does not grant spending rights over B. Previously stolen keys and already signed transactions are not invalidated by this RPC restriction. The treatment of balances on the newly initialized chain follows its reviewed genesis allocation.
+Control over B's existing funds is separate from authority to change future Common TX and fixed-mode Common PoW reward preferences. An attacker controlling A and IPC may redirect future rewards, but registration does not grant spending rights over B. Previously stolen keys and already signed transactions are not invalidated by this RPC restriction. The treatment of balances on the newly initialized chain follows its reviewed genesis allocation.
 
 See [the verification record](fhsd-rpc-reward-verification.md) for changed files, tests, commands, and limitations. The [Geth JSON-RPC server documentation](https://geth.ethereum.org/docs/interacting-with-geth/rpc) describes the background transports; this branch's implementation defines the actual authorization rules.
