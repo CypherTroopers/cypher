@@ -1,0 +1,6 @@
+=== RUN   TestNativeCLXFinancialFHSScenario
+    integration_test.go:494: 7 FHS validators finalized 18 financial blocks; real native fixture custody225 -> withdraw10 + reward1 ->214 CLX; pools F=64000000000000000 S=19020000000000000000 I=5000000000000000000; 7 participant certificates from actual votes; all DEX WALs and CLX StateDB restarted
+    integration_test.go:495: CLX transaction-handler registration, finalized CLX financial transactions, live-network financial workload and real funds NOT_RUN; native calls use trusted devnet execution context
+--- PASS: TestNativeCLXFinancialFHSScenario (20.62s)
+PASS
+ok  	github.com/cypherium/cypher/dex/devnet	20.666s

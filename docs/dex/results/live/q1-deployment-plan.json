@@ -1,0 +1,23 @@
+{
+  "phase": "Q1",
+  "build_result": "PASS",
+  "focused_race": "PASS",
+  "test_packages": 4,
+  "pass_events": 63,
+  "credential_preflight": "PASS 8 personal_sign/recover; no TX or unlock mutation",
+  "old_hash": "bcfb21b13a82eb0a9ffdfec843a5d7c3dededf735607da680b8dfa43db2759f8",
+  "new_hash": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+  "genesis_changed": false,
+  "init": false,
+  "plan": [
+    "exact eight app/PID/start ticks/hash checks",
+    "atomic replace eight preserved wrapper paths with exit0 maintenance entries",
+    "PM2 restart exact named config with treekill true, 60s timeout, autorestart false",
+    "verify all old process identities absent and all eight datadirs without writers",
+    "cold backup full eight datadirs with private permissions and every regular file size/hash comparison",
+    "atomic install reviewed release and exec-based normal launch wrappers",
+    "PM2 restart reviewed eight-app config",
+    "restore original committee FHS credentials through IPC, keep Common PoW off",
+    "verify same genesis/history/hash/root and ordinary signed Common admission transactions"
+  ]
+}

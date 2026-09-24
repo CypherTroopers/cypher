@@ -1,0 +1,53 @@
+=== RUN   TestRelayBusinessIDIndependentGolden
+--- PASS: TestRelayBusinessIDIndependentGolden (0.00s)
+=== RUN   TestRelaySIGKILLChild
+    process_linux_test.go:21: child helper
+--- SKIP: TestRelaySIGKILLChild (0.00s)
+=== RUN   TestRelayActualSIGKILLAndRestartBoundaries
+=== RUN   TestRelayActualSIGKILLAndRestartBoundaries/after_intent
+=== RUN   TestRelayActualSIGKILLAndRestartBoundaries/after_prepared
+=== RUN   TestRelayActualSIGKILLAndRestartBoundaries/after_signed
+=== RUN   TestRelayActualSIGKILLAndRestartBoundaries/before_send
+=== RUN   TestRelayActualSIGKILLAndRestartBoundaries/after_send
+=== RUN   TestRelayActualSIGKILLAndRestartBoundaries/after_proof
+=== RUN   TestRelayActualSIGKILLAndRestartBoundaries/after_completion
+--- PASS: TestRelayActualSIGKILLAndRestartBoundaries (0.63s)
+    --- PASS: TestRelayActualSIGKILLAndRestartBoundaries/after_intent (0.06s)
+    --- PASS: TestRelayActualSIGKILLAndRestartBoundaries/after_prepared (0.07s)
+    --- PASS: TestRelayActualSIGKILLAndRestartBoundaries/after_signed (0.09s)
+    --- PASS: TestRelayActualSIGKILLAndRestartBoundaries/before_send (0.10s)
+    --- PASS: TestRelayActualSIGKILLAndRestartBoundaries/after_send (0.10s)
+    --- PASS: TestRelayActualSIGKILLAndRestartBoundaries/after_proof (0.08s)
+    --- PASS: TestRelayActualSIGKILLAndRestartBoundaries/after_completion (0.12s)
+=== RUN   TestRelayActualSIGKILLDuringTemporaryWrite
+--- PASS: TestRelayActualSIGKILLDuringTemporaryWrite (0.18s)
+=== RUN   TestRelayCrashBoundaryRecoveryAndProofRevalidation
+=== RUN   TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_intent
+=== RUN   TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_prepared
+=== RUN   TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_signed
+=== RUN   TestRelayCrashBoundaryRecoveryAndProofRevalidation/before_send
+=== RUN   TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_send
+=== RUN   TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_proof
+=== RUN   TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_completion
+--- PASS: TestRelayCrashBoundaryRecoveryAndProofRevalidation (0.06s)
+    --- PASS: TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_intent (0.01s)
+    --- PASS: TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_prepared (0.01s)
+    --- PASS: TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_signed (0.01s)
+    --- PASS: TestRelayCrashBoundaryRecoveryAndProofRevalidation/before_send (0.01s)
+    --- PASS: TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_send (0.01s)
+    --- PASS: TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_proof (0.01s)
+    --- PASS: TestRelayCrashBoundaryRecoveryAndProofRevalidation/after_completion (0.01s)
+=== RUN   TestRelayAuthenticationNonceAndIndependentPayers
+--- PASS: TestRelayAuthenticationNonceAndIndependentPayers (0.07s)
+=== RUN   TestRelayMalformedSignerReplanAndOwnership
+--- PASS: TestRelayMalformedSignerReplanAndOwnership (0.00s)
+=== RUN   TestRelayCapacityFairnessHistoryAndRestartCursor
+--- PASS: TestRelayCapacityFairnessHistoryAndRestartCursor (0.39s)
+=== RUN   TestRelayDiskFailureStopsBeforeSigning
+--- PASS: TestRelayDiskFailureStopsBeforeSigning (0.00s)
+=== RUN   TestRelayIndependentCanonicalGolden
+--- PASS: TestRelayIndependentCanonicalGolden (0.00s)
+=== RUN   TestRelayOwnedOrphanCleanupBeforeNewWrites
+--- PASS: TestRelayOwnedOrphanCleanupBeforeNewWrites (0.01s)
+PASS
+ok  	github.com/cypherium/cypher/dex/relay	2.433s

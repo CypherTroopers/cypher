@@ -1,0 +1,27 @@
+{
+  "core/forkid": {
+    "status": "FAIL",
+    "tests": [
+      "TestCreation",
+      "TestValidation"
+    ],
+    "classification": "known existing expectations/genesis/fork configuration mismatch; no expectations changed"
+  },
+  "rpc_sandbox": {
+    "status": "NOT_RUN",
+    "classification": "socket EPERM prevented suite; saved failed environment attempt, rerun isolated namespace"
+  },
+  "rpc_namespace": {
+    "status": "PASS(ISOLATED)",
+    "log": "finality-rpc-network-namespace.log"
+  },
+  "internal/ethapi": {
+    "status": "FAIL",
+    "tests": [
+      "TestRawTxIngressStopDrainsDetachedCancelledBulk",
+      "TestSendRawTransactionsBusySenderDoesNotBlockIndependentGroups",
+      "TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves"
+    ],
+    "classification": "same three named failures as docs/dex/results/live/q3-current-rpc-baseline.jsonl; not retired and not fixed in this DEX finality change"
+  }
+}

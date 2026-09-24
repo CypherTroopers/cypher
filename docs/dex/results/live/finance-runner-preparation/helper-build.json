@@ -1,0 +1,8 @@
+{
+  "path": "build/stage/dex-live-finance",
+  "sha256": "8d7374d5c671e09aa93e456cde6e83b8626e54ca03e940d1d8e1a143f12c62d6",
+  "bytes": 12739144,
+  "go": "go version go1.27.1 linux/amd64",
+  "scope": "pure offline helper; not deployed CLX binary",
+  "status": "BUILD_PASS"
+}

@@ -1,0 +1,19 @@
+{
+  "status": "PASS(UNIT)",
+  "live": "NOT_RUN",
+  "source_manifest_sha256": "1cc225953c6f89a4686de275587c965dfbd1b16d8c395325b1edcc9221807cf7",
+  "final_race_packages": 5,
+  "final_race_top_level": 33,
+  "final_race_pass_events": 93,
+  "final_race_fail_events": 0,
+  "fuzz_seconds": 5,
+  "fuzz_executions": 25375,
+  "old_finance_fixture": "225 -> 214 CLX retained; TestNativeCLXFinancialFHSScenario PASS(race)",
+  "continuous_financial_fixture": "authenticated unit CLX header/MPT inbox followed by 320 engine actions, 64-height cold replay; not a distributed/live result",
+  "intermediate_failures": [
+    {
+      "file": "attempt2.log",
+      "reason": "concurrent consensus generation implementation temporarily lacked Application.storageBlocked; fixed by storage owner before final tests"
+    }
+  ]
+}

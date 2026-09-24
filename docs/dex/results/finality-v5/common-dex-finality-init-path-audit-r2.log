@@ -1,0 +1,6 @@
+test_exact_dex_runtime_cleanup_keeps_nodekeys_and_keystores (test_init_paths.InitPaths.test_exact_dex_runtime_cleanup_keeps_nodekeys_and_keystores) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.187s
+
+OK

@@ -1,0 +1,5 @@
+=== RUN   TestIdleTimeoutPacingOverTLSAndMissingLeaders
+    idle_timeout_test.go:163: idle periods produced no timeout votes; sparse genuine ingress, same-WAL restart and one/two missing leaders formed ordinary threshold QCs over pinned TLS; final tail remains certified only
+--- PASS: TestIdleTimeoutPacingOverTLSAndMissingLeaders (38.55s)
+PASS
+ok  	github.com/cypherium/cypher/dex/service	38.713s

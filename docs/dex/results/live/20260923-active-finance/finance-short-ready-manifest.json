@@ -1,0 +1,39 @@
+{
+  "time_utc": "2026-09-23T19:10:31.302020+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "source_sha256": {
+    "cmd/dex-live-finance/main.go": "57a8c79527bcf5732a588d3bf79f63f25f0375ab5d4847c323d3fc2ece9f6a04",
+    "cmd/dex-live-finance/main_test.go": "509a6cd972e6beb7885a439bbf26a36d58683e40ab2a855867ad8ed2023ebe63",
+    "cmd/dex-live-finance/native.go": "6ec6fb3ebc48405494d90223b65b5a65acd29dac4c46b3c0443ee5d2c3479655",
+    "cmd/dex-live-source-observer/main.go": "190eecabb25c8d8d7e52ec91eadab176d2989e8fbf90b54891d5b4d28b9e0742",
+    "cmd/dex-live-source-observer/main_test.go": "fcc4ae9608e4a025c1bc7a9f9b0e25e5ac06af498c6ea61334109c64f55ff451",
+    "scripts/dex/live_finance.py": "3e484ccd5be9032f5c91279fdaceafd1484da7aef69da689a31d2965a709729b",
+    "scripts/dex/live_finance_accounting.py": "936bc1ffacbb40069367565331402a9208320e73758520d0c07a4d9f7a4e9ae1",
+    "scripts/dex/test_live_finance.py": "86a6117005ec0188af3c6a01533588cd0465982bf925857cc47fdf6cc71cb1f2",
+    "docs/dex/live-finance-runner-preparation.md": "39c746f5e8c4990a9a0765df008d61173623cf2cab032f134429cf9eda413e64"
+  },
+  "binary_sha256": {
+    "/tmp/common-dex-live-test.x5z_05oq/dex-live-finance": "7c3f8ffdf68cf35dca98d52e24d1173b58d319db54b04f31024bb25601a4e190",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-live-source-observer": "a69bd328cbdf3f1bfbd373d1a39e662b97f210c516c4506a42b0fda7452b1130",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-block-audit": "cb10593efc98cc9094953bb779e89c70fae0cb47d86a4ed2aea28a10325bd203"
+  },
+  "results": {
+    "helper_go_top_level": 3,
+    "python_tests": 15,
+    "observer_top_level": 4,
+    "unit": "PASS(UNIT)",
+    "observer_foreign_uid_faults": "NOT_RUN: sandbox maps only UID 0; prior fixture failure retained",
+    "live_financial": "executed separately; no RPC/TX/PM2/init during this component review",
+    "A_B_C": "NOT_IMPLEMENTED: independent concurrent control nonce and validated injector pending"
+  },
+  "bounds": {
+    "runner_tx": 1024,
+    "runner_actions": 512,
+    "source_headers_per_segment": 32,
+    "source_segments": 1024,
+    "source_wal_bytes": 33554432,
+    "account_proof_slots": 32,
+    "native_projection_slots": 17
+  },
+  "live_failed_attempt_fix": "event parameter kind collided with payload kind after action durable save; event_type used; same journal preserved"
+}

@@ -1,0 +1,20 @@
+{
+  "status": "PASS(UNIT)",
+  "change": "current genesis.json prepared; user performs initialization",
+  "chain_id": 10101919,
+  "before_sha256": "131acbb21ef77f4229c91a639c51348bc1d0f0f5b6c4cbf4299e46c90efd4b1f",
+  "after_sha256": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147",
+  "genesis": "0xa4a61fa952509cde79c14e152702a1d7dea1cc0320b4552566b2efb9e4a575de",
+  "key_genesis": "0x2e2c6be19a05958b75c2f163fed60d3380c4616a2c14aa12ca396cd73cc61ee2",
+  "state_root": "0xd3e0fd99e2cbcafe3ca718d616b73ea47664153c0ffc01888c3cedef893a33f0",
+  "dex_id": "0x433b712c48506710a611d48e351ff827d00e64941fff9c085817c266585af497",
+  "changed_fields": [
+    "config.dexDevnet",
+    "mixHash"
+  ],
+  "original_alloc_preserved": true,
+  "original_config_preserved": true,
+  "common_wallets_preserved": true,
+  "live_db_or_pm2_operations": false,
+  "ordinary_clx_replay_separated": false
+}

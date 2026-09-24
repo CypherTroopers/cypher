@@ -1,0 +1,23 @@
+....F.....................................................................F..
+======================================================================
+FAIL: test_private_distinct_listeners_and_no_optional_work_by_default (test_live_common.AdditionalCommon.test_private_distinct_listeners_and_no_optional_work_by_default)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/test_live_common.py", line 17, in test_private_distinct_listeners_and_no_optional_work_by_default
+    self.assertNotIn(flag, c)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^
+AssertionError: '--dex.validator' unexpectedly found in ['/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64', '--config', '/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common1/static.toml', '--datadir', '/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex1', '--nat', 'extip:127.0.0.1', '--rnetport', '7202', '--nodiscover', '--maxpeers', '16', '--networkid', '10101919', '--syncmode', 'full', '--gcmode', 'archive', '--cache', '256', '--cache.trie.journal', '', '--miner.etherbase', '0x0000000000000000000000000000000000000001', '--metrics', '--verbosity', '3', '--dex.validator', '--dex.config', '/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex1.json']
+
+======================================================================
+FAIL: test_explicit_existing_roles_have_unique_paths_and_ports (test_live_tools.LiveToolsTests.test_explicit_existing_roles_have_unique_paths_and_ports)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/test_live_tools.py", line 25, in test_explicit_existing_roles_have_unique_paths_and_ports
+    self.assertNotIn("--dex.validator", c)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '--dex.validator' unexpectedly found in ['/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64', '--config', '/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml', '--verbosity', '4', '--rnetport', '7155', '--syncmode', 'full', '--nat', 'extip:13.140.169.170', '--metrics', '--allow-insecure-unlock', '--port', '6099', '--datadir', '/root/work/cypher-FHS-D-ExchangeCore/chaindbmine', '--networkid', '10101919', '--gcmode', 'archive', '--miner.etherbase', '0xeb8c07def4c5a2541de730b027376e1068aa861a', '--ws', '--ws.addr', '127.0.0.1', '--ws.port', '8434', '--http', '--http.addr', '127.0.0.1', '--http.port', '8999', '--http.api', 'eth,web3,net,debug,txpool', '--dex.validator', '--dex.config', '/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cyphermine.json']
+
+----------------------------------------------------------------------
+Ran 77 tests in 1.242s
+
+FAILED (failures=2)

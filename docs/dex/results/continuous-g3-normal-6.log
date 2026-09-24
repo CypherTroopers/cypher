@@ -1,0 +1,164 @@
+=== RUN   TestFHSNativeContinuousOrdinaryCLI
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.642955284s parentDeadline=2026-09-22T13:42:47Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.59712915s parentDeadline=2026-09-22T13:42:47Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.551953805s parentDeadline=2026-09-22T13:42:47Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.484635631s parentDeadline=2026-09-22T13:42:47Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.43927924s parentDeadline=2026-09-22T13:42:47Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.376865752s parentDeadline=2026-09-22T13:42:47Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.287292068s parentDeadline=2026-09-22T13:42:47Z finite=true protocolTimeoutsUnchanged=true
+    dex_continuous_network_test.go:20: CONTINUOUS_SETUP CLX=[1096777 1096782 1096788 1096794 1096800 1096806 1096814] source=http://127.0.0.1:38427 network=loopback version=3 DEXRegistered=7 activeInitially=6 relayGasPayers=2 coordinatorStateImports=0
+    dex_continuous_network_test.go:21: CONTINUOUS_USER_RPC_ACK tx=0x8704d4a78fa69895f21e86d996ce87324c4ca3113158a874206f86a2b5ea3bf3 nonce=0
+    dex_continuous_network_test.go:21: CONTINUOUS_TX height=1 block=0xbe9201f2e161de7df0b2faf17036176085824b871355c49048e83ab613d79c34 tx=0x8704d4a78fa69895f21e86d996ce87324c4ca3113158a874206f86a2b5ea3bf3 payer=0x54BC4CfEe630217194337F992CA6Ef182B5554af nonce=0 op=funding-1 status=1 gas=271600 gasAtoms=434560000000000 commonAtoms=86912000000000 calldata=12
+    dex_continuous_network_test.go:21: CONTINUOUS_ETH_SOURCE height=1 hash=0xbe9201f2e161de7df0b2faf17036176085824b871355c49048e83ab613d79c34 root=0x37a5fe2a11a0ff94605a83fdedddf78748b39af76924b3f4ce1cc9b29abb5aa4 normalFollow=true
+    dex_continuous_network_test.go:21: CONTINUOUS_USER_RPC_ACK tx=0x94de5f4237a1dd1ebd3016e23347175ac80ee8ae6ae30d809e21ae99a1c7b670 nonce=0
+    dex_continuous_network_test.go:21: CONTINUOUS_TX height=3 block=0x7e47681b86e0b7e99022582e65c0951d56cfde04cd6ccfe5df8281ea9168deba tx=0x94de5f4237a1dd1ebd3016e23347175ac80ee8ae6ae30d809e21ae99a1c7b670 payer=0xbD69Ee44cfB2bf0b446CcAeb53AeC7465f27299E nonce=0 op=funding-1 status=1 gas=271600 gasAtoms=434560000000000 commonAtoms=86912000000000 calldata=12
+    dex_continuous_network_test.go:21: CONTINUOUS_ETH_SOURCE height=3 hash=0x7e47681b86e0b7e99022582e65c0951d56cfde04cd6ccfe5df8281ea9168deba root=0x871e50a858b27f2e040340ed60221207e086d7398bacaa9f02986d78d83d8d8c normalFollow=true
+    dex_continuous_network_test.go:21: CONTINUOUS_USER_RPC_ACK tx=0x0039c3ea9cf804f4523a27d8e1fcea4d391a50d10258e02677d44a487adfbd9c nonce=0
+    dex_continuous_network_test.go:21: CONTINUOUS_TX height=5 block=0xc93da48f932a5d762646feac50b32dd92ebd33d670132c91dd0f977b22c5f47f tx=0x0039c3ea9cf804f4523a27d8e1fcea4d391a50d10258e02677d44a487adfbd9c payer=0xc24e42eB35BbAE55d52e79A7DBdBA8B57591Ce9c nonce=0 op=funding-2 status=1 gas=271600 gasAtoms=434560000000000 commonAtoms=86912000000000 calldata=12
+    dex_continuous_network_test.go:21: CONTINUOUS_ETH_SOURCE height=5 hash=0xc93da48f932a5d762646feac50b32dd92ebd33d670132c91dd0f977b22c5f47f root=0xd3e0c0829f28e9230b8d388ea62d31092d93910f0618a264244d42ab34059a5c normalFollow=true
+    dex_continuous_network_test.go:21: CONTINUOUS_USER_RPC_ACK tx=0xeac14d0b97dfe889fb30845f179aa82655bd68d671a6eeda19f3dba055414a12 nonce=1
+    dex_continuous_network_test.go:21: CONTINUOUS_TX height=7 block=0x1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa tx=0xeac14d0b97dfe889fb30845f179aa82655bd68d671a6eeda19f3dba055414a12 payer=0xc24e42eB35BbAE55d52e79A7DBdBA8B57591Ce9c nonce=1 op=funding-3 status=1 gas=271600 gasAtoms=434560000000000 commonAtoms=86912000000000 calldata=12
+    dex_continuous_network_test.go:21: CONTINUOUS_ETH_SOURCE height=7 hash=0x1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa root=0x49f78c48ecba56fbcbdac409ec24f96024876b8f5b847109b254eec71a523846 normalFollow=true
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0x000000000000000000000000000000000000B123 initial=123 final=347648000000123 delta=347648000000000
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0x0000000000000000000000000000000000De0001 initial=0 final=225000000000000000000 delta=225000000000000000000
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D initial=1000000000000000000000 final=1000000000000000000000 delta=0
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0x54BC4CfEe630217194337F992CA6Ef182B5554af initial=1000000000000000000000 final=899999565440000000000 delta=-100000434560000000000
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0x74E825dC61e20cAC7669ad3aeAb11747C3B879b3 initial=1000000000000000000000000000 final=1000000000000000000000000000 delta=0
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0xFfBA8418A8eEc9d1628F7e32db41cD994efF827D initial=77 final=77 delta=0
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0xbD69Ee44cfB2bf0b446CcAeb53AeC7465f27299E initial=1000000000000000000000 final=899999565440000000000 delta=-100000434560000000000
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0xc24e42eB35BbAE55d52e79A7DBdBA8B57591Ce9c initial=1000000000000000000000 final=974999130880000000000 delta=-25000869120000000000
+    dex_continuous_network_test.go:21: NATIVE_BALANCE height=7 account=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 initial=1000000000000000000000 final=1000000000000000000000 delta=0
+    dex_continuous_network_test.go:21: NATIVE_LEDGER_RECONCILED height=7 custody=225000000000000000000 gas=1738240000000000 commonReward=347648000000000 burn=1390592000000000 accounts=9 engine=0/0/0
+    dex_continuous_network_test.go:21: CONTINUOUS_BUCKET key=F atoms=0
+    dex_continuous_network_test.go:21: CONTINUOUS_BUCKET key=I atoms=5000000000000000000
+    dex_continuous_network_test.go:21: CONTINUOUS_BUCKET key=R atoms=0
+    dex_continuous_network_test.go:21: CONTINUOUS_BUCKET key=S atoms=20000000000000000000
+    dex_continuous_network_test.go:21: CONTINUOUS_BUCKET key=T atoms=0
+    dex_continuous_network_test.go:21: CONTINUOUS_BUCKET key=U atoms=200000000000000000000
+    dex_continuous_network_test.go:21: CONTINUOUS_BUCKET key=W atoms=0
+    dex_continuous_network_test.go:21: CONTINUOUS_BUCKET key=Z atoms=0
+    dex_continuous_network_test.go:21: CONTINUOUS_LIMITS maxCalldata=12 maxHeaders=0 maxMPTNodes=0 maxMPTBytes=0 operationCounts=map[funding-1:2 funding-2:1 funding-3:1]
+    dex_continuous_network_test.go:22: NORMAL_FINANCIAL_ROLES index=0 CommonPID=1097067 DEXSidecarPID=1097077 api=127.0.0.2:43041 pow=false rpcReward=false
+    dex_continuous_network_test.go:22: CONTINUOUS_COMMON_PEER index=0 parentPID=1097067 initialConnection=true forcedHeadRefresh=false
+    dex_continuous_network_test.go:22: NORMAL_FINANCIAL_ROLES index=1 CommonPID=1097094 DEXSidecarPID=1097128 api=127.0.0.3:43597 pow=false rpcReward=false
+    dex_continuous_network_test.go:22: CONTINUOUS_COMMON_PEER index=1 parentPID=1097094 initialConnection=true forcedHeadRefresh=false
+    dex_continuous_network_test.go:22: NORMAL_FINANCIAL_ROLES index=2 CommonPID=1097146 DEXSidecarPID=1097155 api=127.0.0.4:37141 pow=false rpcReward=false
+    dex_continuous_network_test.go:22: CONTINUOUS_COMMON_PEER index=2 parentPID=1097146 initialConnection=true forcedHeadRefresh=false
+    dex_continuous_network_test.go:22: NORMAL_FINANCIAL_ROLES index=3 CommonPID=1097175 DEXSidecarPID=1097212 api=127.0.0.5:43737 pow=false rpcReward=false
+    dex_continuous_network_test.go:22: CONTINUOUS_COMMON_PEER index=3 parentPID=1097175 initialConnection=true forcedHeadRefresh=false
+    dex_continuous_network_test.go:22: NORMAL_FINANCIAL_ROLES index=4 CommonPID=1097230 DEXSidecarPID=1097257 api=127.0.0.6:36229 pow=false rpcReward=false
+    dex_continuous_network_test.go:22: CONTINUOUS_COMMON_PEER index=4 parentPID=1097230 initialConnection=true forcedHeadRefresh=false
+    dex_continuous_network_test.go:22: NORMAL_FINANCIAL_ROLES index=5 CommonPID=1097277 DEXSidecarPID=1097285 api=127.0.0.7:39309 pow=false rpcReward=false
+    dex_continuous_network_test.go:22: CONTINUOUS_COMMON_PEER index=5 parentPID=1097277 initialConnection=true forcedHeadRefresh=false
+    dex_continuous_network_test.go:24: NORMAL_RELAY index=0 pid=1097296 store=/tmp/TestFHSNativeContinuousOrdinaryCLI414875427/001/relay-0 payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657
+    dex_continuous_network_test.go:24: NORMAL_RELAY index=1 pid=1097297 store=/tmp/TestFHSNativeContinuousOrdinaryCLI414875427/001/relay-1 payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=1 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=2 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=2 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=2 view=4 finalizedTip=1 anchor=7 inbox=4..4 actionBytes=282 dataRoot=c3c2ccefabd4e02d90aad93309e615860eefbf10d1f126c2e89d80fe0b1f7044 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_SOURCE_DESCENDANT height=3 certifiedInbox=1 actualFinalized=1 importedCursor=4 targetCursor=4
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=3 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=3 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=3 view=5 finalizedTip=2 anchor=7 inbox=4..4 actionBytes=282 dataRoot=280239eaf49423d3770fd7c72b522e4cea4e7df1a6907bcc19dc443323628cb3 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_SOURCE_DESCENDANT height=4 certifiedInbox=1 actualFinalized=2 importedCursor=4 targetCursor=4
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=4 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=4 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=4 view=6 finalizedTip=3 anchor=7 inbox=4..4 actionBytes=282 dataRoot=06f89caafa29de103162d72c941ab97571f8408e37f6a8df581501316d014243 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_SOURCE_DESCENDANT height=5 certifiedInbox=1 actualFinalized=3 importedCursor=4 targetCursor=4
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=5 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=5 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=5 view=8 finalizedTip=3 anchor=7 inbox=4..4 actionBytes=282 dataRoot=c72fec1efe936ff3f02a311ec5111dcddef629596fe736d25e70299995584fba isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=5 view=8 finalizedTip=3 anchor=7 inbox=4..4 actionBytes=282 dataRoot=c72fec1efe936ff3f02a311ec5111dcddef629596fe736d25e70299995584fba isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_PARTICIPATION_CANDIDATES height=5 certifiedView=8 proposal=e5abce2b84f87637ccee0d5991f5be7091edffd9033210f9fed57d287b3ffffb selected/retained: node0=6/6 node1=6/6 node2=6/6 node3=6/6 node4=6/6 node5=6/6 oldViewEvidenceRetained=true
+    dex_continuous_network_test.go:26: CONTINUOUS_PARTICIPATION height=5 period=1 authenticatedParticipants=6
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=6 bytes=2468
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=6 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=6 view=9 finalizedTip=5 anchor=7 inbox=4..4 actionBytes=2468 dataRoot=f66493fa2b32a06fe943459a57dd84196ce43e0a12f22b7a0beaed01f22e2933 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_SOURCE_DESCENDANT height=7 certifiedInbox=1 actualFinalized=5 importedCursor=4 targetCursor=4
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=7 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=7 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=7 view=10 finalizedTip=6 anchor=7 inbox=4..4 actionBytes=282 dataRoot=39dd8e07c30cb1381c1a31ed9eec886e87220b3c703795a31212d183343266a7 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=7 view=10 finalizedTip=6 anchor=7 inbox=4..4 actionBytes=282 dataRoot=39dd8e07c30cb1381c1a31ed9eec886e87220b3c703795a31212d183343266a7 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_SOURCE_INTERVAL certifiedParent=7 actualFinalized=6 anchor=7 cursor=4 total=225000000000000000000 authenticatedParent=true NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=8 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=8 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=8 view=11 finalizedTip=7 anchor=7 inbox=4..4 actionBytes=282 dataRoot=ef6904701c89a0bc4ae58561ec6a448ec73af2958e0181420a660f8367b3aceb isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=9 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=9 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=9 view=12 finalizedTip=8 anchor=7 inbox=4..4 actionBytes=282 dataRoot=5ef033c7cacaef01c640d56294fd41c833f3461a904a41273d9c7f7bfa04d830 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=10 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=10 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=10 view=13 finalizedTip=9 anchor=7 inbox=4..4 actionBytes=282 dataRoot=12b2b4c9b74c7728972ca6597d5cd391824672bc086a323fc65e9cf405c51b69 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=11 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=11 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=11 view=15 finalizedTip=9 anchor=7 inbox=4..4 actionBytes=282 dataRoot=f032f807cadd68b84be9c851013f3a02297b53241e4c72f86b74dcfc48d59cd3 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=12 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=12 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=12 view=16 finalizedTip=11 anchor=7 inbox=4..4 actionBytes=282 dataRoot=18405314b5f478d486239329c734a2703ffdc0b820becea0e2be078a2981e02a isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=13 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=13 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=13 view=17 finalizedTip=12 anchor=7 inbox=4..4 actionBytes=282 dataRoot=a717bfd0a94350033f0bc4238d5b9d605c3bd51b061347a9ac2373a57953f970 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=14 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=14 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=14 view=18 finalizedTip=13 anchor=7 inbox=4..4 actionBytes=282 dataRoot=4f07e86720f01e110b1ee64b7edcb03d751137cbb738617e31ffff9d8d5166c1 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=15 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=15 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=15 view=19 finalizedTip=14 anchor=7 inbox=4..4 actionBytes=282 dataRoot=c36d2469c2e9f9f441a910c0b6bb1f16c73db8f9e9a9058450c7c1942a849bf4 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=15 view=19 finalizedTip=14 anchor=7 inbox=4..4 actionBytes=282 dataRoot=c36d2469c2e9f9f441a910c0b6bb1f16c73db8f9e9a9058450c7c1942a849bf4 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_PARTICIPATION_CANDIDATES height=15 certifiedView=19 proposal=fe550819c9fa980a7e96a0f3c793000ba7ca397bd587e10f3f4f7b1b2a2246af selected/retained: node0=6/6 node1=6/6 node2=6/6 node3=6/6 node4=6/6 node5=6/6 oldViewEvidenceRetained=true
+    dex_continuous_network_test.go:26: CONTINUOUS_PARTICIPATION height=15 period=2 authenticatedParticipants=6
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=16 bytes=2468
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=16 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=16 view=20 finalizedTip=15 anchor=7 inbox=4..4 actionBytes=2468 dataRoot=014ad24b821a2c2e7a571cb094db2af3181dd95e13026443605b4e1f847c6cd7 isCDXA=false NOT_FINALITY=true
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX_INGRESS expectedHeight=17 bytes=282
+    dex_continuous_network_test.go:26: CONTINUOUS_DEX certified>=17 finalized>=0 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CERTIFIED_RECORD height=17 view=22 finalizedTip=15 anchor=7 inbox=4..4 actionBytes=282 dataRoot=cf94ac63651303338133722ff2a7d20946e67c9db17b019d5cdacd708870f503 isCDXA=false NOT_FINALITY=true
+    dex_continuous_economy_test.go:351: CONTINUOUS_DEX certified>=17 finalized>=14 active=6
+    dex_continuous_economy_test.go:351: CONTINUOUS_DEX_INGRESS expectedHeight=18 bytes=20876
+    dex_continuous_economy_test.go:351: CONTINUOUS_DEX certified>=18 finalized>=0 active=6
+    dex_continuous_economy_test.go:351: CONTINUOUS_CERTIFIED_RECORD height=18 view=23 finalizedTip=17 anchor=7 inbox=4..4 actionBytes=20876 dataRoot=ea65fa66a39888d630b0277371e4de46ba6af38d19350e0500e4ebe6e2f4291b isCDXA=false NOT_FINALITY=true
+    dex_continuous_economy_test.go:351: CONTINUOUS_REWARD_CLOSE period=1 actionHeight=18 packageBytes=20876 participants=6 grace=14
+    dex_continuous_economy_test.go:352: CONTINUOUS_DEX_INGRESS expectedHeight=19 bytes=282
+    dex_continuous_economy_test.go:352: CONTINUOUS_DEX certified>=19 finalized>=0 active=6
+    dex_continuous_economy_test.go:352: CONTINUOUS_CERTIFIED_RECORD height=19 view=24 finalizedTip=18 anchor=7 inbox=4..4 actionBytes=282 dataRoot=536bb5e4469e1c2b49af02c8f9fe8b67a60cf7db4cc44297207b6b22f4dfc75f isCDXA=false NOT_FINALITY=true
+    dex_continuous_economy_test.go:353: CONTINUOUS_DEX_INGRESS expectedHeight=20 bytes=282
+    dex_continuous_economy_test.go:353: CONTINUOUS_DEX certified>=20 finalized>=0 active=6
+    dex_continuous_economy_test.go:353: CONTINUOUS_CERTIFIED_RECORD height=20 view=25 finalizedTip=19 anchor=7 inbox=4..4 actionBytes=282 dataRoot=c3b38f24f8fddce09f57ef4304b1f0e17fe3c91892f6ebf266af41185f6ecf96 isCDXA=false NOT_FINALITY=true
+    dex_continuous_economy_test.go:354: CONTINUOUS_DEX certified>=20 finalized>=18 active=6
+    dex_continuous_network_test.go:26: CONTINUOUS_CYCLE cycle=1 DEXFinalized=18 CLXAnchor=7 inbox=4 fees=64000000000000000 support=19020000000000000000 total=225000000000000000000 withdrawalReserved=10000000000000000000 rewardReserved=1000000000000000000
+    dex_continuous_network_test.go:27: CONTINUOUS_ANCHOR_COST tx=0x5bf90f25f317fd47e473cb0a3b1c26b5fd1871f5bb5192791ee4c12d19380573 calldata=14392 headers=7 mptNodes=7 mptBytes=1271 gas=12790472
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=9 block=0x070839f2e97aacb61c5ed8034f0fa84ab9c53a8e83b9441b9e175891e10dcfc1 tx=0x5bf90f25f317fd47e473cb0a3b1c26b5fd1871f5bb5192791ee4c12d19380573 payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=0 op=anchor status=1 gas=12790472 gasAtoms=20464755200000000 commonAtoms=4092951040000000 calldata=14392
+    dex_continuous_network_test.go:27: CONTINUOUS_ANCHOR_COST tx=0xfb7ad1bd5d77339ea17f2013e47d16fa0aaa42dc28fd9a8053e2f3258c24a03e calldata=14392 headers=7 mptNodes=7 mptBytes=1271 gas=12790472
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=10 block=0xa4ca3f574ba72fa0be2a9c9a9ed4df1e83ace0fc42fe71352b6e8731502557c6 tx=0xfb7ad1bd5d77339ea17f2013e47d16fa0aaa42dc28fd9a8053e2f3258c24a03e payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=0 op=anchor status=1 gas=12790472 gasAtoms=20464755200000000 commonAtoms=4092951040000000 calldata=14392
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=1 hash=0fde3d418f88368a42692b49240a28b792b2c5a346b9999956848eeb3b1ad3ca anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=0..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=12 block=0x2c33785f29d16d7cd19d8dc8f610325982cc2ba7b0c9c17cfc0b34ceeb484562 tx=0x2b40cb368248c4257918bbcdbcaf69dcf7163b8612ae017d12d1f7257c101b10 payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=1 op=checkpoint status=1 gas=12125460 gasAtoms=19400736000000000 commonAtoms=3880147200000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=13 block=0x28e1396e91f8c19608eb90874e2986d2968163d7a832332aeb2fbb28672c7d2d tx=0x570ac49e561bde3631568bef57840a3e157f08cbbca80e175fa5a34ec008d38f payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=1 op=checkpoint-replay status=1 gas=12125460 gasAtoms=19400736000000000 commonAtoms=3880147200000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=2 hash=4c4d1cd713a47fbfec498ea89cf2e0c2ab741dc60b7c25e817a35ee2447c8fba anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=15 block=0x3be666cecb38a70d63da6c0784768a6e5bc36c7f1c486ba1427105c80581a6b9 tx=0x4af383cc504c8172cb1c5fdcc3c1318df5a54bc9e1b7a65ac08298aa684ece31 payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=2 op=checkpoint status=1 gas=12126144 gasAtoms=19401830400000000 commonAtoms=3880366080000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=16 block=0xe97e1dee87d89b09b559a466a1679691e9fab7857570786fbba2542d8af9a35e tx=0x64bb6f69ae51805ff7cc6e985ee1483c716078fdc30080df17f3f08716d26653 payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=2 op=checkpoint-replay status=1 gas=12126144 gasAtoms=19401830400000000 commonAtoms=3880366080000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=3 hash=d08a839e70b48118e6628d19417d79130be086bbf1b8f611b9587be8591d7040 anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=18 block=0xe90c61a3a5a0cb6b70de5a72f1e5551f18b2fcfa1dea61a8e2cfeedd9e001e0b tx=0xc292852b021bdfcda304694574cae502916322f671a3a721e4be3600297bd1f3 payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=3 op=checkpoint status=1 gas=12126132 gasAtoms=19401811200000000 commonAtoms=3880362240000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=19 block=0xb82733e06315e6039282700e45b54ac1632f41bf6ec84fb79f6046fa7f90e2ae tx=0xd243d11e4ee5058c3c3c7cd5314104df5bf25929b71d59ce5bfaa0bea486fc9a payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=3 op=checkpoint-replay status=1 gas=12126132 gasAtoms=19401811200000000 commonAtoms=3880362240000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=4 hash=7789e70ac006e85b9e39b60ef27065581ca91c94af4db461aa97371640b45ea1 anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=21 block=0x382672ef746b577d5e277788430327448d9e2daf0e6249704c1a8b4e82e98d72 tx=0xaf1c0e97a2953f529a0c886f3c67a21cad4f400a859562d34031a54b903a63fd payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=4 op=checkpoint status=1 gas=12153816 gasAtoms=19446105600000000 commonAtoms=3889221120000000 calldata=2574
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=23 block=0x679ce03a4868472c0e22f638dfea5d7819d822bdeb22a05fcc41f77670fd1530 tx=0x685c9d8c37ed917316f1e81994edc26207ceb5e86a8f4274517fd272328a41b1 payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=4 op=checkpoint-replay status=1 gas=12153816 gasAtoms=19446105600000000 commonAtoms=3889221120000000 calldata=2574
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=5 hash=794c931519b95a73e5341612eb10a2cc2e76c77b40fa6742bc3660721a374a18 anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=25 block=0x0c8e5e5ba3d8e765d1d812456f2f56073a8b2b649ae601e1ce63ddb6ea1da00e tx=0x0d7f687e6d4d97c4a4a232c175548def99d56f68215876777b50690b0fb337dd payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=5 op=checkpoint status=1 gas=12126132 gasAtoms=19401811200000000 commonAtoms=3880362240000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=27 block=0x050843851cf20585a9cd21ce3d50e077e0efd9372c232467293e757b50a97b77 tx=0x6fea9a29f25830fdca65d9de9dbec1db17a3ab072e08356f411bd73317a9229c payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=5 op=checkpoint-replay status=1 gas=12126132 gasAtoms=19401811200000000 commonAtoms=3880362240000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=6 hash=647992ced87fb853ffd77393937d8d822ba2e1c0af47da7c96b8758dbeb06864 anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=29 block=0xf914eafaee3ff1dbf7c8a7cf5665834e4407ea8feef3e74cc7253cdbc1a347cf tx=0x4a169c2dac00e70f27d933738bfebaf7dcd027aca2ccee16bf2613a54e902463 payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=6 op=checkpoint status=1 gas=12126084 gasAtoms=19401734400000000 commonAtoms=3880346880000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=30 block=0xfc9afa181d549f6e1363e864f11bc415fc1e005a506a5ac71e6468836f87eb0d tx=0x99bff514935cc1a52ba6099da951532187cf6d38d77348597538ec90fa5d2e12 payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=6 op=checkpoint-replay status=1 gas=12126084 gasAtoms=19401734400000000 commonAtoms=3880346880000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=7 hash=9a70fc81a4efa94526aa789b82f76be201409bc3b3535bc3f9217d1acef2e3be anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=32 block=0x99bdeba86c2e53940a6c5531073e8c702c03f4ab41cf1e31ae53a7e787ddc2f8 tx=0x9c763c9e45ddb2720956e710ae018757e243609619490dbcc89612f2f552028c payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=7 op=checkpoint status=1 gas=12126108 gasAtoms=19401772800000000 commonAtoms=3880354560000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=34 block=0x54dcc98eb675e578c8ef539df36a61bc0db1a393f6720415664db52018bfe9fc tx=0xb809307c0f8ba9fd44781ccb829059c81028ea9c4827f86a3d8d5c2009275517 payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=7 op=checkpoint-replay status=1 gas=12126108 gasAtoms=19401772800000000 commonAtoms=3880354560000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=8 hash=0794bf921891bf16eb56ab8fde25e49dbd0875d9d16a9314c92b35600bdba3c6 anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=36 block=0xcabc8c560089150a614c9984423745d6d665af9d0680daba4f5894f9fcbd8766 tx=0x71683ffcc81896a2d4c884d3c7f88caed7cfe32176fd37e0197d0f08c33df58a payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=8 op=checkpoint status=1 gas=12126156 gasAtoms=19401849600000000 commonAtoms=3880369920000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=38 block=0x51b8bdbe8829866de784d9a33172ba8e0817d1bbda2cb0df37013a4bbf93f1e9 tx=0x00d75f01fe500bd9df6731c7638e6ce9b70bda5cfde509f00c17780f9f318b79 payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=8 op=checkpoint-replay status=1 gas=12126156 gasAtoms=19401849600000000 commonAtoms=3880369920000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=9 hash=eef7a34fbc6de93eb870ad8a41037d89835fd6210efb7b37a4b71786ea287ecc anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=40000000000000000 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=40 block=0xfbad7a20ca03aa5f291c7035b4238798297ee07f1b94e99f1cc86642bd023a60 tx=0x43fbe38d2e41066987c4bbd7fdb0cf84bee793a67a6ff42d4900147bceb66a6a payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=9 op=checkpoint status=1 gas=12126204 gasAtoms=19401926400000000 commonAtoms=3880385280000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=41 block=0xbfb06830681b991c4d8e830a74b3f251bd1aecb672a1d36eb70881fc9845d13f tx=0xc71fe39bdd0fc42f37463aa02d94f8c357e626a7ad9ea3494f20417ac09577c0 payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=9 op=checkpoint-replay status=1 gas=12126204 gasAtoms=19401926400000000 commonAtoms=3880385280000000 calldata=2052
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=10 hash=2fc5cf7b33d4f459c4126f010bfc6be08d4be68855fa4b133b4363ec346e8d6a anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=43 block=0x2f2889c0bd225d8f00d357085eb65e65720850ed6863f0bde675737785878f8c tx=0x20ac81026f7ba1132c5664219257b1f0cb48cd1c7be71c218470dde67b3b65fb payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=10 op=checkpoint status=1 gas=12153816 gasAtoms=19446105600000000 commonAtoms=3889221120000000 calldata=2574
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=44 block=0x9712ce24395d34e36f02a2a4b8cad2a1939b9305e1a1ad79342d2a6ca08ca8c4 tx=0xa23963cf64fcda0c2e48e95daa421023ec57de83534d335c7be75c03c9ae7b74 payer=0xe2441aBAe65111fAfdC5424a6f7C9B90B5018657 nonce=10 op=checkpoint-replay status=1 gas=12153816 gasAtoms=19446105600000000 commonAtoms=3889221120000000 calldata=2574
+    dex_continuous_network_test.go:27: CONTINUOUS_CHECKPOINT sequence=11 hash=2d87caf655318a2e36a69bf6d5a353610faa8e2816a3a35aa0bc12f08d4924c7 anchor=7/1b5f37e95d1d66fd6fd3ac3a42bc6180b6b6eee7cefd0ac9a374d62ac711c1fa inbox=4..4 fee=0 rewardFee=0 rewardSupport=0
+    dex_continuous_network_test.go:27: CONTINUOUS_TX height=46 block=0x36f2a2480e48279b53421d20d197955d5430e88c25a55fcd862ddba1667e82d4 tx=0xf32bf7baff51ee8d4a5365ec2ea748a8ff4f5356142d3af3c87f770b14b598fb payer=0x45951bfc1cB98c33B8cFb94e8E19ea7679576d6D nonce=11 op=checkpoint status=1 gas=12126108 gasAtoms=19401772800000000 commonAtoms=3880354560000000 calldata=2052

@@ -1,0 +1,7 @@
+=== RUN   TestDEXAndCLXProcessIsolation
+    dex_isolation_process_test.go:463: process-devnet network verified: active loopback only, no external routes; namespace="net:[4026532341]" namespace_read_error=<nil> captured_parent=false
+    dex_isolation_process_test.go:464: fixture committee permutation=[0 1 2 3 4 6 5]; proposer=2 laggard=5; both excluded from scheduled views2..10
+    dex_isolation_process_test.go:566: 14 distinct CLX/DEX process identities; DEX pipe-network simulation deliveries=215; all 7 DEX PIDs killed and restarted with WAL height 2 preserved then finalized 4; CLX advanced from heights [1 1 1 1 1 1 1] to canonical height 3 while DEX was stopped; checkpoint signature verification only, no native settlement
+--- PASS: TestDEXAndCLXProcessIsolation (36.18s)
+PASS
+ok  	github.com/cypherium/cypher/reconfig	36.234s

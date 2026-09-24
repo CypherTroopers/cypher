@@ -2,7 +2,7 @@
 
 ## Scope and baseline
 
-The working branch is `FHS-D`, with starting HEAD `1857c9fee48d3e37764dd1874a2acf5e27731bdd`. The initial status, branch, HEAD, diff, Makefile, CI configuration, and existing test conventions were inspected. No applicable AGENTS.md was found in the repository or its parents.
+The working branch is `FHS-D`, with starting HEAD `1857c9fee48d3e37764dd1874a2acf5e27731bdd`. The initial status, branch, HEAD, diff, Makefile, CI configuration, and existing test conventions were inspected.
 
 The implementation follows the updated requirement: restart the network from a fresh genesis and use one mandatory signed reward-recipient rule. It does not retain reward activation scheduling, historical RLP compatibility, or a payout-to-A fallback. All Japanese repository text found in the source/documentation scan was in the two new documentation files; both are now English.
 

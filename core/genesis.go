@@ -329,6 +329,11 @@ func (g *Genesis) ToBlock(db ethdb.Database) *types.Block {
 			statedb.SetState(addr, key, value)
 		}
 	}
+	// Reserve the explicitly genesis-enabled DEX system account before state-root
+	// construction. Its domain-dependent storage is initialized on first call.
+	if g.Config != nil && g.Config.DEXDevnet != nil {
+		statedb.SetNonce(params.DEXSettlementAddress, 1)
+	}
 	// Reserve all replay-registry shards in the genesis state. Nonce one is the
 	// protocol account marker consumed by the NativeTxV1 replay reader; creating
 	// every shard up front prevents an ordinary EVM transfer from defining its
@@ -400,6 +405,14 @@ func (g *Genesis) Commit(db ethdb.Database) (*types.Block, error) {
 	}
 	if err := config.CheckConfigForkOrder(); err != nil {
 		return nil, err
+	}
+	if err := config.ValidateDEXDevnet(); err != nil {
+		return nil, err
+	}
+	if config.DEXDevnet != nil {
+		if _, exists := g.Alloc[params.DEXSettlementAddress]; exists {
+			return nil, errors.New("genesis alloc contains reserved DEX custody")
+		}
 	}
 	if config.NativeParallelEnabled() && config.NativeParallel.RequireNativeTransactions {
 		if addr, ok := firstReservedNativeGenesisAccount(g.Alloc); ok {

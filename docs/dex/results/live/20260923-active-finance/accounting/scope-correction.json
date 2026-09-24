@@ -1,0 +1,7 @@
+{
+  "original_result": "partial-accounting.json",
+  "original_sha256": "ab9db215aa4a9daa43ceae8636712a4bad4b4127c9621e724ea7e780351748b6",
+  "correction_type": "post-run reporting label only; original raw result unchanged",
+  "scope": "Authenticated CLX FHS endpoint, transaction-body inclusion and native account/storage proof accounting; RPC receipt consistency without independent receipt-trie reconstruction. DEX certified observation only; DEX finalized=0. Not a complete Q4/Q5 verdict.",
+  "financial_journal_unchanged": true
+}

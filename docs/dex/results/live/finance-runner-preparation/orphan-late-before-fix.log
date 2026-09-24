@@ -1,0 +1,5 @@
+--- FAIL: TestCollectorOrphanRetirementCompletesBeforeLateCertificateAdmission (0.08s)
+    retirement_test.go:323: orphan tail exposed open period to delayed certificate <nil>
+FAIL
+FAIL	github.com/cypherium/cypher/dex/rewards	0.125s
+FAIL

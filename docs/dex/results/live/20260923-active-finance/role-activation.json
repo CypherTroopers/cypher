@@ -1,0 +1,16 @@
+{
+  "chain_id": 10101919,
+  "genesis": "0xa4a61fa952509cde79c14e152702a1d7dea1cc0320b4552566b2efb9e4a575de",
+  "dex_id": "0x433b712c48506710a611d48e351ff827d00e64941fff9c085817c266585af497",
+  "role_sha256": "60a12dfdee516e50dde7744c565411b88ec059bc31ba897fc2b20043f911df3f",
+  "selected_participants": [
+    "cyphermine",
+    "cypherdex1",
+    "cypherdex2",
+    "cypherdex3",
+    "cypherdex4",
+    "cypherdex5",
+    "cypherdex6"
+  ],
+  "scope": "local optional Common role selection; no CLX genesis/state/init changes"
+}

@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance_accounting.py", line 365, in <module>
+    print(json.dumps(audit(parser.parse_args())))
+                     ~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance_accounting.py", line 244, in audit
+    if observer.call("current")["Height"] >= requested:
+       ~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 114, in call
+    raise ValueError("helper response unavailable/bound")
+ValueError: helper response unavailable/bound

@@ -1,0 +1,43 @@
+{
+  "time_utc": "2026-09-23T19:32:18.960603+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "scope": "Final read-only partial ledger and focused source tests; no DEX finalized settlement claim",
+  "sources": {
+    "cmd/dex-live-finance/main.go": "5128f4d4e9db58c04518f95c29083707cef1ff0abf4146843b7b93b327078445",
+    "cmd/dex-live-finance/main_test.go": "b6866ae986639849d47a9d4c6973ebcceb3c62bfe55d7934faeba1c8a321bcb8",
+    "cmd/dex-live-finance/native.go": "6ec6fb3ebc48405494d90223b65b5a65acd29dac4c46b3c0443ee5d2c3479655",
+    "scripts/dex/live_finance.py": "7f68354a277f8fd112069a0b57e1755858b4ffed6547a3be4dbf64664d9b8290",
+    "scripts/dex/live_finance_accounting.py": "85dd6fe80336f479a3a77eea1bd0a464a7f38eef0e24ce7497da8ef3dd0183bc",
+    "scripts/dex/live_finance_load.py": "f1603e8c93923d00d88b6a0e0596f23227d22c4a3d52299fff81c612a28110dd",
+    "scripts/dex/test_live_finance.py": "602e9960639d693febbfb4f5dba1b31db45636361a99a694b2a6037c01a7d782",
+    "scripts/dex/test_live_finance_load.py": "82cf38372997684aa4bed64a600b4fefb26b6b71d36aa22a663a066263ed9918",
+    "docs/dex/live-finance-runner-preparation.md": "331beb27286a605994238c05cf608efe6898a9e9072226bb5e8806f8ceab3bb6",
+    "cmd/dex-live-source-observer/main.go": "190eecabb25c8d8d7e52ec91eadab176d2989e8fbf90b54891d5b4d28b9e0742",
+    "cmd/dex-live-source-observer/main_test.go": "fcc4ae9608e4a025c1bc7a9f9b0e25e5ac06af498c6ea61334109c64f55ff451"
+  },
+  "artifacts": {
+    "authenticated-accounts.jsonl": "918896901b5def7958f6441cc04a5e56d435c43a4397e613e5d4b59e063e84fe",
+    "blocks-00001058.json": "6cc46223a0152ea34c9a60d79e046ef23a8952fdd2a9306c69794a66badd7eb7",
+    "finance-cert-final-go.log": "934b94980235222b614ee099009cf1d53e8683b9fc46c5a00d33680374d8042b",
+    "finance-helper-r3-build.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "finance-partial-audit-r2-execution.json": "4f6a36f5e8082a4a8cbf76c6150c6acb85735652338c30b3b92f73ba52372746",
+    "finance-partial-audit-r2.log": "55f77558fde60fd511d60ce50aa6d9082ebf5ada794c4d70ab8fa80ae45f5546",
+    "finance-partial-completed-python.log": "92cde4e439761bbac191101cbfa7978cbb7d262b64cde0d69f2115234f2bff3d",
+    "finance-partial-path-fix-python.log": "22341256c5b48406c4dce1c58cc580019d85ce5b4f757dc43629c948fcf09183",
+    "partial-accounting.json": "ab9db215aa4a9daa43ceae8636712a4bad4b4127c9621e724ea7e780351748b6",
+    "partial-endpoint.json": "c17a3d2cc89928fa5e38c0fec26038435cadf683dab49bff4983e4a6677d4992",
+    "scope-correction.json": "27e173fe6e79369afaefec6fd9360576582112d28000ea3f4748c22a646fff73",
+    "transactions.jsonl": "ec4fc4a9c1dd618d2555d2e9fc3a0e6f9c1e270ff16e61e22634fc1b08b3d843"
+  },
+  "binaries": {
+    "/tmp/common-dex-live-test.x5z_05oq/dex-live-finance-r3": "50d28b86104c49679972eedbd1357ea94a42ae92c09d372458a380f79076e696",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-live-source-observer": "a69bd328cbdf3f1bfbd373d1a39e662b97f210c516c4506a42b0fda7452b1130",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-block-audit": "cb10593efc98cc9094953bb779e89c70fae0cb47d86a4ed2aea28a10325bd203"
+  },
+  "focused_python_tests_pass": 24,
+  "helper_go_tests_pass": 4,
+  "live_status": "PASS_PARTIAL_AUTHENTICATED_ACCOUNTING; DEX certified 15 finalized 0, CLX accepted 0",
+  "post_audit_source_change": "report scope label and receipt-proof limitation only, functional verification source unchanged",
+  "normal_node_binary_changed": false,
+  "live_mutation_by_auditor": false
+}

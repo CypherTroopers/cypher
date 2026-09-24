@@ -2543,7 +2543,11 @@ func (s *Service) installHotstuffProposalValidation(output *proposalValidationOu
 		return err
 	}
 	s.storeVerifiedProposal(output.ref.ProposalID(), output.verified)
-	s.pacetMakerTimer.start()
+	if s.fairHotstuffEnabled() {
+		s.pacetMakerTimer.startForFHSProgress(output.ref.ViewNumber, false)
+	} else {
+		s.pacetMakerTimer.start()
+	}
 	return nil
 }
 

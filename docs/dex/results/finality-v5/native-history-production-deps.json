@@ -1,0 +1,5 @@
+{
+  "command": "go list -mod=readonly -deps ./dex/settlement",
+  "heavy_dex_dependencies": [],
+  "package_count": 315
+}

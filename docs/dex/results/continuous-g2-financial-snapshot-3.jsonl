@@ -1,0 +1,6 @@
+{"ImportPath":"github.com/cypherium/cypher/dex/clxevidence_test [github.com/cypherium/cypher/dex/clxevidence.test]","Action":"build-output","Output":"# github.com/cypherium/cypher/dex/clxevidence_test [github.com/cypherium/cypher/dex/clxevidence.test]\n"}
+{"ImportPath":"github.com/cypherium/cypher/dex/clxevidence_test [github.com/cypherium/cypher/dex/clxevidence.test]","Action":"build-output","Output":"dex/clxevidence/relay_source_test.go:94:226: cfg.Genesis.Copy undefined (type *types.Header has no field or method Copy)\n"}
+{"ImportPath":"github.com/cypherium/cypher/dex/clxevidence_test [github.com/cypherium/cypher/dex/clxevidence.test]","Action":"build-fail"}
+{"Time":"2026-09-22T12:01:51.787764933+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/clxevidence"}
+{"Time":"2026-09-22T12:01:51.788354049+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Output":"FAIL\tgithub.com/cypherium/cypher/dex/clxevidence [build failed]\n","OutputType":"frame"}
+{"Time":"2026-09-22T12:01:51.788389495+02:00","Action":"fail","Package":"github.com/cypherium/cypher/dex/clxevidence","Elapsed":0.001,"FailedBuild":"github.com/cypherium/cypher/dex/clxevidence_test [github.com/cypherium/cypher/dex/clxevidence.test]"}

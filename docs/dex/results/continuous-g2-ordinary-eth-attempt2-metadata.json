@@ -1,0 +1,32 @@
+{
+  "started_utc": "2026-09-22T10:24:24.127460+00:00",
+  "finished_utc": "2026-09-22T10:24:58.035213+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-v",
+    "./reconfig",
+    "-run",
+    "^TestFHSNativeOrdinaryETHSource$"
+  ],
+  "exit_code": 1,
+  "network_namespace": "net:[4026532341]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [],
+  "log": "docs/dex/results/continuous-g2-ordinary-eth-attempt2.log",
+  "log_sha256": "7c6fda442d6f7f0a22ca00b2035027264ec81a324dac62bb94b1becbd99c0083",
+  "scope": "Two Common services in one coordinator collided with existing shared signer configuration; first TX rejected unknown account before ETH follow. Replaced by one ordinary Common with RPC admission and proof serving."
+}

@@ -1,0 +1,66 @@
+{
+  "status": "PASS(UNIT_REVIEW)",
+  "created_utc": "2026-09-23T18:25:05Z",
+  "source_files": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/init.sh",
+      "sha256": "568a3391d2b1634144f0eef7396e7e77bfc049b3a27107524c6deced35179a87"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_user_init.py",
+      "sha256": "5a0277f8fa1a462a7a049d8731fd1b8244645eb1f65f5eb10533c1ec1f680ed0"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/test_live_user_init.py",
+      "sha256": "9fcf238de17cebb101e7641188d248b7b0de8c0e7e084d40fdf16ffb1ce83154"
+    }
+  ],
+  "scope": "Read-only independent review and eight temporary fake-host unit tests. No actual init.sh invocation, PM2 operation, datadir opening, archive/rename, key contents or live signatures.",
+  "unit_log": "/tmp/common-dex-live-resume-496b6e0e/public/independent-user-init-unit.log",
+  "unit_tests": 8,
+  "shell_syntax": "PASS bash -n init.sh",
+  "current_same_chain_genesis_sha256": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147",
+  "reviewed_targets": {
+    "clx_datadirs": 14,
+    "common_supervised_dex_runtime_parents": 7,
+    "relay_runtime_paths": 2,
+    "foreign_apps_modified": false
+  },
+  "findings_resolved": [
+    {
+      "id": "UIR01",
+      "issue": "Pre-created empty relay-N lacks the normal Go CLI RELAY_CLI marker.",
+      "resolution": "Only runtime parent is created; relay-N root and ownership marker are created by ordinary relay CLI."
+    },
+    {
+      "id": "UIR02",
+      "issue": "An existing same-domain or unknown runtime could lose vote or signed-nonce safety history through archive/fresh restart.",
+      "resolution": "Any nonempty candidate DEX/relay history is rejected before process stops, irrespective of archive-journal existence."
+    },
+    {
+      "id": "UIR03",
+      "issue": "Repeated wrapper reads overwrote the expected hash and could hide a stop-time configuration edit.",
+      "resolution": "read_bound rejects any changed digest already bound; fake stop-time wrapper edit produces no archive/init."
+    },
+    {
+      "id": "UIR04",
+      "issue": "An initially empty runtime could receive a vote during shutdown before archive.",
+      "resolution": "All targets are revalidated after writer shutdown before any first archive, and each target is revalidated immediately before rename. Fake late vote preserves original CLX/DEX paths and initializes nothing."
+    }
+  ],
+  "checks": [
+    "Exact named fourteen CLX apps plus only registered two relay apps; no sidecar separately managed by PM2.",
+    "Symlink/non-regular/hardlink wallet/nodekey rejection and 1MiB metadata size limits before first stop.",
+    "Whole-directory private same-filesystem archive; no rm/delete; wallets/nodekey selectively copied only into new CLX datadirs.",
+    "boot ID/PID/start-ticks descendants plus /proc file-descriptor/mmap/datadir writer absence required; permission denial refuses proceeding.",
+    "Only ordinary CLX CLI init is invoked; DEX/relay runtime never passed to CLX init. No role activation or process restart.",
+    "Interrupted or already-used generation journal blocks automatic repeat/rollback; retained original data enables separately reviewed recovery.",
+    "Same chain ID intentionally preserved; ordinary CLX transaction replay is not separated."
+  ],
+  "limits": [
+    "This is readiness review, not PASS(LIVE) of actual initialization or restart. Parent will run read-only --check separately.",
+    "Nonempty DEX/relay histories are deliberately not reset by this first-generation helper. Recover same DB or prepare a separately reviewed new domain; do not remove the blocking files.",
+    "Failed initialization does not have automatic continuation: all named writers remain stopped and the private journal/archive must be inspected before any further action."
+  ],
+  "open_blockers": []
+}

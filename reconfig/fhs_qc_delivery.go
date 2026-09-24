@@ -293,7 +293,7 @@ func (s *Service) finishFHSCertificationForGeneration(cert *hotstuff.SignedState
 		s.muLifecycle.Unlock()
 		return types.ErrNotRunning
 	}
-	_ = s.pacetMakerTimer.start()
+	_ = s.pacetMakerTimer.startForFHSProgress(cert.Number, true)
 	if s.fairHotstuffEnabled() && !s.hasDeferredFHSRecovery() {
 		pendingReplay, replayMessage, replayErr = s.preparePendingFHSQCBroadcastReplay()
 	}

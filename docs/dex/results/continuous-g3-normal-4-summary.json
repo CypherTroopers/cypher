@@ -1,0 +1,76 @@
+{
+  "result": "FAIL",
+  "seconds": 495.88,
+  "artifact_root": "/tmp/common-dex-check.IcqPcKQO",
+  "raw": "continuous.log",
+  "source_diff_during_runner": "",
+  "cause": "test helper readFinancialWAL hardcoded v1 hash domain against valid compact v2 WAL",
+  "production_regression_confirmed": false,
+  "max_native_accepted_sequence": 38,
+  "CLX_height_at_reconciled_projection": 158,
+  "DEX_finalized": 39,
+  "inbox_cursor": 6,
+  "native_custody_atoms": "263166666666666666667",
+  "cold_DEX_over_64": "NOT_RUN",
+  "actual_CLX_key_renewal": "NOT_RUN",
+  "remaining_cycles_final_ledger": "NOT_RUN",
+  "private_keys_archived": false,
+  "public_failure_archive": "/tmp/continuous-public-failure-726009714",
+  "runtime_GOMAXPROCS": 2,
+  "observed_processes": {
+    "CLX_PIDs": [
+      1083023,
+      1083029,
+      1083034,
+      1083040,
+      1083046,
+      1083052,
+      1083058
+    ],
+    "registered_index_parent_sidecar": [
+      [
+        0,
+        1083119,
+        1083128
+      ],
+      [
+        1,
+        1083146,
+        1083154
+      ],
+      [
+        2,
+        1083171,
+        1083199
+      ],
+      [
+        3,
+        1083217,
+        1083252
+      ],
+      [
+        4,
+        1083298,
+        1083311
+      ],
+      [
+        5,
+        1083331,
+        1083405
+      ],
+      [
+        6,
+        1084106,
+        1084120
+      ]
+    ],
+    "initial_relay_PIDs": [
+      1083414,
+      1083415
+    ],
+    "simultaneous_owned_children_after_late_join": 23,
+    "coordinator_contains_normal_Common_RPC_source": true,
+    "late_DEX_OFF_process": "NOT_RUN",
+    "independent_operators_claimed": false
+  }
+}

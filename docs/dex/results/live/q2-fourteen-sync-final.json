@@ -1,0 +1,161 @@
+{
+  "status": "PASS(LIVE)",
+  "scope": "ordinary full-sync equality; no independent finality proof",
+  "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+  "target": {
+    "number": "0xdf3",
+    "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+    "parentHash": "0xd47e306f06df631ebf97a502b5a3fd089a4b0d2c8061bd7965ff44c594693bc1",
+    "stateRoot": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+    "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "gasUsed": "0x0",
+    "gasLimit": "0x100000000000",
+    "timestamp": "0x6ab3fc32",
+    "keyHash": "0x6bb36ba2e9159c9d1ba4e1fbce0bae824d8f988a9d8ceac5587df1fc90d96b33"
+  },
+  "nodes": {
+    "cypher0": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": true,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypher1": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": true,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypher2": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": true,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypher3": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": true,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypher4": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": true,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypher5": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": true,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypher6": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": true,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cyphermine": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": false,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypherdex1": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": false,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypherdex2": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": false,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypherdex3": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": false,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypherdex4": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": false,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypherdex5": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": false,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    },
+    "cypherdex6": {
+      "number": "0xdf3",
+      "hash": "0x6888c8f09a1434a49f3f3a872c239307c12e8ddc211b6fb12fdfa215b2c83cd3",
+      "state_root": "0x64e4e1552aa3b23f7ae0e03edead6d4e22112d3f597a7c6dcf516ff44c6ed25a",
+      "receipts_root": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+      "mining": false,
+      "dex_engine": {
+        "error_code": -32601
+      }
+    }
+  },
+  "observations": 1,
+  "elapsed_seconds": 0.19973553001182154
+}

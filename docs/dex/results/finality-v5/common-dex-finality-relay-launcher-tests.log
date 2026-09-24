@@ -1,0 +1,16 @@
+test_active_inventory_noncanonical_location_rejected_before_rpc (test_live_relay.RelayLauncherTest.test_active_inventory_noncanonical_location_rejected_before_rpc) ... ok
+test_active_inventory_selects_new_candidate_without_legacy_fallback (test_live_relay.RelayLauncherTest.test_active_inventory_selects_new_candidate_without_legacy_fallback) ... ok
+test_bound_chain_is_not_a_fixed_candidate_number (test_live_relay.RelayLauncherTest.test_bound_chain_is_not_a_fixed_candidate_number) ... ok
+test_candidate_path_cannot_escape_or_use_symlink (test_live_relay.RelayLauncherTest.test_candidate_path_cannot_escape_or_use_symlink) ... ok
+test_changed_config_symlink_and_duplicate_payer_rejected (test_live_relay.RelayLauncherTest.test_changed_config_symlink_and_duplicate_payer_rejected) ... ok
+test_explicit_prepare_does_not_require_or_change_activation (test_live_relay.RelayLauncherTest.test_explicit_prepare_does_not_require_or_change_activation) ... ok
+test_no_third_index_or_runtime_parent_creation (test_live_relay.RelayLauncherTest.test_no_third_index_or_runtime_parent_creation) ... ok
+test_old_genesis_missing_activation_and_foreign_domain_reject_before_rpc (test_live_relay.RelayLauncherTest.test_old_genesis_missing_activation_and_foreign_domain_reject_before_rpc) ... ok
+test_prepare_only_two_relays_and_exec_command (test_live_relay.RelayLauncherTest.test_prepare_only_two_relays_and_exec_command) ... ok
+test_reviewed_domain_fields_must_match_candidate_genesis (test_live_relay.RelayLauncherTest.test_reviewed_domain_fields_must_match_candidate_genesis) ... ok
+test_source_running_old_database_rejected (test_live_relay.RelayLauncherTest.test_source_running_old_database_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.114s
+
+OK

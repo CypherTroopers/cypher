@@ -1,0 +1,28 @@
+--- original/init.sh
++++ current/init.sh
+@@ -17,6 +17,12 @@
+     cypher5
+     cypher6
+     cyphermine
++    cypherdex1
++    cypherdex2
++    cypherdex3
++    cypherdex4
++    cypherdex5
++    cypherdex6
+ )
+ 
+ dirs=(
+@@ -28,6 +34,12 @@
+     chaindb5
+     chaindb6
+     chaindbmine
++    build/stage/live-commons/chaindbdex1
++    build/stage/live-commons/chaindbdex2
++    build/stage/live-commons/chaindbdex3
++    build/stage/live-commons/chaindbdex4
++    build/stage/live-commons/chaindbdex5
++    build/stage/live-commons/chaindbdex6
+ )
+ 
+ [[ -f "$GENESIS_FILE" ]] || {

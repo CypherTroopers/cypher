@@ -1,0 +1,1 @@
+Under the final instruction, init.sh only adds 12 path/PM2-name lines to the original. The helper version is superseded. Current results are init-paths-only-result.json and the patch. init.sh has no --check feature. Execution was not performed.

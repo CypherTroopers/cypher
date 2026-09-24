@@ -1,0 +1,39 @@
+{
+  "started_utc": "2026-09-22T10:56:42.909591+00:00",
+  "finished_utc": "2026-09-22T10:57:25.166511+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-race",
+    "-json",
+    "./dex/clxevidence",
+    "./dex/relay/source",
+    "-run",
+    "^TestRelayPlanner"
+  ],
+  "exit_code": 0,
+  "network_namespace": "net:[4026532340]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [
+    {
+      "path": "reconfig/dex_continuous_economy_test.go",
+      "before": "aeeb087d2d8c294f6b97255a660b49b16b8c61c43a10fc1397afbafc20e684cd",
+      "after": "7e4e22ce83f0a4f1657fd5485983888e4a9721a85d7ce6b4f018167ad4894217"
+    }
+  ],
+  "log": "docs/dex/results/continuous-g2-planner-unit.jsonl",
+  "log_sha256": "2388aa7d190da5d4bcfe726e1f0a46e14f1a1cd75b4ec96265bdfcc6eb33a32a"
+}

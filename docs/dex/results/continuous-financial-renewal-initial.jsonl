@@ -1,0 +1,9 @@
+{"Time":"2026-09-22T14:18:49.152534771+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/clxevidence"}
+{"Time":"2026-09-22T14:18:49.213188527+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals"}
+{"Time":"2026-09-22T14:18:49.213381336+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals","Output":"=== RUN   TestRollingFinancialParentAcrossFixedMembershipRenewals\n","OutputType":"frame"}
+{"Time":"2026-09-22T14:18:49.464876383+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals","Output":"    renewal_financial_test.go:42: source 3, DEX 1: rolling CLX authentication failed: v3 ordered committee changed\n","OutputType":"error"}
+{"Time":"2026-09-22T14:18:49.464971309+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals","Output":"--- FAIL: TestRollingFinancialParentAcrossFixedMembershipRenewals (0.25s)\n","OutputType":"frame"}
+{"Time":"2026-09-22T14:18:49.464978382+02:00","Action":"fail","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals","Elapsed":0.25}
+{"Time":"2026-09-22T14:18:49.465028896+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Output":"FAIL\n","OutputType":"frame"}
+{"Time":"2026-09-22T14:18:49.483585791+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Output":"FAIL\tgithub.com/cypherium/cypher/dex/clxevidence\t0.330s\n","OutputType":"frame"}
+{"Time":"2026-09-22T14:18:49.483659488+02:00","Action":"fail","Package":"github.com/cypherium/cypher/dex/clxevidence","Elapsed":0.331}

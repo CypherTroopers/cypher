@@ -1,0 +1,111 @@
+=== RUN   TestDEXNormalCLIEightRoleCombinations
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_false
+    dex_test.go:391: ordinary CLI Common pow=false rpc=false dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=5b8f9a26b86e7db843d55c54ea3ccb552212155a
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_false
+    dex_test.go:306: normal PoW did not report absent dataset before stop
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_false
+    dex_test.go:391: ordinary CLI Common pow=false rpc=true dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=643e26a60a41ec47485fce5c50e29e53f91b818a
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_false
+    dex_test.go:306: normal PoW did not report absent dataset before stop
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_true
+    dex_test.go:391: ordinary CLI Common pow=false rpc=false dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=c3c8b1c2f09e13e7cba6f3cded4a5c73670c4bd2
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_true
+    dex_test.go:306: normal PoW did not report absent dataset before stop
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_true
+    dex_test.go:341: ordinary CLI sidecar failed: {State:active Certified:2 Finalized:1 PendingTransport:0 Error:} <nil>
+        INFO [09-22|07:05:21.352] Starting Geth on Ethereum mainnet... 
+        INFO [09-22|07:05:21.355] Allocated trie memory caches             clean=7.00MiB dirty=8.00MiB
+        INFO [09-22|07:05:21.355] Allocated cache and file handles         database=/tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_tru497004661/001/common/cypher/chaindata cache=16.00MiB handles=262144
+        INFO [09-22|07:05:21.363] Opened ancient database                  database=/tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_tru497004661/001/common/cypher/chaindata/ancient
+        INFO [09-22|07:05:21.363] SetCommitteeConfig                       len=0
+        INFO [09-22|07:05:21.364] Initialised chain configuration          config="{ChainID: 10101919 Homestead: 0 DAO: <nil> DAOSupport: false EIP150: 0 EIP155: 0 EIP158: 0 Byzantium: 0 HasPrivate: false Constantinople: 0 TransactionSizeLimit: 128 MaxCodeSize: 0 Petersburg: 0 Istanbul: 0, Muir Glacier: <nil> YOLO v1: <nil> Berlin: 0 London: 0 ArrowGlacier: <nil> GrayGlacier: <nil> ShanghaiTime: 0 CancunTime: 0 PragueTime: 0 OsakaTime: 0 BPO1Time: <nil> BPO2Time: <nil> BPO3Time: <nil> BPO4Time: <nil> BPO5Time: <nil> BlobSchedule: {Cancun:{Target:192 Max:288 BaseFeeUpdateFraction:213662528} Prague:{Target:192 Max:288 BaseFeeUpdateFraction:160246912} Osaka:{Target:192 Max:288 BaseFeeUpdateFraction:160246912} BPO1:<nil> BPO2:<nil> BPO3:<nil> BPO4:<nil> BPO5:<nil>} FairHotstuff: true Engine: colossusX}"
+        INFO [09-22|07:05:21.365] TxQUIC auto role: common RPC FHS bridge  http3rpc=false
+        INFO [09-22|07:05:21.365] Initialised chain configuration          config id=10101919
+        INFO [09-22|07:05:21.365] extIP address                            IP=127.0.0.1
+        INFO [09-22|07:05:21.365] Initialising Ethereum protocol           versions=[66] network=1 dbversion=<nil>
+        WARN [09-22|07:05:21.365] Upgrade blockchain database version      from=<nil> to=10
+        INFO [09-22|07:05:21.365] Loaded most recent local keyblock header number=0 hash="d73a5b…ce9024" td=1100
+        INFO [09-22|07:05:21.365] Loaded most recent local full keyblock   number=0 hash="d73a5b…ce9024" td=1100
+        INFO [09-22|07:05:24.832] BlockChain New                           chain id=10101919
+        WARN [09-22|07:05:24.836] GetBlockByNumer                          number=0
+        INFO [09-22|07:05:24.837] Loaded most recent local header          number=0 hash="05a3dd…f409b7" td=1100 age=2d2h5m
+        INFO [09-22|07:05:24.837] Loaded most recent local full block      number=0 hash="05a3dd…f409b7" td=1100 age=2d2h5m
+        INFO [09-22|07:05:24.837] Loaded most recent local fast block      number=0 hash="05a3dd…f409b7" td=1100 age=2d2h5m
+        INFO [09-22|07:05:24.837] Disabling legacy transaction journal in favor of unified ingress WAL journal=transactions.rlp
+        INFO [09-22|07:05:24.838] Allocated cache and file handles         database=/tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_tru497004661/001/common/cypher/txoutbox cache=16.00MiB handles=128
+        INFO [09-22|07:05:24.839] Allocated cache and file handles         database=/tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_tru497004661/001/common/cypher/txingresswal cache=16.00MiB handles=128
+        INFO [09-22|07:05:24.843] NewTxPool                                config="{Locals:[] NoLocals:false Journal: Rejournal:1h0m0s PriceLimit:1000000000 PriceBump:10 AccountSlots:32768 GlobalSlots:2097152 AccountQueue:32768 GlobalQueue:1048576 RemoteAccountWindow:262144 LocalAccountWindow:262144 FastPendingLifetime:5m0s SlowPendingLifetime:10m0s FastQueuedLifetime:10m0s SlowQueuedLifetime:30m0s Lifetime:3h0m0s TransactionSizeLimit:64 MaxCodeSize:24}"
+        INFO [09-22|07:05:24.844] Using full sync for Fair HotStuff 
+        INFO [09-22|07:05:24.844] Etherbase automatically configured       address=0xDA6632802Ebfb2e02995D200641e0DDa2A0364aD
+        INFO [09-22|07:05:24.844] Common node eth discovery candidates disabled; fixed committee peers only 
+        INFO [09-22|07:05:24.845] New router                               address=[::]:35645
+        INFO [09-22|07:05:24.845] Starting service                         name=cypherBFTService
+        INFO [09-22|07:05:24.845] Started Service                          name=cypherBFTService
+        INFO [09-22|07:05:24.845] instantiated all services                address=127.0.0.1:35645
+        INFO [09-22|07:05:24.845] SetCommitteeConfig                       len=7
+        INFO [09-22|07:05:24.847] TxQUIC connected to Fair HotStuff route provider proposalView=1 leaderIndex=6 endpoint=127.0.0.1:30006
+        INFO [09-22|07:05:24.847] Starting peer-to-peer node               instance=Geth/v1.9.20-stable(cypherium-v2.0.0)/linux-amd64/go1.27.1
+        INFO [09-22|07:05:24.857] Mapped network port                      proto=tcp extport=34753 intport=34753 interface=ExtIP(127.0.0.1)
+        INFO [09-22|07:05:24.858] New local node record                    seq=1 id=a0f76daf54f72c0b ip=127.0.0.1 udp=0 tcp=34753
+        INFO [09-22|07:05:24.859] Started P2P networking                   self="enode://28d770582d460f824c64443a06cdd89718740a084c6cdd5a4b6a798bdce97c958cc6170d52016552959182bfda1a469263045a30dad7027f8bc7d91ec255e573@127.0.0.1:34753?discport=0"
+        INFO [09-22|07:05:24.860] IPC endpoint opened                      url=/tmp/dex-cli-ipc-960387214/node.ipc
+        INFO [09-22|07:05:24.860] HTTP server started                      endpoint=127.0.0.1:33769 cors= vhosts=localhost,127.0.0.1
+        INFO [09-22|07:05:24.860] handle.Start                             maxPeers=0
+        INFO [09-22|07:05:24.861] Started durable TxQUIC outbox            records=0 bytes=0 workers=64
+        INFO [09-22|07:05:24.862] TxQUIC bridge enabled                    queue=1048576 queueBytes=268435456 batch=512 wireBytes=4194304 interval=10ms
+        INFO [09-22|07:05:24.915] DEX sidecar active                       index=0 mode=counter datadir=/tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_tru497004661/001/dex-0
+        INFO [09-22|07:05:24.919] handleNewViewMsg got new view message    from=127.0.0.1:42335 viewId="c353e5…cf31f7"
+        INFO [09-22|07:05:24.949] handleNewViewMsg got new view message    from=127.0.0.1:43235 viewId="c353e5…cf31f7"
+        INFO [09-22|07:05:24.976] handleNewViewMsg got new view message    from=127.0.0.1:42945 viewId="c353e5…cf31f7"
+        WARN [09-22|07:05:24.979] reject new-view before storage           from=127.0.0.1:42945 viewID="c353e5…cf31f7" err="hotstuff view state too old"
+        INFO [09-22|07:05:24.979] handleNewViewMsg got new view message    from=127.0.0.1:41869 viewId="c353e5…cf31f7"
+        WARN [09-22|07:05:24.987] reject new-view before storage           from=127.0.0.1:41869 viewID="c353e5…cf31f7" err="hotstuff view state too old"
+        INFO [09-22|07:05:24.987] handleNewViewMsg got new view message    from=127.0.0.1:43903 viewId="c353e5…cf31f7"
+        WARN [09-22|07:05:24.993] reject new-view before storage           from=127.0.0.1:43903 viewID="c353e5…cf31f7" err="hotstuff view state too old"
+        INFO [09-22|07:05:24.993] handleNewViewMsg got new view message    from=127.0.0.1:43849 viewId="c353e5…cf31f7"
+        WARN [09-22|07:05:24.997] reject new-view before storage           from=127.0.0.1:43849 viewID="c353e5…cf31f7" err="hotstuff view state too old"
+        INFO [09-22|07:05:25.011] handleNewViewMsg got new view message    from=127.0.0.1:33205 viewId="c353e5…cf31f7"
+        WARN [09-22|07:05:25.017] reject new-view before storage           from=127.0.0.1:33205 viewID="c353e5…cf31f7" err="hotstuff view state too old"
+        INFO [09-22|07:05:25.029] HOTSTUFF PREPARE QC VERIFIED             number=2 viewID="47fb42…da78b9" from=127.0.0.1:43235 maskBytes=1
+        INFO [09-22|07:05:25.074] Setting new local account                address=0x20e28C7eD42E3cEC0976A2CC28808BE41fe3D431
+        INFO [09-22|07:05:25.122] HOTSTUFF PREPARE QC VERIFIED             number=3 viewID="938f1c…da3f19" from=127.0.0.1:43903 maskBytes=1
+        INFO [09-22|07:05:29.453] handleNewViewMsg got new view message    from=127.0.0.1:42335 viewId="7f319b…a47b65"
+        INFO [09-22|07:05:29.477] handleNewViewMsg got new view message    from=127.0.0.1:41869 viewId="7f319b…a47b65"
+        WARN [09-22|07:05:29.498] reject new-view before storage           from=127.0.0.1:41869 viewID="7f319b…a47b65" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:29.498] handleNewViewMsg got new view message    from=127.0.0.1:43903 viewId="7f319b…a47b65"
+        WARN [09-22|07:05:29.520] reject new-view before storage           from=127.0.0.1:43903 viewID="7f319b…a47b65" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:29.520] handleNewViewMsg got new view message    from=127.0.0.1:43235 viewId="7f319b…a47b65"
+        WARN [09-22|07:05:29.537] reject new-view before storage           from=127.0.0.1:43235 viewID="7f319b…a47b65" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:29.537] handleNewViewMsg got new view message    from=127.0.0.1:43849 viewId="7f319b…a47b65"
+        WARN [09-22|07:05:29.563] reject new-view before storage           from=127.0.0.1:43849 viewID="7f319b…a47b65" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:29.563] handleNewViewMsg got new view message    from=127.0.0.1:33205 viewId="7f319b…a47b65"
+        WARN [09-22|07:05:29.581] reject new-view before storage           from=127.0.0.1:33205 viewID="7f319b…a47b65" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:29.582] handleNewViewMsg got new view message    from=127.0.0.1:42945 viewId="7f319b…a47b65"
+        WARN [09-22|07:05:29.606] reject new-view before storage           from=127.0.0.1:42945 viewID="7f319b…a47b65" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:43.410] handleNewViewMsg got new view message    from=127.0.0.1:42335 viewId="4d4d2f…1f7bde"
+        INFO [09-22|07:05:43.434] handleNewViewMsg got new view message    from=127.0.0.1:43903 viewId="4d4d2f…1f7bde"
+        WARN [09-22|07:05:43.452] reject new-view before storage           from=127.0.0.1:43903 viewID="4d4d2f…1f7bde" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:43.452] handleNewViewMsg got new view message    from=127.0.0.1:41869 viewId="4d4d2f…1f7bde"
+        WARN [09-22|07:05:43.468] reject new-view before storage           from=127.0.0.1:41869 viewID="4d4d2f…1f7bde" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:43.469] handleNewViewMsg got new view message    from=127.0.0.1:42945 viewId="4d4d2f…1f7bde"
+        WARN [09-22|07:05:43.486] reject new-view before storage           from=127.0.0.1:42945 viewID="4d4d2f…1f7bde" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:43.486] handleNewViewMsg got new view message    from=127.0.0.1:33205 viewId="4d4d2f…1f7bde"
+        WARN [09-22|07:05:43.503] reject new-view before storage           from=127.0.0.1:33205 viewID="4d4d2f…1f7bde" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:43.503] handleNewViewMsg got new view message    from=127.0.0.1:43849 viewId="4d4d2f…1f7bde"
+        WARN [09-22|07:05:43.520] reject new-view before storage           from=127.0.0.1:43849 viewID="4d4d2f…1f7bde" err="hotstuff proposal data unavailable"
+        INFO [09-22|07:05:43.521] handleNewViewMsg got new view message    from=127.0.0.1:43235 viewId="4d4d2f…1f7bde"
+        WARN [09-22|07:05:43.539] reject new-view before storage           from=127.0.0.1:43235 viewID="4d4d2f…1f7bde" err="hotstuff proposal data unavailable"
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_true
+    dex_test.go:306: normal PoW did not report absent dataset before stop
+--- FAIL: TestDEXNormalCLIEightRoleCombinations (87.96s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_false (4.47s)
+    --- FAIL: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_false (9.51s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_false (4.50s)
+    --- FAIL: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_false (9.71s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_true (5.23s)
+    --- FAIL: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_true (10.40s)
+    --- FAIL: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_true (34.24s)
+    --- FAIL: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_true (9.89s)
+FAIL
+FAIL	github.com/cypherium/cypher/cmd/cypher	88.004s
+FAIL

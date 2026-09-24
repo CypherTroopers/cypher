@@ -1,0 +1,350 @@
+{
+  "observed_utc": "2026-09-23T20:12:27Z",
+  "host": "vmi3365213",
+  "uid": 0,
+  "workspace": "/root/work/cypher-FHS-D-ExchangeCore",
+  "boot_id": "fcd0df19-9bbb-4d09-a76d-fedbbed8541a",
+  "clock_ticks": 100,
+  "apps": [
+    {
+      "name": "cypher0",
+      "pm_id": 0,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher0.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    },
+    {
+      "name": "cypher1",
+      "pm_id": 1,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher1.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    },
+    {
+      "name": "cypher2",
+      "pm_id": 2,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher2.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    },
+    {
+      "name": "cypher3",
+      "pm_id": 3,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher3.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    },
+    {
+      "name": "cypher4",
+      "pm_id": 4,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher4.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    },
+    {
+      "name": "cypher5",
+      "pm_id": 5,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher5.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    },
+    {
+      "name": "cypher6",
+      "pm_id": 6,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher6.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    },
+    {
+      "name": "cyphermine",
+      "pm_id": 7,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cyphermine.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 3
+      },
+      "processes": [],
+      "dex_observation": {
+        "observation_error": "URLError"
+      }
+    },
+    {
+      "name": "cypherdex1",
+      "pm_id": 8,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common1/start.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 3
+      },
+      "processes": [],
+      "dex_observation": {
+        "observation_error": "URLError"
+      }
+    },
+    {
+      "name": "cypherdex2",
+      "pm_id": 9,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common2/start.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 3
+      },
+      "processes": [],
+      "dex_observation": {
+        "observation_error": "URLError"
+      }
+    },
+    {
+      "name": "cypherdex3",
+      "pm_id": 10,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common3/start.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 3
+      },
+      "processes": [],
+      "dex_observation": {
+        "observation_error": "URLError"
+      }
+    },
+    {
+      "name": "cypherdex4",
+      "pm_id": 11,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common4/start.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 3
+      },
+      "processes": [],
+      "dex_observation": {
+        "observation_error": "URLError"
+      }
+    },
+    {
+      "name": "cypherdex5",
+      "pm_id": 12,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common5/start.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 3
+      },
+      "processes": [],
+      "dex_observation": {
+        "observation_error": "URLError"
+      }
+    },
+    {
+      "name": "cypherdex6",
+      "pm_id": 13,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common6/start.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 3
+      },
+      "processes": [],
+      "dex_observation": {
+        "observation_error": "URLError"
+      }
+    },
+    {
+      "name": "cypherdex-relay0",
+      "pm_id": 14,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/start-cypherdex-relay0.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 5000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    },
+    {
+      "name": "cypherdex-relay1",
+      "pm_id": 15,
+      "pid": 0,
+      "pm2": {
+        "status": "stopped",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/start-cypherdex-relay1.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 5000,
+        "watch": false,
+        "restart_time": 0
+      },
+      "processes": []
+    }
+  ],
+  "other_pm2_app_count": 0,
+  "meminfo": "MemTotal:       49325352 kB\nMemFree:        24169164 kB\nMemAvailable:   27854388 kB\nBuffers:          161236 kB\nCached:         23489384 kB\nSwapCached:            0 kB\nActive:          3421736 kB\nInactive:       20823096 kB\nActive(anon):    2104064 kB\nInactive(anon): 17936316 kB\nActive(file):    1317672 kB\nInactive(file):  2886780 kB\nUnevictable:       13112 kB\nMlocked:            9112 kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:              2096 kB\nWriteback:             0 kB\nAnonPages:        607636 kB\nMapped:           306164 kB\nShmem:          19439480 kB\nKReclaimable:     340844 kB\nSlab:             613728 kB\nSReclaimable:     340844 kB\nSUnreclaim:       272884 kB\nKernelStack:        6864 kB\nPageTables:        13784 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    24662676 kB\nCommitted_AS:   21775324 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:       19236 kB\nVmallocChunk:          0 kB\nPercpu:             7536 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:         0 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:     16384 kB\nFilePmdMapped:         0 kB\nCmaTotal:              0 kB\nCmaFree:         2605832 kB\nUnaccepted:            0 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:      235368 kB\nDirectMap2M:    13395968 kB\nDirectMap1G:    38797312 kB\n",
+  "observer_memlock": [
+    8388608,
+    8388608
+  ],
+  "loadavg": [
+    6.3818359375,
+    20.08203125,
+    24.19287109375
+  ],
+  "deployed": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher",
+      "sha256": "7ad62239831d318cefbcc2115e267601b7d3ef590826ea0c64ca339731a3d623",
+      "bytes": 54447536
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "sha256": "7ad62239831d318cefbcc2115e267601b7d3ef590826ea0c64ca339731a3d623",
+      "bytes": 54447536
+    }
+  ],
+  "disk": {
+    "/root/work/cypher-FHS-D-ExchangeCore": {
+      "free_bytes": 402242383872
+    },
+    "/tmp": {
+      "free_bytes": 5364322304
+    }
+  }
+}

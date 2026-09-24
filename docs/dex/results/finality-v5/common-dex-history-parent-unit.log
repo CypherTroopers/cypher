@@ -1,0 +1,8 @@
+=== RUN   TestHistoryFrontierReplayRejectsChangedAndForeignParent
+--- PASS: TestHistoryFrontierReplayRejectsChangedAndForeignParent (3.27s)
+=== RUN   TestHistoryColdReplayRejectsRechecksummedMissingFrontier
+--- PASS: TestHistoryColdReplayRejectsRechecksummedMissingFrontier (1.96s)
+=== RUN   TestHistoryBindsActualParentQCViewInsteadOfCheckpointHeight
+--- PASS: TestHistoryBindsActualParentQCViewInsteadOfCheckpointHeight (0.06s)
+PASS
+ok  	github.com/cypherium/cypher/dex/consensus	5.472s

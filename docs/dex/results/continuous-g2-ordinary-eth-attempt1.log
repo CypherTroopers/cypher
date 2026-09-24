@@ -1,0 +1,4 @@
+# github.com/cypherium/cypher/reconfig_test [github.com/cypherium/cypher/reconfig.test]
+reconfig/dex_native_eth_source_test.go:87:18: invalid operation: r.Status != types.ReceiptStatusSuccessful (mismatched types hexutil.Uint64 and uint64)
+FAIL	github.com/cypherium/cypher/reconfig [build failed]
+FAIL

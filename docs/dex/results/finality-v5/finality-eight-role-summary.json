@@ -1,0 +1,21 @@
+{
+  "normal_cli_eight_roles": {
+    "status": "PASS(ISOLATED)",
+    "test": "TestDEXNormalCLIEightRoleCombinations",
+    "log": "finality-cli-eight-roles.log",
+    "all_combinations": 8,
+    "test_seconds": 39.75
+  },
+  "actual_api_eight_roles": {
+    "status": "PASS(ISOLATED)",
+    "test": "TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset",
+    "log": "finality-api-eight-roles.log",
+    "all_combinations": 8
+  },
+  "scope": [
+    "new user/network namespaces; loopback only; no host fallback",
+    "temporary datadirs and owned child processes only; no live PM2 interaction",
+    "role lifecycle/flag/API/TLS counter-sidecar regressions; not schema6 financial network completion",
+    "normal-size PoW nonce generation NOT_RUN; dedicated invalid-size/no-dataset fixtures only"
+  ]
+}

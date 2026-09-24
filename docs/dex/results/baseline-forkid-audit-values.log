@@ -1,0 +1,6 @@
+Mainnet chainID=16166 genesis=0xe8186a2e15328b38547348dec5d25b051bc1d17681c66b8c8ac15c06afa223c6 crc=5705bf8f positiveBlockForks=[]
+Ropsten chainID=16164 genesis=0x1d2bc30c28ad041bc4e426dfe92327d5dff58d442d671106e32309d4e374bd85 crc=04e4bab1 positiveBlockForks=[]
+Rinkeby chainID=4 genesis=0x6341fd3daf94b748c72ced5a5b26028f2474f5f00d824504e4fa37a75767e177 crc=3b8e0691 positiveBlockForks=[1 2 3 103 366 432 543]
+Goerli chainID=5 genesis=0xbf7e331f7f7c1dd2e05159666b3bf8bc7a8a3a9eb1d518969eab529dd9b88c1a crc=a3f5ab08 positiveBlockForks=[156]
+repository genesis memory-only chainID=10101919 hash=0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e forkID=f6d70575/0 selfFilter=<nil> FairHotstuff=true positiveBlockForks=[]
+separate exact-boundary diagnostic localHead=8 remoteHead=7 remoteNext=8 filter=local incompatible or needs update

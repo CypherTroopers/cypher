@@ -1,0 +1,104 @@
+{
+  "expected_source": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "checked": 14,
+  "rows": [
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-baseline/metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-baseline/raw.log",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 1
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-core-vm-cli/metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-core-vm-cli/raw.jsonl",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-g0-qc-process/metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-g0-qc-process/raw.jsonl",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-native-cost/metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-native-cost/raw.jsonl",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-production-deps/metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-production-deps/raw.jsonl",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-rpc-existing-failures/metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-rpc-existing-failures/raw.jsonl",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 1
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-rpc-existing-timeout/metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-rpc-existing-timeout/raw.jsonl",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 1
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-unit/metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-unit/raw.jsonl",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-process-metadata.json",
+      "raw": "docs/dex/results/continuous-final-process-raw.log",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-roles-metadata.json",
+      "raw": "docs/dex/results/continuous-final-roles-raw.log",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-cli-roles-metadata.json",
+      "raw": "docs/dex/results/continuous-final-cli-roles-raw.log",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-socket-metadata.json",
+      "raw": "docs/dex/results/continuous-final-socket-raw.log",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-source-metadata.json",
+      "raw": "docs/dex/results/continuous-final-source-raw.log",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    },
+    {
+      "metadata": "docs/dex/results/continuous-final-7f78-cli-financial-metadata.json",
+      "raw": "docs/dex/results/continuous-final-7f78-cli-financial-raw.log",
+      "raw_sha_match": true,
+      "source_match": true,
+      "run_exit": 0
+    }
+  ]
+}

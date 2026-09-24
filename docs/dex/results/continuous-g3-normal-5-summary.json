@@ -1,0 +1,22 @@
+{
+  "result": "FAIL",
+  "seconds": 721.3,
+  "artifact_root": "/tmp/common-dex-check.6OkFvCNJ",
+  "cause": "All7 CLX child test binaries self-terminate at hardcoded12m before45m parent fixture ends",
+  "source_diff_during_runner": "",
+  "max_native_accepted_sequence": 49,
+  "CLX_height_observed": 275,
+  "DEX_finalized": 59,
+  "inbox_cursor": 8,
+  "all_DEX_absence_stopped_CLX_head": 148,
+  "all_DEX_absence_resumed_CLX_head": 214,
+  "actual_stopped_height_delta": 66,
+  "own_v2_WAL_restarts": 7,
+  "source_anchor_version2_observed": true,
+  "actual_renewal_details": "separate read-only audit pending",
+  "remaining_cycles_and_final_ledger": "NOT_RUN",
+  "public_failure_archive": "/tmp/continuous-public-failure-50694433",
+  "initial_child_lifetime_seconds": 720,
+  "parent_lifetime_seconds": 2700,
+  "protocol_timeout_change": false
+}

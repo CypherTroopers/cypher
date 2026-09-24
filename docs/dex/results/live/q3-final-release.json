@@ -1,0 +1,12 @@
+{
+  "status": "PASS(BUILD)",
+  "source_manifest": "/tmp/common-dex-live.8gezz_j9/public/q3-build-source-r3.json",
+  "source_manifest_sha256": "b0c62fc3cc5c9298d2b4321da5c7a84f57a831ee51171d47bf3f1ba57476213c",
+  "source_paths": 600,
+  "source_changed_during_build": [],
+  "binary": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-q3-release/bin/cypher-linux-amd64",
+  "binary_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+  "binary_bytes": 54399088,
+  "deployed": false,
+  "build_log": "/tmp/common-dex-live.8gezz_j9/public/q3-release-build-final-r3.log"
+}

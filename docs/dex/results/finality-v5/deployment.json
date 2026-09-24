@@ -1,0 +1,29 @@
+{
+  "records": [
+    {
+      "path": "build/bin/cypher",
+      "before_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+      "after_sha256": "7ad62239831d318cefbcc2115e267601b7d3ef590826ea0c64ca339731a3d623"
+    },
+    {
+      "path": "build/bin/cypher-linux-amd64",
+      "before_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+      "after_sha256": "7ad62239831d318cefbcc2115e267601b7d3ef590826ea0c64ca339731a3d623"
+    },
+    {
+      "path": "genesis.json",
+      "before_sha256": "ac548d8dc6da5e32b471fc3fb863e5bc0e9c243af6b404825cf9cd3933a5634c",
+      "after_sha256": "06e879c0c1277008cc915b8a0ad4c73704f45119ec64cef875f503360d7d15ff"
+    },
+    {
+      "path": "build/stage/live-deployment.json",
+      "before_sha256": "60a12dfdee516e50dde7744c565411b88ec059bc31ba897fc2b20043f911df3f",
+      "after_sha256": "267102624d3c566be908359b2a7e92bb223d626355514a541832254fb1210f9c"
+    }
+  ],
+  "network_state": "all16namedPM2stopped; no restarted process before user init",
+  "chain_id": 10101919,
+  "init_executed": false,
+  "live_DB_or_WAL_deleted": false,
+  "new_runtime": "empty parent directories only"
+}

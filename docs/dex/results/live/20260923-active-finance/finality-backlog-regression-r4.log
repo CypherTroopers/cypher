@@ -1,0 +1,5 @@
+=== RUN   TestLiveFinalityBacklogBeyondProofBoundFailsClosed
+    live_finality_backlog_test.go:79: KNOWN LIVE LIVENESS FAILURE reproduced: 9 certified gapped heights; genuine height10/view18 child rejected by unchanged 8-descendant cap; finality stays0; safety survives same-WAL restart; this test PASS is fail-closed coverage, not LIVE recovery PASS
+--- PASS: TestLiveFinalityBacklogBeyondProofBoundFailsClosed (10.48s)
+PASS
+ok  	github.com/cypherium/cypher/dex/consensus	10.587s

@@ -1,0 +1,46 @@
+{
+  "scope": "read-only helper source/test/build; no LIVE RPC/TX/PM2 executed",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "go": "go version go1.27.1 linux/amd64",
+  "result": "PASS(UNIT)",
+  "top_level_tests": 4,
+  "pass_test_events": 15,
+  "foreign_uid_faults": "NOT_RUN: sandbox uid_map exposes only UID 0; two fixture subtests skipped after preserved original EINVAL failure",
+  "proof_limits": {
+    "headers_per_segment": 32,
+    "segments": 1024,
+    "source_wal_bytes": 33554432,
+    "account_slots": 32
+  },
+  "absolute_clx_height_limit": 9223372036854775807,
+  "files": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/cmd/dex-live-source-observer/main.go",
+      "sha256": "190eecabb25c8d8d7e52ec91eadab176d2989e8fbf90b54891d5b4d28b9e0742"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/cmd/dex-live-source-observer/main_test.go",
+      "sha256": "fcc4ae9608e4a025c1bc7a9f9b0e25e5ac06af498c6ea61334109c64f55ff451"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/dex-live-source-observer",
+      "sha256": "a69bd328cbdf3f1bfbd373d1a39e662b97f210c516c4506a42b0fda7452b1130"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/public/common-dex-observer-ownership-final.jsonl",
+      "sha256": "4d46607c2e36ffca43f31b0cb2d644d21a33d1053d98c21311cef75bba9866f4"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/public/common-dex-observer-ownership-final2.jsonl",
+      "sha256": "d9336e0376a199a3acf20f43f7e1ee58e6f10c9aa67e79009167511ced3bf08e"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/public/common-dex-observer-ownership-final3.jsonl",
+      "sha256": "9ac86afe51cf77fc88fc9579979e8ac9eaeb3569d1b5ff318f859a4c94dae557"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/public/common-dex-observer-final-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

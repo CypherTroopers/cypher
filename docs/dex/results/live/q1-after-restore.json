@@ -1,0 +1,743 @@
+{
+  "observed_utc": "2026-09-23T15:18:21Z",
+  "host": "vmi3365213",
+  "uid": 0,
+  "workspace": "/root/work/cypher-FHS-D-ExchangeCore",
+  "boot_id": "fcd0df19-9bbb-4d09-a76d-fedbbed8541a",
+  "clock_ticks": 100,
+  "apps": [
+    {
+      "name": "cypher0",
+      "pm_id": 0,
+      "pid": 1230220,
+      "pm2": {
+        "status": "online",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher0.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 1
+      },
+      "processes": [
+        {
+          "pid": 1230220,
+          "ppid": 1215117,
+          "start_ticks": 45471558,
+          "comm": "cypher-linux-am",
+          "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+          "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+          "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+          "flags": {
+            "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+            "--rnetport": "7102",
+            "--syncmode": "full",
+            "--nat": "extip:13.140.169.170",
+            "--port": "6000",
+            "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb0",
+            "--networkid": "10101919",
+            "--gcmode": "archive"
+          },
+          "memory": {
+            "VmLck": "0 kB",
+            "VmHWM": "1733876 kB",
+            "VmRSS": "1733876 kB",
+            "VmSwap": "0 kB",
+            "Threads": "23"
+          },
+          "cpu_user_ticks": 3441,
+          "cpu_system_ticks": 2935,
+          "dag_mappings": [],
+          "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb0",
+          "ipc": "/root/work/cypher-FHS-D-ExchangeCore/chaindb0/cypher.ipc",
+          "rpc": {
+            "chain_id": "0x9a249f",
+            "peer_count": "0x7",
+            "mining": true,
+            "miner_status": "I'm leader.is Running.",
+            "coinbase": "0x3555d2c2af8ff75009f7dbfcf7de7ed80f68588d",
+            "syncing": false,
+            "genesis": {
+              "number": "0x0",
+              "hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+              "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "stateRoot": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6aaf4c30",
+              "keyHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "latest": {
+              "number": "0xdb7",
+              "hash": "0xbbe63a16815b24848c592fb1ff72faa231f4f4343b24bb3b16a0ee3da79c5c20",
+              "parentHash": "0xbfa1bfcb7c00be864715051561bf14f46de854bbe2c2f565c8ec8ac22f5f81ed",
+              "stateRoot": "0x7726006c10c5758b5ac78469fb964f4d4400e0140344f9af275e8245e21c3e34",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6ab3ebcd",
+              "keyHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            },
+            "key": {
+              "hash": "0x5b18c786d9cd01b58ffeb9c18d839b6eabfc09e303a3d96a442db8e4ae9c55e4",
+              "keyBlockNumber": 505,
+              "parentHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cypher1",
+      "pm_id": 1,
+      "pid": 1230221,
+      "pm2": {
+        "status": "online",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher1.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 1
+      },
+      "processes": [
+        {
+          "pid": 1230221,
+          "ppid": 1215117,
+          "start_ticks": 45471559,
+          "comm": "cypher-linux-am",
+          "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+          "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+          "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+          "flags": {
+            "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+            "--rnetport": "7104",
+            "--syncmode": "full",
+            "--nat": "extip:13.140.169.170",
+            "--port": "6001",
+            "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb1",
+            "--networkid": "10101919",
+            "--gcmode": "archive"
+          },
+          "memory": {
+            "VmLck": "0 kB",
+            "VmHWM": "1708192 kB",
+            "VmRSS": "1708192 kB",
+            "VmSwap": "0 kB",
+            "Threads": "23"
+          },
+          "cpu_user_ticks": 4036,
+          "cpu_system_ticks": 3019,
+          "dag_mappings": [],
+          "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb1",
+          "ipc": "/root/work/cypher-FHS-D-ExchangeCore/chaindb1/cypher.ipc",
+          "rpc": {
+            "chain_id": "0x9a249f",
+            "peer_count": "0x7",
+            "mining": true,
+            "miner_status": "I'm committee member.is Running.",
+            "coinbase": "0x60746b20d36500f3353163226ad62bf7e92e1f3c",
+            "syncing": false,
+            "genesis": {
+              "number": "0x0",
+              "hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+              "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "stateRoot": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6aaf4c30",
+              "keyHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "latest": {
+              "number": "0xdb7",
+              "hash": "0xbbe63a16815b24848c592fb1ff72faa231f4f4343b24bb3b16a0ee3da79c5c20",
+              "parentHash": "0xbfa1bfcb7c00be864715051561bf14f46de854bbe2c2f565c8ec8ac22f5f81ed",
+              "stateRoot": "0x7726006c10c5758b5ac78469fb964f4d4400e0140344f9af275e8245e21c3e34",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6ab3ebcd",
+              "keyHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            },
+            "key": {
+              "hash": "0x5b18c786d9cd01b58ffeb9c18d839b6eabfc09e303a3d96a442db8e4ae9c55e4",
+              "keyBlockNumber": 505,
+              "parentHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cypher2",
+      "pm_id": 2,
+      "pid": 1230223,
+      "pm2": {
+        "status": "online",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher2.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 1
+      },
+      "processes": [
+        {
+          "pid": 1230223,
+          "ppid": 1215117,
+          "start_ticks": 45471562,
+          "comm": "cypher-linux-am",
+          "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+          "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+          "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+          "flags": {
+            "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+            "--rnetport": "7106",
+            "--syncmode": "full",
+            "--nat": "extip:13.140.169.170",
+            "--port": "6002",
+            "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb2",
+            "--networkid": "10101919",
+            "--gcmode": "archive"
+          },
+          "memory": {
+            "VmLck": "0 kB",
+            "VmHWM": "1736852 kB",
+            "VmRSS": "1736852 kB",
+            "VmSwap": "0 kB",
+            "Threads": "23"
+          },
+          "cpu_user_ticks": 3503,
+          "cpu_system_ticks": 2782,
+          "dag_mappings": [],
+          "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb2",
+          "ipc": "/root/work/cypher-FHS-D-ExchangeCore/chaindb2/cypher.ipc",
+          "rpc": {
+            "chain_id": "0x9a249f",
+            "peer_count": "0x7",
+            "mining": true,
+            "miner_status": "I'm committee member.is Running.",
+            "coinbase": "0x01cbcb9b60e73f0244ea1debbee0fd1b8bb11b31",
+            "syncing": false,
+            "genesis": {
+              "number": "0x0",
+              "hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+              "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "stateRoot": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6aaf4c30",
+              "keyHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "latest": {
+              "number": "0xdb7",
+              "hash": "0xbbe63a16815b24848c592fb1ff72faa231f4f4343b24bb3b16a0ee3da79c5c20",
+              "parentHash": "0xbfa1bfcb7c00be864715051561bf14f46de854bbe2c2f565c8ec8ac22f5f81ed",
+              "stateRoot": "0x7726006c10c5758b5ac78469fb964f4d4400e0140344f9af275e8245e21c3e34",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6ab3ebcd",
+              "keyHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            },
+            "key": {
+              "hash": "0x5b18c786d9cd01b58ffeb9c18d839b6eabfc09e303a3d96a442db8e4ae9c55e4",
+              "keyBlockNumber": 505,
+              "parentHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cypher3",
+      "pm_id": 3,
+      "pid": 1230222,
+      "pm2": {
+        "status": "online",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher3.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 1
+      },
+      "processes": [
+        {
+          "pid": 1230222,
+          "ppid": 1215117,
+          "start_ticks": 45471561,
+          "comm": "cypher-linux-am",
+          "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+          "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+          "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+          "flags": {
+            "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+            "--rnetport": "7108",
+            "--syncmode": "full",
+            "--nat": "extip:13.140.169.170",
+            "--port": "6003",
+            "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb3",
+            "--networkid": "10101919",
+            "--gcmode": "archive"
+          },
+          "memory": {
+            "VmLck": "0 kB",
+            "VmHWM": "1711996 kB",
+            "VmRSS": "1711996 kB",
+            "VmSwap": "0 kB",
+            "Threads": "23"
+          },
+          "cpu_user_ticks": 3478,
+          "cpu_system_ticks": 2657,
+          "dag_mappings": [],
+          "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb3",
+          "ipc": "/root/work/cypher-FHS-D-ExchangeCore/chaindb3/cypher.ipc",
+          "rpc": {
+            "chain_id": "0x9a249f",
+            "peer_count": "0x7",
+            "mining": true,
+            "miner_status": "I'm committee member.is Running.",
+            "coinbase": "0x4b91661f2659a62cb1a0ee54f6540c283d448a86",
+            "syncing": false,
+            "genesis": {
+              "number": "0x0",
+              "hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+              "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "stateRoot": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6aaf4c30",
+              "keyHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "latest": {
+              "number": "0xdb7",
+              "hash": "0xbbe63a16815b24848c592fb1ff72faa231f4f4343b24bb3b16a0ee3da79c5c20",
+              "parentHash": "0xbfa1bfcb7c00be864715051561bf14f46de854bbe2c2f565c8ec8ac22f5f81ed",
+              "stateRoot": "0x7726006c10c5758b5ac78469fb964f4d4400e0140344f9af275e8245e21c3e34",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6ab3ebcd",
+              "keyHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            },
+            "key": {
+              "hash": "0x5b18c786d9cd01b58ffeb9c18d839b6eabfc09e303a3d96a442db8e4ae9c55e4",
+              "keyBlockNumber": 505,
+              "parentHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cypher4",
+      "pm_id": 4,
+      "pid": 1230224,
+      "pm2": {
+        "status": "online",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher4.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 1
+      },
+      "processes": [
+        {
+          "pid": 1230224,
+          "ppid": 1215117,
+          "start_ticks": 45471563,
+          "comm": "cypher-linux-am",
+          "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+          "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+          "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+          "flags": {
+            "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+            "--rnetport": "7110",
+            "--syncmode": "full",
+            "--nat": "extip:13.140.169.170",
+            "--port": "6004",
+            "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb4",
+            "--networkid": "10101919",
+            "--gcmode": "archive"
+          },
+          "memory": {
+            "VmLck": "0 kB",
+            "VmHWM": "1739796 kB",
+            "VmRSS": "1739796 kB",
+            "VmSwap": "0 kB",
+            "Threads": "22"
+          },
+          "cpu_user_ticks": 3359,
+          "cpu_system_ticks": 3042,
+          "dag_mappings": [],
+          "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb4",
+          "ipc": "/root/work/cypher-FHS-D-ExchangeCore/chaindb4/cypher.ipc",
+          "rpc": {
+            "chain_id": "0x9a249f",
+            "peer_count": "0x7",
+            "mining": true,
+            "miner_status": "I'm committee member.is Running.",
+            "coinbase": "0x9c01a453daf5c36951301ea26c1605ce7489b186",
+            "syncing": false,
+            "genesis": {
+              "number": "0x0",
+              "hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+              "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "stateRoot": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6aaf4c30",
+              "keyHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "latest": {
+              "number": "0xdb7",
+              "hash": "0xbbe63a16815b24848c592fb1ff72faa231f4f4343b24bb3b16a0ee3da79c5c20",
+              "parentHash": "0xbfa1bfcb7c00be864715051561bf14f46de854bbe2c2f565c8ec8ac22f5f81ed",
+              "stateRoot": "0x7726006c10c5758b5ac78469fb964f4d4400e0140344f9af275e8245e21c3e34",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6ab3ebcd",
+              "keyHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            },
+            "key": {
+              "hash": "0x5b18c786d9cd01b58ffeb9c18d839b6eabfc09e303a3d96a442db8e4ae9c55e4",
+              "keyBlockNumber": 505,
+              "parentHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cypher5",
+      "pm_id": 5,
+      "pid": 1230225,
+      "pm2": {
+        "status": "online",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher5.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 1
+      },
+      "processes": [
+        {
+          "pid": 1230225,
+          "ppid": 1215117,
+          "start_ticks": 45471564,
+          "comm": "cypher-linux-am",
+          "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+          "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+          "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+          "flags": {
+            "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+            "--rnetport": "7112",
+            "--syncmode": "full",
+            "--nat": "extip:13.140.169.170",
+            "--port": "6005",
+            "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb5",
+            "--networkid": "10101919",
+            "--gcmode": "archive"
+          },
+          "memory": {
+            "VmLck": "0 kB",
+            "VmHWM": "1700752 kB",
+            "VmRSS": "1700752 kB",
+            "VmSwap": "0 kB",
+            "Threads": "25"
+          },
+          "cpu_user_ticks": 3326,
+          "cpu_system_ticks": 2867,
+          "dag_mappings": [],
+          "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb5",
+          "ipc": "/root/work/cypher-FHS-D-ExchangeCore/chaindb5/cypher.ipc",
+          "rpc": {
+            "chain_id": "0x9a249f",
+            "peer_count": "0x8",
+            "mining": true,
+            "miner_status": "I'm committee member.is Running.",
+            "coinbase": "0xf1cf67fd1669ddf1df76fd887b2f6da0d11b2cd9",
+            "syncing": false,
+            "genesis": {
+              "number": "0x0",
+              "hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+              "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "stateRoot": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6aaf4c30",
+              "keyHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "latest": {
+              "number": "0xdb7",
+              "hash": "0xbbe63a16815b24848c592fb1ff72faa231f4f4343b24bb3b16a0ee3da79c5c20",
+              "parentHash": "0xbfa1bfcb7c00be864715051561bf14f46de854bbe2c2f565c8ec8ac22f5f81ed",
+              "stateRoot": "0x7726006c10c5758b5ac78469fb964f4d4400e0140344f9af275e8245e21c3e34",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6ab3ebcd",
+              "keyHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            },
+            "key": {
+              "hash": "0x5b18c786d9cd01b58ffeb9c18d839b6eabfc09e303a3d96a442db8e4ae9c55e4",
+              "keyBlockNumber": 505,
+              "parentHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cypher6",
+      "pm_id": 6,
+      "pid": 1230226,
+      "pm2": {
+        "status": "online",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher6.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 1
+      },
+      "processes": [
+        {
+          "pid": 1230226,
+          "ppid": 1215117,
+          "start_ticks": 45471566,
+          "comm": "cypher-linux-am",
+          "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+          "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+          "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+          "flags": {
+            "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+            "--rnetport": "7114",
+            "--syncmode": "full",
+            "--nat": "extip:13.140.169.170",
+            "--port": "6006",
+            "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb6",
+            "--networkid": "10101919",
+            "--gcmode": "archive"
+          },
+          "memory": {
+            "VmLck": "0 kB",
+            "VmHWM": "1759112 kB",
+            "VmRSS": "1759112 kB",
+            "VmSwap": "0 kB",
+            "Threads": "20"
+          },
+          "cpu_user_ticks": 3459,
+          "cpu_system_ticks": 2762,
+          "dag_mappings": [],
+          "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb6",
+          "ipc": "/root/work/cypher-FHS-D-ExchangeCore/chaindb6/cypher.ipc",
+          "rpc": {
+            "chain_id": "0x9a249f",
+            "peer_count": "0x7",
+            "mining": true,
+            "miner_status": "I'm committee member.is Running.",
+            "coinbase": "0x3abb765b281d2ef60aac35bc85b62692f89c7ee3",
+            "syncing": false,
+            "genesis": {
+              "number": "0x0",
+              "hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+              "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "stateRoot": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6aaf4c30",
+              "keyHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "latest": {
+              "number": "0xdb7",
+              "hash": "0xbbe63a16815b24848c592fb1ff72faa231f4f4343b24bb3b16a0ee3da79c5c20",
+              "parentHash": "0xbfa1bfcb7c00be864715051561bf14f46de854bbe2c2f565c8ec8ac22f5f81ed",
+              "stateRoot": "0x7726006c10c5758b5ac78469fb964f4d4400e0140344f9af275e8245e21c3e34",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6ab3ebcd",
+              "keyHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            },
+            "key": {
+              "hash": "0x5b18c786d9cd01b58ffeb9c18d839b6eabfc09e303a3d96a442db8e4ae9c55e4",
+              "keyBlockNumber": 505,
+              "parentHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cyphermine",
+      "pm_id": 7,
+      "pid": 1230232,
+      "pm2": {
+        "status": "online",
+        "pm_exec_path": "/root/work/cypher-FHS-D-ExchangeCore/start-cyphermine.sh",
+        "pm_cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+        "exec_interpreter": "bash",
+        "exec_mode": "fork_mode",
+        "autorestart": true,
+        "kill_timeout": 30000,
+        "restart_delay": 2000,
+        "watch": false,
+        "restart_time": 2
+      },
+      "processes": [
+        {
+          "pid": 1230232,
+          "ppid": 1215117,
+          "start_ticks": 45471567,
+          "comm": "cypher-linux-am",
+          "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+          "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+          "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+          "flags": {
+            "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+            "--rnetport": "7155",
+            "--syncmode": "full",
+            "--nat": "extip:13.140.169.170",
+            "--port": "6099",
+            "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindbmine",
+            "--networkid": "10101919",
+            "--gcmode": "archive",
+            "--ws": true,
+            "--ws.addr": "127.0.0.1",
+            "--ws.port": "8434",
+            "--http": true,
+            "--http.addr": "127.0.0.1",
+            "--http.port": "8999"
+          },
+          "memory": {
+            "VmLck": "0 kB",
+            "VmHWM": "1296688 kB",
+            "VmRSS": "1296688 kB",
+            "VmSwap": "0 kB",
+            "Threads": "19"
+          },
+          "cpu_user_ticks": 3424,
+          "cpu_system_ticks": 1664,
+          "dag_mappings": [],
+          "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindbmine",
+          "ipc": "/root/work/cypher-FHS-D-ExchangeCore/chaindbmine/cypher.ipc",
+          "rpc": {
+            "chain_id": "0x9a249f",
+            "peer_count": "0x7",
+            "mining": false,
+            "miner_status": "I'm common node.Stopped.",
+            "coinbase": "0xeb8c07def4c5a2541de730b027376e1068aa861a",
+            "syncing": false,
+            "genesis": {
+              "number": "0x0",
+              "hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+              "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "stateRoot": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6aaf4c30",
+              "keyHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "latest": {
+              "number": "0xdb7",
+              "hash": "0xbbe63a16815b24848c592fb1ff72faa231f4f4343b24bb3b16a0ee3da79c5c20",
+              "parentHash": "0xbfa1bfcb7c00be864715051561bf14f46de854bbe2c2f565c8ec8ac22f5f81ed",
+              "stateRoot": "0x7726006c10c5758b5ac78469fb964f4d4400e0140344f9af275e8245e21c3e34",
+              "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+              "gasUsed": "0x0",
+              "gasLimit": "0x100000000000",
+              "timestamp": "0x6ab3ebcd",
+              "keyHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            },
+            "key": {
+              "hash": "0x5b18c786d9cd01b58ffeb9c18d839b6eabfc09e303a3d96a442db8e4ae9c55e4",
+              "keyBlockNumber": 505,
+              "parentHash": "0xa6515c5f134d7457d1633dc2930b412bb4a94ef73eb5de338b250d7f6eb050b3"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "other_pm2_app_count": 0,
+  "meminfo": "MemTotal:       49325352 kB\nMemFree:        16296488 kB\nMemAvailable:   16392096 kB\nBuffers:           16796 kB\nCached:         18704656 kB\nSwapCached:            0 kB\nActive:         29502156 kB\nInactive:        2807348 kB\nActive(anon):   29293116 kB\nInactive(anon):  2571348 kB\nActive(file):     209040 kB\nInactive(file):   236000 kB\nUnevictable:       13208 kB\nMlocked:            9208 kB\nSwapTotal:             0 kB\nSwapFree:              0 kB\nZswap:                 0 kB\nZswapped:              0 kB\nDirty:              1276 kB\nWriteback:             0 kB\nAnonPages:      13601284 kB\nMapped:           358336 kB\nShmem:          18269504 kB\nKReclaimable:     230428 kB\nSlab:             492952 kB\nSReclaimable:     230428 kB\nSUnreclaim:       262524 kB\nKernelStack:        9856 kB\nPageTables:        44820 kB\nSecPageTables:         0 kB\nNFS_Unstable:          0 kB\nBounce:                0 kB\nWritebackTmp:          0 kB\nCommitLimit:    24662676 kB\nCommitted_AS:   38331552 kB\nVmallocTotal:   34359738367 kB\nVmallocUsed:       22228 kB\nVmallocChunk:          0 kB\nPercpu:             7536 kB\nHardwareCorrupted:     0 kB\nAnonHugePages:      6144 kB\nShmemHugePages:        0 kB\nShmemPmdMapped:        0 kB\nFileHugePages:         0 kB\nFilePmdMapped:         0 kB\nCmaTotal:              0 kB\nCmaFree:         2324516 kB\nUnaccepted:            0 kB\nBalloon:               0 kB\nHugePages_Total:       0\nHugePages_Free:        0\nHugePages_Rsvd:        0\nHugePages_Surp:        0\nHugepagesize:       2048 kB\nHugetlb:               0 kB\nDirectMap4k:      235368 kB\nDirectMap2M:    13395968 kB\nDirectMap1G:    38797312 kB\n",
+  "observer_memlock": [
+    8388608,
+    8388608
+  ],
+  "loadavg": [
+    8.6953125,
+    7.05029296875,
+    5.79736328125
+  ],
+  "deployed": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher",
+      "sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "bytes": 54185808
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "bytes": 54185808
+    }
+  ],
+  "disk": {
+    "/root/work/cypher-FHS-D-ExchangeCore": {
+      "free_bytes": 392825704448
+    },
+    "/tmp": {
+      "free_bytes": 6562369536
+    }
+  }
+}

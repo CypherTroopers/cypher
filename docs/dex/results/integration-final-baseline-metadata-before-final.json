@@ -1,0 +1,111 @@
+{
+  "started_utc": "2026-09-22T06:43:56.078605+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "run_root": "/tmp/common-dex-baseline-final.7_jf8e11",
+  "source_files": 1162,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "source_policy": "no source or test expectation changes; all observed FAILs retained",
+  "process_selection": "^(TestFHSProcessRecovery.*|TestFHSRewardHTTPToTxQUICToFinality|TestDEXAndCLXProcessIsolation)$",
+  "process_tests": [
+    "TestFHSProcessRecoverySplitTC",
+    "TestFHSProcessRecoveryOfflineProposer",
+    "TestFHSProcessRecoveryQCBeforePrepare",
+    "TestFHSProcessRecoveryRewardFinality",
+    "TestFHSRewardHTTPToTxQUICToFinality",
+    "TestDEXAndCLXProcessIsolation"
+  ],
+  "scope": "no production-size PoW nonce work; existing NewTester tests retain their original small fixture",
+  "finished_utc": "2026-09-22T06:54:11.860211+00:00",
+  "source_changes": [
+    {
+      "path": "cmd/cypher/dex_finance_test.go",
+      "before": "0a3e5fc3a1474a316b8c2c3736f1f476ceaa3d1dd4df2ff2be8fba1dd8694da8",
+      "after": "34e69de88f375d7314038355ad161428f5da61988be3e93612e60b51bf9b6304"
+    },
+    {
+      "path": "dex/devnet/integration_test.go",
+      "before": "e7bf96dede274a1e2cefa04d2259acd0ea750dd3f2b9c005ebb3f541ecd3218c",
+      "after": "ed9aa22f631e789c1ecc426099618d13361aba5d231e5bfa8e6b5a41cda8dc81"
+    },
+    {
+      "path": "reconfig/dex_financial_network_test.go",
+      "before": "c18e90c1c1f1b67a67d0076304941149094c024523adf8d32b1753e2133e39c5",
+      "after": "ca6bea6eeba9c284c5b2e26e113e7c9c3fee51bbbf17246eb3d0bc5d51c5a615"
+    },
+    {
+      "path": "reconfig/dex_financial_reward_test.go",
+      "before": null,
+      "after": "89af7ec02009526402f896254870ac3167c8947db586c0164caa372d1fba03fb"
+    },
+    {
+      "path": "reconfig/dex_native_sync_process_test.go",
+      "before": "0237e3e9aa13c4f2a0db494d3a26949822ad4dbecd033686a30b60ff3c520ffd",
+      "after": "20eed1e096ad4bbd8ae48e662a38eea290c0a2b6482fcda863fce17ace2ea776"
+    }
+  ],
+  "approval_retry": "First baseline launch did not execute because automatic approval review timed out; one identical retry was approved and executed. Process launch succeeded on first attempt.",
+  "build": {
+    "exit_code": 0,
+    "failed_tests": [],
+    "skipped_tests": [],
+    "package_results": []
+  },
+  "baseline": {
+    "exit_code": 1,
+    "failed_tests": [
+      "TestCreation",
+      "TestValidation"
+    ],
+    "skipped_tests": [
+      "TestCommonRPCRewardCrashChild",
+      "TestDEXRoleSidecarHelper",
+      "TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset",
+      "TestDEXIsolationProcessHelper",
+      "TestDEXAndCLXProcessIsolation",
+      "TestFHSProcessRecoveryQCBeforePrepare",
+      "TestFHSProcessRecoverySplitTC",
+      "TestFHSProcessRecoveryOfflineProposer",
+      "TestFHSRecoveryProcessHelper",
+      "TestFHSProcessRecoveryRewardFinality",
+      "TestFHSNativeFinancialTwoDomainSockets",
+      "TestFHSNativeFinancialOrdinaryCLI",
+      "TestDEXNativeFinancialChild",
+      "TestFHSNativeDepositRPCFinalityEvidence",
+      "TestNativeDEXOffCommonProcess",
+      "TestFHSRewardHTTPToTxQUICToFinality"
+    ],
+    "package_results": [
+      "ok  \tgithub.com/cypherium/cypher/commonrpcreward\t0.012s",
+      "ok  \tgithub.com/cypherium/cypher/params\t0.051s",
+      "ok  \tgithub.com/cypherium/cypher/consensus/colossusX\t0.074s",
+      "ok  \tgithub.com/cypherium/cypher/miner\t0.040s",
+      "ok  \tgithub.com/cypherium/cypher/eth\t19.531s",
+      "ok  \tgithub.com/cypherium/cypher/reconfig\t60.846s",
+      "ok  \tgithub.com/cypherium/cypher/reconfig/bftview\t0.039s",
+      "ok  \tgithub.com/cypherium/cypher/reconfig/hotstuff\t6.169s",
+      "ok  \tgithub.com/cypherium/cypher/core\t11.324s",
+      "ok  \tgithub.com/cypherium/cypher/core/asm\t0.042s",
+      "ok  \tgithub.com/cypherium/cypher/core/bloombits\t8.238s",
+      "FAIL\tgithub.com/cypherium/cypher/core/forkid\t0.035s",
+      "ok  \tgithub.com/cypherium/cypher/core/rawdb\t0.031s",
+      "ok  \tgithub.com/cypherium/cypher/core/state\t1.924s",
+      "ok  \tgithub.com/cypherium/cypher/core/state/snapshot\t3.785s",
+      "ok  \tgithub.com/cypherium/cypher/core/types\t6.973s",
+      "ok  \tgithub.com/cypherium/cypher/core/vm\t0.067s",
+      "?   \tgithub.com/cypherium/cypher/core/vm/runtime\t[no test files]"
+    ]
+  },
+  "process": {
+    "exit_code": 0,
+    "failed_tests": [],
+    "skipped_tests": [],
+    "package_results": [
+      "ok  \tgithub.com/cypherium/cypher/reconfig\t196.672s"
+    ]
+  },
+  "baseline_failure_classification": "Only core/forkid TestCreation and TestValidation failed, matching previously documented legacy failures. Expectations and source unchanged during baseline run; optional process/socket/CLI/role/native opt-ins intentionally disabled.",
+  "source_note": "New CLI restart reproduction changes cmd/cypher/dex_finance_test.go after CLI build and outside selected baseline/process packages. Parent concurrent financial test changes are separately listed. Empty-journal production fix was not yet applied at this snapshot."
+}

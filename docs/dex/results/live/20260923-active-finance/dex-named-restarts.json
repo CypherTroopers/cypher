@@ -1,0 +1,51 @@
+[
+  {
+    "utc": 1790190091.467689,
+    "action": "restart",
+    "app": "cyphermine",
+    "exit_code": 0,
+    "reason": "prepared missing private participant parent; no DB reset"
+  },
+  {
+    "utc": 1790190092.1319063,
+    "action": "restart",
+    "app": "cypherdex1",
+    "exit_code": 0,
+    "reason": "prepared missing private participant parent; no DB reset"
+  },
+  {
+    "utc": 1790190092.602551,
+    "action": "restart",
+    "app": "cypherdex2",
+    "exit_code": 0,
+    "reason": "prepared missing private participant parent; no DB reset"
+  },
+  {
+    "utc": 1790190093.2352846,
+    "action": "restart",
+    "app": "cypherdex3",
+    "exit_code": 0,
+    "reason": "prepared missing private participant parent; no DB reset"
+  },
+  {
+    "utc": 1790190093.8063374,
+    "action": "restart",
+    "app": "cypherdex4",
+    "exit_code": 0,
+    "reason": "prepared missing private participant parent; no DB reset"
+  },
+  {
+    "utc": 1790190094.9819083,
+    "action": "restart",
+    "app": "cypherdex5",
+    "exit_code": 0,
+    "reason": "prepared missing private participant parent; no DB reset"
+  },
+  {
+    "utc": 1790190095.6780882,
+    "action": "restart",
+    "app": "cypherdex6",
+    "exit_code": 0,
+    "reason": "prepared missing private participant parent; no DB reset"
+  }
+]

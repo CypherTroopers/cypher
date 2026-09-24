@@ -1,0 +1,39 @@
+{
+  "mode": "native-cost",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=2m",
+    "-json",
+    "./dex/settlement",
+    "-run",
+    "^TestNativeRollingFullCalldataCostAndLateProofFailure$"
+  ],
+  "start_utc": "2026-09-23T11:32:01.695287+00:00",
+  "end_utc": "2026-09-23T11:32:05.891313+00:00",
+  "test_exit": 0,
+  "source_before_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_equal": true,
+  "raw_sha256": "b0f54b7ebd1825e9196adf5709ad577c605ba12cdf2c7d4e8e949efdf1b6ebb6",
+  "counts": {
+    "pass_test_events": 3,
+    "pass_top_level": 1,
+    "pass_packages": 1
+  },
+  "details": {
+    "fail": [],
+    "skip": []
+  },
+  "network": "no network fixture",
+  "scope": "Local isolated devnet regression. Counts are not a safety proof.",
+  "run_exit": 0
+}

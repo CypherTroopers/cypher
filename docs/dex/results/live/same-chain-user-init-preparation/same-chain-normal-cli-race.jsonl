@@ -1,0 +1,8 @@
+{"Time":"2026-09-23T20:13:20.035249734+02:00","Action":"start","Package":"github.com/cypherium/cypher/cmd/cypher"}
+{"Time":"2026-09-23T20:13:20.106935866+02:00","Action":"run","Package":"github.com/cypherium/cypher/cmd/cypher","Test":"TestDEXLiveCandidateRelayCLIValidation"}
+{"Time":"2026-09-23T20:13:20.107122994+02:00","Action":"output","Package":"github.com/cypherium/cypher/cmd/cypher","Test":"TestDEXLiveCandidateRelayCLIValidation","Output":"=== RUN   TestDEXLiveCandidateRelayCLIValidation\n","OutputType":"frame"}
+{"Time":"2026-09-23T20:13:20.189778597+02:00","Action":"output","Package":"github.com/cypherium/cypher/cmd/cypher","Test":"TestDEXLiveCandidateRelayCLIValidation","Output":"--- PASS: TestDEXLiveCandidateRelayCLIValidation (0.08s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T20:13:20.189839571+02:00","Action":"pass","Package":"github.com/cypherium/cypher/cmd/cypher","Test":"TestDEXLiveCandidateRelayCLIValidation","Elapsed":0.08}
+{"Time":"2026-09-23T20:13:20.189916714+02:00","Action":"output","Package":"github.com/cypherium/cypher/cmd/cypher","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-23T20:13:21.19921618+02:00","Action":"output","Package":"github.com/cypherium/cypher/cmd/cypher","Output":"ok  \tgithub.com/cypherium/cypher/cmd/cypher\t1.162s\n"}
+{"Time":"2026-09-23T20:13:21.199288825+02:00","Action":"pass","Package":"github.com/cypherium/cypher/cmd/cypher","Elapsed":1.164}

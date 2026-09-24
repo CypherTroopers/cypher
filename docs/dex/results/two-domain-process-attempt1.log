@@ -1,0 +1,6 @@
+=== RUN   TestDEXAndCLXProcessIsolation
+    dex_isolation_process_test.go:465: process devnet requires a separate network namespace (unshare -n, loopback enabled)
+--- FAIL: TestDEXAndCLXProcessIsolation (0.00s)
+FAIL
+FAIL	github.com/cypherium/cypher/reconfig	0.037s
+FAIL

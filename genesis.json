@@ -1,21 +1,45 @@
 {
+  "alloc": {
+    "380Ae1a000eb03930bb2F64d4A75dfE54b3e7e18": {
+      "balance": "100000000000000000000000000"
+    },
+    "7d7cC2AbEB8256d11E9Ec63C13782E77300c7e30": {
+      "balance": "100000000000000000000000000"
+    },
+    "2Dcf9cd01CF19022183E7CC788D21A03407dfee5": {
+      "balance": "100000000000000000000000000"
+    },
+    "21833C75dE48FaBC8fBDC4CD7002e6C96d98CB99": {
+      "balance": "100000000000000000000000000"
+    },
+    "3555d2c2af8ff75009f7dbfcf7de7ed80f68588d": {
+      "balance": "100000000000000000000000000"
+    },
+    "60746b20d36500f3353163226ad62bf7e92e1f3c": {
+      "balance": "100000000000000000000000000"
+    },
+    "01cbcb9b60e73f0244ea1debbee0fd1b8bb11b31": {
+      "balance": "100000000000000000000000000"
+    },
+    "4b91661f2659a62cb1a0ee54f6540c283d448a86": {
+      "balance": "100000000000000000000000000"
+    },
+    "9c01a453daf5c36951301ea26c1605ce7489b186": {
+      "balance": "100000000000000000000000000"
+    },
+    "f1cf67fd1669ddf1df76fd887b2f6da0d11b2cd9": {
+      "balance": "100000000000000000000000000"
+    },
+    "3abb765b281d2ef60aac35bc85b62692f89c7ee3": {
+      "balance": "100000000000000000000000000"
+    },
+    "eb8c07def4c5a2541de730b027376e1068aa861a": {
+      "balance": "100000000000000000000000000"
+    }
+  },
+  "baseFeePerGas": "0x2faf0800",
   "config": {
-    "chainId": 10101919,
-    "homesteadBlock": 0,
-    "eip150Block": 0,
-    "eip155Block": 0,
-    "eip158Block": 0,
-    "byzantiumBlock": 0,
-    "constantinopleBlock": 0,
-    "petersburgBlock": 0,
-    "istanbulBlock": 0,
     "berlinBlock": 0,
-    "londonBlock": 0,
-    "shanghaiTime": 0,
-    "cancunTime": 0,
-    "pragueTime": 0,
-    "osakaTime": 0,
-
     "blobSchedule": {
       "cancun": {
         "target": 192,
@@ -33,16 +57,96 @@
         "baseFeeUpdateFraction": 160246912
       }
     },
-
+    "byzantiumBlock": 0,
+    "cancunTime": 0,
+    "chainId": 10101919,
     "colossusX": {},
-
-    "fixedCommittee": true,
-    "fixedLeader": false,
-    "fairHotstuff": true,
-    "rnettransport": "quic",
-    "rnetfallbacktransport": "none",
-    "fairHotstuffSeed": "0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627",
-
+    "committee": {
+      "0": {
+        "address": "13.140.169.170:7102",
+        "coinbase": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+        "public": "3912d236e16d97b70244a6c3f0693c8ff855bca8771b521bb3af948f0c682a15a8ca1a90265f7db37dacd2621e389c1cc8526eca9efd31a66e6ce6debdb1560b"
+      },
+      "1": {
+        "address": "13.140.169.170:7104",
+        "coinbase": "60746B20D36500f3353163226Ad62bF7E92e1F3C",
+        "public": "e79f42fc639c2bb3fb489641d4643aed30f3095948283362a11f35074175081632e251cad8e718bbbfa22ce58720968a092ae9d326df681ccc9efb1828ab380a"
+      },
+      "2": {
+        "address": "13.140.169.170:7106",
+        "coinbase": "01cBCB9b60E73f0244eA1deBbEe0FD1b8BB11B31",
+        "public": "c5248a6fdfe58a4b442293c84dcb2d08d2d6c6cdaf2cd42732723ca238b0c2198f9e047170bef68af6b690327b6bbab8af258eba20db0679ddc897f0ea108388"
+      },
+      "3": {
+        "address": "13.140.169.170:7108",
+        "coinbase": "4b91661f2659A62cB1A0EE54f6540c283D448a86",
+        "public": "e1f5313fea570fbef1013335a91afc186a35aca491a08bcaedc3566c18beac1f969ee7303de787b2861c5bc4a874b2887bd027f2562b9807bac7c171098a308b"
+      },
+      "4": {
+        "address": "13.140.169.170:7110",
+        "coinbase": "9c01A453dAF5c36951301ea26C1605cE7489B186",
+        "public": "48a16b06d3771797644cce84d1bb0bfba9525ff6b19fab48cb29f7b108a8971a35630a7c0355fe69f95263faaf48a4ed515028b20e7bc6b306448cddeb3ea61e"
+      },
+      "5": {
+        "address": "13.140.169.170:7112",
+        "coinbase": "f1cf67fD1669dDf1dF76FD887B2f6da0d11b2cd9",
+        "public": "0ea28b3fad0c3ef992e8d51fa2e0b158c0ba1101629e4516f999f66c672222257d3d4b0e20024fdcc1d09100c2d040c006cd32dbb7ccb416c7dc5a03af9c8d02"
+      },
+      "6": {
+        "address": "13.140.169.170:7114",
+        "coinbase": "3abb765B281d2Ef60aAC35Bc85B62692f89c7Ee3",
+        "public": "bbf99348f4f81b296d0fceeb3d7f1b25ad4d3f50eb44baffa80a290d1a56a0177394455ce8d8a69452b453e5de5568df58f68077d57e7ff54df0aa4ade7d0e14"
+      }
+    },
+    "constantinopleBlock": 0,
+    "dexDevnet": {
+      "version": 5,
+      "activationBlock": 1,
+      "dexId": "0xae8b961b841fb8b270e87639314f2881c8ac3c6154480eb96b44296ad9c1be62",
+      "genesisSeed": "0x60c5073008f1931a732ac6039a0b900bb086735ca3344fdc56d2cd47027c5e55",
+      "custody": "0x0000000000000000000000000000000000de0001",
+      "committee": [
+        {
+          "address": "127.0.0.1:18000",
+          "coinbase": "0x15fa779515F8632e656653c7B49DCeE40Eed5cdb",
+          "public": "f855aa6f8d57cb0f1518cf901d1354ab636402dd6348edd435dec6a283f15111ac5aa1ed785adecb74bd14701b8bcd9aa1997f236a25db15e384689bb27b808f"
+        },
+        {
+          "address": "127.0.0.1:18001",
+          "coinbase": "0x7efAea9ED8bB7Ea77518D8EF5144f2e6fB99eFCE",
+          "public": "a01081f61993ba7755b594e4a2f2f90b1ac4444e420a32f3244a5c8b564fb50e40811eaf364e9834770160d575030bc7ee291a54b9d716339e9c7ac03120e307"
+        },
+        {
+          "address": "127.0.0.1:18002",
+          "coinbase": "0xb3512C385C484839910C1aDA1d7B9988d9207C01",
+          "public": "87eb84095c290a4a6ca5dcfc71808c70d3fc609ab832492c476b45b606259b208b49e0648ef8f14a69ccb968f5e368eacb99d55d24607b5ca087bb8877fb8a19"
+        },
+        {
+          "address": "127.0.0.1:18003",
+          "coinbase": "0x422a852B41b8F22aB179e2AEc31888Cae9B1a7eE",
+          "public": "50a8fcbe72f8b87f09caaf0405e060d96121c69897085be14de0fa98a6db72133a98254647a8a13e975755a051bf7837c2d2e65d6c2a9d4e8db85370fc1ea18a"
+        },
+        {
+          "address": "127.0.0.1:18004",
+          "coinbase": "0xd393641743c7C39D34bAfa6770ccD57F301ea92A",
+          "public": "c4668b08b9d01599f0e926deca7da13e2578d18c75bf1893e69dc6cfd5ebde2030e6ad3be5037c7ec57fb27654e467d2da3902a537ee7b1e8b92a8de74e29309"
+        },
+        {
+          "address": "127.0.0.1:18005",
+          "coinbase": "0x3427eB445a37F4D042b5Ff918e438F575C19E34F",
+          "public": "68cf08814decdefb193a6a07ecd960d63dc4d9342bde2d3ff788424489fb6c016401be52359d1b086dbafc3bb895ef735539ebe8a1d5eaddb3c7830208916c1a"
+        },
+        {
+          "address": "127.0.0.1:18006",
+          "coinbase": "0x47EC77eFA0c9E33DB23864DF6aFdEF84dA3482de",
+          "public": "06a2b98d327deaa9d2af5e1aac262d5b260a9972c6ec5c1e955778bbb1a42320bbf140bf0a0ce37c806e0dab0c1a651e9c5d4297574cc52e931aadd190ccf417"
+        }
+      ],
+      "maxCheckpoints": 4096
+    },
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip158Block": 0,
     "evmParallel": {
       "maxTransactionsPerBlock": 1048576,
       "maxBlockBytes": 268435456,
@@ -60,120 +164,31 @@
       "maxOutputBytesPerTransaction": 1048576,
       "replayWindowBlocks": 512
     },
-
-    "committee": {
-      "0": {
-        "address": "13.140.169.170:7102",
-        "coinbase": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
-        "public": "3912d236e16d97b70244a6c3f0693c8ff855bca8771b521bb3af948f0c682a15a8ca1a90265f7db37dacd2621e389c1cc8526eca9efd31a66e6ce6debdb1560b"
-      },
-
-      "1": {
-        "address": "13.140.169.170:7104",
-        "coinbase": "60746B20D36500f3353163226Ad62bF7E92e1F3C",
-        "public": "e79f42fc639c2bb3fb489641d4643aed30f3095948283362a11f35074175081632e251cad8e718bbbfa22ce58720968a092ae9d326df681ccc9efb1828ab380a"
-      },
-
-      "2": {
-        "address": "13.140.169.170:7106",
-        "coinbase": "01cBCB9b60E73f0244eA1deBbEe0FD1b8BB11B31",
-        "public": "c5248a6fdfe58a4b442293c84dcb2d08d2d6c6cdaf2cd42732723ca238b0c2198f9e047170bef68af6b690327b6bbab8af258eba20db0679ddc897f0ea108388"
-      },
-
-      "3": {
-        "address": "13.140.169.170:7108",
-        "coinbase": "4b91661f2659A62cB1A0EE54f6540c283D448a86",
-        "public": "e1f5313fea570fbef1013335a91afc186a35aca491a08bcaedc3566c18beac1f969ee7303de787b2861c5bc4a874b2887bd027f2562b9807bac7c171098a308b"
-      },
-
-      "4": {
-        "address": "13.140.169.170:7110",
-        "coinbase": "9c01A453dAF5c36951301ea26C1605cE7489B186",
-        "public": "48a16b06d3771797644cce84d1bb0bfba9525ff6b19fab48cb29f7b108a8971a35630a7c0355fe69f95263faaf48a4ed515028b20e7bc6b306448cddeb3ea61e"
-      },
-
-      "5": {
-        "address": "13.140.169.170:7112",
-        "coinbase": "f1cf67fD1669dDf1dF76FD887B2f6da0d11b2cd9",
-        "public": "0ea28b3fad0c3ef992e8d51fa2e0b158c0ba1101629e4516f999f66c672222257d3d4b0e20024fdcc1d09100c2d040c006cd32dbb7ccb416c7dc5a03af9c8d02"
-      },
-
-      "6": {
-        "address": "13.140.169.170:7114",
-        "coinbase": "3abb765B281d2Ef60aAC35Bc85B62692f89c7Ee3",
-        "public": "bbf99348f4f81b296d0fceeb3d7f1b25ad4d3f50eb44baffa80a290d1a56a0177394455ce8d8a69452b453e5de5568df58f68077d57e7ff54df0aa4ade7d0e14"
-      }
-    },
-
+    "fairHotstuff": true,
+    "fairHotstuffSeed": "0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627",
+    "fixedCommittee": true,
+    "fixedLeader": false,
+    "homesteadBlock": 0,
+    "istanbulBlock": 0,
+    "londonBlock": 0,
     "maxCodeSizeConfig": [
       {
         "block": 0,
         "size": 128
       }
     ],
-
+    "osakaTime": 0,
+    "petersburgBlock": 0,
+    "pragueTime": 0,
+    "rnetfallbacktransport": "none",
+    "rnettransport": "quic",
+    "shanghaiTime": 0,
     "txnSizeLimit": 128
   },
-
-"alloc": {
-  "380Ae1a000eb03930bb2F64d4A75dfE54b3e7e18": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "7d7cC2AbEB8256d11E9Ec63C13782E77300c7e30": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "2Dcf9cd01CF19022183E7CC788D21A03407dfee5": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "21833C75dE48FaBC8fBDC4CD7002e6C96d98CB99": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "3555d2c2af8ff75009f7dbfcf7de7ed80f68588d": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "60746b20d36500f3353163226ad62bf7e92e1f3c": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "01cbcb9b60e73f0244ea1debbee0fd1b8bb11b31": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "4b91661f2659a62cb1a0ee54f6540c283d448a86": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "9c01a453daf5c36951301ea26c1605ce7489b186": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "f1cf67fd1669ddf1df76fd887b2f6da0d11b2cd9": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "3abb765b281d2ef60aac35bc85b62692f89c7ee3": {
-    "balance": "100000000000000000000000000"
-  },
-
-  "eb8c07def4c5a2541de730b027376e1068aa861a": {
-    "balance": "100000000000000000000000000"
-  }
-},
-
   "difficulty": "0x44C",
   "gasLimit": "0x100000000000",
-  "baseFeePerGas": "0x2faf0800",
-
+  "mixHash": "0x7dc4eb91dc1d3bd56b6b2ea918e995033819c4a7fa4af2bcbe8baf62b5e883cc",
   "nonce": "0x0",
-
-  "mixHash": "0x73a979fba0ba41027e06626a2d94ac71e55476a36244bcda9acb2288d8510257",
-
   "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-
   "timestamp": "0x6AAF4C30"
 }

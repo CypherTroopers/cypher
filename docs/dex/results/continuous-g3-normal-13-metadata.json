@@ -1,0 +1,162 @@
+{
+  "status": "FAIL",
+  "duration_seconds": 1077.63,
+  "reason": "At attempted ordinary action105, DEX reports persistence failed/signing disabled:2MiB WAL byte budget exhausted. Largest retained signed action bodies and extra records exhausted bytes before128-record count. No timeout/cap/proof changes. Root cause and safe retention review pending.",
+  "artifact": "/tmp/common-dex-check.FoI8mIGV",
+  "source_manifest_sha256": "59b0ac84536503682915fb0a1d5c75de60dedf7c70fd74ab9f65eb7bc729823d",
+  "source_during_run_bytes": 0,
+  "raw_sha256": "d7bc5016188b3077105b48d0922ea448b31bda21421cd69c2d3b0c89e5d08c83",
+  "binary_sha256": {
+    "cypher": "a4a567ce9dcfc5d39fbc1f7576bd7ff225fd9416eb2ca0324a8ebd9d263d3562",
+    "reconfig.test": "e5c7c346aa86d57e7eae9d53aa8975543179ec0665d6a62b4d81fc932aa96c83"
+  },
+  "test_exit": "1",
+  "run_exit": "1",
+  "public_failure_archive": "/tmp/continuous-public-failure-4143780618",
+  "public_periodic_watch": "/tmp/common-dex-continuous.uye5vgqi/trial13-public-watch",
+  "last_successful_certified_action": 104,
+  "failed_attempted_action": 105,
+  "last_settlement_snapshot": {
+    "CLXHeight": 446,
+    "CLXAccepted": 78,
+    "CustodyAtoms": "330000000000000000000"
+  },
+  "cold_absence": {
+    "startCLX": 164,
+    "intermediate_advance_checkCLX": 230,
+    "pre_restart_verified_sourceCLX": 247,
+    "minimum_absent_heights": 83
+  },
+  "normal_key_wait": {
+    "carriers": 4,
+    "seconds": 368.504710221,
+    "source_before": 236,
+    "source_after": 247
+  },
+  "third_native_deposits": [
+    233,
+    236
+  ],
+  "fourth_native_deposits": [
+    276,
+    279
+  ],
+  "flat": {
+    "finalized": 58,
+    "anchor": 262,
+    "version": 2,
+    "inbox": 8
+  },
+  "cycle3": {
+    "finalized_anchor_assertion_height": 79,
+    "anchor": 308,
+    "version": 2,
+    "inbox": 10
+  },
+  "outage": {
+    "CLXHeight": 361,
+    "accepted_before": 60,
+    "DEX_finalized_during_outage": 78,
+    "unsettled": 18,
+    "accepted_after_reopen": 78,
+    "CLXHeight_after_settlement": 444
+  },
+  "public_relay_final_snapshots": [
+    {
+      "relay": "relay-0",
+      "source_height": 480,
+      "source_version": 2,
+      "DEXSequence": 104,
+      "CLXSequence": 83,
+      "counts": {
+        "complete": 146,
+        "queued": 8,
+        "submitted": 1,
+        "waiting": 10
+      }
+    },
+    {
+      "relay": "relay-1",
+      "source_height": 478,
+      "source_version": 2,
+      "DEXSequence": 102,
+      "CLXSequence": 82,
+      "counts": {
+        "complete": 146,
+        "queued": 7,
+        "submitted": 1,
+        "waiting": 10
+      }
+    }
+  ],
+  "WAL_snapshot_sizes": [
+    {
+      "path": "common-0/dex/fhs/state.json",
+      "bytes": 1927081,
+      "sha256": "e9e622c69a4c43463e0e0d884c4ce6b24a4f16c90d2e752f6d0e1eeae76b20bd",
+      "records": 110,
+      "finalized_records": 104,
+      "record_bytes": 1741309
+    },
+    {
+      "path": "common-1/dex/fhs/state.json",
+      "bytes": 2031731,
+      "sha256": "5b0eecc118660410b2970c7b2925c01af9136ca609c6e65d155f688c3fa26a21",
+      "records": 111,
+      "finalized_records": 104,
+      "record_bytes": 1845963
+    },
+    {
+      "path": "common-2/dex/fhs/state.json",
+      "bytes": 2080398,
+      "sha256": "744b9a49f0fb6f8e3cde82343b41eeff0965c68327c416ccb972786fe9b0db85",
+      "records": 112,
+      "finalized_records": 104,
+      "record_bytes": 1894626
+    },
+    {
+      "path": "common-3/dex/fhs/state.json",
+      "bytes": 1927076,
+      "sha256": "dcfdbdff55c1b3b28bae97ca9f13376140e21cad330b46ff28cd2a4c6f6c39d5",
+      "records": 110,
+      "finalized_records": 104,
+      "record_bytes": 1741309
+    },
+    {
+      "path": "common-4/dex/fhs/state.json",
+      "bytes": 2078433,
+      "sha256": "e849101da1eda498af7b32106bc973298317c0eeae7c9298b1b3ed25cbfa50f9",
+      "records": 111,
+      "finalized_records": 103,
+      "record_bytes": 1894234
+    },
+    {
+      "path": "common-5/dex/fhs/state.json",
+      "bytes": 1927077,
+      "sha256": "62387cc852783e0bea6cddca61ed782f41a7fcd92d391f8eb9cae982cfa46b49",
+      "records": 110,
+      "finalized_records": 104,
+      "record_bytes": 1741309
+    },
+    {
+      "path": "common-6/dex/fhs/state.json",
+      "bytes": 1927164,
+      "sha256": "c3d7b52289eecf115e51e351a950dd9e1e0bd4abc5f9058fb084c21fcc0f4be3",
+      "records": 110,
+      "finalized_records": 104,
+      "record_bytes": 1741309
+    }
+  ],
+  "WAL_limit_bytes": 2097152,
+  "record_limit": 128,
+  "raw_ledger_claim_lines": 34,
+  "last_raw_ledger_paid_claims_atoms": "15000000000000000000",
+  "ledger_observation_scope": "Ledger was last observed atCLX446 beforecycle4; cleanup relay status may reflectlater canonical states. Do not infer final native custody from DEX reservations or stale ledger.",
+  "remaining_NOT_RUN": [
+    "period10 close108 and descendants",
+    "CLX settlement ofalllaterfinancialstates",
+    "72claims and295 finalnativeledger",
+    "new financial/audit phase split network validation",
+    "late DEX OFF Common sync/restart"
+  ]
+}

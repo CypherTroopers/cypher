@@ -1,0 +1,421 @@
+{
+  "scope": "read-only source finality catchup; no CLX/DEX action injection",
+  "target": 1089,
+  "steps": [
+    {
+      "height": 30,
+      "proof_available": true
+    },
+    {
+      "height": 60,
+      "proof_available": true
+    },
+    {
+      "height": 90,
+      "proof_available": true
+    },
+    {
+      "height": 120,
+      "proof_available": true
+    },
+    {
+      "height": 150,
+      "proof_available": true
+    },
+    {
+      "height": 180,
+      "proof_available": true
+    },
+    {
+      "height": 210,
+      "proof_available": true
+    },
+    {
+      "height": 240,
+      "proof_available": true
+    },
+    {
+      "height": 270,
+      "proof_available": true
+    },
+    {
+      "height": 300,
+      "proof_available": true
+    },
+    {
+      "height": 330,
+      "proof_available": true
+    },
+    {
+      "height": 360,
+      "proof_available": true
+    },
+    {
+      "height": 390,
+      "proof_available": true
+    },
+    {
+      "height": 420,
+      "proof_available": true
+    },
+    {
+      "height": 450,
+      "proof_available": true
+    },
+    {
+      "height": 480,
+      "proof_available": true
+    },
+    {
+      "height": 510,
+      "proof_available": true
+    },
+    {
+      "height": 540,
+      "proof_available": true
+    },
+    {
+      "height": 570,
+      "proof_available": true
+    },
+    {
+      "height": 600,
+      "proof_available": true
+    },
+    {
+      "height": 630,
+      "proof_available": true
+    },
+    {
+      "height": 660,
+      "proof_available": true
+    },
+    {
+      "height": 690,
+      "proof_available": true
+    },
+    {
+      "height": 720,
+      "proof_available": true
+    },
+    {
+      "height": 750,
+      "proof_available": true
+    },
+    {
+      "height": 780,
+      "proof_available": true
+    },
+    {
+      "height": 810,
+      "proof_available": true
+    },
+    {
+      "height": 840,
+      "proof_available": true
+    },
+    {
+      "height": 870,
+      "proof_available": true
+    },
+    {
+      "height": 900,
+      "proof_available": true
+    },
+    {
+      "height": 930,
+      "proof_available": true
+    },
+    {
+      "height": 960,
+      "proof_available": true
+    },
+    {
+      "height": 990,
+      "proof_available": true
+    },
+    {
+      "height": 1020,
+      "proof_available": true
+    },
+    {
+      "height": 1050,
+      "proof_available": true
+    },
+    {
+      "height": 1082,
+      "proof_available": true
+    },
+    {
+      "height": 1092,
+      "proof_available": true
+    }
+  ],
+  "anchor": {
+    "Version": 2,
+    "ChainID": 10101919,
+    "Genesis": [
+      164,
+      166,
+      31,
+      169,
+      82,
+      80,
+      156,
+      222,
+      121,
+      193,
+      78,
+      21,
+      39,
+      2,
+      161,
+      215,
+      222,
+      161,
+      204,
+      3,
+      32,
+      180,
+      85,
+      37,
+      102,
+      178,
+      239,
+      185,
+      228,
+      165,
+      117,
+      222
+    ],
+    "DEXID": [
+      67,
+      59,
+      113,
+      44,
+      72,
+      80,
+      103,
+      16,
+      166,
+      17,
+      212,
+      142,
+      53,
+      31,
+      248,
+      39,
+      208,
+      14,
+      100,
+      148,
+      31,
+      255,
+      156,
+      8,
+      88,
+      23,
+      194,
+      102,
+      88,
+      90,
+      244,
+      151
+    ],
+    "Custody": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      222,
+      0,
+      1
+    ],
+    "Height": 1092,
+    "BlockHash": [
+      47,
+      229,
+      202,
+      56,
+      71,
+      160,
+      212,
+      18,
+      188,
+      49,
+      97,
+      77,
+      198,
+      115,
+      239,
+      239,
+      124,
+      125,
+      122,
+      20,
+      199,
+      164,
+      72,
+      119,
+      7,
+      23,
+      14,
+      48,
+      29,
+      49,
+      24,
+      190
+    ],
+    "StateRoot": [
+      35,
+      52,
+      55,
+      100,
+      70,
+      144,
+      243,
+      217,
+      36,
+      198,
+      244,
+      146,
+      114,
+      231,
+      176,
+      185,
+      143,
+      57,
+      53,
+      75,
+      237,
+      106,
+      254,
+      188,
+      106,
+      122,
+      153,
+      176,
+      242,
+      42,
+      185,
+      209
+    ],
+    "SourceKeyHash": [
+      171,
+      160,
+      55,
+      118,
+      251,
+      250,
+      33,
+      77,
+      161,
+      18,
+      113,
+      14,
+      242,
+      109,
+      76,
+      81,
+      247,
+      250,
+      241,
+      19,
+      94,
+      186,
+      180,
+      213,
+      170,
+      69,
+      59,
+      132,
+      246,
+      196,
+      253,
+      122
+    ],
+    "SourceCommittee": [
+      223,
+      244,
+      177,
+      56,
+      62,
+      135,
+      91,
+      80,
+      177,
+      56,
+      82,
+      202,
+      37,
+      39,
+      66,
+      151,
+      52,
+      217,
+      141,
+      90,
+      160,
+      178,
+      75,
+      150,
+      86,
+      170,
+      249,
+      15,
+      126,
+      108,
+      6,
+      241
+    ],
+    "SourceEpoch": 1,
+    "InboxCount": 4,
+    "ActivationRoot": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  }
+}

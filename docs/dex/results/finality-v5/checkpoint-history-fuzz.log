@@ -1,0 +1,8 @@
+fuzz: elapsed: 0s, gathering baseline coverage: 0/52 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 52/52 completed, now fuzzing with 2 workers
+fuzz: elapsed: 3s, execs: 27803 (9266/sec), new interesting: 3 (total: 55)
+fuzz: elapsed: 6s, execs: 50139 (7445/sec), new interesting: 6 (total: 58)
+fuzz: elapsed: 9s, execs: 57678 (2512/sec), new interesting: 7 (total: 59)
+fuzz: elapsed: 11s, execs: 57678 (0/sec), new interesting: 7 (total: 59)
+PASS
+ok  	github.com/cypherium/cypher/dex/checkpoint	11.189s

@@ -1,0 +1,78 @@
+ok  	github.com/cypherium/cypher/commonrpcreward	0.009s
+ok  	github.com/cypherium/cypher/params	0.073s
+ok  	github.com/cypherium/cypher/consensus/colossusX	0.083s
+ok  	github.com/cypherium/cypher/miner	0.051s
+ok  	github.com/cypherium/cypher/eth	28.007s
+ok  	github.com/cypherium/cypher/reconfig	97.272s
+ok  	github.com/cypherium/cypher/reconfig/bftview	0.051s
+ok  	github.com/cypherium/cypher/reconfig/hotstuff	6.854s
+ok  	github.com/cypherium/cypher/core	19.272s
+ok  	github.com/cypherium/cypher/core/asm	0.084s
+ok  	github.com/cypherium/cypher/core/bloombits	16.445s
+--- FAIL: TestCreation (0.00s)
+    forkid_test.go:124: test 0, case 0: fork ID mismatch: have {5705bf8f 0}, want {fc64ec04 118c30}
+    forkid_test.go:124: test 0, case 1: fork ID mismatch: have {5705bf8f 0}, want {fc64ec04 118c30}
+    forkid_test.go:124: test 0, case 2: fork ID mismatch: have {5705bf8f 0}, want {97c2c34c 1d4c00}
+    forkid_test.go:124: test 0, case 3: fork ID mismatch: have {5705bf8f 0}, want {97c2c34c 1d4c00}
+    forkid_test.go:124: test 0, case 4: fork ID mismatch: have {5705bf8f 0}, want {91d1f948 259518}
+    forkid_test.go:124: test 0, case 5: fork ID mismatch: have {5705bf8f 0}, want {91d1f948 259518}
+    forkid_test.go:124: test 0, case 6: fork ID mismatch: have {5705bf8f 0}, want {7a64da13 28d138}
+    forkid_test.go:124: test 0, case 7: fork ID mismatch: have {5705bf8f 0}, want {7a64da13 28d138}
+    forkid_test.go:124: test 0, case 8: fork ID mismatch: have {5705bf8f 0}, want {3edd5b10 42ae50}
+    forkid_test.go:124: test 0, case 9: fork ID mismatch: have {5705bf8f 0}, want {3edd5b10 42ae50}
+    forkid_test.go:124: test 0, case 10: fork ID mismatch: have {5705bf8f 0}, want {a00bc324 6f1580}
+    forkid_test.go:124: test 0, case 11: fork ID mismatch: have {5705bf8f 0}, want {a00bc324 6f1580}
+    forkid_test.go:124: test 0, case 12: fork ID mismatch: have {5705bf8f 0}, want {668db0af 8a61c8}
+    forkid_test.go:124: test 0, case 13: fork ID mismatch: have {5705bf8f 0}, want {668db0af 8a61c8}
+    forkid_test.go:124: test 0, case 14: fork ID mismatch: have {5705bf8f 0}, want {879d6e30 8c6180}
+    forkid_test.go:124: test 0, case 15: fork ID mismatch: have {5705bf8f 0}, want {879d6e30 8c6180}
+    forkid_test.go:124: test 0, case 16: fork ID mismatch: have {5705bf8f 0}, want {e029e991 0}
+    forkid_test.go:124: test 0, case 17: fork ID mismatch: have {5705bf8f 0}, want {e029e991 0}
+    forkid_test.go:124: test 1, case 0: fork ID mismatch: have {04e4bab1 0}, want {30c7ddbc a}
+    forkid_test.go:124: test 1, case 1: fork ID mismatch: have {04e4bab1 0}, want {30c7ddbc a}
+    forkid_test.go:124: test 1, case 2: fork ID mismatch: have {04e4bab1 0}, want {63760190 19f0a0}
+    forkid_test.go:124: test 1, case 3: fork ID mismatch: have {04e4bab1 0}, want {63760190 19f0a0}
+    forkid_test.go:124: test 1, case 4: fork ID mismatch: have {04e4bab1 0}, want {3ea159c7 408b70}
+    forkid_test.go:124: test 1, case 5: fork ID mismatch: have {04e4bab1 0}, want {3ea159c7 408b70}
+    forkid_test.go:124: test 1, case 6: fork ID mismatch: have {04e4bab1 0}, want {97b544f3 4b5e82}
+    forkid_test.go:124: test 1, case 7: fork ID mismatch: have {04e4bab1 0}, want {97b544f3 4b5e82}
+    forkid_test.go:124: test 1, case 8: fork ID mismatch: have {04e4bab1 0}, want {d6e2149b 62f756}
+    forkid_test.go:124: test 1, case 9: fork ID mismatch: have {04e4bab1 0}, want {d6e2149b 62f756}
+    forkid_test.go:124: test 1, case 10: fork ID mismatch: have {04e4bab1 0}, want {4bc66396 6c993d}
+    forkid_test.go:124: test 1, case 11: fork ID mismatch: have {04e4bab1 0}, want {4bc66396 6c993d}
+    forkid_test.go:124: test 1, case 12: fork ID mismatch: have {04e4bab1 0}, want {6727ef90 0}
+    forkid_test.go:124: test 1, case 13: fork ID mismatch: have {04e4bab1 0}, want {6727ef90 0}
+    forkid_test.go:124: test 2, case 3: fork ID mismatch: have {cb3a64bb 67}, want {cb3a64bb fcc25}
+    forkid_test.go:124: test 2, case 4: fork ID mismatch: have {8cf6af52 0}, want {cb3a64bb fcc25}
+    forkid_test.go:124: test 2, case 5: fork ID mismatch: have {8cf6af52 0}, want {8d748b57 37db77}
+    forkid_test.go:124: test 2, case 6: fork ID mismatch: have {8cf6af52 0}, want {8d748b57 37db77}
+    forkid_test.go:124: test 2, case 7: fork ID mismatch: have {8cf6af52 0}, want {e49cab14 41efd2}
+    forkid_test.go:124: test 2, case 8: fork ID mismatch: have {8cf6af52 0}, want {e49cab14 41efd2}
+    forkid_test.go:124: test 2, case 9: fork ID mismatch: have {8cf6af52 0}, want {afec6b27 52efd1}
+    forkid_test.go:124: test 2, case 10: fork ID mismatch: have {8cf6af52 0}, want {afec6b27 52efd1}
+    forkid_test.go:124: test 2, case 11: fork ID mismatch: have {8cf6af52 0}, want {cbdb8838 0}
+    forkid_test.go:124: test 2, case 12: fork ID mismatch: have {8cf6af52 0}, want {cbdb8838 0}
+    forkid_test.go:124: test 3, case 0: fork ID mismatch: have {a3f5ab08 9c}, want {a3f5ab08 17d433}
+    forkid_test.go:124: test 3, case 1: fork ID mismatch: have {780af1cb 0}, want {a3f5ab08 17d433}
+    forkid_test.go:124: test 3, case 2: fork ID mismatch: have {780af1cb 0}, want {c25efa5c 0}
+    forkid_test.go:124: test 3, case 3: fork ID mismatch: have {780af1cb 0}, want {c25efa5c 0}
+--- FAIL: TestValidation (0.00s)
+    forkid_test.go:203: test 0: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 1: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 2: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 3: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 4: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 5: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 6: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 7: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 8: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 9: validation error mismatch: have local incompatible or needs update, want remote needs update
+FAIL
+FAIL	github.com/cypherium/cypher/core/forkid	0.033s
+ok  	github.com/cypherium/cypher/core/rawdb	0.031s
+ok  	github.com/cypherium/cypher/core/state	1.942s
+ok  	github.com/cypherium/cypher/core/state/snapshot	4.931s
+ok  	github.com/cypherium/cypher/core/types	12.301s
+ok  	github.com/cypherium/cypher/core/vm	0.175s
+?   	github.com/cypherium/cypher/core/vm/runtime	[no test files]
+FAIL

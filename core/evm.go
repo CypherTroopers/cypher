@@ -48,6 +48,40 @@ func NewEVMContext(msg Message, header *types.Header, chain ChainContext, author
 // NewEVMContextWithConfig creates a new context for use in the EVM and passes
 // chain config into modern fork helpers such as BLOBBASEFEE.
 func NewEVMContextWithConfig(config *params.ChainConfig, msg Message, header *types.Header, chain ChainContext, author *common.Address) vm.Context {
+	var nativeGenesis *types.Header
+	var nativeGenesisKeyHash common.Hash
+	var nativeGenesisConfig *params.ChainConfig
+	var nativeGenesisForks *params.ModernForkConfig
+	var nativeContextError error
+	if config != nil && (config.DEXDevnet != nil || (msg.To() != nil && *msg.To() == params.DEXSettlementAddress)) {
+		nativeGenesisConfig = config
+		nativeGenesisForks = config.ModernForkConfig()
+		if reader, ok := chain.(interface {
+			DEXGenesisConfig() (*params.ChainConfig, *params.ModernForkConfig)
+		}); ok {
+			nativeGenesisConfig, nativeGenesisForks = reader.DEXGenesisConfig()
+			nativeGenesisConfig.SetModernForkConfig(nativeGenesisForks)
+			defer nativeGenesisConfig.SetModernForkConfig(nil)
+		}
+		if reader, ok := chain.(interface{ DEXGenesisKeyHash() common.Hash }); ok {
+			nativeGenesisKeyHash = reader.DEXGenesisKeyHash()
+		}
+		if reader, ok := chain.(interface{ GetHeaderByNumber(uint64) *types.Header }); ok {
+			if h := reader.GetHeaderByNumber(0); h != nil {
+				nativeGenesis = types.CopyHeader(h)
+			}
+		}
+		if nativeGenesis == nil && chain != nil && header.Number != nil && header.Number.Uint64() == 1 {
+			if h := chain.GetHeader(header.ParentHash, 0); h != nil {
+				nativeGenesis = types.CopyHeader(h)
+			}
+		}
+		var commitment common.Hash
+		if nativeGenesis != nil {
+			commitment = nativeGenesis.MixDigest
+		}
+		nativeContextError = authenticateDEXGenesisConfig(config, nativeGenesisConfig, commitment)
+	}
 	// If we don't have an explicit author (i.e. not mining), extract from the header
 	var beneficiary common.Address
 	if author == nil {
@@ -81,20 +115,26 @@ func NewEVMContextWithConfig(config *params.ChainConfig, msg Message, header *ty
 		}
 	}
 	return vm.Context{
-		CanTransfer: CanTransfer,
-		Transfer:    Transfer,
-		GetHash:     GetHashFn(header, chain),
-		Origin:      msg.From(),
-		Coinbase:    beneficiary,
-		BlockNumber: new(big.Int).Set(header.Number),
-		Time:        new(big.Int).SetUint64(header.Time),
-		Difficulty:  new(big.Int).Set(header.Difficulty),
-		Random:      random,
-		BaseFee:     baseFee,
-		BlobBaseFee: blobBaseFee,
-		BlobHashes:  blobHashes,
-		GasLimit:    header.GasLimit,
-		GasPrice:    gasPrice,
+		CanTransfer:          CanTransfer,
+		Transfer:             Transfer,
+		GetHash:              GetHashFn(header, chain),
+		Origin:               msg.From(),
+		Coinbase:             beneficiary,
+		BlockNumber:          new(big.Int).Set(header.Number),
+		Time:                 new(big.Int).SetUint64(header.Time),
+		Difficulty:           new(big.Int).Set(header.Difficulty),
+		Random:               random,
+		BaseFee:              baseFee,
+		BlobBaseFee:          blobBaseFee,
+		BlobHashes:           blobHashes,
+		GasLimit:             header.GasLimit,
+		GasPrice:             gasPrice,
+		NativeGenesis:        nativeGenesis,
+		NativeGenesisKeyHash: nativeGenesisKeyHash,
+		NativeGenesisConfig:  nativeGenesisConfig,
+		NativeGenesisForks:   nativeGenesisForks,
+		NativeContextError:   nativeContextError,
+		TransactionNonce:     msg.Nonce(),
 	}
 }
 

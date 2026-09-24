@@ -1,0 +1,321 @@
+{
+  "processes": [
+    {
+      "pid": 1230220,
+      "ppid": 1215117,
+      "start_ticks": 45471558,
+      "comm": "cypher-linux-am",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "flags": {
+        "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+        "--rnetport": "7102",
+        "--syncmode": "full",
+        "--nat": "extip:13.140.169.170",
+        "--port": "6000",
+        "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb0",
+        "--networkid": "10101919",
+        "--gcmode": "archive"
+      },
+      "memory": {
+        "VmLck": "0 kB",
+        "VmHWM": "1732916 kB",
+        "VmRSS": "953996 kB",
+        "VmSwap": "0 kB",
+        "Threads": "23"
+      },
+      "cpu_user_ticks": 19354,
+      "cpu_system_ticks": 21035,
+      "dag_mappings": []
+    },
+    {
+      "pid": 1230221,
+      "ppid": 1215117,
+      "start_ticks": 45471559,
+      "comm": "cypher-linux-am",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "flags": {
+        "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+        "--rnetport": "7104",
+        "--syncmode": "full",
+        "--nat": "extip:13.140.169.170",
+        "--port": "6001",
+        "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb1",
+        "--networkid": "10101919",
+        "--gcmode": "archive"
+      },
+      "memory": {
+        "VmLck": "0 kB",
+        "VmHWM": "1739176 kB",
+        "VmRSS": "942848 kB",
+        "VmSwap": "0 kB",
+        "Threads": "23"
+      },
+      "cpu_user_ticks": 20591,
+      "cpu_system_ticks": 20781,
+      "dag_mappings": []
+    },
+    {
+      "pid": 1230222,
+      "ppid": 1215117,
+      "start_ticks": 45471561,
+      "comm": "cypher-linux-am",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "flags": {
+        "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+        "--rnetport": "7108",
+        "--syncmode": "full",
+        "--nat": "extip:13.140.169.170",
+        "--port": "6003",
+        "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb3",
+        "--networkid": "10101919",
+        "--gcmode": "archive"
+      },
+      "memory": {
+        "VmLck": "0 kB",
+        "VmHWM": "1713304 kB",
+        "VmRSS": "1015916 kB",
+        "VmSwap": "0 kB",
+        "Threads": "23"
+      },
+      "cpu_user_ticks": 20088,
+      "cpu_system_ticks": 20787,
+      "dag_mappings": []
+    },
+    {
+      "pid": 1230223,
+      "ppid": 1215117,
+      "start_ticks": 45471562,
+      "comm": "cypher-linux-am",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "flags": {
+        "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+        "--rnetport": "7106",
+        "--syncmode": "full",
+        "--nat": "extip:13.140.169.170",
+        "--port": "6002",
+        "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb2",
+        "--networkid": "10101919",
+        "--gcmode": "archive"
+      },
+      "memory": {
+        "VmLck": "0 kB",
+        "VmHWM": "1738048 kB",
+        "VmRSS": "936588 kB",
+        "VmSwap": "0 kB",
+        "Threads": "23"
+      },
+      "cpu_user_ticks": 18633,
+      "cpu_system_ticks": 20084,
+      "dag_mappings": []
+    },
+    {
+      "pid": 1230224,
+      "ppid": 1215117,
+      "start_ticks": 45471563,
+      "comm": "cypher-linux-am",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "flags": {
+        "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+        "--rnetport": "7110",
+        "--syncmode": "full",
+        "--nat": "extip:13.140.169.170",
+        "--port": "6004",
+        "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb4",
+        "--networkid": "10101919",
+        "--gcmode": "archive"
+      },
+      "memory": {
+        "VmLck": "0 kB",
+        "VmHWM": "1740976 kB",
+        "VmRSS": "979064 kB",
+        "VmSwap": "0 kB",
+        "Threads": "22"
+      },
+      "cpu_user_ticks": 18523,
+      "cpu_system_ticks": 20862,
+      "dag_mappings": []
+    },
+    {
+      "pid": 1230225,
+      "ppid": 1215117,
+      "start_ticks": 45471564,
+      "comm": "cypher-linux-am",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "flags": {
+        "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+        "--rnetport": "7112",
+        "--syncmode": "full",
+        "--nat": "extip:13.140.169.170",
+        "--port": "6005",
+        "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb5",
+        "--networkid": "10101919",
+        "--gcmode": "archive"
+      },
+      "memory": {
+        "VmLck": "0 kB",
+        "VmHWM": "1702196 kB",
+        "VmRSS": "957044 kB",
+        "VmSwap": "0 kB",
+        "Threads": "25"
+      },
+      "cpu_user_ticks": 18246,
+      "cpu_system_ticks": 20924,
+      "dag_mappings": []
+    },
+    {
+      "pid": 1230226,
+      "ppid": 1215117,
+      "start_ticks": 45471566,
+      "comm": "cypher-linux-am",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "flags": {
+        "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+        "--rnetport": "7114",
+        "--syncmode": "full",
+        "--nat": "extip:13.140.169.170",
+        "--port": "6006",
+        "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb6",
+        "--networkid": "10101919",
+        "--gcmode": "archive"
+      },
+      "memory": {
+        "VmLck": "0 kB",
+        "VmHWM": "1760508 kB",
+        "VmRSS": "960312 kB",
+        "VmSwap": "0 kB",
+        "Threads": "20"
+      },
+      "cpu_user_ticks": 19313,
+      "cpu_system_ticks": 20446,
+      "dag_mappings": []
+    },
+    {
+      "pid": 1230232,
+      "ppid": 1215117,
+      "start_ticks": 45471567,
+      "comm": "cypher-linux-am",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "flags": {
+        "--config": "/root/work/cypher-FHS-D-ExchangeCore/static-nodes.toml",
+        "--rnetport": "7155",
+        "--syncmode": "full",
+        "--nat": "extip:13.140.169.170",
+        "--port": "6099",
+        "--datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindbmine",
+        "--networkid": "10101919",
+        "--gcmode": "archive",
+        "--ws": true,
+        "--ws.addr": "127.0.0.1",
+        "--ws.port": "8434",
+        "--http": true,
+        "--http.addr": "127.0.0.1",
+        "--http.port": "8999"
+      },
+      "memory": {
+        "VmLck": "0 kB",
+        "VmHWM": "1295756 kB",
+        "VmRSS": "904848 kB",
+        "VmSwap": "0 kB",
+        "Threads": "19"
+      },
+      "cpu_user_ticks": 12599,
+      "cpu_system_ticks": 14158,
+      "dag_mappings": []
+    }
+  ],
+  "cypher5_peers": [
+    {
+      "id": "155d8ed15e646fa23e68ed933b83f85e66fbfc6cbc349b9592d40c1fd425d20e",
+      "name": "Geth/v1.9.20-stable-70862a71(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+      "network": {
+        "localAddress": "13.140.169.170:6005",
+        "remoteAddress": "13.140.169.170:37398",
+        "inbound": true,
+        "trusted": false,
+        "static": false
+      }
+    },
+    {
+      "id": "16cf14011aee710feaafcd6baa652ec6145a6e2ea4dbf1d9b65d1679137749e4",
+      "name": "Geth/v1.9.20-stable-70862a71(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+      "network": {
+        "localAddress": "13.140.169.170:6005",
+        "remoteAddress": "13.140.169.170:37372",
+        "inbound": true,
+        "trusted": false,
+        "static": false
+      }
+    },
+    {
+      "id": "16d705509956e20c8ac91de61ba75b122228fd14287f1082ce8b9a6f9c122e53",
+      "name": "Geth/v1.9.20-stable-70862a71(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+      "network": {
+        "localAddress": "13.140.169.170:6005",
+        "remoteAddress": "13.140.169.170:37386",
+        "inbound": true,
+        "trusted": false,
+        "static": false
+      }
+    },
+    {
+      "id": "837b2148f0874fccca1e632e8b80173d6fa2631903058d850b904a8277550741",
+      "name": "Geth/v1.9.20-stable-70862a71(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+      "network": {
+        "localAddress": "13.140.169.170:35344",
+        "remoteAddress": "13.140.169.170:6006",
+        "inbound": false,
+        "trusted": false,
+        "static": true
+      }
+    },
+    {
+      "id": "95f74e6a3e8d9293976fdbe3722b487bd5480b31052048fcc8c5d749993adc04",
+      "name": "Geth/v1.9.20-stable-70862a71(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+      "network": {
+        "localAddress": "13.140.169.170:60416",
+        "remoteAddress": "13.140.169.170:6003",
+        "inbound": false,
+        "trusted": false,
+        "static": true
+      }
+    },
+    {
+      "id": "b650bcb287db128bc3f14b738a612efd4aec8019dc2afd86b001d1aaff52ee60",
+      "name": "Geth/v1.9.20-stable-70862a71(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+      "network": {
+        "localAddress": "13.140.169.170:55664",
+        "remoteAddress": "13.140.169.170:6004",
+        "inbound": false,
+        "trusted": false,
+        "static": true
+      }
+    },
+    {
+      "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+      "name": "Geth/v1.9.20-stable-70862a71(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+      "network": {
+        "localAddress": "13.140.169.170:6005",
+        "remoteAddress": "13.140.169.170:33364",
+        "inbound": true,
+        "trusted": false,
+        "static": false
+      }
+    }
+  ]
+}

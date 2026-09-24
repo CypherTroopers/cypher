@@ -1,0 +1,23 @@
+{
+  "utc": "2026-09-23T07:10:34.834723+00:00",
+  "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.43",
+  "go": "go version go1.27.1 linux/amd64",
+  "cpus_visible": 12,
+  "affinity_cpus": 12,
+  "memlock_bytes": [
+    8388608,
+    8388608
+  ],
+  "GOMAXPROCS_for_tests": 2,
+  "nice_for_root_go_tests": 10,
+  "GOPROXY": "off",
+  "module_mode": "readonly",
+  "cpu_models": [
+    "AMD EPYC Processor (with IBPB)"
+  ],
+  "memory": {
+    "MemTotal": "49325352 kB",
+    "MemAvailable": "16249780 kB",
+    "SwapTotal": "0 kB"
+  }
+}

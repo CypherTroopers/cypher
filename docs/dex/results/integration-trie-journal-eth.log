@@ -1,0 +1,621 @@
+=== RUN   TestReceiptEffectiveGasPriceForModernTransactionTypes
+--- PASS: TestReceiptEffectiveGasPriceForModernTransactionTypes (0.00s)
+=== RUN   TestRPCTransactionYParityForStandardTypedTransactions
+=== RUN   TestRPCTransactionYParityForStandardTypedTransactions/legacy
+=== RUN   TestRPCTransactionYParityForStandardTypedTransactions/access-list
+=== RUN   TestRPCTransactionYParityForStandardTypedTransactions/dynamic-fee
+=== RUN   TestRPCTransactionYParityForStandardTypedTransactions/blob
+=== RUN   TestRPCTransactionYParityForStandardTypedTransactions/set-code
+--- PASS: TestRPCTransactionYParityForStandardTypedTransactions (0.00s)
+    --- PASS: TestRPCTransactionYParityForStandardTypedTransactions/legacy (0.00s)
+    --- PASS: TestRPCTransactionYParityForStandardTypedTransactions/access-list (0.00s)
+    --- PASS: TestRPCTransactionYParityForStandardTypedTransactions/dynamic-fee (0.00s)
+    --- PASS: TestRPCTransactionYParityForStandardTypedTransactions/blob (0.00s)
+    --- PASS: TestRPCTransactionYParityForStandardTypedTransactions/set-code (0.00s)
+=== RUN   TestTransactionIngressLifecycleDrainsRPCBeforeTransport
+--- PASS: TestTransactionIngressLifecycleDrainsRPCBeforeTransport (0.00s)
+=== RUN   TestTransactionIngressLifecycleStopsExactlyOnce
+--- PASS: TestTransactionIngressLifecycleStopsExactlyOnce (0.00s)
+=== RUN   TestBlockBodiesMsgDecodesStoredSixFieldBody
+--- PASS: TestBlockBodiesMsgDecodesStoredSixFieldBody (0.00s)
+=== RUN   TestBlockBodiesMsgPreservesBlobSidecarsForBlockReconstruction
+=== RUN   TestBlockBodiesMsgPreservesBlobSidecarsForBlockReconstruction/v0
+=== RUN   TestBlockBodiesMsgPreservesBlobSidecarsForBlockReconstruction/v1
+--- PASS: TestBlockBodiesMsgPreservesBlobSidecarsForBlockReconstruction (4.30s)
+    --- PASS: TestBlockBodiesMsgPreservesBlobSidecarsForBlockReconstruction/v0 (3.80s)
+    --- PASS: TestBlockBodiesMsgPreservesBlobSidecarsForBlockReconstruction/v1 (0.50s)
+=== RUN   TestBlockscoutTraceExecution
+=== RUN   TestBlockscoutTraceExecution/legacy
+=== RUN   TestBlockscoutTraceExecution/dynamic
+=== RUN   TestBlockscoutTraceExecution/return
+=== RUN   TestBlockscoutTraceExecution/revert
+=== RUN   TestBlockscoutTraceExecution/custom-js
+--- PASS: TestBlockscoutTraceExecution (0.03s)
+    --- PASS: TestBlockscoutTraceExecution/legacy (0.01s)
+    --- PASS: TestBlockscoutTraceExecution/dynamic (0.01s)
+    --- PASS: TestBlockscoutTraceExecution/return (0.00s)
+    --- PASS: TestBlockscoutTraceExecution/revert (0.00s)
+    --- PASS: TestBlockscoutTraceExecution/custom-js (0.01s)
+=== RUN   TestBlockscoutTraceHashEnvelope
+--- PASS: TestBlockscoutTraceHashEnvelope (0.00s)
+=== RUN   TestForwardCommonRPCTransactionUsesNodeDurabilityContext
+--- PASS: TestForwardCommonRPCTransactionUsesNodeDurabilityContext (0.00s)
+=== RUN   TestForwardCommonRPCTransactionReportsQueueFailure
+--- PASS: TestForwardCommonRPCTransactionReportsQueueFailure (0.00s)
+=== RUN   TestCommonRPCRejectedUniqueSameNonceTransactionsDoNotRetainAdmissions
+--- PASS: TestCommonRPCRejectedUniqueSameNonceTransactionsDoNotRetainAdmissions (0.09s)
+=== RUN   TestCommonRPCSameHashConcurrentAcceptRejectNeverLeavesNakedPoolTx
+--- PASS: TestCommonRPCSameHashConcurrentAcceptRejectNeverLeavesNakedPoolTx (0.00s)
+=== RUN   TestCommonRPCSubmissionHashLeasesSerializeOnlyOverlaps
+--- PASS: TestCommonRPCSubmissionHashLeasesSerializeOnlyOverlaps (0.03s)
+=== RUN   TestCommonRPCAdmissionPoolAlignmentMismatchFailsBeforeMutation
+--- PASS: TestCommonRPCAdmissionPoolAlignmentMismatchFailsBeforeMutation (0.00s)
+=== RUN   TestCommonRPCAlreadyKnownAndOutboxFailureRetainAdmission
+--- PASS: TestCommonRPCAlreadyKnownAndOutboxFailureRetainAdmission (0.00s)
+=== RUN   TestTxQUICPacketAcceptsIndependentSignersWithOptionalFilter
+--- PASS: TestTxQUICPacketAcceptsIndependentSignersWithOptionalFilter (0.00s)
+=== RUN   TestTxQUICBridgeStartsBeforeWalletAndSignsAfterAccountCreation
+--- PASS: TestTxQUICBridgeStartsBeforeWalletAndSignsAfterAccountCreation (0.31s)
+=== RUN   TestCommonRPCNodeStartsBeforeAccountCreationAndPersistsIndependentAdmissions
+--- PASS: TestCommonRPCNodeStartsBeforeAccountCreationAndPersistsIndependentAdmissions (0.62s)
+=== RUN   TestCommonRPCRewardForcedCrashRecovery
+--- PASS: TestCommonRPCRewardForcedCrashRecovery (7.42s)
+=== RUN   TestCommonRPCRewardCrashChild
+    common_rpc_reward_crash_test.go:224: subprocess helper
+--- SKIP: TestCommonRPCRewardCrashChild (0.00s)
+=== RUN   TestCommonRPCRewardHTTPIPCChangeAndRestart
+--- PASS: TestCommonRPCRewardHTTPIPCChangeAndRestart (1.82s)
+=== RUN   TestCommonRPCRewardConcurrentIPCSnapshots
+=== RUN   TestCommonRPCRewardConcurrentIPCSnapshots/transaction_and_receipt_fields
+--- PASS: TestCommonRPCRewardConcurrentIPCSnapshots (0.05s)
+    --- PASS: TestCommonRPCRewardConcurrentIPCSnapshots/transaction_and_receipt_fields (0.00s)
+=== RUN   TestCommonRPCRewardSnapshotExcludesIdentityWriter
+--- PASS: TestCommonRPCRewardSnapshotExcludesIdentityWriter (0.05s)
+=== RUN   TestCommonRPCPoWRewardRecipient
+--- PASS: TestCommonRPCPoWRewardRecipient (0.00s)
+=== RUN   TestCommonRPCPoWRewardRecipientRegistryErrors
+=== RUN   TestCommonRPCPoWRewardRecipientRegistryErrors/nil_registry
+=== RUN   TestCommonRPCPoWRewardRecipientRegistryErrors/no_datadir
+=== RUN   TestCommonRPCPoWRewardRecipientRegistryErrors/malformed_registry
+=== RUN   TestCommonRPCPoWRewardRecipientRegistryErrors/unreadable_registry_path
+--- PASS: TestCommonRPCPoWRewardRecipientRegistryErrors (0.00s)
+    --- PASS: TestCommonRPCPoWRewardRecipientRegistryErrors/nil_registry (0.00s)
+    --- PASS: TestCommonRPCPoWRewardRecipientRegistryErrors/no_datadir (0.00s)
+    --- PASS: TestCommonRPCPoWRewardRecipientRegistryErrors/malformed_registry (0.00s)
+    --- PASS: TestCommonRPCPoWRewardRecipientRegistryErrors/unreadable_registry_path (0.00s)
+=== RUN   TestCommonRPCLocalIntentTimeoutKeepsOwnershipUntilFsync
+--- PASS: TestCommonRPCLocalIntentTimeoutKeepsOwnershipUntilFsync (0.04s)
+=== RUN   TestCommonRPCLocalRetryIndexCheckpointRestartAndSignerIsolation
+--- PASS: TestCommonRPCLocalRetryIndexCheckpointRestartAndSignerIsolation (0.01s)
+=== RUN   TestDEXRoleSidecarHelper
+    dex_role_independence_test.go:68: DEX role sidecar helper
+--- SKIP: TestDEXRoleSidecarHelper (0.00s)
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset
+    dex_role_independence_test.go:307: set CYPHER_DEX_ROLE_API_DEVNET=1 in isolated loopback-only network namespace
+--- SKIP: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset (0.00s)
+=== RUN   TestFHSProtocolManagerUsesFullSync
+=== RUN   TestFHSProtocolManagerUsesFullSync/default
+=== RUN   TestFHSProtocolManagerUsesFullSync/explicit_fast
+=== RUN   TestFHSProtocolManagerUsesFullSync/explicit_full
+=== RUN   TestFHSProtocolManagerUsesFullSync/full_with_fast_head
+--- PASS: TestFHSProtocolManagerUsesFullSync (0.03s)
+    --- PASS: TestFHSProtocolManagerUsesFullSync/default (0.01s)
+    --- PASS: TestFHSProtocolManagerUsesFullSync/explicit_fast (0.01s)
+    --- PASS: TestFHSProtocolManagerUsesFullSync/explicit_full (0.00s)
+    --- PASS: TestFHSProtocolManagerUsesFullSync/full_with_fast_head (0.00s)
+=== RUN   TestFHSSyncDoesNotResumeFastSync
+=== RUN   TestFHSSyncDoesNotResumeFastSync/persisted_pivot
+=== RUN   TestFHSSyncDoesNotResumeFastSync/stale_fast_flag
+--- PASS: TestFHSSyncDoesNotResumeFastSync (0.01s)
+    --- PASS: TestFHSSyncDoesNotResumeFastSync/persisted_pivot (0.00s)
+    --- PASS: TestFHSSyncDoesNotResumeFastSync/stale_fast_flag (0.01s)
+=== RUN   TestNonFHSSyncModeSelection
+=== RUN   TestNonFHSSyncModeSelection/fast
+=== RUN   TestNonFHSSyncModeSelection/full
+=== RUN   TestNonFHSSyncModeSelection/resume_fast_head
+--- PASS: TestNonFHSSyncModeSelection (0.01s)
+    --- PASS: TestNonFHSSyncModeSelection/fast (0.00s)
+    --- PASS: TestNonFHSSyncModeSelection/full (0.00s)
+    --- PASS: TestNonFHSSyncModeSelection/resume_fast_head (0.00s)
+=== RUN   TestNativeMinerGasBoundsUseGenesisComputeCapacity
+--- PASS: TestNativeMinerGasBoundsUseGenesisComputeCapacity (0.00s)
+=== RUN   TestResponseItemFitsNearNativeFrameLimit
+--- PASS: TestResponseItemFitsNearNativeFrameLimit (0.00s)
+=== RUN   TestScheduleInitialTransactionSyncByProtocolVersion
+=== RUN   TestScheduleInitialTransactionSyncByProtocolVersion/eth66_announces_hashes
+=== RUN   TestScheduleInitialTransactionSyncByProtocolVersion/eth64_uses_legacy_syncer
+=== RUN   TestScheduleInitialTransactionSyncByProtocolVersion/FHS_eth66_sends_nothing
+=== RUN   TestScheduleInitialTransactionSyncByProtocolVersion/FHS_eth64_sends_nothing
+--- PASS: TestScheduleInitialTransactionSyncByProtocolVersion (0.00s)
+    --- PASS: TestScheduleInitialTransactionSyncByProtocolVersion/eth66_announces_hashes (0.00s)
+    --- PASS: TestScheduleInitialTransactionSyncByProtocolVersion/eth64_uses_legacy_syncer (0.00s)
+    --- PASS: TestScheduleInitialTransactionSyncByProtocolVersion/FHS_eth66_sends_nothing (0.00s)
+    --- PASS: TestScheduleInitialTransactionSyncByProtocolVersion/FHS_eth64_sends_nothing (0.00s)
+=== RUN   TestPooledTransactionResolverDisablesFHSResponseAtSendTime
+--- PASS: TestPooledTransactionResolverDisablesFHSResponseAtSendTime (0.00s)
+=== RUN   TestFHSRejectsTransactionOnlyP2PMessages
+=== RUN   TestFHSRejectsTransactionOnlyP2PMessages/hash_announcement
+=== RUN   TestFHSRejectsTransactionOnlyP2PMessages/pooled_request
+=== RUN   TestFHSRejectsTransactionOnlyP2PMessages/full_transaction
+=== RUN   TestFHSRejectsTransactionOnlyP2PMessages/pooled_response
+=== RUN   TestFHSRejectsTransactionOnlyP2PMessages/admission_only
+--- PASS: TestFHSRejectsTransactionOnlyP2PMessages (0.00s)
+    --- PASS: TestFHSRejectsTransactionOnlyP2PMessages/hash_announcement (0.00s)
+    --- PASS: TestFHSRejectsTransactionOnlyP2PMessages/pooled_request (0.00s)
+    --- PASS: TestFHSRejectsTransactionOnlyP2PMessages/full_transaction (0.00s)
+    --- PASS: TestFHSRejectsTransactionOnlyP2PMessages/pooled_response (0.00s)
+    --- PASS: TestFHSRejectsTransactionOnlyP2PMessages/admission_only (0.00s)
+=== RUN   TestTxIngressWALGroupCommitAndIdempotentReplay
+--- PASS: TestTxIngressWALGroupCommitAndIdempotentReplay (0.10s)
+=== RUN   TestTxIngressWALRejectsSameGroupEventIDCollision
+--- PASS: TestTxIngressWALRejectsSameGroupEventIDCollision (0.00s)
+=== RUN   TestTxIngressWALRepairsOnlyTornTerminalRecord
+--- PASS: TestTxIngressWALRepairsOnlyTornTerminalRecord (0.01s)
+=== RUN   TestTxIngressWALRejectsInteriorCorruption
+--- PASS: TestTxIngressWALRejectsInteriorCorruption (0.02s)
+=== RUN   TestTxIngressWALAppliesBoundedQueueBackpressure
+--- PASS: TestTxIngressWALAppliesBoundedQueueBackpressure (0.02s)
+=== RUN   TestTxIngressWALStopRejectsLateAppendWithoutQueueing
+--- PASS: TestTxIngressWALStopRejectsLateAppendWithoutQueueing (0.00s)
+=== RUN   TestTxIngressWALConcurrentStopsWaitForSameCompletion
+--- PASS: TestTxIngressWALConcurrentStopsWaitForSameCompletion (0.03s)
+=== RUN   TestTxIngressWALCancellationTerminatesCommitAndCapacityWaiters
+--- PASS: TestTxIngressWALCancellationTerminatesCommitAndCapacityWaiters (0.02s)
+=== RUN   TestTxIngressWALDefaultCapacityCoversStandardBurstPartitioning
+--- PASS: TestTxIngressWALDefaultCapacityCoversStandardBurstPartitioning (0.00s)
+=== RUN   TestTxIngressWALRejectsRecordBeyondHardCapacity
+--- PASS: TestTxIngressWALRejectsRecordBeyondHardCapacity (0.01s)
+=== RUN   TestTxOutboxRetryReleasesGlobalLockBeforeWALFsync
+--- PASS: TestTxOutboxRetryReleasesGlobalLockBeforeWALFsync (0.03s)
+=== RUN   TestTxOutboxNonceStreamsReleaseGlobalLockBeforeWALFsync
+--- PASS: TestTxOutboxNonceStreamsReleaseGlobalLockBeforeWALFsync (0.02s)
+=== RUN   TestTxOutboxRetryUsesWALGroupCommitAcrossBatchIDs
+--- PASS: TestTxOutboxRetryUsesWALGroupCommitAcrossBatchIDs (0.16s)
+=== RUN   TestTxOutboxPlacementReleasesGlobalLockBeforeWALFsync
+--- PASS: TestTxOutboxPlacementReleasesGlobalLockBeforeWALFsync (0.03s)
+=== RUN   TestTxOutboxDeleteReleasesGlobalLockBeforeWALFsync
+--- PASS: TestTxOutboxDeleteReleasesGlobalLockBeforeWALFsync (0.04s)
+=== RUN   TestTxOutboxVisibilityWaitsForUnifiedWALFsync
+--- PASS: TestTxOutboxVisibilityWaitsForUnifiedWALFsync (0.01s)
+=== RUN   TestTxOutboxCapacityAdmissionPrecedesReplayOwnership
+=== RUN   TestTxOutboxCapacityAdmissionPrecedesReplayOwnership/outbox_enqueue
+=== RUN   TestTxOutboxCapacityAdmissionPrecedesReplayOwnership/local_RPC_outcome
+--- PASS: TestTxOutboxCapacityAdmissionPrecedesReplayOwnership (0.07s)
+    --- PASS: TestTxOutboxCapacityAdmissionPrecedesReplayOwnership/outbox_enqueue (0.03s)
+    --- PASS: TestTxOutboxCapacityAdmissionPrecedesReplayOwnership/local_RPC_outcome (0.04s)
+=== RUN   TestTxIngressWALExistingResidualReplacementPreservesPlacementOnRestart
+--- PASS: TestTxIngressWALExistingResidualReplacementPreservesPlacementOnRestart (0.05s)
+=== RUN   TestTxIngressWALDuplicateLocalOutcomePreservesActiveProjectionOnRestart
+--- PASS: TestTxIngressWALDuplicateLocalOutcomePreservesActiveProjectionOnRestart (0.04s)
+=== RUN   TestTxIngressWALRebuildsOutboxProjectionIdempotently
+--- PASS: TestTxIngressWALRebuildsOutboxProjectionIdempotently (0.01s)
+=== RUN   TestTxIngressWALCheckpointCrashBeforeAndAfterManifestSwitch
+=== RUN   TestTxIngressWALCheckpointCrashBeforeAndAfterManifestSwitch/before_switch
+=== RUN   TestTxIngressWALCheckpointCrashBeforeAndAfterManifestSwitch/after_switch
+--- PASS: TestTxIngressWALCheckpointCrashBeforeAndAfterManifestSwitch (0.01s)
+    --- PASS: TestTxIngressWALCheckpointCrashBeforeAndAfterManifestSwitch/before_switch (0.01s)
+    --- PASS: TestTxIngressWALCheckpointCrashBeforeAndAfterManifestSwitch/after_switch (0.01s)
+=== RUN   TestTxIngressWALCheckpointSerializesConcurrentAppendAndRestarts
+--- PASS: TestTxIngressWALCheckpointSerializesConcurrentAppendAndRestarts (0.03s)
+=== RUN   TestTxIngressWALBulkCheckpointAllowsConcurrentAppendAndExactRestart
+--- PASS: TestTxIngressWALBulkCheckpointAllowsConcurrentAppendAndExactRestart (0.01s)
+=== RUN   TestTxIngressWALConcurrentAppendCheckpointCrashReplaysExactly
+=== RUN   TestTxIngressWALConcurrentAppendCheckpointCrashReplaysExactly/before_manifest_switch
+=== RUN   TestTxIngressWALConcurrentAppendCheckpointCrashReplaysExactly/after_manifest_switch
+--- PASS: TestTxIngressWALConcurrentAppendCheckpointCrashReplaysExactly (0.03s)
+    --- PASS: TestTxIngressWALConcurrentAppendCheckpointCrashReplaysExactly/before_manifest_switch (0.01s)
+    --- PASS: TestTxIngressWALConcurrentAppendCheckpointCrashReplaysExactly/after_manifest_switch (0.01s)
+=== RUN   TestTxIngressWALOnlineCheckpointRecoversCapacity
+--- PASS: TestTxIngressWALOnlineCheckpointRecoversCapacity (0.36s)
+=== RUN   TestTxIngressWALCheckpointKeepsOnlyUnappliedInbound
+--- PASS: TestTxIngressWALCheckpointKeepsOnlyUnappliedInbound (0.03s)
+=== RUN   TestTxIngressWALCheckpointRetainsUnappliedOutboxMutationCrashWindow
+=== RUN   TestTxIngressWALCheckpointRetainsUnappliedOutboxMutationCrashWindow/delete
+=== RUN   TestTxIngressWALCheckpointRetainsUnappliedOutboxMutationCrashWindow/replacement
+--- PASS: TestTxIngressWALCheckpointRetainsUnappliedOutboxMutationCrashWindow (0.03s)
+    --- PASS: TestTxIngressWALCheckpointRetainsUnappliedOutboxMutationCrashWindow/delete (0.01s)
+    --- PASS: TestTxIngressWALCheckpointRetainsUnappliedOutboxMutationCrashWindow/replacement (0.01s)
+=== RUN   TestTxIngressWALReenqueueAfterAppliedDeleteSurvivesRestart
+--- PASS: TestTxIngressWALReenqueueAfterAppliedDeleteSurvivesRestart (0.03s)
+=== RUN   TestTxIngressWALLocalIntentReenqueueUsesNewLifecycle
+--- PASS: TestTxIngressWALLocalIntentReenqueueUsesNewLifecycle (0.04s)
+=== RUN   TestTxIngressWALRetainsAcceptedLocalTxUntilFinality
+--- PASS: TestTxIngressWALRetainsAcceptedLocalTxUntilFinality (0.03s)
+=== RUN   TestTxOutboxSerializesDeleteAndReenqueueWALProjectionOrder
+--- PASS: TestTxOutboxSerializesDeleteAndReenqueueWALProjectionOrder (0.05s)
+=== RUN   TestTxOutboxTimeoutTransfersLifecycleUntilProjectionCommit
+--- PASS: TestTxOutboxTimeoutTransfersLifecycleUntilProjectionCommit (0.08s)
+=== RUN   TestTxIngressWALRoleTransitionKeepsDedicatedAuthority
+=== RUN   TestTxIngressWALRoleTransitionKeepsDedicatedAuthority/bridge-only_to_dual-role
+=== RUN   TestTxIngressWALRoleTransitionKeepsDedicatedAuthority/dual-role_to_bridge-only
+--- PASS: TestTxIngressWALRoleTransitionKeepsDedicatedAuthority (0.02s)
+    --- PASS: TestTxIngressWALRoleTransitionKeepsDedicatedAuthority/bridge-only_to_dual-role (0.01s)
+    --- PASS: TestTxIngressWALRoleTransitionKeepsDedicatedAuthority/dual-role_to_bridge-only (0.01s)
+=== RUN   TestTxIngressWALAppliedMarkerCoversEquivalentMutationRetries
+--- PASS: TestTxIngressWALAppliedMarkerCoversEquivalentMutationRetries (0.02s)
+=== RUN   TestTxIngressWALLocalIntentCrashBeforePoolReplaysExactlyOnce
+--- PASS: TestTxIngressWALLocalIntentCrashBeforePoolReplaysExactlyOnce (0.02s)
+=== RUN   TestTxIngressWALCompletedLocalDeliveryRestoresPendingPoolOnly
+--- PASS: TestTxIngressWALCompletedLocalDeliveryRestoresPendingPoolOnly (0.04s)
+=== RUN   TestTxLiveIngressSchedulerBoundsAndAlternatesSources
+--- PASS: TestTxLiveIngressSchedulerBoundsAndAlternatesSources (0.00s)
+=== RUN   TestTxLiveIngressSchedulerCancellationAndPendingCapacity
+--- PASS: TestTxLiveIngressSchedulerCancellationAndPendingCapacity (0.02s)
+=== RUN   TestTxLiveIngressSchedulerReleaseIsIdempotent
+--- PASS: TestTxLiveIngressSchedulerReleaseIsIdempotent (0.00s)
+=== RUN   TestTxPoolIngressSchedulerAccountsForRealBlobSidecarCapacity
+--- PASS: TestTxPoolIngressSchedulerAccountsForRealBlobSidecarCapacity (0.05s)
+=== RUN   TestTxPoolIngressSchedulerConcurrencyBackpressureAndFairness
+=== RUN   TestTxPoolIngressSchedulerConcurrencyBackpressureAndFairness/concurrency_and_ordered_outcomes
+=== RUN   TestTxPoolIngressSchedulerConcurrencyBackpressureAndFairness/round_robin_source_fairness
+--- PASS: TestTxPoolIngressSchedulerConcurrencyBackpressureAndFairness (0.02s)
+    --- PASS: TestTxPoolIngressSchedulerConcurrencyBackpressureAndFairness/concurrency_and_ordered_outcomes (0.02s)
+    --- PASS: TestTxPoolIngressSchedulerConcurrencyBackpressureAndFairness/round_robin_source_fairness (0.00s)
+=== RUN   TestTxQUICBlobSidecarRoundTripOwnsDurableBytes
+--- PASS: TestTxQUICBlobSidecarRoundTripOwnsDurableBytes (0.07s)
+=== RUN   TestTxQUICBlobSidecarStructuralRejections
+--- PASS: TestTxQUICBlobSidecarStructuralRejections (0.05s)
+=== RUN   TestTxQUICBlobSidecarBytesBindBatchIdentityAndKZG
+--- PASS: TestTxQUICBlobSidecarBytesBindBatchIdentityAndKZG (0.07s)
+=== RUN   TestTxQUICOsakaIngressRejectsV0BeforeDurability
+--- PASS: TestTxQUICOsakaIngressRejectsV0BeforeDurability (0.80s)
+=== RUN   TestTxQUICInvalidKnownHashSidecarNeverReachesWAL
+--- PASS: TestTxQUICInvalidKnownHashSidecarNeverReachesWAL (0.08s)
+=== RUN   TestTxQUICWALRestoreRejectsInvalidCommittedBlobSidecar
+=== RUN   TestTxQUICWALRestoreRejectsInvalidCommittedBlobSidecar/local_intent
+=== RUN   TestTxQUICWALRestoreRejectsInvalidCommittedBlobSidecar/outbox_projection
+=== RUN   TestTxQUICWALRestoreRejectsInvalidCommittedBlobSidecar/inbound_projection
+--- PASS: TestTxQUICWALRestoreRejectsInvalidCommittedBlobSidecar (0.09s)
+    --- PASS: TestTxQUICWALRestoreRejectsInvalidCommittedBlobSidecar/local_intent (0.01s)
+    --- PASS: TestTxQUICWALRestoreRejectsInvalidCommittedBlobSidecar/outbox_projection (0.01s)
+    --- PASS: TestTxQUICWALRestoreRejectsInvalidCommittedBlobSidecar/inbound_projection (0.01s)
+=== RUN   TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable
+=== RUN   TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable/0
+=== RUN   TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable/1
+=== RUN   TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable/2
+=== RUN   TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable/4
+--- PASS: TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable (0.00s)
+    --- PASS: TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable/0 (0.00s)
+    --- PASS: TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable/1 (0.00s)
+    --- PASS: TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable/2 (0.00s)
+    --- PASS: TestTxQUICNonBlobItemIdentityAndNilSidecarRemainStable/4 (0.00s)
+=== RUN   TestTxQUICKZGIsDeferredUntilAfterPacketAuthentication
+--- PASS: TestTxQUICKZGIsDeferredUntilAfterPacketAuthentication (0.06s)
+=== RUN   TestTxQUICBridgeAccountingIncludesExactBlobSidecarBytes
+--- PASS: TestTxQUICBridgeAccountingIncludesExactBlobSidecarBytes (0.06s)
+=== RUN   TestTxQUICFinalizedNonceLookupReusesDecodedTransactionsAndSenderNonce
+--- PASS: TestTxQUICFinalizedNonceLookupReusesDecodedTransactionsAndSenderNonce (0.00s)
+=== RUN   TestTxQUICFinalizedNonceLookupUsesExactHeadHash
+--- PASS: TestTxQUICFinalizedNonceLookupUsesExactHeadHash (0.00s)
+=== RUN   TestTxQUICFinalizedNonceLookupReadFailurePublishesNoPartialNonce
+=== RUN   TestTxQUICFinalizedNonceLookupReadFailurePublishesNoPartialNonce/open_error
+=== RUN   TestTxQUICFinalizedNonceLookupReadFailurePublishesNoPartialNonce/nil_state
+=== RUN   TestTxQUICFinalizedNonceLookupReadFailurePublishesNoPartialNonce/account_read_error
+--- PASS: TestTxQUICFinalizedNonceLookupReadFailurePublishesNoPartialNonce (0.00s)
+    --- PASS: TestTxQUICFinalizedNonceLookupReadFailurePublishesNoPartialNonce/open_error (0.00s)
+    --- PASS: TestTxQUICFinalizedNonceLookupReadFailurePublishesNoPartialNonce/nil_state (0.00s)
+    --- PASS: TestTxQUICFinalizedNonceLookupReadFailurePublishesNoPartialNonce/account_read_error (0.00s)
+=== RUN   TestTxQUICFinalizedNonceLookupRejectsInvalidAndCopiesChainID
+--- PASS: TestTxQUICFinalizedNonceLookupRejectsInvalidAndCopiesChainID (0.00s)
+=== RUN   TestTxQUICFinalizedNonceLookupEvictionAndUncachedMode
+--- PASS: TestTxQUICFinalizedNonceLookupEvictionAndUncachedMode (0.00s)
+=== RUN   TestTxQUICFinalizedNonceLookupConcurrentHeads
+--- PASS: TestTxQUICFinalizedNonceLookupConcurrentHeads (0.01s)
+=== RUN   TestTxQUICFinalizedNonceLookupDoesNotBypassDurableCommitment
+--- PASS: TestTxQUICFinalizedNonceLookupDoesNotBypassDurableCommitment (0.01s)
+=== RUN   TestTxQUICClientTLSConfigFailsClosedWithoutCommitteeIdentity
+--- PASS: TestTxQUICClientTLSConfigFailsClosedWithoutCommitteeIdentity (0.00s)
+=== RUN   TestTxQUICClientTLSConfigVerifiesCommitteeAttestation
+--- PASS: TestTxQUICClientTLSConfigVerifiesCommitteeAttestation (0.02s)
+=== RUN   TestTxQUICHandshakeRejectsWrongCommitteeCertificateBeforeAccept
+--- PASS: TestTxQUICHandshakeRejectsWrongCommitteeCertificateBeforeAccept (0.11s)
+=== RUN   TestTxQUICServerCertificatePinsLocalNonLeaderAndBoundsRefresh
+--- PASS: TestTxQUICServerCertificatePinsLocalNonLeaderAndBoundsRefresh (0.01s)
+=== RUN   TestTxQUICAllowIPsUnsetPreservesAllowAllBehavior
+--- PASS: TestTxQUICAllowIPsUnsetPreservesAllowAllBehavior (0.00s)
+=== RUN   TestTxQUICIngressStartsWithoutSourceOrSignerAllowlist
+--- PASS: TestTxQUICIngressStartsWithoutSourceOrSignerAllowlist (0.00s)
+=== RUN   TestTxQUICHandshakeAdmissionPrecedesTLSAndReleasesWithConnection
+--- PASS: TestTxQUICHandshakeAdmissionPrecedesTLSAndReleasesWithConnection (0.00s)
+=== RUN   TestTxQUICServerCertificateRefreshWaitIsContextBounded
+--- PASS: TestTxQUICServerCertificateRefreshWaitIsContextBounded (0.03s)
+=== RUN   TestTxQUICRouteProviderReplacementBypassesStalledGeneration
+--- PASS: TestTxQUICRouteProviderReplacementBypassesStalledGeneration (0.03s)
+=== RUN   TestTxQUICClientRetirementCancelsDialAndWakesWaiters
+--- PASS: TestTxQUICClientRetirementCancelsDialAndWakesWaiters (0.01s)
+=== RUN   TestTxQUICAllowIPsRejectsInvalidEntriesBeforeStartup
+=== RUN   TestTxQUICAllowIPsRejectsInvalidEntriesBeforeStartup/mixed_valid_and_invalid
+=== RUN   TestTxQUICAllowIPsRejectsInvalidEntriesBeforeStartup/all_invalid
+--- PASS: TestTxQUICAllowIPsRejectsInvalidEntriesBeforeStartup (0.00s)
+    --- PASS: TestTxQUICAllowIPsRejectsInvalidEntriesBeforeStartup/mixed_valid_and_invalid (0.00s)
+    --- PASS: TestTxQUICAllowIPsRejectsInvalidEntriesBeforeStartup/all_invalid (0.00s)
+=== RUN   TestTxQUICAllowIPsAcceptsValidIPAndCIDR
+=== RUN   TestTxQUICAllowIPsAcceptsValidIPAndCIDR/192.0.2.10
+=== RUN   TestTxQUICAllowIPsAcceptsValidIPAndCIDR/192.0.2.11
+=== RUN   TestTxQUICAllowIPsAcceptsValidIPAndCIDR/2001:db8:abcd::42
+=== RUN   TestTxQUICAllowIPsAcceptsValidIPAndCIDR/2001:db8:abce::42
+--- PASS: TestTxQUICAllowIPsAcceptsValidIPAndCIDR (0.00s)
+    --- PASS: TestTxQUICAllowIPsAcceptsValidIPAndCIDR/192.0.2.10 (0.00s)
+    --- PASS: TestTxQUICAllowIPsAcceptsValidIPAndCIDR/192.0.2.11 (0.00s)
+    --- PASS: TestTxQUICAllowIPsAcceptsValidIPAndCIDR/2001:db8:abcd::42 (0.00s)
+    --- PASS: TestTxQUICAllowIPsAcceptsValidIPAndCIDR/2001:db8:abce::42 (0.00s)
+=== RUN   TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes
+=== RUN   TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/streams_exceed_workers
+=== RUN   TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/connections_exceed_workers
+=== RUN   TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/stream_product
+=== RUN   TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/payload_below_one_packet
+=== RUN   TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/payload_exceeds_workers
+--- PASS: TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes (0.00s)
+    --- PASS: TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/streams_exceed_workers (0.00s)
+    --- PASS: TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/connections_exceed_workers (0.00s)
+    --- PASS: TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/stream_product (0.00s)
+    --- PASS: TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/payload_below_one_packet (0.00s)
+    --- PASS: TestTxQUICRuntimeLimitsBindConnectionsStreamsWorkersAndPayloadBytes/payload_exceeds_workers (0.00s)
+=== RUN   TestTxQUICRateBucketsAreBoundedAndIdleEntriesExpire
+--- PASS: TestTxQUICRateBucketsAreBoundedAndIdleEntriesExpire (0.00s)
+=== RUN   TestTxQUICProtocolNameHasNoGenerationSuffix
+--- PASS: TestTxQUICProtocolNameHasNoGenerationSuffix (0.00s)
+=== RUN   TestTxQUICSemanticBatchIDIgnoresEnvelopeAndBindsOrderAndChain
+--- PASS: TestTxQUICSemanticBatchIDIgnoresEnvelopeAndBindsOrderAndChain (0.00s)
+=== RUN   TestTxQUICMicroBatchStoresOneCertificateAndOriginalIndexes
+--- PASS: TestTxQUICMicroBatchStoresOneCertificateAndOriginalIndexes (0.01s)
+=== RUN   TestTxQUICStoredBatchReserveCoversMaximumWireEnvelope
+--- PASS: TestTxQUICStoredBatchReserveCoversMaximumWireEnvelope (0.00s)
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/identity
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/key_generation
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/committee_generation
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/bitmap_length
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/overlap
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/omission
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/duplicate_permanent
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/wrong_item_identity
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/empty_permanent_reason
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/unknown_permanent_code
+=== RUN   TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/non-zero_padding
+--- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/identity (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/key_generation (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/committee_generation (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/bitmap_length (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/overlap (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/omission (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/duplicate_permanent (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/wrong_item_identity (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/empty_permanent_reason (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/unknown_permanent_code (0.00s)
+    --- PASS: TestValidateTxQUICAckOutcomeRequiresOneStrictOutcomePerItem/non-zero_padding (0.00s)
+=== RUN   TestTxQUICCertificateItemsAreFailClosed
+=== RUN   TestTxQUICCertificateItemsAreFailClosed/missing_transaction
+=== RUN   TestTxQUICCertificateItemsAreFailClosed/nil_item
+=== RUN   TestTxQUICCertificateItemsAreFailClosed/mismatched_index
+=== RUN   TestTxQUICCertificateItemsAreFailClosed/duplicate_transaction
+--- PASS: TestTxQUICCertificateItemsAreFailClosed (0.00s)
+    --- PASS: TestTxQUICCertificateItemsAreFailClosed/missing_transaction (0.00s)
+    --- PASS: TestTxQUICCertificateItemsAreFailClosed/nil_item (0.00s)
+    --- PASS: TestTxQUICCertificateItemsAreFailClosed/mismatched_index (0.00s)
+    --- PASS: TestTxQUICCertificateItemsAreFailClosed/duplicate_transaction (0.00s)
+=== RUN   TestTxQUICRewardRecipientRequiredIncludingDurableReuse
+=== RUN   TestTxQUICRewardRecipientRequiredIncludingDurableReuse/recipient-less_version
+=== RUN   TestTxQUICRewardRecipientRequiredIncludingDurableReuse/unsupported_version
+=== RUN   TestTxQUICRewardRecipientRequiredIncludingDurableReuse/unset_recipient
+=== RUN   TestTxQUICRewardRecipientRequiredIncludingDurableReuse/recipient_equals_signer
+--- PASS: TestTxQUICRewardRecipientRequiredIncludingDurableReuse (0.00s)
+    --- PASS: TestTxQUICRewardRecipientRequiredIncludingDurableReuse/recipient-less_version (0.00s)
+    --- PASS: TestTxQUICRewardRecipientRequiredIncludingDurableReuse/unsupported_version (0.00s)
+    --- PASS: TestTxQUICRewardRecipientRequiredIncludingDurableReuse/unset_recipient (0.00s)
+    --- PASS: TestTxQUICRewardRecipientRequiredIncludingDurableReuse/recipient_equals_signer (0.00s)
+=== RUN   TestTxQUICCertificateRejectsDuplicateNativeReplayIdentity
+--- PASS: TestTxQUICCertificateRejectsDuplicateNativeReplayIdentity (0.00s)
+=== RUN   TestTxQUICPublicIngressRejectsNativeTransactionType
+--- PASS: TestTxQUICPublicIngressRejectsNativeTransactionType (0.00s)
+=== RUN   TestBuildTxBatchRequiresCertificateAndOriginalIndexes
+--- PASS: TestBuildTxBatchRequiresCertificateAndOriginalIndexes (0.00s)
+=== RUN   TestTxQUICIngressRejectsInvalidAdmissionWithoutPublishingTransaction
+=== RUN   TestTxQUICIngressRejectsInvalidAdmissionWithoutPublishingTransaction/invalid_signature
+=== RUN   TestTxQUICIngressRejectsInvalidAdmissionWithoutPublishingTransaction/valid_signature_for_another_chain
+--- PASS: TestTxQUICIngressRejectsInvalidAdmissionWithoutPublishingTransaction (0.00s)
+    --- PASS: TestTxQUICIngressRejectsInvalidAdmissionWithoutPublishingTransaction/invalid_signature (0.00s)
+    --- PASS: TestTxQUICIngressRejectsInvalidAdmissionWithoutPublishingTransaction/valid_signature_for_another_chain (0.00s)
+=== RUN   TestTxQUICDurableCertificateReuseSkipsRecoveryButRestoresMissingIndex
+--- PASS: TestTxQUICDurableCertificateReuseSkipsRecoveryButRestoresMissingIndex (0.00s)
+=== RUN   TestTxQUICIngressNonceTooLowOnlyTerminatesProvablyObsoleteTransaction
+=== RUN   TestTxQUICIngressNonceTooLowOnlyTerminatesProvablyObsoleteTransaction/replacement_or_cancel_consumed_nonce
+=== RUN   TestTxQUICIngressNonceTooLowOnlyTerminatesProvablyObsoleteTransaction/nonce_status_unavailable
+--- PASS: TestTxQUICIngressNonceTooLowOnlyTerminatesProvablyObsoleteTransaction (0.01s)
+    --- PASS: TestTxQUICIngressNonceTooLowOnlyTerminatesProvablyObsoleteTransaction/replacement_or_cancel_consumed_nonce (0.00s)
+    --- PASS: TestTxQUICIngressNonceTooLowOnlyTerminatesProvablyObsoleteTransaction/nonce_status_unavailable (0.00s)
+=== RUN   TestTxQUICReceiptAccumulatorFourEndpointQuorumDeduplicatesCommitteeIdentity
+--- PASS: TestTxQUICReceiptAccumulatorFourEndpointQuorumDeduplicatesCommitteeIdentity (0.00s)
+=== RUN   TestTxQUICReceiptAccumulatorRejectsIdentityCommitteeKeyMismatch
+--- PASS: TestTxQUICReceiptAccumulatorRejectsIdentityCommitteeKeyMismatch (0.00s)
+=== RUN   TestTxQUICReceiptAccumulatorBoundsAllSuccessHedgingAtQuorum
+--- PASS: TestTxQUICReceiptAccumulatorBoundsAllSuccessHedgingAtQuorum (0.00s)
+=== RUN   TestRotateTxQUICCommitteeTailKeepsLeaderFirst
+--- PASS: TestRotateTxQUICCommitteeTailKeepsLeaderFirst (0.00s)
+=== RUN   TestTxQUICQuorumHandoffKeepsHedgedAckReadsAlive
+--- PASS: TestTxQUICQuorumHandoffKeepsHedgedAckReadsAlive (0.05s)
+=== RUN   TestTxQUICPreQuorumCancelDrainsLaunchedEndpoints
+--- PASS: TestTxQUICPreQuorumCancelDrainsLaunchedEndpoints (0.03s)
+=== RUN   TestTxQUICBackgroundHandoffRetriesOnlyFailedAndNeverLaunched
+--- PASS: TestTxQUICBackgroundHandoffRetriesOnlyFailedAndNeverLaunched (0.00s)
+=== RUN   TestTxQUICBackgroundHandoffRetriesMixedRetryableAck
+--- PASS: TestTxQUICBackgroundHandoffRetriesMixedRetryableAck (0.00s)
+=== RUN   TestTxQUICBackgroundHandoffShutdownIsBounded
+--- PASS: TestTxQUICBackgroundHandoffShutdownIsBounded (0.03s)
+=== RUN   TestTxQUICBackgroundHandoffAttemptCancelRaceIsBounded
+--- PASS: TestTxQUICBackgroundHandoffAttemptCancelRaceIsBounded (0.00s)
+=== RUN   TestTxQUICBackgroundHandoffQueueSaturationKeepsCancelWithCaller
+--- PASS: TestTxQUICBackgroundHandoffQueueSaturationKeepsCancelWithCaller (0.04s)
+=== RUN   TestTxQUICQuorumPersistsTailBeforeSaturatedHandoff
+--- PASS: TestTxQUICQuorumPersistsTailBeforeSaturatedHandoff (0.01s)
+=== RUN   TestTxQUICItemWiseQuorumPromotionSurvivesRestartWithTwoCompleteEndpoints
+--- PASS: TestTxQUICItemWiseQuorumPromotionSurvivesRestartWithTwoCompleteEndpoints (0.02s)
+=== RUN   TestTxOutboxPlacementReserveAllowsPromotionAtFullCapacity
+--- PASS: TestTxOutboxPlacementReserveAllowsPromotionAtFullCapacity (0.11s)
+=== RUN   TestTxOutboxPlacementPromotionRequiresTrustedPayloadBoundTerminalAggregate
+--- PASS: TestTxOutboxPlacementPromotionRequiresTrustedPayloadBoundTerminalAggregate (0.02s)
+=== RUN   TestTxOutboxAmbiguousPlacementPromotionRecoversOnRestart
+--- PASS: TestTxOutboxAmbiguousPlacementPromotionRecoversOnRestart (0.02s)
+=== RUN   TestTxOutboxAmbiguousAcknowledgedDeletePoisonsUntilRestartScan
+--- PASS: TestTxOutboxAmbiguousAcknowledgedDeletePoisonsUntilRestartScan (0.00s)
+=== RUN   TestTxOutboxRestartDrainsTailWithRotatingCursor
+--- PASS: TestTxOutboxRestartDrainsTailWithRotatingCursor (0.04s)
+=== RUN   TestTxOutboxTailReceiptRetainedAcrossCommitteeTransition
+--- PASS: TestTxOutboxTailReceiptRetainedAcrossCommitteeTransition (0.02s)
+=== RUN   TestTxQUICReceiptAccumulatorSingleByzantinePermanentDoesNotGC
+--- PASS: TestTxQUICReceiptAccumulatorSingleByzantinePermanentDoesNotGC (0.00s)
+=== RUN   TestTxQUICReceiptAccumulatorAggregatesFourEndpointsItemWise
+--- PASS: TestTxQUICReceiptAccumulatorAggregatesFourEndpointsItemWise (0.00s)
+=== RUN   TestTxQUICPacketSignatureRejectsUnsignedAndMutatedEnvelope
+--- PASS: TestTxQUICPacketSignatureRejectsUnsignedAndMutatedEnvelope (0.00s)
+=== RUN   TestTxQUICAckSignatureIsBoundToCanonicalCommitteeMember
+--- PASS: TestTxQUICAckSignatureIsBoundToCanonicalCommitteeMember (0.00s)
+=== RUN   TestTxQUICSignAckRejectsStaleGenerationBeforeInvokingSigner
+--- PASS: TestTxQUICSignAckRejectsStaleGenerationBeforeInvokingSigner (0.01s)
+=== RUN   TestReadTxQUICAckRejectsOversizeAndTrailingData
+--- PASS: TestReadTxQUICAckRejectsOversizeAndTrailingData (0.00s)
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/block_gas_limit
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/node_data_policy
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/private_gas_policy
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/private_value_policy
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/fork_intrinsic_gas
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/future_transaction_type
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/blob_availability_policy
+=== RUN   TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/payer_sequence_pending_elsewhere
+--- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures (0.00s)
+    --- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/block_gas_limit (0.00s)
+    --- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/node_data_policy (0.00s)
+    --- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/private_gas_policy (0.00s)
+    --- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/private_value_policy (0.00s)
+    --- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/fork_intrinsic_gas (0.00s)
+    --- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/future_transaction_type (0.00s)
+    --- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/blob_availability_policy (0.00s)
+    --- PASS: TestClassifyTxQUICInsertErrorRetriesPolicyAndForkDependentFailures/payer_sequence_pending_elsewhere (0.00s)
+=== RUN   TestTxQUICDatabaseIdentityFailsClosed
+--- PASS: TestTxQUICDatabaseIdentityFailsClosed (0.00s)
+=== RUN   TestTxQUICIngressGroupCommitUsesOneSynchronousBatch
+--- PASS: TestTxQUICIngressGroupCommitUsesOneSynchronousBatch (0.10s)
+=== RUN   TestTxQUICIngressGroupCommitNeverOvershootsByteLimit
+--- PASS: TestTxQUICIngressGroupCommitNeverOvershootsByteLimit (0.15s)
+=== RUN   TestTxQUICIngressReplayWindowIsolationDoesNotDisableOtherGroupCommit
+--- PASS: TestTxQUICIngressReplayWindowIsolationDoesNotDisableOtherGroupCommit (0.52s)
+=== RUN   TestTxQUICIngressReplaySameBatchAndNonceSurvivesRestart
+--- PASS: TestTxQUICIngressReplaySameBatchAndNonceSurvivesRestart (0.01s)
+=== RUN   TestTxQUICIngressReplayAcceptsHugeNonceJumpsAndCompactsOldWindow
+--- PASS: TestTxQUICIngressReplayAcceptsHugeNonceJumpsAndCompactsOldWindow (0.02s)
+=== RUN   TestTxQUICIngressAmbiguousSyncPoisonsUntilValidatedRestart
+--- PASS: TestTxQUICIngressAmbiguousSyncPoisonsUntilValidatedRestart (0.01s)
+=== RUN   TestTxQUICIngressRestoreFailsClosedAtPersistedCapacityBoundary
+--- PASS: TestTxQUICIngressRestoreFailsClosedAtPersistedCapacityBoundary (0.01s)
+=== RUN   TestTxQUICIngressRestoreRejectsOrphanAndReplayCorruptionBeforeCallbacks
+=== RUN   TestTxQUICIngressRestoreRejectsOrphanAndReplayCorruptionBeforeCallbacks/orphan_item
+=== RUN   TestTxQUICIngressRestoreRejectsOrphanAndReplayCorruptionBeforeCallbacks/missing_nonce_mapping
+=== RUN   TestTxQUICIngressRestoreRejectsOrphanAndReplayCorruptionBeforeCallbacks/dangling_transaction_index
+--- PASS: TestTxQUICIngressRestoreRejectsOrphanAndReplayCorruptionBeforeCallbacks (0.01s)
+    --- PASS: TestTxQUICIngressRestoreRejectsOrphanAndReplayCorruptionBeforeCallbacks/orphan_item (0.00s)
+    --- PASS: TestTxQUICIngressRestoreRejectsOrphanAndReplayCorruptionBeforeCallbacks/missing_nonce_mapping (0.01s)
+    --- PASS: TestTxQUICIngressRestoreRejectsOrphanAndReplayCorruptionBeforeCallbacks/dangling_transaction_index (0.00s)
+=== RUN   TestTxQUICIngressCompactFinalizedRemovesItemsIndividually
+--- PASS: TestTxQUICIngressCompactFinalizedRemovesItemsIndividually (0.01s)
+=== RUN   TestTxQUICIngressDuplicateTransactionIndexSurvivesOlderBatchCompaction
+--- PASS: TestTxQUICIngressDuplicateTransactionIndexSurvivesOlderBatchCompaction (0.01s)
+=== RUN   TestTxQUICIngressMaintenanceCompactsFinalizedAndNonceConsumedOldHash
+--- PASS: TestTxQUICIngressMaintenanceCompactsFinalizedAndNonceConsumedOldHash (0.01s)
+=== RUN   TestTxQUICIngressRetryTombstonesExpireAfterDurableItemsFinalize
+--- PASS: TestTxQUICIngressRetryTombstonesExpireAfterDurableItemsFinalize (0.02s)
+=== RUN   TestTxOutboxGroupCommitUsesOneSynchronousBatch
+--- PASS: TestTxOutboxGroupCommitUsesOneSynchronousBatch (0.01s)
+=== RUN   TestTxOutboxGroupCommitNeverOvershootsByteLimit
+--- PASS: TestTxOutboxGroupCommitNeverOvershootsByteLimit (0.12s)
+=== RUN   TestTxOutboxGroupCommitDeduplicatesAndAlignsCollisionErrors
+--- PASS: TestTxOutboxGroupCommitDeduplicatesAndAlignsCollisionErrors (0.00s)
+=== RUN   TestTxOutboxGroupCommitContinuesAfterCallerCancellation
+--- PASS: TestTxOutboxGroupCommitContinuesAfterCallerCancellation (0.02s)
+=== RUN   TestTxOutboxGroupCommitStopFailsQueuedWaiters
+--- PASS: TestTxOutboxGroupCommitStopFailsQueuedWaiters (0.00s)
+=== RUN   TestTxOutboxParentCancellationCannotEnqueueAfterCommitDrain
+--- PASS: TestTxOutboxParentCancellationCannotEnqueueAfterCommitDrain (0.02s)
+=== RUN   TestTxOutboxConcurrentStopsWaitForSameCompletion
+--- PASS: TestTxOutboxConcurrentStopsWaitForSameCompletion (0.03s)
+=== RUN   TestTxOutboxCapacityWaitDoesNotHoldLifecycleStripe
+--- PASS: TestTxOutboxCapacityWaitDoesNotHoldLifecycleStripe (0.00s)
+=== RUN   TestTxOutboxWALOwnedProjectionFailureRetainsCapacityUntilRestart
+--- PASS: TestTxOutboxWALOwnedProjectionFailureRetainsCapacityUntilRestart (0.01s)
+=== RUN   TestTxOutboxBusyPredecessorDoesNotConsumeReenqueueSchedule
+--- PASS: TestTxOutboxBusyPredecessorDoesNotConsumeReenqueueSchedule (0.00s)
+=== RUN   TestTxOutboxGroupCommitAmbiguousSyncFailsEveryWaiter
+--- PASS: TestTxOutboxGroupCommitAmbiguousSyncFailsEveryWaiter (0.02s)
+=== RUN   TestTxOutboxNonceReservationPersistsAcrossRestart
+--- PASS: TestTxOutboxNonceReservationPersistsAcrossRestart (0.00s)
+=== RUN   TestTxOutboxRestoreFailsClosedAtPersistedCapacityBoundary
+--- PASS: TestTxOutboxRestoreFailsClosedAtPersistedCapacityBoundary (0.01s)
+=== RUN   TestTxOutboxAmbiguousSyncStopsDeliveryUntilValidatedRestart
+--- PASS: TestTxOutboxAmbiguousSyncStopsDeliveryUntilValidatedRestart (0.02s)
+=== RUN   TestTxOutboxValidatesAllSchemaBeforeRestoreCallbacks
+--- PASS: TestTxOutboxValidatesAllSchemaBeforeRestoreCallbacks (0.01s)
+=== RUN   TestTxQUICRuntimeLimitsRejectExtremeAllocationConfig
+--- PASS: TestTxQUICRuntimeLimitsRejectExtremeAllocationConfig (0.00s)
+=== RUN   TestTxQUICRuntimeLimitsKeepAckThroughPacketAge
+--- PASS: TestTxQUICRuntimeLimitsKeepAckThroughPacketAge (0.00s)
+=== RUN   TestTxQUICRuntimeLimitsBoundBridgeQueueBytes
+--- PASS: TestTxQUICRuntimeLimitsBoundBridgeQueueBytes (0.00s)
+=== RUN   TestTxQUICRuntimeLimitsBoundDurableStorage
+--- PASS: TestTxQUICRuntimeLimitsBoundDurableStorage (0.00s)
+=== RUN   TestTxOutboxCompactsAcknowledgedItemsIntoResidualBatch
+--- PASS: TestTxOutboxCompactsAcknowledgedItemsIntoResidualBatch (0.00s)
+=== RUN   TestTxOutboxResidualReplacementUsesNetCapacityAtFullLimit
+--- PASS: TestTxOutboxResidualReplacementUsesNetCapacityAtFullLimit (0.01s)
+=== RUN   TestTxOutboxResidualReplacementAmbiguousApplyRestartsWithoutCapacityOverflow
+--- PASS: TestTxOutboxResidualReplacementAmbiguousApplyRestartsWithoutCapacityOverflow (0.01s)
+=== RUN   TestTxOutboxResidualReplacementDeterministicWriteFailureHasNoDrift
+--- PASS: TestTxOutboxResidualReplacementDeterministicWriteFailureHasNoDrift (0.00s)
+=== RUN   TestTxOutboxResidualReplacementReusesExistingRecordAtomically
+--- PASS: TestTxOutboxResidualReplacementReusesExistingRecordAtomically (0.01s)
+=== RUN   TestTxQUICVerifiedLocalAdmissionAvoidsRedundantRecoveryButDiskRestoreFailsClosed
+--- PASS: TestTxQUICVerifiedLocalAdmissionAvoidsRedundantRecoveryButDiskRestoreFailsClosed (0.00s)
+=== RUN   TestTxQUICBridgeSharedCertificateUsesOneSnapshot
+--- PASS: TestTxQUICBridgeSharedCertificateUsesOneSnapshot (0.01s)
+=== RUN   TestTxQUICBridgeCoalescesIdenticalDistinctCertificatePointers
+--- PASS: TestTxQUICBridgeCoalescesIdenticalDistinctCertificatePointers (0.00s)
+=== RUN   TestTxQUICBridgeRejectsConflictingDistinctCertificatePointers
+--- PASS: TestTxQUICBridgeRejectsConflictingDistinctCertificatePointers (0.00s)
+=== RUN   TestDurableTxQUICBridgeSplitsAtFixedMicroBatchCount
+--- PASS: TestDurableTxQUICBridgeSplitsAtFixedMicroBatchCount (0.05s)
+=== RUN   TestDurableTxQUICBridgeSplitsAtFixedMicroBatchBytes
+--- PASS: TestDurableTxQUICBridgeSplitsAtFixedMicroBatchBytes (0.13s)
+=== RUN   TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding
+=== RUN   TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding/legacy
+=== RUN   TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding/typed
+=== RUN   TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding/one-byte_index
+=== RUN   TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding/large_index
+--- PASS: TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding (0.00s)
+    --- PASS: TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding/legacy (0.00s)
+    --- PASS: TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding/typed (0.00s)
+    --- PASS: TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding/one-byte_index (0.00s)
+    --- PASS: TestTxQUICBridgeItemRawSizeMatchesCanonicalEncoding/large_index (0.00s)
+=== RUN   TestTxQUICPayloadFramingDeclaresBoundedLength
+--- PASS: TestTxQUICPayloadFramingDeclaresBoundedLength (0.00s)
+=== RUN   TestTxQUICBridgeRawByteBackpressureReleasesCompletedRequests
+--- PASS: TestTxQUICBridgeRawByteBackpressureReleasesCompletedRequests (0.03s)
+=== RUN   TestTxQUICBridgeRawByteReservationRollsBackOnQueueFailure
+--- PASS: TestTxQUICBridgeRawByteReservationRollsBackOnQueueFailure (0.03s)
+=== RUN   TestTxQUICBridgeShutdownReleasesQueuedRawBytes
+--- PASS: TestTxQUICBridgeShutdownReleasesQueuedRawBytes (0.00s)
+=== RUN   TestTxOutboxRestartRestoresByteCapacityAndAckReleasesIt
+--- PASS: TestTxOutboxRestartRestoresByteCapacityAndAckReleasesIt (0.04s)
+=== RUN   TestTxQUICEndpointFromCommitteeAddressSupportsIPv6
+--- PASS: TestTxQUICEndpointFromCommitteeAddressSupportsIPv6 (0.00s)
+=== RUN   TestApplyFixedCommitteeAutoRoleUsesDynamicFHSRouting
+--- PASS: TestApplyFixedCommitteeAutoRoleUsesDynamicFHSRouting (0.00s)
+=== RUN   TestTxQUICFHSForwardEndpointsUseCanonicalCurrentCommittee
+--- PASS: TestTxQUICFHSForwardEndpointsUseCanonicalCurrentCommittee (0.00s)
+=== RUN   TestTxQUICFHSRouteRefreshRemovesLateClientOutsideCurrentCommittee
+--- PASS: TestTxQUICFHSRouteRefreshRemovesLateClientOutsideCurrentCommittee (0.01s)
+=== RUN   TestTxQUICForwardClientKeysAreCanonical
+--- PASS: TestTxQUICForwardClientKeysAreCanonical (0.00s)
+=== RUN   TestTxQUICFHSRouteLagFailsClosedWithoutStaticFallback
+--- PASS: TestTxQUICFHSRouteLagFailsClosedWithoutStaticFallback (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/eth	19.897s

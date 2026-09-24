@@ -1,0 +1,36 @@
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/devnet
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/version
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/relative
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/dns
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/public
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/credentials
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/poll
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/height
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/gasdecimal
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/payerpurpose
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/duplicatepayerlane
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/recipient
+--- PASS: TestDEXRelayCLIExplicitStrictConfiguration (0.03s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/devnet (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/version (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/relative (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/dns (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/public (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/credentials (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/poll (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/height (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/gasdecimal (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/payerpurpose (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/duplicatepayerlane (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/recipient (0.00s)
+=== RUN   TestDEXRelayCLIPrivateGasKeysAndSigner
+--- PASS: TestDEXRelayCLIPrivateGasKeysAndSigner (0.01s)
+=== RUN   TestDEXRelayCLILoopAndPrivatePaths
+--- PASS: TestDEXRelayCLILoopAndPrivatePaths (0.00s)
+=== RUN   TestDEXRelayCLIRealCommandFiniteRunAndSignal
+    dex_relay_test.go:280: SIGINT failed to release owned locks resource temporarily unavailable
+--- FAIL: TestDEXRelayCLIRealCommandFiniteRunAndSignal (0.27s)
+FAIL
+FAIL	github.com/cypherium/cypher/cmd/cypher	0.369s
+FAIL

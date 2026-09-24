@@ -1,0 +1,58 @@
+=== RUN   TestDEXNormalCLINativeFinanceRestart
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-init path=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/common/cypher/chaindata key0=ô—{-Åî‚cÄ!xò¯5C¿R›c˙BB¨ tx0=4Ê-Ä˜¡^)C±Áñ˙e‹;√G*Ÿb›=«„:
+    dex_finance_test.go:39: pre-inbox economic rejection: native finalized inbox anchor required
+    dex_finance_test.go:39: read-only closed fixture database after-parent-stop-before-probe stat /tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/common/cypher/chaindata: no such file or directory
+    dex_finance_test.go:146: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/child-1790059913180055203.log: INFO [09-22|08:51:53.324] DEX sidecar active                       index=1 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/dex-1
+    dex_finance_test.go:146: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/child-1790059913189076259.log: INFO [09-22|08:51:53.316] DEX sidecar active                       index=2 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/dex-2
+    dex_finance_test.go:146: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/child-1790059913190239764.log: INFO [09-22|08:51:53.316] DEX sidecar active                       index=3 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/dex-3
+    dex_finance_test.go:146: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/child-1790059913191489058.log: INFO [09-22|08:51:53.261] DEX sidecar active                       index=4 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/dex-4
+    dex_finance_test.go:146: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/child-1790059913192749974.log: INFO [09-22|08:51:53.328] DEX sidecar active                       index=5 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/dex-5
+    dex_finance_test.go:146: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/child-1790059913196377846.log: INFO [09-22|08:51:53.276] DEX sidecar active                       index=6 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/dex-6
+    dex_finance_test.go:146: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/child-1790059909532971729.log: 9-22|08:51:53.146] GetBlockByNumer                          number=0
+        INFO [09-22|08:51:53.146] Loaded most recent local header          number=0 hash="34e62d‚Ä¶e33a0b" td=1100 age=2d3h51m
+        INFO [09-22|08:51:53.146] Loaded most recent local full block      number=0 hash="34e62d‚Ä¶e33a0b" td=1100 age=2d3h51m
+        INFO [09-22|08:51:53.146] Loaded most recent local fast block      number=0 hash="34e62d‚Ä¶e33a0b" td=1100 age=2d3h51m
+        INFO [09-22|08:51:53.146] Disabling legacy transaction journal in favor of unified ingress WAL journal=transactions.rlp
+        INFO [09-22|08:51:53.146] Allocated cache and file handles         database=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/common/cypher/txoutbox cache=16.00MiB handles=128
+        INFO [09-22|08:51:53.153] Allocated cache and file handles         database=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/common/cypher/txingresswal cache=16.00MiB handles=128
+        INFO [09-22|08:51:53.155] NewTxPool                                config="{Locals:[] NoLocals:false Journal: Rejournal:1h0m0s PriceLimit:1000000000 PriceBump:10 AccountSlots:32768 GlobalSlots:2097152 AccountQueue:32768 GlobalQueue:1048576 RemoteAccountWindow:262144 LocalAccountWindow:262144 FastPendingLifetime:5m0s SlowPendingLifetime:10m0s FastQueuedLifetime:10m0s SlowQueuedLifetime:30m0s Lifetime:3h0m0s TransactionSizeLimit:64 MaxCodeSize:24}"
+        INFO [09-22|08:51:53.155] Using full sync for Fair HotStuff 
+        INFO [09-22|08:51:53.155] Common RPC signing account is not configured yet err="etherbase must be explicitly specified"
+        INFO [09-22|08:51:53.156] New router                               address=[::]:42003
+        INFO [09-22|08:51:53.156] Starting service                         name=cypherBFTService
+        INFO [09-22|08:51:53.156] Started Service                          name=cypherBFTService
+        INFO [09-22|08:51:53.156] instantiated all services                address=127.0.0.1:42003
+        INFO [09-22|08:51:53.156] SetCommitteeConfig                       len=7
+        INFO [09-22|08:51:53.159] TxQUIC connected to Fair HotStuff route provider proposalView=1 leaderIndex=6 endpoint=127.0.0.1:31006
+        INFO [09-22|08:51:53.159] Starting peer-to-peer node               instance=Geth/v1.9.20-stable(cypherium-v2.0.0)/linux-amd64/go1.27.1
+        INFO [09-22|08:51:53.160] Mapped network port                      proto=tcp extport=37815 intport=37815 interface=ExtIP(127.0.0.1)
+        INFO [09-22|08:51:53.161] New local node record                    seq=1 id=9a5ad3e112d85b88 ip=127.0.0.1 udp=0 tcp=37815
+        INFO [09-22|08:51:53.161] Started P2P networking                   self="enode://3ffbdeb5f620458275d88f7db5b1c39f8e6bc809c7030ba99f5eea174f69239ad83f4891f4fd4f3821dbedb92b1bbb5e78e7778132a9b3031d9db0059cb5bc06@127.0.0.1:37815?discport=0"
+        INFO [09-22|08:51:53.162] IPC endpoint opened                      url=/tmp/native-cli-ipc-2290048808/node.ipc
+        INFO [09-22|08:51:53.163] handle.Start                             maxPeers=0
+        INFO [09-22|08:51:53.163] Started durable TxQUIC outbox            records=0 bytes=0 workers=64
+        INFO [09-22|08:51:53.164] TxQUIC bridge enabled                    queue=1048576 queueBytes=268435456 batch=512 wireBytes=4194304 interval=10ms
+        INFO [09-22|08:51:53.339] DEX sidecar active                       index=0 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/dex-0
+        INFO [09-22|08:51:53.342] handleNewViewMsg got new view message    from=127.0.0.1:41713 viewId="63c1eb‚Ä¶3c6229"
+        INFO [09-22|08:51:53.362] handleNewViewMsg got new view message    from=127.0.0.1:40757 viewId="63c1eb‚Ä¶3c6229"
+        INFO [09-22|08:51:53.383] handleNewViewMsg got new view message    from=127.0.0.1:44459 viewId="63c1eb‚Ä¶3c6229"
+        INFO [09-22|08:51:53.423] handleNewViewMsg got new view message    from=127.0.0.1:46151 viewId="63c1eb‚Ä¶3c6229"
+        INFO [09-22|08:51:53.440] handleNewViewMsg got new view message    from=127.0.0.1:38741 viewId="63c1eb‚Ä¶3c6229"
+        INFO [09-22|08:51:53.453] handleNewViewMsg got new view message    from=127.0.0.1:41177 viewId="63c1eb‚Ä¶3c6229"
+        INFO [09-22|08:51:53.459] handleNewViewMsg got new view message    from=127.0.0.1:37527 viewId="63c1eb‚Ä¶3c6229"
+        INFO [09-22|08:51:53.545] Got interrupt, shutting down... 
+        INFO [09-22|08:51:53.545] IPC endpoint closed                      url=/tmp/native-cli-ipc-2290048808/node.ipc
+        INFO [09-22|08:51:53.552] Stopped durable TxQUIC outbox 
+        INFO [09-22|08:51:53.552] Stopped QUIC tx ingress 
+        INFO [09-22|08:51:53.552] Raft stopped 
+        INFO [09-22|08:51:53.553] Ethereum protocol stopped 
+        INFO [09-22|08:51:53.553] Transaction pool stopped 
+        INFO [09-22|08:51:53.553] Writing clean trie cache to disk         path=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/common/cypher threads=2
+        INFO [09-22|08:51:53.553] txsEventLoop stopped 
+        INFO [09-22|08:51:53.554] Persisted the clean trie cache           path=/tmp/TestDEXNormalCLINativeFinanceRestart730915940/001/common/cypher elapsed="982.027¬µs"
+        INFO [09-22|08:51:53.554] Blockchain stopped 
+        INFO [09-22|08:51:53.554] key blockchain manager stopped 
+--- FAIL: TestDEXNormalCLINativeFinanceRestart (4.16s)
+FAIL
+FAIL	github.com/cypherium/cypher/cmd/cypher	4.198s
+FAIL

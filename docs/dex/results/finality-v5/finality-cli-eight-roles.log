@@ -1,0 +1,36 @@
+=== RUN   TestDEXNormalCLIEightRoleCombinations
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_false_dex_fa444904194/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=false rpc=false dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=df609dce15824cb5e3e508af460aa207fca50922
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_false_dex_fal3957587426/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=false dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=9eb9b629a2002c2d59f368881a2ffe85db58e438
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_fal806693458/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=false rpc=true dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=7dd812c5f7ed8333214f9dac71a44d56b2fb707e
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_true_dex_fals1653849942/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=true dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=098144ea7355285c8e2ba386051c90a9a51bae68
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_true
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_false_dex_tr3151468557/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=false rpc=false dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=8f7fb6136f588c771022b2a5eb987b2e7569138f
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_true
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_false_dex_tru2806610513/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=false dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=3fbd7cb4ebeee2a1929238141cf6ded132bcf12d
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_true
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_tru3335255158/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=false rpc=true dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=e4825f2d21553922d0b2a439c6fefdf61a00129b
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_true
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_true_dex_true2824515820/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=true dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=6474e292578e3e7c2eb7cd6d246d4790fbdeed82
+--- PASS: TestDEXNormalCLIEightRoleCombinations (39.75s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_false (4.79s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_false (5.00s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_false (4.38s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_false (4.21s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_true (6.33s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_true (4.91s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_true (5.29s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_true (4.84s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/cypher	39.793s

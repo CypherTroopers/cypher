@@ -1,0 +1,17 @@
+{"Time":"2026-09-23T22:01:59.949238196+02:00","Action":"start","Package":"github.com/cypherium/cypher/core"}
+{"Time":"2026-09-23T22:02:00.006513586+02:00","Action":"run","Package":"github.com/cypherium/cypher/core","Test":"TestDEXNativeHistorySignedTXCheckpointClaimReplayAndGas"}
+{"Time":"2026-09-23T22:02:00.006602672+02:00","Action":"output","Package":"github.com/cypherium/cypher/core","Test":"TestDEXNativeHistorySignedTXCheckpointClaimReplayAndGas","Output":"=== RUN   TestDEXNativeHistorySignedTXCheckpointClaimReplayAndGas\n","OutputType":"frame"}
+{"Time":"2026-09-23T22:02:00.298700749+02:00","Action":"output","Package":"github.com/cypherium/cypher/core","Test":"TestDEXNativeHistorySignedTXCheckpointClaimReplayAndGas","Output":"    dex_native_history_test.go:224: signed native schema6 TXs: deposit100, custody90, claim10; bad proof reverted; duplicate checkpoint/claim +cold reopen did not pay twice; proof bytes=2006; sender gas cost=50707248000000000\n"}
+{"Time":"2026-09-23T22:02:00.298768074+02:00","Action":"output","Package":"github.com/cypherium/cypher/core","Test":"TestDEXNativeHistorySignedTXCheckpointClaimReplayAndGas","Output":"--- PASS: TestDEXNativeHistorySignedTXCheckpointClaimReplayAndGas (0.29s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T22:02:00.298774746+02:00","Action":"pass","Package":"github.com/cypherium/cypher/core","Test":"TestDEXNativeHistorySignedTXCheckpointClaimReplayAndGas","Elapsed":0.29}
+{"Time":"2026-09-23T22:02:00.340515221+02:00","Action":"output","Package":"github.com/cypherium/cypher/core","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-23T22:02:01.406154467+02:00","Action":"output","Package":"github.com/cypherium/cypher/core","Output":"ok  \tgithub.com/cypherium/cypher/core\t1.456s\n"}
+{"Time":"2026-09-23T22:02:01.431329659+02:00","Action":"pass","Package":"github.com/cypherium/cypher/core","Elapsed":1.482}
+{"Time":"2026-09-23T22:02:05.524188635+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/settlement"}
+{"Time":"2026-09-23T22:02:05.580869088+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeAncestryHistoricalCheckpointClaimsRestartAndRollback"}
+{"Time":"2026-09-23T22:02:05.58097234+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeAncestryHistoricalCheckpointClaimsRestartAndRollback","Output":"=== RUN   TestNativeAncestryHistoricalCheckpointClaimsRestartAndRollback\n","OutputType":"frame"}
+{"Time":"2026-09-23T22:02:06.770169266+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeAncestryHistoricalCheckpointClaimsRestartAndRollback","Output":"--- PASS: TestNativeAncestryHistoricalCheckpointClaimsRestartAndRollback (1.19s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T22:02:06.770226211+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeAncestryHistoricalCheckpointClaimsRestartAndRollback","Elapsed":1.19}
+{"Time":"2026-09-23T22:02:06.771649911+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-23T22:02:07.788655747+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Output":"ok  \tgithub.com/cypherium/cypher/dex/settlement\t2.264s\n"}
+{"Time":"2026-09-23T22:02:07.789804395+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/settlement","Elapsed":2.266}

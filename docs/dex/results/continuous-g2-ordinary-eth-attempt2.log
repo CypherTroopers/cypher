@@ -1,0 +1,79 @@
+=== RUN   TestFHSNativeOrdinaryETHSource
+    dex_native_eth_source_test.go:84: unknown account
+    fhs_process_recovery_test.go:227: validator 1024840 complete log: /tmp/common-dex-continuous.uye5vgqi/fhs-process-failure-1818056452.log
+    fhs_process_recovery_test.go:232: validator 1024840 log tail:
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T12:24:53+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+    fhs_process_recovery_test.go:227: validator 1024835 complete log: /tmp/common-dex-continuous.uye5vgqi/fhs-process-failure-20441196.log
+    fhs_process_recovery_test.go:232: validator 1024835 log tail:
+        t=2026-09-22T12:24:49+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T12:24:49+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+    fhs_process_recovery_test.go:227: validator 1024828 complete log: /tmp/common-dex-continuous.uye5vgqi/fhs-process-failure-3017027919.log
+    fhs_process_recovery_test.go:232: validator 1024828 log tail:
+        t=2026-09-22T12:24:46+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T12:24:46+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    fhs_process_recovery_test.go:227: validator 1024823 complete log: /tmp/common-dex-continuous.uye5vgqi/fhs-process-failure-3711194665.log
+    fhs_process_recovery_test.go:232: validator 1024823 log tail:
+        t=2026-09-22T12:24:42+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T12:24:42+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:55885 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    fhs_process_recovery_test.go:227: validator 1024817 complete log: /tmp/common-dex-continuous.uye5vgqi/fhs-process-failure-1561893685.log
+    fhs_process_recovery_test.go:232: validator 1024817 log tail:
+        t=2026-09-22T12:24:38+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T12:24:38+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:40841 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:55885 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    fhs_process_recovery_test.go:227: validator 1024810 complete log: /tmp/common-dex-continuous.uye5vgqi/fhs-process-failure-3511654283.log
+    fhs_process_recovery_test.go:232: validator 1024810 log tail:
+        t=2026-09-22T12:24:35+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T12:24:35+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:40841 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:37884 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:55885 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    fhs_process_recovery_test.go:227: validator 1024805 complete log: /tmp/common-dex-continuous.uye5vgqi/fhs-process-failure-931933715.log
+    fhs_process_recovery_test.go:232: validator 1024805 log tail:
+        t=2026-09-22T12:24:31+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T12:24:31+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:37884 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:33701 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:40841 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:55885 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T12:24:53+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:47924 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+--- FAIL: TestFHSNativeOrdinaryETHSource (29.87s)
+FAIL
+FAIL	github.com/cypherium/cypher/reconfig	29.927s
+FAIL

@@ -1,0 +1,10 @@
+{"Time":"2026-09-23T11:21:54.283485055+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/relay"}
+{"Time":"2026-09-23T11:21:54.309005021+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners"}
+{"Time":"2026-09-23T11:21:54.30960663+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Output":"=== RUN   TestRelayColdHistoryDoesNotDelayReservedOwners\n","OutputType":"frame"}
+{"Time":"2026-09-23T11:21:55.772599138+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Output":"    cold_scheduling_test.go:115: COLD_SCHEDULER records=204 firstCP=203 firstClaim=204 firstInbox=1 first8History=6 completedAt=208 ObserveCalls=208 elapsed=710.028188ms fakeBackend=true\n"}
+{"Time":"2026-09-23T11:21:55.772694776+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Output":"    cold_scheduling_test.go:120: cold historical work delayed reserved owners or independent lane\n","OutputType":"error"}
+{"Time":"2026-09-23T11:21:55.772731044+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Output":"--- FAIL: TestRelayColdHistoryDoesNotDelayReservedOwners (1.46s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T11:21:55.772896542+02:00","Action":"fail","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Elapsed":1.46}
+{"Time":"2026-09-23T11:21:55.773352651+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Output":"FAIL\n","OutputType":"frame"}
+{"Time":"2026-09-23T11:21:55.775525043+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Output":"FAIL\tgithub.com/cypherium/cypher/dex/relay\t1.491s\n","OutputType":"frame"}
+{"Time":"2026-09-23T11:21:55.775556371+02:00","Action":"fail","Package":"github.com/cypherium/cypher/dex/relay","Elapsed":1.492}

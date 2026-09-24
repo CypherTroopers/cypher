@@ -1,0 +1,2 @@
+fatal: unable to access 'https://github.com/herumi/bls.git/': Could not resolve host: github.com
+make: *** [Makefile:19: cypher] Error 128

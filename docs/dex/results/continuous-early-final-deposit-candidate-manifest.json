@@ -1,0 +1,50 @@
+{
+  "candidate-spec.md": {
+    "bytes": 4450,
+    "sha256": "e7c6177db10d10bcda87a18c57f00d1f72c947a798adcb4d232a3f504a77300b"
+  },
+  "check.log": {
+    "bytes": 269,
+    "sha256": "5c121faa93ed1beaf16d21510cc8e49abe3798003e808a3e7ada87cdef13248c"
+  },
+  "compare_original.py": {
+    "bytes": 2888,
+    "sha256": "f3706941fd43d6e26d509ade8637f155d1da3b691f48e7ee1182153cfc108d09"
+  },
+  "comparison.json": {
+    "bytes": 700,
+    "sha256": "244599337e66a4749d273416f2f12049239d08f8e65b30736db0176ecad32f50"
+  },
+  "comparison.log": {
+    "bytes": 700,
+    "sha256": "244599337e66a4749d273416f2f12049239d08f8e65b30736db0176ecad32f50"
+  },
+  "continuous-extended10-early-final-deposit.json": {
+    "bytes": 238122,
+    "sha256": "0305ea91c4269ec1eee577ef1bf0dfeedbbb0d1c6e3c3d41788dc88fa6c188da"
+  },
+  "continuous_early_final_deposit_vectors.py": {
+    "bytes": 8988,
+    "sha256": "dc8de1e008213f50b2b432e70a4e4f4092c10e7a4670724d85d414ef47486283"
+  },
+  "initial-check-failure.txt": {
+    "bytes": 231,
+    "sha256": "e18e2d5a0c05e57dad9cfe6f43868cc4c02013119668d9aaec7cc4f9ad346d6b"
+  },
+  "intermediate-ledger-atoms.csv": {
+    "bytes": 43381,
+    "sha256": "c0990bf11d6efc5ed75b4f20fda31d3e38bb1561828479a337cca95ff860c69b"
+  },
+  "original-after-sha256.json": {
+    "bytes": 660,
+    "sha256": "07659c6728762e2dc4896517a53401376388f8b5f3821e4d00cd2373b2407616"
+  },
+  "original-sha256.json": {
+    "bytes": 660,
+    "sha256": "07659c6728762e2dc4896517a53401376388f8b5f3821e4d00cd2373b2407616"
+  },
+  "reference_model.py": {
+    "bytes": 10601,
+    "sha256": "3cc616ab2adfacf61d58a3ea78c26614d3d51ab1597136e1c274e42ca9d24525"
+  }
+}

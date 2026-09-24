@@ -1,0 +1,2873 @@
+{
+  "source_log": "docs/dex/results/integration-final-financial-cli.log",
+  "source_sha256": "4bc80a37d76dbd3486297d8b88762a94c583948848a3cf538ee1a2707705782c",
+  "result": "--- PASS: TestFHSNativeFinancialOrdinaryCLI (262.12s)",
+  "unit": "native CLX atoms (1 CLX = 10^18 atoms)",
+  "scope": "One isolated run only. ACK, DEX finality, CLX finality and payment are distinct events.",
+  "gas_price_atoms": "1600000000",
+  "transactions": [
+    {
+      "tx": "0x8b2d6751665e6e8f6b9b458208c51acfcc582ad09546a669c91d2a2f29df8e15",
+      "height": "1",
+      "hash": "0xdcdb45fbc6ccb665f05eb906a29bf446df7df1524144ed8f71d02f80308f781c",
+      "status": "1",
+      "payer": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+      "gas": "271600",
+      "value": "100000000000000000000"
+    },
+    {
+      "tx": "0x1d46d66cd1ea3cbe451c6b748242e3e98ba382606c7864a12e0db1f970aa669a",
+      "height": "3",
+      "hash": "0x03f88a1cc0894ca16f799aa84917f6835e2fb7b8883cff344dd645423a2b21a3",
+      "status": "1",
+      "payer": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+      "gas": "271600",
+      "value": "100000000000000000000"
+    },
+    {
+      "tx": "0xc303a78a03748f7b65e359a0b54c61f082df7df2af283bca1aa7ebd9d66286f8",
+      "height": "5",
+      "hash": "0x2a5676a0ab7689faf2bad812e6aa82d71ac0ee06fee928460b153fb8df8b7a96",
+      "status": "1",
+      "payer": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+      "gas": "271600",
+      "value": "20000000000000000000"
+    },
+    {
+      "tx": "0x18f49eaa79f64151cc99290fe3831157c6fe83b78f4f318c5fa18c529ee655e4",
+      "height": "7",
+      "hash": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "status": "1",
+      "payer": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+      "gas": "271600",
+      "value": "5000000000000000000"
+    },
+    {
+      "tx": "0x76c4be96eb39f68093f5b9b75095927a7989a6878d4dfabdea54b3a890a6986d",
+      "height": "9",
+      "hash": "0xfc12e06a884fec4ae05d3beeb05f8dfe4e617b22d101e02af0a46f0b910cf3d6",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "13033584",
+      "value": "0"
+    },
+    {
+      "tx": "0xdac5bd7eff105827fe5285ef7ef963ca761ef20049da7dca0354410ecf73b12e",
+      "height": "11",
+      "hash": "0xba6dcfb829b633bb0c0c0400f8e5f3e0fd4c3fa73e09d4f8d4c30a93a6e6fa32",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126156",
+      "value": "0"
+    },
+    {
+      "tx": "0xf73dde6a99f2fdb540c31b9b2ef87deaa4b2f89d57da9c93aff2e070665f0dd1",
+      "height": "13",
+      "hash": "0x7932213a4acf23eec7977d1bdf5e78880879d7aa242f0832b391a6728668a6ac",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126168",
+      "value": "0"
+    },
+    {
+      "tx": "0xfe1c94b3cc842a2d2c3259f258680dec5bc809a1b97321a2dc053f458fc1b71e",
+      "height": "15",
+      "hash": "0x87609d8ff7096db398c1b54b3e0bb58618f2fa2817e9be2db92fcc28a1f03b4f",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126180",
+      "value": "0"
+    },
+    {
+      "tx": "0x48f627078ead8f7b24c49fed458fc9b989256bb8a5e3b23145bf71e235632570",
+      "height": "17",
+      "hash": "0x113f288f5d0d53e3bf960e98f1e63f3cb212fd9a36b09c9928585848092de61c",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126216",
+      "value": "0"
+    },
+    {
+      "tx": "0x468b7e0ef03e68075cbe4689968dc251561956fb3ffb78d916fd78b6cc045893",
+      "height": "19",
+      "hash": "0xbd81e91cbf2bf267ed1cd9323bad5f3690fbb05c403e3607809fabb6e3d23427",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126132",
+      "value": "0"
+    },
+    {
+      "tx": "0xc2e1b0ee9ed7ee36672233ac5b0ee596ae52e59c5ab330f9f711d3002d899f47",
+      "height": "21",
+      "hash": "0x65898d0f5933a94478fc9b49759693593b3d0118b2c7f9c63a37e5072f598bac",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126156",
+      "value": "0"
+    },
+    {
+      "tx": "0xf5bc68cae6b34e6e12cb4a281bd7e8d38a46de57b9b85c4a5fe078d2e7827a9e",
+      "height": "23",
+      "hash": "0xe57a4ebc953d2ac8ea7c8868977bd620fc0a3fbfd84e964849bd4411a0684d54",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126180",
+      "value": "0"
+    },
+    {
+      "tx": "0x5168bbec6850a866692ce24032777c03e694e76856272667f75cef2413316aba",
+      "height": "25",
+      "hash": "0xa2727d0cdb8847f8662cb3f3196ce2e1f8c4a1dc837b58d830d6a3e3c29ec141",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126156",
+      "value": "0"
+    },
+    {
+      "tx": "0xb4dd22d5703522e061ff5c6b677a4a7f50b9a19db19cec81d6e595b488bf0393",
+      "height": "27",
+      "hash": "0x2c1a3c190bf632b433fe5289218a2e15df3784982b076e8ce8df4ed3bf8ed6cd",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126156",
+      "value": "0"
+    },
+    {
+      "tx": "0x66b645779678a5c55236fa40f832350d22a8737c7a25245f9ce9869ddd17a8ef",
+      "height": "29",
+      "hash": "0xbc2f264b3bd1a3c92646ba092895d54910119c1b21700892fc3221647d330904",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126156",
+      "value": "0"
+    },
+    {
+      "tx": "0x4936e5eb18517f283224e87348fa5956810814d95475cf9feee23a8d53b19d42",
+      "height": "31",
+      "hash": "0xe5a348f178fc0c89c8e0f1581ff91d91c886796bdeb2d87579bdcf27d7595143",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126132",
+      "value": "0"
+    },
+    {
+      "tx": "0xcfa4a65ba72345d0e9f64ad010d55f780b0b5ffbd3dd07c7fc97cf3a489065b4",
+      "height": "33",
+      "hash": "0x0d72a4395cf363f35eb1e0346ff6dc6a05f4198e2879ed5e51ddac5ce0ff51e6",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126216",
+      "value": "0"
+    },
+    {
+      "tx": "0x2e3cd96396258e49a791aadb0d907aba79d1246f6f544ec2d39f8e641725eeee",
+      "height": "35",
+      "hash": "0x74aa081c041941ff223ca91761ac5b7a47a2b21f64dda51ed2eb7e284ddebf22",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126648",
+      "value": "0"
+    },
+    {
+      "tx": "0x8823a2e927dc17b26a44c5396f9bc7eb80634b49fa4f9d702ebaaea5f54b1ab5",
+      "height": "37",
+      "hash": "0xdb0bc0b8e992bbf3c1804ac1150fa4de2b8ae569d8f97f5ef4bd3dcc7411abb0",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126096",
+      "value": "0"
+    },
+    {
+      "tx": "0x023246966b0708ec103193bfef0ebf0b27c520814ec0e557e20c4d70801693a2",
+      "height": "39",
+      "hash": "0x7fcd52163708f396a06d2ad1182b2e72d1a6660695a9c0bbafbb1cc60cd551ee",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126168",
+      "value": "0"
+    },
+    {
+      "tx": "0x9cc6f9d229cfa038cf5deebd042ec5a18626f5470fe02cd1b4d6f31d0cf7ba5d",
+      "height": "41",
+      "hash": "0x868c104d496495df1813417d7a1016ba9e0be19a77d1a59c5a25aa2a6dfeae4f",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12126168",
+      "value": "0"
+    },
+    {
+      "tx": "0x5a43af81c3edbbca754dbf4fb30eb601443b198f5df11e1cb4bafabc50a15f73",
+      "height": "43",
+      "hash": "0x07af7ee4f54e171c49123dd19c708ddbf1ac88b0cb35bfda322fc51352d0a910",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "12127176",
+      "value": "0"
+    },
+    {
+      "tx": "0x684d9601dd5f36dc704e4afa06d4d3619398d3b7fd11346bda95c6682fb4de51",
+      "height": "45",
+      "hash": "0x50ca9a14f85a21cf8afbad66ba85561c88992aff59a4b70166052c666873c329",
+      "status": "1",
+      "payer": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+      "gas": "12127176",
+      "value": "0"
+    },
+    {
+      "tx": "0x03b173c57694ceeaf275070e50e2786e82cf1071487ffd2433a3e7e80894071d",
+      "height": "47",
+      "hash": "0x5137e0cd0e7823a4e2f1ac700edf6bf8e4135194b799936644b32d1f90409668",
+      "status": "0",
+      "payer": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+      "gas": "12127176",
+      "value": "0"
+    },
+    {
+      "tx": "0x4deebf0649fe033cfcd0e0bc3471cd077db971140f0166b5607f9d2a305d5bc1",
+      "height": "49",
+      "hash": "0x1493c6f6ba9b0aeffedd1d333614c5341a4b888bffa45842e8f04b2f08f29af8",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "384708",
+      "value": "0"
+    },
+    {
+      "tx": "0x2dd8d154f0b7ffc75ff553c459c3a2545401546279f2e9279ab5ffd4052d976b",
+      "height": "51",
+      "hash": "0xb2448f24be80037dd0642b4b75350e0965b1d500db3b95af54e2c72a30f10015",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "390132",
+      "value": "0"
+    },
+    {
+      "tx": "0x591721f8112fe56dcbf6fde04577ce7a42b8edc28d86b644f5fb9ed4ad6a4a9b",
+      "height": "53",
+      "hash": "0xce21cd2c3c48bff4bce2564820a6b6cc7c526fb2ee51fd458fa8182d8dc65242",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "390132",
+      "value": "0"
+    },
+    {
+      "tx": "0x3bd6c3d3651a851ab5e09ee57643012e9693fb83495774dd5e8b13914bd85a70",
+      "height": "55",
+      "hash": "0xed091e3967a56a8b8b2ae358c6fcd8f78453a4861a73d3c8b3723d3cfbcc6050",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "390156",
+      "value": "0"
+    },
+    {
+      "tx": "0x9920667c688c309f63a0ce2cb96941778a1663832987385960ceeddada359a6b",
+      "height": "57",
+      "hash": "0xb82c4700fa650d722f4b2493386c41c4e456a10fdfb68f6890ed0bf30c40b672",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "390132",
+      "value": "0"
+    },
+    {
+      "tx": "0x6fba5684b16ac65628af145dd0c9f471dd73074e3e493683895411ccf2ecdb4e",
+      "height": "59",
+      "hash": "0xd55e8982dfa33ee244e9dc5353683cfe75d23e4b7f72beca8582444b7cd12fa3",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "390156",
+      "value": "0"
+    },
+    {
+      "tx": "0xf512a1e8d23eeb31b75e60c000456fe6eddf8b65e6f872711eb1bde484b7b415",
+      "height": "61",
+      "hash": "0x7764843d24e6575fc586d2d04eb343599858e252ac6e093e11d72c4133d3b6c0",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "390156",
+      "value": "0"
+    },
+    {
+      "tx": "0x9efc16a528eabdee760f068b7e6d08164c696b916e230366c0a5da98947bcb83",
+      "height": "63",
+      "hash": "0x2a9121ad1b1b4d6237d1560392343a94474b6b308bdc7ecfa6cb7e72fab4677a",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "390144",
+      "value": "0"
+    },
+    {
+      "tx": "0x17c453de623a5be01d508f29b2a6c571086e873d3a170b921b88c071bb80c3ac",
+      "height": "65",
+      "hash": "0xa0fd0539f3570d801c55ee54b7b6d43e507a244f335825320f88e7ba77f85406",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "21000",
+      "value": "1"
+    },
+    {
+      "tx": "0x9840eac37ecaaa1f00bd5002b9451affaaee29854a9b977a59ce9b262e15e54b",
+      "height": "67",
+      "hash": "0x8e02f2828ca7a4dc31cc95b6f0a248af51bf171023bda6215817a848e01fe97c",
+      "status": "1",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "384708",
+      "value": "0"
+    },
+    {
+      "tx": "0xb6559a830375878f53515c5457078042a90338edf6da15c6f5e8b389ea41a7b7",
+      "height": "69",
+      "hash": "0x7e67b0dc800b906ace8efbdf169eec4ff4008f3fef22e8ed6b9099c58ad377b4",
+      "status": "0",
+      "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "gas": "384708",
+      "value": "0"
+    }
+  ],
+  "deposits": [
+    {
+      "index": "0",
+      "depositID": "b6e6e33eb612d4380fc21271bb7c3400bb74c84be0ffeb67ff018a0fc04b314c",
+      "entryHash": "43174e5e6a4cd41404ade7fae7d8dff118e17050fcba83002fbde8eedf4af2bb",
+      "tx": "0x8b2d6751665e6e8f6b9b458208c51acfcc582ad09546a669c91d2a2f29df8e15",
+      "owner": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+      "amount": "100000000000000000000",
+      "bucket": "1",
+      "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+    },
+    {
+      "index": "1",
+      "depositID": "ab61e57ace012fee614a2ee93d3a89f2145c9ed0cfe58e12a565a1b98c2625f6",
+      "entryHash": "229d7697b6991288edcb503f31339190302ebdb7bf8abcc55c8ecbc5f0d0ffd1",
+      "tx": "0x1d46d66cd1ea3cbe451c6b748242e3e98ba382606c7864a12e0db1f970aa669a",
+      "owner": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+      "amount": "100000000000000000000",
+      "bucket": "1",
+      "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+    },
+    {
+      "index": "2",
+      "depositID": "f2ff3b036507f84cb14bcf211518327bbc804329a4a39c8a60dd8a5c6452fc4a",
+      "entryHash": "971bf4a6fdbb1a66f1942fb4c999cc6968990e9f399e1b3ed0f2fa23a09194c2",
+      "tx": "0xc303a78a03748f7b65e359a0b54c61f082df7df2af283bca1aa7ebd9d66286f8",
+      "owner": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+      "amount": "20000000000000000000",
+      "bucket": "2",
+      "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+    },
+    {
+      "index": "3",
+      "depositID": "e8674990847f96c3e994faba341b7a372f7c2b1c611190228c2a9b301a6c26ff",
+      "entryHash": "1b0dc6ff4cee339dd4426b04b005440725bd79a1fe6729f5d64fe6df9900c391",
+      "tx": "0x18f49eaa79f64151cc99290fe3831157c6fe83b78f4f318c5fa18c529ee655e4",
+      "owner": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+      "amount": "5000000000000000000",
+      "bucket": "3",
+      "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+    }
+  ],
+  "checkpoint_submissions": [
+    {
+      "sequence": "1",
+      "checkpoint": "86da2641e5e138b655e9c56a64ad707b4b53a6161ea0114ca69a548a6e3551a7",
+      "root": "02717fb07ef6627f3465df53d12d931b83d3770dddf8d46e1e5ab5f9915ade2b",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "bab090c825d72476829c4000e5a96fbea80b25490530bb94208f04823df6bbb8",
+      "finalityEvidenceKeccak": "0xfc953958b2bdd1cb068be02afcc31fe86c85ee0f4d21ec7a722efc3df23ae4cc",
+      "finalityBytes": "1051",
+      "calldataBytes": "18984",
+      "clxTX": "0x76c4be96eb39f68093f5b9b75095927a7989a6878d4dfabdea54b3a890a6986d"
+    },
+    {
+      "sequence": "2",
+      "checkpoint": "d85199fdc42e32ffb15f3b68fa7424d078818a6b6193a1392649e0c64334af1a",
+      "root": "4c90d3b003548aae9bbc1b22c96a4a5dcf0d8585709ddb232543bac444046e50",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "3ceff64807349bee4d0b93a554ee44518b66d57b35b6cd817db2c51c3f400b64",
+      "finalityEvidenceKeccak": "0xece2765f3ebc03781d24351243d678ca24c215ffba2736dd11d4313888294157",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0xdac5bd7eff105827fe5285ef7ef963ca761ef20049da7dca0354410ecf73b12e"
+    },
+    {
+      "sequence": "3",
+      "checkpoint": "e99b959be533a9c34c06914e91facf19d4816d698d4e12b125a6f2ac41a9a6c2",
+      "root": "63408d5962c4ef8f040273f9cfe1d7a55054eea47a7fabe14e3c3958423e442a",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "94a868c63cbf7d6da96dadd8124819b097c8a901633ac6c963f8460f3364d19a",
+      "finalityEvidenceKeccak": "0x4c7c9297aab0bd10323c5bc8687c1f082e47f611c0f427121c430561ee90963d",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0xf73dde6a99f2fdb540c31b9b2ef87deaa4b2f89d57da9c93aff2e070665f0dd1"
+    },
+    {
+      "sequence": "4",
+      "checkpoint": "2752b2d3731eda1ea2cde5755ddfe08ba47957bea2730511cbefbfae41e0ddaf",
+      "root": "3a468385d9b8e1ae6638bc6c0276703ae5f65c0568628af663606711b0722d1b",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "e1919c66a0301fbf7c7d5c1cf17752660f85eb1b0463f48777d93489d840a801",
+      "finalityEvidenceKeccak": "0x1ae9051b89b4c05ed003d988e9def5e49e2bee79fc3e6ac7c24856695296eae1",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0xfe1c94b3cc842a2d2c3259f258680dec5bc809a1b97321a2dc053f458fc1b71e"
+    },
+    {
+      "sequence": "5",
+      "checkpoint": "469835dbd8debec29fc0aa208b86ad8e9722e1e35f937e96842e6e90445d37be",
+      "root": "8cfffb6d7141e310e35a85ed9ccdb15b6f94e282314f7faa708a338515a59845",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "94ec77425b9e654a107223db07cedcc48c7d2aa777873da5b6a346fce8bada8d",
+      "finalityEvidenceKeccak": "0xd77194762051b5428a98f0e48b2d0aa81aa442e56ffb1f5128b5d8af8a0d6674",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x48f627078ead8f7b24c49fed458fc9b989256bb8a5e3b23145bf71e235632570"
+    },
+    {
+      "sequence": "6",
+      "checkpoint": "280a0477fb67013fc33647127fda8276f6a293803c7c10f60acad5171a0b89aa",
+      "root": "9f90c62dad7db7e04a3b3de81b3db22e0d5603b9f06da025b9d8e8484b9f87ef",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "09ca7f1c3dac83dea1cb168fd3efdb0b2586d6ccbd2a896a459ddd601cd2429a",
+      "finalityEvidenceKeccak": "0x76824e76617a698474898e3986806994aa7bfb8a186ca40fed2823259cdffc45",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x468b7e0ef03e68075cbe4689968dc251561956fb3ffb78d916fd78b6cc045893"
+    },
+    {
+      "sequence": "7",
+      "checkpoint": "c41c9bcc5f3fe3ed7d421b2da06888ab9230b3b3f337ada6473ff5fdace7b915",
+      "root": "7d2d0284ad073278a7cf5b536a46179a94ca61ad1ae3e16e5b8dc4db6ef9336c",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "07e3dfeb2c383c683a74d32a3fe095d8f9b3896bd52ba6f315a956419a8dc738",
+      "finalityEvidenceKeccak": "0x4186bcd1d968db33aa1f2cd88c719d66500b7d74f655ebdfd63f797bf470e81d",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0xc2e1b0ee9ed7ee36672233ac5b0ee596ae52e59c5ab330f9f711d3002d899f47"
+    },
+    {
+      "sequence": "8",
+      "checkpoint": "c62146dc6b86f575f237fa729b1e75d1a85f758e9efd209d9c787aa9503cbe49",
+      "root": "aecb5934e1ea22e55e0e173d0dc40998f1ea47b9d7784845602c38e570775c4b",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "d783a5f9558e6cef2d5f86889839a4e4ce65a86652b2701949c22eadcedcfe94",
+      "finalityEvidenceKeccak": "0xc8371f1810d5bb388de304837e7a4e0a00ae10c5236c5888987a50bdfc0f4259",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0xf5bc68cae6b34e6e12cb4a281bd7e8d38a46de57b9b85c4a5fe078d2e7827a9e"
+    },
+    {
+      "sequence": "9",
+      "checkpoint": "a1d19a28db8464e8cd3ec6ac66dc65295c9a3bebfef70be160b2d922a0c441d3",
+      "root": "7ff35960dacefe17a5df619a6616326fc8e4aff03bca9ef77cb40ec6a6a12d19",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "2f2a2c3cbdff30c67ba8a80285b28b477a5e7c4bb582d98895bc3b945268246d",
+      "finalityEvidenceKeccak": "0xd4a3cae89af24d9ccd8fca210f845b19c48f91864983c0dd70dbed79a0604aaf",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x5168bbec6850a866692ce24032777c03e694e76856272667f75cef2413316aba"
+    },
+    {
+      "sequence": "10",
+      "checkpoint": "6299cef314e555b7d992f7c92110ea59b05261a697f718dc8770e957f1a27fff",
+      "root": "395894e6143ba44941c5c94df7e5c2c9f313957eb40c34d30d0ee6183d7ba5a6",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "1fa4c9e99247435f9b4a2d5e30e964bf76c9019f5dd83793a0755476fccf4521",
+      "finalityEvidenceKeccak": "0x3da16f57b04f7786864708767b068157ed30c4a64de6946edb709cc5930e1dc2",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0xb4dd22d5703522e061ff5c6b677a4a7f50b9a19db19cec81d6e595b488bf0393"
+    },
+    {
+      "sequence": "11",
+      "checkpoint": "c7f93d1b251fa801c2fee1257158be5a42133372e224964f9a181075beddf019",
+      "root": "0a22ded90e58350781654ed907f1c73f617b82a870d337caddb4486a10078c5a",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "6f923b3f8c974752bcd8e0e6fdbf7b391716934debee1ebecab4d53c2b21322f",
+      "finalityEvidenceKeccak": "0x537eec3d6812d2295a63e6e6af0d92d203bfd0d8470d5b650d4a4e5d39dc0419",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x66b645779678a5c55236fa40f832350d22a8737c7a25245f9ce9869ddd17a8ef"
+    },
+    {
+      "sequence": "12",
+      "checkpoint": "2f377b4a03d34866bf1703b9e77f0b4bfdfc191c92ec466d5a843149b019e77e",
+      "root": "9ac0c63f55f7f6268c8175e1a7c3dbb07ad83733c81611830ce8f97de2d25d30",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "a3884b124f0d78402d3f0398d55e16b1572540c5a26953ac68f158b7880bb21d",
+      "finalityEvidenceKeccak": "0x09715918171f6f8641cec85cfb6f034b99a8091b44d42641291097349add3cd6",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x4936e5eb18517f283224e87348fa5956810814d95475cf9feee23a8d53b19d42"
+    },
+    {
+      "sequence": "13",
+      "checkpoint": "482e705fe26472f3ef738dc9a4f0c2304d5bebd6c75aa6a15b21a32a3ec18a25",
+      "root": "700fc69e15d18678832577a1099ad076751667a7743555bb8c61a31b4df90ae1",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "7f5c768f9424c235c723ae3e21a710bcb39d7250eaea9a960a481886810ab138",
+      "finalityEvidenceKeccak": "0xafab3964e2046d69f474fd9a6d7ba96f2327410103c0fe6c25734eab0b230180",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0xcfa4a65ba72345d0e9f64ad010d55f780b0b5ffbd3dd07c7fc97cf3a489065b4"
+    },
+    {
+      "sequence": "14",
+      "checkpoint": "2f47e9e85d3e46fa0c1acb4a30df68b5a9576622d7e779784d29f8438db8e2de",
+      "root": "1f59a1a742d3ef8a4f03bba76ae8590622db417652542101e33d157bbf263e15",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "1d125e40b9d152d76bdd3e67b24a49b3fd471bb85ed3ea645ee5b91976721d00",
+      "finalityEvidenceKeccak": "0x4c41b3453df8920fad6a89d23b10d857bcc3665eec680e7a3dc8de4f5553bb05",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x2e3cd96396258e49a791aadb0d907aba79d1246f6f544ec2d39f8e641725eeee"
+    },
+    {
+      "sequence": "15",
+      "checkpoint": "e2d51db91a70e894713c2843d82439cad5c01fe7fc81deb59e2d8886c486a4f8",
+      "root": "6582e73b40e9a983d98971612c009632062d9733aa108f68f2a7e9ee5a817a61",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "c796e0c2afebe131e579efc4f56e3c1257046f209fc0853e2903ee3eb0094f28",
+      "finalityEvidenceKeccak": "0x4f1c87a94dcb33cfdf230de054eb319eb3be0854988ad44a09268d2c8e07b4b8",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x8823a2e927dc17b26a44c5396f9bc7eb80634b49fa4f9d702ebaaea5f54b1ab5"
+    },
+    {
+      "sequence": "16",
+      "checkpoint": "396fab742edd14a60c0b6722215cf050d81d4d4851cb6f317b6f3ab0ddfa990e",
+      "root": "5ce4e7110fac4c176b81847a9578ff2538ea663b6b8cccd89cec9bfcdd9bee99",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "809f34355855ff14de08d1e89a141e53a24b0305a39b33933e7f1334c1401e53",
+      "finalityEvidenceKeccak": "0xe0f54b382367b71adfca62b2b4e8b1e76e1b94fcfcb6ed11ea1cdde97b1c7005",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x023246966b0708ec103193bfef0ebf0b27c520814ec0e557e20c4d70801693a2"
+    },
+    {
+      "sequence": "17",
+      "checkpoint": "0e832024365bd09ed5b5e5d8e756d4074f6b157320bc85e9884978617d3e7c62",
+      "root": "d705f8c5b4ceef2a14aaea648693f041aaedc247eaad5a5f01e5a7328a9c2233",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "ba12c1829e554f18a54f4ba0f57eac7b037e377b70bc636658938642dea3c39f",
+      "finalityEvidenceKeccak": "0x5eedee2b299cfa8de8394fd1a8679e4c2ee312c8a12f691f9405c97d9b3223f3",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x9cc6f9d229cfa038cf5deebd042ec5a18626f5470fe02cd1b4d6f31d0cf7ba5d"
+    },
+    {
+      "sequence": "18",
+      "checkpoint": "7fca56b2535f080433e0b3f9f16f86a9b76ff09dea114b51f9487126e153f624",
+      "root": "547d10799e8c96241ea14b7c74197908ebc85ffdd51f3bb341708e30d0ae12f9",
+      "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+      "finance": "3b538999698ca7fe0c6ab2ab3136fc47349691af7d3cbd44aebeb59fc1c9c18a",
+      "finalityEvidenceKeccak": "0x3467eca52948543668e3e05e959d165de7ff237b1379a89caf1208d4eddfef6e",
+      "finalityBytes": "1051",
+      "calldataBytes": "2052",
+      "clxTX": "0x5a43af81c3edbbca754dbf4fb30eb601443b198f5df11e1cb4bafabc50a15f73"
+    }
+  ],
+  "claims": [
+    {
+      "id": "c079013d43a2cd4419aa2e7232e7e9ba2d04fdbf8b60aa5d03e5ffeb91acebf4",
+      "recipient": "0x0d382368cCEFB277F4915C053930DabC4A79C6Bf",
+      "amount": "10000000000000000000",
+      "kind": "1"
+    },
+    {
+      "id": "19ee74fda2b7a561b104272029b3011d2c095c8bd6f08ebbf7ed6b18c674c5b1",
+      "recipient": "0x61A212B6bad62A1662e2746fb27A2497B4ed9704",
+      "amount": "142857142857142857",
+      "kind": "2"
+    },
+    {
+      "id": "323455827a815fc7e52ef91a7da0a508de24dc4020857d2afd8f6b6600c2c2af",
+      "recipient": "0x86Ca6ca4332a79794059F0d8eC6553E0548224d9",
+      "amount": "142857142857142858",
+      "kind": "2"
+    },
+    {
+      "id": "358d5b7b10e437a23cf737cac6afffde4e3d5b31b892032453e9097585f3b53c",
+      "recipient": "0x279EA1ce4296eD87f95F7C8961CDade7dBd89634",
+      "amount": "142857142857142857",
+      "kind": "2"
+    },
+    {
+      "id": "653b46cd43359b85422ad2ae397013b6672881e5fb26869a4263f807e9041492",
+      "recipient": "0xc9188585a89AE0B4220918a5076500D5245c7325",
+      "amount": "142857142857142857",
+      "kind": "2"
+    },
+    {
+      "id": "6904c8384952a3b3eac950a024348d4ca901a779e54f54a0da02a4f9c7473e8f",
+      "recipient": "0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850",
+      "amount": "142857142857142857",
+      "kind": "2"
+    },
+    {
+      "id": "84c0688e83f17c6b527501c6e7f2c8b8113d850483bc2b85cbfaa4903f4d4996",
+      "recipient": "0x2209f42761d2D3E3606F3818AB0f560eDc1aD022",
+      "amount": "142857142857142857",
+      "kind": "2"
+    },
+    {
+      "id": "b539e56801c47bbb8f5c7c563df432b720fedd8b81a939f65ae1f374aecd811f",
+      "recipient": "0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E",
+      "amount": "142857142857142857",
+      "kind": "2"
+    }
+  ],
+  "final_wallets": [
+    {
+      "height": "69",
+      "account": "0x000000000000000000000000000000000000B123",
+      "initial": "123",
+      "final": "79496552960000123",
+      "delta": "79496552960000000"
+    },
+    {
+      "height": "69",
+      "account": "0x000000000000000000000000000000000000DAd1",
+      "initial": "0",
+      "final": "1",
+      "delta": "1"
+    },
+    {
+      "height": "69",
+      "account": "0x0000000000000000000000000000000000De0001",
+      "initial": "0",
+      "final": "214000000000000000000",
+      "delta": "214000000000000000000"
+    },
+    {
+      "height": "69",
+      "account": "0x0d382368cCEFB277F4915C053930DabC4A79C6Bf",
+      "initial": "0",
+      "final": "10000000000000000000",
+      "delta": "10000000000000000000"
+    },
+    {
+      "height": "69",
+      "account": "0x2209f42761d2D3E3606F3818AB0f560eDc1aD022",
+      "initial": "0",
+      "final": "142857142857142857",
+      "delta": "142857142857142857"
+    },
+    {
+      "height": "69",
+      "account": "0x279EA1ce4296eD87f95F7C8961CDade7dBd89634",
+      "initial": "0",
+      "final": "142857142857142857",
+      "delta": "142857142857142857"
+    },
+    {
+      "height": "69",
+      "account": "0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850",
+      "initial": "0",
+      "final": "142857142857142857",
+      "delta": "142857142857142857"
+    },
+    {
+      "height": "69",
+      "account": "0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E",
+      "initial": "0",
+      "final": "142857142857142857",
+      "delta": "142857142857142857"
+    },
+    {
+      "height": "69",
+      "account": "0x61A212B6bad62A1662e2746fb27A2497B4ed9704",
+      "initial": "0",
+      "final": "142857142857142857",
+      "delta": "142857142857142857"
+    },
+    {
+      "height": "69",
+      "account": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+      "initial": "1000000000000000000000",
+      "final": "974999130880000000000",
+      "delta": "-25000869120000000000"
+    },
+    {
+      "height": "69",
+      "account": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+      "initial": "1000000000000000000000",
+      "final": "899980161958400000000",
+      "delta": "-100019838041600000000"
+    },
+    {
+      "height": "69",
+      "account": "0x86Ca6ca4332a79794059F0d8eC6553E0548224d9",
+      "initial": "0",
+      "final": "142857142857142858",
+      "delta": "142857142857142858"
+    },
+    {
+      "height": "69",
+      "account": "0xF3632993774901B65Ee5F4d86D7619A48dF38A90",
+      "initial": "77",
+      "final": "77",
+      "delta": "0"
+    },
+    {
+      "height": "69",
+      "account": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+      "initial": "1000000000000000000000000000",
+      "final": "999999999643062438399999999",
+      "delta": "-356937561600000001"
+    },
+    {
+      "height": "69",
+      "account": "0xc9188585a89AE0B4220918a5076500D5245c7325",
+      "initial": "0",
+      "final": "142857142857142857",
+      "delta": "142857142857142857"
+    },
+    {
+      "height": "69",
+      "account": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+      "initial": "1000000000000000000000",
+      "final": "899980161958400000000",
+      "delta": "-100019838041600000000"
+    }
+  ],
+  "final_ledger": {
+    "height": "69",
+    "custody": "214000000000000000000",
+    "gas": "397482764800000000",
+    "commonReward": "79496552960000000",
+    "burn": "317986211840000000",
+    "accounts": "16",
+    "engine": "0/0/0"
+  },
+  "native_buckets_asserted_in_passing_go_scenario": {
+    "Uncredited": "0",
+    "Trader": "189916000000000000000",
+    "Fees": "64000000000000000",
+    "Support": "19020000000000000000",
+    "Insurance": "5000000000000000000",
+    "Dust": "0",
+    "Withdrawals": "0",
+    "Rewards": "0"
+  },
+  "reward_source_atoms": {
+    "period_fees": "20000000000000000",
+    "support": "980000000000000000"
+  },
+  "events": [
+    {
+      "event": "CLX_FINALIZED",
+      "line": 2,
+      "fields": {
+        "tx": "0x8b2d6751665e6e8f6b9b458208c51acfcc582ad09546a669c91d2a2f29df8e15",
+        "height": "1",
+        "hash": "0xdcdb45fbc6ccb665f05eb906a29bf446df7df1524144ed8f71d02f80308f781c",
+        "status": "1",
+        "payer": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+        "gas": "271600",
+        "value": "100000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:287: CLX_FINALIZED tx=0x8b2d6751665e6e8f6b9b458208c51acfcc582ad09546a669c91d2a2f29df8e15 height=1 hash=0xdcdb45fbc6ccb665f05eb906a29bf446df7df1524144ed8f71d02f80308f781c status=1 payer=0x69C470DE997d4B81997528939D49f1F1b02c5aC3 gas=271600 value=100000000000000000000"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 3,
+      "fields": {
+        "tx": "0x1d46d66cd1ea3cbe451c6b748242e3e98ba382606c7864a12e0db1f970aa669a",
+        "height": "3",
+        "hash": "0x03f88a1cc0894ca16f799aa84917f6835e2fb7b8883cff344dd645423a2b21a3",
+        "status": "1",
+        "payer": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+        "gas": "271600",
+        "value": "100000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:287: CLX_FINALIZED tx=0x1d46d66cd1ea3cbe451c6b748242e3e98ba382606c7864a12e0db1f970aa669a height=3 hash=0x03f88a1cc0894ca16f799aa84917f6835e2fb7b8883cff344dd645423a2b21a3 status=1 payer=0xfa7D265919bb8D2c1166fe421Ab84E786bf00097 gas=271600 value=100000000000000000000"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 4,
+      "fields": {
+        "tx": "0xc303a78a03748f7b65e359a0b54c61f082df7df2af283bca1aa7ebd9d66286f8",
+        "height": "5",
+        "hash": "0x2a5676a0ab7689faf2bad812e6aa82d71ac0ee06fee928460b153fb8df8b7a96",
+        "status": "1",
+        "payer": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "gas": "271600",
+        "value": "20000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:287: CLX_FINALIZED tx=0xc303a78a03748f7b65e359a0b54c61f082df7df2af283bca1aa7ebd9d66286f8 height=5 hash=0x2a5676a0ab7689faf2bad812e6aa82d71ac0ee06fee928460b153fb8df8b7a96 status=1 payer=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 gas=271600 value=20000000000000000000"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 5,
+      "fields": {
+        "tx": "0x18f49eaa79f64151cc99290fe3831157c6fe83b78f4f318c5fa18c529ee655e4",
+        "height": "7",
+        "hash": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "status": "1",
+        "payer": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "gas": "271600",
+        "value": "5000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:287: CLX_FINALIZED tx=0x18f49eaa79f64151cc99290fe3831157c6fe83b78f4f318c5fa18c529ee655e4 height=7 hash=0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 status=1 payer=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 gas=271600 value=5000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 6,
+      "fields": {
+        "height": "7",
+        "account": "0x000000000000000000000000000000000000B123",
+        "initial": "123",
+        "final": "347648000000123",
+        "delta": "347648000000000"
+      },
+      "raw": "dex_financial_network_test.go:296: NATIVE_BALANCE height=7 account=0x000000000000000000000000000000000000B123 initial=123 final=347648000000123 delta=347648000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 7,
+      "fields": {
+        "height": "7",
+        "account": "0x0000000000000000000000000000000000De0001",
+        "initial": "0",
+        "final": "225000000000000000000",
+        "delta": "225000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:296: NATIVE_BALANCE height=7 account=0x0000000000000000000000000000000000De0001 initial=0 final=225000000000000000000 delta=225000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 8,
+      "fields": {
+        "height": "7",
+        "account": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "initial": "1000000000000000000000",
+        "final": "974999130880000000000",
+        "delta": "-25000869120000000000"
+      },
+      "raw": "dex_financial_network_test.go:296: NATIVE_BALANCE height=7 account=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 initial=1000000000000000000000 final=974999130880000000000 delta=-25000869120000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 9,
+      "fields": {
+        "height": "7",
+        "account": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+        "initial": "1000000000000000000000",
+        "final": "899999565440000000000",
+        "delta": "-100000434560000000000"
+      },
+      "raw": "dex_financial_network_test.go:296: NATIVE_BALANCE height=7 account=0x69C470DE997d4B81997528939D49f1F1b02c5aC3 initial=1000000000000000000000 final=899999565440000000000 delta=-100000434560000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 10,
+      "fields": {
+        "height": "7",
+        "account": "0xF3632993774901B65Ee5F4d86D7619A48dF38A90",
+        "initial": "77",
+        "final": "77",
+        "delta": "0"
+      },
+      "raw": "dex_financial_network_test.go:296: NATIVE_BALANCE height=7 account=0xF3632993774901B65Ee5F4d86D7619A48dF38A90 initial=77 final=77 delta=0"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 11,
+      "fields": {
+        "height": "7",
+        "account": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "initial": "1000000000000000000000000000",
+        "final": "1000000000000000000000000000",
+        "delta": "0"
+      },
+      "raw": "dex_financial_network_test.go:296: NATIVE_BALANCE height=7 account=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 initial=1000000000000000000000000000 final=1000000000000000000000000000 delta=0"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 12,
+      "fields": {
+        "height": "7",
+        "account": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+        "initial": "1000000000000000000000",
+        "final": "899999565440000000000",
+        "delta": "-100000434560000000000"
+      },
+      "raw": "dex_financial_network_test.go:296: NATIVE_BALANCE height=7 account=0xfa7D265919bb8D2c1166fe421Ab84E786bf00097 initial=1000000000000000000000 final=899999565440000000000 delta=-100000434560000000000"
+    },
+    {
+      "event": "NATIVE_LEDGER_RECONCILED",
+      "line": 13,
+      "fields": {
+        "height": "7",
+        "custody": "225000000000000000000",
+        "gas": "1738240000000000",
+        "commonReward": "347648000000000",
+        "burn": "1390592000000000",
+        "accounts": "7",
+        "engine": "0/0/0"
+      },
+      "raw": "dex_financial_network_test.go:296: NATIVE_LEDGER_RECONCILED height=7 custody=225000000000000000000 gas=1738240000000000 commonReward=347648000000000 burn=1390592000000000 accounts=7 engine=0/0/0"
+    },
+    {
+      "event": "NORMAL_FINANCIAL_ROLES",
+      "line": 14,
+      "fields": {
+        "index": "0",
+        "CommonPID": "975921",
+        "DEXSidecarPID": "976003",
+        "api": "127.0.0.2:44103",
+        "pow": "false",
+        "rpcReward": "false"
+      },
+      "raw": "dex_financial_network_test.go:323: NORMAL_FINANCIAL_ROLES index=0 CommonPID=975921 DEXSidecarPID=976003 api=127.0.0.2:44103 pow=false rpcReward=false"
+    },
+    {
+      "event": "NORMAL_FINANCIAL_ROLES",
+      "line": 15,
+      "fields": {
+        "index": "1",
+        "CommonPID": "976019",
+        "DEXSidecarPID": "976027",
+        "api": "127.0.0.3:40675",
+        "pow": "false",
+        "rpcReward": "false"
+      },
+      "raw": "dex_financial_network_test.go:323: NORMAL_FINANCIAL_ROLES index=1 CommonPID=976019 DEXSidecarPID=976027 api=127.0.0.3:40675 pow=false rpcReward=false"
+    },
+    {
+      "event": "NORMAL_FINANCIAL_ROLES",
+      "line": 16,
+      "fields": {
+        "index": "2",
+        "CommonPID": "976044",
+        "DEXSidecarPID": "976051",
+        "api": "127.0.0.4:34997",
+        "pow": "false",
+        "rpcReward": "false"
+      },
+      "raw": "dex_financial_network_test.go:323: NORMAL_FINANCIAL_ROLES index=2 CommonPID=976044 DEXSidecarPID=976051 api=127.0.0.4:34997 pow=false rpcReward=false"
+    },
+    {
+      "event": "NORMAL_FINANCIAL_ROLES",
+      "line": 17,
+      "fields": {
+        "index": "3",
+        "CommonPID": "976067",
+        "DEXSidecarPID": "976077",
+        "api": "127.0.0.5:41429",
+        "pow": "false",
+        "rpcReward": "false"
+      },
+      "raw": "dex_financial_network_test.go:323: NORMAL_FINANCIAL_ROLES index=3 CommonPID=976067 DEXSidecarPID=976077 api=127.0.0.5:41429 pow=false rpcReward=false"
+    },
+    {
+      "event": "NORMAL_FINANCIAL_ROLES",
+      "line": 18,
+      "fields": {
+        "index": "4",
+        "CommonPID": "976093",
+        "DEXSidecarPID": "976105",
+        "api": "127.0.0.6:36951",
+        "pow": "false",
+        "rpcReward": "false"
+      },
+      "raw": "dex_financial_network_test.go:323: NORMAL_FINANCIAL_ROLES index=4 CommonPID=976093 DEXSidecarPID=976105 api=127.0.0.6:36951 pow=false rpcReward=false"
+    },
+    {
+      "event": "NORMAL_FINANCIAL_ROLES",
+      "line": 19,
+      "fields": {
+        "index": "5",
+        "CommonPID": "976124",
+        "DEXSidecarPID": "976134",
+        "api": "127.0.0.7:37355",
+        "pow": "false",
+        "rpcReward": "false"
+      },
+      "raw": "dex_financial_network_test.go:323: NORMAL_FINANCIAL_ROLES index=5 CommonPID=976124 DEXSidecarPID=976134 api=127.0.0.7:37355 pow=false rpcReward=false"
+    },
+    {
+      "event": "NORMAL_FINANCIAL_ROLES",
+      "line": 20,
+      "fields": {
+        "index": "6",
+        "CommonPID": "976152",
+        "DEXSidecarPID": "976161",
+        "api": "127.0.0.8:35893",
+        "pow": "false",
+        "rpcReward": "false"
+      },
+      "raw": "dex_financial_network_test.go:323: NORMAL_FINANCIAL_ROLES index=6 CommonPID=976152 DEXSidecarPID=976161 api=127.0.0.8:35893 pow=false rpcReward=false"
+    },
+    {
+      "event": "REWARD_OMISSION_REJECTED",
+      "line": 21,
+      "fields": {
+        "candidate": "9d59d22acce5d3bed798f24a81ab01ef96b78a1f9b8e18188354bdf5c9944dfe",
+        "omittedDuty": "f6b6d767fe32a5166e8784eaa8e236ebf646a239c894ccb81190fad920e4757e",
+        "participant": "6",
+        "rejects": "6",
+        "nextNonce": "12",
+        "rewardReserve": "0"
+      },
+      "raw": "dex_financial_network_test.go:431: REWARD_OMISSION_REJECTED candidate=9d59d22acce5d3bed798f24a81ab01ef96b78a1f9b8e18188354bdf5c9944dfe omittedDuty=f6b6d767fe32a5166e8784eaa8e236ebf646a239c894ccb81190fad920e4757e participant=6 rejects=6 nextNonce=12 rewardReserve=0; complete package retry retains same nonce"
+    },
+    {
+      "event": "CLX_INBOX_EVIDENCE",
+      "line": 22,
+      "fields": {
+        "anchorHeight": "7",
+        "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "stateRoot": "0x270477046728b2278b8a8db90d4fb6a1c49f98f5b39e11880c1a9da5bce13b62",
+        "evidenceKeccak": "0x2d064e1372ce2c708aae7afd67531967c54ac4a63f1fa44bace4ab11aa8800c9",
+        "bytes": "16932",
+        "blocks": "7",
+        "entries": "4"
+      },
+      "raw": "dex_financial_network_test.go:456: CLX_INBOX_EVIDENCE anchorHeight=7 anchor=0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 stateRoot=0x270477046728b2278b8a8db90d4fb6a1c49f98f5b39e11880c1a9da5bce13b62 evidenceKeccak=0x2d064e1372ce2c708aae7afd67531967c54ac4a63f1fa44bace4ab11aa8800c9 bytes=16932 blocks=7 entries=4"
+    },
+    {
+      "event": "CLX_INBOX_ENTRY",
+      "line": 23,
+      "fields": {
+        "index": "0",
+        "depositID": "b6e6e33eb612d4380fc21271bb7c3400bb74c84be0ffeb67ff018a0fc04b314c",
+        "entryHash": "43174e5e6a4cd41404ade7fae7d8dff118e17050fcba83002fbde8eedf4af2bb",
+        "tx": "0x8b2d6751665e6e8f6b9b458208c51acfcc582ad09546a669c91d2a2f29df8e15",
+        "owner": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+        "amount": "100000000000000000000",
+        "bucket": "1",
+        "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+      },
+      "raw": "dex_financial_network_test.go:466: CLX_INBOX_ENTRY index=0 depositID=b6e6e33eb612d4380fc21271bb7c3400bb74c84be0ffeb67ff018a0fc04b314c entryHash=43174e5e6a4cd41404ade7fae7d8dff118e17050fcba83002fbde8eedf4af2bb tx=0x8b2d6751665e6e8f6b9b458208c51acfcc582ad09546a669c91d2a2f29df8e15 owner=0x69C470DE997d4B81997528939D49f1F1b02c5aC3 amount=100000000000000000000 bucket=1 anchor=0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+    },
+    {
+      "event": "CLX_INBOX_ENTRY",
+      "line": 24,
+      "fields": {
+        "index": "1",
+        "depositID": "ab61e57ace012fee614a2ee93d3a89f2145c9ed0cfe58e12a565a1b98c2625f6",
+        "entryHash": "229d7697b6991288edcb503f31339190302ebdb7bf8abcc55c8ecbc5f0d0ffd1",
+        "tx": "0x1d46d66cd1ea3cbe451c6b748242e3e98ba382606c7864a12e0db1f970aa669a",
+        "owner": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+        "amount": "100000000000000000000",
+        "bucket": "1",
+        "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+      },
+      "raw": "dex_financial_network_test.go:466: CLX_INBOX_ENTRY index=1 depositID=ab61e57ace012fee614a2ee93d3a89f2145c9ed0cfe58e12a565a1b98c2625f6 entryHash=229d7697b6991288edcb503f31339190302ebdb7bf8abcc55c8ecbc5f0d0ffd1 tx=0x1d46d66cd1ea3cbe451c6b748242e3e98ba382606c7864a12e0db1f970aa669a owner=0xfa7D265919bb8D2c1166fe421Ab84E786bf00097 amount=100000000000000000000 bucket=1 anchor=0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+    },
+    {
+      "event": "CLX_INBOX_ENTRY",
+      "line": 25,
+      "fields": {
+        "index": "2",
+        "depositID": "f2ff3b036507f84cb14bcf211518327bbc804329a4a39c8a60dd8a5c6452fc4a",
+        "entryHash": "971bf4a6fdbb1a66f1942fb4c999cc6968990e9f399e1b3ed0f2fa23a09194c2",
+        "tx": "0xc303a78a03748f7b65e359a0b54c61f082df7df2af283bca1aa7ebd9d66286f8",
+        "owner": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "amount": "20000000000000000000",
+        "bucket": "2",
+        "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+      },
+      "raw": "dex_financial_network_test.go:466: CLX_INBOX_ENTRY index=2 depositID=f2ff3b036507f84cb14bcf211518327bbc804329a4a39c8a60dd8a5c6452fc4a entryHash=971bf4a6fdbb1a66f1942fb4c999cc6968990e9f399e1b3ed0f2fa23a09194c2 tx=0xc303a78a03748f7b65e359a0b54c61f082df7df2af283bca1aa7ebd9d66286f8 owner=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 amount=20000000000000000000 bucket=2 anchor=0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+    },
+    {
+      "event": "CLX_INBOX_ENTRY",
+      "line": 26,
+      "fields": {
+        "index": "3",
+        "depositID": "e8674990847f96c3e994faba341b7a372f7c2b1c611190228c2a9b301a6c26ff",
+        "entryHash": "1b0dc6ff4cee339dd4426b04b005440725bd79a1fe6729f5d64fe6df9900c391",
+        "tx": "0x18f49eaa79f64151cc99290fe3831157c6fe83b78f4f318c5fa18c529ee655e4",
+        "owner": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "amount": "5000000000000000000",
+        "bucket": "3",
+        "anchor": "0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+      },
+      "raw": "dex_financial_network_test.go:466: CLX_INBOX_ENTRY index=3 depositID=e8674990847f96c3e994faba341b7a372f7c2b1c611190228c2a9b301a6c26ff entryHash=1b0dc6ff4cee339dd4426b04b005440725bd79a1fe6729f5d64fe6df9900c391 tx=0x18f49eaa79f64151cc99290fe3831157c6fe83b78f4f318c5fa18c529ee655e4 owner=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 amount=5000000000000000000 bucket=3 anchor=0xcb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 27,
+      "fields": {
+        "tx": "0x76c4be96eb39f68093f5b9b75095927a7989a6878d4dfabdea54b3a890a6986d",
+        "height": "9",
+        "hash": "0xfc12e06a884fec4ae05d3beeb05f8dfe4e617b22d101e02af0a46f0b910cf3d6",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "13033584",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x76c4be96eb39f68093f5b9b75095927a7989a6878d4dfabdea54b3a890a6986d height=9 hash=0xfc12e06a884fec4ae05d3beeb05f8dfe4e617b22d101e02af0a46f0b910cf3d6 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=13033584 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 28,
+      "fields": {
+        "sequence": "1",
+        "checkpoint": "86da2641e5e138b655e9c56a64ad707b4b53a6161ea0114ca69a548a6e3551a7",
+        "root": "02717fb07ef6627f3465df53d12d931b83d3770dddf8d46e1e5ab5f9915ade2b",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "bab090c825d72476829c4000e5a96fbea80b25490530bb94208f04823df6bbb8",
+        "finalityEvidenceKeccak": "0xfc953958b2bdd1cb068be02afcc31fe86c85ee0f4d21ec7a722efc3df23ae4cc",
+        "finalityBytes": "1051",
+        "calldataBytes": "18984",
+        "clxTX": "0x76c4be96eb39f68093f5b9b75095927a7989a6878d4dfabdea54b3a890a6986d"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=1 checkpoint=86da2641e5e138b655e9c56a64ad707b4b53a6161ea0114ca69a548a6e3551a7 root=02717fb07ef6627f3465df53d12d931b83d3770dddf8d46e1e5ab5f9915ade2b clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=bab090c825d72476829c4000e5a96fbea80b25490530bb94208f04823df6bbb8 finalityEvidenceKeccak=0xfc953958b2bdd1cb068be02afcc31fe86c85ee0f4d21ec7a722efc3df23ae4cc finalityBytes=1051 calldataBytes=18984 clxTX=0x76c4be96eb39f68093f5b9b75095927a7989a6878d4dfabdea54b3a890a6986d"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 29,
+      "fields": {
+        "tx": "0xdac5bd7eff105827fe5285ef7ef963ca761ef20049da7dca0354410ecf73b12e",
+        "height": "11",
+        "hash": "0xba6dcfb829b633bb0c0c0400f8e5f3e0fd4c3fa73e09d4f8d4c30a93a6e6fa32",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126156",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0xdac5bd7eff105827fe5285ef7ef963ca761ef20049da7dca0354410ecf73b12e height=11 hash=0xba6dcfb829b633bb0c0c0400f8e5f3e0fd4c3fa73e09d4f8d4c30a93a6e6fa32 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126156 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 30,
+      "fields": {
+        "sequence": "2",
+        "checkpoint": "d85199fdc42e32ffb15f3b68fa7424d078818a6b6193a1392649e0c64334af1a",
+        "root": "4c90d3b003548aae9bbc1b22c96a4a5dcf0d8585709ddb232543bac444046e50",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "3ceff64807349bee4d0b93a554ee44518b66d57b35b6cd817db2c51c3f400b64",
+        "finalityEvidenceKeccak": "0xece2765f3ebc03781d24351243d678ca24c215ffba2736dd11d4313888294157",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0xdac5bd7eff105827fe5285ef7ef963ca761ef20049da7dca0354410ecf73b12e"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=2 checkpoint=d85199fdc42e32ffb15f3b68fa7424d078818a6b6193a1392649e0c64334af1a root=4c90d3b003548aae9bbc1b22c96a4a5dcf0d8585709ddb232543bac444046e50 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=3ceff64807349bee4d0b93a554ee44518b66d57b35b6cd817db2c51c3f400b64 finalityEvidenceKeccak=0xece2765f3ebc03781d24351243d678ca24c215ffba2736dd11d4313888294157 finalityBytes=1051 calldataBytes=2052 clxTX=0xdac5bd7eff105827fe5285ef7ef963ca761ef20049da7dca0354410ecf73b12e"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 31,
+      "fields": {
+        "tx": "0xf73dde6a99f2fdb540c31b9b2ef87deaa4b2f89d57da9c93aff2e070665f0dd1",
+        "height": "13",
+        "hash": "0x7932213a4acf23eec7977d1bdf5e78880879d7aa242f0832b391a6728668a6ac",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126168",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0xf73dde6a99f2fdb540c31b9b2ef87deaa4b2f89d57da9c93aff2e070665f0dd1 height=13 hash=0x7932213a4acf23eec7977d1bdf5e78880879d7aa242f0832b391a6728668a6ac status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126168 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 32,
+      "fields": {
+        "sequence": "3",
+        "checkpoint": "e99b959be533a9c34c06914e91facf19d4816d698d4e12b125a6f2ac41a9a6c2",
+        "root": "63408d5962c4ef8f040273f9cfe1d7a55054eea47a7fabe14e3c3958423e442a",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "94a868c63cbf7d6da96dadd8124819b097c8a901633ac6c963f8460f3364d19a",
+        "finalityEvidenceKeccak": "0x4c7c9297aab0bd10323c5bc8687c1f082e47f611c0f427121c430561ee90963d",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0xf73dde6a99f2fdb540c31b9b2ef87deaa4b2f89d57da9c93aff2e070665f0dd1"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=3 checkpoint=e99b959be533a9c34c06914e91facf19d4816d698d4e12b125a6f2ac41a9a6c2 root=63408d5962c4ef8f040273f9cfe1d7a55054eea47a7fabe14e3c3958423e442a clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=94a868c63cbf7d6da96dadd8124819b097c8a901633ac6c963f8460f3364d19a finalityEvidenceKeccak=0x4c7c9297aab0bd10323c5bc8687c1f082e47f611c0f427121c430561ee90963d finalityBytes=1051 calldataBytes=2052 clxTX=0xf73dde6a99f2fdb540c31b9b2ef87deaa4b2f89d57da9c93aff2e070665f0dd1"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 33,
+      "fields": {
+        "tx": "0xfe1c94b3cc842a2d2c3259f258680dec5bc809a1b97321a2dc053f458fc1b71e",
+        "height": "15",
+        "hash": "0x87609d8ff7096db398c1b54b3e0bb58618f2fa2817e9be2db92fcc28a1f03b4f",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126180",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0xfe1c94b3cc842a2d2c3259f258680dec5bc809a1b97321a2dc053f458fc1b71e height=15 hash=0x87609d8ff7096db398c1b54b3e0bb58618f2fa2817e9be2db92fcc28a1f03b4f status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126180 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 34,
+      "fields": {
+        "sequence": "4",
+        "checkpoint": "2752b2d3731eda1ea2cde5755ddfe08ba47957bea2730511cbefbfae41e0ddaf",
+        "root": "3a468385d9b8e1ae6638bc6c0276703ae5f65c0568628af663606711b0722d1b",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "e1919c66a0301fbf7c7d5c1cf17752660f85eb1b0463f48777d93489d840a801",
+        "finalityEvidenceKeccak": "0x1ae9051b89b4c05ed003d988e9def5e49e2bee79fc3e6ac7c24856695296eae1",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0xfe1c94b3cc842a2d2c3259f258680dec5bc809a1b97321a2dc053f458fc1b71e"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=4 checkpoint=2752b2d3731eda1ea2cde5755ddfe08ba47957bea2730511cbefbfae41e0ddaf root=3a468385d9b8e1ae6638bc6c0276703ae5f65c0568628af663606711b0722d1b clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=e1919c66a0301fbf7c7d5c1cf17752660f85eb1b0463f48777d93489d840a801 finalityEvidenceKeccak=0x1ae9051b89b4c05ed003d988e9def5e49e2bee79fc3e6ac7c24856695296eae1 finalityBytes=1051 calldataBytes=2052 clxTX=0xfe1c94b3cc842a2d2c3259f258680dec5bc809a1b97321a2dc053f458fc1b71e"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 35,
+      "fields": {
+        "tx": "0x48f627078ead8f7b24c49fed458fc9b989256bb8a5e3b23145bf71e235632570",
+        "height": "17",
+        "hash": "0x113f288f5d0d53e3bf960e98f1e63f3cb212fd9a36b09c9928585848092de61c",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126216",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x48f627078ead8f7b24c49fed458fc9b989256bb8a5e3b23145bf71e235632570 height=17 hash=0x113f288f5d0d53e3bf960e98f1e63f3cb212fd9a36b09c9928585848092de61c status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126216 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 36,
+      "fields": {
+        "sequence": "5",
+        "checkpoint": "469835dbd8debec29fc0aa208b86ad8e9722e1e35f937e96842e6e90445d37be",
+        "root": "8cfffb6d7141e310e35a85ed9ccdb15b6f94e282314f7faa708a338515a59845",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "94ec77425b9e654a107223db07cedcc48c7d2aa777873da5b6a346fce8bada8d",
+        "finalityEvidenceKeccak": "0xd77194762051b5428a98f0e48b2d0aa81aa442e56ffb1f5128b5d8af8a0d6674",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x48f627078ead8f7b24c49fed458fc9b989256bb8a5e3b23145bf71e235632570"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=5 checkpoint=469835dbd8debec29fc0aa208b86ad8e9722e1e35f937e96842e6e90445d37be root=8cfffb6d7141e310e35a85ed9ccdb15b6f94e282314f7faa708a338515a59845 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=94ec77425b9e654a107223db07cedcc48c7d2aa777873da5b6a346fce8bada8d finalityEvidenceKeccak=0xd77194762051b5428a98f0e48b2d0aa81aa442e56ffb1f5128b5d8af8a0d6674 finalityBytes=1051 calldataBytes=2052 clxTX=0x48f627078ead8f7b24c49fed458fc9b989256bb8a5e3b23145bf71e235632570"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 37,
+      "fields": {
+        "tx": "0x468b7e0ef03e68075cbe4689968dc251561956fb3ffb78d916fd78b6cc045893",
+        "height": "19",
+        "hash": "0xbd81e91cbf2bf267ed1cd9323bad5f3690fbb05c403e3607809fabb6e3d23427",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126132",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x468b7e0ef03e68075cbe4689968dc251561956fb3ffb78d916fd78b6cc045893 height=19 hash=0xbd81e91cbf2bf267ed1cd9323bad5f3690fbb05c403e3607809fabb6e3d23427 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126132 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 38,
+      "fields": {
+        "sequence": "6",
+        "checkpoint": "280a0477fb67013fc33647127fda8276f6a293803c7c10f60acad5171a0b89aa",
+        "root": "9f90c62dad7db7e04a3b3de81b3db22e0d5603b9f06da025b9d8e8484b9f87ef",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "09ca7f1c3dac83dea1cb168fd3efdb0b2586d6ccbd2a896a459ddd601cd2429a",
+        "finalityEvidenceKeccak": "0x76824e76617a698474898e3986806994aa7bfb8a186ca40fed2823259cdffc45",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x468b7e0ef03e68075cbe4689968dc251561956fb3ffb78d916fd78b6cc045893"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=6 checkpoint=280a0477fb67013fc33647127fda8276f6a293803c7c10f60acad5171a0b89aa root=9f90c62dad7db7e04a3b3de81b3db22e0d5603b9f06da025b9d8e8484b9f87ef clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=09ca7f1c3dac83dea1cb168fd3efdb0b2586d6ccbd2a896a459ddd601cd2429a finalityEvidenceKeccak=0x76824e76617a698474898e3986806994aa7bfb8a186ca40fed2823259cdffc45 finalityBytes=1051 calldataBytes=2052 clxTX=0x468b7e0ef03e68075cbe4689968dc251561956fb3ffb78d916fd78b6cc045893"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 39,
+      "fields": {
+        "tx": "0xc2e1b0ee9ed7ee36672233ac5b0ee596ae52e59c5ab330f9f711d3002d899f47",
+        "height": "21",
+        "hash": "0x65898d0f5933a94478fc9b49759693593b3d0118b2c7f9c63a37e5072f598bac",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126156",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0xc2e1b0ee9ed7ee36672233ac5b0ee596ae52e59c5ab330f9f711d3002d899f47 height=21 hash=0x65898d0f5933a94478fc9b49759693593b3d0118b2c7f9c63a37e5072f598bac status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126156 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 40,
+      "fields": {
+        "sequence": "7",
+        "checkpoint": "c41c9bcc5f3fe3ed7d421b2da06888ab9230b3b3f337ada6473ff5fdace7b915",
+        "root": "7d2d0284ad073278a7cf5b536a46179a94ca61ad1ae3e16e5b8dc4db6ef9336c",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "07e3dfeb2c383c683a74d32a3fe095d8f9b3896bd52ba6f315a956419a8dc738",
+        "finalityEvidenceKeccak": "0x4186bcd1d968db33aa1f2cd88c719d66500b7d74f655ebdfd63f797bf470e81d",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0xc2e1b0ee9ed7ee36672233ac5b0ee596ae52e59c5ab330f9f711d3002d899f47"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=7 checkpoint=c41c9bcc5f3fe3ed7d421b2da06888ab9230b3b3f337ada6473ff5fdace7b915 root=7d2d0284ad073278a7cf5b536a46179a94ca61ad1ae3e16e5b8dc4db6ef9336c clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=07e3dfeb2c383c683a74d32a3fe095d8f9b3896bd52ba6f315a956419a8dc738 finalityEvidenceKeccak=0x4186bcd1d968db33aa1f2cd88c719d66500b7d74f655ebdfd63f797bf470e81d finalityBytes=1051 calldataBytes=2052 clxTX=0xc2e1b0ee9ed7ee36672233ac5b0ee596ae52e59c5ab330f9f711d3002d899f47"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 41,
+      "fields": {
+        "tx": "0xf5bc68cae6b34e6e12cb4a281bd7e8d38a46de57b9b85c4a5fe078d2e7827a9e",
+        "height": "23",
+        "hash": "0xe57a4ebc953d2ac8ea7c8868977bd620fc0a3fbfd84e964849bd4411a0684d54",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126180",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0xf5bc68cae6b34e6e12cb4a281bd7e8d38a46de57b9b85c4a5fe078d2e7827a9e height=23 hash=0xe57a4ebc953d2ac8ea7c8868977bd620fc0a3fbfd84e964849bd4411a0684d54 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126180 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 42,
+      "fields": {
+        "sequence": "8",
+        "checkpoint": "c62146dc6b86f575f237fa729b1e75d1a85f758e9efd209d9c787aa9503cbe49",
+        "root": "aecb5934e1ea22e55e0e173d0dc40998f1ea47b9d7784845602c38e570775c4b",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "d783a5f9558e6cef2d5f86889839a4e4ce65a86652b2701949c22eadcedcfe94",
+        "finalityEvidenceKeccak": "0xc8371f1810d5bb388de304837e7a4e0a00ae10c5236c5888987a50bdfc0f4259",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0xf5bc68cae6b34e6e12cb4a281bd7e8d38a46de57b9b85c4a5fe078d2e7827a9e"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=8 checkpoint=c62146dc6b86f575f237fa729b1e75d1a85f758e9efd209d9c787aa9503cbe49 root=aecb5934e1ea22e55e0e173d0dc40998f1ea47b9d7784845602c38e570775c4b clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=d783a5f9558e6cef2d5f86889839a4e4ce65a86652b2701949c22eadcedcfe94 finalityEvidenceKeccak=0xc8371f1810d5bb388de304837e7a4e0a00ae10c5236c5888987a50bdfc0f4259 finalityBytes=1051 calldataBytes=2052 clxTX=0xf5bc68cae6b34e6e12cb4a281bd7e8d38a46de57b9b85c4a5fe078d2e7827a9e"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 43,
+      "fields": {
+        "tx": "0x5168bbec6850a866692ce24032777c03e694e76856272667f75cef2413316aba",
+        "height": "25",
+        "hash": "0xa2727d0cdb8847f8662cb3f3196ce2e1f8c4a1dc837b58d830d6a3e3c29ec141",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126156",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x5168bbec6850a866692ce24032777c03e694e76856272667f75cef2413316aba height=25 hash=0xa2727d0cdb8847f8662cb3f3196ce2e1f8c4a1dc837b58d830d6a3e3c29ec141 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126156 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 44,
+      "fields": {
+        "sequence": "9",
+        "checkpoint": "a1d19a28db8464e8cd3ec6ac66dc65295c9a3bebfef70be160b2d922a0c441d3",
+        "root": "7ff35960dacefe17a5df619a6616326fc8e4aff03bca9ef77cb40ec6a6a12d19",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "2f2a2c3cbdff30c67ba8a80285b28b477a5e7c4bb582d98895bc3b945268246d",
+        "finalityEvidenceKeccak": "0xd4a3cae89af24d9ccd8fca210f845b19c48f91864983c0dd70dbed79a0604aaf",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x5168bbec6850a866692ce24032777c03e694e76856272667f75cef2413316aba"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=9 checkpoint=a1d19a28db8464e8cd3ec6ac66dc65295c9a3bebfef70be160b2d922a0c441d3 root=7ff35960dacefe17a5df619a6616326fc8e4aff03bca9ef77cb40ec6a6a12d19 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=2f2a2c3cbdff30c67ba8a80285b28b477a5e7c4bb582d98895bc3b945268246d finalityEvidenceKeccak=0xd4a3cae89af24d9ccd8fca210f845b19c48f91864983c0dd70dbed79a0604aaf finalityBytes=1051 calldataBytes=2052 clxTX=0x5168bbec6850a866692ce24032777c03e694e76856272667f75cef2413316aba"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 45,
+      "fields": {
+        "tx": "0xb4dd22d5703522e061ff5c6b677a4a7f50b9a19db19cec81d6e595b488bf0393",
+        "height": "27",
+        "hash": "0x2c1a3c190bf632b433fe5289218a2e15df3784982b076e8ce8df4ed3bf8ed6cd",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126156",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0xb4dd22d5703522e061ff5c6b677a4a7f50b9a19db19cec81d6e595b488bf0393 height=27 hash=0x2c1a3c190bf632b433fe5289218a2e15df3784982b076e8ce8df4ed3bf8ed6cd status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126156 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 46,
+      "fields": {
+        "sequence": "10",
+        "checkpoint": "6299cef314e555b7d992f7c92110ea59b05261a697f718dc8770e957f1a27fff",
+        "root": "395894e6143ba44941c5c94df7e5c2c9f313957eb40c34d30d0ee6183d7ba5a6",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "1fa4c9e99247435f9b4a2d5e30e964bf76c9019f5dd83793a0755476fccf4521",
+        "finalityEvidenceKeccak": "0x3da16f57b04f7786864708767b068157ed30c4a64de6946edb709cc5930e1dc2",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0xb4dd22d5703522e061ff5c6b677a4a7f50b9a19db19cec81d6e595b488bf0393"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=10 checkpoint=6299cef314e555b7d992f7c92110ea59b05261a697f718dc8770e957f1a27fff root=395894e6143ba44941c5c94df7e5c2c9f313957eb40c34d30d0ee6183d7ba5a6 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=1fa4c9e99247435f9b4a2d5e30e964bf76c9019f5dd83793a0755476fccf4521 finalityEvidenceKeccak=0x3da16f57b04f7786864708767b068157ed30c4a64de6946edb709cc5930e1dc2 finalityBytes=1051 calldataBytes=2052 clxTX=0xb4dd22d5703522e061ff5c6b677a4a7f50b9a19db19cec81d6e595b488bf0393"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 47,
+      "fields": {
+        "tx": "0x66b645779678a5c55236fa40f832350d22a8737c7a25245f9ce9869ddd17a8ef",
+        "height": "29",
+        "hash": "0xbc2f264b3bd1a3c92646ba092895d54910119c1b21700892fc3221647d330904",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126156",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x66b645779678a5c55236fa40f832350d22a8737c7a25245f9ce9869ddd17a8ef height=29 hash=0xbc2f264b3bd1a3c92646ba092895d54910119c1b21700892fc3221647d330904 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126156 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 48,
+      "fields": {
+        "sequence": "11",
+        "checkpoint": "c7f93d1b251fa801c2fee1257158be5a42133372e224964f9a181075beddf019",
+        "root": "0a22ded90e58350781654ed907f1c73f617b82a870d337caddb4486a10078c5a",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "6f923b3f8c974752bcd8e0e6fdbf7b391716934debee1ebecab4d53c2b21322f",
+        "finalityEvidenceKeccak": "0x537eec3d6812d2295a63e6e6af0d92d203bfd0d8470d5b650d4a4e5d39dc0419",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x66b645779678a5c55236fa40f832350d22a8737c7a25245f9ce9869ddd17a8ef"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=11 checkpoint=c7f93d1b251fa801c2fee1257158be5a42133372e224964f9a181075beddf019 root=0a22ded90e58350781654ed907f1c73f617b82a870d337caddb4486a10078c5a clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=6f923b3f8c974752bcd8e0e6fdbf7b391716934debee1ebecab4d53c2b21322f finalityEvidenceKeccak=0x537eec3d6812d2295a63e6e6af0d92d203bfd0d8470d5b650d4a4e5d39dc0419 finalityBytes=1051 calldataBytes=2052 clxTX=0x66b645779678a5c55236fa40f832350d22a8737c7a25245f9ce9869ddd17a8ef"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 49,
+      "fields": {
+        "tx": "0x4936e5eb18517f283224e87348fa5956810814d95475cf9feee23a8d53b19d42",
+        "height": "31",
+        "hash": "0xe5a348f178fc0c89c8e0f1581ff91d91c886796bdeb2d87579bdcf27d7595143",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126132",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x4936e5eb18517f283224e87348fa5956810814d95475cf9feee23a8d53b19d42 height=31 hash=0xe5a348f178fc0c89c8e0f1581ff91d91c886796bdeb2d87579bdcf27d7595143 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126132 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 50,
+      "fields": {
+        "sequence": "12",
+        "checkpoint": "2f377b4a03d34866bf1703b9e77f0b4bfdfc191c92ec466d5a843149b019e77e",
+        "root": "9ac0c63f55f7f6268c8175e1a7c3dbb07ad83733c81611830ce8f97de2d25d30",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "a3884b124f0d78402d3f0398d55e16b1572540c5a26953ac68f158b7880bb21d",
+        "finalityEvidenceKeccak": "0x09715918171f6f8641cec85cfb6f034b99a8091b44d42641291097349add3cd6",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x4936e5eb18517f283224e87348fa5956810814d95475cf9feee23a8d53b19d42"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=12 checkpoint=2f377b4a03d34866bf1703b9e77f0b4bfdfc191c92ec466d5a843149b019e77e root=9ac0c63f55f7f6268c8175e1a7c3dbb07ad83733c81611830ce8f97de2d25d30 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=a3884b124f0d78402d3f0398d55e16b1572540c5a26953ac68f158b7880bb21d finalityEvidenceKeccak=0x09715918171f6f8641cec85cfb6f034b99a8091b44d42641291097349add3cd6 finalityBytes=1051 calldataBytes=2052 clxTX=0x4936e5eb18517f283224e87348fa5956810814d95475cf9feee23a8d53b19d42"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 51,
+      "fields": {
+        "tx": "0xcfa4a65ba72345d0e9f64ad010d55f780b0b5ffbd3dd07c7fc97cf3a489065b4",
+        "height": "33",
+        "hash": "0x0d72a4395cf363f35eb1e0346ff6dc6a05f4198e2879ed5e51ddac5ce0ff51e6",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126216",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0xcfa4a65ba72345d0e9f64ad010d55f780b0b5ffbd3dd07c7fc97cf3a489065b4 height=33 hash=0x0d72a4395cf363f35eb1e0346ff6dc6a05f4198e2879ed5e51ddac5ce0ff51e6 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126216 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 52,
+      "fields": {
+        "sequence": "13",
+        "checkpoint": "482e705fe26472f3ef738dc9a4f0c2304d5bebd6c75aa6a15b21a32a3ec18a25",
+        "root": "700fc69e15d18678832577a1099ad076751667a7743555bb8c61a31b4df90ae1",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "7f5c768f9424c235c723ae3e21a710bcb39d7250eaea9a960a481886810ab138",
+        "finalityEvidenceKeccak": "0xafab3964e2046d69f474fd9a6d7ba96f2327410103c0fe6c25734eab0b230180",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0xcfa4a65ba72345d0e9f64ad010d55f780b0b5ffbd3dd07c7fc97cf3a489065b4"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=13 checkpoint=482e705fe26472f3ef738dc9a4f0c2304d5bebd6c75aa6a15b21a32a3ec18a25 root=700fc69e15d18678832577a1099ad076751667a7743555bb8c61a31b4df90ae1 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=7f5c768f9424c235c723ae3e21a710bcb39d7250eaea9a960a481886810ab138 finalityEvidenceKeccak=0xafab3964e2046d69f474fd9a6d7ba96f2327410103c0fe6c25734eab0b230180 finalityBytes=1051 calldataBytes=2052 clxTX=0xcfa4a65ba72345d0e9f64ad010d55f780b0b5ffbd3dd07c7fc97cf3a489065b4"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 53,
+      "fields": {
+        "tx": "0x2e3cd96396258e49a791aadb0d907aba79d1246f6f544ec2d39f8e641725eeee",
+        "height": "35",
+        "hash": "0x74aa081c041941ff223ca91761ac5b7a47a2b21f64dda51ed2eb7e284ddebf22",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126648",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x2e3cd96396258e49a791aadb0d907aba79d1246f6f544ec2d39f8e641725eeee height=35 hash=0x74aa081c041941ff223ca91761ac5b7a47a2b21f64dda51ed2eb7e284ddebf22 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126648 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 54,
+      "fields": {
+        "sequence": "14",
+        "checkpoint": "2f47e9e85d3e46fa0c1acb4a30df68b5a9576622d7e779784d29f8438db8e2de",
+        "root": "1f59a1a742d3ef8a4f03bba76ae8590622db417652542101e33d157bbf263e15",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "1d125e40b9d152d76bdd3e67b24a49b3fd471bb85ed3ea645ee5b91976721d00",
+        "finalityEvidenceKeccak": "0x4c41b3453df8920fad6a89d23b10d857bcc3665eec680e7a3dc8de4f5553bb05",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x2e3cd96396258e49a791aadb0d907aba79d1246f6f544ec2d39f8e641725eeee"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=14 checkpoint=2f47e9e85d3e46fa0c1acb4a30df68b5a9576622d7e779784d29f8438db8e2de root=1f59a1a742d3ef8a4f03bba76ae8590622db417652542101e33d157bbf263e15 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=1d125e40b9d152d76bdd3e67b24a49b3fd471bb85ed3ea645ee5b91976721d00 finalityEvidenceKeccak=0x4c41b3453df8920fad6a89d23b10d857bcc3665eec680e7a3dc8de4f5553bb05 finalityBytes=1051 calldataBytes=2052 clxTX=0x2e3cd96396258e49a791aadb0d907aba79d1246f6f544ec2d39f8e641725eeee"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 55,
+      "fields": {
+        "tx": "0x8823a2e927dc17b26a44c5396f9bc7eb80634b49fa4f9d702ebaaea5f54b1ab5",
+        "height": "37",
+        "hash": "0xdb0bc0b8e992bbf3c1804ac1150fa4de2b8ae569d8f97f5ef4bd3dcc7411abb0",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126096",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x8823a2e927dc17b26a44c5396f9bc7eb80634b49fa4f9d702ebaaea5f54b1ab5 height=37 hash=0xdb0bc0b8e992bbf3c1804ac1150fa4de2b8ae569d8f97f5ef4bd3dcc7411abb0 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126096 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 56,
+      "fields": {
+        "sequence": "15",
+        "checkpoint": "e2d51db91a70e894713c2843d82439cad5c01fe7fc81deb59e2d8886c486a4f8",
+        "root": "6582e73b40e9a983d98971612c009632062d9733aa108f68f2a7e9ee5a817a61",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "c796e0c2afebe131e579efc4f56e3c1257046f209fc0853e2903ee3eb0094f28",
+        "finalityEvidenceKeccak": "0x4f1c87a94dcb33cfdf230de054eb319eb3be0854988ad44a09268d2c8e07b4b8",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x8823a2e927dc17b26a44c5396f9bc7eb80634b49fa4f9d702ebaaea5f54b1ab5"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=15 checkpoint=e2d51db91a70e894713c2843d82439cad5c01fe7fc81deb59e2d8886c486a4f8 root=6582e73b40e9a983d98971612c009632062d9733aa108f68f2a7e9ee5a817a61 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=c796e0c2afebe131e579efc4f56e3c1257046f209fc0853e2903ee3eb0094f28 finalityEvidenceKeccak=0x4f1c87a94dcb33cfdf230de054eb319eb3be0854988ad44a09268d2c8e07b4b8 finalityBytes=1051 calldataBytes=2052 clxTX=0x8823a2e927dc17b26a44c5396f9bc7eb80634b49fa4f9d702ebaaea5f54b1ab5"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 57,
+      "fields": {
+        "tx": "0x023246966b0708ec103193bfef0ebf0b27c520814ec0e557e20c4d70801693a2",
+        "height": "39",
+        "hash": "0x7fcd52163708f396a06d2ad1182b2e72d1a6660695a9c0bbafbb1cc60cd551ee",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126168",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x023246966b0708ec103193bfef0ebf0b27c520814ec0e557e20c4d70801693a2 height=39 hash=0x7fcd52163708f396a06d2ad1182b2e72d1a6660695a9c0bbafbb1cc60cd551ee status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126168 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 58,
+      "fields": {
+        "sequence": "16",
+        "checkpoint": "396fab742edd14a60c0b6722215cf050d81d4d4851cb6f317b6f3ab0ddfa990e",
+        "root": "5ce4e7110fac4c176b81847a9578ff2538ea663b6b8cccd89cec9bfcdd9bee99",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "809f34355855ff14de08d1e89a141e53a24b0305a39b33933e7f1334c1401e53",
+        "finalityEvidenceKeccak": "0xe0f54b382367b71adfca62b2b4e8b1e76e1b94fcfcb6ed11ea1cdde97b1c7005",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x023246966b0708ec103193bfef0ebf0b27c520814ec0e557e20c4d70801693a2"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=16 checkpoint=396fab742edd14a60c0b6722215cf050d81d4d4851cb6f317b6f3ab0ddfa990e root=5ce4e7110fac4c176b81847a9578ff2538ea663b6b8cccd89cec9bfcdd9bee99 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=809f34355855ff14de08d1e89a141e53a24b0305a39b33933e7f1334c1401e53 finalityEvidenceKeccak=0xe0f54b382367b71adfca62b2b4e8b1e76e1b94fcfcb6ed11ea1cdde97b1c7005 finalityBytes=1051 calldataBytes=2052 clxTX=0x023246966b0708ec103193bfef0ebf0b27c520814ec0e557e20c4d70801693a2"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 59,
+      "fields": {
+        "tx": "0x9cc6f9d229cfa038cf5deebd042ec5a18626f5470fe02cd1b4d6f31d0cf7ba5d",
+        "height": "41",
+        "hash": "0x868c104d496495df1813417d7a1016ba9e0be19a77d1a59c5a25aa2a6dfeae4f",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12126168",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x9cc6f9d229cfa038cf5deebd042ec5a18626f5470fe02cd1b4d6f31d0cf7ba5d height=41 hash=0x868c104d496495df1813417d7a1016ba9e0be19a77d1a59c5a25aa2a6dfeae4f status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12126168 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 60,
+      "fields": {
+        "sequence": "17",
+        "checkpoint": "0e832024365bd09ed5b5e5d8e756d4074f6b157320bc85e9884978617d3e7c62",
+        "root": "d705f8c5b4ceef2a14aaea648693f041aaedc247eaad5a5f01e5a7328a9c2233",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "ba12c1829e554f18a54f4ba0f57eac7b037e377b70bc636658938642dea3c39f",
+        "finalityEvidenceKeccak": "0x5eedee2b299cfa8de8394fd1a8679e4c2ee312c8a12f691f9405c97d9b3223f3",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x9cc6f9d229cfa038cf5deebd042ec5a18626f5470fe02cd1b4d6f31d0cf7ba5d"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=17 checkpoint=0e832024365bd09ed5b5e5d8e756d4074f6b157320bc85e9884978617d3e7c62 root=d705f8c5b4ceef2a14aaea648693f041aaedc247eaad5a5f01e5a7328a9c2233 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=ba12c1829e554f18a54f4ba0f57eac7b037e377b70bc636658938642dea3c39f finalityEvidenceKeccak=0x5eedee2b299cfa8de8394fd1a8679e4c2ee312c8a12f691f9405c97d9b3223f3 finalityBytes=1051 calldataBytes=2052 clxTX=0x9cc6f9d229cfa038cf5deebd042ec5a18626f5470fe02cd1b4d6f31d0cf7ba5d"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 61,
+      "fields": {
+        "tx": "0x5a43af81c3edbbca754dbf4fb30eb601443b198f5df11e1cb4bafabc50a15f73",
+        "height": "43",
+        "hash": "0x07af7ee4f54e171c49123dd19c708ddbf1ac88b0cb35bfda322fc51352d0a910",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "12127176",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:491: CLX_FINALIZED tx=0x5a43af81c3edbbca754dbf4fb30eb601443b198f5df11e1cb4bafabc50a15f73 height=43 hash=0x07af7ee4f54e171c49123dd19c708ddbf1ac88b0cb35bfda322fc51352d0a910 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=12127176 value=0"
+    },
+    {
+      "event": "DEX_FINALIZED_AND_CLX_SETTLED",
+      "line": 62,
+      "fields": {
+        "sequence": "18",
+        "checkpoint": "7fca56b2535f080433e0b3f9f16f86a9b76ff09dea114b51f9487126e153f624",
+        "root": "547d10799e8c96241ea14b7c74197908ebc85ffdd51f3bb341708e30d0ae12f9",
+        "clxAnchor": "cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5",
+        "finance": "3b538999698ca7fe0c6ab2ab3136fc47349691af7d3cbd44aebeb59fc1c9c18a",
+        "finalityEvidenceKeccak": "0x3467eca52948543668e3e05e959d165de7ff237b1379a89caf1208d4eddfef6e",
+        "finalityBytes": "1051",
+        "calldataBytes": "2052",
+        "clxTX": "0x5a43af81c3edbbca754dbf4fb30eb601443b198f5df11e1cb4bafabc50a15f73"
+      },
+      "raw": "dex_financial_network_test.go:505: DEX_FINALIZED_AND_CLX_SETTLED sequence=18 checkpoint=7fca56b2535f080433e0b3f9f16f86a9b76ff09dea114b51f9487126e153f624 root=547d10799e8c96241ea14b7c74197908ebc85ffdd51f3bb341708e30d0ae12f9 clxAnchor=cb8ea49c9adaa2766275f3e43f211484eee88d39d850a8a0749b469ea2dccea5 finance=3b538999698ca7fe0c6ab2ab3136fc47349691af7d3cbd44aebeb59fc1c9c18a finalityEvidenceKeccak=0x3467eca52948543668e3e05e959d165de7ff237b1379a89caf1208d4eddfef6e finalityBytes=1051 calldataBytes=2052 clxTX=0x5a43af81c3edbbca754dbf4fb30eb601443b198f5df11e1cb4bafabc50a15f73"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 63,
+      "fields": {
+        "tx": "0x684d9601dd5f36dc704e4afa06d4d3619398d3b7fd11346bda95c6682fb4de51",
+        "height": "45",
+        "hash": "0x50ca9a14f85a21cf8afbad66ba85561c88992aff59a4b70166052c666873c329",
+        "status": "1",
+        "payer": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+        "gas": "12127176",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:513: CLX_FINALIZED tx=0x684d9601dd5f36dc704e4afa06d4d3619398d3b7fd11346bda95c6682fb4de51 height=45 hash=0x50ca9a14f85a21cf8afbad66ba85561c88992aff59a4b70166052c666873c329 status=1 payer=0x69C470DE997d4B81997528939D49f1F1b02c5aC3 gas=12127176 value=0"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 64,
+      "fields": {
+        "tx": "0x03b173c57694ceeaf275070e50e2786e82cf1071487ffd2433a3e7e80894071d",
+        "height": "47",
+        "hash": "0x5137e0cd0e7823a4e2f1ac700edf6bf8e4135194b799936644b32d1f90409668",
+        "status": "0",
+        "payer": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+        "gas": "12127176",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:514: CLX_FINALIZED tx=0x03b173c57694ceeaf275070e50e2786e82cf1071487ffd2433a3e7e80894071d height=47 hash=0x5137e0cd0e7823a4e2f1ac700edf6bf8e4135194b799936644b32d1f90409668 status=0 payer=0xfa7D265919bb8D2c1166fe421Ab84E786bf00097 gas=12127176 value=0"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 65,
+      "fields": {
+        "height": "47",
+        "account": "0x000000000000000000000000000000000000B123",
+        "initial": "123",
+        "final": "78246590720000123",
+        "delta": "78246590720000000"
+      },
+      "raw": "dex_financial_network_test.go:519: NATIVE_BALANCE height=47 account=0x000000000000000000000000000000000000B123 initial=123 final=78246590720000123 delta=78246590720000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 66,
+      "fields": {
+        "height": "47",
+        "account": "0x0000000000000000000000000000000000De0001",
+        "initial": "0",
+        "final": "225000000000000000000",
+        "delta": "225000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:519: NATIVE_BALANCE height=47 account=0x0000000000000000000000000000000000De0001 initial=0 final=225000000000000000000 delta=225000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 67,
+      "fields": {
+        "height": "47",
+        "account": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "initial": "1000000000000000000000",
+        "final": "974999130880000000000",
+        "delta": "-25000869120000000000"
+      },
+      "raw": "dex_financial_network_test.go:519: NATIVE_BALANCE height=47 account=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 initial=1000000000000000000000 final=974999130880000000000 delta=-25000869120000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 68,
+      "fields": {
+        "height": "47",
+        "account": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+        "initial": "1000000000000000000000",
+        "final": "899980161958400000000",
+        "delta": "-100019838041600000000"
+      },
+      "raw": "dex_financial_network_test.go:519: NATIVE_BALANCE height=47 account=0x69C470DE997d4B81997528939D49f1F1b02c5aC3 initial=1000000000000000000000 final=899980161958400000000 delta=-100019838041600000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 69,
+      "fields": {
+        "height": "47",
+        "account": "0xF3632993774901B65Ee5F4d86D7619A48dF38A90",
+        "initial": "77",
+        "final": "77",
+        "delta": "0"
+      },
+      "raw": "dex_financial_network_test.go:519: NATIVE_BALANCE height=47 account=0xF3632993774901B65Ee5F4d86D7619A48dF38A90 initial=77 final=77 delta=0"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 70,
+      "fields": {
+        "height": "47",
+        "account": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "initial": "1000000000000000000000000000",
+        "final": "999999999649312249600000000",
+        "delta": "-350687750400000000"
+      },
+      "raw": "dex_financial_network_test.go:519: NATIVE_BALANCE height=47 account=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 initial=1000000000000000000000000000 final=999999999649312249600000000 delta=-350687750400000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 71,
+      "fields": {
+        "height": "47",
+        "account": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+        "initial": "1000000000000000000000",
+        "final": "899980161958400000000",
+        "delta": "-100019838041600000000"
+      },
+      "raw": "dex_financial_network_test.go:519: NATIVE_BALANCE height=47 account=0xfa7D265919bb8D2c1166fe421Ab84E786bf00097 initial=1000000000000000000000 final=899980161958400000000 delta=-100019838041600000000"
+    },
+    {
+      "event": "NATIVE_LEDGER_RECONCILED",
+      "line": 72,
+      "fields": {
+        "height": "47",
+        "custody": "225000000000000000000",
+        "gas": "391232953600000000",
+        "commonReward": "78246590720000000",
+        "burn": "312986362880000000",
+        "accounts": "7",
+        "engine": "0/0/0"
+      },
+      "raw": "dex_financial_network_test.go:519: NATIVE_LEDGER_RECONCILED height=47 custody=225000000000000000000 gas=391232953600000000 commonReward=78246590720000000 burn=312986362880000000 accounts=7 engine=0/0/0"
+    },
+    {
+      "event": "CLX_CRASH_REOPEN",
+      "line": 73,
+      "fields": {
+        "height": "47",
+        "oldPIDs": "[975620 975626 975632 975638 975645 975651 975657]",
+        "newPIDs": "[976256 976333 976341 976348 976354 976360 976367]",
+        "root": "0xb6e69dbf7f1f4f1774f6d9c1bcdc4cef829d34df6f99fe29baf8e3d9063413af"
+      },
+      "raw": "dex_financial_network_test.go:519: CLX_CRASH_REOPEN height=47 oldPIDs=[975620 975626 975632 975638 975645 975651 975657] newPIDs=[976256 976333 976341 976348 976354 976360 976367] root=0xb6e69dbf7f1f4f1774f6d9c1bcdc4cef829d34df6f99fe29baf8e3d9063413af"
+    },
+    {
+      "event": "NORMAL_COMMON_RPC_DEX_READY",
+      "line": 74,
+      "fields": {
+        "index": "0",
+        "CommonPID": "975921",
+        "DEXSidecarPID": "976003",
+        "height": "47",
+        "custody": "225000000000000000000",
+        "operator": "0x96B736A70f98D0850C17F7f440c6f9024B81220A",
+        "recipient": "0x000000000000000000000000000000000000B123",
+        "pow": "false",
+        "rpcReward": "true",
+        "dex": "true",
+        "publicHTTP": "eth-only"
+      },
+      "raw": "dex_financial_network_test.go:540: NORMAL_COMMON_RPC_DEX_READY index=0 CommonPID=975921 DEXSidecarPID=976003 height=47 custody=225000000000000000000 operator=0x96B736A70f98D0850C17F7f440c6f9024B81220A recipient=0x000000000000000000000000000000000000B123 pow=false rpcReward=true dex=true publicHTTP=eth-only"
+    },
+    {
+      "event": "NORMAL_COMMON_RPC_DEX_RELAY",
+      "line": 75,
+      "fields": {
+        "index": "0",
+        "tx": "0x4deebf0649fe033cfcd0e0bc3471cd077db971140f0166b5607f9d2a305d5bc1",
+        "pow": "false",
+        "dex": "active",
+        "rpcReward": "authenticated",
+        "HTTP": "accepted",
+        "CLXFinality": "checked-by-nativeLedger"
+      },
+      "raw": "dex_financial_combined_rpc_test.go:253: NORMAL_COMMON_RPC_DEX_RELAY index=0 tx=0x4deebf0649fe033cfcd0e0bc3471cd077db971140f0166b5607f9d2a305d5bc1 pow=false dex=active rpcReward=authenticated HTTP=accepted CLXFinality=checked-by-nativeLedger"
+    },
+    {
+      "event": "NORMAL_COMMON_RPC_DEX_CONFIRMED",
+      "line": 76,
+      "fields": {
+        "index": "0",
+        "tx": "0x4deebf0649fe033cfcd0e0bc3471cd077db971140f0166b5607f9d2a305d5bc1",
+        "CLXHeight": "49",
+        "HTTP": "previously-accepted",
+        "CLXFinality": "observed",
+        "operatorCleanup": "after-receipt"
+      },
+      "raw": "dex_financial_combined_rpc_test.go:263: NORMAL_COMMON_RPC_DEX_CONFIRMED index=0 tx=0x4deebf0649fe033cfcd0e0bc3471cd077db971140f0166b5607f9d2a305d5bc1 CLXHeight=49 HTTP=previously-accepted CLXFinality=observed operatorCleanup=after-receipt"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 77,
+      "fields": {
+        "tx": "0x4deebf0649fe033cfcd0e0bc3471cd077db971140f0166b5607f9d2a305d5bc1",
+        "height": "49",
+        "hash": "0x1493c6f6ba9b0aeffedd1d333614c5341a4b888bffa45842e8f04b2f08f29af8",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "384708",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:542: CLX_FINALIZED tx=0x4deebf0649fe033cfcd0e0bc3471cd077db971140f0166b5607f9d2a305d5bc1 height=49 hash=0x1493c6f6ba9b0aeffedd1d333614c5341a4b888bffa45842e8f04b2f08f29af8 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=384708 value=0"
+    },
+    {
+      "event": "CLAIM_PAID",
+      "line": 78,
+      "fields": {
+        "id": "c079013d43a2cd4419aa2e7232e7e9ba2d04fdbf8b60aa5d03e5ffeb91acebf4",
+        "recipient": "0x0d382368cCEFB277F4915C053930DabC4A79C6Bf",
+        "amount": "10000000000000000000",
+        "kind": "1"
+      },
+      "raw": "dex_financial_network_test.go:547: CLAIM_PAID id=c079013d43a2cd4419aa2e7232e7e9ba2d04fdbf8b60aa5d03e5ffeb91acebf4 recipient=0x0d382368cCEFB277F4915C053930DabC4A79C6Bf amount=10000000000000000000 kind=1"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 79,
+      "fields": {
+        "tx": "0x2dd8d154f0b7ffc75ff553c459c3a2545401546279f2e9279ab5ffd4052d976b",
+        "height": "51",
+        "hash": "0xb2448f24be80037dd0642b4b75350e0965b1d500db3b95af54e2c72a30f10015",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "390132",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:542: CLX_FINALIZED tx=0x2dd8d154f0b7ffc75ff553c459c3a2545401546279f2e9279ab5ffd4052d976b height=51 hash=0xb2448f24be80037dd0642b4b75350e0965b1d500db3b95af54e2c72a30f10015 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=390132 value=0"
+    },
+    {
+      "event": "CLAIM_PAID",
+      "line": 80,
+      "fields": {
+        "id": "19ee74fda2b7a561b104272029b3011d2c095c8bd6f08ebbf7ed6b18c674c5b1",
+        "recipient": "0x61A212B6bad62A1662e2746fb27A2497B4ed9704",
+        "amount": "142857142857142857",
+        "kind": "2"
+      },
+      "raw": "dex_financial_network_test.go:547: CLAIM_PAID id=19ee74fda2b7a561b104272029b3011d2c095c8bd6f08ebbf7ed6b18c674c5b1 recipient=0x61A212B6bad62A1662e2746fb27A2497B4ed9704 amount=142857142857142857 kind=2"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 81,
+      "fields": {
+        "tx": "0x591721f8112fe56dcbf6fde04577ce7a42b8edc28d86b644f5fb9ed4ad6a4a9b",
+        "height": "53",
+        "hash": "0xce21cd2c3c48bff4bce2564820a6b6cc7c526fb2ee51fd458fa8182d8dc65242",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "390132",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:542: CLX_FINALIZED tx=0x591721f8112fe56dcbf6fde04577ce7a42b8edc28d86b644f5fb9ed4ad6a4a9b height=53 hash=0xce21cd2c3c48bff4bce2564820a6b6cc7c526fb2ee51fd458fa8182d8dc65242 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=390132 value=0"
+    },
+    {
+      "event": "CLAIM_PAID",
+      "line": 82,
+      "fields": {
+        "id": "323455827a815fc7e52ef91a7da0a508de24dc4020857d2afd8f6b6600c2c2af",
+        "recipient": "0x86Ca6ca4332a79794059F0d8eC6553E0548224d9",
+        "amount": "142857142857142858",
+        "kind": "2"
+      },
+      "raw": "dex_financial_network_test.go:547: CLAIM_PAID id=323455827a815fc7e52ef91a7da0a508de24dc4020857d2afd8f6b6600c2c2af recipient=0x86Ca6ca4332a79794059F0d8eC6553E0548224d9 amount=142857142857142858 kind=2"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 83,
+      "fields": {
+        "tx": "0x3bd6c3d3651a851ab5e09ee57643012e9693fb83495774dd5e8b13914bd85a70",
+        "height": "55",
+        "hash": "0xed091e3967a56a8b8b2ae358c6fcd8f78453a4861a73d3c8b3723d3cfbcc6050",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "390156",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:542: CLX_FINALIZED tx=0x3bd6c3d3651a851ab5e09ee57643012e9693fb83495774dd5e8b13914bd85a70 height=55 hash=0xed091e3967a56a8b8b2ae358c6fcd8f78453a4861a73d3c8b3723d3cfbcc6050 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=390156 value=0"
+    },
+    {
+      "event": "CLAIM_PAID",
+      "line": 84,
+      "fields": {
+        "id": "358d5b7b10e437a23cf737cac6afffde4e3d5b31b892032453e9097585f3b53c",
+        "recipient": "0x279EA1ce4296eD87f95F7C8961CDade7dBd89634",
+        "amount": "142857142857142857",
+        "kind": "2"
+      },
+      "raw": "dex_financial_network_test.go:547: CLAIM_PAID id=358d5b7b10e437a23cf737cac6afffde4e3d5b31b892032453e9097585f3b53c recipient=0x279EA1ce4296eD87f95F7C8961CDade7dBd89634 amount=142857142857142857 kind=2"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 85,
+      "fields": {
+        "tx": "0x9920667c688c309f63a0ce2cb96941778a1663832987385960ceeddada359a6b",
+        "height": "57",
+        "hash": "0xb82c4700fa650d722f4b2493386c41c4e456a10fdfb68f6890ed0bf30c40b672",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "390132",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:542: CLX_FINALIZED tx=0x9920667c688c309f63a0ce2cb96941778a1663832987385960ceeddada359a6b height=57 hash=0xb82c4700fa650d722f4b2493386c41c4e456a10fdfb68f6890ed0bf30c40b672 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=390132 value=0"
+    },
+    {
+      "event": "CLAIM_PAID",
+      "line": 86,
+      "fields": {
+        "id": "653b46cd43359b85422ad2ae397013b6672881e5fb26869a4263f807e9041492",
+        "recipient": "0xc9188585a89AE0B4220918a5076500D5245c7325",
+        "amount": "142857142857142857",
+        "kind": "2"
+      },
+      "raw": "dex_financial_network_test.go:547: CLAIM_PAID id=653b46cd43359b85422ad2ae397013b6672881e5fb26869a4263f807e9041492 recipient=0xc9188585a89AE0B4220918a5076500D5245c7325 amount=142857142857142857 kind=2"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 87,
+      "fields": {
+        "tx": "0x6fba5684b16ac65628af145dd0c9f471dd73074e3e493683895411ccf2ecdb4e",
+        "height": "59",
+        "hash": "0xd55e8982dfa33ee244e9dc5353683cfe75d23e4b7f72beca8582444b7cd12fa3",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "390156",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:542: CLX_FINALIZED tx=0x6fba5684b16ac65628af145dd0c9f471dd73074e3e493683895411ccf2ecdb4e height=59 hash=0xd55e8982dfa33ee244e9dc5353683cfe75d23e4b7f72beca8582444b7cd12fa3 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=390156 value=0"
+    },
+    {
+      "event": "CLAIM_PAID",
+      "line": 88,
+      "fields": {
+        "id": "6904c8384952a3b3eac950a024348d4ca901a779e54f54a0da02a4f9c7473e8f",
+        "recipient": "0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850",
+        "amount": "142857142857142857",
+        "kind": "2"
+      },
+      "raw": "dex_financial_network_test.go:547: CLAIM_PAID id=6904c8384952a3b3eac950a024348d4ca901a779e54f54a0da02a4f9c7473e8f recipient=0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850 amount=142857142857142857 kind=2"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 89,
+      "fields": {
+        "tx": "0xf512a1e8d23eeb31b75e60c000456fe6eddf8b65e6f872711eb1bde484b7b415",
+        "height": "61",
+        "hash": "0x7764843d24e6575fc586d2d04eb343599858e252ac6e093e11d72c4133d3b6c0",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "390156",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:542: CLX_FINALIZED tx=0xf512a1e8d23eeb31b75e60c000456fe6eddf8b65e6f872711eb1bde484b7b415 height=61 hash=0x7764843d24e6575fc586d2d04eb343599858e252ac6e093e11d72c4133d3b6c0 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=390156 value=0"
+    },
+    {
+      "event": "CLAIM_PAID",
+      "line": 90,
+      "fields": {
+        "id": "84c0688e83f17c6b527501c6e7f2c8b8113d850483bc2b85cbfaa4903f4d4996",
+        "recipient": "0x2209f42761d2D3E3606F3818AB0f560eDc1aD022",
+        "amount": "142857142857142857",
+        "kind": "2"
+      },
+      "raw": "dex_financial_network_test.go:547: CLAIM_PAID id=84c0688e83f17c6b527501c6e7f2c8b8113d850483bc2b85cbfaa4903f4d4996 recipient=0x2209f42761d2D3E3606F3818AB0f560eDc1aD022 amount=142857142857142857 kind=2"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 91,
+      "fields": {
+        "tx": "0x9efc16a528eabdee760f068b7e6d08164c696b916e230366c0a5da98947bcb83",
+        "height": "63",
+        "hash": "0x2a9121ad1b1b4d6237d1560392343a94474b6b308bdc7ecfa6cb7e72fab4677a",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "390144",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:542: CLX_FINALIZED tx=0x9efc16a528eabdee760f068b7e6d08164c696b916e230366c0a5da98947bcb83 height=63 hash=0x2a9121ad1b1b4d6237d1560392343a94474b6b308bdc7ecfa6cb7e72fab4677a status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=390144 value=0"
+    },
+    {
+      "event": "CLAIM_PAID",
+      "line": 92,
+      "fields": {
+        "id": "b539e56801c47bbb8f5c7c563df432b720fedd8b81a939f65ae1f374aecd811f",
+        "recipient": "0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E",
+        "amount": "142857142857142857",
+        "kind": "2"
+      },
+      "raw": "dex_financial_network_test.go:547: CLAIM_PAID id=b539e56801c47bbb8f5c7c563df432b720fedd8b81a939f65ae1f374aecd811f recipient=0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E amount=142857142857142857 kind=2"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 93,
+      "fields": {
+        "height": "63",
+        "account": "0x000000000000000000000000000000000000B123",
+        "initial": "123",
+        "final": "79243619840000123",
+        "delta": "79243619840000000"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x000000000000000000000000000000000000B123 initial=123 final=79243619840000123 delta=79243619840000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 94,
+      "fields": {
+        "height": "63",
+        "account": "0x0000000000000000000000000000000000De0001",
+        "initial": "0",
+        "final": "214000000000000000000",
+        "delta": "214000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x0000000000000000000000000000000000De0001 initial=0 final=214000000000000000000 delta=214000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 95,
+      "fields": {
+        "height": "63",
+        "account": "0x0d382368cCEFB277F4915C053930DabC4A79C6Bf",
+        "initial": "0",
+        "final": "10000000000000000000",
+        "delta": "10000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x0d382368cCEFB277F4915C053930DabC4A79C6Bf initial=0 final=10000000000000000000 delta=10000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 96,
+      "fields": {
+        "height": "63",
+        "account": "0x2209f42761d2D3E3606F3818AB0f560eDc1aD022",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x2209f42761d2D3E3606F3818AB0f560eDc1aD022 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 97,
+      "fields": {
+        "height": "63",
+        "account": "0x279EA1ce4296eD87f95F7C8961CDade7dBd89634",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x279EA1ce4296eD87f95F7C8961CDade7dBd89634 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 98,
+      "fields": {
+        "height": "63",
+        "account": "0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 99,
+      "fields": {
+        "height": "63",
+        "account": "0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 100,
+      "fields": {
+        "height": "63",
+        "account": "0x61A212B6bad62A1662e2746fb27A2497B4ed9704",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x61A212B6bad62A1662e2746fb27A2497B4ed9704 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 101,
+      "fields": {
+        "height": "63",
+        "account": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "initial": "1000000000000000000000",
+        "final": "974999130880000000000",
+        "delta": "-25000869120000000000"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 initial=1000000000000000000000 final=974999130880000000000 delta=-25000869120000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 102,
+      "fields": {
+        "height": "63",
+        "account": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+        "initial": "1000000000000000000000",
+        "final": "899980161958400000000",
+        "delta": "-100019838041600000000"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x69C470DE997d4B81997528939D49f1F1b02c5aC3 initial=1000000000000000000000 final=899980161958400000000 delta=-100019838041600000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 103,
+      "fields": {
+        "height": "63",
+        "account": "0x86Ca6ca4332a79794059F0d8eC6553E0548224d9",
+        "initial": "0",
+        "final": "142857142857142858",
+        "delta": "142857142857142858"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0x86Ca6ca4332a79794059F0d8eC6553E0548224d9 initial=0 final=142857142857142858 delta=142857142857142858"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 104,
+      "fields": {
+        "height": "63",
+        "account": "0xF3632993774901B65Ee5F4d86D7619A48dF38A90",
+        "initial": "77",
+        "final": "77",
+        "delta": "0"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0xF3632993774901B65Ee5F4d86D7619A48dF38A90 initial=77 final=77 delta=0"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 105,
+      "fields": {
+        "height": "63",
+        "account": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "initial": "1000000000000000000000000000",
+        "final": "999999999644327104000000000",
+        "delta": "-355672896000000000"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 initial=1000000000000000000000000000 final=999999999644327104000000000 delta=-355672896000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 106,
+      "fields": {
+        "height": "63",
+        "account": "0xc9188585a89AE0B4220918a5076500D5245c7325",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0xc9188585a89AE0B4220918a5076500D5245c7325 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 107,
+      "fields": {
+        "height": "63",
+        "account": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+        "initial": "1000000000000000000000",
+        "final": "899980161958400000000",
+        "delta": "-100019838041600000000"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_BALANCE height=63 account=0xfa7D265919bb8D2c1166fe421Ab84E786bf00097 initial=1000000000000000000000 final=899980161958400000000 delta=-100019838041600000000"
+    },
+    {
+      "event": "NATIVE_LEDGER_RECONCILED",
+      "line": 108,
+      "fields": {
+        "height": "63",
+        "custody": "214000000000000000000",
+        "gas": "396218099200000000",
+        "commonReward": "79243619840000000",
+        "burn": "316974479360000000",
+        "accounts": "15",
+        "engine": "0/0/0"
+      },
+      "raw": "dex_financial_network_test.go:557: NATIVE_LEDGER_RECONCILED height=63 custody=214000000000000000000 gas=396218099200000000 commonReward=79243619840000000 burn=316974479360000000 accounts=15 engine=0/0/0"
+    },
+    {
+      "event": "CLX_ALL_STOPPED",
+      "line": 109,
+      "fields": {
+        "CLX_accepted_sequence": "18",
+        "horizon": "128"
+      },
+      "raw": "dex_financial_network_test.go:573: CLX_ALL_STOPPED DEX_finalized>=22 CLX_accepted_sequence=18; no native payout callback; finite retention horizon=128"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 110,
+      "fields": {
+        "height": "63",
+        "account": "0x000000000000000000000000000000000000B123",
+        "initial": "123",
+        "final": "79243619840000123",
+        "delta": "79243619840000000"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x000000000000000000000000000000000000B123 initial=123 final=79243619840000123 delta=79243619840000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 111,
+      "fields": {
+        "height": "63",
+        "account": "0x0000000000000000000000000000000000De0001",
+        "initial": "0",
+        "final": "214000000000000000000",
+        "delta": "214000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x0000000000000000000000000000000000De0001 initial=0 final=214000000000000000000 delta=214000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 112,
+      "fields": {
+        "height": "63",
+        "account": "0x0d382368cCEFB277F4915C053930DabC4A79C6Bf",
+        "initial": "0",
+        "final": "10000000000000000000",
+        "delta": "10000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x0d382368cCEFB277F4915C053930DabC4A79C6Bf initial=0 final=10000000000000000000 delta=10000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 113,
+      "fields": {
+        "height": "63",
+        "account": "0x2209f42761d2D3E3606F3818AB0f560eDc1aD022",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x2209f42761d2D3E3606F3818AB0f560eDc1aD022 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 114,
+      "fields": {
+        "height": "63",
+        "account": "0x279EA1ce4296eD87f95F7C8961CDade7dBd89634",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x279EA1ce4296eD87f95F7C8961CDade7dBd89634 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 115,
+      "fields": {
+        "height": "63",
+        "account": "0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 116,
+      "fields": {
+        "height": "63",
+        "account": "0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 117,
+      "fields": {
+        "height": "63",
+        "account": "0x61A212B6bad62A1662e2746fb27A2497B4ed9704",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x61A212B6bad62A1662e2746fb27A2497B4ed9704 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 118,
+      "fields": {
+        "height": "63",
+        "account": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "initial": "1000000000000000000000",
+        "final": "974999130880000000000",
+        "delta": "-25000869120000000000"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 initial=1000000000000000000000 final=974999130880000000000 delta=-25000869120000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 119,
+      "fields": {
+        "height": "63",
+        "account": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+        "initial": "1000000000000000000000",
+        "final": "899980161958400000000",
+        "delta": "-100019838041600000000"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x69C470DE997d4B81997528939D49f1F1b02c5aC3 initial=1000000000000000000000 final=899980161958400000000 delta=-100019838041600000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 120,
+      "fields": {
+        "height": "63",
+        "account": "0x86Ca6ca4332a79794059F0d8eC6553E0548224d9",
+        "initial": "0",
+        "final": "142857142857142858",
+        "delta": "142857142857142858"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0x86Ca6ca4332a79794059F0d8eC6553E0548224d9 initial=0 final=142857142857142858 delta=142857142857142858"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 121,
+      "fields": {
+        "height": "63",
+        "account": "0xF3632993774901B65Ee5F4d86D7619A48dF38A90",
+        "initial": "77",
+        "final": "77",
+        "delta": "0"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0xF3632993774901B65Ee5F4d86D7619A48dF38A90 initial=77 final=77 delta=0"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 122,
+      "fields": {
+        "height": "63",
+        "account": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "initial": "1000000000000000000000000000",
+        "final": "999999999644327104000000000",
+        "delta": "-355672896000000000"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 initial=1000000000000000000000000000 final=999999999644327104000000000 delta=-355672896000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 123,
+      "fields": {
+        "height": "63",
+        "account": "0xc9188585a89AE0B4220918a5076500D5245c7325",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0xc9188585a89AE0B4220918a5076500D5245c7325 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 124,
+      "fields": {
+        "height": "63",
+        "account": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+        "initial": "1000000000000000000000",
+        "final": "899980161958400000000",
+        "delta": "-100019838041600000000"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_BALANCE height=63 account=0xfa7D265919bb8D2c1166fe421Ab84E786bf00097 initial=1000000000000000000000 final=899980161958400000000 delta=-100019838041600000000"
+    },
+    {
+      "event": "NATIVE_LEDGER_RECONCILED",
+      "line": 125,
+      "fields": {
+        "height": "63",
+        "custody": "214000000000000000000",
+        "gas": "396218099200000000",
+        "commonReward": "79243619840000000",
+        "burn": "316974479360000000",
+        "accounts": "15",
+        "engine": "0/0/0"
+      },
+      "raw": "dex_financial_network_test.go:558: NATIVE_LEDGER_RECONCILED height=63 custody=214000000000000000000 gas=396218099200000000 commonReward=79243619840000000 burn=316974479360000000 accounts=15 engine=0/0/0"
+    },
+    {
+      "event": "CLX_CRASH_REOPEN",
+      "line": 126,
+      "fields": {
+        "height": "63",
+        "oldPIDs": "[976256 976333 976341 976348 976354 976360 976367]",
+        "newPIDs": "[976509 976515 976522 976528 976538 976544 976551]",
+        "root": "0x28da89068006a27d4d9f95ebdce85c69499045efb83a153d9837eea5df1bda91"
+      },
+      "raw": "dex_financial_network_test.go:558: CLX_CRASH_REOPEN height=63 oldPIDs=[976256 976333 976341 976348 976354 976360 976367] newPIDs=[976509 976515 976522 976528 976538 976544 976551] root=0x28da89068006a27d4d9f95ebdce85c69499045efb83a153d9837eea5df1bda91"
+    },
+    {
+      "event": "DEX_FINANCIAL_FAULT",
+      "line": 127,
+      "fields": {
+        "stage": "one-stopped",
+        "live": "6",
+        "finalized": "25",
+        "root": "66554be141bd70a473c3d9b95fc8f3f960e069e525a3039ed54daba9c42f8707",
+        "total": "225CLX",
+        "reserved": "11CLX"
+      },
+      "raw": "dex_financial_faults_test.go:148: DEX_FINANCIAL_FAULT stage=one-stopped live=6 finalized=25 root=66554be141bd70a473c3d9b95fc8f3f960e069e525a3039ed54daba9c42f8707 total=225CLX reserved=11CLX"
+    },
+    {
+      "event": "DEX_FINANCIAL_FAULT",
+      "line": 128,
+      "fields": {
+        "stage": "two-stopped",
+        "live": "5",
+        "finalized": "28",
+        "root": "873eae66f91dece047ecb50b3418ace2d5584bda75fe849defb9b32e115054af",
+        "total": "225CLX",
+        "reserved": "11CLX"
+      },
+      "raw": "dex_financial_faults_test.go:148: DEX_FINANCIAL_FAULT stage=two-stopped live=5 finalized=28 root=873eae66f91dece047ecb50b3418ace2d5584bda75fe849defb9b32e115054af total=225CLX reserved=11CLX"
+    },
+    {
+      "event": "DEX_FINANCIAL_FAULT",
+      "line": 138,
+      "fields": {
+        "stage": "restart-repair",
+        "live": "7",
+        "finalized": "28",
+        "root": "873eae66f91dece047ecb50b3418ace2d5584bda75fe849defb9b32e115054af",
+        "total": "225CLX",
+        "reserved": "11CLX"
+      },
+      "raw": "dex_financial_faults_test.go:148: DEX_FINANCIAL_FAULT stage=restart-repair live=7 finalized=28 root=873eae66f91dece047ecb50b3418ace2d5584bda75fe849defb9b32e115054af total=225CLX reserved=11CLX"
+    },
+    {
+      "event": "DEX_FINANCIAL_FAULT",
+      "line": 146,
+      "fields": {
+        "stage": "partition-5-2",
+        "live": "5",
+        "finalized": "31",
+        "root": "cfd2511d9f6cf57f5bfbcf656e895a2761f4ef87d0f507cbd3aa98d790149286",
+        "total": "225CLX",
+        "reserved": "11CLX"
+      },
+      "raw": "dex_financial_faults_test.go:148: DEX_FINANCIAL_FAULT stage=partition-5-2 live=5 finalized=31 root=cfd2511d9f6cf57f5bfbcf656e895a2761f4ef87d0f507cbd3aa98d790149286 total=225CLX reserved=11CLX"
+    },
+    {
+      "event": "DEX_FINANCIAL_FAULT",
+      "line": 154,
+      "fields": {
+        "stage": "partition-5-2-healed",
+        "live": "7",
+        "finalized": "31",
+        "root": "cfd2511d9f6cf57f5bfbcf656e895a2761f4ef87d0f507cbd3aa98d790149286",
+        "total": "225CLX",
+        "reserved": "11CLX"
+      },
+      "raw": "dex_financial_faults_test.go:148: DEX_FINANCIAL_FAULT stage=partition-5-2-healed live=7 finalized=31 root=cfd2511d9f6cf57f5bfbcf656e895a2761f4ef87d0f507cbd3aa98d790149286 total=225CLX reserved=11CLX"
+    },
+    {
+      "event": "DEX_FINANCIAL_FAULT",
+      "line": 162,
+      "fields": {
+        "stage": "partition-4-3-no-new-qc",
+        "live": "7",
+        "finalized": "31",
+        "root": "cfd2511d9f6cf57f5bfbcf656e895a2761f4ef87d0f507cbd3aa98d790149286",
+        "total": "225CLX",
+        "reserved": "11CLX"
+      },
+      "raw": "dex_financial_faults_test.go:148: DEX_FINANCIAL_FAULT stage=partition-4-3-no-new-qc live=7 finalized=31 root=cfd2511d9f6cf57f5bfbcf656e895a2761f4ef87d0f507cbd3aa98d790149286 total=225CLX reserved=11CLX"
+    },
+    {
+      "event": "DEX_FINANCIAL_FAULT",
+      "line": 170,
+      "fields": {
+        "stage": "partition-4-3-healed",
+        "live": "7",
+        "finalized": "35",
+        "root": "dab8fe7b313ce1d488c7c1eacc0567019bfc91e151f90203292651fc9d442c52",
+        "total": "225CLX",
+        "reserved": "11CLX"
+      },
+      "raw": "dex_financial_faults_test.go:148: DEX_FINANCIAL_FAULT stage=partition-4-3-healed live=7 finalized=35 root=dab8fe7b313ce1d488c7c1eacc0567019bfc91e151f90203292651fc9d442c52 total=225CLX reserved=11CLX"
+    },
+    {
+      "event": "DEX_FINANCIAL_ECONOMY",
+      "line": 172,
+      "fields": {
+        "stage": "oracle-stopped-cancel",
+        "finalized": "40",
+        "root": "1b51968b2e60dcd17e603b93ce9749942520a2a5876a68f78b7f8fd4d1df9782",
+        "total": "225CLX",
+        "reserved": "11CLX",
+        "mark": "100000000000000000000",
+        "insurance": "5000000000000000000",
+        "frozen": "false"
+      },
+      "raw": "dex_financial_economy_test.go:149: DEX_FINANCIAL_ECONOMY stage=oracle-stopped-cancel finalized=40 root=1b51968b2e60dcd17e603b93ce9749942520a2a5876a68f78b7f8fd4d1df9782 total=225CLX reserved=11CLX mark=100000000000000000000 insurance=5000000000000000000 frozen=false"
+    },
+    {
+      "event": "DEX_FINANCIAL_ECONOMY",
+      "line": 175,
+      "fields": {
+        "stage": "abrupt-price-no-counterparty",
+        "finalized": "46",
+        "root": "57a8ea4800c0a03820c481ffc87e86ac7110dcb8bb45c462abf58721eddfe4d1",
+        "total": "225CLX",
+        "reserved": "11CLX",
+        "mark": "1000000000000000000",
+        "insurance": "5000000000000000000",
+        "frozen": "false"
+      },
+      "raw": "dex_financial_economy_test.go:149: DEX_FINANCIAL_ECONOMY stage=abrupt-price-no-counterparty finalized=46 root=57a8ea4800c0a03820c481ffc87e86ac7110dcb8bb45c462abf58721eddfe4d1 total=225CLX reserved=11CLX mark=1000000000000000000 insurance=5000000000000000000 frozen=false"
+    },
+    {
+      "event": "DEX_FINANCIAL_ECONOMY",
+      "line": 178,
+      "fields": {
+        "stage": "holder-repaired",
+        "finalized": "46",
+        "root": "57a8ea4800c0a03820c481ffc87e86ac7110dcb8bb45c462abf58721eddfe4d1",
+        "total": "225CLX",
+        "reserved": "11CLX",
+        "mark": "1000000000000000000",
+        "insurance": "5000000000000000000",
+        "frozen": "false"
+      },
+      "raw": "dex_financial_economy_test.go:149: DEX_FINANCIAL_ECONOMY stage=holder-repaired finalized=46 root=57a8ea4800c0a03820c481ffc87e86ac7110dcb8bb45c462abf58721eddfe4d1 total=225CLX reserved=11CLX mark=1000000000000000000 insurance=5000000000000000000 frozen=false"
+    },
+    {
+      "event": "DEX_FINANCIAL_ECONOMY",
+      "line": 179,
+      "fields": {
+        "stage": "actual-close-insurance-exhausted",
+        "finalized": "49",
+        "root": "3a5cf3a1524c2ed86a865c64c96cb73579b4a9609d3cd80beab82094ecdf7795",
+        "total": "225CLX",
+        "reserved": "11CLX",
+        "mark": "1000000000000000000",
+        "insurance": "0",
+        "frozen": "true"
+      },
+      "raw": "dex_financial_economy_test.go:149: DEX_FINANCIAL_ECONOMY stage=actual-close-insurance-exhausted finalized=49 root=3a5cf3a1524c2ed86a865c64c96cb73579b4a9609d3cd80beab82094ecdf7795 total=225CLX reserved=11CLX mark=1000000000000000000 insurance=0 frozen=true"
+    },
+    {
+      "event": "DEX_FINANCIAL_ECONOMY",
+      "line": 181,
+      "fields": {
+        "stage": "frozen-market-noop-remains-conservative",
+        "finalized": "50",
+        "root": "56f0935e7674bb0bcf6ce5967e3c7c549d844f078527e833e62848379b8d711c",
+        "total": "225CLX",
+        "reserved": "11CLX",
+        "mark": "1000000000000000000",
+        "insurance": "0",
+        "frozen": "true"
+      },
+      "raw": "dex_financial_economy_test.go:149: DEX_FINANCIAL_ECONOMY stage=frozen-market-noop-remains-conservative finalized=50 root=56f0935e7674bb0bcf6ce5967e3c7c549d844f078527e833e62848379b8d711c total=225CLX reserved=11CLX mark=1000000000000000000 insurance=0 frozen=true"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 184,
+      "fields": {
+        "tx": "0x17c453de623a5be01d508f29b2a6c571086e873d3a170b921b88c071bb80c3ac",
+        "height": "65",
+        "hash": "0xa0fd0539f3570d801c55ee54b7b6d43e507a244f335825320f88e7ba77f85406",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "21000",
+        "value": "1"
+      },
+      "raw": "dex_financial_network_test.go:594: CLX_FINALIZED tx=0x17c453de623a5be01d508f29b2a6c571086e873d3a170b921b88c071bb80c3ac height=65 hash=0xa0fd0539f3570d801c55ee54b7b6d43e507a244f335825320f88e7ba77f85406 status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=21000 value=1"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 185,
+      "fields": {
+        "tx": "0x9840eac37ecaaa1f00bd5002b9451affaaee29854a9b977a59ce9b262e15e54b",
+        "height": "67",
+        "hash": "0x8e02f2828ca7a4dc31cc95b6f0a248af51bf171023bda6215817a848e01fe97c",
+        "status": "1",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "384708",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:600: CLX_FINALIZED tx=0x9840eac37ecaaa1f00bd5002b9451affaaee29854a9b977a59ce9b262e15e54b height=67 hash=0x8e02f2828ca7a4dc31cc95b6f0a248af51bf171023bda6215817a848e01fe97c status=1 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=384708 value=0"
+    },
+    {
+      "event": "CLX_FINALIZED",
+      "line": 186,
+      "fields": {
+        "tx": "0xb6559a830375878f53515c5457078042a90338edf6da15c6f5e8b389ea41a7b7",
+        "height": "69",
+        "hash": "0x7e67b0dc800b906ace8efbdf169eec4ff4008f3fef22e8ed6b9099c58ad377b4",
+        "status": "0",
+        "payer": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "gas": "384708",
+        "value": "0"
+      },
+      "raw": "dex_financial_network_test.go:606: CLX_FINALIZED tx=0xb6559a830375878f53515c5457078042a90338edf6da15c6f5e8b389ea41a7b7 height=69 hash=0x7e67b0dc800b906ace8efbdf169eec4ff4008f3fef22e8ed6b9099c58ad377b4 status=0 payer=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 gas=384708 value=0"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 187,
+      "fields": {
+        "height": "69",
+        "account": "0x000000000000000000000000000000000000B123",
+        "initial": "123",
+        "final": "79496552960000123",
+        "delta": "79496552960000000"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x000000000000000000000000000000000000B123 initial=123 final=79496552960000123 delta=79496552960000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 188,
+      "fields": {
+        "height": "69",
+        "account": "0x000000000000000000000000000000000000DAd1",
+        "initial": "0",
+        "final": "1",
+        "delta": "1"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x000000000000000000000000000000000000DAd1 initial=0 final=1 delta=1"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 189,
+      "fields": {
+        "height": "69",
+        "account": "0x0000000000000000000000000000000000De0001",
+        "initial": "0",
+        "final": "214000000000000000000",
+        "delta": "214000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x0000000000000000000000000000000000De0001 initial=0 final=214000000000000000000 delta=214000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 190,
+      "fields": {
+        "height": "69",
+        "account": "0x0d382368cCEFB277F4915C053930DabC4A79C6Bf",
+        "initial": "0",
+        "final": "10000000000000000000",
+        "delta": "10000000000000000000"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x0d382368cCEFB277F4915C053930DabC4A79C6Bf initial=0 final=10000000000000000000 delta=10000000000000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 191,
+      "fields": {
+        "height": "69",
+        "account": "0x2209f42761d2D3E3606F3818AB0f560eDc1aD022",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x2209f42761d2D3E3606F3818AB0f560eDc1aD022 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 192,
+      "fields": {
+        "height": "69",
+        "account": "0x279EA1ce4296eD87f95F7C8961CDade7dBd89634",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x279EA1ce4296eD87f95F7C8961CDade7dBd89634 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 193,
+      "fields": {
+        "height": "69",
+        "account": "0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x4b67B1e4CCbA9e44DA5fa159a429fd788af19850 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 194,
+      "fields": {
+        "height": "69",
+        "account": "0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x570CFbE994cfdebeBd78076FDD4D20E1A383a37E initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 195,
+      "fields": {
+        "height": "69",
+        "account": "0x61A212B6bad62A1662e2746fb27A2497B4ed9704",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x61A212B6bad62A1662e2746fb27A2497B4ed9704 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 196,
+      "fields": {
+        "height": "69",
+        "account": "0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2",
+        "initial": "1000000000000000000000",
+        "final": "974999130880000000000",
+        "delta": "-25000869120000000000"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x63aDD4d994A5DE54754Cd874B9e32bF7C79B89d2 initial=1000000000000000000000 final=974999130880000000000 delta=-25000869120000000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 197,
+      "fields": {
+        "height": "69",
+        "account": "0x69C470DE997d4B81997528939D49f1F1b02c5aC3",
+        "initial": "1000000000000000000000",
+        "final": "899980161958400000000",
+        "delta": "-100019838041600000000"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x69C470DE997d4B81997528939D49f1F1b02c5aC3 initial=1000000000000000000000 final=899980161958400000000 delta=-100019838041600000000"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 198,
+      "fields": {
+        "height": "69",
+        "account": "0x86Ca6ca4332a79794059F0d8eC6553E0548224d9",
+        "initial": "0",
+        "final": "142857142857142858",
+        "delta": "142857142857142858"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0x86Ca6ca4332a79794059F0d8eC6553E0548224d9 initial=0 final=142857142857142858 delta=142857142857142858"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 199,
+      "fields": {
+        "height": "69",
+        "account": "0xF3632993774901B65Ee5F4d86D7619A48dF38A90",
+        "initial": "77",
+        "final": "77",
+        "delta": "0"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0xF3632993774901B65Ee5F4d86D7619A48dF38A90 initial=77 final=77 delta=0"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 200,
+      "fields": {
+        "height": "69",
+        "account": "0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00",
+        "initial": "1000000000000000000000000000",
+        "final": "999999999643062438399999999",
+        "delta": "-356937561600000001"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0xbAE1747cF5c2499fa57d5D674776b8d70Ff1aE00 initial=1000000000000000000000000000 final=999999999643062438399999999 delta=-356937561600000001"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 201,
+      "fields": {
+        "height": "69",
+        "account": "0xc9188585a89AE0B4220918a5076500D5245c7325",
+        "initial": "0",
+        "final": "142857142857142857",
+        "delta": "142857142857142857"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0xc9188585a89AE0B4220918a5076500D5245c7325 initial=0 final=142857142857142857 delta=142857142857142857"
+    },
+    {
+      "event": "NATIVE_BALANCE",
+      "line": 202,
+      "fields": {
+        "height": "69",
+        "account": "0xfa7D265919bb8D2c1166fe421Ab84E786bf00097",
+        "initial": "1000000000000000000000",
+        "final": "899980161958400000000",
+        "delta": "-100019838041600000000"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_BALANCE height=69 account=0xfa7D265919bb8D2c1166fe421Ab84E786bf00097 initial=1000000000000000000000 final=899980161958400000000 delta=-100019838041600000000"
+    },
+    {
+      "event": "NATIVE_LEDGER_RECONCILED",
+      "line": 203,
+      "fields": {
+        "height": "69",
+        "custody": "214000000000000000000",
+        "gas": "397482764800000000",
+        "commonReward": "79496552960000000",
+        "burn": "317986211840000000",
+        "accounts": "16",
+        "engine": "0/0/0"
+      },
+      "raw": "dex_financial_network_test.go:607: NATIVE_LEDGER_RECONCILED height=69 custody=214000000000000000000 gas=397482764800000000 commonReward=79496552960000000 burn=317986211840000000 accounts=16 engine=0/0/0"
+    },
+    {
+      "event": "DEX_OFF_PROCESS_FULLSYNC_RESTART",
+      "line": 218,
+      "fields": {
+        "pid": "976819",
+        "restartPid": "976826",
+        "height": "69",
+        "root": "0x4981f3147fe114ce33517307d614201a2acc9accc928b88d29cb260d05efcb52",
+        "receipts": "0x232f79d806c08cacd9cc3c78563f20622dac828877e3d053a068ed1a6a6c40c4",
+        "gas": "384708",
+        "financialEngine": "0/0/0"
+      },
+      "raw": "dex_financial_network_test.go:612: DEX_OFF_PROCESS_FULLSYNC_RESTART pid=976819 restartPid=976826 height=69 root=0x4981f3147fe114ce33517307d614201a2acc9accc928b88d29cb260d05efcb52 receipts=0x232f79d806c08cacd9cc3c78563f20622dac828877e3d053a068ed1a6a6c40c4 gas=384708 financialEngine=0/0/0"
+    },
+    {
+      "event": "NATIVE_RPC_PARITY",
+      "line": 219,
+      "fields": {
+        "head": "0x7e67b0dc800b906ace8efbdf169eec4ff4008f3fef22e8ed6b9099c58ad377b4",
+        "eth_call_return": "223",
+        "estimate": "271600",
+        "native_trace_gas": "271600",
+        "ordinary_trace_gas": "21000",
+        "fake_from": "insufficient",
+        "explicit_override": "simulation",
+        "canonical_state": "unchanged"
+      },
+      "raw": "dex_financial_network_test.go:613: NATIVE_RPC_PARITY head=0x7e67b0dc800b906ace8efbdf169eec4ff4008f3fef22e8ed6b9099c58ad377b4 eth_call_return=223 estimate=271600 native_trace_gas=271600 ordinary_trace_gas=21000 fake_from=insufficient explicit_override=simulation canonical_state=unchanged"
+    },
+    {
+      "event": "FINANCIAL_TWO_DOMAIN_TRACE_PASS",
+      "line": 220,
+      "fields": {
+        "ordinaryCLI": "true",
+        "clxProcesses": "[976509 976515 976522 976528 976538 976544 976551]",
+        "dexSidecars": "7",
+        "RPCCommon": "1",
+        "independentDEXOffSyncCommon": "1"
+      },
+      "raw": "dex_financial_network_test.go:614: FINANCIAL_TWO_DOMAIN_TRACE_PASS ordinaryCLI=true clxProcesses=[976509 976515 976522 976528 976538 976544 976551] dexSidecars=7 RPCCommon=1 independentDEXOffSyncCommon=1; normal CLI mode additionally has 7 supervising Common processes; isolated loopback, not WAN"
+    }
+  ]
+}

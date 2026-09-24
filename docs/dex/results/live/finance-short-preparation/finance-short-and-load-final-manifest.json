@@ -1,0 +1,30 @@
+{
+  "time_utc": "2026-09-23T19:14:29.721049+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "source_sha256": {
+    "cmd/dex-live-finance/main.go": "57a8c79527bcf5732a588d3bf79f63f25f0375ab5d4847c323d3fc2ece9f6a04",
+    "cmd/dex-live-finance/main_test.go": "509a6cd972e6beb7885a439bbf26a36d58683e40ab2a855867ad8ed2023ebe63",
+    "cmd/dex-live-finance/native.go": "6ec6fb3ebc48405494d90223b65b5a65acd29dac4c46b3c0443ee5d2c3479655",
+    "cmd/dex-live-source-observer/main.go": "190eecabb25c8d8d7e52ec91eadab176d2989e8fbf90b54891d5b4d28b9e0742",
+    "cmd/dex-live-source-observer/main_test.go": "fcc4ae9608e4a025c1bc7a9f9b0e25e5ac06af498c6ea61334109c64f55ff451",
+    "scripts/dex/live_finance.py": "bceaeececdba532a42317f175dfbae691648f6eef23b6c834147b3609c3fbd00",
+    "scripts/dex/live_finance_accounting.py": "936bc1ffacbb40069367565331402a9208320e73758520d0c07a4d9f7a4e9ae1",
+    "scripts/dex/live_finance_load.py": "f1603e8c93923d00d88b6a0e0596f23227d22c4a3d52299fff81c612a28110dd",
+    "scripts/dex/test_live_finance.py": "86a6117005ec0188af3c6a01533588cd0465982bf925857cc47fdf6cc71cb1f2",
+    "scripts/dex/test_live_finance_load.py": "82cf38372997684aa4bed64a600b4fefb26b6b71d36aa22a663a066263ed9918",
+    "docs/dex/live-finance-runner-preparation.md": "70b447acb1549d6718a1732fbe8a464d02fb6c403fe25756f4578987ad9a8d45"
+  },
+  "binary_sha256": {
+    "/tmp/common-dex-live-test.x5z_05oq/dex-live-finance": "7c3f8ffdf68cf35dca98d52e24d1173b58d319db54b04f31024bb25601a4e190",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-live-source-observer": "a69bd328cbdf3f1bfbd373d1a39e662b97f210c516c4506a42b0fda7452b1130",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-block-audit": "cb10593efc98cc9094953bb779e89c70fae0cb47d86a4ed2aea28a10325bd203"
+  },
+  "python_tests": 20,
+  "helper_go_tests": 3,
+  "observer_go_top_level": 4,
+  "foreign_uid_faults": "NOT_RUN sandbox UID map; prior fixture failures preserved",
+  "result": "PASS(UNIT)",
+  "live": "not executed in this component review; live results are recorded separately",
+  "load_offline_plan": "finance-load-offline-plan.json",
+  "rules": "no reinit, deadline extension, balance/model change, hidden certified finality promotion or proof-bound increase"
+}

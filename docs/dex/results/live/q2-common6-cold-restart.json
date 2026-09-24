@@ -1,0 +1,38 @@
+{
+  "status": "PASS(LIVE)",
+  "app": "cypherdex6",
+  "pid_before": 1250851,
+  "start_ticks_before": 45725651,
+  "binary_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+  "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+  "target": {
+    "number": "0xdf9",
+    "hash": "0xb482a8f66cf9d07cd3e19fb1e9dcb9fa9fc5764f7ee9670e34ca09b1f9eb1f81",
+    "parentHash": "0x7f1d9427307dbcd7b83b43edf0ca2c07cbbfea6da5228cbffba9b7d8bf354280",
+    "stateRoot": "0x7f9a428f870b699ed640d7dbf18546ce9e0ffcb397fc61f14a2f19d3dbb1044d",
+    "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "gasUsed": "0x0",
+    "gasLimit": "0x100000000000",
+    "timestamp": "0x6ab400e1",
+    "keyHash": "0x2f5e77fb854266be3cbf49f501481b808f01324dc12b17ea47e82c93ec013934"
+  },
+  "init": false,
+  "database_replaced": false,
+  "old_process_exited": true,
+  "pid_after": 1271425,
+  "start_ticks_after": 45999112,
+  "restored_block": {
+    "number": "0xdf9",
+    "hash": "0xb482a8f66cf9d07cd3e19fb1e9dcb9fa9fc5764f7ee9670e34ca09b1f9eb1f81",
+    "parentHash": "0x7f1d9427307dbcd7b83b43edf0ca2c07cbbfea6da5228cbffba9b7d8bf354280",
+    "stateRoot": "0x7f9a428f870b699ed640d7dbf18546ce9e0ffcb397fc61f14a2f19d3dbb1044d",
+    "transactionsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "receiptsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+    "gasUsed": "0x0",
+    "gasLimit": "0x100000000000",
+    "timestamp": "0x6ab400e1",
+    "keyHash": "0x2f5e77fb854266be3cbf49f501481b808f01324dc12b17ea47e82c93ec013934"
+  },
+  "mining": false
+}

@@ -1,0 +1,81 @@
+=== RUN   TestCommonCLIEmptyTrieJournalRestartDEXOff
+    dex_common_restart_test.go:57: CLOSED_GENESIS stage=DEX-OFF-after-init path=/tmp/TestCommonCLIEmptyTrieJournalRestartDEXOff3366203265/001/common/cypher/chaindata key0=0x5abd23722468a219feb4653b24be687dd123a2946dce569e0b20e822cd7b91ae tx0=0x2874d93fe70c7a083c07e12a3d49e3b08b3aa01d01c67bae0df0e5696912fb9b
+    dex_common_restart_test.go:77: CLOSED_GENESIS stage=DEX-OFF-closed-0 path=/tmp/TestCommonCLIEmptyTrieJournalRestartDEXOff3366203265/001/common/cypher/chaindata key0=0x5abd23722468a219feb4653b24be687dd123a2946dce569e0b20e822cd7b91ae tx0=0x2874d93fe70c7a083c07e12a3d49e3b08b3aa01d01c67bae0df0e5696912fb9b
+    dex_common_restart_test.go:77: CLOSED_GENESIS stage=DEX-OFF-closed-1 path=/tmp/TestCommonCLIEmptyTrieJournalRestartDEXOff3366203265/001/common/cypher/chaindata key0=0x5abd23722468a219feb4653b24be687dd123a2946dce569e0b20e822cd7b91ae tx0=0x2874d93fe70c7a083c07e12a3d49e3b08b3aa01d01c67bae0df0e5696912fb9b
+    dex_common_restart_test.go:81: ordinary Common DEX OFF restarted without init; disabled trie journal preserved tx/key genesis and chaindata; no PoW nonce search
+--- PASS: TestCommonCLIEmptyTrieJournalRestartDEXOff (7.10s)
+=== RUN   TestDEXNormalCLINativeFinanceSmoke
+    dex_finance_test.go:35: pre-inbox economic rejection: native finalized inbox anchor required
+    dex_finance_test.go:35: ordinary Common owns native-finance child; seven real TLS peers; signed HTTP admission and economic rejection; no PoW nonce work, no funded CLX scenario in this smoke
+--- PASS: TestDEXNormalCLINativeFinanceSmoke (3.95s)
+=== RUN   TestDEXNormalCLINativeFinanceRestart
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-init path=/tmp/TestDEXNormalCLINativeFinanceRestart3830587733/001/common/cypher/chaindata key0=0x176bf364312eaea84cfbae433ea3b0adaa1f37a59da6a1a0faa425c2b0d74361 tx0=0xc2d454b4a8633eb4aec1611425da4f6281e6da3c2f6d7d3ff2d7a9dbc9a9b45d
+    dex_finance_test.go:39: pre-inbox economic rejection: native finalized inbox anchor required
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-parent-stop-before-probe path=/tmp/TestDEXNormalCLINativeFinanceRestart3830587733/001/common/cypher/chaindata key0=0x176bf364312eaea84cfbae433ea3b0adaa1f37a59da6a1a0faa425c2b0d74361 tx0=0xc2d454b4a8633eb4aec1611425da4f6281e6da3c2f6d7d3ff2d7a9dbc9a9b45d
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-probe path=/tmp/TestDEXNormalCLINativeFinanceRestart3830587733/001/common/cypher/chaindata key0=0x176bf364312eaea84cfbae433ea3b0adaa1f37a59da6a1a0faa425c2b0d74361 tx0=0xc2d454b4a8633eb4aec1611425da4f6281e6da3c2f6d7d3ff2d7a9dbc9a9b45d
+    dex_finance_test.go:39: RESTART_SAME_ARGS executable=/tmp/go-build1527465541/b001/cypher.test args=["--datadir" "/tmp/TestDEXNormalCLINativeFinanceRestart3830587733/001/common" "--nat" "extip:127.0.0.1" "--rnetport" "39269" "--port" "0" "--nodiscover" "--maxpeers" "0" "--ipcpath" "/tmp/native-cli-ipc-1222821129/node.ipc" "--syncmode" "full" "--cache" "32" "--cache.trie.journal" "" "--dex.validator" "--dex.config" "/tmp/TestDEXNormalCLINativeFinanceRestart3830587733/001/native-0.json"]
+    dex_finance_test.go:39: native Common restarted same datadir=/tmp/TestDEXNormalCLINativeFinanceRestart3830587733/001/common without init; oldPID=1200428 newPID=1200497; rejected recipient probe before restart
+    dex_finance_test.go:39: ordinary Common owns native-finance child; seven real TLS peers; signed HTTP admission and economic rejection; no PoW nonce work, no funded CLX scenario in this smoke
+--- PASS: TestDEXNormalCLINativeFinanceRestart (7.34s)
+=== RUN   TestG0CommonCLIJournalPathRestart
+=== RUN   TestG0CommonCLIJournalPathRestart/omitted
+    dex_journal_paths_test.go:58: CLOSED_GENESIS stage=journal-omitted-initialized path=/tmp/TestG0CommonCLIJournalPathRestartomitted3471886547/001/common/cypher/chaindata key0=0xff4ed739ccd7ef13f3d258f1e666b63c6300d776d232efee2b862f6c1a4f2f05 tx0=0x488c0ad8c1f5ec6ceacc6d745470ddf6d6a7114dcbbebf58ffcab341496886e0
+    dex_journal_paths_test.go:95: CLOSED_GENESIS stage=journal-omitted-closed-0 path=/tmp/TestG0CommonCLIJournalPathRestartomitted3471886547/001/common/cypher/chaindata key0=0xff4ed739ccd7ef13f3d258f1e666b63c6300d776d232efee2b862f6c1a4f2f05 tx0=0x488c0ad8c1f5ec6ceacc6d745470ddf6d6a7114dcbbebf58ffcab341496886e0
+    dex_journal_paths_test.go:95: CLOSED_GENESIS stage=journal-omitted-closed-1 path=/tmp/TestG0CommonCLIJournalPathRestartomitted3471886547/001/common/cypher/chaindata key0=0xff4ed739ccd7ef13f3d258f1e666b63c6300d776d232efee2b862f6c1a4f2f05 tx0=0x488c0ad8c1f5ec6ceacc6d745470ddf6d6a7114dcbbebf58ffcab341496886e0
+    dex_journal_paths_test.go:110: JOURNAL_RESTART mode=omitted expected=/tmp/TestG0CommonCLIJournalPathRestartomitted3471886547/001/common/cypher/triecache normal_starts=2 genesis_init=1 tx_key_genesis=preserved sibling=preserved normal_pow_nonce=NOT_RUN
+=== RUN   TestG0CommonCLIJournalPathRestart/empty
+    dex_journal_paths_test.go:58: CLOSED_GENESIS stage=journal-empty-initialized path=/tmp/TestG0CommonCLIJournalPathRestartempty4200840000/001/common/cypher/chaindata key0=0xa4820d17005aafb78f2d297d6cc51bd06bcda026bc4adacd5d8fffac3327962d tx0=0x04e56518af11469adbd3abfbf12d80c3ccbe4bfe23b940d5c7b39ef3ff29f01e
+    dex_journal_paths_test.go:95: CLOSED_GENESIS stage=journal-empty-closed-0 path=/tmp/TestG0CommonCLIJournalPathRestartempty4200840000/001/common/cypher/chaindata key0=0xa4820d17005aafb78f2d297d6cc51bd06bcda026bc4adacd5d8fffac3327962d tx0=0x04e56518af11469adbd3abfbf12d80c3ccbe4bfe23b940d5c7b39ef3ff29f01e
+    dex_journal_paths_test.go:95: CLOSED_GENESIS stage=journal-empty-closed-1 path=/tmp/TestG0CommonCLIJournalPathRestartempty4200840000/001/common/cypher/chaindata key0=0xa4820d17005aafb78f2d297d6cc51bd06bcda026bc4adacd5d8fffac3327962d tx0=0x04e56518af11469adbd3abfbf12d80c3ccbe4bfe23b940d5c7b39ef3ff29f01e
+    dex_journal_paths_test.go:110: JOURNAL_RESTART mode=empty expected=/tmp/TestG0CommonCLIJournalPathRestartempty4200840000/001/common/cypher/triecache normal_starts=2 genesis_init=1 tx_key_genesis=preserved sibling=preserved normal_pow_nonce=NOT_RUN
+=== RUN   TestG0CommonCLIJournalPathRestart/relative
+    dex_journal_paths_test.go:58: CLOSED_GENESIS stage=journal-relative-initialized path=/tmp/TestG0CommonCLIJournalPathRestartrelative4037492952/001/common/cypher/chaindata key0=0x2312774446582ef4f082e46044bf6feccdbd0280b3887d1682a97c7064fae26f tx0=0x891574d25318f22380964622e3d1e137131e5200fced17ea6d4e3dc30c3b2ffd
+    dex_journal_paths_test.go:95: CLOSED_GENESIS stage=journal-relative-closed-0 path=/tmp/TestG0CommonCLIJournalPathRestartrelative4037492952/001/common/cypher/chaindata key0=0x2312774446582ef4f082e46044bf6feccdbd0280b3887d1682a97c7064fae26f tx0=0x891574d25318f22380964622e3d1e137131e5200fced17ea6d4e3dc30c3b2ffd
+    dex_journal_paths_test.go:95: CLOSED_GENESIS stage=journal-relative-closed-1 path=/tmp/TestG0CommonCLIJournalPathRestartrelative4037492952/001/common/cypher/chaindata key0=0x2312774446582ef4f082e46044bf6feccdbd0280b3887d1682a97c7064fae26f tx0=0x891574d25318f22380964622e3d1e137131e5200fced17ea6d4e3dc30c3b2ffd
+    dex_journal_paths_test.go:110: JOURNAL_RESTART mode=relative expected=/tmp/TestG0CommonCLIJournalPathRestartrelative4037492952/001/common/cypher/g0-cache/trie normal_starts=2 genesis_init=1 tx_key_genesis=preserved sibling=preserved normal_pow_nonce=NOT_RUN
+=== RUN   TestG0CommonCLIJournalPathRestart/absolute
+    dex_journal_paths_test.go:58: CLOSED_GENESIS stage=journal-absolute-initialized path=/tmp/TestG0CommonCLIJournalPathRestartabsolute143359253/001/common/cypher/chaindata key0=0x7710d1a4d52822c5ae042cf6b28400bc9be962479e8b5dd33fb07d4893d3d615 tx0=0xf0e32699e99d60292fe004afa2f18ee277c99046815aa236237d4aec6d31796a
+    dex_journal_paths_test.go:95: CLOSED_GENESIS stage=journal-absolute-closed-0 path=/tmp/TestG0CommonCLIJournalPathRestartabsolute143359253/001/common/cypher/chaindata key0=0x7710d1a4d52822c5ae042cf6b28400bc9be962479e8b5dd33fb07d4893d3d615 tx0=0xf0e32699e99d60292fe004afa2f18ee277c99046815aa236237d4aec6d31796a
+    dex_journal_paths_test.go:95: CLOSED_GENESIS stage=journal-absolute-closed-1 path=/tmp/TestG0CommonCLIJournalPathRestartabsolute143359253/001/common/cypher/chaindata key0=0x7710d1a4d52822c5ae042cf6b28400bc9be962479e8b5dd33fb07d4893d3d615 tx0=0xf0e32699e99d60292fe004afa2f18ee277c99046815aa236237d4aec6d31796a
+    dex_journal_paths_test.go:110: JOURNAL_RESTART mode=absolute expected=/tmp/TestG0CommonCLIJournalPathRestartabsolute143359253/001/owned-absolute-triecache normal_starts=2 genesis_init=1 tx_key_genesis=preserved sibling=preserved normal_pow_nonce=NOT_RUN
+--- PASS: TestG0CommonCLIJournalPathRestart (29.71s)
+    --- PASS: TestG0CommonCLIJournalPathRestart/omitted (7.19s)
+    --- PASS: TestG0CommonCLIJournalPathRestart/empty (7.12s)
+    --- PASS: TestG0CommonCLIJournalPathRestart/relative (7.99s)
+    --- PASS: TestG0CommonCLIJournalPathRestart/absolute (7.42s)
+=== RUN   TestDEXNormalCLIEightRoleCombinations
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_false_dex_fa1709706747/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=false rpc=false dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=efa95254ac3b7b4f270fd94300f42affa510f5ca
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_false_dex_fal4152132151/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=false dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=356b1d55ff2b3f02e53e23449fd521d63df43239
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_fal2401274329/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=false rpc=true dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=ec06b3595764834c4baa37efbe912459239e3b5a
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_true_dex_fals1440552142/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=true dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=c35b36c8270b9cb1347203cf8094346f29502ea1
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_true
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_false_dex_tr1797596377/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=false rpc=false dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=de56a7a0962aaca0a6e4b0d8dc4abc512c9b8707
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_true
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_false_dex_tru648238656/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=false dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=461febffb3537d3d034794891fa7801061714cd0
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_true
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_false_rpc_true_dex_tru3852705018/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=false rpc=true dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=c245c96431d53cf33092d294b0c849ed5e662afb
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_true
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_true_dex_true1189859803/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=true dex=true; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=07c367bec7c2b9a10324b388e9f7277ba5ef7c22
+--- PASS: TestDEXNormalCLIEightRoleCombinations (34.41s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_false (4.21s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_false (4.28s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_false (4.17s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_false (4.19s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_true (4.63s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_true (4.46s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_true_dex_true (4.29s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_true_dex_true (4.18s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/cypher	82.575s

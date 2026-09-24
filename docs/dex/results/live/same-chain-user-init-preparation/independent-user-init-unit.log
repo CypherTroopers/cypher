@@ -1,0 +1,13 @@
+test_all_target_preflight_precedes_first_stop_or_archive (test_live_user_init.UserInitTest.test_all_target_preflight_precedes_first_stop_or_archive) ... ok
+test_archive_preserves_keys_wal_claims_and_only_clx_is_initialized (test_live_user_init.UserInitTest.test_archive_preserves_keys_wal_claims_and_only_clx_is_initialized) ... ok
+test_check_is_read_only_and_lists_exact_distinct_kinds (test_live_user_init.UserInitTest.test_check_is_read_only_and_lists_exact_distinct_kinds) ... ok
+test_config_change_during_stop_refuses_further_mutation (test_live_user_init.UserInitTest.test_config_change_during_stop_refuses_further_mutation) ... ok
+test_existing_candidate_vote_or_relay_history_rejected_before_stop (test_live_user_init.UserInitTest.test_existing_candidate_vote_or_relay_history_rejected_before_stop) ... ok
+test_failed_init_retains_whole_archives_and_refuses_automatic_retry (test_live_user_init.UserInitTest.test_failed_init_retains_whole_archives_and_refuses_automatic_retry) ... ok
+test_remaining_child_or_writer_stops_before_archive (test_live_user_init.UserInitTest.test_remaining_child_or_writer_stops_before_archive) ... ok
+test_runtime_history_created_during_stop_is_retained_before_first_archive (test_live_user_init.UserInitTest.test_runtime_history_created_during_stop_is_retained_before_first_archive) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 1.461s
+
+OK

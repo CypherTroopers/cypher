@@ -1,0 +1,24 @@
+{
+  "returncode": 1,
+  "journal_before_sha256": "4db02852e2bd7a9522683929caa64185593eb90163f6c50cc79f1a2a01f197ef",
+  "journal_after_sha256": "4db02852e2bd7a9522683929caa64185593eb90163f6c50cc79f1a2a01f197ef",
+  "journal_unchanged": true,
+  "operations": "read-only CLX/DEX HTTP/IPC; dedicated observer proof journal and audit result writes only",
+  "arguments": [
+    "python3",
+    "scripts/dex/live_finance_accounting.py",
+    "--partial",
+    "--output-name",
+    "accounting-partial-r1",
+    "--run",
+    "build/stage/live-finance-20260923-smoke",
+    "--candidate",
+    "build/stage/live-generation-candidate",
+    "--helper",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-live-finance-r3",
+    "--observer",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-live-source-observer",
+    "--decoder",
+    "/tmp/common-dex-live-test.x5z_05oq/dex-block-audit"
+  ]
+}

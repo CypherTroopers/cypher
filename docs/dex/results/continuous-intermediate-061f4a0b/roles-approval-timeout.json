@@ -1,0 +1,7 @@
+{
+  "mode": "roles",
+  "state": "NOT_RUN",
+  "reason": "Automatic approval review did not finish before its deadline; no child/session was created. Not retried because source freeze was lifted for G3 test observer fix.",
+  "command": "DEX_TEST_GOCACHE=/tmp/common-dex-devnet.0wvjd5/gocache bash scripts/dex/check.sh roles",
+  "source_manifest": "061f4a0b6bed257c6ba8ad60f377f52cf8640cb6dcb8d4dcbd01a1575cfe1630"
+}

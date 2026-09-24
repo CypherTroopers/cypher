@@ -1,0 +1,20 @@
+=== RUN   TestCommonCLIEmptyTrieJournalRestartDEXOff
+    dex_common_restart_test.go:51: CLI failed: exit status 1
+        INFO [09-22|08:55:39.743] Allocated cache and file handles         database=/tmp/TestCommonCLIEmptyTrieJournalRestartDEXOff4086747019/001/common/cypher/chaindata cache=16.00MiB handles=16
+        INFO [09-22|08:55:39.745] SetCommitteeConfig                       len=0
+        INFO [09-22|08:55:39.745] Writing custom genesis key block 
+        INFO [09-22|08:55:39.747] Writing custom genesis block 
+        Fatal: Failed to write genesis block: genesis mixHash must commit the complete Fair HotStuff configuration: have s©y˚†∫A~bj-î¨qÂTv£bDº⁄öÀ"àÿQW want 9Ö∫}:ÁP·@˘˛&¯Ø›˜≤îKÛ,Åâ0MY©
+--- FAIL: TestCommonCLIEmptyTrieJournalRestartDEXOff (0.06s)
+=== RUN   TestDEXNormalCLINativeFinanceRestart
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-init path=/tmp/TestDEXNormalCLINativeFinanceRestart2004884510/001/common/cypher/chaindata key0=0x70c88d779e57ffae32fda4c8a2ac01a8e6f7ef1e428f713b4c9e0e8d3e8865b1 tx0=0xaefc5f9b7fd10791274f09645b44d73b9801b8f874838609e8dbcde156ac77a8
+    dex_finance_test.go:39: pre-inbox economic rejection: native finalized inbox anchor required
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-parent-stop-before-probe path=/tmp/TestDEXNormalCLINativeFinanceRestart2004884510/001/common/cypher/chaindata key0=0x70c88d779e57ffae32fda4c8a2ac01a8e6f7ef1e428f713b4c9e0e8d3e8865b1 tx0=0xaefc5f9b7fd10791274f09645b44d73b9801b8f874838609e8dbcde156ac77a8
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-probe path=/tmp/TestDEXNormalCLINativeFinanceRestart2004884510/001/common/cypher/chaindata key0=0x70c88d779e57ffae32fda4c8a2ac01a8e6f7ef1e428f713b4c9e0e8d3e8865b1 tx0=0xaefc5f9b7fd10791274f09645b44d73b9801b8f874838609e8dbcde156ac77a8
+    dex_finance_test.go:39: RESTART_SAME_ARGS executable=/tmp/go-build2221835408/b001/cypher.test args=["--datadir" "/tmp/TestDEXNormalCLINativeFinanceRestart2004884510/001/common" "--nat" "extip:127.0.0.1" "--rnetport" "42089" "--port" "0" "--nodiscover" "--maxpeers" "0" "--ipcpath" "/tmp/native-cli-ipc-1081685530/node.ipc" "--syncmode" "full" "--cache" "32" "--cache.trie.journal" "" "--dex.validator" "--dex.config" "/tmp/TestDEXNormalCLINativeFinanceRestart2004884510/001/native-0.json"]
+    dex_finance_test.go:39: native Common restarted same datadir=/tmp/TestDEXNormalCLINativeFinanceRestart2004884510/001/common without init; oldPID=948479 newPID=948581; rejected recipient probe before restart
+    dex_finance_test.go:39: ordinary Common owns native-finance child; seven real TLS peers; signed HTTP admission and economic rejection; no PoW nonce work, no funded CLX scenario in this smoke
+--- PASS: TestDEXNormalCLINativeFinanceRestart (7.95s)
+FAIL
+FAIL	github.com/cypherium/cypher/cmd/cypher	8.058s
+FAIL

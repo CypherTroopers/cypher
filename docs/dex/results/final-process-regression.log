@@ -1,0 +1,35 @@
+=== RUN   TestDEXAndCLXProcessIsolation
+    dex_isolation_process_test.go:463: process-devnet network verified: active loopback only, no external routes; namespace="net:[4026532340]" namespace_read_error=<nil> captured_parent=false
+    dex_isolation_process_test.go:464: fixture committee permutation=[0 1 2 3 4 6 5]; proposer=0 laggard=4; both excluded from scheduled views2..10
+    dex_isolation_process_test.go:566: 14 distinct CLX/DEX process identities; DEX pipe-network simulation deliveries=215; all 7 DEX PIDs killed and restarted with WAL height 2 preserved then finalized 4; CLX advanced from heights [1 1 1 1 1 1 1] to canonical height 3 while DEX was stopped; checkpoint signature verification only, no native settlement
+--- PASS: TestDEXAndCLXProcessIsolation (33.00s)
+PASS
+ok  	github.com/cypherium/cypher/reconfig	33.040s
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_false_dex_false
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=false, HTTP Common admission=false, separate-process 7-actor DEX finality=false; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_false_dex_false
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=true, HTTP Common admission=false, separate-process 7-actor DEX finality=false; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_true_dex_false
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=false, HTTP Common admission=true, separate-process 7-actor DEX finality=false; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_true_dex_false
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=true, HTTP Common admission=true, separate-process 7-actor DEX finality=false; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_false_dex_true
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=false, HTTP Common admission=false, separate-process 7-actor DEX finality=true; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_false_dex_true
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=true, HTTP Common admission=false, separate-process 7-actor DEX finality=true; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_true_dex_true
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=false, HTTP Common admission=true, separate-process 7-actor DEX finality=true; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_true_dex_true
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=true, HTTP Common admission=true, separate-process 7-actor DEX finality=true; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+--- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset (13.30s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_false_dex_false (3.82s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_false_dex_false (0.47s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_true_dex_false (0.46s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_true_dex_false (0.55s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_false_dex_true (1.99s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_false_dex_true (2.05s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_true_dex_true (1.90s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_true_dex_true (2.06s)
+PASS
+ok  	github.com/cypherium/cypher/eth	13.349s

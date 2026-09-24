@@ -1,0 +1,5 @@
+=== RUN   TestHistoryFinalityAcrossTwoStorageGenerations
+    history_test.go:234: two real128-hot storage cuts;16 nonconsecutive certified descendants;finalized145 with bounded ancestry proofs;oldarchive claims/proofs retained;7cold restarts;rechecksummed badfrontier rejected
+--- PASS: TestHistoryFinalityAcrossTwoStorageGenerations (180.23s)
+PASS
+ok  	github.com/cypherium/cypher/dex/consensus	180.265s

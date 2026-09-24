@@ -1,0 +1,22 @@
+[
+  {
+    "count": 0,
+    "root": "2d9d2e4a5d2618f5964ecb7537a905605458385cc1c2ed84b824f444c6ed27c3",
+    "data_root": "4aebd38a3387a45979e14a436923cea711d2765934e93710c684210803613e4a"
+  },
+  {
+    "count": 1,
+    "root": "1746dd8bbc2f0003dafd17d3a164b66548944543ca1dde02ad9c47748309347e",
+    "data_root": "46ec832e5f82187bcb0a4948ecf5293b60303312dbcf4fe3860223e23e8d1e7a"
+  },
+  {
+    "count": 3,
+    "root": "870e77875c85f231b6988044a7756ed06b79bc7e16a34308a95074f984fbc245",
+    "data_root": "f04ccbf272047d15584d3d71ec507b076f9e43a7025c2632f8be743c215a502e"
+  },
+  {
+    "count": 4095,
+    "root": "c0887b8280303d4d0773b2c5ffd48c5ba5a666c0780672ee26f093e971b80f8e",
+    "data_root": "cb9e564e6da34eb7aeecf69566ebb0845f14ff07d5aa0b9fdd1ce2320e60cf5a"
+  }
+]

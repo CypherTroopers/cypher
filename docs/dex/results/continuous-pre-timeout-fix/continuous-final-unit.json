@@ -1,0 +1,11 @@
+{
+  "artifact_root": "/tmp/common-dex-check.HjjQ4XOw",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "source_manifest_sha256": "c3e925e9445d6b51e1f28aa7dbf0c18966cc696fb7143489a674a78bdb6d3c14",
+  "run_exit": "0",
+  "packages_pass": 19,
+  "top_level_pass": 270,
+  "pass_events": 783,
+  "skip_events": 22,
+  "source_diff_bytes": 0
+}

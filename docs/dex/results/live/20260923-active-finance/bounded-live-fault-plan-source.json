@@ -1,0 +1,37 @@
+{
+  "status": "NOT_RUN",
+  "scope": "read-only plan only; no live operations",
+  "created_utc": "2026-09-23T19:10:28.541985+00:00",
+  "plan": "/tmp/common-dex-live-test.x5z_05oq/public/bounded-live-fault-plan.md",
+  "plan_sha256": "ac37cd9079dc936151893e4d135333a6845fe2f4a356f93111ac320781a75edf",
+  "sources": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py",
+      "sha256": "3e484ccd5be9032f5c91279fdaceafd1484da7aef69da689a31d2965a709729b"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance_load.py",
+      "sha256": "3ebb2f4ead5553b67e20e0a9e08ef53bd6475fc7dd8e7e7b0723670c2b822390"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_auth.py",
+      "sha256": "04195e2ddd5b02d43ca965881906efea7e0537159044841eb2f72f6af07ed03a"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_relay.py",
+      "sha256": "65162cb1f47f2d93b7e9e8dd020c3cdb76466534940cb392074ac34711b9258b"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/dex.go",
+      "sha256": "3ad3b8a8e6e12f32edb602e35e24f17b19d4935e6c23ba0357f6a272b47eda0c"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/dex/service/finance/factory.go",
+      "sha256": "054a8d28018d7a478e0dee2616188eb89ab5a869d70432161bb2668c447fb84c"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/dex/relay/planner.go",
+      "sha256": "2c9681889c0f55c12cfc05659ec73260b7dbbf4789bb6e6c2d4c1740dbb34f18"
+    }
+  ]
+}

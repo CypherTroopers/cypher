@@ -1,0 +1,8 @@
+=== RUN   TestOfflineInputAndAmountBounds
+--- PASS: TestOfflineInputAndAmountBounds (0.05s)
+=== RUN   TestNativeFundingCodecProjectionAndMutationRefusal
+--- PASS: TestNativeFundingCodecProjectionAndMutationRefusal (0.00s)
+=== RUN   TestCandidateGenesisBindingRetainsApprovedChainID
+--- PASS: TestCandidateGenesisBindingRetainsApprovedChainID (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/dex-live-finance	0.108s

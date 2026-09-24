@@ -1,0 +1,124 @@
+{
+  "mode": "unit",
+  "artifact_root": "/tmp/common-dex-check.Rj9INvRq",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "source_manifest_sha256": "59b0ac84536503682915fb0a1d5c75de60dedf7c70fd74ab9f65eb7bc729823d",
+  "source_manifest_after_sha256": "59b0ac84536503682915fb0a1d5c75de60dedf7c70fd74ab9f65eb7bc729823d",
+  "source_diff_bytes": 0,
+  "test_exit": 0,
+  "run_exit": 0,
+  "counts": {
+    "test_pass": 802,
+    "top_level_pass": 277,
+    "package_pass": 19,
+    "test_skip": 25,
+    "top_level_skip": 24
+  },
+  "skipped": [
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestKeyRenewalSourceHTTPPermutationColdResume"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestKeyRenewalSourceLegacyV3PendingWAL"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayInboxCompletionNeedsWholeProofBoundEffect"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayPlannerSemanticInboxCompletion"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayPlannerEmptyAnchorConflict"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayPlannerHistoricalLegBeyondSourceRequest"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayPlannerColdSourceAndRepeatedInboxCompletion"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayInboxRenewalReadyACKThenColdCompletion"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayInboxRenewalTargetContext"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayInboxRenewalDoesNotReplaceInvalidJobProofs"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelaySourceHTTPProofsAndRestart"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelaySourceHTTPFailureBoundaries"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelaySourceWALFailClosed"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelaySourceHeaderBoundAndReverifiedWAL"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/consensus",
+      "test": "TestWALOrphanSIGKILLChild"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/consensus",
+      "test": "TestWALOrphanUnsafeOrUnverifiedRecoveryDeletesNothing/foreign-owner"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/devnet/testnet",
+      "test": "TestProcessIdentityOwnershipAndRestart"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/relay",
+      "test": "TestRelaySIGKILLChild"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/service",
+      "test": "TestSnapshotAndSettlementAPIResponseBounds"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/service",
+      "test": "TestSevenFHSActorsOverPinnedTLSSockets"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/service",
+      "test": "TestAuthenticatedActionAPIAndSerializedActor"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/transport",
+      "test": "TestOutboundTLSUsesRegisteredListenerIPAndEphemeralPort"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/transport",
+      "test": "TestTLSOutboxReconnectDuplicatesAndRestart"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/transport",
+      "test": "TestTLSIdentityEpochPartialAndOutOfOrder"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/transport",
+      "test": "TestOutboxOwnershipAndRegistryRebind"
+    }
+  ],
+  "first_event": "2026-09-23T11:53:20.055020271+02:00",
+  "last_event": "2026-09-23T11:57:32.502745227+02:00",
+  "raw_sha256": "a6918e177851e480fa4e075c938137f2625dd5cef75376c3e253f1e919104917",
+  "scope": "Final candidate59b0; GOMAXPROCS2 nice10 p1 race readonly/offline. Run during G3 all-DEX-stopped ordinary key timer wait. Network opt-in SKIPs need independent socket gate. Go race is not C BLS or financial security proof.",
+  "status": "PASS"
+}

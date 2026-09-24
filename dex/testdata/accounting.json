@@ -1,0 +1,741 @@
+{
+  "schema": "common-dex-accounting-v0",
+  "scope": "Isolated devnet integer arithmetic only; no native chain, signatures, FHS, matching, or claims verification",
+  "expected_origin": "Manually specified independently of any Go implementation; reference checker cannot regenerate outputs",
+  "cases": [
+    {
+      "id": "notional_one_btc",
+      "operation": "notional",
+      "input": {
+        "price": "100000000000000000000",
+        "quantity": "100000000"
+      },
+      "result": "100000000000000000000"
+    },
+    {
+      "id": "notional_short_absolute",
+      "operation": "notional",
+      "input": {
+        "price": "100000000000000000000",
+        "quantity": "-100000"
+      },
+      "result": "100000000000000000"
+    },
+    {
+      "id": "notional_smallest_lot_tick",
+      "operation": "notional",
+      "input": {
+        "price": "1000",
+        "quantity": "100000"
+      },
+      "result": "1"
+    },
+    {
+      "id": "fee_taker_300_ppm",
+      "operation": "charge",
+      "input": {
+        "price": "100000000000000000000",
+        "quantity": "100000000",
+        "rate_ppm": "300"
+      },
+      "result": "30000000000000000"
+    },
+    {
+      "id": "fee_maker_100_ppm",
+      "operation": "charge",
+      "input": {
+        "price": "100000000000000000000",
+        "quantity": "100000000",
+        "rate_ppm": "100"
+      },
+      "result": "10000000000000000"
+    },
+    {
+      "id": "fee_round_up_one_atom",
+      "operation": "charge",
+      "input": {
+        "price": "1000",
+        "quantity": "100000",
+        "rate_ppm": "300"
+      },
+      "result": "1"
+    },
+    {
+      "id": "fee_zero_rate",
+      "operation": "charge",
+      "input": {
+        "price": "1000",
+        "quantity": "100000",
+        "rate_ppm": "0"
+      },
+      "result": "0"
+    },
+    {
+      "id": "initial_margin_10_percent",
+      "operation": "charge",
+      "input": {
+        "price": "100000000000000000000",
+        "quantity": "100000000",
+        "rate_ppm": "100000"
+      },
+      "result": "10000000000000000000"
+    },
+    {
+      "id": "maintenance_margin_5_percent",
+      "operation": "charge",
+      "input": {
+        "price": "100000000000000000000",
+        "quantity": "100000000",
+        "rate_ppm": "50000"
+      },
+      "result": "5000000000000000000"
+    },
+    {
+      "id": "long_realized_gain",
+      "operation": "pnl",
+      "input": {
+        "entry": "100000000000000000000",
+        "exit": "110000000000000000000",
+        "quantity": "100000000"
+      },
+      "result": "10000000000000000000"
+    },
+    {
+      "id": "short_realized_loss",
+      "operation": "pnl",
+      "input": {
+        "entry": "100000000000000000000",
+        "exit": "110000000000000000000",
+        "quantity": "-100000000"
+      },
+      "result": "-10000000000000000000"
+    },
+    {
+      "id": "partial_close_long_loss",
+      "operation": "pnl",
+      "input": {
+        "entry": "100000000000000000000",
+        "exit": "90000000000000000000",
+        "quantity": "100000"
+      },
+      "result": "-10000000000000000"
+    },
+    {
+      "id": "funding_positive_rate",
+      "operation": "funding",
+      "input": {
+        "price": "105000000000000000000",
+        "positions": {
+          "alice": "100000000",
+          "bob": "-100000000"
+        },
+        "rate_ppm": "1000"
+      },
+      "result": {
+        "cash_deltas": {
+          "alice": "-105000000000000000",
+          "bob": "105000000000000000"
+        },
+        "dust": "0"
+      }
+    },
+    {
+      "id": "funding_negative_rate",
+      "operation": "funding",
+      "input": {
+        "price": "105000000000000000000",
+        "positions": {
+          "alice": "100000000",
+          "bob": "-100000000"
+        },
+        "rate_ppm": "-1000"
+      },
+      "result": {
+        "cash_deltas": {
+          "alice": "105000000000000000",
+          "bob": "-105000000000000000"
+        },
+        "dust": "0"
+      }
+    },
+    {
+      "id": "funding_asymmetric_rounding",
+      "operation": "funding",
+      "input": {
+        "price": "1000",
+        "positions": {
+          "alice": "200000",
+          "bob": "-100000",
+          "carol": "-100000"
+        },
+        "rate_ppm": "1"
+      },
+      "result": {
+        "cash_deltas": {
+          "alice": "-1",
+          "bob": "0",
+          "carol": "0"
+        },
+        "dust": "1"
+      }
+    },
+    {
+      "id": "funding_reverse_rounding",
+      "operation": "funding",
+      "input": {
+        "price": "1000",
+        "positions": {
+          "alice": "200000",
+          "bob": "-100000",
+          "carol": "-100000"
+        },
+        "rate_ppm": "-1"
+      },
+      "result": {
+        "cash_deltas": {
+          "alice": "0",
+          "bob": "-1",
+          "carol": "-1"
+        },
+        "dust": "2"
+      }
+    },
+    {
+      "id": "funding_zero_rate",
+      "operation": "funding",
+      "input": {
+        "price": "1000",
+        "positions": {
+          "alice": "100000",
+          "bob": "-100000"
+        },
+        "rate_ppm": "0"
+      },
+      "result": {
+        "cash_deltas": {
+          "alice": "0",
+          "bob": "0"
+        },
+        "dust": "0"
+      }
+    },
+    {
+      "id": "insurance_sufficient",
+      "operation": "insurance",
+      "input": {
+        "cash": "-3000000000000000000",
+        "insurance": "5000000000000000000"
+      },
+      "result": {
+        "cash": "0",
+        "insurance": "2000000000000000000",
+        "insurance_used": "3000000000000000000",
+        "uncovered_debt": "0",
+        "status": "NORMAL"
+      }
+    },
+    {
+      "id": "insurance_insufficient_freezes",
+      "operation": "insurance",
+      "input": {
+        "cash": "-8000000000000000000",
+        "insurance": "5000000000000000000"
+      },
+      "result": {
+        "cash": "-3000000000000000000",
+        "insurance": "0",
+        "insurance_used": "5000000000000000000",
+        "uncovered_debt": "3000000000000000000",
+        "status": "FROZEN"
+      }
+    },
+    {
+      "id": "insurance_no_positive_balance_subsidy",
+      "operation": "insurance",
+      "input": {
+        "cash": "1",
+        "insurance": "5"
+      },
+      "result": {
+        "cash": "1",
+        "insurance": "5",
+        "insurance_used": "0",
+        "uncovered_debt": "0",
+        "status": "NORMAL"
+      }
+    },
+    {
+      "id": "reward_funded_capped",
+      "operation": "reward",
+      "input": {
+        "fees": "84000000000000000",
+        "support": "20000000000000000000",
+        "allowance": "2000000000000000000",
+        "cap": "1000000000000000000",
+        "points": {
+          "v1": "2",
+          "v2": "1",
+          "v3": "1",
+          "v4": "0",
+          "v5": "0",
+          "v6": "0",
+          "v7": "0"
+        }
+      },
+      "result": {
+        "budget": "1000000000000000000",
+        "from_fees": "42000000000000000",
+        "from_support": "958000000000000000",
+        "fees_remaining": "42000000000000000",
+        "support_remaining": "19042000000000000000",
+        "allocations": {
+          "v1": "500000000000000000",
+          "v2": "250000000000000000",
+          "v3": "250000000000000000",
+          "v4": "0",
+          "v5": "0",
+          "v6": "0",
+          "v7": "0"
+        }
+      }
+    },
+    {
+      "id": "reward_remainder_canonical_id",
+      "operation": "reward",
+      "input": {
+        "fees": "0",
+        "support": "10",
+        "allowance": "10",
+        "cap": "10",
+        "points": {
+          "v3": "1",
+          "v2": "1",
+          "v1": "1"
+        }
+      },
+      "result": {
+        "budget": "10",
+        "from_fees": "0",
+        "from_support": "10",
+        "fees_remaining": "0",
+        "support_remaining": "0",
+        "allocations": {
+          "v3": "3",
+          "v2": "3",
+          "v1": "4"
+        }
+      }
+    },
+    {
+      "id": "reward_largest_fraction_first",
+      "operation": "reward",
+      "input": {
+        "fees": "0",
+        "support": "2",
+        "allowance": "2",
+        "cap": "2",
+        "points": {
+          "v1": "1",
+          "v2": "2"
+        }
+      },
+      "result": {
+        "budget": "2",
+        "from_fees": "0",
+        "from_support": "2",
+        "fees_remaining": "0",
+        "support_remaining": "0",
+        "allocations": {
+          "v1": "1",
+          "v2": "1"
+        }
+      }
+    },
+    {
+      "id": "reward_support_ended_zero_fees",
+      "operation": "reward",
+      "input": {
+        "fees": "0",
+        "support": "0",
+        "allowance": "2000000000000000000",
+        "cap": "1000000000000000000",
+        "points": {
+          "v1": "10",
+          "v2": "10"
+        }
+      },
+      "result": {
+        "budget": "0",
+        "from_fees": "0",
+        "from_support": "0",
+        "fees_remaining": "0",
+        "support_remaining": "0",
+        "allocations": {
+          "v1": "0",
+          "v2": "0"
+        }
+      }
+    },
+    {
+      "id": "reward_zero_points_does_not_reserve",
+      "operation": "reward",
+      "input": {
+        "fees": "100",
+        "support": "100",
+        "allowance": "100",
+        "cap": "100",
+        "points": {
+          "v1": "0",
+          "v2": "0"
+        }
+      },
+      "result": {
+        "budget": "0",
+        "from_fees": "0",
+        "from_support": "0",
+        "fees_remaining": "100",
+        "support_remaining": "100",
+        "allocations": {
+          "v1": "0",
+          "v2": "0"
+        }
+      }
+    },
+    {
+      "id": "reward_fee_only_cap",
+      "operation": "reward",
+      "input": {
+        "fees": "1000",
+        "support": "1000",
+        "allowance": "1000",
+        "cap": "100",
+        "points": {
+          "v1": "1"
+        }
+      },
+      "result": {
+        "budget": "100",
+        "from_fees": "100",
+        "from_support": "0",
+        "fees_remaining": "900",
+        "support_remaining": "1000",
+        "allocations": {
+          "v1": "100"
+        }
+      }
+    },
+    {
+      "id": "reject_zero_price",
+      "operation": "notional",
+      "input": {
+        "price": "0",
+        "quantity": "100000"
+      },
+      "error": "PRICE_TICK"
+    },
+    {
+      "id": "reject_noncanonical_integer",
+      "operation": "notional",
+      "input": {
+        "price": "01000",
+        "quantity": "100000"
+      },
+      "error": "INTEGER"
+    },
+    {
+      "id": "reject_quantity_dust",
+      "operation": "notional",
+      "input": {
+        "price": "1000",
+        "quantity": "1"
+      },
+      "error": "QUANTITY_LOT"
+    },
+    {
+      "id": "reject_off_tick_price",
+      "operation": "notional",
+      "input": {
+        "price": "1001",
+        "quantity": "100000"
+      },
+      "error": "PRICE_TICK"
+    },
+    {
+      "id": "reject_amount_overflow",
+      "operation": "notional",
+      "input": {
+        "price": "340282366920938463463374607431768211000",
+        "quantity": "100000000000000"
+      },
+      "error": "RANGE"
+    },
+    {
+      "id": "reject_unbalanced_funding",
+      "operation": "funding",
+      "input": {
+        "price": "1000",
+        "positions": {
+          "alice": "100000",
+          "bob": "0"
+        },
+        "rate_ppm": "1"
+      },
+      "error": "UNBALANCED_POSITION"
+    },
+    {
+      "id": "reject_unbounded_funding_rate",
+      "operation": "funding",
+      "input": {
+        "price": "1000",
+        "positions": {
+          "alice": "100000",
+          "bob": "-100000"
+        },
+        "rate_ppm": "10001"
+      },
+      "error": "FUNDING_RATE"
+    },
+    {
+      "id": "reject_self_declared_excess_points",
+      "operation": "reward",
+      "input": {
+        "fees": "100",
+        "support": "100",
+        "allowance": "100",
+        "cap": "100",
+        "points": {
+          "v1": "11"
+        }
+      },
+      "error": "POINT_BOUND"
+    },
+    {
+      "id": "deposit_trade_fee_funding_reward_withdrawal_arithmetic_trace",
+      "operation": "trace",
+      "input": {},
+      "result": {
+        "steps": [
+          {
+            "action": "deposits_and_funded_pools",
+            "accounts": {
+              "alice": "100000000000000000000",
+              "bob": "100000000000000000000"
+            },
+            "custody": "225000000000000000000",
+            "fees": "0",
+            "support": "20000000000000000000",
+            "insurance": "5000000000000000000",
+            "funding_dust": "0",
+            "withdrawal_reserved": "0",
+            "reward_reserved": "0"
+          },
+          {
+            "action": "open_pair_at_100_CLX_per_BTC",
+            "accounts": {
+              "alice": "99970000000000000000",
+              "bob": "99990000000000000000"
+            },
+            "custody": "225000000000000000000",
+            "fees": "40000000000000000",
+            "support": "20000000000000000000",
+            "insurance": "5000000000000000000",
+            "funding_dust": "0",
+            "withdrawal_reserved": "0",
+            "reward_reserved": "0"
+          },
+          {
+            "action": "funding_at_105_CLX_per_BTC",
+            "accounts": {
+              "alice": "99865000000000000000",
+              "bob": "100095000000000000000"
+            },
+            "custody": "225000000000000000000",
+            "fees": "40000000000000000",
+            "support": "20000000000000000000",
+            "insurance": "5000000000000000000",
+            "funding_dust": "0",
+            "withdrawal_reserved": "0",
+            "reward_reserved": "0"
+          },
+          {
+            "action": "close_pair_at_110_CLX_per_BTC",
+            "accounts": {
+              "alice": "109832000000000000000",
+              "bob": "90084000000000000000"
+            },
+            "custody": "225000000000000000000",
+            "fees": "84000000000000000",
+            "support": "20000000000000000000",
+            "insurance": "5000000000000000000",
+            "funding_dust": "0",
+            "withdrawal_reserved": "0",
+            "reward_reserved": "0"
+          },
+          {
+            "action": "funded_reward_reservation",
+            "accounts": {
+              "alice": "109832000000000000000",
+              "bob": "90084000000000000000"
+            },
+            "custody": "225000000000000000000",
+            "fees": "42000000000000000",
+            "support": "19042000000000000000",
+            "insurance": "5000000000000000000",
+            "funding_dust": "0",
+            "withdrawal_reserved": "0",
+            "reward_reserved": "1000000000000000000"
+          },
+          {
+            "action": "withdrawal_reservation",
+            "accounts": {
+              "alice": "99832000000000000000",
+              "bob": "90084000000000000000"
+            },
+            "custody": "225000000000000000000",
+            "fees": "42000000000000000",
+            "support": "19042000000000000000",
+            "insurance": "5000000000000000000",
+            "funding_dust": "0",
+            "withdrawal_reserved": "10000000000000000000",
+            "reward_reserved": "1000000000000000000"
+          },
+          {
+            "action": "native_withdrawal_paid",
+            "accounts": {
+              "alice": "99832000000000000000",
+              "bob": "90084000000000000000"
+            },
+            "custody": "215000000000000000000",
+            "fees": "42000000000000000",
+            "support": "19042000000000000000",
+            "insurance": "5000000000000000000",
+            "funding_dust": "0",
+            "withdrawal_reserved": "0",
+            "reward_reserved": "1000000000000000000"
+          },
+          {
+            "action": "native_rewards_paid",
+            "accounts": {
+              "alice": "99832000000000000000",
+              "bob": "90084000000000000000"
+            },
+            "custody": "214000000000000000000",
+            "fees": "42000000000000000",
+            "support": "19042000000000000000",
+            "insurance": "5000000000000000000",
+            "funding_dust": "0",
+            "withdrawal_reserved": "0",
+            "reward_reserved": "0"
+          }
+        ],
+        "reward_allocations": {
+          "v1": "500000000000000000",
+          "v2": "250000000000000000",
+          "v3": "250000000000000000",
+          "v4": "0",
+          "v5": "0",
+          "v6": "0",
+          "v7": "0"
+        }
+      }
+    },
+    {
+      "id": "three_trader_close_new_preserves_equity",
+      "operation": "equity",
+      "input": {
+        "mark": "110000000000000000000",
+        "accounts": {
+          "alice": {
+            "cash": "100000000000000000000",
+            "quantity": "100000000",
+            "entry": "100000000000000000000"
+          },
+          "bob": {
+            "cash": "90000000000000000000",
+            "quantity": "0",
+            "entry": "100000000000000000000"
+          },
+          "carol": {
+            "cash": "100000000000000000000",
+            "quantity": "-100000000",
+            "entry": "110000000000000000000"
+          }
+        },
+        "custody": "300000000000000000000",
+        "pools": "0"
+      },
+      "result": {
+        "cash": "290000000000000000000",
+        "unrealized": "10000000000000000000",
+        "rights": "300000000000000000000"
+      }
+    },
+    {
+      "id": "three_trader_second_close_negative_unrealized",
+      "operation": "equity",
+      "input": {
+        "mark": "120000000000000000000",
+        "accounts": {
+          "alice": {
+            "cash": "120000000000000000000",
+            "quantity": "0",
+            "entry": "100000000000000000000"
+          },
+          "bob": {
+            "cash": "90000000000000000000",
+            "quantity": "100000000",
+            "entry": "120000000000000000000"
+          },
+          "carol": {
+            "cash": "100000000000000000000",
+            "quantity": "-100000000",
+            "entry": "110000000000000000000"
+          }
+        },
+        "custody": "300000000000000000000",
+        "pools": "0"
+      },
+      "result": {
+        "cash": "310000000000000000000",
+        "unrealized": "-10000000000000000000",
+        "rights": "300000000000000000000"
+      }
+    },
+    {
+      "id": "reject_cash_only_custody_for_open_positions",
+      "operation": "equity",
+      "input": {
+        "mark": "110000000000000000000",
+        "accounts": {
+          "alice": {
+            "cash": "100000000000000000000",
+            "quantity": "100000000",
+            "entry": "100000000000000000000"
+          },
+          "bob": {
+            "cash": "90000000000000000000",
+            "quantity": "0",
+            "entry": "100000000000000000000"
+          },
+          "carol": {
+            "cash": "100000000000000000000",
+            "quantity": "-100000000",
+            "entry": "110000000000000000000"
+          }
+        },
+        "custody": "290000000000000000000",
+        "pools": "0"
+      },
+      "error": "CONSERVATION"
+    },
+    {
+      "id": "big_intermediate_fits_final_amount",
+      "operation": "notional",
+      "input": {
+        "price": "340282366920938463463374607431768211000",
+        "quantity": "100000"
+      },
+      "result": "340282366920938463463374607431768211"
+    }
+  ]
+}

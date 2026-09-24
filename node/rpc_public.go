@@ -17,6 +17,7 @@ var publicRPCMethods = func() map[string]bool {
 		"net":  "listening peerCount version",
 		"eth": `accounts config gasPrice maxPriorityFeePerGas feeHistory protocolVersion syncing
 			chainId blockNumber keyBlockNumber getBalance getProof getHeaderByNumber getHeaderByHash
+			getCLXFinalityWitness getDEXInboxEntries
 			getBlockByNumber getBlockByHash getUncleByBlockNumberAndIndex getKeyBlockByNumber
 			getKeyBlockByHash getKeyBlocksByNumbers getUncleByBlockHashAndIndex
 			getUncleCountByBlockNumber getUncleCountByBlockHash getCommitteeMember getCode getStorageAt

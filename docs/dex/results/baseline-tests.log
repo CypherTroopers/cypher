@@ -1,0 +1,149 @@
+ok  	github.com/cypherium/cypher/commonrpcreward	0.017s
+# gopkg.in/olebedev/go-duktape.v3
+duk_logging.c: In function ‘duk__logger_prototype_log_shared’:
+duk_logging.c:184:71: warning: ‘Z’ directive writing 1 byte into a region of size between 0 and 9 [-Wformat-overflow=]
+  184 |         sprintf((char *) date_buf, "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+      |                                                                       ^
+In file included from /usr/include/stdio.h:974,
+                 from duk_logging.c:5:
+In function ‘sprintf’,
+    inlined from ‘duk__logger_prototype_log_shared’ at duk_logging.c:184:2:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:30:10: note: ‘__builtin___sprintf_chk’ output between 25 and 85 bytes into a destination of size 32
+   30 |   return __builtin___sprintf_chk (__s, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   31 |                                   __glibc_objsize (__s), __fmt,
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   32 |                                   __va_arg_pack ());
+      |                                   ~~~~~~~~~~~~~~~~~
+ok  	github.com/cypherium/cypher/params	0.066s
+ok  	github.com/cypherium/cypher/consensus/colossusX	0.161s
+ok  	github.com/cypherium/cypher/miner	0.052s
+--- FAIL: TestCommonRPCNodeStartsBeforeAccountCreationAndPersistsIndependentAdmissions (0.04s)
+panic: failed to create quic rnet server: Error opening QUIC UDP socket: listen udp :19000: socket: operation not permitted [recovered, repanicked]
+
+goroutine 8522 [running]:
+testing.tRunner.func1.2({0x202a3f8, 0x1999c1cbba30})
+	/usr/local/go/src/testing/testing.go:2123 +0x232
+testing.tRunner.func1()
+	/usr/local/go/src/testing/testing.go:2126 +0x329
+panic({0x202a3f8?, 0x1999c1cbba30?})
+	/usr/local/go/src/runtime/panic.go:859 +0x125
+github.com/cypherium/cypher/rnet.newServerFromRouter(0x1999c18317c0?, {0x214a9b8, 0x1999c1cbba10}, {0x12adb39?, 0x6?})
+	/root/work/cypher-FHS-D-ExchangeCore/rnet/server.go:97 +0x1ba
+github.com/cypherium/cypher/rnet.NewServerQUICWithListenAddr(0x1999c1776da0?, {0x0?, 0x12adb39?})
+	/root/work/cypher-FHS-D-ExchangeCore/rnet/server.go:112 +0x29
+github.com/cypherium/cypher/rnet.NewQuicServer({0x1999c1776da0?, 0x1999c1beddc8?})
+	/root/work/cypher-FHS-D-ExchangeCore/rnet/server.go:63 +0x2e
+github.com/cypherium/cypher/rnet.NewServerWithTransport({0x1999c1776da0?, 0x8326c1b2afeef8b3?}, {0x1999c1893a40?, 0x12bb6ad?}, {0x1999c1893a44?, 0x215b590?})
+	/root/work/cypher-FHS-D-ExchangeCore/rnet/server.go:82 +0x98
+github.com/cypherium/cypher/reconfig.newNetService({0x12bb6ad, 0x10}, {0x1999c1776da0, 0xf}, 0x1999c1ad8c60, 0x1999c2191490, {0x214be98, 0x1999c191c608})
+	/root/work/cypher-FHS-D-ExchangeCore/reconfig/gossip.go:720 +0xf4
+github.com/cypherium/cypher/reconfig.newService({0x12bb6ad, 0x10}, {0x1999c1776da0, 0xf}, 0x1999c1ad8c60, 0x1999c2191490)
+	/root/work/cypher-FHS-D-ExchangeCore/reconfig/service.go:167 +0x9d
+github.com/cypherium/cypher/reconfig.New(0x1999c1cb15f0, 0x1999c1ad8c60, {0x2157a00, 0x1999c18cc180})
+	/root/work/cypher-FHS-D-ExchangeCore/reconfig/backend.go:127 +0x445
+github.com/cypherium/cypher/eth.New(0x1999c1cb15f0, 0x1999c19c9908)
+	/root/work/cypher-FHS-D-ExchangeCore/eth/backend.go:433 +0x283e
+github.com/cypherium/cypher/eth.TestCommonRPCNodeStartsBeforeAccountCreationAndPersistsIndependentAdmissions(0x1999c18346c8)
+	/root/work/cypher-FHS-D-ExchangeCore/eth/common_rpc_open_access_test.go:185 +0x91d
+testing.tRunner(0x1999c18346c8, 0x2159aa0)
+	/usr/local/go/src/testing/testing.go:2193 +0xea
+created by testing.(*T).Run in goroutine 1
+	/usr/local/go/src/testing/testing.go:2258 +0x4d4
+FAIL	github.com/cypherium/cypher/eth	5.193s
+ok  	github.com/cypherium/cypher/reconfig	61.145s
+ok  	github.com/cypherium/cypher/reconfig/bftview	0.049s
+ok  	github.com/cypherium/cypher/reconfig/hotstuff	6.411s
+--- FAIL: TestPoWResultTransportQUICAcknowledgesOnlyAfterAdmission (0.00s)
+    pow_result_transport_test.go:125: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportFallsBackToRealTLSTCP (0.00s)
+    pow_result_transport_test.go:169: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportSemanticNACKDoesNotFallback (0.00s)
+    pow_result_transport_test.go:198: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportEncodesReceiverBehindNACK (0.00s)
+    pow_result_transport_test.go:229: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportMissingACKIsFailure (0.00s)
+    pow_result_transport_test.go:244: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportDuplicateACKIsSuccess (0.00s)
+    pow_result_transport_test.go:292: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportStopAllowsSamePortRebind (0.00s)
+    pow_result_transport_test.go:308: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportRejectsBLSCertificateMismatch (0.00s)
+    pow_result_transport_test.go:332: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportPinsKeyBlockGeneration (0.00s)
+    pow_result_transport_test.go:379: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportConcurrentQUICAndTCP (0.00s)
+    pow_result_transport_test.go:413: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+--- FAIL: TestPoWResultTransportSlowTCPDoesNotExhaustQUIC (0.00s)
+    pow_result_transport_test.go:468: listen for PoW result TLS/TCP: listen tcp 127.0.0.1:0: socket: operation not permitted
+FAIL
+FAIL	github.com/cypherium/cypher/core	10.453s
+ok  	github.com/cypherium/cypher/core/asm	0.057s
+ok  	github.com/cypherium/cypher/core/bloombits	8.631s
+--- FAIL: TestCreation (0.00s)
+    forkid_test.go:124: test 0, case 0: fork ID mismatch: have {5705bf8f 0}, want {fc64ec04 118c30}
+    forkid_test.go:124: test 0, case 1: fork ID mismatch: have {5705bf8f 0}, want {fc64ec04 118c30}
+    forkid_test.go:124: test 0, case 2: fork ID mismatch: have {5705bf8f 0}, want {97c2c34c 1d4c00}
+    forkid_test.go:124: test 0, case 3: fork ID mismatch: have {5705bf8f 0}, want {97c2c34c 1d4c00}
+    forkid_test.go:124: test 0, case 4: fork ID mismatch: have {5705bf8f 0}, want {91d1f948 259518}
+    forkid_test.go:124: test 0, case 5: fork ID mismatch: have {5705bf8f 0}, want {91d1f948 259518}
+    forkid_test.go:124: test 0, case 6: fork ID mismatch: have {5705bf8f 0}, want {7a64da13 28d138}
+    forkid_test.go:124: test 0, case 7: fork ID mismatch: have {5705bf8f 0}, want {7a64da13 28d138}
+    forkid_test.go:124: test 0, case 8: fork ID mismatch: have {5705bf8f 0}, want {3edd5b10 42ae50}
+    forkid_test.go:124: test 0, case 9: fork ID mismatch: have {5705bf8f 0}, want {3edd5b10 42ae50}
+    forkid_test.go:124: test 0, case 10: fork ID mismatch: have {5705bf8f 0}, want {a00bc324 6f1580}
+    forkid_test.go:124: test 0, case 11: fork ID mismatch: have {5705bf8f 0}, want {a00bc324 6f1580}
+    forkid_test.go:124: test 0, case 12: fork ID mismatch: have {5705bf8f 0}, want {668db0af 8a61c8}
+    forkid_test.go:124: test 0, case 13: fork ID mismatch: have {5705bf8f 0}, want {668db0af 8a61c8}
+    forkid_test.go:124: test 0, case 14: fork ID mismatch: have {5705bf8f 0}, want {879d6e30 8c6180}
+    forkid_test.go:124: test 0, case 15: fork ID mismatch: have {5705bf8f 0}, want {879d6e30 8c6180}
+    forkid_test.go:124: test 0, case 16: fork ID mismatch: have {5705bf8f 0}, want {e029e991 0}
+    forkid_test.go:124: test 0, case 17: fork ID mismatch: have {5705bf8f 0}, want {e029e991 0}
+    forkid_test.go:124: test 1, case 0: fork ID mismatch: have {04e4bab1 0}, want {30c7ddbc a}
+    forkid_test.go:124: test 1, case 1: fork ID mismatch: have {04e4bab1 0}, want {30c7ddbc a}
+    forkid_test.go:124: test 1, case 2: fork ID mismatch: have {04e4bab1 0}, want {63760190 19f0a0}
+    forkid_test.go:124: test 1, case 3: fork ID mismatch: have {04e4bab1 0}, want {63760190 19f0a0}
+    forkid_test.go:124: test 1, case 4: fork ID mismatch: have {04e4bab1 0}, want {3ea159c7 408b70}
+    forkid_test.go:124: test 1, case 5: fork ID mismatch: have {04e4bab1 0}, want {3ea159c7 408b70}
+    forkid_test.go:124: test 1, case 6: fork ID mismatch: have {04e4bab1 0}, want {97b544f3 4b5e82}
+    forkid_test.go:124: test 1, case 7: fork ID mismatch: have {04e4bab1 0}, want {97b544f3 4b5e82}
+    forkid_test.go:124: test 1, case 8: fork ID mismatch: have {04e4bab1 0}, want {d6e2149b 62f756}
+    forkid_test.go:124: test 1, case 9: fork ID mismatch: have {04e4bab1 0}, want {d6e2149b 62f756}
+    forkid_test.go:124: test 1, case 10: fork ID mismatch: have {04e4bab1 0}, want {4bc66396 6c993d}
+    forkid_test.go:124: test 1, case 11: fork ID mismatch: have {04e4bab1 0}, want {4bc66396 6c993d}
+    forkid_test.go:124: test 1, case 12: fork ID mismatch: have {04e4bab1 0}, want {6727ef90 0}
+    forkid_test.go:124: test 1, case 13: fork ID mismatch: have {04e4bab1 0}, want {6727ef90 0}
+    forkid_test.go:124: test 2, case 3: fork ID mismatch: have {cb3a64bb 67}, want {cb3a64bb fcc25}
+    forkid_test.go:124: test 2, case 4: fork ID mismatch: have {8cf6af52 0}, want {cb3a64bb fcc25}
+    forkid_test.go:124: test 2, case 5: fork ID mismatch: have {8cf6af52 0}, want {8d748b57 37db77}
+    forkid_test.go:124: test 2, case 6: fork ID mismatch: have {8cf6af52 0}, want {8d748b57 37db77}
+    forkid_test.go:124: test 2, case 7: fork ID mismatch: have {8cf6af52 0}, want {e49cab14 41efd2}
+    forkid_test.go:124: test 2, case 8: fork ID mismatch: have {8cf6af52 0}, want {e49cab14 41efd2}
+    forkid_test.go:124: test 2, case 9: fork ID mismatch: have {8cf6af52 0}, want {afec6b27 52efd1}
+    forkid_test.go:124: test 2, case 10: fork ID mismatch: have {8cf6af52 0}, want {afec6b27 52efd1}
+    forkid_test.go:124: test 2, case 11: fork ID mismatch: have {8cf6af52 0}, want {cbdb8838 0}
+    forkid_test.go:124: test 2, case 12: fork ID mismatch: have {8cf6af52 0}, want {cbdb8838 0}
+    forkid_test.go:124: test 3, case 0: fork ID mismatch: have {a3f5ab08 9c}, want {a3f5ab08 17d433}
+    forkid_test.go:124: test 3, case 1: fork ID mismatch: have {780af1cb 0}, want {a3f5ab08 17d433}
+    forkid_test.go:124: test 3, case 2: fork ID mismatch: have {780af1cb 0}, want {c25efa5c 0}
+    forkid_test.go:124: test 3, case 3: fork ID mismatch: have {780af1cb 0}, want {c25efa5c 0}
+--- FAIL: TestValidation (0.00s)
+    forkid_test.go:203: test 0: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 1: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 2: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 3: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 4: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 5: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 6: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 7: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 8: validation error mismatch: have local incompatible or needs update, want <nil>
+    forkid_test.go:203: test 9: validation error mismatch: have local incompatible or needs update, want remote needs update
+FAIL
+FAIL	github.com/cypherium/cypher/core/forkid	0.041s
+ok  	github.com/cypherium/cypher/core/rawdb	0.064s
+ok  	github.com/cypherium/cypher/core/state	1.912s
+ok  	github.com/cypherium/cypher/core/state/snapshot	4.311s
+ok  	github.com/cypherium/cypher/core/types	6.201s
+ok  	github.com/cypherium/cypher/core/vm	0.072s
+?   	github.com/cypherium/cypher/core/vm/runtime	[no test files]
+FAIL

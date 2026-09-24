@@ -1,0 +1,83 @@
+{
+  "time_utc": "2026-09-22T04:31:21.417888+00:00",
+  "go": "go version go1.27.1 linux/amd64",
+  "meminfo": {
+    "MemTotal": "49325352 kB",
+    "MemAvailable": "24729084 kB",
+    "SwapTotal": "0 kB"
+  },
+  "memlock": [
+    8388608,
+    8388608
+  ],
+  "changed_files": 136,
+  "prior_source_hash_match": true,
+  "prior_package_results": [
+    {
+      "Time": "2026-09-22T00:29:09.633482306+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/accounting",
+      "Elapsed": 1.078
+    },
+    {
+      "Time": "2026-09-22T00:29:12.883918153+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/checkpoint",
+      "Elapsed": 1.287
+    },
+    {
+      "Time": "2026-09-22T00:29:42.239628706+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/consensus",
+      "Elapsed": 27.706
+    },
+    {
+      "Time": "2026-09-22T00:29:43.971495353+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/data",
+      "Elapsed": 1.032
+    },
+    {
+      "Time": "2026-09-22T00:31:26.89046984+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/devnet",
+      "Elapsed": 35.332
+    },
+    {
+      "Time": "2026-09-22T00:31:29.730155442+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/engine",
+      "Elapsed": 1.23
+    },
+    {
+      "Time": "2026-09-22T00:31:31.743141447+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/protocol",
+      "Elapsed": 1.045
+    },
+    {
+      "Time": "2026-09-22T00:31:35.643638564+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/rewards",
+      "Elapsed": 2.658
+    },
+    {
+      "Time": "2026-09-22T00:31:37.375124974+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/runtime",
+      "Elapsed": 1.023
+    },
+    {
+      "Time": "2026-09-22T00:31:40.918010641+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/dex/settlement",
+      "Elapsed": 1.754
+    },
+    {
+      "Time": "2026-09-22T00:31:53.464151225+02:00",
+      "Action": "pass",
+      "Package": "github.com/cypherium/cypher/reconfig/hotstuff",
+      "Elapsed": 7.845
+    }
+  ]
+}

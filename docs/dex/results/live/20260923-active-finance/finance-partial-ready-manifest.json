@@ -1,0 +1,22 @@
+{
+  "time_utc": "2026-09-23T19:24:27.433733+00:00",
+  "scope": "final offline helper/runner and read-only partial auditor; financial live unresolved separately",
+  "sources": {
+    "cmd/dex-live-finance/main.go": "5128f4d4e9db58c04518f95c29083707cef1ff0abf4146843b7b93b327078445",
+    "cmd/dex-live-finance/main_test.go": "b6866ae986639849d47a9d4c6973ebcceb3c62bfe55d7934faeba1c8a321bcb8",
+    "cmd/dex-live-finance/native.go": "6ec6fb3ebc48405494d90223b65b5a65acd29dac4c46b3c0443ee5d2c3479655",
+    "scripts/dex/live_finance.py": "96d02ff1dd02d764e32e3969645bcc0fa507c17979e61404aa377d676325fb48",
+    "scripts/dex/live_finance_accounting.py": "c3d4ffae6f275ad70566e10d4ba7440ff1786e8b4617e37b94f8eb4b66b34b94",
+    "scripts/dex/live_finance_load.py": "f1603e8c93923d00d88b6a0e0596f23227d22c4a3d52299fff81c612a28110dd",
+    "scripts/dex/test_live_finance.py": "d89a1fbfc067fe1d1867b0f0e25ed33e82819ee2b4a4ec2a7d7b1b40706da7a2",
+    "scripts/dex/test_live_finance_load.py": "82cf38372997684aa4bed64a600b4fefb26b6b71d36aa22a663a066263ed9918",
+    "docs/dex/live-finance-runner-preparation.md": "4c90c23a15942b1ce89be61decc4363da88fa922c16fcd937c843440f47e1b0c"
+  },
+  "helper_binary": "/tmp/common-dex-live-test.x5z_05oq/dex-live-finance-r3",
+  "helper_sha256": "50d28b86104c49679972eedbd1357ea94a42ae92c09d372458a380f79076e696",
+  "python_tests": 23,
+  "go_helper_tests": 4,
+  "live_complete": false,
+  "no_protocol_proof_bound_change": true,
+  "partial_writes_runner_journal": false
+}

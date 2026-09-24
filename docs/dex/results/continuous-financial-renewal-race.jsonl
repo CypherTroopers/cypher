@@ -1,0 +1,8 @@
+{"Time":"2026-09-22T14:19:39.060820944+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/clxevidence"}
+{"Time":"2026-09-22T14:19:39.120912915+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals"}
+{"Time":"2026-09-22T14:19:39.121054539+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals","Output":"=== RUN   TestRollingFinancialParentAcrossFixedMembershipRenewals\n","OutputType":"frame"}
+{"Time":"2026-09-22T14:19:39.859642242+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals","Output":"--- PASS: TestRollingFinancialParentAcrossFixedMembershipRenewals (0.73s)\n","OutputType":"frame"}
+{"Time":"2026-09-22T14:19:39.859721369+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/clxevidence","Test":"TestRollingFinancialParentAcrossFixedMembershipRenewals","Elapsed":0.73}
+{"Time":"2026-09-22T14:19:39.859750934+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-22T14:19:40.873557492+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/clxevidence","Output":"ok  \tgithub.com/cypherium/cypher/dex/clxevidence\t1.812s\n"}
+{"Time":"2026-09-22T14:19:40.873633784+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/clxevidence","Elapsed":1.813}

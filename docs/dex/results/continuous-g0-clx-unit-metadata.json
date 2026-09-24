@@ -1,0 +1,55 @@
+{
+  "started_utc": "2026-09-22T09:08:27.113391+00:00",
+  "finished_utc": "2026-09-22T09:10:46.518232+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-race",
+    "-json",
+    "./core",
+    "./reconfig/hotstuff",
+    "./reconfig",
+    "-run",
+    "^(TestG0.*|TestFHSCanonicalStateDurableBeforeShutdown|TestFHSCanonicalHeadStagesTransactionAndKeyHeadTogether|TestDEXNativeImmutableGenesisConfigAndLocalFailure|TestDEXNativeContextMissingChainDoesNotPanic|TestDEXNativeGenesisForkContextDoesNotRetainSideTable|TestFHSEarlyQCBeforePrepareUsesAuthenticatedCatchup|TestFHSHighQCData.*|TestProposalManifestRepairReconstructsExactBody|TestProposalManifestAuthorityAllowsOnlyVerifiedHighQCRepairSet|TestIncompletePeerManifestCannotPoisonProposalCache|TestProposalRepairCannotExportTransactionOutsideManifest|TestMergeProposalRepairRejectsOutsideHashAtomically|TestProposalRepairWireValidationRejectsMalformedTransactions|TestProposalBlobSidecarManifestRejectsMissingAndCountMismatch|TestProposalBlobSidecarTamperingFailsBodyCommitment)$"
+  ],
+  "exit_code": 0,
+  "network_namespace": "net:[4026532339]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [
+    {
+      "path": "dex/devnet/integration_test.go",
+      "before": "e32aebde963eebe5b4e4fc2edcf64052cd55c6e9c35070a451874f60a9131576",
+      "after": "2e4dcb5eb787bd86c0ecf87862def4b5d554c3189f655796afc6e5afdc5a2bf7"
+    },
+    {
+      "path": "dex/rewards/committed_test.go",
+      "before": null,
+      "after": "998f15d6d6eba23d66d03570a460e6b7683afcbc6456a9f9eb8694158cc54481"
+    },
+    {
+      "path": "reconfig/dex_financial_network_test.go",
+      "before": "90d1308f6ff91a2a0c71b4816490c1898b82b513c441a476e81c9e72be556c39",
+      "after": "b1856be53c4941d29f8a6a7acd2e48980d3b070b3a2e01c2b0029d5b0552f527"
+    },
+    {
+      "path": "reconfig/dex_financial_reward_test.go",
+      "before": "89af7ec02009526402f896254870ac3167c8947db586c0164caa372d1fba03fb",
+      "after": "8f6dd7cc528591e370007c09646251f505073d3121d1d38ed160dc6a9f02818f"
+    }
+  ],
+  "log": "docs/dex/results/continuous-g0-clx-unit.jsonl",
+  "log_sha256": "0cd46b4b3644a8b2c36a90d9c375c4ce85163da8b79ba368c40e0add81bdd3a5"
+}

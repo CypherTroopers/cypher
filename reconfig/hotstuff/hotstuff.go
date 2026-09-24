@@ -697,11 +697,16 @@ func (hsm *HotstuffProtocolManager) initViewCommittee(v *View) error {
 	if viewState == nil || viewState.KeyHash == (common.Hash{}) {
 		return fmt.Errorf("%w: view has no committee key hash", ErrInvalidPublicKey)
 	}
+	if _, isolated := hsm.app.(CommitteeResolverApplication); isolated {
+		if _, err := hsm.loadCommittee(viewState.KeyNumber, viewState.KeyHash, viewState.CommitteeHash, true); err != nil {
+			return err
+		}
+	}
 	groupPublicKey, err := hsm.app.GetPublicKey(viewState.KeyHash)
 	if err != nil {
 		return fmt.Errorf("%w: load committee %s: %v", ErrInvalidPublicKey, viewState.KeyHash, err)
 	}
-	v.groupPublicKey, err = snapshotPublicKeys(groupPublicKey)
+	v.groupPublicKey, err = hsm.snapshotApplicationKeys(groupPublicKey)
 	if err != nil {
 		return fmt.Errorf("committee %s: %w", viewState.KeyHash, err)
 	}
@@ -1027,7 +1032,10 @@ func (hsm *HotstuffProtocolManager) validateNewViewMsg(msg *HotstuffMessage) (*V
 		return nil, nil, stateErr
 	}
 
-	committee := bftview.LoadMember(decodedView.KeyNumber, decodedView.KeyHash, true)
+	committee, err := hsm.loadCommittee(decodedView.KeyNumber, decodedView.KeyHash, decodedView.CommitteeHash, true)
+	if err != nil {
+		return nil, nil, err
+	}
 	if committee == nil || committee.RlpHash() != decodedView.CommitteeHash || decodedView.LeaderIndex >= uint(len(committee.List)) {
 		return nil, nil, ErrInvalidLeaderView
 	}
@@ -1417,7 +1425,7 @@ func (hsm *HotstuffProtocolManager) verifyFHSParentQC(parentQC *SignedState, chi
 	if err != nil {
 		return fmt.Errorf("%w: load parent committee %s: %v", ErrInvalidHighQC, parentRef.KeyHash, err)
 	}
-	parentKeys, err = snapshotPublicKeys(parentKeys)
+	parentKeys, err = hsm.snapshotApplicationKeys(parentKeys)
 	if err != nil {
 		return fmt.Errorf("%w: parent committee %s: %v", ErrInvalidHighQC, parentRef.KeyHash, err)
 	}
@@ -1872,7 +1880,11 @@ func (hsm *HotstuffProtocolManager) handlePrepareVoteMsg(m *HotstuffMessage) err
 		voteView := bftview.DecodeToView(v.currentState)
 		committee := (*bftview.Committee)(nil)
 		if voteView != nil {
-			committee = bftview.LoadMember(voteView.KeyNumber, voteView.KeyHash, true)
+			var err error
+			committee, err = hsm.loadCommittee(voteView.KeyNumber, voteView.KeyHash, voteView.CommitteeHash, true)
+			if err != nil {
+				return err
+			}
 		}
 		if committee == nil || qrum.Index < 0 || qrum.Index >= len(committee.List) || committee.List[qrum.Index] == nil ||
 			bftview.GetNodeID(committee.List[qrum.Index].Address, committee.List[qrum.Index].Public) != m.Id {
@@ -2006,6 +2018,14 @@ func (hsm *HotstuffProtocolManager) handleQCBroadcastMsg(m *HotstuffMessage) err
 	}
 	if m.Number != v.number {
 		return ErrViewIdNotMatch
+	}
+	if hsm.app.UseFHS2Chain() && !v.hasKState() && !v.hasTState() {
+		// NewView creates this cache entry before Prepare arrives. A QC can
+		// overtake Prepare on another stream, leaving no local proposal to
+		// compare against. Use the same historical-committee/envelope checks
+		// and full content catch-up as after a restart; an empty volatile view
+		// must not turn a valid self-contained QC into a permanent rejection.
+		return hsm.handleStandaloneFHSQCBroadcast(m)
 	}
 	if hsm.requiresMessageAuth() {
 		qcView := bftview.DecodeToView(v.currentState)
@@ -2228,7 +2248,10 @@ func (hsm *HotstuffProtocolManager) addToUnhandled(m *HotstuffMessage) {
 		if view == nil {
 			return
 		}
-		committee := bftview.LoadMember(view.KeyNumber, view.KeyHash, true)
+		committee, err := hsm.loadCommittee(view.KeyNumber, view.KeyHash, view.CommitteeHash, true)
+		if err != nil {
+			return
+		}
 		keys, err := hsm.app.GetPublicKey(view.KeyHash)
 		if err != nil || committee == nil || len(keys) != len(committee.List) {
 			return

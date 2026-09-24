@@ -1,0 +1,18 @@
+{
+  "end_block": "0xdcd",
+  "balances_after": {
+    "0xeb8c07def4c5a2541de730b027376e1068aa861a": "999789999999999990",
+    "0x3555d2c2af8ff75009f7dbfcf7de7ed80f68588d": "127300000000000000000000010"
+  },
+  "delta": {
+    "0xeb8c07def4c5a2541de730b027376e1068aa861a": "-210000000000010",
+    "0x3555d2c2af8ff75009f7dbfcf7de7ed80f68588d": "200000000000000000000010"
+  },
+  "gas": "210000000000000",
+  "reward": "42000000000000",
+  "burn": "168000000000000",
+  "reward_recipients": [
+    "0xed2772838f7a7aec042a972084998cb30d63b660"
+  ],
+  "status": "accounting failure investigation, no new transactions"
+}

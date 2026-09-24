@@ -1,0 +1,13 @@
+{
+  "status": "PASS(UNIT)",
+  "scope": "original user init.sh plus six named PM2 apps and six explicit CLX datadirs only",
+  "original_sha256": "14967caaf3f9abaec7613917bf2231e289b89ee245e08b19d25c14400a7ce19f",
+  "final_sha256": "83134c59b490f3ffb204c4d9c23f034bdf29e5f81508057024b3b670e748be13",
+  "added_lines": 12,
+  "deleted_lines": 0,
+  "shell_syntax": "PASS: bash -n init.sh",
+  "executed": false,
+  "chain_id": 10101919,
+  "dry_run_supported": false,
+  "supersedes": "all live_user_init helper readiness/tests as current init result"
+}

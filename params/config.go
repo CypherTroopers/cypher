@@ -462,6 +462,7 @@ type ChainConfig struct {
 	FixedLeader           bool             `json:"fixedLeader,omitempty"`
 	FairHotstuff          bool             `json:"fairHotstuff,omitempty"`
 	FairHotstuffSeed      common.Hash      `json:"fairHotstuffSeed,omitempty"`
+	DEXDevnet             *DEXDevnetConfig `json:"dexDevnet,omitempty"`
 	// NativeParallel retains its internal name while the public genesis schema
 	// calls this EVM execution-capacity profile "evmParallel".
 	NativeParallel *NativeParallelConfig `json:"evmParallel,omitempty"`
@@ -660,6 +661,9 @@ func (c *ChainConfig) String() string {
 
 // validate code size and transaction size limit
 func (c *ChainConfig) IsValid() error {
+	if err := c.ValidateDEXDevnet(); err != nil {
+		return err
+	}
 
 	if c.TransactionSizeLimit < 32 || c.TransactionSizeLimit > 128 {
 		return errors.New("Genesis transaction size limit must be between 32 and 128")
@@ -935,6 +939,7 @@ type Rules struct {
 	IsBerlin, IsLondon                                      bool
 	IsShanghai, IsCancun, IsPrague, IsOsaka                 bool
 	IsYoloV1                                                bool
+	IsDEXDevnet                                             bool
 }
 
 // Rules ensures c's ChainID is not nil.
@@ -954,5 +959,6 @@ func (c *ChainConfig) Rules(num *big.Int) Rules {
 		IsPetersburg:     c.IsPetersburg(num),
 		IsIstanbul:       c.IsIstanbul(num),
 		IsYoloV1:         c.IsYoloV1(num),
+		IsDEXDevnet:      c.DEXDevnet != nil,
 	}
 }

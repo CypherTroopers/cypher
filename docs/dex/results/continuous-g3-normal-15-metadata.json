@@ -1,0 +1,228 @@
+{
+  "status": "PASS",
+  "duration_seconds": 1546.32,
+  "artifact": "/tmp/common-dex-check.SKj8bHWv",
+  "source_manifest_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_during_run_bytes": 0,
+  "raw_sha256": "ac45652614b46d0c800e450064acebe3c2fff87beab6aa88d512a8d66ee523df",
+  "binary_sha256": {
+    "cypher": "2a2d63680e18a26217a5c691bdcfeb3e26c2931354a8eade06bb12b50cc583f7",
+    "reconfig.test": "8c1d9b444140b3139bfc3e4c95604d6f62e27c56d4144b75a6a36c560c7fbb82"
+  },
+  "test_exit": "0",
+  "run_exit": "0",
+  "public_periodic_watch": "/tmp/common-dex-continuous.uye5vgqi/trial15-public-watch",
+  "final_public_relays": "/tmp/common-dex-continuous.uye5vgqi/trial15-final-public-relays",
+  "final": {
+    "fixture": "extended10-early-final-deposit",
+    "CLXHeight": "749",
+    "DEXFinalized": "109",
+    "CLXAccepted": "109",
+    "nextUnusedDEXHeight": "111",
+    "funding": "345",
+    "custody": "295",
+    "withdrawals": "40",
+    "rewards": "10",
+    "uniqueClaims": "72",
+    "inbox": "10",
+    "periods": "10",
+    "lateOwnKeySnapshot": "true",
+    "coldDEXOver64": "true",
+    "CLXOutageDEXProgress": "true",
+    "relays": "2",
+    "oldClaimSequence": "14",
+    "oldClaimRoot": "9ba637d859bc20d8174fed5ae7a76ec13f97b75bb08b91a87c3e882ab86548cf",
+    "engine": "0/0/0"
+  },
+  "native_reconciliation": {
+    "height": "749",
+    "custody": "295000000000000000000",
+    "gas": "4473920409600000000",
+    "commonReward": "894784081920000000",
+    "burn": "3579136327680000000",
+    "accounts": "17",
+    "engine": "0/0/0"
+  },
+  "canonical_tx_count": 410,
+  "claim_leaf_count": 72,
+  "actual_protocol_claim_ids": 72,
+  "relayAudit": {
+    "relays": 2,
+    "jobsPerRelay": 203,
+    "totalFreshComplete": 406,
+    "seconds": 129.132654007
+  },
+  "observed_native_anchor_maxima": {
+    "calldata": 63566,
+    "headers": 32,
+    "mptNodes": 7,
+    "mptBytes": 2105,
+    "gas": 15416776
+  },
+  "cold_absence": {
+    "stopCLX": 168,
+    "intermediateCheckCLX": 241,
+    "preRestartAuthenticatedSource": 257,
+    "minimumAbsentHeights": 89,
+    "intermediateLoggedDelta": 73
+  },
+  "normal_key_wait": {
+    "seconds": 368.495889466,
+    "carriers": 4,
+    "sourceBefore": 246,
+    "sourceAfter": 257,
+    "versionAfter": 2,
+    "schedulingHintOnly": true
+  },
+  "flat": {
+    "finalized": 58,
+    "versionAssertionFinalized": 59,
+    "anchor": 255,
+    "version": 1,
+    "inbox": 8
+  },
+  "fourth_native_funding_heights": [
+    281,
+    285
+  ],
+  "cycle3": {
+    "actualFinalized": 79,
+    "anchor": 314,
+    "version": 2,
+    "inbox": 10
+  },
+  "outage": {
+    "CLXHeight": 361,
+    "acceptedBefore": 60,
+    "DEXFinalizedDuringOutage": 78,
+    "unsettledDuringOutage": 18,
+    "acceptedAfterRestart": 78,
+    "CLXHeightAfterSettlement": 467
+  },
+  "finalUnsettledSequenceDifference": 0,
+  "lateDEXOffCommon": {
+    "freshPID": 1209785,
+    "restartPID": 1210069,
+    "height": 749,
+    "blocksIncludingGenesis": 750,
+    "engine": "0/0/0",
+    "automaticETH": true,
+    "sameDBRestart": true
+  },
+  "loggedRoleProcesses": {
+    "CLX validator": {
+      "distinct_slots": 7,
+      "successful_launch_events": 14,
+      "distinct_logged_pids": 14,
+      "explicit_or_retrospective_stops": 7,
+      "inferred_stops": 0
+    },
+    "Common DEX parent": {
+      "distinct_slots": 7,
+      "successful_launch_events": 14,
+      "distinct_logged_pids": 14,
+      "explicit_or_retrospective_stops": 7,
+      "inferred_stops": 0
+    },
+    "DEX sidecar": {
+      "distinct_slots": 7,
+      "successful_launch_events": 14,
+      "distinct_logged_pids": 14,
+      "explicit_or_retrospective_stops": 0,
+      "inferred_stops": 7
+    },
+    "late DEX OFF Common": {
+      "distinct_slots": 1,
+      "successful_launch_events": 2,
+      "distinct_logged_pids": 2,
+      "explicit_or_retrospective_stops": 2,
+      "inferred_stops": 0
+    },
+    "relay": {
+      "distinct_slots": 2,
+      "successful_launch_events": 6,
+      "distinct_logged_pids": 6,
+      "explicit_or_retrospective_stops": 6,
+      "inferred_stops": 0
+    }
+  },
+  "processCountScope": "Successful role launches and logged stops; not all OS subprocesses or peak concurrency. Source Common lives in test coordinator. Init/bad-identity probes and final general cleanup are not exhaustively logged.",
+  "loggedSuccessfulRoleLaunches": 50,
+  "distinctRoleSlots": 24,
+  "testCoordinator": 1,
+  "WALObservedCopies": [
+    {
+      "path": "/tmp/common-dex-continuous.uye5vgqi/trial15-public-watch/common-0/dex/fhs/state.json",
+      "bytes": 1847069,
+      "sha256": "dba41f777de93b3274eb6445685f67a38bc90ea737f1a42d72f3c4d1adc5e371",
+      "version": 3,
+      "records": 114,
+      "dictionary": 110
+    },
+    {
+      "path": "/tmp/common-dex-continuous.uye5vgqi/trial15-public-watch/common-1/dex/fhs/state.json",
+      "bytes": 1870382,
+      "sha256": "8ea8d5c1df278b094ce79ccc44e3066cb872263a45a9db8ffa9c2a1975f6d8f7",
+      "version": 3,
+      "records": 115,
+      "dictionary": 110
+    },
+    {
+      "path": "/tmp/common-dex-continuous.uye5vgqi/trial15-public-watch/common-2/dex/fhs/state.json",
+      "bytes": 1847064,
+      "sha256": "843e53000026a6648a1497060ebd6634eacc102f06344acd721412a829d4dcef",
+      "version": 3,
+      "records": 114,
+      "dictionary": 110
+    },
+    {
+      "path": "/tmp/common-dex-continuous.uye5vgqi/trial15-public-watch/common-3/dex/fhs/state.json",
+      "bytes": 1867889,
+      "sha256": "ebaaf20a9ad69ea5ff67a828fbb3f596092ffde0867faccd1306280fba1aa775",
+      "version": 3,
+      "records": 115,
+      "dictionary": 110
+    },
+    {
+      "path": "/tmp/common-dex-continuous.uye5vgqi/trial15-public-watch/common-4/dex/fhs/state.json",
+      "bytes": 1868284,
+      "sha256": "77218fa369e71de1f9c880b621509ac672cbd3090eccaeb6c172a076ebd2aec0",
+      "version": 3,
+      "records": 115,
+      "dictionary": 110
+    },
+    {
+      "path": "/tmp/common-dex-continuous.uye5vgqi/trial15-public-watch/common-5/dex/fhs/state.json",
+      "bytes": 1866924,
+      "sha256": "e64e65fd8abc9afa920bdb3ae76febbf17fc8c0b736ea8c2da13e649810a6aa7",
+      "version": 3,
+      "records": 115,
+      "dictionary": 110
+    },
+    {
+      "path": "/tmp/common-dex-continuous.uye5vgqi/trial15-public-watch/common-6/dex/fhs/state.json",
+      "bytes": 1847155,
+      "sha256": "4556dc939aa71906d8ce786db937c585de2743c1bf1258c6a7b8632bad33b101",
+      "version": 3,
+      "records": 114,
+      "dictionary": 110
+    }
+  ],
+  "WALWireLimit": 2097152,
+  "WALRecordLimit": 128,
+  "approval_prelaunch": {
+    "firstAttempt": "REJECTED before CreateProcess: /tmp storage1.7GiB risk",
+    "resolution": "dedicatedGo cache5.28GB byte-verified migration to ignored blockfilesystem, /tmp6.7GiB free, then renewedapprovalaccepted",
+    "environment_record": "continuous-cache-storage-migration.json"
+  },
+  "limits": "Isolated fixed-epoch loopback devnet, not WAN/performance/public committee or new FROZEN recovery. Final749 values differ from preaudit707 gas. Public copies are not atomic crossfile snapshots.",
+  "processExitAudit": {
+    "path": "continuous-trial15-process-exit-audit.json",
+    "loggedRolePIDs": 50,
+    "present": 0,
+    "runnerExit": 0,
+    "watcherExit": 0,
+    "signalsSent": false
+  }
+}

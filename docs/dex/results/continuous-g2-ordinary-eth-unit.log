@@ -1,0 +1,11 @@
+=== RUN   TestFHSNativeOrdinaryETHSource
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=1 height=1 hash=0x384e42299783634a2ae9e70f0c3f1a3ad9e07e7c9ca37f2a96b4fa27146939e1 root=0x0d09ef5e8b2ec6fdc4464c774e10a8bf8dc44d308164c92b70440e8710226981 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=2 height=3 hash=0x0c70753fb7fef3f162041e13f6dd8cf149c225df7f847228985e35e81e4505a6 root=0x1edda8a5edd2dd7810a4b80a219c5a9d0901f7c954fc63196c8938a41970e5e1 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=3 height=5 hash=0xe47edb1c0338d66dc1a40d0341b91d2c894d69931c07fd24723d0bd381c15745 root=0x0b504f3abf858e444ec1bb3f55eed7d491acb1c3671edf49dec76ab8c8adb541 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=4 height=7 hash=0x9d91f44f3a7488b81a1c30e1adc3c571636d6ec3a017b21d1cdd2711d410f359 root=0x2d483c0a5676d0a0345c00f8b18de8d154a290eafe1c5fb4f01a544a0e6ff78f peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=5 height=9 hash=0x469303b58917d90c1e8559a8186ba4dbecbf45ed073560bbb29af359ad65dc07 root=0xc54df5168c790e146d3eadda8158083a4868d129e0b2b98ceb59a0647e76ad85 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=6 height=11 hash=0x85f41911cd0b7fedb27a4284c44b75912972425b58e143fc57e1f128e5b49c15 root=0xd737ef7de27af782d13af2282b7fab76c5e4b2799085c855245ad9064b951d2b peers=1 engineDelta=0
+    dex_native_eth_source_test.go:167: ORDINARY_ETH_SOURCE_RESTART_PROOF sourceHeight=11 inbox=6 balance=6000000000000000000 CLXChildren=7 sourceRPC=true sourcePoW=false sourceDEX=false noCoordinatorInsertChain=true
+--- PASS: TestFHSNativeOrdinaryETHSource (34.46s)
+PASS
+ok  	github.com/cypherium/cypher/reconfig	34.499s

@@ -1,0 +1,9 @@
+=== RUN   TestSevenFHSActorsOverPinnedTLSSockets
+    service_test.go:147: seven actual FHS managers finalized4 using mutually pinned TLS sockets; no financial execution in this test
+--- PASS: TestSevenFHSActorsOverPinnedTLSSockets (7.24s)
+=== RUN   TestAuthenticatedActionAPIAndSerializedActor
+--- PASS: TestAuthenticatedActionAPIAndSerializedActor (0.36s)
+=== RUN   TestManifestDisabledAndUnknownFields
+--- PASS: TestManifestDisabledAndUnknownFields (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/dex/service	8.677s

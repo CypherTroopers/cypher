@@ -267,9 +267,16 @@ func New(stack *node.Node, config *Config) (*Ethereum, error) {
 		EWASMInterpreter:        config.EWASMInterpreter,
 		EVMInterpreter:          config.EVMInterpreter,
 	}
+	// An empty journal disables persistence. Resolving it as a path would yield
+	// the instance directory, which fastcache atomically replaces when saving.
+	// Preserve the disabled value so stopping a node cannot erase its databases.
+	var trieCleanJournal string
+	if config.TrieCleanCacheJournal != "" {
+		trieCleanJournal = stack.ResolvePath(config.TrieCleanCacheJournal)
+	}
 	cacheConfig := &core.CacheConfig{
 		TrieCleanLimit:      config.TrieCleanCache,
-		TrieCleanJournal:    stack.ResolvePath(config.TrieCleanCacheJournal),
+		TrieCleanJournal:    trieCleanJournal,
 		TrieCleanRejournal:  config.TrieCleanCacheRejournal,
 		TrieCleanNoPrefetch: config.NoPrefetch,
 		TrieDirtyLimit:      config.TrieDirtyCache,
@@ -645,9 +652,8 @@ func (s *Ethereum) GetCalcGasLimit() func(block *types.Block) uint64 { return s.
 
 // Protocols returns all the currently configured network protocols to start.
 func (s *Ethereum) Protocols() []p2p.Protocol {
-	protos := make([]p2p.Protocol, len(ProtocolVersions))
-	for i, vsn := range ProtocolVersions {
-		protos[i] = s.protocolManager.makeProtocol(vsn)
+	protos := s.protocolManager.Protocols()
+	for i := range protos {
 		protos[i].Attributes = []enr.Entry{s.currentEthEntry()}
 		protos[i].DialCandidates = s.dialCandidates
 	}

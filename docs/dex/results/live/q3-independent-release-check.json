@@ -1,0 +1,31 @@
+{
+  "status": "PASS_READ_ONLY_BUILD_BINDING",
+  "time_utc": "2026-09-23T17:04:54.494560+00:00",
+  "deployed_by_this_check": false,
+  "application_executed": false,
+  "source_manifest": "/tmp/common-dex-live.8gezz_j9/public/q3-build-source-r3.json",
+  "source_manifest_sha256": "b0c62fc3cc5c9298d2b4321da5c7a84f57a831ee51171d47bf3f1ba57476213c",
+  "source_files_checked": 600,
+  "source_mismatches": [],
+  "binary_hashes": {
+    "build/stage/live-q3-release/bin/cypher-linux-amd64": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+    "build/stage/live-q3-release/bin/cypher": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+    "build/stage/live-q3-release/stage/linux-amd64/cypher-linux-amd64": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+    "build/stage/live-q3-release/stage/linux-amd64/cypher": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+  },
+  "build_manifest": {
+    "source_sha": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+    "goos": "linux",
+    "goarch": "amd64",
+    "go_version": "go1.27.1",
+    "herumi_ref": "2026abe5e97e9a10fa7d7c66279ee728630d6219",
+    "binary": "cypher-linux-amd64",
+    "binary_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+    "bls_sha256": "7e7ba6225ec9c509acc262b6883924dce9b282464d65b809284d372e775646d5",
+    "mcl_sha256": "9f9021da8aec2a0bebb9dbe4c322e8910268479afb30196a2c80bf4c78f666b2"
+  },
+  "build_log": "/tmp/common-dex-live.8gezz_j9/public/q3-release-build-final-r3.log",
+  "build_log_sha256": "e70a08d9493a2e1f2025bd754272938259a0cbc7cf0bf5cc104186d15138caf6",
+  "go_version_m": "/tmp/common-dex-live.8gezz_j9/public/q3-independent-release-go-version-m.log",
+  "scope": "normal release artifact and final production source binding; no PM2/init/LIVE execution"
+}

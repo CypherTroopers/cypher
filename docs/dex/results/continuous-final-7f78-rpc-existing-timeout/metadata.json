@@ -1,0 +1,44 @@
+{
+  "mode": "rpc-existing-timeout",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "command": [
+    "unshare",
+    "-Urn",
+    "sh",
+    "-c",
+    "ip link set lo up && test -z \"$(ip route show default)\" && exec \"$@\"",
+    "sh",
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=40s",
+    "-json",
+    "./internal/ethapi",
+    "-run",
+    "^TestSendRawTransactionPipelineSerializesSenderAcrossWaves$"
+  ],
+  "start_utc": "2026-09-23T11:29:51.479917+00:00",
+  "end_utc": "2026-09-23T11:30:34.298334+00:00",
+  "test_exit": 1,
+  "source_before_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_equal": true,
+  "raw_sha256": "4ec914430d21c130df3c0622d5ca433f8a569cbf9d47358a4916263334d16af1",
+  "counts": {
+    "fail_packages": 1
+  },
+  "details": {
+    "fail": [],
+    "skip": []
+  },
+  "network": "fresh loopback-only user/network namespace; no fallback",
+  "scope": "Local isolated devnet regression. Counts are not a safety proof.",
+  "run_exit": 1,
+  "classification": "Existing issue reproduced at G0 source; no test expectation or production scheduler change in this work."
+}

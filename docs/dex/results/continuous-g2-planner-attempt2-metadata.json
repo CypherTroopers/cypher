@@ -1,0 +1,44 @@
+{
+  "started_utc": "2026-09-22T10:51:32.917245+00:00",
+  "finished_utc": "2026-09-22T10:52:07.835600+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-race",
+    "-json",
+    "./dex/clxevidence",
+    "./dex/relay/source",
+    "-run",
+    "^TestRelayPlanner"
+  ],
+  "exit_code": 1,
+  "network_namespace": "net:[4026532340]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [
+    {
+      "path": "reconfig/dex_continuous_fixture_test.go",
+      "before": "fb0b5d6c70f4676fc83b1f8cc499ebc6263cf6dd8417e6523d550229e9bb94f7",
+      "after": "1a2726f0073b2e4805a4b8fd30acfade64538225f7bf5503042dd1813f1d2ce8"
+    },
+    {
+      "path": "reconfig/dex_continuous_network_test.go",
+      "before": null,
+      "after": "f119f5a6170d7c645493991730072e538c25ba450ae4dd87124aea834966a661"
+    }
+  ],
+  "log": "docs/dex/results/continuous-g2-planner-attempt2.jsonl",
+  "log_sha256": "d3cc569cf910639c792e400eb2e991ac3af9328c4ae4185f1ae30342b09c3b61"
+}

@@ -2339,7 +2339,7 @@ func (s *Service) installStagedFHSHighQC(output *fhsHighQCValidationOutput, noti
 	s.waittingView.KeyNumber = s.currentView.KeyNumber
 	s.muCurrentView.Unlock()
 	if notify {
-		s.pacetMakerTimer.start()
+		s.pacetMakerTimer.startForFHSProgress(output.targetQC.Number, true)
 		s.sendNewViewMsg(output.targetQC.Number)
 	}
 	return nil

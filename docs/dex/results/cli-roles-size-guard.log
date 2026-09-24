@@ -1,0 +1,8 @@
+=== RUN   TestDEXNormalCLIEightRoleCombinations
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_false
+    dex_test.go:278: PoW lifecycle only: dedicated8byte fixture /tmp/TestDEXNormalCLIEightRoleCombinationspow_true_rpc_false_dex_fal1837978098/001/invalid-dataset/full-R25-0000000000000000; colossusX.go:396 size rejection precedes line412 cache generation; sealer.go:36 calls dataset before threads
+    dex_test.go:424: ordinary CLI Common pow=true rpc=false dex=false; enabled roles checked independently through IPC/HTTP/TLS; normal-size PoW nonces NOT_RUN; payer=6a05cf892d2c12c8410363d93543f0a10963953e
+--- PASS: TestDEXNormalCLIEightRoleCombinations (4.27s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_true_rpc_false_dex_false (4.27s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/cypher	4.324s

@@ -1,0 +1,8 @@
+test_explicit_existing_roles_have_unique_paths_and_ports (__main__.LiveToolsTests.test_explicit_existing_roles_have_unique_paths_and_ports) ... ok
+test_secret_arguments_not_observed (__main__.LiveToolsTests.test_secret_arguments_not_observed) ... ok
+test_unknown_committee_layout_rejected (__main__.LiveToolsTests.test_unknown_committee_layout_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.003s
+
+OK

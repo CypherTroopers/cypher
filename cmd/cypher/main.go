@@ -56,6 +56,8 @@ var (
 	app = flags.NewApp(gitCommit, gitDate, "the go-ethereum command line interface")
 	// flags that configure the node
 	nodeFlags = []cli.Flag{
+		utils.DEXValidatorFlag,
+		utils.DEXConfigFlag,
 		utils.IdentityFlag,
 		utils.UnlockedAccountFlag,
 		utils.PasswordFileFlag,
@@ -219,6 +221,8 @@ func init() {
 	app.HideVersion = true // we have a command to print the version
 	app.Copyright = "Copyright 2013-2020 The go-ethereum Authors"
 	app.Commands = []cli.Command{
+		dexValidatorCommand,
+		dexRelayCommand,
 		// See chaincmd.go:
 		initCommand,
 		importCommand,

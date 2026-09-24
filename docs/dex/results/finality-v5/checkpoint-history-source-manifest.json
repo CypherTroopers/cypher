@@ -1,0 +1,9 @@
+{
+  "dex/checkpoint/proof.go": "e9cf9aa11b6033a91dec01438a8ee27cfd333e8840f2a71fb40e1ba43f511487",
+  "dex/checkpoint/proof_test.go": "fedec1ecfce938f340eef059539816124a2cecdd27a4b6f420806f39a7a34e73",
+  "dex/checkpoint/history_proof_test.go": "fda1d7f726f339d9ab2e29ff4d8cdf4d5b952190a305ed3071e5c92fe715bde7",
+  "dex/protocol/checkpoint.go": "9fd4217ed8e591a0a8d184aa73cc927d6d68cf04f4d77a622c319e900fcd1c95",
+  "dex/protocol/history.go": "a16132166c0b8b6a015c3861b5e972222beca47b0e59604d0ea069d70ada0799",
+  "dex/protocol/history_test.go": "3ec6bbf2bd9f4ee8dcde6dd5c3609147c9fa820a29c19b67eee5da9321308e19",
+  "dex/protocol/testdata/history_golden.py": "b43d5e4cb814b20509085aa3f982c63ca8190fd309c6b9f3fae4ed8d6c0c8b49"
+}

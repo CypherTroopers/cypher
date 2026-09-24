@@ -1,0 +1,36 @@
+{
+  "source": "docs/dex/counter-devnet-spec.md",
+  "encoding": "uint64 big endian; SHA-256 domain plus zero plus eight bytes",
+  "action": "0000000000000001",
+  "action_root": "2a5ee171ef2d36a296e326d24280bff74d79a969ddcfb24abcb68088fd65e336",
+  "roots": [
+    {
+      "value": "0",
+      "root": "745504dc459c1db8633570728a25414c58cd49f6ace63e1aa5a077c4b3cbe0a4"
+    },
+    {
+      "value": "1",
+      "root": "04612da07a70288e175a38a847ede1dc81d3031fa7934c71255efdbcf02f4ef2"
+    },
+    {
+      "value": "2",
+      "root": "e8a49053696044921a71b7fd52e234958f2283a3b8a2b48f95f160a3b8093250"
+    },
+    {
+      "value": "3",
+      "root": "95f2e3d756792b028fb385849350dc4d9cc28cb6c11ac825f2ab9e687649b9ba"
+    },
+    {
+      "value": "4",
+      "root": "7d04aac55e4eb873a6892df8f5acb7ba7ef80ff32954d542a91ba1569d411d1b"
+    },
+    {
+      "value": "5",
+      "root": "5240c05838b3a7aba1d0ba8c718e81a224f646e76d3168f07d8b69d0e1f5ce00"
+    },
+    {
+      "value": "18446744073709551615",
+      "root": "1b073003cefc6d2d90a73c617df672be86be027acd45e8f38063f8bd20b8f6aa"
+    }
+  ]
+}

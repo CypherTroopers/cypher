@@ -1,0 +1,23 @@
+{
+  "recorded_utc": "2026-09-22T11:52:46.947463+00:00",
+  "scope": "offline read-only cryptographic reverification of archived public source evidence, no network/node/storage mutation",
+  "command": "GOMAXPROCS=2 GOCACHE=/tmp/common-dex-devnet.0wvjd5/gocache GOPROXY=off nice -n10 go run -mod=readonly /tmp/common-dex-continuous.uye5vgqi/audit-key-renewal.go",
+  "files": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/docs/dex/results/continuous-g3-key-renewal-audit.go.txt",
+      "sha256": "743d94c2bd66cf165a3fad24f6014fc4feea0e97e0eb0556bb8264b8a9a8dd8e"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/docs/dex/results/continuous-g3-key-renewal-audit.log",
+      "sha256": "21ee44a83b8d3a073113df6afdcfda423d9cc49e72c7f4ec19b441f2abc65fb3"
+    },
+    {
+      "path": "/tmp/continuous-public-failure-985541726/relay-config-0/relay.json",
+      "sha256": "9d8f0140522813c6d0aefcd28704bb4de0bf14914f265cff3ee8c05c8d3e6c01"
+    },
+    {
+      "path": "/tmp/continuous-public-failure-985541726/relay-0/source/source-wal.json",
+      "sha256": "b3fdb5ed11a24d1cd90df0f31bbbb9b0f9cd0678e84befc4e92281b8b591357f"
+    }
+  ]
+}

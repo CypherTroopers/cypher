@@ -258,9 +258,9 @@ func (b *EthAPIBackend) GetTd(ctx context.Context, hash common.Hash) *big.Int {
 }
 
 func (b *EthAPIBackend) GetEVM(ctx context.Context, msg core.Message, state *state.StateDB, header *types.Header) (*vm.EVM, func() error, error) {
-	vmError := func() error { return nil }
 	context := core.NewEVMContextWithConfig(b.eth.blockchain.Config(), msg, header, b.eth.BlockChain(), nil)
-	return vm.NewEVM(context, state, b.eth.blockchain.Config(), *b.eth.blockchain.GetVMConfig()), vmError, nil
+	evm, vmError := core.NewEVMForNativeSimulation(context, state, b.eth.blockchain.Config(), *b.eth.blockchain.GetVMConfig(), msg.To())
+	return evm, vmError, nil
 }
 
 func (b *EthAPIBackend) SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEvent) event.Subscription {

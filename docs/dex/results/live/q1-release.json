@@ -1,0 +1,7 @@
+{
+  "binary": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-q1-release/bin/cypher-linux-amd64",
+  "bytes": 54185808,
+  "sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+  "build_exit": 0,
+  "deploy_status": "NOT_RUN"
+}

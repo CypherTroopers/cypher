@@ -1,0 +1,555 @@
+=== RUN   TestOutboundTLSUsesRegisteredListenerIPAndEphemeralPort
+    source_test.go:85: actual pinned TLS accepted source 127.0.0.2 with an ephemeral port; frame identity checks retained
+--- PASS: TestOutboundTLSUsesRegisteredListenerIPAndEphemeralPort (0.05s)
+=== RUN   TestSocketGolden
+--- PASS: TestSocketGolden (0.00s)
+=== RUN   TestTLSOutboxReconnectDuplicatesAndRestart
+--- PASS: TestTLSOutboxReconnectDuplicatesAndRestart (0.41s)
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/partial
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/old_epoch
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/wrong_source
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/huge_length
+--- PASS: TestTLSIdentityEpochPartialAndOutOfOrder (0.73s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/partial (0.50s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/old_epoch (0.02s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/wrong_source (0.02s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/huge_length (0.02s)
+=== RUN   TestOutboxOwnershipAndRegistryRebind
+--- PASS: TestOutboxOwnershipAndRegistryRebind (0.10s)
+PASS
+ok  	github.com/cypherium/cypher/dex/transport	2.335s
+=== RUN   TestSnapshotAndSettlementAPIResponseBounds
+--- PASS: TestSnapshotAndSettlementAPIResponseBounds (0.85s)
+=== RUN   TestSevenFHSActorsOverPinnedTLSSockets
+    service_test.go:147: seven actual FHS managers finalized4 using mutually pinned TLS sockets; no financial execution in this test
+--- PASS: TestSevenFHSActorsOverPinnedTLSSockets (5.04s)
+=== RUN   TestAuthenticatedActionAPIAndSerializedActor
+--- PASS: TestAuthenticatedActionAPIAndSerializedActor (0.74s)
+=== RUN   TestManifestDisabledAndUnknownFields
+--- PASS: TestManifestDisabledAndUnknownFields (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/dex/service	7.785s
+=== RUN   TestPoolCachedAdmissionKeepsAuthenticationAndParentExecution
+--- PASS: TestPoolCachedAdmissionKeepsAuthenticationAndParentExecution (0.03s)
+=== RUN   TestPoolColdPendingReauthenticatesChecksumValidMutation
+--- PASS: TestPoolColdPendingReauthenticatesChecksumValidMutation (0.09s)
+=== RUN   TestPoolRejectsInvalidCandidateWithoutBlockingNextAndRestarts
+--- PASS: TestPoolRejectsInvalidCandidateWithoutBlockingNextAndRestarts (0.07s)
+=== RUN   TestPoolBoundsAuthenticationAndPersistenceFailure
+--- PASS: TestPoolBoundsAuthenticationAndPersistenceFailure (0.32s)
+=== RUN   TestPoolRefusesUnownedAndSymlinkState
+--- PASS: TestPoolRefusesUnownedAndSymlinkState (0.01s)
+PASS
+ok  	github.com/cypherium/cypher/dex/service/finance	1.611s
+=== RUN   TestReplicationIndependentGoldenAndBounds
+--- PASS: TestReplicationIndependentGoldenAndBounds (0.00s)
+=== RUN   TestReplicationRejectsIdentityAndBoundsBeforeCrypto
+--- PASS: TestReplicationRejectsIdentityAndBoundsBeforeCrypto (0.00s)
+=== RUN   FuzzReplicationEnvelope
+=== RUN   FuzzReplicationEnvelope/seed#0
+=== RUN   FuzzReplicationEnvelope/seed#1
+=== RUN   FuzzReplicationEnvelope/seed#2
+--- PASS: FuzzReplicationEnvelope (0.00s)
+    --- PASS: FuzzReplicationEnvelope/seed#0 (0.00s)
+    --- PASS: FuzzReplicationEnvelope/seed#1 (0.00s)
+    --- PASS: FuzzReplicationEnvelope/seed#2 (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/dex/service/replication	1.061s
+=== RUN   TestProcessEnvelopeIndependentGoldenAndBounds
+--- PASS: TestProcessEnvelopeIndependentGoldenAndBounds (0.00s)
+=== RUN   TestNativeRegistrationMatchesAuthenticatedGenesis
+--- PASS: TestNativeRegistrationMatchesAuthenticatedGenesis (0.00s)
+=== RUN   TestProcessAuthenticatedQueueConflictAndPersistenceUncertainty
+--- PASS: TestProcessAuthenticatedQueueConflictAndPersistenceUncertainty (0.02s)
+=== RUN   TestProcessIdentityOwnershipAndRestart
+--- PASS: TestProcessIdentityOwnershipAndRestart (0.03s)
+PASS
+ok  	github.com/cypherium/cypher/dex/devnet/testnet	1.216s
+=== RUN   TestAccountStorageAuthenticatedValuesAndOwnership
+--- PASS: TestAccountStorageAuthenticatedValuesAndOwnership (0.02s)
+=== RUN   TestAccountStorageNonmembershipRequiresProof
+=== RUN   TestAccountStorageNonmembershipRequiresProof/nonempty_state
+=== RUN   TestAccountStorageNonmembershipRequiresProof/empty_state
+=== RUN   TestAccountStorageNonmembershipRequiresProof/missing_account
+=== RUN   TestAccountStorageNonmembershipRequiresProof/missing_present_slot
+=== RUN   TestAccountStorageNonmembershipRequiresProof/missing_absent_slot
+=== RUN   TestAccountStorageNonmembershipRequiresProof/unexpected_empty_root_path
+--- PASS: TestAccountStorageNonmembershipRequiresProof (0.01s)
+    --- PASS: TestAccountStorageNonmembershipRequiresProof/nonempty_state (0.00s)
+    --- PASS: TestAccountStorageNonmembershipRequiresProof/empty_state (0.00s)
+    --- PASS: TestAccountStorageNonmembershipRequiresProof/missing_account (0.00s)
+    --- PASS: TestAccountStorageNonmembershipRequiresProof/missing_present_slot (0.00s)
+    --- PASS: TestAccountStorageNonmembershipRequiresProof/missing_absent_slot (0.00s)
+    --- PASS: TestAccountStorageNonmembershipRequiresProof/unexpected_empty_root_path (0.00s)
+=== RUN   TestAccountStorageRejectCorruptionAndBounds
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/root
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/zero_root
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/account_node
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/account_duplicate
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/account_missing_leaf
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/storage_node
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/storage_duplicate
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/storage_missing_leaf
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/duplicate_slot
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/too_many_slots
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/account_nodes
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/storage_nodes
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/account_node_bytes
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/storage_node_bytes
+=== RUN   TestAccountStorageRejectCorruptionAndBounds/empty_node
+--- PASS: TestAccountStorageRejectCorruptionAndBounds (0.02s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/root (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/zero_root (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/account_node (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/account_duplicate (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/account_missing_leaf (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/storage_node (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/storage_duplicate (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/storage_missing_leaf (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/duplicate_slot (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/too_many_slots (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/account_nodes (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/storage_nodes (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/account_node_bytes (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/storage_node_bytes (0.00s)
+    --- PASS: TestAccountStorageRejectCorruptionAndBounds/empty_node (0.00s)
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedAccount
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedAccount/balance_over_u256
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedAccount/zero_storage_root
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedAccount/short_code_hash
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedAccount/nonce_leading_zero
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedAccount/extra_field
+--- PASS: TestAccountStorageRejectMalformedAuthenticatedAccount (0.01s)
+    --- PASS: TestAccountStorageRejectMalformedAuthenticatedAccount/balance_over_u256 (0.00s)
+    --- PASS: TestAccountStorageRejectMalformedAuthenticatedAccount/zero_storage_root (0.00s)
+    --- PASS: TestAccountStorageRejectMalformedAuthenticatedAccount/short_code_hash (0.00s)
+    --- PASS: TestAccountStorageRejectMalformedAuthenticatedAccount/nonce_leading_zero (0.00s)
+    --- PASS: TestAccountStorageRejectMalformedAuthenticatedAccount/extra_field (0.00s)
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedStorage
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedStorage/2
+=== RUN   TestAccountStorageRejectMalformedAuthenticatedStorage/Q
+--- PASS: TestAccountStorageRejectMalformedAuthenticatedStorage (0.00s)
+    --- PASS: TestAccountStorageRejectMalformedAuthenticatedStorage/2 (0.00s)
+    --- PASS: TestAccountStorageRejectMalformedAuthenticatedStorage/Q (0.00s)
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/unfinalized_target
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/orphan_parent
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/forged_sign_info_same_hash
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/single_qc_only
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/terminal_view_gap
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/forged_committee
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/wrong_genesis
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/entry_amount
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/entry_owner
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/entry_custody
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/entry_payload
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/bad_storage_proof
+=== RUN   TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/cursor_gap
+--- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit (0.19s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/unfinalized_target (0.00s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/orphan_parent (0.01s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/forged_sign_info_same_hash (0.02s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/single_qc_only (0.00s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/terminal_view_gap (0.01s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/forged_committee (0.00s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/wrong_genesis (0.01s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/entry_amount (0.02s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/entry_owner (0.01s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/entry_custody (0.00s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/entry_payload (0.02s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/bad_storage_proof (0.02s)
+    --- PASS: TestRejectUnfinalizedOrphanAndSameHashSignInfoBeforeCredit/cursor_gap (0.00s)
+=== RUN   TestVerifiedInboxStateProofRoundTripAndOwnership
+--- PASS: TestVerifiedInboxStateProofRoundTripAndOwnership (0.05s)
+=== RUN   TestLeaderElectionIndependentGolden
+--- PASS: TestLeaderElectionIndependentGolden (0.00s)
+=== RUN   TestEmptyRangeAuthenticatesCountAndAnchor
+--- PASS: TestEmptyRangeAuthenticatesCountAndAnchor (0.09s)
+=== RUN   TestEvidenceBoundsAndTrustedConfig
+--- PASS: TestEvidenceBoundsAndTrustedConfig (0.05s)
+=== RUN   TestVerifierOwnsTrustedSnapshot
+--- PASS: TestVerifierOwnsTrustedSnapshot (0.04s)
+=== RUN   TestKeyRenewalIndependentGolden
+=== RUN   TestKeyRenewalIndependentGolden/pending
+=== RUN   TestKeyRenewalIndependentGolden/cleared
+--- PASS: TestKeyRenewalIndependentGolden (0.01s)
+    --- PASS: TestKeyRenewalIndependentGolden/pending (0.00s)
+    --- PASS: TestKeyRenewalIndependentGolden/cleared (0.00s)
+=== RUN   TestKeyRenewalBoundaryColdRestartAndRepeatedIntervals
+--- PASS: TestKeyRenewalBoundaryColdRestartAndRepeatedIntervals (3.67s)
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/unknown-key
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/missing-boundary
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/changed-boundary
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/duplicate-boundary
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/changed-signed-header
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/cadence
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/key-parent
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/new-member
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/reordered-committee
+=== RUN   TestKeyRenewalRejectsContextAndGenerationAttacks/pow-candidate
+--- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks (1.61s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/unknown-key (0.03s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/missing-boundary (0.04s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/changed-boundary (0.10s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/duplicate-boundary (0.00s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/changed-signed-header (0.00s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/cadence (0.18s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/key-parent (0.32s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/new-member (0.20s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/reordered-committee (0.27s)
+    --- PASS: TestKeyRenewalRejectsContextAndGenerationAttacks/pow-candidate (0.12s)
+=== RUN   TestKeyRenewalPermutationAndConcurrentLegacy
+--- PASS: TestKeyRenewalPermutationAndConcurrentLegacy (8.03s)
+=== RUN   TestKeyRenewalValidSignaturesCannotExtendOldLifetime
+--- PASS: TestKeyRenewalValidSignaturesCannotExtendOldLifetime (0.23s)
+=== RUN   TestRollingAnchorIndependentGolden
+=== RUN   TestRollingAnchorIndependentGolden/genesis
+=== RUN   TestRollingAnchorIndependentGolden/genesis/epoch
+=== RUN   TestRollingAnchorIndependentGolden/genesis/count
+=== RUN   TestRollingAnchorIndependentGolden/genesis/root
+=== RUN   TestRollingAnchorIndependentGolden/genesis/key
+=== RUN   TestRollingAnchorIndependentGolden/genesis/committee
+=== RUN   TestRollingAnchorIndependentGolden/genesis/genesis
+=== RUN   TestRollingAnchorIndependentGolden/genesis/version
+=== RUN   TestRollingAnchorIndependentGolden/genesis/chain
+=== RUN   TestRollingAnchorIndependentGolden/after_257
+=== RUN   TestRollingAnchorIndependentGolden/after_257/chain
+=== RUN   TestRollingAnchorIndependentGolden/after_257/epoch
+=== RUN   TestRollingAnchorIndependentGolden/after_257/count
+=== RUN   TestRollingAnchorIndependentGolden/after_257/root
+=== RUN   TestRollingAnchorIndependentGolden/after_257/key
+=== RUN   TestRollingAnchorIndependentGolden/after_257/committee
+=== RUN   TestRollingAnchorIndependentGolden/after_257/genesis
+=== RUN   TestRollingAnchorIndependentGolden/after_257/version
+--- PASS: TestRollingAnchorIndependentGolden (0.00s)
+    --- PASS: TestRollingAnchorIndependentGolden/genesis (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/genesis/epoch (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/genesis/count (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/genesis/root (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/genesis/key (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/genesis/committee (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/genesis/genesis (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/genesis/version (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/genesis/chain (0.00s)
+    --- PASS: TestRollingAnchorIndependentGolden/after_257 (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/after_257/chain (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/after_257/epoch (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/after_257/count (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/after_257/root (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/after_257/key (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/after_257/committee (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/after_257/genesis (0.00s)
+        --- PASS: TestRollingAnchorIndependentGolden/after_257/version (0.00s)
+=== RUN   TestRollingVerificationAndSameAnchorRange
+--- PASS: TestRollingVerificationAndSameAnchorRange (0.05s)
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/key
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/time
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/mask_extra_bit
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/view_number
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/single_qc
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/state_root
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/admission_root
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/reward_root
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/gas_limit
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/extra
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/view_id
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/leader
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/parent_qc
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/number
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/parent
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/receipt_root
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/signature_same_hash
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/gas_used
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/mask
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/extra_hash
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/tx_root
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/ref_header_hash
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/ref_version
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/ref_chain
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/ref_body_hash
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/ref_body_size
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/descendant_view_gap
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/descendant_parent_qc
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/descendant_parent_hash
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/descendant_height
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/descendant_signature
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/descendant_single_empty
+=== RUN   TestRollingRejectHeaderRefAndSignInfoTampering/descendant_too_many
+--- PASS: TestRollingRejectHeaderRefAndSignInfoTampering (0.16s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/key (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/time (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/mask_extra_bit (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/view_number (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/single_qc (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/state_root (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/admission_root (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/reward_root (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/gas_limit (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/extra (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/view_id (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/leader (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/parent_qc (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/number (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/parent (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/receipt_root (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/signature_same_hash (0.01s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/gas_used (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/mask (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/extra_hash (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/tx_root (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/ref_header_hash (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/ref_version (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/ref_chain (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/ref_body_hash (0.01s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/ref_body_size (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/descendant_view_gap (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/descendant_parent_qc (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/descendant_parent_hash (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/descendant_height (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/descendant_signature (0.01s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/descendant_single_empty (0.00s)
+    --- PASS: TestRollingRejectHeaderRefAndSignInfoTampering/descendant_too_many (0.00s)
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/chain
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/dex
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/key
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/overflow_height
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/genesis
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/custody
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/committee
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/epoch
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/genesis_root
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/base_id
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/cursor
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/cursor_overflow
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/account_missing
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/account_corrupt
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/count_missing
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/count_duplicate
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/entry_missing
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/entry_corrupt
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/entry_duplicate
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/amount
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/owner
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/entry_domain
+=== RUN   TestRollingRejectBaseAndPartialStorageProofs/index_gap
+--- PASS: TestRollingRejectBaseAndPartialStorageProofs (0.18s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/chain (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/dex (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/key (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/overflow_height (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/genesis (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/custody (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/committee (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/epoch (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/genesis_root (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/base_id (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/cursor (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/cursor_overflow (0.01s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/account_missing (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/account_corrupt (0.01s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/count_missing (0.02s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/count_duplicate (0.01s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/entry_missing (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/entry_corrupt (0.01s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/entry_duplicate (0.01s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/amount (0.03s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/owner (0.01s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/entry_domain (0.00s)
+    --- PASS: TestRollingRejectBaseAndPartialStorageProofs/index_gap (0.00s)
+=== RUN   TestRollingIngressIsNotContinuityAuthorization
+--- PASS: TestRollingIngressIsNotContinuityAuthorization (0.04s)
+=== RUN   TestRollingCodecBoundsBeforeVerification
+=== RUN   TestRollingCodecBoundsBeforeVerification/headers
+=== RUN   TestRollingCodecBoundsBeforeVerification/witness_bytes
+=== RUN   TestRollingCodecBoundsBeforeVerification/reference_bytes
+=== RUN   TestRollingCodecBoundsBeforeVerification/account_nodes
+=== RUN   TestRollingCodecBoundsBeforeVerification/node_bytes
+=== RUN   TestRollingCodecBoundsBeforeVerification/entries
+=== RUN   TestRollingCodecBoundsBeforeVerification/aggregate
+--- PASS: TestRollingCodecBoundsBeforeVerification (0.31s)
+    --- PASS: TestRollingCodecBoundsBeforeVerification/headers (0.00s)
+    --- PASS: TestRollingCodecBoundsBeforeVerification/witness_bytes (0.00s)
+    --- PASS: TestRollingCodecBoundsBeforeVerification/reference_bytes (0.00s)
+    --- PASS: TestRollingCodecBoundsBeforeVerification/account_nodes (0.00s)
+    --- PASS: TestRollingCodecBoundsBeforeVerification/node_bytes (0.00s)
+    --- PASS: TestRollingCodecBoundsBeforeVerification/entries (0.01s)
+    --- PASS: TestRollingCodecBoundsBeforeVerification/aggregate (0.27s)
+=== RUN   TestFinancialSnapshotDistinctRegisteredLateVoter
+=== RUN   TestFinancialSnapshotDistinctRegisteredLateVoter/domain
+=== RUN   TestFinancialSnapshotDistinctRegisteredLateVoter/genesis-root
+=== RUN   TestFinancialSnapshotDistinctRegisteredLateVoter/state-root
+=== RUN   TestFinancialSnapshotDistinctRegisteredLateVoter/omitted-state-root
+=== RUN   TestFinancialSnapshotDistinctRegisteredLateVoter/missing-data
+=== RUN   TestFinancialSnapshotDistinctRegisteredLateVoter/trailing
+=== RUN   TestFinancialSnapshotDistinctRegisteredLateVoter/service-startup-boundary
+=== NAME  TestFinancialSnapshotDistinctRegisteredLateVoter
+    financial_snapshot_test.go:444: FINANCIAL_SNAPSHOT schema=4 state=5 finalized=3 distinctLateMember=6 participation=1 nativeTotal=6 bytes=36407
+--- PASS: TestFinancialSnapshotDistinctRegisteredLateVoter (5.40s)
+    --- PASS: TestFinancialSnapshotDistinctRegisteredLateVoter/domain (0.05s)
+    --- PASS: TestFinancialSnapshotDistinctRegisteredLateVoter/genesis-root (0.05s)
+    --- PASS: TestFinancialSnapshotDistinctRegisteredLateVoter/state-root (0.16s)
+    --- PASS: TestFinancialSnapshotDistinctRegisteredLateVoter/omitted-state-root (0.11s)
+    --- PASS: TestFinancialSnapshotDistinctRegisteredLateVoter/missing-data (0.04s)
+    --- PASS: TestFinancialSnapshotDistinctRegisteredLateVoter/trailing (0.07s)
+    --- PASS: TestFinancialSnapshotDistinctRegisteredLateVoter/service-startup-boundary (0.72s)
+=== RUN   TestNativeFinancialProofDrivenCredit
+=== RUN   TestNativeFinancialProofDrivenCredit/unproved_signed_credit
+=== RUN   TestNativeFinancialProofDrivenCredit/ordinary_action_before_authenticated_anchor
+=== RUN   TestNativeFinancialProofDrivenCredit/malformed
+=== RUN   TestNativeFinancialProofDrivenCredit/unfinalized
+=== RUN   TestNativeFinancialProofDrivenCredit/same_hash_sign_info
+=== RUN   TestNativeFinancialProofDrivenCredit/changed_amount
+=== RUN   TestNativeFinancialProofDrivenCredit/changed_owner
+=== RUN   TestNativeFinancialProofDrivenCredit/duplicate
+--- PASS: TestNativeFinancialProofDrivenCredit (0.12s)
+    --- PASS: TestNativeFinancialProofDrivenCredit/unproved_signed_credit (0.00s)
+    --- PASS: TestNativeFinancialProofDrivenCredit/ordinary_action_before_authenticated_anchor (0.00s)
+    --- PASS: TestNativeFinancialProofDrivenCredit/malformed (0.00s)
+    --- PASS: TestNativeFinancialProofDrivenCredit/unfinalized (0.00s)
+    --- PASS: TestNativeFinancialProofDrivenCredit/same_hash_sign_info (0.01s)
+    --- PASS: TestNativeFinancialProofDrivenCredit/changed_amount (0.01s)
+    --- PASS: TestNativeFinancialProofDrivenCredit/changed_owner (0.01s)
+    --- PASS: TestNativeFinancialProofDrivenCredit/duplicate (0.00s)
+=== RUN   TestNativeGenesisConfigurationAndCapabilityGuards
+--- PASS: TestNativeGenesisConfigurationAndCapabilityGuards (0.06s)
+=== RUN   TestKeyRenewalSourceHTTPPermutationColdResume
+--- PASS: TestKeyRenewalSourceHTTPPermutationColdResume (19.55s)
+=== RUN   TestKeyRenewalSourceLegacyV3PendingWAL
+--- PASS: TestKeyRenewalSourceLegacyV3PendingWAL (0.24s)
+=== RUN   TestRollingInboxDuplicateAdmissionUsesOnlyKnownAuthenticatedBytes
+    pool_admission_cache_test.go:53: duplicate ingress observations only: headers=32 bytes=60044 knownRetries=100 elapsed=4.281567ms; no consensus/financial execution bypass
+--- PASS: TestRollingInboxDuplicateAdmissionUsesOnlyKnownAuthenticatedBytes (0.40s)
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/matching-range
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/cursor-only
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/wrong-entry-root
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/empty-exact-action
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/empty-equivalent-anchor
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/empty-conflicting-anchor
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/altered-entry-amount
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/forged-same-hash-metadata
+=== RUN   TestRelayInboxCompletionNeedsWholeProofBoundEffect/untrusted-target
+--- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect (0.98s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/matching-range (0.08s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/cursor-only (0.10s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/wrong-entry-root (0.11s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/empty-exact-action (0.08s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/empty-equivalent-anchor (0.09s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/empty-conflicting-anchor (0.10s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/altered-entry-amount (0.15s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/forged-same-hash-metadata (0.14s)
+    --- PASS: TestRelayInboxCompletionNeedsWholeProofBoundEffect/untrusted-target (0.10s)
+=== RUN   TestRelayPlannerSemanticInboxCompletion
+=== RUN   TestRelayPlannerSemanticInboxCompletion/empty_equivalent_proof
+=== RUN   TestRelayPlannerSemanticInboxCompletion/empty_authenticated_descendant
+=== RUN   TestRelayPlannerSemanticInboxCompletion/split_range
+=== RUN   TestRelayPlannerSemanticInboxCompletion/broader_range
+=== RUN   TestRelayPlannerSemanticInboxCompletion/broader_right
+=== RUN   TestRelayPlannerSemanticInboxCompletion/bad_authenticated_root
+=== RUN   TestRelayPlannerSemanticInboxCompletion/bad_broader_root
+=== RUN   TestRelayPlannerSemanticInboxCompletion/cursor_gap_is_not_completion
+--- PASS: TestRelayPlannerSemanticInboxCompletion (27.45s)
+    --- PASS: TestRelayPlannerSemanticInboxCompletion/empty_equivalent_proof (3.85s)
+    --- PASS: TestRelayPlannerSemanticInboxCompletion/empty_authenticated_descendant (3.76s)
+    --- PASS: TestRelayPlannerSemanticInboxCompletion/split_range (3.17s)
+    --- PASS: TestRelayPlannerSemanticInboxCompletion/broader_range (2.77s)
+    --- PASS: TestRelayPlannerSemanticInboxCompletion/broader_right (3.47s)
+    --- PASS: TestRelayPlannerSemanticInboxCompletion/bad_authenticated_root (3.04s)
+    --- PASS: TestRelayPlannerSemanticInboxCompletion/bad_broader_root (3.55s)
+    --- PASS: TestRelayPlannerSemanticInboxCompletion/cursor_gap_is_not_completion (3.52s)
+=== RUN   TestRelayPlannerEmptyAnchorConflict
+=== RUN   TestRelayPlannerEmptyAnchorConflict/1
+=== RUN   TestRelayPlannerEmptyAnchorConflict/3
+--- PASS: TestRelayPlannerEmptyAnchorConflict (0.71s)
+    --- PASS: TestRelayPlannerEmptyAnchorConflict/1 (0.25s)
+    --- PASS: TestRelayPlannerEmptyAnchorConflict/3 (0.34s)
+=== RUN   TestRelayPlannerHistoricalLegBeyondSourceRequest
+=== RUN   TestRelayPlannerHistoricalLegBeyondSourceRequest/1
+=== RUN   TestRelayPlannerHistoricalLegBeyondSourceRequest/33
+--- PASS: TestRelayPlannerHistoricalLegBeyondSourceRequest (10.03s)
+    --- PASS: TestRelayPlannerHistoricalLegBeyondSourceRequest/1 (4.82s)
+    --- PASS: TestRelayPlannerHistoricalLegBeyondSourceRequest/33 (4.93s)
+=== RUN   TestRelayPlannerColdSourceAndRepeatedInboxCompletion
+--- PASS: TestRelayPlannerColdSourceAndRepeatedInboxCompletion (5.86s)
+=== RUN   TestRelaySourceHTTPProofsAndRestart
+--- PASS: TestRelaySourceHTTPProofsAndRestart (0.38s)
+=== RUN   TestRelaySourceHTTPFailureBoundaries
+=== RUN   TestRelaySourceHTTPFailureBoundaries/wrong_signature
+=== RUN   TestRelaySourceHTTPFailureBoundaries/bad_account
+=== RUN   TestRelaySourceHTTPFailureBoundaries/missing_slot
+=== RUN   TestRelaySourceHTTPFailureBoundaries/wrong_rpc_id
+=== RUN   TestRelaySourceHTTPFailureBoundaries/oversize
+=== RUN   TestRelaySourceHTTPFailureBoundaries/redirect
+=== RUN   TestRelaySourceHTTPFailureBoundaries/witness_unavailable
+--- PASS: TestRelaySourceHTTPFailureBoundaries (5.10s)
+    --- PASS: TestRelaySourceHTTPFailureBoundaries/wrong_signature (0.03s)
+    --- PASS: TestRelaySourceHTTPFailureBoundaries/bad_account (0.12s)
+    --- PASS: TestRelaySourceHTTPFailureBoundaries/missing_slot (0.10s)
+    --- PASS: TestRelaySourceHTTPFailureBoundaries/wrong_rpc_id (0.01s)
+    --- PASS: TestRelaySourceHTTPFailureBoundaries/oversize (0.67s)
+    --- PASS: TestRelaySourceHTTPFailureBoundaries/redirect (0.02s)
+    --- PASS: TestRelaySourceHTTPFailureBoundaries/witness_unavailable (0.02s)
+=== RUN   TestRelaySourceWALFailClosed
+=== RUN   TestRelaySourceWALFailClosed/foreign_bootstrap
+=== RUN   TestRelaySourceWALFailClosed/corrupt_and_missing
+=== RUN   TestRelaySourceWALFailClosed/failed_save_poison
+=== RUN   TestRelaySourceWALFailClosed/unowned_and_symlink
+--- PASS: TestRelaySourceWALFailClosed (0.28s)
+    --- PASS: TestRelaySourceWALFailClosed/foreign_bootstrap (0.11s)
+    --- PASS: TestRelaySourceWALFailClosed/corrupt_and_missing (0.02s)
+    --- PASS: TestRelaySourceWALFailClosed/failed_save_poison (0.07s)
+    --- PASS: TestRelaySourceWALFailClosed/unowned_and_symlink (0.01s)
+=== RUN   TestRelaySourceHeaderBoundAndReverifiedWAL
+--- PASS: TestRelaySourceHeaderBoundAndReverifiedWAL (2.95s)
+=== RUN   TestRollingFinancialParentAcrossFixedMembershipRenewals
+--- PASS: TestRollingFinancialParentAcrossFixedMembershipRenewals (0.98s)
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=1 clxHeight=1 witnesses=1 bytes=3562 cursor=3 total=6
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=4 clxHeight=32 witnesses=31 bytes=56794 cursor=3 total=6
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=5 clxHeight=64 witnesses=32 bytes=58616 cursor=3 total=6
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/base
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/signature-same-hash
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/unfinalized
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/epoch
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/account-proof
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/count-proof
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/amount
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/owner
+=== RUN   TestRollingFinancialCreditBeyond257AndColdReplay/duplicate-entry
+=== NAME  TestRollingFinancialCreditBeyond257AndColdReplay
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=6 clxHeight=65 witnesses=1 bytes=2618 cursor=4 total=10
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=7 clxHeight=96 witnesses=31 bytes=56826 cursor=4 total=10
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=8 clxHeight=128 witnesses=32 bytes=58662 cursor=4 total=10
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=9 clxHeight=130 witnesses=2 bytes=4524 cursor=5 total=15
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=10 clxHeight=160 witnesses=30 bytes=55336 cursor=5 total=15
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=11 clxHeight=192 witnesses=32 bytes=59000 cursor=5 total=15
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=12 clxHeight=224 witnesses=32 bytes=59000 cursor=5 total=15
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=13 clxHeight=256 witnesses=32 bytes=59014 cursor=5 total=15
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=14 clxHeight=258 witnesses=2 bytes=4092 cursor=5 total=15
+    rolling_financial_test.go:222: ROLLING_FINANCIAL_UPDATE dexHeight=15 clxHeight=258 witnesses=0 bytes=923 cursor=6 total=21
+--- PASS: TestRollingFinancialCreditBeyond257AndColdReplay (11.22s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/base (0.03s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/signature-same-hash (0.02s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/unfinalized (0.02s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/epoch (0.01s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/account-proof (0.10s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/count-proof (0.04s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/amount (0.10s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/owner (0.05s)
+    --- PASS: TestRollingFinancialCreditBeyond257AndColdReplay/duplicate-entry (0.01s)
+=== RUN   TestRollingFinancialVersionAndActionSeparation
+--- PASS: TestRollingFinancialVersionAndActionSeparation (0.11s)
+=== RUN   FuzzDecodeRangeEvidence
+=== RUN   FuzzDecodeRangeEvidence/seed#0
+=== RUN   FuzzDecodeRangeEvidence/seed#1
+=== RUN   FuzzDecodeRangeEvidence/seed#2
+--- PASS: FuzzDecodeRangeEvidence (0.00s)
+    --- PASS: FuzzDecodeRangeEvidence/seed#0 (0.00s)
+    --- PASS: FuzzDecodeRangeEvidence/seed#1 (0.00s)
+    --- PASS: FuzzDecodeRangeEvidence/seed#2 (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/dex/clxevidence	107.819s

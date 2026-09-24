@@ -1,0 +1,7 @@
+{
+  "raw": "/tmp/common-dex-continuous.uye5vgqi/logs/continuous-final3-rpc-existing-timeout.jsonl",
+  "source_manifest_sha256": "061f4a0b6bed257c6ba8ad60f377f52cf8640cb6dcb8d4dcbd01a1575cfe1630",
+  "counts": {
+    "fail_packages": 1
+  }
+}

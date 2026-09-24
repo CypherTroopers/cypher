@@ -1,0 +1,1428 @@
+{
+  "schema_version": 1,
+  "generated_utc": "2026-09-22T08:08:03.851440+00:00",
+  "repository": "CypherTroopers/cypher",
+  "branch": "FHS-D-ExchangeCore",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "worktree": "Uncommitted implementation/test changes are included; HEAD alone does not identify tested source.",
+  "latest_source_snapshot": {
+    "path": "docs/dex/results/integration-financial-final-source-after.json",
+    "sha256": "11a8c57cebf73dcf473fc2c5083489dd084bc358fafe9a8ea39de8e27b95df61",
+    "bytes": 119403
+  },
+  "counting": "Go test events are aggregated from terminal pass/fail/skip records. Top-level excludes names containing /. Package PASS can coexist with test SKIP. Counts from different suites overlap and must not be summed as unique coverage.",
+  "units_skipped_then_explicitly_passed": [
+    {
+      "test": "TestProcessIdentityOwnershipAndRestart",
+      "explicit_tls_pass": true
+    },
+    {
+      "test": "TestSevenFHSActorsOverPinnedTLSSockets",
+      "explicit_tls_pass": true
+    },
+    {
+      "test": "TestAuthenticatedActionAPIAndSerializedActor",
+      "explicit_tls_pass": true
+    },
+    {
+      "test": "TestOutboundTLSUsesRegisteredListenerIPAndEphemeralPort",
+      "explicit_tls_pass": true
+    },
+    {
+      "test": "TestTLSOutboxReconnectDuplicatesAndRestart",
+      "explicit_tls_pass": true
+    },
+    {
+      "test": "TestTLSIdentityEpochPartialAndOutOfOrder",
+      "explicit_tls_pass": true
+    },
+    {
+      "test": "TestOutboxOwnershipAndRegistryRebind",
+      "explicit_tls_pass": true
+    }
+  ],
+  "entries": [
+    {
+      "id": "unit_race",
+      "path": "docs/dex/results/integration-final-unit.jsonl",
+      "sha256": "2c493d4e141d3c2c292b2251d774d57f90aa498aa9bebd9864a3e4015d60a633",
+      "bytes": 440469,
+      "PASS_FAIL_SKIP": "PASS_WITH_SKIP",
+      "summary": {
+        "format": "go-test-json",
+        "started_event_time": "2026-09-22T09:10:25.598339664+02:00",
+        "finished_event_time": "2026-09-22T09:12:43.208706784+02:00",
+        "packages": {
+          "pass": 17,
+          "fail": 0,
+          "skip": 0
+        },
+        "top_level_tests": {
+          "pass": 204,
+          "fail": 0,
+          "skip": 7
+        },
+        "test_events_including_subtests": {
+          "pass": 446,
+          "fail": 0,
+          "skip": 7
+        },
+        "failed_tests": [],
+        "skipped_tests": [
+          "TestProcessIdentityOwnershipAndRestart",
+          "TestSevenFHSActorsOverPinnedTLSSockets",
+          "TestAuthenticatedActionAPIAndSerializedActor",
+          "TestOutboundTLSUsesRegisteredListenerIPAndEphemeralPort",
+          "TestTLSOutboxReconnectDuplicatesAndRestart",
+          "TestTLSIdentityEpochPartialAndOutOfOrder",
+          "TestOutboxOwnershipAndRegistryRebind"
+        ],
+        "package_results": [
+          {
+            "package": "github.com/cypherium/cypher/dex/accounting",
+            "status": "PASS",
+            "elapsed_seconds": 1.112
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/checkpoint",
+            "status": "PASS",
+            "elapsed_seconds": 1.308
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/clxevidence",
+            "status": "PASS",
+            "elapsed_seconds": 1.7610000000000001
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/consensus",
+            "status": "PASS",
+            "elapsed_seconds": 46.593
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/data",
+            "status": "PASS",
+            "elapsed_seconds": 1.022
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/devnet",
+            "status": "PASS",
+            "elapsed_seconds": 40.555
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/devnet/testnet",
+            "status": "PASS",
+            "elapsed_seconds": 1.09
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/engine",
+            "status": "PASS",
+            "elapsed_seconds": 1.229
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/protocol",
+            "status": "PASS",
+            "elapsed_seconds": 1.041
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/rewards",
+            "status": "PASS",
+            "elapsed_seconds": 3.04
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/runtime",
+            "status": "PASS",
+            "elapsed_seconds": 1.114
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/service",
+            "status": "PASS",
+            "elapsed_seconds": 1.088
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/service/finance",
+            "status": "PASS",
+            "elapsed_seconds": 1.494
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/service/replication",
+            "status": "PASS",
+            "elapsed_seconds": 1.067
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/settlement",
+            "status": "PASS",
+            "elapsed_seconds": 2.349
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/transport",
+            "status": "PASS",
+            "elapsed_seconds": 1.231
+          },
+          {
+            "package": "github.com/cypherium/cypher/reconfig/hotstuff",
+            "status": "PASS",
+            "elapsed_seconds": 7.931
+          }
+        ]
+      },
+      "execution_boundary": "In-process unit/actor/generic execution and native StateDB tests for ./dex/... and ./reconfig/hotstuff under race. Explicit socket opt-in was absent; seven socket tests skipped.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-final-runner.log",
+          "sha256": "24cd810100e84c9d4258bccbd28f11513d2a2735c43a166969de66b911bae276",
+          "bytes": 148
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-unit-source-sha256.txt",
+              "sha256": "6aacd18d2bab1ff31fde373361f398a854ed310457f542b7bcfe141e2f51e99d",
+              "bytes": 69996
+            },
+            "recorded_files": 720,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_cli_test.go",
+                "recorded_sha256": "301c77df6e0234c59131f16ad1e4cd142cc9d806b4a0f6faa40d5ee5e5267544",
+                "current_sha256": "cc5204f046500da0c3b232ea87d8599c1b72b20d33e856276218e34cce0d253f"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "af61f648ded260e5a0fd6725f48900f6ad99492e43674948ab680fd3305d251a",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              },
+              {
+                "path": "reconfig/dex_native_rpc_parity_test.go",
+                "recorded_sha256": "6af79948e77d1cb28b8261fcfb84e7ae8dc3e75a6529e736a918d77a81cafb6a",
+                "current_sha256": "3e53fafa17c0d6611a83747b67036d3618fe474d21ff3d2e576ed59674daa898"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "dex/",
+              "reconfig/hotstuff/"
+            ],
+            "current_direct_scope_go_files": 110,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      },
+      "notes": [
+        "Latest unit events ran at07:10:25Z\u201307:12:43Z. The saved manifest contains the current eth/backend.go empty-journal fix hash; this run was after that fix.",
+        "204 passing top-level tests plus7 skipped top-level tests =211 top-level outcomes;446 passing test events includes subtests and is not446 independent scenarios.",
+        "Only recorded reconfig test harness files differ from current source; the directly tested dex and hotstuff package files match. Source capture is a pre-run manifest, not an independent post-run snapshot."
+      ],
+      "stderr": {
+        "path": "docs/dex/results/integration-final-unit.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "id": "native_race",
+      "path": "docs/dex/results/integration-final-native-race.jsonl",
+      "sha256": "40349b2acf3c436a4627bafd8e5e536eec8ee564eec315b9adfd190aa0b842e6",
+      "bytes": 33885,
+      "PASS_FAIL_SKIP": "PASS",
+      "summary": {
+        "format": "go-test-json",
+        "started_event_time": "2026-09-22T09:41:13.278673168+02:00",
+        "finished_event_time": "2026-09-22T09:41:17.871143047+02:00",
+        "packages": {
+          "pass": 2,
+          "fail": 0,
+          "skip": 0
+        },
+        "top_level_tests": {
+          "pass": 15,
+          "fail": 0,
+          "skip": 0
+        },
+        "test_events_including_subtests": {
+          "pass": 34,
+          "fail": 0,
+          "skip": 0
+        },
+        "failed_tests": [],
+        "skipped_tests": [],
+        "package_results": [
+          {
+            "package": "github.com/cypherium/cypher/core",
+            "status": "PASS",
+            "elapsed_seconds": 2.1310000000000002
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/vm",
+            "status": "PASS",
+            "elapsed_seconds": 1.065
+          }
+        ]
+      },
+      "execution_boundary": "Exact15 previously executed core/core-vm tests, race enabled, fresh loopback-only namespace; native StateDB/transaction/VM tests, not a distributed financial run.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-final-focused-metadata.json",
+          "sha256": "25e06a8705263c8f11478e33592e01d13ad684d5e55b72b34d216728efe82bec",
+          "bytes": 4571
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-focused-source-native-before.sha256",
+              "sha256": "f1a75e3733cf0b16fd04016fcf517b8edb7d5036d5113b06829990a61c6afc19",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_combined_rpc_test.go",
+                "recorded_sha256": "e40e53b8580e815f6c16e5e3e7972af0ad144390728f5d885a0695990d6a8074",
+                "current_sha256": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "63e736ae6290633de070484bcc206809805c22bfe835f9ea3dfcfc50c9c96283",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "core/"
+            ],
+            "current_direct_scope_go_files": 290,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          },
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-focused-source-native-after.sha256",
+              "sha256": "f1a75e3733cf0b16fd04016fcf517b8edb7d5036d5113b06829990a61c6afc19",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_combined_rpc_test.go",
+                "recorded_sha256": "e40e53b8580e815f6c16e5e3e7972af0ad144390728f5d885a0695990d6a8074",
+                "current_sha256": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "63e736ae6290633de070484bcc206809805c22bfe835f9ea3dfcfc50c9c96283",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "core/"
+            ],
+            "current_direct_scope_go_files": 290,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      },
+      "notes": [],
+      "stderr": {
+        "path": "docs/dex/results/integration-final-native-race.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    },
+    {
+      "id": "normal_cli_roles_and_restart",
+      "path": "docs/dex/results/integration-trie-journal-cli.log",
+      "sha256": "16d9fff9ba9b29cd5c9086ec55770aa33eab71373688f6508480e922b9e347db",
+      "bytes": 9106,
+      "PASS_FAIL_SKIP": "PASS",
+      "summary": {
+        "format": "go-test-verbose",
+        "packages": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0,
+          "no_test_files": 0
+        },
+        "top_level_tests": {
+          "pass": 4,
+          "fail": 0,
+          "skip": 0
+        },
+        "test_events_including_subtests": {
+          "pass": 12,
+          "fail": 0,
+          "skip": 0
+        },
+        "failed_tests": [],
+        "skipped_tests": [],
+        "package_results": [
+          {
+            "package": "github.com/cypherium/cypher/cmd/cypher",
+            "status": "PASS",
+            "elapsed_or_detail": "54.756s"
+          }
+        ]
+      },
+      "execution_boundary": "Actual ordinary Common CLI supervising native/counter sidecars; all8 PoW/RPC/DEX combinations, native-finance smoke and DEX-ON/OFF same-datadir restart. PoW tests use an8-byte invalid-size owned dataset that rejects before DAG/cache allocation; normal nonce search NOT_RUN.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-trie-journal-metadata.json",
+          "sha256": "98e69e14e9377c037e03ed75ac32ccd48217818800f5e8946fd2f42faca824d4",
+          "bytes": 2333
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-trie-journal-source-before.sha256",
+              "sha256": "0e76c0e5aafe73fb240fb44929c59c5e894d3b94ad38813065fc4c1a0ffd56dc",
+              "bytes": 108249
+            },
+            "recorded_files": 1164,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_cli_test.go",
+                "recorded_sha256": "734b5d302816deb478f077e31ee37e8466339ba2cbbf508330e23db27f90a5d3",
+                "current_sha256": "cc5204f046500da0c3b232ea87d8599c1b72b20d33e856276218e34cce0d253f"
+              },
+              {
+                "path": "reconfig/dex_financial_faults_test.go",
+                "recorded_sha256": "c2ae4d3e0a9017f2b96c340e1a922ef7aaa10ad5de9fcbdd57d9ccd95470133d",
+                "current_sha256": "2a54f857445347953df6daee69707ba9cdec4cddbbac58d472f3beedea2a2e08"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "fa87ab3446751780296866550ca1ee65ab245c8349336f993acfc0ee7084c5ee",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              },
+              {
+                "path": "reconfig/dex_native_rpc_parity_test.go",
+                "recorded_sha256": "6af79948e77d1cb28b8261fcfb84e7ae8dc3e75a6529e736a918d77a81cafb6a",
+                "current_sha256": "3e53fafa17c0d6611a83747b67036d3618fe474d21ff3d2e576ed59674daa898"
+              },
+              {
+                "path": "reconfig/export_native_test.go",
+                "recorded_sha256": "67c308bed41237850fb8934b1e4993db8254b6fdcf1b8f95bdc0a72f7524b0ab",
+                "current_sha256": "d00dcd1368231b30ad6863f568c984d446737027af2275821dda0f1a75eebb67"
+              },
+              {
+                "path": "reconfig/fhs_process_recovery_test.go",
+                "recorded_sha256": "a39f685dc0dcf490f68b58d8b803b7c3ca4a70feb1162692b04e9e6d97253f3d",
+                "current_sha256": "7f29cfe49e5c6f3d0be8920c477bae436d3c3d7696fc3b6d3d166a18b267c84a"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "cmd/cypher/",
+              "cmd/utils/"
+            ],
+            "current_direct_scope_go_files": 21,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          },
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-trie-journal-source-after.sha256",
+              "sha256": "4b975aa7bc5e3c39611bdef7f618320f50719bff083f43c10f3c543e224352ed",
+              "bytes": 108350
+            },
+            "recorded_files": 1165,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_cli_test.go",
+                "recorded_sha256": "940d633c24f3e618df68b7093d3e2359805685b4718b75ea3e1b7f732485560a",
+                "current_sha256": "cc5204f046500da0c3b232ea87d8599c1b72b20d33e856276218e34cce0d253f"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "af61f648ded260e5a0fd6725f48900f6ad99492e43674948ab680fd3305d251a",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              },
+              {
+                "path": "reconfig/dex_native_rpc_parity_test.go",
+                "recorded_sha256": "6af79948e77d1cb28b8261fcfb84e7ae8dc3e75a6529e736a918d77a81cafb6a",
+                "current_sha256": "3e53fafa17c0d6611a83747b67036d3618fe474d21ff3d2e576ed59674daa898"
+              },
+              {
+                "path": "reconfig/export_native_test.go",
+                "recorded_sha256": "67c308bed41237850fb8934b1e4993db8254b6fdcf1b8f95bdc0a72f7524b0ab",
+                "current_sha256": "d00dcd1368231b30ad6863f568c984d446737027af2275821dda0f1a75eebb67"
+              },
+              {
+                "path": "reconfig/fhs_process_recovery_test.go",
+                "recorded_sha256": "a39f685dc0dcf490f68b58d8b803b7c3ca4a70feb1162692b04e9e6d97253f3d",
+                "current_sha256": "7f29cfe49e5c6f3d0be8920c477bae436d3c3d7696fc3b6d3d166a18b267c84a"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "cmd/cypher/",
+              "cmd/utils/"
+            ],
+            "current_direct_scope_go_files": 21,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      },
+      "notes": [
+        "Supersedes integration-final-cli-roles.log for the current CLI/restart scope. The smoke is not the funded financial trace."
+      ]
+    },
+    {
+      "id": "actual_common_api_roles",
+      "path": "docs/dex/results/integration-final-api-roles.log",
+      "sha256": "d1f4576957609e5584babe43f478d6d7bce6439e68986fc0e2286a193a751152",
+      "bytes": 3685,
+      "PASS_FAIL_SKIP": "PASS",
+      "summary": {
+        "format": "go-test-verbose",
+        "packages": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0,
+          "no_test_files": 0
+        },
+        "top_level_tests": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0
+        },
+        "test_events_including_subtests": {
+          "pass": 9,
+          "fail": 0,
+          "skip": 0
+        },
+        "failed_tests": [],
+        "skipped_tests": [],
+        "package_results": [
+          {
+            "package": "github.com/cypherium/cypher/eth",
+            "status": "PASS",
+            "elapsed_or_detail": "13.581s"
+          }
+        ]
+      },
+      "execution_boundary": "Actual Common IPC miner lifecycle, HTTP Common admission and separate-process DEX actor finality for all8 combinations. Existing empty-DAG fixture only; actual32GiB PoW nonce exploration and committee delivery NOT_RUN.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-final-focused-metadata.json",
+          "sha256": "25e06a8705263c8f11478e33592e01d13ad684d5e55b72b34d216728efe82bec",
+          "bytes": 4571
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-focused-source-api-before.sha256",
+              "sha256": "f1a75e3733cf0b16fd04016fcf517b8edb7d5036d5113b06829990a61c6afc19",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_combined_rpc_test.go",
+                "recorded_sha256": "e40e53b8580e815f6c16e5e3e7972af0ad144390728f5d885a0695990d6a8074",
+                "current_sha256": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "63e736ae6290633de070484bcc206809805c22bfe835f9ea3dfcfc50c9c96283",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "eth/"
+            ],
+            "current_direct_scope_go_files": 71,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          },
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-focused-source-api-after.sha256",
+              "sha256": "7f2cb76382820f61d4978134b8295a1f492c501164f734897c7d524fae4b531c",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "63e736ae6290633de070484bcc206809805c22bfe835f9ea3dfcfc50c9c96283",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "eth/"
+            ],
+            "current_direct_scope_go_files": 71,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      },
+      "notes": [
+        "Concurrent combined-RPC reconfig test edits are outside these package tests."
+      ]
+    },
+    {
+      "id": "explicit_tls_race",
+      "path": "docs/dex/results/integration-final-sockets.log",
+      "sha256": "2d02197ada3b496031c2fdbe45c0f523c7ac1cd5549f8f4da63a612531bb3f65",
+      "bytes": 3459,
+      "PASS_FAIL_SKIP": "PASS",
+      "summary": {
+        "format": "go-test-verbose",
+        "packages": {
+          "pass": 5,
+          "fail": 0,
+          "skip": 0,
+          "no_test_files": 0
+        },
+        "top_level_tests": {
+          "pass": 18,
+          "fail": 0,
+          "skip": 0
+        },
+        "test_events_including_subtests": {
+          "pass": 25,
+          "fail": 0,
+          "skip": 0
+        },
+        "failed_tests": [],
+        "skipped_tests": [],
+        "package_results": [
+          {
+            "package": "github.com/cypherium/cypher/dex/service",
+            "status": "PASS",
+            "elapsed_or_detail": "4.986s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/service/finance",
+            "status": "PASS",
+            "elapsed_or_detail": "1.398s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/service/replication",
+            "status": "PASS",
+            "elapsed_or_detail": "1.063s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/transport",
+            "status": "PASS",
+            "elapsed_or_detail": "2.058s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/dex/devnet/testnet",
+            "status": "PASS",
+            "elapsed_or_detail": "1.088s"
+          }
+        ]
+      },
+      "execution_boundary": "Fresh loopback namespace with CYPHER_DEX_SOCKET_DEVNET=1; real mutually pinned TLS sockets,7 actual FHS actors, serialized HTTP action API, finance/replication service, source-IP binding, reconnect/duplicate/identity/epoch/partial-frame/outbox/owned-identity tests. Financial service tests are bounded components, not full native funded CLX financial execution.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-final-focused-metadata.json",
+          "sha256": "25e06a8705263c8f11478e33592e01d13ad684d5e55b72b34d216728efe82bec",
+          "bytes": 4571
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-focused-source-sockets-before.sha256",
+              "sha256": "f1a75e3733cf0b16fd04016fcf517b8edb7d5036d5113b06829990a61c6afc19",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_combined_rpc_test.go",
+                "recorded_sha256": "e40e53b8580e815f6c16e5e3e7972af0ad144390728f5d885a0695990d6a8074",
+                "current_sha256": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "63e736ae6290633de070484bcc206809805c22bfe835f9ea3dfcfc50c9c96283",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "dex/service/",
+              "dex/transport/",
+              "dex/devnet/testnet/"
+            ],
+            "current_direct_scope_go_files": 26,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          },
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-focused-source-sockets-after.sha256",
+              "sha256": "7f2cb76382820f61d4978134b8295a1f492c501164f734897c7d524fae4b531c",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "63e736ae6290633de070484bcc206809805c22bfe835f9ea3dfcfc50c9c96283",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "dex/service/",
+              "dex/transport/",
+              "dex/devnet/testnet/"
+            ],
+            "current_direct_scope_go_files": 26,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      },
+      "notes": [
+        "This explicit run covers the seven socket tests skipped by the unit run. Concurrent combined-RPC reconfig test edits are outside these package tests."
+      ]
+    },
+    {
+      "id": "independent_python_golden",
+      "path": "docs/dex/results/integration-final-python-vectors.log",
+      "sha256": "fa32341885ba6a21340ce354db135aaf1a139c002ee0d96af99e5fd4e7656cf9",
+      "bytes": 1948,
+      "PASS_FAIL_SKIP": "PASS",
+      "summary": {
+        "independent_arithmetic_cases_pass": 39,
+        "independent_arithmetic_cases_fail": 0,
+        "check_scripts": 12,
+        "scripts": [
+          "codec_vectors.py",
+          "claim_vectors.py",
+          "reference_model.py",
+          "counter_vectors.py",
+          "execution_vectors.py",
+          "finance_vectors.py",
+          "participation_vectors.py",
+          "engine_vectors.py",
+          "inbox_vectors.py",
+          "native_tx_vectors.py",
+          "process_vectors.py",
+          "transport_vectors.py"
+        ],
+        "note": "12 script checks are not12 or39 cryptographic/distributed scenarios. Some successful scripts emit no PASS line; check.sh set-e and the matching successful runner establish their command success."
+      },
+      "execution_boundary": "Independent Python codec/accounting models compare committed golden inputs/outputs. Arithmetic/model checks alone do not exercise FHS, native settlement, socket transport or performance.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-final-runner.log",
+          "sha256": "24cd810100e84c9d4258bccbd28f11513d2a2735c43a166969de66b911bae276",
+          "bytes": 148
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-unit-source-sha256.txt",
+              "sha256": "6aacd18d2bab1ff31fde373361f398a854ed310457f542b7bcfe141e2f51e99d",
+              "bytes": 69996
+            },
+            "recorded_files": 720,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_cli_test.go",
+                "recorded_sha256": "301c77df6e0234c59131f16ad1e4cd142cc9d806b4a0f6faa40d5ee5e5267544",
+                "current_sha256": "cc5204f046500da0c3b232ea87d8599c1b72b20d33e856276218e34cce0d253f"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "af61f648ded260e5a0fd6725f48900f6ad99492e43674948ab680fd3305d251a",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              },
+              {
+                "path": "reconfig/dex_native_rpc_parity_test.go",
+                "recorded_sha256": "6af79948e77d1cb28b8261fcfb84e7ae8dc3e75a6529e736a918d77a81cafb6a",
+                "current_sha256": "3e53fafa17c0d6611a83747b67036d3618fe474d21ff3d2e576ed59674daa898"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "scripts/dex/",
+              "dex/testdata/"
+            ],
+            "current_direct_scope_go_files": 0,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      },
+      "golden_input_source_match": {
+        "files": 26,
+        "unrecorded_or_changed": [],
+        "definition": "Current Python model/generator scripts and committed JSON golden inputs under scripts/dex and dex/testdata, compared with the saved unit-run manifest."
+      }
+    },
+    {
+      "id": "final_baseline",
+      "path": "docs/dex/results/integration-final-baseline.log",
+      "sha256": "484e71e978b156f5fa085bc99a5fb4b284788985b3e3c393463ec2fb3fb10240",
+      "bytes": 250435,
+      "PASS_FAIL_SKIP": "FAIL",
+      "summary": {
+        "format": "go-test-verbose",
+        "packages": {
+          "pass": 16,
+          "fail": 1,
+          "skip": 0,
+          "no_test_files": 1
+        },
+        "top_level_tests": {
+          "pass": 1124,
+          "fail": 2,
+          "skip": 16
+        },
+        "test_events_including_subtests": {
+          "pass": 1720,
+          "fail": 2,
+          "skip": 16
+        },
+        "failed_tests": [
+          "TestCreation",
+          "TestValidation"
+        ],
+        "skipped_tests": [
+          "TestCommonRPCRewardCrashChild",
+          "TestDEXRoleSidecarHelper",
+          "TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset",
+          "TestDEXIsolationProcessHelper",
+          "TestDEXAndCLXProcessIsolation",
+          "TestFHSProcessRecoveryQCBeforePrepare",
+          "TestFHSProcessRecoverySplitTC",
+          "TestFHSProcessRecoveryOfflineProposer",
+          "TestFHSRecoveryProcessHelper",
+          "TestFHSProcessRecoveryRewardFinality",
+          "TestFHSNativeFinancialTwoDomainSockets",
+          "TestFHSNativeFinancialOrdinaryCLI",
+          "TestDEXNativeFinancialChild",
+          "TestFHSNativeDepositRPCFinalityEvidence",
+          "TestNativeDEXOffCommonProcess",
+          "TestFHSRewardHTTPToTxQUICToFinality"
+        ],
+        "package_results": [
+          {
+            "package": "github.com/cypherium/cypher/commonrpcreward",
+            "status": "PASS",
+            "elapsed_or_detail": "0.015s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/params",
+            "status": "PASS",
+            "elapsed_or_detail": "0.077s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/consensus/colossusX",
+            "status": "PASS",
+            "elapsed_or_detail": "0.083s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/miner",
+            "status": "PASS",
+            "elapsed_or_detail": "0.032s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/eth",
+            "status": "PASS",
+            "elapsed_or_detail": "19.369s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/reconfig",
+            "status": "PASS",
+            "elapsed_or_detail": "61.133s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/reconfig/bftview",
+            "status": "PASS",
+            "elapsed_or_detail": "0.040s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/reconfig/hotstuff",
+            "status": "PASS",
+            "elapsed_or_detail": "6.161s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core",
+            "status": "PASS",
+            "elapsed_or_detail": "10.603s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/asm",
+            "status": "PASS",
+            "elapsed_or_detail": "0.033s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/bloombits",
+            "status": "PASS",
+            "elapsed_or_detail": "8.240s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/forkid",
+            "status": "FAIL",
+            "elapsed_or_detail": "0.035s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/rawdb",
+            "status": "PASS",
+            "elapsed_or_detail": "0.034s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/state",
+            "status": "PASS",
+            "elapsed_or_detail": "1.256s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/state/snapshot",
+            "status": "PASS",
+            "elapsed_or_detail": "3.561s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/types",
+            "status": "PASS",
+            "elapsed_or_detail": "5.960s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/vm",
+            "status": "PASS",
+            "elapsed_or_detail": "0.043s"
+          },
+          {
+            "package": "github.com/cypherium/cypher/core/vm/runtime",
+            "status": "NO_TEST_FILES",
+            "elapsed_or_detail": "[no test files]"
+          }
+        ]
+      },
+      "execution_boundary": "Existing commonrpcreward/params/colossusX/miner/eth/reconfig/.../core/... tests; fresh loopback namespace; opt-in DEX/API/process tests disabled. Existing small ColossusX test-mode fixtures only.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-final-baseline-metadata.json",
+          "sha256": "cb96bb27ae580380b53195dd079d85c6e00fa1b7b9bfa73cd32538ffe976a74e",
+          "bytes": 4491
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-baseline-source-before.sha256",
+              "sha256": "759d90cffeef2f6c7e05eb46fd278d25019b7bb41a19aa7e9b93096959dec793",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_combined_rpc_test.go",
+                "recorded_sha256": "9f6e50035389467ed07df7847143ccaf7df21bf2085b34ba7b5d6d891c196137",
+                "current_sha256": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "54c18d19cac02555c076b9a4a9c5fb0294293509555a9b0fea5756fcd7543e7f",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "commonrpcreward/",
+              "params/",
+              "consensus/colossusX/",
+              "miner/",
+              "eth/",
+              "reconfig/",
+              "core/"
+            ],
+            "current_direct_scope_go_files": 490,
+            "direct_scope_changes_or_unrecorded_go_files": [
+              "reconfig/dex_financial_combined_rpc_test.go",
+              "reconfig/dex_financial_network_test.go"
+            ]
+          },
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-baseline-source-after.sha256",
+              "sha256": "759d90cffeef2f6c7e05eb46fd278d25019b7bb41a19aa7e9b93096959dec793",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_combined_rpc_test.go",
+                "recorded_sha256": "9f6e50035389467ed07df7847143ccaf7df21bf2085b34ba7b5d6d891c196137",
+                "current_sha256": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "54c18d19cac02555c076b9a4a9c5fb0294293509555a9b0fea5756fcd7543e7f",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "commonrpcreward/",
+              "params/",
+              "consensus/colossusX/",
+              "miner/",
+              "eth/",
+              "reconfig/",
+              "core/"
+            ],
+            "current_direct_scope_go_files": 490,
+            "direct_scope_changes_or_unrecorded_go_files": [
+              "reconfig/dex_financial_combined_rpc_test.go",
+              "reconfig/dex_financial_network_test.go"
+            ]
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      },
+      "notes": [
+        "Only core/forkid TestCreation and TestValidation fail, as recorded before the DEX changes. Expectations were not modified. Independent child/opt-in tests skip explicitly. Later combined-RPC financial harness edits mean current reconfig test sources are not all identical; all recorded production Go files match."
+      ],
+      "failure_classification": "EXISTING_FAIL: core/forkid TestCreation,TestValidation; no new baseline failure observed."
+    },
+    {
+      "id": "legacy_six_process_regressions",
+      "path": "docs/dex/results/integration-final-process.log",
+      "sha256": "a37225ac89bdbe2e9c096a2674d949e4094e418bf333753bcfaa56a46f6c7a6c",
+      "bytes": 69371,
+      "PASS_FAIL_SKIP": "PASS",
+      "summary": {
+        "format": "go-test-verbose",
+        "packages": {
+          "pass": 1,
+          "fail": 0,
+          "skip": 0,
+          "no_test_files": 0
+        },
+        "top_level_tests": {
+          "pass": 6,
+          "fail": 0,
+          "skip": 0
+        },
+        "test_events_including_subtests": {
+          "pass": 6,
+          "fail": 0,
+          "skip": 0
+        },
+        "failed_tests": [],
+        "skipped_tests": [],
+        "package_results": [
+          {
+            "package": "github.com/cypherium/cypher/reconfig",
+            "status": "PASS",
+            "elapsed_or_detail": "188.387s"
+          }
+        ]
+      },
+      "execution_boundary": "Six actual process tests:7 CLX QUIC validators for recovery/earlyQC/reward; DEX-vs-CLX isolation uses7 additional real FHS actor processes with a bounded parent pipe bus (network simulation for DEX), counter-only checkpoints and no native settlement. Fresh loopback namespace, owned child PIDs/datadirs only.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-final-baseline-metadata.json",
+          "sha256": "cb96bb27ae580380b53195dd079d85c6e00fa1b7b9bfa73cd32538ffe976a74e",
+          "bytes": 4491
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-baseline-source-before.sha256",
+              "sha256": "759d90cffeef2f6c7e05eb46fd278d25019b7bb41a19aa7e9b93096959dec793",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_combined_rpc_test.go",
+                "recorded_sha256": "9f6e50035389467ed07df7847143ccaf7df21bf2085b34ba7b5d6d891c196137",
+                "current_sha256": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "54c18d19cac02555c076b9a4a9c5fb0294293509555a9b0fea5756fcd7543e7f",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "reconfig/"
+            ],
+            "current_direct_scope_go_files": 90,
+            "direct_scope_changes_or_unrecorded_go_files": [
+              "reconfig/dex_financial_combined_rpc_test.go",
+              "reconfig/dex_financial_network_test.go"
+            ]
+          },
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-final-baseline-source-after.sha256",
+              "sha256": "759d90cffeef2f6c7e05eb46fd278d25019b7bb41a19aa7e9b93096959dec793",
+              "bytes": 108460
+            },
+            "recorded_files": 1166,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_combined_rpc_test.go",
+                "recorded_sha256": "9f6e50035389467ed07df7847143ccaf7df21bf2085b34ba7b5d6d891c196137",
+                "current_sha256": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "54c18d19cac02555c076b9a4a9c5fb0294293509555a9b0fea5756fcd7543e7f",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "reconfig/"
+            ],
+            "current_direct_scope_go_files": 90,
+            "direct_scope_changes_or_unrecorded_go_files": [
+              "reconfig/dex_financial_combined_rpc_test.go",
+              "reconfig/dex_financial_network_test.go"
+            ]
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      },
+      "notes": [
+        "Does not substitute for the new financial TLS or ordinary Common+sidecar financial fault matrix. Later combined-RPC financial harness test edits are outside the six selected test functions."
+      ]
+    },
+    {
+      "id": "ordinary_cli_build",
+      "path": "docs/dex/results/integration-trie-journal-build.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "PASS_FAIL_SKIP": "PASS",
+      "execution_boundary": "Readonly normal CLI build to a temporary owned output path after the empty trie journal fix; no distributed behavior is inferred from a successful build.",
+      "metadata": [
+        {
+          "path": "docs/dex/results/integration-trie-journal-metadata.json",
+          "sha256": "98e69e14e9377c037e03ed75ac32ccd48217818800f5e8946fd2f42faca824d4",
+          "bytes": 2333
+        }
+      ],
+      "source_evidence": {
+        "snapshots": [
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-trie-journal-source-before.sha256",
+              "sha256": "0e76c0e5aafe73fb240fb44929c59c5e894d3b94ad38813065fc4c1a0ffd56dc",
+              "bytes": 108249
+            },
+            "recorded_files": 1164,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_cli_test.go",
+                "recorded_sha256": "734b5d302816deb478f077e31ee37e8466339ba2cbbf508330e23db27f90a5d3",
+                "current_sha256": "cc5204f046500da0c3b232ea87d8599c1b72b20d33e856276218e34cce0d253f"
+              },
+              {
+                "path": "reconfig/dex_financial_faults_test.go",
+                "recorded_sha256": "c2ae4d3e0a9017f2b96c340e1a922ef7aaa10ad5de9fcbdd57d9ccd95470133d",
+                "current_sha256": "2a54f857445347953df6daee69707ba9cdec4cddbbac58d472f3beedea2a2e08"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "fa87ab3446751780296866550ca1ee65ab245c8349336f993acfc0ee7084c5ee",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              },
+              {
+                "path": "reconfig/dex_native_rpc_parity_test.go",
+                "recorded_sha256": "6af79948e77d1cb28b8261fcfb84e7ae8dc3e75a6529e736a918d77a81cafb6a",
+                "current_sha256": "3e53fafa17c0d6611a83747b67036d3618fe474d21ff3d2e576ed59674daa898"
+              },
+              {
+                "path": "reconfig/export_native_test.go",
+                "recorded_sha256": "67c308bed41237850fb8934b1e4993db8254b6fdcf1b8f95bdc0a72f7524b0ab",
+                "current_sha256": "d00dcd1368231b30ad6863f568c984d446737027af2275821dda0f1a75eebb67"
+              },
+              {
+                "path": "reconfig/fhs_process_recovery_test.go",
+                "recorded_sha256": "a39f685dc0dcf490f68b58d8b803b7c3ca4a70feb1162692b04e9e6d97253f3d",
+                "current_sha256": "7f29cfe49e5c6f3d0be8920c477bae436d3c3d7696fc3b6d3d166a18b267c84a"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "cmd/cypher/",
+              "cmd/utils/"
+            ],
+            "current_direct_scope_go_files": 21,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          },
+          {
+            "manifest": {
+              "path": "docs/dex/results/integration-trie-journal-source-after.sha256",
+              "sha256": "4b975aa7bc5e3c39611bdef7f618320f50719bff083f43c10f3c543e224352ed",
+              "bytes": 108350
+            },
+            "recorded_files": 1165,
+            "current_changes": [
+              {
+                "path": "reconfig/dex_financial_cli_test.go",
+                "recorded_sha256": "940d633c24f3e618df68b7093d3e2359805685b4718b75ea3e1b7f732485560a",
+                "current_sha256": "cc5204f046500da0c3b232ea87d8599c1b72b20d33e856276218e34cce0d253f"
+              },
+              {
+                "path": "reconfig/dex_financial_network_test.go",
+                "recorded_sha256": "af61f648ded260e5a0fd6725f48900f6ad99492e43674948ab680fd3305d251a",
+                "current_sha256": "ceda526fa30f041daf4d493846fa28fad533eba551de4ddb2323c4403e324b23"
+              },
+              {
+                "path": "reconfig/dex_native_rpc_parity_test.go",
+                "recorded_sha256": "6af79948e77d1cb28b8261fcfb84e7ae8dc3e75a6529e736a918d77a81cafb6a",
+                "current_sha256": "3e53fafa17c0d6611a83747b67036d3618fe474d21ff3d2e576ed59674daa898"
+              },
+              {
+                "path": "reconfig/export_native_test.go",
+                "recorded_sha256": "67c308bed41237850fb8934b1e4993db8254b6fdcf1b8f95bdc0a72f7524b0ab",
+                "current_sha256": "d00dcd1368231b30ad6863f568c984d446737027af2275821dda0f1a75eebb67"
+              },
+              {
+                "path": "reconfig/fhs_process_recovery_test.go",
+                "recorded_sha256": "a39f685dc0dcf490f68b58d8b803b7c3ca4a70feb1162692b04e9e6d97253f3d",
+                "current_sha256": "7f29cfe49e5c6f3d0be8920c477bae436d3c3d7696fc3b6d3d166a18b267c84a"
+              }
+            ],
+            "current_production_go_changes": [],
+            "direct_scope_prefixes": [
+              "cmd/cypher/",
+              "cmd/utils/"
+            ],
+            "current_direct_scope_go_files": 21,
+            "direct_scope_changes_or_unrecorded_go_files": []
+          }
+        ],
+        "limit": "These hashes cover the files listed in the manifests. They do not prove native/C/BLS library binary identity, OS/toolchain identity or unsnapshotted external dependencies. A current matching snapshot is not a new test execution."
+      }
+    },
+    {
+      "path": "docs/dex/results/integration-final-financial-cli.log",
+      "sha256": "4bc80a37d76dbd3486297d8b88762a94c583948848a3cf538ee1a2707705782c",
+      "bytes": 52099,
+      "id": "ordinary_common_financial_final",
+      "PASS_FAIL_SKIP": "PASS",
+      "mode": "ordinaryCLI=true",
+      "result": [
+        "--- PASS: TestFHSNativeFinancialOrdinaryCLI (262.12s)"
+      ],
+      "source_before": {
+        "path": "docs/dex/results/integration-financial-final-source-before.json",
+        "sha256": "698588afcaa10c93e4c0ce76d2f7a9fc3b45daf0057df51b5244a00299ec82a8",
+        "bytes": 119375
+      },
+      "source_after": {
+        "path": "docs/dex/results/integration-financial-final-source-after.json",
+        "sha256": "11a8c57cebf73dcf473fc2c5083489dd084bc358fafe9a8ea39de8e27b95df61",
+        "bytes": 119403
+      },
+      "current_source_differences": [],
+      "source_scope": "All Go files identical during final ordinary CLI run. Legacy socket v3 differs only in the CLI-only peer refresh helper, never called in ordinaryCLI=false and exercised by the final ordinaryCLI=true run. No production differences.",
+      "boundaries": [
+        "fresh user/network namespace, numeric loopback only, no external routes",
+        "actual CLX RPC/admission/TxQUIC/FHS/native settlement",
+        "35 signed CLX TX, 4 deposits, 18 checkpoints, 8 claims",
+        "DEX/CLX crashes, authenticated TLS partitions and economic/DA fault cases",
+        "CLX69 canonical sync/restart and native214, engine0/0/0",
+        "normal PoW dataset/nonce NOT_RUN, C-library race safety not implied"
+      ],
+      "binaries": {
+        "/tmp/common-dex-integration.hnc63_8r/bin/cypher-devnet": "3ee2d36713c5beb5220994bcba1ea48c226e6f7cac9d3ecc9d92554ef6e45bc3",
+        "/tmp/common-dex-integration.hnc63_8r/bin/reconfig-financial-final-v4.test": "fabc685e87b4757db56001b81a4e92f3023de6b0eb92f1a7d023bd8bd9b3cf7f"
+      }
+    },
+    {
+      "path": "docs/dex/results/integration-final-financial-sockets.log",
+      "sha256": "16ec180e958d97a6b31c667dce1ffd06157694e6109ef5ac5e89c6796a522b1f",
+      "bytes": 41299,
+      "id": "legacy_financial_tls_final",
+      "PASS_FAIL_SKIP": "PASS",
+      "mode": "ordinaryCLI=false",
+      "result": [
+        "--- PASS: TestFHSNativeFinancialTwoDomainSockets (219.08s)"
+      ],
+      "source_before": {
+        "path": "docs/dex/results/integration-financial-v3-source-before.json",
+        "sha256": "f75dd53fb79f58e3e75b707130d17eb6eb5ddff52c18281d41961ca5d69d64dd",
+        "bytes": 119375
+      },
+      "source_after": {
+        "path": "docs/dex/results/integration-financial-final-source-after.json",
+        "sha256": "11a8c57cebf73dcf473fc2c5083489dd084bc358fafe9a8ea39de8e27b95df61",
+        "bytes": 119403
+      },
+      "current_source_differences": [
+        "reconfig/dex_financial_cli_test.go"
+      ],
+      "source_scope": "All Go files identical during final ordinary CLI run. Legacy socket v3 differs only in the CLI-only peer refresh helper, never called in ordinaryCLI=false and exercised by the final ordinaryCLI=true run. No production differences.",
+      "boundaries": [
+        "fresh user/network namespace, numeric loopback only, no external routes",
+        "actual CLX RPC/admission/TxQUIC/FHS/native settlement",
+        "35 signed CLX TX, 4 deposits, 18 checkpoints, 8 claims",
+        "DEX/CLX crashes, authenticated TLS partitions and economic/DA fault cases",
+        "CLX69 canonical sync/restart and native214, engine0/0/0",
+        "normal PoW dataset/nonce NOT_RUN, C-library race safety not implied"
+      ],
+      "binaries": {
+        "/tmp/common-dex-integration.hnc63_8r/bin/cypher-devnet": "3ee2d36713c5beb5220994bcba1ea48c226e6f7cac9d3ecc9d92554ef6e45bc3",
+        "/tmp/common-dex-integration.hnc63_8r/bin/reconfig-financial-final-v3.test": "533fa9b92a60880df8e462a379490967190e8cbb2769c3c28510a560add54fb6"
+      }
+    }
+  ],
+  "not_run": [
+    "Normal32GiB PoW nonce search and candidate delivery under combined load",
+    "60-minute mixed/open-loop performance and Hyperliquid comparison",
+    "Production/public-network activation, real-fund operations and remote push"
+  ],
+  "protection": "No operational node/datadir/key changes or host networking/limits adjustments were performed by these fixtures. Namespaces, processes, keystores, native balances and datasets were newly created test-owned fixtures.",
+  "normal_pow_resources": "No successful normal32GiB dataset/nonce workload is claimed. Existing tiny rejection/test-mode fixtures establish only the stated API/lifecycle scope.",
+  "financial_trace": {
+    "path": "docs/dex/results/integration-financial-trace.json",
+    "sha256": "16d61ec4068b2ac68abc5a6a7d1707f4ca932668304718f1850b0650dc4fe255",
+    "bytes": 137142
+  },
+  "financial_socket_trace": {
+    "path": "docs/dex/results/integration-financial-sockets-trace.json",
+    "sha256": "35bec3f1dcc0332f4cb3a654c871f116ee36b92166884285ef40abdde02faf07",
+    "bytes": 131290
+  },
+  "historical_failed_attempts": [
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-cli-1.log",
+      "sha256": "18199a21a7c8f3386742bcf3fdfe95673e8c3fc50f55bfb1e8047e0bb5872618",
+      "bytes": 49966
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-cli-2.log",
+      "sha256": "752a0f14fc8cf535bd3d4a03910089047808d8a96490ad2870ce4ce123f82128",
+      "bytes": 493614
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-cli-3.log",
+      "sha256": "ba882a9137d8f2f43d92ab6cddba95052e37e6dbb31916eb13e206a735593dc7",
+      "bytes": 475849
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-cli-4.log",
+      "sha256": "e8920f84df2ee91e7cdd671aeb6cb76892bac803857fbb097a745d2909b56884",
+      "bytes": 563586
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-cli-6.log",
+      "sha256": "13eead35f65a28bd77ef99ed1d199e235b6c7b302ae3f4c8117fdb9c8b3e2078",
+      "bytes": 356462
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-cli-7.log",
+      "sha256": "04ad70306e30be15ae84a621fbde51d658c42f3fb937767f28bd84ae6cd95340",
+      "bytes": 556159
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-cli-8.log",
+      "sha256": "235515793ca6c525a7a0880e9910b9736641653a5764481e0d8b78bfa7da2473",
+      "bytes": 575882
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-sockets-1.log",
+      "sha256": "b20390eb249689e46a136924b22fcea27c3416289843f8e04610bd01a47d66e3",
+      "bytes": 35732
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-sockets-2.log",
+      "sha256": "ee7fae5fdfb32226770d011f867afc32d5e1c099914b5309fd40494e487883b2",
+      "bytes": 54002
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-sockets-3.log",
+      "sha256": "1c79b08d7b1ad35d0ab2817248152b8201bc90b7f3102ea537847b864c530080",
+      "bytes": 69244
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-sockets-4.log",
+      "sha256": "21965078489bd5ba4bccbc9668a7f1139e7aa0e916cd68b6884774daa9c3839f",
+      "bytes": 152069
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/native-financial-sockets-5.log",
+      "sha256": "9145d5245f8966b052565c79ffe685a669beae3a3c27c4e7304f41bce9e6ee61",
+      "bytes": 390914
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/rpc-nonce-fhs-process-failure-1025405488.log",
+      "sha256": "f80b09ce5ef345f3f5f9f08b0b647f32671abb0e8665c3c549a0249f495f4df9",
+      "bytes": 19741
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/rpc-nonce-fhs-process-failure-1402094264.log",
+      "sha256": "6af67ee9709a5c300ab9554cdca99e87029d3822f9c7649c8d00964ef85d3f2b",
+      "bytes": 11825
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/rpc-nonce-fhs-process-failure-1803826592.log",
+      "sha256": "3142efd559f195b0eb214fcb71f105b17b673d952a96b144773a3757a5ed83ef",
+      "bytes": 11303
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/rpc-nonce-fhs-process-failure-201005632.log",
+      "sha256": "44c5a1dd640b422107a7bf98c373009d353da2ca1221c6d51b49159fb065ea65",
+      "bytes": 11999
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/rpc-nonce-fhs-process-failure-3684601818.log",
+      "sha256": "51b58def161882509a5dc71a04335c565aaa019eb6758a8e1b45eef44186ec07",
+      "bytes": 11477
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/rpc-nonce-fhs-process-failure-432895872.log",
+      "sha256": "e9bd6f31214c7cc376f830a168519faabed32c0f028f8c79ef7322d2ed3a5618",
+      "bytes": 17712
+    },
+    {
+      "path": "docs/dex/results/integration-attempts/rpc-nonce-fhs-process-failure-820251207.log",
+      "sha256": "fe46dd076259884b974a00a47bbe6001a0b84dc9bd6fed7261b498356811e7d5",
+      "bytes": 11303
+    }
+  ],
+  "final_protection": [
+    {
+      "path": "docs/dex/results/integration-environment-final.json",
+      "sha256": "e5ee6405fa23766d696630e0a9cc1db98e4c240c67c7d43e5a77309d65c973b5",
+      "bytes": 2093
+    },
+    {
+      "path": "docs/dex/results/integration-protected-check.log",
+      "sha256": "834ff4196594b74f820fa1308286944c893af7fb52acf95892b0145a99830075",
+      "bytes": 3012
+    }
+  ],
+  "trace_extractor": {
+    "path": "scripts/dex/extract_financial_trace.py",
+    "sha256": "dba1e96444c0ccb4391590bb684365b6c9e605480b7c917ef79b94b1864ad193",
+    "bytes": 3818
+  },
+  "reproduction_runner": {
+    "path": "scripts/dex/check.sh",
+    "sha256": "60ec7c1257010921a88106d4b41b372ef5381e47b7d2898c06c10f56aac6eea0",
+    "bytes": 4486
+  },
+  "runner_verification": "bash -n and all scripts/dex/*.py AST parse PASS; runner socket mode now names the same fifth testnet helper package verified in the explicit socket run."
+}

@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 708, in <module>
+    except Exception as error:
+    ^^^^^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 697, in main
+    "max_runner_tx": MAX_TX, "max_actions": MAX_ACTIONS,
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 584, in drive
+    continue
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 529, in economic_step
+    raise ValueError("close lacks exact committed registered participation set")
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 513, in maintenance_step
+    closed = market["RewardPeriod"]
+    
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 486, in collect
+    # verified by the formal helper and the exact target binding.
+ValueError: declared active participation collection deadline; no unproved reward claim invented

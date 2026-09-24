@@ -1,0 +1,9 @@
+{
+  "artifact_root": "/tmp/common-dex-check.gt87dxTv",
+  "source_manifest_sha256": "c3e925e9445d6b51e1f28aa7dbf0c18966cc696fb7143489a674a78bdb6d3c14",
+  "test_exit": "0",
+  "run_exit": "0",
+  "source_diff_bytes": 0,
+  "failed_tests": [],
+  "passed_packages": 0
+}

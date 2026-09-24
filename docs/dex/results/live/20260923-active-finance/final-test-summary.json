@@ -1,0 +1,267 @@
+{
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "chain_id": 10101919,
+  "live_financial_result": "FAIL",
+  "reason": "No consecutive-view finality edge and unfinalized chain exceeds 8-descendant proof bound",
+  "clx_height": 1121,
+  "clx_hash": "0xf6b0428aa9fcd443ba9d96ddfb8c8f96c52bab818075c08890f210c9c40265cb",
+  "clx_root": "0x87adc3f1c979f299969635f9167189edc182d4379edaebe2077ef2ed9f6ad3e4",
+  "dex_certified": 15,
+  "dex_finalized": 0,
+  "clx_accepted": 0,
+  "financial_ledger": {
+    "custody_atoms": "225000000000000000000",
+    "buckets_atoms": {
+      "F": "0",
+      "I": "5000000000000000000",
+      "R": "0",
+      "S": "20000000000000000000",
+      "T": "0",
+      "U": "200000000000000000000",
+      "W": "0",
+      "Z": "0"
+    },
+    "surplus_atoms": "0",
+    "gas_atoms": "1611400000000000",
+    "common_reward_atoms": "322280000000000",
+    "burn_atoms": "1289120000000000",
+    "paid_claims": 0,
+    "unsettled": {
+      "native_deposit_uncredited_atoms": "200000000000000000000",
+      "native_reward_reserved_atoms": "0",
+      "native_withdrawal_reserved_atoms": "0",
+      "runner_completion_unchanged": true,
+      "runner_original_status": "STOPPED_WITH_JOURNAL_PRESERVED"
+    },
+    "operations": {
+      "deposit": 2,
+      "insurance": 1,
+      "support": 1,
+      "transfer": 25
+    },
+    "maxima": {
+      "calldata_bytes": 12,
+      "clx_evidence_bytes": 0,
+      "depth": 0,
+      "dex_proof_bytes": 0,
+      "headers": 0,
+      "mpt_bytes": 0,
+      "mpt_nodes": 0
+    }
+  },
+  "pm2": [
+    {
+      "name": "cypher0",
+      "status": "online",
+      "pid": 1315272
+    },
+    {
+      "name": "cypher1",
+      "status": "online",
+      "pid": 1315273
+    },
+    {
+      "name": "cypher2",
+      "status": "online",
+      "pid": 1315274
+    },
+    {
+      "name": "cypher3",
+      "status": "online",
+      "pid": 1315275
+    },
+    {
+      "name": "cypher4",
+      "status": "online",
+      "pid": 1315276
+    },
+    {
+      "name": "cypher5",
+      "status": "online",
+      "pid": 1315277
+    },
+    {
+      "name": "cypher6",
+      "status": "online",
+      "pid": 1315278
+    },
+    {
+      "name": "cyphermine",
+      "status": "online",
+      "pid": 1324785
+    },
+    {
+      "name": "cypherdex1",
+      "status": "online",
+      "pid": 1324811
+    },
+    {
+      "name": "cypherdex2",
+      "status": "online",
+      "pid": 1324837
+    },
+    {
+      "name": "cypherdex3",
+      "status": "online",
+      "pid": 1324863
+    },
+    {
+      "name": "cypherdex4",
+      "status": "online",
+      "pid": 1324889
+    },
+    {
+      "name": "cypherdex5",
+      "status": "online",
+      "pid": 1324916
+    },
+    {
+      "name": "cypherdex6",
+      "status": "online",
+      "pid": 1324942
+    },
+    {
+      "name": "cypherdex-relay0",
+      "status": "stopped",
+      "pid": 0
+    },
+    {
+      "name": "cypherdex-relay1",
+      "status": "stopped",
+      "pid": 0
+    }
+  ],
+  "end_role_processes": 21,
+  "peak_role_processes_observed": 23,
+  "normal_binary_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+  "normal_binary_changed": false,
+  "init_executed": false,
+  "remote_push": false,
+  "storage_generations_crossed": 0,
+  "ab_c_load": "NOT_RUN",
+  "sixty_minute_mixed_finance": "BLOCKED",
+  "normal_pow": "NOT_RUN: available memory below 32GiB DAG + cache + node requirements",
+  "existing_failures_not_retested": [
+    "core/forkid 2 historical failures",
+    "RPC 3 historical failures"
+  ],
+  "acceptance": [
+    {
+      "id": "L01",
+      "status": "PASS(LIVE)",
+      "scope": "start/final-live-observation.json. Mapped the designated host/branch and parent-child relationships, executables, and datadirs for 14 CLX/Common processes, seven sidecars, and two relays. All 14 share the new genesis."
+    },
+    {
+      "id": "L02",
+      "status": "PASS(LIVE)",
+      "scope": "Operated only the seven target Commons and two relays. All seven committee PIDs were unchanged. No out-of-scope PM2 application was involved. Chain ID, genesis, initialization, and normal binaries were unchanged in this work."
+    },
+    {
+      "id": "L03",
+      "status": "PASS(LIVE)",
+      "scope": "dex-stop-isolation.json. Gracefully stopped seven owned sidecars and normally restarted seven Commons with the same DBs. Old parent/child PIDs were gone; each had one sidecar with matching inode/manifest/checkpoint. The initial missing-directory FAIL was retained separately."
+    },
+    {
+      "id": "L04",
+      "status": "PASS(LIVE)",
+      "scope": "All 23 running executables matched release 76d2d104…. All 600 production source files also matched the existing build manifest. No normal binary was redeployed in this work."
+    },
+    {
+      "id": "L05",
+      "status": "PASS(LIVE)",
+      "scope": "Started real TLS for seven Common-side participants with unique manifests/DBs/voting keys. CLX committee engine counters were zero. Fixed epoch 1 on one host; this is neither public admission nor WAN operation."
+    },
+    {
+      "id": "L06",
+      "status": "NOT_RUN",
+      "scope": "LIVE observations covered RPC+DEX, Common PoW OFF, and stopping all DEX children. A complete rerun of all eight combinations and normal PoW were not performed. Previous ISOLATED lifecycle PASS is a separate record."
+    },
+    {
+      "id": "L07",
+      "status": "BLOCKED",
+      "scope": "Four native deposits passed through ordinary signed TX/Common admission/CLX finality and outer authentication reconciliation: PASS(LIVE). Heavy counters were zero on all 14 CLX processes. The LIVE DEX checkpoint/claim path remained blocked at finality 0."
+    },
+    {
+      "id": "L08",
+      "status": "FAIL",
+      "scope": "225 native CLX were deposited, but DEX was certified 15/finalized 0/inbox 0. LIVE financial integration of orders/fills/participation reward reservations remained incomplete. See finality-wal-chain.json and the reproduction test."
+    },
+    {
+      "id": "L09",
+      "status": "BLOCKED",
+      "scope": "Payments 0, reservations 0. No unauthenticated funds were paid. Prerequisites for complete LIVE financial claim/replay/cold-restart tests were unmet."
+    },
+    {
+      "id": "L10",
+      "status": "NOT_RUN",
+      "scope": "Existing hot-128/cut-64 implementation and historical UNIT results were retained. The full storage-rotation acceptance suite was not rerun. A separate finality stop at the eight-descendant proof bound was discovered."
+    },
+    {
+      "id": "L11",
+      "status": "BLOCKED",
+      "scope": "All DEX storage generations were 0. Prerequisites for the LIVE financial test with two rotations at actual settings were unmet."
+    },
+    {
+      "id": "L12",
+      "status": "NOT_RUN",
+      "scope": "Restoring existing certified checkpoints from the same DB passed LIVE. The new backlog reproduction retained votes/locks/QCs/timeouts: PASS(UNIT). LIVE continuity of all rights, including unpaid claims, was not tested."
+    },
+    {
+      "id": "L13",
+      "status": "BLOCKED",
+      "scope": "Ordinary CLX transfers during the complete DEX stop and same-DB recovery passed LIVE, with independent FHS/MPT/inclusion checks. Draining financial unsettled work after a CLX stop was not tested."
+    },
+    {
+      "id": "L14",
+      "status": "NOT_RUN",
+      "scope": "Only A/B/C runner unit tests and the offline plan were completed. Measured comparison was not run because financial prerequisites failed. Performance acceptance is undetermined."
+    },
+    {
+      "id": "L15",
+      "status": "BLOCKED",
+      "scope": "The requested five-minute short drive failed partway through. It did not complete 60 minutes of mixed finance, two storage generations, or financial settlement after downtime."
+    },
+    {
+      "id": "L16",
+      "status": "NOT_RUN",
+      "scope": "Observed MemAvailable was about 23.98–25.09 GiB, insufficient for a normal 32 GiB DAG plus 512 MiB cache and node resources. Nonce exploration/delivery/adoption/rewards were not tested. DAG, difficulty, and OS settings were unchanged."
+    },
+    {
+      "id": "L17",
+      "status": "FAIL",
+      "scope": "The new LIVE finality failure remained unfixed. Final Python 78 tests, finance/source helper race eight top-level tests, four financial packages/60 tests, the existing 225→214 fixture, and backlog reproduction/race passed UNIT. Initial harness FAILs were retained. Two historical forkid and three RPC failures were neither fixed nor rerun."
+    },
+    {
+      "id": "L18",
+      "status": "NOT_RUN",
+      "scope": "The new generation after owner-performed init was observed. init.sh was neither modified nor executed in this work. Post-completion final init was not performed. Keeping the same chain ID does not isolate ordinary signed-transaction replay."
+    },
+    {
+      "id": "L19",
+      "status": "PASS(LIVE)",
+      "scope": "At completion, 14 CLX processes were online and seven DEX participants active; two relays were intentionally stopped. Recorded CLX 1121 with matching roots, DEX 15/0/accepted 0, custody 225, payments/reservations 0, and generation 0."
+    },
+    {
+      "id": "L20",
+      "status": "PASS(UNIT)",
+      "scope": "Mapped final source/build/configuration/run/public raw logs to the review archive, excluding keys/runtime. Starting git status, release-source comparison, and per-helper manifests were retained. There is no record of a new complete starting-diff archive; that capture is reported as not performed."
+    }
+  ],
+  "tests": {
+    "python": {
+      "pass": 78,
+      "log": "final-python-live-tools-r3.log"
+    },
+    "financial_packages": {
+      "packages": 4,
+      "top_level": 60,
+      "result": "PASS(UNIT)"
+    },
+    "legacy_financial_fixture": "PASS(UNIT) 225->214",
+    "helpers_race": {
+      "top_level": 8,
+      "skipped_foreign_owner_subtests": 2
+    },
+    "finality_backlog_and_gap_race": "PASS(UNIT): fail-closed/restart; LIVE liveness remains FAIL"
+  }
+}

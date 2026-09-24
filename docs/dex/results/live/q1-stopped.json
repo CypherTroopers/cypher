@@ -1,0 +1,16 @@
+{
+  "utc": 1790176420.735641,
+  "owned_processes_exited": 16,
+  "apps": [
+    "cypher0",
+    "cypher1",
+    "cypher2",
+    "cypher3",
+    "cypher4",
+    "cypher5",
+    "cypher6",
+    "cyphermine"
+  ],
+  "method": "PM2 named maintenance restart, 60s graceful timeout",
+  "forced_exit_status": "inspect PM2 exit records; not inferred from absence"
+}

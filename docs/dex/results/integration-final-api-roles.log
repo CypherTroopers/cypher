@@ -1,0 +1,28 @@
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_false_dex_false
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=false, HTTP Common admission=false, separate-process 7-actor DEX finality=false; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_false_dex_false
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=true, HTTP Common admission=false, separate-process 7-actor DEX finality=false; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_true_dex_false
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=false, HTTP Common admission=true, separate-process 7-actor DEX finality=false; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_true_dex_false
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=true, HTTP Common admission=true, separate-process 7-actor DEX finality=false; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_false_dex_true
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=false, HTTP Common admission=false, separate-process 7-actor DEX finality=true; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_false_dex_true
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=true, HTTP Common admission=false, separate-process 7-actor DEX finality=true; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_true_dex_true
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=false, HTTP Common admission=true, separate-process 7-actor DEX finality=true; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+=== RUN   TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_true_dex_true
+    dex_role_independence_test.go:523: actual IPC miner lifecycle=true, HTTP Common admission=true, separate-process 7-actor DEX finality=true; normal-mode dataset explicitly unavailable, nonce search and committee delivery NOT_RUN
+--- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset (13.53s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_false_dex_false (3.88s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_false_dex_false (0.49s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_true_dex_false (0.46s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_true_dex_false (0.53s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_false_dex_true (2.03s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_false_dex_true (2.01s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_false_rpc_true_dex_true (1.97s)
+    --- PASS: TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset/pow_true_rpc_true_dex_true (2.15s)
+PASS
+ok  	github.com/cypherium/cypher/eth	13.581s

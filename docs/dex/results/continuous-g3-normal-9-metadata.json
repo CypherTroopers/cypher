@@ -1,0 +1,44 @@
+{
+  "status": "FAIL",
+  "duration_seconds": 952.43,
+  "reason": "waitSettled fixed six-minute phase deadline expired at accepted54 before target58; native progress continued through CLX314 with new proposals316..318 at deadline. Causal workload review is pending; no timeout/protocol/source changes applied.",
+  "source_manifest_sha256": "cb8d607384fb79bc30efe81565e4401f7ddd08b41352c05dd380b693977abd15",
+  "source_during_run_bytes": 0,
+  "test_exit": "1",
+  "run_exit": "1",
+  "artifact": "/tmp/common-dex-check.GlX5mbiL",
+  "public_failure_archive": "/tmp/continuous-public-failure-874240443",
+  "public_periodic_watch": "/tmp/common-dex-continuous.uye5vgqi/trial9-public-watch",
+  "binary_sha256": {
+    "cypher": "7f50dfa5f6dcc59bf572d5272d941411d39cd5291a0b58123ba0ec3447ecb808",
+    "reconfig.test": "37ee48e0ba5170e656689d1e222b314e9ecde6c09abd3bb3d8900aa730691a75"
+  },
+  "raw_sha256": "9fd6cae1b57a2f431d2c3e0ef522e3f39450fe454ec697dcaa612dc1f85cc48d",
+  "last_relay_observed_source": 314,
+  "last_relay_source_version": 2,
+  "last_native_accepted": 54,
+  "last_dex_finalized": 59,
+  "last_dex_certified": 61,
+  "finalized_dex_anchor": 242,
+  "finalized_dex_inbox": 8,
+  "certified_dex_anchor": 262,
+  "certified_dex_anchor_version": 1,
+  "certified_dex_inbox": 10,
+  "v2_DEX_target_network_coverage": false,
+  "stopped_CLX_head": 160,
+  "resumed_CLX_head": 226,
+  "actual_stopped_delta": 66,
+  "post257_native_deposit_heights": [
+    260,
+    262
+  ],
+  "total_native_inputs_atoms": "345000000000000000000",
+  "remaining_NOT_RUN": [
+    "third/fourth trade cycles",
+    "CLX all-stop and later CP78 settlement",
+    "period10 and all72claims",
+    "final295 ledger",
+    "old deferred claim payment",
+    "late DEX OFF common sync"
+  ]
+}

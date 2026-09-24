@@ -1,0 +1,46 @@
+{
+  "scope": "offline helper and runner only; no LIVE finance executed",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "sources": [
+    {
+      "path": "cmd/dex-live-finance/main.go",
+      "sha256": "2d6c66be5bb6ffd78642fd506b8da41292e40f4af046a35752875f235dab6eee"
+    },
+    {
+      "path": "cmd/dex-live-finance/native.go",
+      "sha256": "6ec6fb3ebc48405494d90223b65b5a65acd29dac4c46b3c0443ee5d2c3479655"
+    },
+    {
+      "path": "cmd/dex-live-finance/main_test.go",
+      "sha256": "2d7627e6b26816112b4b81a41383cad33364bf9f537ad211aec978a745d70263"
+    },
+    {
+      "path": "scripts/dex/live_finance.py",
+      "sha256": "716b474381e69c05b2445999d952c3519202439870716982926822717ff20549"
+    },
+    {
+      "path": "scripts/dex/live_finance_accounting.py",
+      "sha256": "cf4c94badfcfcdfb3bddb2e86313ce8dc8515d9fccb08163cc4b6bee22d714f1"
+    },
+    {
+      "path": "scripts/dex/test_live_finance.py",
+      "sha256": "0fa3952c6c1810ddc37280ff7a160a14d1ec1480ec6eb419873b1db098e7ec49"
+    }
+  ],
+  "binary": {
+    "path": "/tmp/common-dex-live.8gezz_j9/dex-live-finance-final",
+    "sha256": "8d7374d5c671e09aa93e456cde6e83b8626e54ca03e940d1d8e1a143f12c62d6",
+    "bytes": 12739144
+  },
+  "plan_log_sha256": "ae1d298011dfc8d4131c65c1d3a21bfea2acfb8dfb87ec3f5525656774dba68e",
+  "expected_storage": {
+    "interval_finalized_blocks": 64,
+    "two_cuts_base_height": 128,
+    "continuous_fixture_certified_target": 130,
+    "nominal_interval_seconds": 10,
+    "nominal_seconds_without_overhead": 1300,
+    "run_seconds": 3600,
+    "estimated_max_new_actions_without_overhead": 360,
+    "verdict": "NOT_RUN; actual finality/generation counters and mixed finance/fault evidence required"
+  }
+}

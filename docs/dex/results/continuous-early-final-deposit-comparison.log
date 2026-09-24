@@ -1,0 +1,23 @@
+{
+  "candidate": "extended10-early-final-deposit",
+  "arithmetic": "PASS",
+  "original_files_unchanged": true,
+  "full_trace_rows": 163,
+  "height_boundaries_checked": 111,
+  "changed_cashflow_input": "A20+B20 at logical61 instead81",
+  "intermediate_difference": "61<=h<81: custody+40CLX, Alice cash+20CLX, Bob cash+20CLX, T+40CLX; all other buckets unchanged; h>=81 identical",
+  "unchanged_final_keys": [
+    "accounts",
+    "buckets",
+    "claim_count",
+    "custody",
+    "inputs",
+    "reward_claim_count",
+    "reward_paid",
+    "reward_periods",
+    "reward_recipient_rank_totals",
+    "withdrawal_claim_count",
+    "withdrawal_paid"
+  ],
+  "authentication_network_finality_gas": "NOT_RUN"
+}

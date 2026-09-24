@@ -1,0 +1,193 @@
+{
+  "status": "FAIL",
+  "duration_seconds": 1311.84,
+  "reason": "Final cold relay reopen reached no new canonical accepted sequence/unique paid claim/native anchor height within 120 seconds; last canonical sequence109 and62 claims. Completed-job revalidation remained in progress. Scheduling cause under review; no timeout extension.",
+  "artifact": "/tmp/common-dex-check.wYeZzC7m",
+  "source_manifest_sha256": "148e42afa9261eab328a3efc92895428e1844ff86abd86b311980435c01f4d2e",
+  "source_during_run_bytes": 0,
+  "raw_sha256": "7d29d8b0539d58bf5418fc4ab21b9f9b96174a1257759677e085606ac2ef7f79",
+  "binary_sha256": {
+    "cypher": "f5948716cb4f807961cc3dc1d8260d44e9500ca72bd25a672d35cf74a9c71389",
+    "reconfig.test": "47ee5abf536b647171b042f4f342eb9398d92fe8b22ad5a1bf2d4ee3d6331134"
+  },
+  "test_exit": "1",
+  "run_exit": "1",
+  "public_failure_archive": "/tmp/continuous-public-failure-3054148330",
+  "public_periodic_watch": "/tmp/common-dex-continuous.uye5vgqi/trial11-public-watch",
+  "last_relay_source": 566,
+  "last_relay_source_version": 2,
+  "last_observed_native_transaction_height": 563,
+  "last_settlement_snapshot_height": 561,
+  "last_native_accepted": 109,
+  "last_dex_finalized": 109,
+  "cold_absence_start_clx": 160,
+  "intermediate_clx_advance_check": 225,
+  "pre_restart_authenticated_source_height": 254,
+  "cold_absence_minimum_blocks": 94,
+  "cold_absence_scope": "Original resumedCLXHead=225 log field is the intermediate 65-block advance check, not actual restart height; all DEX remained stopped through source254.",
+  "normal_key_hint_before": 231,
+  "normal_key_hint_after": 254,
+  "normal_key_hint_wait_seconds": 368.618976031,
+  "normal_key_hint_carriers": 4,
+  "third_native_deposits": [
+    229,
+    231
+  ],
+  "fourth_native_deposits": [
+    282,
+    285
+  ],
+  "flat_finalized_height": 58,
+  "flat_anchor": 241,
+  "flat_anchor_version": 1,
+  "flat_inbox": 8,
+  "cycle3_finalized_anchor_assertion_height": 79,
+  "cycle3_anchor": 289,
+  "cycle3_anchor_version": 2,
+  "cycle3_inbox": 10,
+  "clx_outage": {
+    "before_height": 359,
+    "accepted_at_stop": 62,
+    "dex_finalized_during_stop": 78,
+    "unsettled": 16,
+    "accepted_after_cold_restart": 78,
+    "settled_at_clx": 419
+  },
+  "largest_native_calldata_bytes": 62887,
+  "largest_native_ancestor_headers": 32,
+  "largest_native_mpt_nodes": 7,
+  "largest_native_mpt_bytes": 2073,
+  "financial": {
+    "inputs_atoms": "345000000000000000000",
+    "paid_claims": 62,
+    "paid_withdrawals_count": 3,
+    "paid_withdrawals_atoms": "30000000000000000000",
+    "paid_rewards_count": 59,
+    "paid_rewards_atoms": "8714285714285714286",
+    "observed_custody_atoms": "306285714285714285714",
+    "remaining_claims": 10,
+    "remaining_withdrawal_atoms": "10000000000000000000",
+    "remaining_reward_atoms": "1285714285714285714",
+    "target_custody_atoms": "295000000000000000000",
+    "target_status": "NOT_REACHED",
+    "final_full_gas_bucket_wallet_reconciliation": "NOT_RUN"
+  },
+  "remaining_NOT_RUN": [
+    "final 10 claim payments including deferred old withdrawal",
+    "all cold relay jobs freshly authenticated complete",
+    "final295 full native/bucket/gas/Common/burn reconciliation",
+    "late DEX OFF Common sync/restart/engine0 final gate"
+  ],
+  "revalidation_observations": [
+    {
+      "scope": "before final cold reopen, log exact",
+      "relay0": {
+        "complete": 191,
+        "queued": 3,
+        "submitted": 1,
+        "waiting": 8
+      },
+      "relay1": {
+        "complete": 192,
+        "completed_pending_nonce": 1,
+        "queued": 4,
+        "waiting": 6
+      }
+    },
+    {
+      "scope": "external read-only periodic watch captured at epoch1790154914.473 (~09:15:14Z), not a canonical progress event",
+      "relay0": {
+        "complete": 59,
+        "queued": 4,
+        "revalidation_wait": 132,
+        "submitted": 1,
+        "waiting": 8
+      },
+      "relay1": {
+        "complete": 57,
+        "queued": 5,
+        "revalidation_wait": 136,
+        "waiting": 6
+      }
+    },
+    {
+      "scope": "terminal raw error after120.591925329s, no new canonical effect",
+      "relay0": {
+        "complete": 101,
+        "queued": 4,
+        "revalidation_wait": 90,
+        "submitted": 1,
+        "waiting": 8
+      }
+    },
+    {
+      "scope": "cleanup public failure archive; read-only individual files, not atomic",
+      "relay0": {
+        "complete": 102,
+        "queued": 4,
+        "revalidation_wait": 89,
+        "submitted": 1,
+        "waiting": 8
+      },
+      "relay1": {
+        "complete": 99,
+        "queued": 5,
+        "revalidation_wait": 94,
+        "waiting": 6
+      }
+    }
+  ],
+  "archive_interrupt_errors_scope": "interrupt signal received in terminal snapshots may arise from intentional relay pause/cleanup; not independently treated as production source outage.",
+  "cold_scheduler_diagnostic": {
+    "source": "Offline public core/state.bin decode by regressions_resume; full crypto acceptance remains separate from journal contents.",
+    "relays": [
+      {
+        "relay": 0,
+        "last_sequence_per_lane": [
+          128,
+          117,
+          67,
+          138
+        ],
+        "pending_checkpoint109_record": [
+          {
+            "local": 203,
+            "lane": 3,
+            "id": "4d7b87c006a0fe471084d099710ddb01c63983e5e8586c0e467bf5a642f7e561",
+            "phase": "submitted",
+            "status": "submitted",
+            "reserved": true,
+            "nonce": 136,
+            "sends": 2,
+            "owner": "0000000000000000000000000000000000000000",
+            "cp": 109
+          }
+        ]
+      },
+      {
+        "relay": 1,
+        "last_sequence_per_lane": [
+          128,
+          117,
+          59,
+          137
+        ],
+        "pending_checkpoint109_record": [
+          {
+            "local": 203,
+            "lane": 3,
+            "id": "4d7b87c006a0fe471084d099710ddb01c63983e5e8586c0e467bf5a642f7e561",
+            "phase": "completed_pending_nonce",
+            "status": "revalidation_wait",
+            "reserved": true,
+            "nonce": 143,
+            "sends": 2,
+            "owner": "0000000000000000000000000000000000000000",
+            "cp": 109
+          }
+        ]
+      }
+    ],
+    "cause": "The CP109 reserved nonce owner at localID203 was selected behind cold completed checkpoint history in the same lane. payerBusy then correctly deferred unsigned remaining claims. Root-authorized scheduler review pending; no proof bypass or timeout change."
+  }
+}

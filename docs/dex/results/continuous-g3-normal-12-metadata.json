@@ -1,0 +1,26 @@
+{
+  "status": "FAIL",
+  "classification": "isolated test network setup UDP bind collision; finance stages NOT_RUN",
+  "duration_seconds": 25.43,
+  "reason": "seventh CLX child failed listen udp127.0.0.1:42754 address already in use before fixture funding/setup completed. TxQUIC binds RnetPort+2000, so42754 corresponds40754+2000; base UDP alone had been reserved. Socket owner was not captured before owned-process cleanup, so other committee endpoint versus QUIC ephemeral socket remains unknown.",
+  "artifact": "/tmp/common-dex-check.RN71NEke",
+  "source_manifest_sha256": "59b0ac84536503682915fb0a1d5c75de60dedf7c70fd74ab9f65eb7bc729823d",
+  "source_during_run_bytes": 0,
+  "raw_sha256": "cbbb7d561fa690cafeb0d473c8613156635ee29ade122da864e731018ca5fd7e",
+  "binary_sha256": {
+    "cypher": "a4a567ce9dcfc5d39fbc1f7576bd7ff225fd9416eb2ca0324a8ebd9d263d3562",
+    "reconfig.test": "e5c7c346aa86d57e7eae9d53aa8975543179ec0665d6a62b4d81fc932aa96c83"
+  },
+  "test_exit": "1",
+  "run_exit": "1",
+  "public_failure_archive": "/tmp/continuous-public-failure-1022682575",
+  "public_periodic_watch": "NOT_STARTED: setup failed before path was captured",
+  "native_financial_transactions": 0,
+  "relay_started": false,
+  "NOT_RUN": [
+    "all financial phases",
+    "final audit split network validation",
+    "late OFF Common sync"
+  ],
+  "retry_policy": "one fresh isolated run with identical source, new keys and namespace; no fixture/protocol/cap/host changes"
+}

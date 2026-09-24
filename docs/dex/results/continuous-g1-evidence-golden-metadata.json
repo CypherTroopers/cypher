@@ -1,0 +1,15 @@
+{
+  "command": [
+    "python3",
+    "scripts/dex/rolling_anchor_golden.py",
+    "--check"
+  ],
+  "recorded_utc": "2026-09-22T09:40:40.245423+00:00",
+  "exit_code": 0,
+  "boundary": "independent Python encoder, no node/network/financial operations",
+  "log_sha256": "d3c2515f50a851ff67d45a6e8d6095d0bd7cf9f063e6960afb86b26b1cc1fe57",
+  "inputs": {
+    "scripts/dex/rolling_anchor_golden.py": "c658939cdee708cf0421a67727ca3b44ece5d04da66c451f8978ac14601f94b7",
+    "dex/testdata/rolling_anchor.json": "6cd252e14f0e726b2b7aa21eb406306ae9c4c9aa16a976286e9fccd0827db46b"
+  }
+}

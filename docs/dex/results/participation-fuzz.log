@@ -1,0 +1,6 @@
+fuzz: elapsed: 0s, gathering baseline coverage: 0/6 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 6/6 completed, now fuzzing with 2 workers
+fuzz: elapsed: 3s, execs: 45193 (15024/sec), new interesting: 2 (total: 8)
+fuzz: elapsed: 4s, execs: 45193 (0/sec), new interesting: 2 (total: 8)
+PASS
+ok  	github.com/cypherium/cypher/dex/rewards	4.077s

@@ -1,0 +1,6 @@
+{
+  "manifest": "docs/dex/results/live/q3-build-source-r3.json",
+  "manifest_sha256": "b0c62fc3cc5c9298d2b4321da5c7a84f57a831ee51171d47bf3f1ba57476213c",
+  "files": 600,
+  "mismatches": []
+}

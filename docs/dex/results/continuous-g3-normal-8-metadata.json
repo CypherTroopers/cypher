@@ -1,0 +1,25 @@
+{
+  "status": "FAIL",
+  "duration_seconds": 726.17,
+  "reason": "Real CLX key renewal produced version2 target anchor. Relay observeInbox reconstructed a same-anchor proof without the required target KeyContext and quarantined the valid inbox job (ErrRollingBase); DEX certified52/finalized51 could not reach53.",
+  "source_manifest_sha256": "845f2af52a3c28a0a9b64ed3765d2f24ab4afdfac3ff2ec8e482c91a9431b898",
+  "source_during_run_bytes": 0,
+  "test_exit": "1",
+  "run_exit": "1",
+  "artifact": "/tmp/common-dex-check.9yWB0ai8",
+  "public_failure_archive": "/tmp/continuous-public-failure-3293954290",
+  "public_periodic_watch": "/tmp/common-dex-continuous.uye5vgqi/trial8-public-watch",
+  "binary_sha256": {
+    "cypher": "fbcc9fc866ebd31fcbfe9ab56d8d241d4eaf56110e5291ba1e100d3deaaedd65",
+    "reconfig.test": "08bddb8aa359fe69c26199aa8b611cbbc1da5366ae2923b37452db03877e2c9d"
+  },
+  "raw_sha256": "c01216ab4f38c821a32d7405cec1a2295903f557628b247e62aa0c6852cd4c99",
+  "last_relay_observed_source": 262,
+  "last_native_accepted": 40,
+  "last_dex_finalized": 51,
+  "dex_anchor": 229,
+  "dex_inbox": 6,
+  "stopped_CLX_head": 168,
+  "resumed_CLX_head": 234,
+  "actual_stopped_delta": 66
+}

@@ -1,0 +1,54 @@
+{
+  "status": "PASS(UNIT)",
+  "LIVE_finance": "NOT_RUN",
+  "helper_build": "PASS",
+  "offline_candidate_plan": "PASS",
+  "go_race": {
+    "packages": 5,
+    "top_level_pass": 36,
+    "test_pass_events": 83,
+    "fail_events": 0,
+    "logs": [
+      "collector-runner-final4-race.jsonl",
+      "collector-final-financial-regression.jsonl"
+    ]
+  },
+  "python_unit": {
+    "tests": 8,
+    "status": "PASS",
+    "log": "runner-python-final5.log"
+  },
+  "historical_failures_fixed": [
+    {
+      "test": "TestCollectorRetiredPinSurvivesRepeatedCollectorAheadCrashes",
+      "log": "repeated-crash-before-fix.log"
+    },
+    {
+      "test": "TestCollectorOrphanRetirementCompletesBeforeLateCertificateAdmission",
+      "log": "orphan-late-before-fix.log"
+    }
+  ],
+  "source_scope": "source-manifest.json is this subtask only; root final manifest required",
+  "not_implemented_here": [
+    "A/B/C load injector and EVM accounting",
+    "PM2/DEX-route fault orchestrator",
+    "independent late Common cold-sync verifier"
+  ],
+  "live_preconditions": [
+    "approved candidate generation init/activation",
+    "named seven CLX committee and seven unique DEX Common sidecars",
+    "two relay processes and normal Common admission signer",
+    "existing owned source unlocked via normal live_auth",
+    "finite funding/gas/resource budget and shared source stability",
+    "short actual financial integration before 60-minute continuation"
+  ],
+  "storage_plan": {
+    "two_generation_cuts_require_finalized_base": 128,
+    "fixture_certified_target": 130,
+    "nominal_10_second_action_schedule_seconds": 1300,
+    "actual_time": "plus certification, proof collection, operations and recovery; no guarantee",
+    "long_run_seconds": 3600,
+    "maximum_actions_without_overhead": 360,
+    "proof_cost": "record actual calldata/gas; 6 CLX per checkpoint lane is a budget, not a guarantee that all maximum-size proofs fit a 60-minute run"
+  }
+}

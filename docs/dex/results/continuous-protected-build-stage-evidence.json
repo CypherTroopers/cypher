@@ -1,0 +1,27 @@
+{
+  "at_utc": "2026-09-23T12:00:11.534118+00:00",
+  "status": "PROVENANCE_STILL_UNRESOLVED",
+  "evidence": [
+    {
+      "path": "build/stage/linux-amd64/manifest.txt",
+      "bytes": 405,
+      "sha256": "b0ca991086829863ef1df147c4271f0112831464c33a8c2a219d57f1769f6132",
+      "mtime_ns": 1790083359898980339,
+      "public_text": "source_sha=70862a71dfaf2b00694dc1354c6a64e9504d7db5\ngoos=linux\ngoarch=amd64\ngo_version=go1.27.1\nherumi_ref=2026abe5e97e9a10fa7d7c66279ee728630d6219\nbinary=cypher-linux-amd64\nbinary_sha256=bcfb21b13a82eb0a9ffdfec843a5d7c3dededf735607da680b8dfa43db2759f8\nbls_sha256=7e7ba6225ec9c509acc262b6883924dce9b282464d65b809284d372e775646d5\nmcl_sha256=9f9021da8aec2a0bebb9dbe4c322e8910268479afb30196a2c80bf4c78f666b2\n"
+    },
+    {
+      "path": "build/stage/linux-amd64/SHA256SUMS",
+      "bytes": 158,
+      "sha256": "8b1c9813a224ab02e57b973831d3b8d5e1c3e03cf998a2bb3e6f25b3e2157a08",
+      "mtime_ns": 1790083359511985886,
+      "public_text": "bcfb21b13a82eb0a9ffdfec843a5d7c3dededf735607da680b8dfa43db2759f8  cypher\nbcfb21b13a82eb0a9ffdfec843a5d7c3dededf735607da680b8dfa43db2759f8  cypher-linux-amd64\n"
+    },
+    {
+      "path": "build/build-cypher.sh",
+      "bytes": 19544,
+      "sha256": "159d7dccb2ea27bd5ff296c404c42d171e59ad68515a6741d2e704af92c0f075",
+      "mtime_ns": 1790010470299443865
+    }
+  ],
+  "interpretation": "Read-only stage manifest and checksums name the same bcfb21... binary hash as the two G0 mismatches. Stage timestamp matches the 2026-09-22 13:22 UTC period. Existing build/build-cypher.sh lines 448-550 stage and replace local build/bin copies. This supports a compatible build path but does not identify who invoked it, authorize the mutation, or bind uncommitted source to that binary. No build script/binary was executed and no staged binary copied or restored."
+}

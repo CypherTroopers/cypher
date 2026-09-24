@@ -1,0 +1,58 @@
+=== RUN   TestCandidateDerivesActualGenesisAndKeepsAllocAndChainID
+--- PASS: TestCandidateDerivesActualGenesisAndKeepsAllocAndChainID (0.12s)
+=== RUN   TestCandidateReusesOnlySixCommonWalletsFromRenamedPrivateArchive
+--- PASS: TestCandidateReusesOnlySixCommonWalletsFromRenamedPrivateArchive (0.15s)
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/false-address
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/external-key-metadata
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/wrong-secret
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/key-symlink
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/public-key-permission
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/root-symlink
+--- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput (0.12s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/false-address (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/external-key-metadata (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/wrong-secret (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/key-symlink (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/public-key-permission (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/root-symlink (0.01s)
+=== RUN   TestCandidateRejectsManifestIdentityTampering
+=== RUN   TestCandidateRejectsManifestIdentityTampering/genesis
+=== RUN   TestCandidateRejectsManifestIdentityTampering/committee
+=== RUN   TestCandidateRejectsManifestIdentityTampering/domain
+=== RUN   TestCandidateRejectsManifestIdentityTampering/tls-pin
+=== RUN   TestCandidateRejectsManifestIdentityTampering/vote-key
+=== RUN   TestCandidateRejectsManifestIdentityTampering/unknown-epoch
+--- PASS: TestCandidateRejectsManifestIdentityTampering (0.12s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/genesis (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/committee (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/domain (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/tls-pin (0.01s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/vote-key (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/unknown-epoch (0.00s)
+=== RUN   TestCandidateRejectsUnsafePathsAndWrongGeneration
+--- PASS: TestCandidateRejectsUnsafePathsAndWrongGeneration (0.00s)
+=== RUN   TestHistoricalDifferentChainTransactionReplayScope
+--- PASS: TestHistoricalDifferentChainTransactionReplayScope (0.00s)
+=== RUN   TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay
+=== RUN   TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay/protected
+=== RUN   TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay/unprotected
+--- PASS: TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay (0.00s)
+    --- PASS: TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay/protected (0.00s)
+    --- PASS: TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay/unprotected (0.00s)
+=== RUN   TestCandidateUpgradesAuthenticatedCurrentV4WithoutChangingChainOrCLX
+--- PASS: TestCandidateUpgradesAuthenticatedCurrentV4WithoutChangingChainOrCLX (0.18s)
+=== RUN   TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput
+=== RUN   TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/v3
+=== RUN   TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/v5
+=== RUN   TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/future
+=== RUN   TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/mixhash
+=== RUN   TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/committee
+--- PASS: TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput (0.14s)
+    --- PASS: TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/v3 (0.00s)
+    --- PASS: TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/v5 (0.00s)
+    --- PASS: TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/future (0.00s)
+    --- PASS: TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/mixhash (0.00s)
+    --- PASS: TestCandidateRejectsUnsupportedOrUnboundSourceBeforeCreatingOutput/committee (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/dex-live-candidate	0.927s

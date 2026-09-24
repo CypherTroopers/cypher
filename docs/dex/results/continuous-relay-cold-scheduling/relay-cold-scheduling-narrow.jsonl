@@ -1,0 +1,9 @@
+{"Time":"2026-09-23T11:26:09.417658741+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/relay"}
+{"Time":"2026-09-23T11:26:09.454691999+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners"}
+{"Time":"2026-09-23T11:26:09.45491317+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Output":"=== RUN   TestRelayColdHistoryDoesNotDelayReservedOwners\n","OutputType":"frame"}
+{"Time":"2026-09-23T11:26:10.993991208+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Output":"    cold_scheduling_test.go:118: COLD_SCHEDULER records=204 firstCP=5 firstClaim=6 firstInbox=1 firstNewClaim=12 first8History=4 completedAt=208 ObserveCalls=208 elapsed=943.033061ms fakeBackend=true\n"}
+{"Time":"2026-09-23T11:26:10.995201079+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Output":"--- PASS: TestRelayColdHistoryDoesNotDelayReservedOwners (1.54s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T11:26:10.9952228+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/relay","Test":"TestRelayColdHistoryDoesNotDelayReservedOwners","Elapsed":1.54}
+{"Time":"2026-09-23T11:26:10.995308248+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-23T11:26:11.005703841+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/relay","Output":"ok  \tgithub.com/cypherium/cypher/dex/relay\t1.587s\n"}
+{"Time":"2026-09-23T11:26:11.006094138+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/relay","Elapsed":1.588}

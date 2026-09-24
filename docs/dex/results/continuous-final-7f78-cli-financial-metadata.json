@@ -1,0 +1,60 @@
+{
+  "artifact_root": "/tmp/common-dex-check.8eoz6Xmw",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "source_manifest_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_manifest_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_diff_bytes": 0,
+  "test_exit": 0,
+  "run_exit": 0,
+  "mode": "cli-financial",
+  "command": "env DEX_TEST_GOCACHE=/tmp/common-dex-devnet.0wvjd5/gocache bash scripts/dex/check.sh cli-financial",
+  "namespace": "new unshare -Urn; loopback only, no host fallback",
+  "top_level_pass": 1,
+  "pass_events": 1,
+  "fail_events": 0,
+  "skip_events": 0,
+  "test_seconds": 249.8,
+  "raw_sha256": "52009f7317812f9d165c7048b184f48d6964133855b9dd249f9143c15cd1003a",
+  "claim_paid_count": 8,
+  "checkpoints_accepted": 18,
+  "final_native_ledger": {
+    "height": "69",
+    "custody": "214000000000000000000",
+    "gas": "397485267200000000",
+    "commonReward": "79497053440000000",
+    "burn": "317988213760000000",
+    "accounts": "16",
+    "engine": "0/0/0"
+  },
+  "asserted_native_buckets_wei": {
+    "trader": "189916000000000000000",
+    "fees": "64000000000000000",
+    "support": "19020000000000000000",
+    "insurance": "5000000000000000000"
+  },
+  "bucket_evidence": "reconfig/dex_financial_network_test.go final native projection assertion, then both restart and final ledger reconciliation",
+  "fault_stages": [
+    "one-stopped",
+    "two-stopped",
+    "restart-repair",
+    "partition-5-2",
+    "partition-5-2-healed",
+    "partition-4-3-no-new-qc",
+    "partition-4-3-healed"
+  ],
+  "economic_stages": [
+    "oracle-stopped-cancel",
+    "abrupt-price-no-counterparty",
+    "holder-repaired",
+    "actual-close-insurance-exhausted",
+    "frozen-market-noop-remains-conservative"
+  ],
+  "scope": [
+    "Original 225-10-1=214 ordinary CLI financial fixture, not G3 long ledger",
+    "CLX accepted18; financial roots after18 intentionally not submitted. Conservative FROZEN root50 is not paid/settled as if accepted",
+    "Seven CLX processes, seven DEX sidecars plus seven supervising Common parents, source RPC Common and separate OFF sync child; coordinator/temporary probes counted separately",
+    "Exact claim replay does not repay; modified recipient transaction fails; custody never pays relay gas",
+    "Original ordinary Common sync includes explicit owned peer remove/add handshake. This is not evidence of uninterrupted automatic following; separate source/G3 gates test that",
+    "No new FROZEN recovery, real funds, production deployment, remote push, ordinary-size PoW search, WAN or performance comparison"
+  ]
+}

@@ -1,0 +1,8 @@
+{"Time":"2026-09-22T12:04:31.124269922+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/service"}
+{"Time":"2026-09-22T12:04:31.166901809+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/service","Test":"TestSnapshotAndSettlementAPIResponseBounds"}
+{"Time":"2026-09-22T12:04:31.167076123+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/service","Test":"TestSnapshotAndSettlementAPIResponseBounds","Output":"=== RUN   TestSnapshotAndSettlementAPIResponseBounds\n","OutputType":"frame"}
+{"Time":"2026-09-22T12:04:31.269553277+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/service","Test":"TestSnapshotAndSettlementAPIResponseBounds","Output":"--- PASS: TestSnapshotAndSettlementAPIResponseBounds (0.10s)\n","OutputType":"frame"}
+{"Time":"2026-09-22T12:04:31.269678289+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/service","Test":"TestSnapshotAndSettlementAPIResponseBounds","Elapsed":0.1}
+{"Time":"2026-09-22T12:04:31.269752968+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/service","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-22T12:04:31.275703681+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/service","Output":"ok  \tgithub.com/cypherium/cypher/dex/service\t0.150s\n"}
+{"Time":"2026-09-22T12:04:31.275776617+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/service","Elapsed":0.152}

@@ -1,0 +1,9 @@
+{
+  "directory": "/tmp/common-dex-finality-fix-xs_6hyaf/final",
+  "sha256": {
+    "changed-source-sha256.json": "8d14ba1a3543ec69be489a1997f0da033d05ec197635bbcb80445d6cf5864b28",
+    "reviewable-worktree.tar.gz": "839602b7f73fd35867123941d4a5a37a373ad702a81cc4dd879a65774f51e089",
+    "public-root-config-and-build.tar.gz": "d40f98a0e8420968db9ab99ae8ed9612059fd4dfc78ab789aed7f425267e8a15"
+  },
+  "excluded": "private keys, live/candidate runtime DB/WAL, keystore, secret launch credentials, deployed binary bytes"
+}

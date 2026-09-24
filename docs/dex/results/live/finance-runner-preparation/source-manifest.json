@@ -1,0 +1,67 @@
+[
+  {
+    "path": "dex/rewards/collector.go",
+    "sha256": "dac88db2da3e3ff5b02d1a58b72655b8532d20dc3e29d4b2263aec0f6e032bb0",
+    "bytes": 15284
+  },
+  {
+    "path": "dex/rewards/retirement.go",
+    "sha256": "61997f4fcd42dff8b17955e6f3ba272afc174d1814f20a4a564f8549a1f9b195",
+    "bytes": 13282
+  },
+  {
+    "path": "dex/rewards/retirement_test.go",
+    "sha256": "c9c409ea52a82a37aadc0667ea3b454e6a11ca9676ddcef904e0e23e112ef542",
+    "bytes": 12370
+  },
+  {
+    "path": "dex/service/api.go",
+    "sha256": "f3f99d5449bbf601b275326a91c7e1a5da3ba38e96d5998e85f0856a267ed3b0",
+    "bytes": 4189
+  },
+  {
+    "path": "dex/service/finance/factory.go",
+    "sha256": "054a8d28018d7a478e0dee2616188eb89ab5a869d70432161bb2668c447fb84c",
+    "bytes": 8742
+  },
+  {
+    "path": "cmd/dex-live-finance/main.go",
+    "sha256": "2d6c66be5bb6ffd78642fd506b8da41292e40f4af046a35752875f235dab6eee",
+    "bytes": 18319
+  },
+  {
+    "path": "cmd/dex-live-finance/native.go",
+    "sha256": "6ec6fb3ebc48405494d90223b65b5a65acd29dac4c46b3c0443ee5d2c3479655",
+    "bytes": 5503
+  },
+  {
+    "path": "cmd/dex-live-finance/main_test.go",
+    "sha256": "2d7627e6b26816112b4b81a41383cad33364bf9f537ad211aec978a745d70263",
+    "bytes": 2212
+  },
+  {
+    "path": "scripts/dex/live_finance.py",
+    "sha256": "716b474381e69c05b2445999d952c3519202439870716982926822717ff20549",
+    "bytes": 31710
+  },
+  {
+    "path": "scripts/dex/live_finance_accounting.py",
+    "sha256": "cf4c94badfcfcdfb3bddb2e86313ce8dc8515d9fccb08163cc4b6bee22d714f1",
+    "bytes": 14763
+  },
+  {
+    "path": "scripts/dex/test_live_finance.py",
+    "sha256": "0fa3952c6c1810ddc37280ff7a160a14d1ec1480ec6eb419873b1db098e7ec49",
+    "bytes": 7879
+  },
+  {
+    "path": "docs/dex/live-finance-runner-preparation.md",
+    "sha256": "f2f4f6beec1ff56107221cf4a0818be8c1d547c08e50d67bace2dbd5b8d4d960",
+    "bytes": 7238
+  },
+  {
+    "path": "docs/dex/financial-storage-v6-spec.md",
+    "sha256": "4b5a416072544f5b54f63313e0a0acf2d693d2281997fbb2330ff8f551becf85",
+    "bytes": 6649
+  }
+]

@@ -1,0 +1,31 @@
+{
+  "started_utc": "2026-09-22T09:09:01.994616+00:00",
+  "finished_utc": "2026-09-22T09:09:32.961565+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-v",
+    "./reconfig",
+    "-run",
+    "^TestFHSProcessRecoveryQCBeforePrepare$"
+  ],
+  "exit_code": 0,
+  "network_namespace": "net:[4026532502]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [],
+  "log": "docs/dex/results/continuous-g0-clx-process.log",
+  "log_sha256": "0bd8ea34beb995cd7bf3a1961a449b1efd1ce4c0598f0ffa3ef40f1d060cb765"
+}

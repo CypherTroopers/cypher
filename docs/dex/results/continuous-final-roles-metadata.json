@@ -1,0 +1,19 @@
+{
+  "mode": "roles",
+  "artifact_root": "/tmp/common-dex-check.NvHLhkU7",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "test_exit": 0,
+  "run_exit": 0,
+  "source_manifest_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_manifest_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_diff_bytes": 0,
+  "packages_pass": 1,
+  "top_level_pass": 1,
+  "pass_events": 9,
+  "top_level_fail": 0,
+  "fail_events": 0,
+  "top_level_skip": 0,
+  "skip_events": 0,
+  "raw_sha256": "5fce7cdafd7e6c32d31c8f124b850f204b85ac4d9fed42b082f71f18b20ddeab",
+  "scope": "Owned isolated devnet network namespace; no host fallback. PASS events include subtests and are not a security proof."
+}

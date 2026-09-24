@@ -1,0 +1,6 @@
+=== RUN   TestIdleTimeoutPacingOverTLSAndMissingLeaders
+    idle_timeout_test.go:137: node3: idle interval changed: certified=2 expected=2 view=3 expected=3 pending=&{Version:3 ChainID:9127001 TimedOutView:3 KeyNumber:1 KeyHash:[102 65 159 216 62 176 233 222 149 228 196 132 227 225 212 5 179 13 38 167 76 114 118 255 229 158 181 42 43 212 43 123] CommitteeHash:[100 235 173 118 100 130 198 209 163 92 138 175 167 119 169 110 95 194 246 159 58 85 188 135 94 217 69 79 2 125 254 123]} vote=true
+--- FAIL: TestIdleTimeoutPacingOverTLSAndMissingLeaders (3.78s)
+FAIL
+FAIL	github.com/cypherium/cypher/dex/service	3.813s
+FAIL

@@ -1,0 +1,16 @@
+{
+  "source_manifest_sha256": "c3e925e9445d6b51e1f28aa7dbf0c18966cc696fb7143489a674a78bdb6d3c14",
+  "source_manifest": "continuous-final-source-sha256.txt",
+  "command_environment": "Go1.27.1 GOMAXPROCS=2 GOPROXY=off -p1 -mod=readonly -count=1; core-vm-cli race; scheduler failures non-race",
+  "counts": {
+    "fail_events": 3,
+    "fail_packages": 1
+  },
+  "failures": [
+    "TestRawTxIngressStopDrainsDetachedCancelledBulk",
+    "TestSendRawTransactionsBusySenderDoesNotBlockIndependentGroups",
+    "TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves",
+    "github.com/cypherium/cypher/internal/ethapi"
+  ],
+  "raw": "/tmp/common-dex-continuous.uye5vgqi/logs/continuous-frozen-rpc-existing-failures.jsonl"
+}

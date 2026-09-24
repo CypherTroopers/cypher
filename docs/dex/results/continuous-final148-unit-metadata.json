@@ -1,0 +1,123 @@
+{
+  "mode": "unit",
+  "artifact_root": "/tmp/common-dex-check.JidOqXIm",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "source_manifest_sha256": "148e42afa9261eab328a3efc92895428e1844ff86abd86b311980435c01f4d2e",
+  "source_manifest_after_sha256": "148e42afa9261eab328a3efc92895428e1844ff86abd86b311980435c01f4d2e",
+  "source_diff_bytes": 0,
+  "test_exit": 0,
+  "run_exit": 0,
+  "status": "PASS",
+  "counts": {
+    "test_pass": 789,
+    "top_level_pass": 274,
+    "package_pass": 19,
+    "test_skip": 25,
+    "top_level_skip": 24
+  },
+  "skipped": [
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestKeyRenewalSourceHTTPPermutationColdResume"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestKeyRenewalSourceLegacyV3PendingWAL"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayInboxCompletionNeedsWholeProofBoundEffect"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayPlannerSemanticInboxCompletion"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayPlannerEmptyAnchorConflict"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayPlannerHistoricalLegBeyondSourceRequest"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayPlannerColdSourceAndRepeatedInboxCompletion"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayInboxRenewalReadyACKThenColdCompletion"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayInboxRenewalTargetContext"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelayInboxRenewalDoesNotReplaceInvalidJobProofs"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelaySourceHTTPProofsAndRestart"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelaySourceHTTPFailureBoundaries"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelaySourceWALFailClosed"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "test": "TestRelaySourceHeaderBoundAndReverifiedWAL"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/consensus",
+      "test": "TestWALOrphanSIGKILLChild"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/consensus",
+      "test": "TestWALOrphanUnsafeOrUnverifiedRecoveryDeletesNothing/foreign-owner"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/devnet/testnet",
+      "test": "TestProcessIdentityOwnershipAndRestart"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/relay",
+      "test": "TestRelaySIGKILLChild"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/service",
+      "test": "TestSnapshotAndSettlementAPIResponseBounds"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/service",
+      "test": "TestSevenFHSActorsOverPinnedTLSSockets"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/service",
+      "test": "TestAuthenticatedActionAPIAndSerializedActor"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/transport",
+      "test": "TestOutboundTLSUsesRegisteredListenerIPAndEphemeralPort"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/transport",
+      "test": "TestTLSOutboxReconnectDuplicatesAndRestart"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/transport",
+      "test": "TestTLSIdentityEpochPartialAndOutOfOrder"
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/transport",
+      "test": "TestOutboxOwnershipAndRegistryRebind"
+    }
+  ],
+  "failed": [],
+  "raw_sha256": "9bd7fbc74685f977e5a8879b798d77138f07a78c1ee613cba62de1c5d613f93d",
+  "scope": "Go race on executed DEX/HotStuff paths; opt-in network skips separate; not C-library or financial security proof. Ran while G3 DEX roles stopped during normal CLX key timer; no performance inference."
+}

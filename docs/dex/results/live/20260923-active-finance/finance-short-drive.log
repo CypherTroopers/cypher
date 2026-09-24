@@ -1,0 +1,25 @@
+Traceback (most recent call last):
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 684, in <module>
+    main()
+    ~~~~^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 673, in main
+    getattr(runner, args.mode.replace("-", "_"))()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 561, in drive
+    self.economic_step(record, parent, final)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 490, in economic_step
+    oracle()
+    ~~~~~~^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 487, in <lambda>
+    oracle = lambda: self.submit(record, Kind="oracle", Price=str(100*ATOM), FundingRate=100,
+                     ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                                 FeedSequence=market["FeedSequence"]+1, ValidUntil=height+90)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 410, in submit
+    self.resume_action()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live_finance.py", line 454, in resume_action
+    self.event("dex_certified", id=item["id"], height=height, predicted_height=item["predicted_height"], root=actual["root"], kind=item["kind"])
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Runner.event() got multiple values for argument 'kind'

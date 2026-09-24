@@ -1,0 +1,6 @@
+{"ImportPath":"github.com/cypherium/cypher/dex/rewards.test","Action":"build-output","Output":"# github.com/cypherium/cypher/dex/rewards\n"}
+{"ImportPath":"github.com/cypherium/cypher/dex/rewards.test","Action":"build-output","Output":"dex/rewards/committed_test.go:30:6: expected '(', found TestCommittedParticipationExactSetDeadlineAndOrphan\n"}
+{"ImportPath":"github.com/cypherium/cypher/dex/rewards.test","Action":"build-fail"}
+{"Time":"2026-09-22T11:09:46.987095239+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/rewards"}
+{"Time":"2026-09-22T11:09:46.98718252+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/rewards","Output":"FAIL\tgithub.com/cypherium/cypher/dex/rewards [setup failed]\n","OutputType":"frame"}
+{"Time":"2026-09-22T11:09:46.987210643+02:00","Action":"fail","Package":"github.com/cypherium/cypher/dex/rewards","Elapsed":0,"FailedBuild":"github.com/cypherium/cypher/dex/rewards.test"}

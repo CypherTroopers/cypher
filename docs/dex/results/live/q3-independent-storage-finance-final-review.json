@@ -1,0 +1,34 @@
+{
+  "type": "read_only_final_source_review",
+  "created_utc": "2026-09-23T16:51:41.571579+00:00",
+  "files": {
+    "dex/consensus/generation.go": "ccd9ef3cb14fa53e0c658d4b6f1b26348cfaec0078e8bcb79b556d07fe070c8a",
+    "dex/consensus/generation_store.go": "bd75f8fff527fec26ba3d19a3cfb7ca58ed59b5472ff86cd08f550ba754ec22d",
+    "dex/consensus/wal.go": "9806bf74d66df658648ea09f0249dfbf635259762979df9adce72f55672480e1",
+    "dex/consensus/wal_orphans.go": "306080b19b403704ded0fc7a124d753d96a68654e52af4597aaa5a2dd0efcf5c",
+    "dex/consensus/app.go": "20e4c449e96dad4fc52006e309fc170c6d394e138412fa68160dede969866e5d",
+    "dex/consensus/execution.go": "46945acc4abd6f7e16e6d61f79990124c2d830e41892c09bf6170d8aa263caa7",
+    "dex/devnet/execution.go": "7a7e1eb6c4618913b45246986160edd163e2a4ab22c2b9024833006e589938e9",
+    "dex/devnet/fee_history.go": "f9f12df311fb9a7e94b1454a71a167b15013fd390a9469057c37f13ac9b36dee",
+    "dex/rewards/collector.go": "dac88db2da3e3ff5b02d1a58b72655b8532d20dc3e29d4b2263aec0f6e032bb0",
+    "dex/rewards/retirement.go": "61997f4fcd42dff8b17955e6f3ba272afc174d1814f20a4a564f8549a1f9b195",
+    "dex/rewards/retirement_test.go": "c9c409ea52a82a37aadc0667ea3b454e6a11ca9676ddcef904e0e23e112ef542",
+    "dex/service/replication/controller.go": "687ffe8dd2a609fdfeb16f33df01f820b26fc6705da8d12c38a76dfe097292c8",
+    "dex/relay/bundle_archive.go": "0fbb363782528c83d2f61cbde24391de9071fd177355bc4dd19b9923f68fbb8f",
+    "dex/relay/network.go": "4d6a37134700abd788357e2c7fcb52f092b9342fc1eda35d039a75babd57fcee",
+    "dex/relay/planner.go": "2c9681889c0f55c12cfc05659ec73260b7dbbf4789bb6e6c2d4c1740dbb34f18",
+    "cmd/dex-live-finance/main.go": "2d6c66be5bb6ffd78642fd506b8da41292e40f4af046a35752875f235dab6eee",
+    "cmd/dex-live-finance/native.go": "6ec6fb3ebc48405494d90223b65b5a65acd29dac4c46b3c0443ee5d2c3479655",
+    "scripts/dex/live_finance.py": "716b474381e69c05b2445999d952c3519202439870716982926822717ff20549",
+    "scripts/dex/live_finance_accounting.py": "cf4c94badfcfcdfb3bddb2e86313ce8dc8515d9fccb08163cc4b6bee22d714f1",
+    "scripts/dex/test_live_finance.py": "0fa3952c6c1810ddc37280ff7a160a14d1ec1480ec6eb419873b1db098e7ec49",
+    "docs/dex/live-storage-generation-review.md": "9da3f381255ffc87d3d87a5cfc42937288a5770a1827763f659e240ddd4fbce0",
+    "docs/dex/live-finance-runner-review.md": "6d98d910727c5ec252a48d32224d1e521d8b590a5b88b1697d9d00a830012bcd"
+  },
+  "blocking_findings_open": [],
+  "scope": "init preparation unit gate only; parent final build/race still required; no init authorization or LIVE outcome",
+  "independent_tests": {
+    "finance_python": "PASS(UNIT) 8 tests",
+    "log": "q3-independent-finance-runner-final-unit.log"
+  }
+}

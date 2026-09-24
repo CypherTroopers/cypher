@@ -1,0 +1,34 @@
+{
+  "at_utc": "2026-09-23T12:02:48.536312+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "go": "go version go1.27.1 linux/amd64",
+  "platform": [
+    "Linux",
+    "vmi3365213",
+    "7.0.0-30-generic",
+    "#30-Ubuntu SMP PREEMPT_DYNAMIC Fri Jul 31 18:22:54 UTC 2026",
+    "x86_64"
+  ],
+  "cpu": {
+    "vendor_id": "AuthenticAMD",
+    "model name": "AMD EPYC Processor (with IBPB)",
+    "siblings": "12",
+    "cpu cores": "12"
+  },
+  "affinity_count": 12,
+  "visible_cgroup_limits": {},
+  "memlock_bytes": [
+    8388608,
+    8388608
+  ],
+  "test_environment": {
+    "GOMAXPROCS": "2",
+    "GOPROXY": "off",
+    "modules": "readonly",
+    "go_build_parallelism": "1",
+    "cache_requested": "/tmp/common-dex-devnet.0wvjd5/gocache",
+    "cache_resolved": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/common-dex-cache.dck1uf5i/gocache"
+  },
+  "network": "Fresh user/network namespace, loopback only, no default route, no host fallback; actual DEX TLS and normal CLX RPC/admission/TxQUIC/ETH. No WAN measurement.",
+  "limits": "Shared host; no dedicated CPU pinning or exclusive hardware claim. Ordinary 32GiB DAG search not run; no host resource setting modified."
+}

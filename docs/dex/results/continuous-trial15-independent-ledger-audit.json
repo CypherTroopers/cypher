@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "scope": "Independent raw arithmetic/grouping plus reconstruction of all239byte claims/hash/nullifier and membership in both checksum-verified public relay stores; no new FHS/MPT authentication",
+  "transactions": 410,
+  "wallets": 17,
+  "buckets": 8,
+  "claimIDs": 72,
+  "nullifiers": 72,
+  "custodyAtoms": "295000000000000000000",
+  "gasAtoms": "4473920409600000000",
+  "commonAtoms": "894784081920000000",
+  "burnAtoms": "3579136327680000000",
+  "sourceManifestSHA256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "rawSHA256": "ac45652614b46d0c800e450064acebe3c2fff87beab6aa88d512a8d66ee523df"
+}

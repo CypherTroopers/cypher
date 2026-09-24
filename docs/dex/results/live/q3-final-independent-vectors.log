@@ -1,0 +1,88 @@
+{"script": "codec_vectors", "exit_code": 0}
+PASS: 2 canonical checkpoint and epoch-domain vectors (525 bytes each)
+{"script": "claim_vectors", "exit_code": 0}
+PASS: 2 claim encodings, leaf hashes, cross-epoch nullifiers and Merkle root
+{"script": "reference_model", "exit_code": 0}
+PASS notional_one_btc
+PASS notional_short_absolute
+PASS notional_smallest_lot_tick
+PASS fee_taker_300_ppm
+PASS fee_maker_100_ppm
+PASS fee_round_up_one_atom
+PASS fee_zero_rate
+PASS initial_margin_10_percent
+PASS maintenance_margin_5_percent
+PASS long_realized_gain
+PASS short_realized_loss
+PASS partial_close_long_loss
+PASS funding_positive_rate
+PASS funding_negative_rate
+PASS funding_asymmetric_rounding
+PASS funding_reverse_rounding
+PASS funding_zero_rate
+PASS insurance_sufficient
+PASS insurance_insufficient_freezes
+PASS insurance_no_positive_balance_subsidy
+PASS reward_funded_capped
+PASS reward_remainder_canonical_id
+PASS reward_largest_fraction_first
+PASS reward_support_ended_zero_fees
+PASS reward_zero_points_does_not_reserve
+PASS reward_fee_only_cap
+PASS reject_zero_price
+PASS reject_noncanonical_integer
+PASS reject_quantity_dust
+PASS reject_off_tick_price
+PASS reject_amount_overflow
+PASS reject_unbalanced_funding
+PASS reject_unbounded_funding_rate
+PASS reject_self_declared_excess_points
+PASS deposit_trade_fee_funding_reward_withdrawal_arithmetic_trace
+PASS three_trader_close_new_preserves_equity
+PASS three_trader_second_close_negative_unrealized
+PASS reject_cash_only_custody_for_open_positions
+PASS big_intermediate_fits_final_amount
+accounting vectors: 39/39 PASS
+Arithmetic only; cryptography, FHS, native settlement and distributed tests: NOT_RUN
+{"script": "rolling_anchor_golden", "exit_code": 0}
+rolling anchor goldens: 2 fixed246-byte anchors + RLPv2 codec PASS
+{"script": "key_renewal_golden", "exit_code": 0}
+key renewal goldens: legacy246 unchanged, two286-byte anchors, boundary ID commitment and RLPv3 PASS
+{"script": "source_wal_golden", "exit_code": 0}
+relay source codec-only WAL/account bundle golden PASS
+{"script": "counter_vectors", "exit_code": 0}
+counter vectors: PASS
+{"script": "execution_vectors", "exit_code": 0}
+execution vectors: PASS
+{"script": "finance_vectors", "exit_code": 0}
+PASS: 2 finance, 3 deposit, 4 counted-tree independent golden vectors
+{"script": "participation_vectors", "exit_code": 0}
+{"script": "participation_commit_vectors", "exit_code": 0}
+{"script": "engine_vectors", "exit_code": 0}
+PASS: 10 action codecs + independent trade/funding/withdrawal trace
+{"script": "inbox_vectors", "exit_code": 0}
+inbox vectors: PASS
+{"script": "native_tx_vectors", "exit_code": 0}
+PASS: 5 native call envelopes, 6 funding payload/source identities and genesis commitment
+{"script": "native_rolling_vectors", "exit_code": 0}
+PASS: native v3 root, 14 storage slots, ID lookup, metadata and opcode6 framing
+{"script": "native_continuous_vectors", "exit_code": 0}
+PASS native config4 independent root/bounds vector
+{"script": "process_vectors", "exit_code": 0}
+process golden PASS
+{"script": "transport_vectors", "exit_code": 0}
+transport golden PASS
+{"script": "relay_vectors", "exit_code": 0}
+PASS: relay binding/job/state/durable envelope independent vectors
+{"script": "relay_job_vectors", "exit_code": 0}
+PASS independent relay job vectors
+{"script": "settlement_bundle_vectors", "exit_code": 0}
+PASS: bundle v1 framing, counted paths, finance binding and bootstrap digest
+{"script": "continuous_vectors", "exit_code": 0}
+PASS: four cycles, eight periods, inputs345 - withdrawals40 - rewards8 = custody297; T279.664 F0.168 S12.168 I5 Z0; Alice159.796 Bob119.868 CLX
+{"script": "continuous_extended_vectors", "exit_code": 0}
+PASS: extended10, four trade cycles plus flat catch-up interval, inputs345 - withdrawals40 - rewards10 = custody295; T279.664 F0.168 S10.168 I5 Z0; Alice159.796 Bob119.868 CLX; 68 reward + 4 withdrawal = 72 claims; golden exact
+{"script": "continuous_early_final_deposit_vectors", "exit_code": 0}
+PASS: extended10-early-final-deposit (21/41/61), four trade cycles plus flat catch-up interval, inputs345 - withdrawals40 - rewards10 = custody295; T279.664 F0.168 S10.168 I5 Z0; Alice159.796 Bob119.868 CLX; 68 reward + 4 withdrawal = 72 claims; golden exact
+{"script": "compact_replay_vectors", "exit_code": 0}
+{"script": "wal_dictionary_vectors", "exit_code": 0}

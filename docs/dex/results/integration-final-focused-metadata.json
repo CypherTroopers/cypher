@@ -1,0 +1,120 @@
+{
+  "started_utc": "2026-09-22T07:40:50.465718+00:00",
+  "source_files": 1166,
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "reason": "Refresh native/API/TLS scopes after final production fixes; exact15 native top-level names derived from archived passing log.",
+  "normal_pow_nonce_search": "NOT_RUN; existing API empty-DAG fixture only",
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "native_top_level_test_selection": [
+    "TestDEXNativeActivationAndReservedGenesisAreConsensusBound",
+    "TestDEXNativeCheckpointAndClaimOuterResourceRollback",
+    "TestDEXNativeContextMissingChainDoesNotPanic",
+    "TestDEXNativeFundingSourceIdentityBindsSignedValue",
+    "TestDEXNativeGenesisForkContextDoesNotRetainSideTable",
+    "TestDEXNativeImmutableGenesisConfigAndLocalFailure",
+    "TestDEXNativeRejectsAlternateCallContextsAndReservedCreation",
+    "TestDEXNativeRevertOOGAndMalformedCallsPreserveFunds",
+    "TestDEXNativeSelfDestructSurplusAndWrongChainSignature",
+    "TestDEXNativeSignedTransactionValueReceiptReplayAndRestart",
+    "TestDEXNativeSimulationResourceAdmissionMatchesExecution",
+    "TestDEXNativeSimulationTraceAndForcedSurplus",
+    "TestDEXNativeUsesResourceRecordingAndGenesisActivation",
+    "TestFHSCanonicalHeadStagesTransactionAndKeyHeadTogether",
+    "TestFHSCanonicalStateDurableBeforeShutdown"
+  ],
+  "finished_utc": "2026-09-22T07:42:25.831694+00:00",
+  "source_changes": [
+    {
+      "path": "reconfig/dex_financial_combined_rpc_test.go",
+      "before": "e40e53b8580e815f6c16e5e3e7972af0ad144390728f5d885a0695990d6a8074",
+      "after": "d2a1ed570270d889a6a1f6bb8e5786b020de608d0d47a44b86dd4c4b0a8e7fb9"
+    }
+  ],
+  "runs": {
+    "native": {
+      "started_utc": "2026-09-22T07:41:10.317385+00:00",
+      "finished_utc": "2026-09-22T07:41:17.978520+00:00",
+      "exit_code": 0,
+      "command": [
+        "nice",
+        "-n",
+        "10",
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-mod=readonly",
+        "-count=1",
+        "-timeout=5m",
+        "-race",
+        "-json",
+        "./core",
+        "./core/vm",
+        "-run",
+        "^(TestDEXNativeActivationAndReservedGenesisAreConsensusBound|TestDEXNativeCheckpointAndClaimOuterResourceRollback|TestDEXNativeContextMissingChainDoesNotPanic|TestDEXNativeFundingSourceIdentityBindsSignedValue|TestDEXNativeGenesisForkContextDoesNotRetainSideTable|TestDEXNativeImmutableGenesisConfigAndLocalFailure|TestDEXNativeRejectsAlternateCallContextsAndReservedCreation|TestDEXNativeRevertOOGAndMalformedCallsPreserveFunds|TestDEXNativeSelfDestructSurplusAndWrongChainSignature|TestDEXNativeSignedTransactionValueReceiptReplayAndRestart|TestDEXNativeSimulationResourceAdmissionMatchesExecution|TestDEXNativeSimulationTraceAndForcedSurplus|TestDEXNativeUsesResourceRecordingAndGenesisActivation|TestFHSCanonicalHeadStagesTransactionAndKeyHeadTogether|TestFHSCanonicalStateDurableBeforeShutdown)$"
+      ],
+      "network_namespace": "net:[4026532339]",
+      "loopback_only": true,
+      "source_changes": [],
+      "log": "docs/dex/results/integration-final-native-race.jsonl"
+    },
+    "api": {
+      "started_utc": "2026-09-22T07:41:26.901323+00:00",
+      "finished_utc": "2026-09-22T07:41:44.175158+00:00",
+      "exit_code": 0,
+      "command": [
+        "nice",
+        "-n",
+        "10",
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-mod=readonly",
+        "-count=1",
+        "-timeout=5m",
+        "-v",
+        "./eth",
+        "-run",
+        "^TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset$"
+      ],
+      "network_namespace": "net:[4026532339]",
+      "loopback_only": true,
+      "source_changes": [
+        "reconfig/dex_financial_combined_rpc_test.go"
+      ],
+      "log": "docs/dex/results/integration-final-api-roles.log"
+    },
+    "sockets": {
+      "started_utc": "2026-09-22T07:41:42.832174+00:00",
+      "finished_utc": "2026-09-22T07:42:00.636039+00:00",
+      "exit_code": 0,
+      "command": [
+        "nice",
+        "-n",
+        "10",
+        "go",
+        "test",
+        "-p",
+        "1",
+        "-mod=readonly",
+        "-count=1",
+        "-timeout=5m",
+        "-race",
+        "-v",
+        "./dex/service/...",
+        "./dex/transport",
+        "./dex/devnet/testnet"
+      ],
+      "network_namespace": "net:[4026532448]",
+      "loopback_only": true,
+      "source_changes": [
+        "reconfig/dex_financial_combined_rpc_test.go"
+      ],
+      "log": "docs/dex/results/integration-final-sockets.log"
+    }
+  }
+}

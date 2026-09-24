@@ -1,0 +1,4 @@
+ok  	github.com/cypherium/cypher/dex/rewards	2.041s
+ok  	github.com/cypherium/cypher/dex/devnet	28.063s
+ok  	github.com/cypherium/cypher/dex/service/replication	0.037s
+ok  	github.com/cypherium/cypher/dex/service/finance	0.115s

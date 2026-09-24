@@ -1,0 +1,38 @@
+[
+  {
+    "path": "/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/full-R25-0000000000000000.1437311303136636455",
+    "logical_bytes": 34359728392,
+    "allocated_bytes": 39641088,
+    "mtime_utc": "2026-09-22T05:05:20.821974+00:00",
+    "first4096_sha256": "60411099577d5c0394de510385cd3e710ca8f0099dedbbc16844f47c7c60f1dd",
+    "source": "CLI matrix attempt: empty DirectoryFlag normalized to task cwd; incomplete generated fixture, not an operational dataset",
+    "removed": true
+  },
+  {
+    "path": "/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/full-R25-0000000000000000.2269057243879657359",
+    "logical_bytes": 34359728392,
+    "allocated_bytes": 43302912,
+    "mtime_utc": "2026-09-22T05:05:05.294196+00:00",
+    "first4096_sha256": "60411099577d5c0394de510385cd3e710ca8f0099dedbbc16844f47c7c60f1dd",
+    "source": "CLI matrix attempt: empty DirectoryFlag normalized to task cwd; incomplete generated fixture, not an operational dataset",
+    "removed": true
+  },
+  {
+    "path": "/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/full-R25-0000000000000000.6350280210746951321",
+    "logical_bytes": 34359728392,
+    "allocated_bytes": 43339776,
+    "mtime_utc": "2026-09-22T05:06:04.956344+00:00",
+    "first4096_sha256": "60411099577d5c0394de510385cd3e710ca8f0099dedbbc16844f47c7c60f1dd",
+    "source": "CLI matrix attempt: empty DirectoryFlag normalized to task cwd; incomplete generated fixture, not an operational dataset",
+    "removed": true
+  },
+  {
+    "path": "/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/full-R25-0000000000000000.8905184330844341064",
+    "logical_bytes": 34359728392,
+    "allocated_bytes": 42520576,
+    "mtime_utc": "2026-09-22T05:04:51.069399+00:00",
+    "first4096_sha256": "60411099577d5c0394de510385cd3e710ca8f0099dedbbc16844f47c7c60f1dd",
+    "source": "CLI matrix attempt: empty DirectoryFlag normalized to task cwd; incomplete generated fixture, not an operational dataset",
+    "removed": true
+  }
+]

@@ -1,0 +1,38 @@
+{
+  "started_utc": "2026-09-22T10:26:47.190393+00:00",
+  "finished_utc": "2026-09-22T10:27:26.438537+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-v",
+    "./reconfig",
+    "-run",
+    "^TestFHSNativeOrdinaryETHSource$"
+  ],
+  "exit_code": 1,
+  "network_namespace": "net:[4026532340]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [
+    {
+      "path": "internal/ethapi/dex_evidence_test.go",
+      "before": "a456e305c3c985c57c0d2a78288b8ed5bd21ee63f9103e4ac43e1ab661e97529",
+      "after": "70604fe48ff8c8fccfbf7ff058b1c67674ff763e3c7573e3a3683e7f4d4963b6"
+    }
+  ],
+  "log": "docs/dex/results/continuous-g2-ordinary-eth-attempt3.log",
+  "log_sha256": "dbae71ed1479f024d76a1d583a03f601fc04da6f6c98f09ce1f8f46cb2cf690c",
+  "scope": "Actual ETH automatic progress1,3,5,7,9 and same-datadir restart11 passed; proof source RPC discovery/witness unavailable after restart."
+}

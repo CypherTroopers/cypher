@@ -1,0 +1,76 @@
+PID 1086794 raw /tmp/fhs-process-failure-2284029015.log
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=1
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=275
+panic: test timed out after 12m0s
+	running tests:
+		TestFHSRecoveryProcessHelper (12m0s)
+
+goroutine 17237 [running]:
+testing.(*M).startAlarm.func1()
+	/usr/local/go/src/testing/testing.go:2959 +0x34a
+
+PID 1086788 raw /tmp/fhs-process-failure-434389396.log
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=1
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=275
+panic: test timed out after 12m0s
+	running tests:
+		TestFHSRecoveryProcessHelper (12m0s)
+
+goroutine 16708 [running]:
+testing.(*M).startAlarm.func1()
+	/usr/local/go/src/testing/testing.go:2959 +0x34a
+
+PID 1086782 raw /tmp/fhs-process-failure-2120076259.log
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=1
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=275
+panic: test timed out after 12m0s
+	running tests:
+		TestFHSRecoveryProcessHelper (12m0s)
+
+goroutine 16706 [running]:
+testing.(*M).startAlarm.func1()
+	/usr/local/go/src/testing/testing.go:2959 +0x34a
+
+PID 1086774 raw /tmp/fhs-process-failure-3315185139.log
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=1
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=275
+panic: test timed out after 12m0s
+	running tests:
+		TestFHSRecoveryProcessHelper (12m0s)
+
+goroutine 16685 [running]:
+testing.(*M).startAlarm.func1()
+	/usr/local/go/src/testing/testing.go:2959 +0x34a
+
+PID 1086768 raw /tmp/fhs-process-failure-586133250.log
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=1
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=275
+panic: test timed out after 12m0s
+	running tests:
+		TestFHSRecoveryProcessHelper (12m0s)
+
+goroutine 16726 [running]:
+testing.(*M).startAlarm.func1()
+	/usr/local/go/src/testing/testing.go:2959 +0x34a
+
+PID 1086762 raw /tmp/fhs-process-failure-814351467.log
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=1
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=275
+panic: test timed out after 12m0s
+	running tests:
+		TestFHSRecoveryProcessHelper (12m0s)
+
+goroutine 16757 [running]:
+testing.(*M).startAlarm.func1()
+	/usr/local/go/src/testing/testing.go:2959 +0x34a
+
+PID 1086757 raw /tmp/fhs-process-failure-720865574.log
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=1
+t=2026-09-22T14:49:31+0200 lvl=warn msg=GetBlockByNumer                         number=275
+panic: test timed out after 12m0s
+	running tests:
+		TestFHSRecoveryProcessHelper (12m0s)
+
+goroutine 21452 [running]:
+testing.(*M).startAlarm.func1()
+	/usr/local/go/src/testing/testing.go:2959 +0x34a

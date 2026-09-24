@@ -1,0 +1,14 @@
+=== RUN   TestCypheriumCustomGenesisConfigPinsUpgradeSurface
+--- PASS: TestCypheriumCustomGenesisConfigPinsUpgradeSurface (0.00s)
+=== RUN   TestCypheriumModernForkConfigDecoding
+--- PASS: TestCypheriumModernForkConfigDecoding (0.00s)
+=== RUN   TestSetupGenesisRejectsFairHotstuffSeedReplacement
+--- PASS: TestSetupGenesisRejectsFairHotstuffSeedReplacement (0.01s)
+=== RUN   TestSetupGenesisRejectsFairHotstuffCommitteeReplacement
+--- PASS: TestSetupGenesisRejectsFairHotstuffCommitteeReplacement (0.00s)
+=== RUN   TestSetupGenesisRejectsFairHotstuffActivationChange
+--- PASS: TestSetupGenesisRejectsFairHotstuffActivationChange (0.00s)
+=== RUN   TestSetupGenesisRejectsMissingStoredFairHotstuffConfig
+--- PASS: TestSetupGenesisRejectsMissingStoredFairHotstuffConfig (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/core	0.044s

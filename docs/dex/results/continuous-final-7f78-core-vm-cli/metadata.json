@@ -1,0 +1,59 @@
+{
+  "mode": "core-vm-cli",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "command": [
+    "unshare",
+    "-Urn",
+    "sh",
+    "-c",
+    "ip link set lo up && test -z \"$(ip route show default)\" && exec \"$@\"",
+    "sh",
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-race",
+    "-count=1",
+    "-timeout=5m",
+    "-json",
+    "./core",
+    "./core/vm",
+    "./params",
+    "./node",
+    "./cmd/cypher",
+    "./internal/ethapi",
+    "-run",
+    "DEX|Native|G0|Journal"
+  ],
+  "start_utc": "2026-09-23T11:23:47.546799+00:00",
+  "end_utc": "2026-09-23T11:24:40.543038+00:00",
+  "test_exit": 0,
+  "source_before_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_equal": true,
+  "raw_sha256": "d1293c1363543aa51f3d37c4497b4df5d1e43a61f3e3eed3654c080d5cf2fc4d",
+  "counts": {
+    "pass_test_events": 135,
+    "pass_top_level": 63,
+    "pass_packages": 6,
+    "skip_test_events": 5,
+    "skip_top_level": 5
+  },
+  "details": {
+    "fail": [],
+    "skip": [
+      "github.com/cypherium/cypher/cmd/cypher:TestCommonCLIEmptyTrieJournalRestartDEXOff",
+      "github.com/cypherium/cypher/cmd/cypher:TestDEXNormalCLINativeFinanceSmoke",
+      "github.com/cypherium/cypher/cmd/cypher:TestDEXNormalCLINativeFinanceRestart",
+      "github.com/cypherium/cypher/cmd/cypher:TestG0CommonCLIJournalPathRestart",
+      "github.com/cypherium/cypher/cmd/cypher:TestDEXNormalCLIEightRoleCombinations"
+    ]
+  },
+  "network": "fresh loopback-only user/network namespace; no fallback",
+  "scope": "Local isolated devnet regression. Counts are not a safety proof.",
+  "run_exit": 0
+}

@@ -1,0 +1,84 @@
+{
+  "time_utc": "2026-09-22T07:28:49.474654+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "branch": "FHS-D-ExchangeCore",
+  "go": "go version go1.27.1 linux/amd64",
+  "kernel": "7.0.0-30-generic",
+  "cpus": 12,
+  "meminfo": {
+    "MemTotal": "49325352 kB",
+    "MemAvailable": "20881572 kB",
+    "SwapTotal": "0 kB"
+  },
+  "memlock": [
+    8388608,
+    8388608
+  ],
+  "protected_processes": [
+    {
+      "pid": 477749,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb1",
+      "same_identity": true
+    },
+    {
+      "pid": 477750,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb0",
+      "same_identity": true
+    },
+    {
+      "pid": 477760,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb2",
+      "same_identity": true
+    },
+    {
+      "pid": 477766,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb3",
+      "same_identity": true
+    },
+    {
+      "pid": 477767,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb4",
+      "same_identity": true
+    },
+    {
+      "pid": 477781,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb6",
+      "same_identity": true
+    },
+    {
+      "pid": 477787,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb5",
+      "same_identity": true
+    },
+    {
+      "pid": 561356,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindbmine",
+      "same_identity": true
+    }
+  ],
+  "normal_pow_nonce": "NOT_RUN: 32 GiB DAG + cache exceeds available memory; memlock is 8 MiB; host limits unchanged",
+  "process_observation": "Read in host-visible approved command; ordinary sandbox has a separate PID namespace.",
+  "finished_utc": "2026-09-22T08:07:24.870197+00:00",
+  "remaining_owned_integration_processes": [],
+  "final_meminfo": {
+    "MemTotal": "49325352 kB",
+    "MemAvailable": "21566464 kB",
+    "SwapTotal": "0 kB"
+  }
+}

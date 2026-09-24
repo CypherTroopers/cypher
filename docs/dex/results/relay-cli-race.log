@@ -1,0 +1,36 @@
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/devnet
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/version
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/relative
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/dns
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/public
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/credentials
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/poll
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/height
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/gasdecimal
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/payerpurpose
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/duplicatepayerlane
+=== RUN   TestDEXRelayCLIExplicitStrictConfiguration/recipient
+--- PASS: TestDEXRelayCLIExplicitStrictConfiguration (0.11s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/devnet (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/version (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/relative (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/dns (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/public (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/credentials (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/poll (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/height (0.00s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/gasdecimal (0.01s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/payerpurpose (0.01s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/duplicatepayerlane (0.01s)
+    --- PASS: TestDEXRelayCLIExplicitStrictConfiguration/recipient (0.01s)
+=== RUN   TestDEXRelayCLIPrivateGasKeysAndSigner
+--- PASS: TestDEXRelayCLIPrivateGasKeysAndSigner (0.01s)
+=== RUN   TestDEXRelayCLILoopAndPrivatePaths
+--- PASS: TestDEXRelayCLILoopAndPrivatePaths (0.07s)
+=== RUN   TestDEXRelayCLIRealCommandFiniteRunAndSignal
+--- PASS: TestDEXRelayCLIRealCommandFiniteRunAndSignal (2.46s)
+=== RUN   TestDEXRelayCLIOrphanStatusRecovery
+--- PASS: TestDEXRelayCLIOrphanStatusRecovery (0.02s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/cypher	3.794s

@@ -1,0 +1,285 @@
+=== RUN   TestFHSNativeFinancialOrdinaryCLI
+    dex_financial_network_test.go:263: CLX_FINALIZED tx=0x7cd1a3fab3e33083794139534650b017b398a37e7114ab55ff6622287fbebc93 height=1 hash=0x4da4eb11af4d4c71529bce50bee792a4e1035182d5d3a4e6190fa394b9eaf0c5 status=1 payer=0x792460D0718d558952dAC9545BBc87EBD81372d2 gas=271600 value=100000000000000000000
+    dex_financial_network_test.go:263: CLX_FINALIZED tx=0xf747c70faeb0777e1df61576745821792ab304a4443e909fceff5ea236e4b5cd height=3 hash=0xbebad2d420def95a53d129e320c3704d8c4ed58244fc4c168b4f4d558b726aed status=1 payer=0x33186bC2692328F1fcd76b657b0626fA3c8d624D gas=271600 value=100000000000000000000
+    dex_financial_network_test.go:263: CLX_FINALIZED tx=0xb7bc450e2f23447ea3cf9c3836bd8e2bfb80025decb33b279af140b988d095a8 height=5 hash=0x14b0fc50753e581848feeb82d72dea09cc35c7d910a784ac2117d7bbb95fd139 status=1 payer=0x7E3AA4935ADDDa78420064c02817e6f7Ff4081d4 gas=271600 value=20000000000000000000
+    dex_financial_network_test.go:263: CLX_FINALIZED tx=0x96a32fe3074d8be52a0f0b431b142bbed30ec78b9377adf6c5812202a7399983 height=7 hash=0xff0e90372652c5a70b92c4cb382a8bb8c2b7edfd3146f538e2b928d444b1436c status=1 payer=0x7E3AA4935ADDDa78420064c02817e6f7Ff4081d4 gas=271600 value=5000000000000000000
+    dex_financial_network_test.go:272: NATIVE_LEDGER_RECONCILED height=7 custody=225000000000000000000 gas=1738240000000000 commonReward=347648000000000 burn=1390592000000000 accounts=7 engine=0/0/0
+    dex_financial_network_test.go:299: normal Common/DEX startup deadline
+    dex_financial_cli_test.go:102: ordinary CLI full log /tmp/dex-normal-cli-failure-3573146501.log
+    dex_financial_cli_test.go:107: ordinary Common0: WARN [09-22|08:09:37.299] Upgrade blockchain database version      from=<nil> to=10
+        WARN [09-22|08:09:40.850] GetBlockByNumer                          number=0
+        INFO [09-22|08:09:40.935] DEX sidecar active                       index=0 mode=native-finance datadir=/tmp/TestFHSNativeFinancialOrdinaryCLI2157605425/001/common-0/dex
+        INFO [09-22|08:09:40.942] handleNewViewMsg got new view message    from=127.0.0.1:38793 viewId="971c72…8cca13"
+    fhs_process_recovery_test.go:225: validator 922408 complete log: /tmp/fhs-process-failure-2516425266.log
+    fhs_process_recovery_test.go:230: validator 922408 log tail:
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T08:09:29+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T08:09:33+0200 lvl=info msg="HOTSTUFF PROPOSAL REF"                 number=1 viewID=0x9f4a3a230046f368611d98951fa58d52b0d2e332b359b2d1280bd7cdbe6b449d proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f blockHash=0x4da4eb11af4d4c71529bce50bee792a4e1035182d5d3a4e6190fa394b9eaf0c5 bodyHash=0x20efbd6db9ae532bad0be84908c0bfab450b4ad49c154474d2fddc283b5a5339 bodySize=1314 refBytes=442
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa manifestBytes=830 missing=0 bodyBytes=830
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL REF"                 number=3 viewID=0xdede5b3261d990e3e3b99c23d61abaf4c6a181dbf248ad3b9414cdbbdf9da84b proposalID=0xc5a74c939048cd3f9e52c9258906380aba4b4b7ac17d0b4d8189af2fb3f25ae9 blockHash=0xbebad2d420def95a53d129e320c3704d8c4ed58244fc4c168b4f4d558b726aed bodyHash=0xca0a5633cf8591e8a731c3fced1978789b783587ba1dcbf3a939a7973a31cc13 bodySize=1314 refBytes=442
+        t=2026-09-22T08:09:34+0200 lvl=warn msg="Send msg try again"                    address=[::]:45149 Couldn't send to=127.0.0.1:50747 error="Operation Canceled"
+        t=2026-09-22T08:09:34+0200 lvl=eror msg=CloseConnect                            =[::]:45149 having error closing conn to=127.0.0.1:50195 error="Connection Closed"
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=4 proposalID=0xcd369373b8a9dc6995df3561bffa7f1f77d1eaad485afb80f21219a3b9f6fafd manifestBytes=830 missing=0 bodyBytes=830
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=5 proposalID=0xcd2306c02d2b2b761c1627bd8f549c064e6a0c7038fa33aa462a4fac70918010 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=6 proposalID=0x018b840e4837fe7260c060b76bc8efd23f2d2f2985fa680c0a615baa73d2d35a manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:35+0200 lvl=warn msg="HandleConn drops connection: closed"   address=127.0.0.1:45149 remot=127.0.0.1:52335
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=6 proposalID=0x018b840e4837fe7260c060b76bc8efd23f2d2f2985fa680c0a615baa73d2d35a manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=7 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 manifestBytes=1219 missing=0 bodyBytes=1313
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:49606 number=8 proposalID=0x97272904951b6a55a8c6c2c1ce25906074cb5707a5866dc0c727d7cb84ec58a5 manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=warn msg="HandleConn drops connection: closed"   address=127.0.0.1:45149 remot=127.0.0.1:49606
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:49606 number=8 proposalID=0x97272904951b6a55a8c6c2c1ce25906074cb5707a5866dc0c727d7cb84ec58a5 manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:41+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:46+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:51+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:56+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:01+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:06+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:11+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:16+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:21+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+    fhs_process_recovery_test.go:225: validator 922402 complete log: /tmp/fhs-process-failure-2745480590.log
+    fhs_process_recovery_test.go:230: validator 922402 log tail:
+        t=2026-09-22T08:09:26+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T08:09:26+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T08:09:33+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=1 proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f manifestBytes=1219 missing=1 bodyBytes=1314
+        t=2026-09-22T08:09:34+0200 lvl=eror msg="OnPropose wait proposal body"          number=1 proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f err="hotstuff view state too old"
+        t=2026-09-22T08:09:34+0200 lvl=warn msg="HOTSTUFF PROPOSAL MANIFEST authority rejected" from=127.0.0.1:50747 leader=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa err="proposal manifest does not match the current deterministic leader route: manifest key committee is already canonical but is not the current route"
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL REPAIR REQUEST"      to=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa missing=0 attempt=0
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=3 proposalID=0xc5a74c939048cd3f9e52c9258906380aba4b4b7ac17d0b4d8189af2fb3f25ae9 manifestBytes=1219 missing=1 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=4 proposalID=0xcd369373b8a9dc6995df3561bffa7f1f77d1eaad485afb80f21219a3b9f6fafd manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=5 proposalID=0xcd2306c02d2b2b761c1627bd8f549c064e6a0c7038fa33aa462a4fac70918010 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=6 proposalID=0x018b840e4837fe7260c060b76bc8efd23f2d2f2985fa680c0a615baa73d2d35a manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=7 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 manifestBytes=1219 missing=0 bodyBytes=1313
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:49606 number=8 proposalID=0x97272904951b6a55a8c6c2c1ce25906074cb5707a5866dc0c727d7cb84ec58a5 manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:41+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:46+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:51+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:56+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:01+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:06+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:11+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:16+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:21+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+    fhs_process_recovery_test.go:225: validator 922396 complete log: /tmp/fhs-process-failure-2216556380.log
+    fhs_process_recovery_test.go:230: validator 922396 log tail:
+        t=2026-09-22T08:09:22+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T08:09:22+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:33+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=1 proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f manifestBytes=1219 missing=1 bodyBytes=1314
+        t=2026-09-22T08:09:34+0200 lvl=eror msg="OnPropose wait proposal body"          number=1 proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f err="hotstuff view state too old"
+        t=2026-09-22T08:09:34+0200 lvl=warn msg="HOTSTUFF PROPOSAL MANIFEST authority rejected" from=127.0.0.1:50747 leader=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa err="proposal manifest does not match the current deterministic leader route: manifest key committee is already canonical but is not the current route"
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL REPAIR REQUEST"      to=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa missing=0 attempt=0
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=3 proposalID=0xc5a74c939048cd3f9e52c9258906380aba4b4b7ac17d0b4d8189af2fb3f25ae9 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=4 proposalID=0xcd369373b8a9dc6995df3561bffa7f1f77d1eaad485afb80f21219a3b9f6fafd manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=5 proposalID=0xcd2306c02d2b2b761c1627bd8f549c064e6a0c7038fa33aa462a4fac70918010 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=warn msg="reject new-view before storage"        from=127.0.0.1:39783 viewID=0xa44a6d40c6b2f799173af984e50c14bb682fd2c3c852cbb97de4c94554899e4d err="hotstuff proposal validation pending"
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL REF"                 number=6 viewID=0xa44a6d40c6b2f799173af984e50c14bb682fd2c3c852cbb97de4c94554899e4d proposalID=0x018b840e4837fe7260c060b76bc8efd23f2d2f2985fa680c0a615baa73d2d35a blockHash=0xc5ad92290a72e22e5d14f8eda62dc2eb59ecb61d5e9a5b89a6874e01f012af61 bodyHash=0x4d5ac6c76c36ede091d9c2293c38033415fbf1ff918c6e0ca8f4e876274dd29f bodySize=830 refBytes=439
+        t=2026-09-22T08:09:35+0200 lvl=warn msg="Send msg try again"                    address=[::]:52335 Couldn't send to=127.0.0.1:45149 error="Operation Canceled"
+        t=2026-09-22T08:09:35+0200 lvl=eror msg=CloseConnect                            =[::]:52335 having error closing conn to=127.0.0.1:45149 error="Connection Closed"
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL REF"                 number=7 viewID=0x2560dbd6c35a44b421145ed46f634a26d48a03deeac960e961f159e9412deff1 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 blockHash=0xff0e90372652c5a70b92c4cb382a8bb8c2b7edfd3146f538e2b928d444b1436c bodyHash=0x1ce47253c13cf3a7491f37c54bd33da8b045d35fac974273a8605075dc762a33 bodySize=1313 refBytes=442
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:49606 number=8 proposalID=0x97272904951b6a55a8c6c2c1ce25906074cb5707a5866dc0c727d7cb84ec58a5 manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:41+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:46+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:51+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:56+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:01+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:06+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:11+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:16+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:21+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+    fhs_process_recovery_test.go:225: validator 922390 complete log: /tmp/fhs-process-failure-51664044.log
+    fhs_process_recovery_test.go:230: validator 922390 log tail:
+        t=2026-09-22T08:09:19+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T08:09:19+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:54119 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:33+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=1 proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=3 proposalID=0xc5a74c939048cd3f9e52c9258906380aba4b4b7ac17d0b4d8189af2fb3f25ae9 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=4 proposalID=0xcd369373b8a9dc6995df3561bffa7f1f77d1eaad485afb80f21219a3b9f6fafd manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=5 proposalID=0xcd2306c02d2b2b761c1627bd8f549c064e6a0c7038fa33aa462a4fac70918010 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=6 proposalID=0x018b840e4837fe7260c060b76bc8efd23f2d2f2985fa680c0a615baa73d2d35a manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=7 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 manifestBytes=1219 missing=0 bodyBytes=1313
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:49606 number=8 proposalID=0x97272904951b6a55a8c6c2c1ce25906074cb5707a5866dc0c727d7cb84ec58a5 manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:41+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:46+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:51+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:56+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:01+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:06+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:11+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:16+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:21+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+    fhs_process_recovery_test.go:225: validator 922385 complete log: /tmp/fhs-process-failure-3699513969.log
+    fhs_process_recovery_test.go:230: validator 922385 log tail:
+        t=2026-09-22T08:09:15+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T08:09:15+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:52335 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:54119 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:33+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=1 proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:34+0200 lvl=warn msg="reject new-view before storage"        from=127.0.0.1:45149 viewID=0x98bfc7514b07e9a8924826b706eae78867779ac8456be1f47126b0fb92957968 err="hotstuff proposal validation pending"
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL REF"                 number=2 viewID=0x98bfc7514b07e9a8924826b706eae78867779ac8456be1f47126b0fb92957968 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa blockHash=0xa9f52eca4fc77826c141527ed28640ba11a1c819783d6f328d521f96ea95cf50 bodyHash=0x130ebc40b0c89ac89f3ecfda56f1c3cb75f9dfeb4277abca2e4aca917fe2445b bodySize=830 refBytes=439
+        t=2026-09-22T08:09:34+0200 lvl=warn msg="HandleConn drops connection: closed"   address=127.0.0.1:50747 remot=127.0.0.1:45149
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL REPAIR REQUEST"      to=127.0.0.1:45149 number=3 proposalID=0xc5a74c939048cd3f9e52c9258906380aba4b4b7ac17d0b4d8189af2fb3f25ae9 missing=0 attempt=0
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=3 proposalID=0xc5a74c939048cd3f9e52c9258906380aba4b4b7ac17d0b4d8189af2fb3f25ae9 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=4 proposalID=0xcd369373b8a9dc6995df3561bffa7f1f77d1eaad485afb80f21219a3b9f6fafd manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=5 proposalID=0xcd2306c02d2b2b761c1627bd8f549c064e6a0c7038fa33aa462a4fac70918010 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=6 proposalID=0x018b840e4837fe7260c060b76bc8efd23f2d2f2985fa680c0a615baa73d2d35a manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=7 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 manifestBytes=1219 missing=1 bodyBytes=1313
+        t=2026-09-22T08:09:36+0200 lvl=eror msg="OnPropose wait proposal body"          number=7 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 err="hotstuff view state too old"
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:49606 number=8 proposalID=0x97272904951b6a55a8c6c2c1ce25906074cb5707a5866dc0c727d7cb84ec58a5 manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:41+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:46+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:51+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:56+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:01+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:06+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:11+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:16+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:21+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+    fhs_process_recovery_test.go:225: validator 922379 complete log: /tmp/fhs-process-failure-3599855912.log
+    fhs_process_recovery_test.go:230: validator 922379 log tail:
+        t=2026-09-22T08:09:12+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T08:09:12+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:54119 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:52335 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:33+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=1 proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=3 proposalID=0xc5a74c939048cd3f9e52c9258906380aba4b4b7ac17d0b4d8189af2fb3f25ae9 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=4 proposalID=0xcd369373b8a9dc6995df3561bffa7f1f77d1eaad485afb80f21219a3b9f6fafd manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:39783 number=5 proposalID=0xcd2306c02d2b2b761c1627bd8f549c064e6a0c7038fa33aa462a4fac70918010 manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=6 proposalID=0x018b840e4837fe7260c060b76bc8efd23f2d2f2985fa680c0a615baa73d2d35a manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=7 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 manifestBytes=1219 missing=1 bodyBytes=1313
+        t=2026-09-22T08:09:36+0200 lvl=eror msg="OnPropose wait proposal body"          number=7 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 err="hotstuff view state too old"
+        t=2026-09-22T08:09:36+0200 lvl=warn msg="reject new-view before storage"        from=127.0.0.1:52335 viewID=0x2c13b7207a6fd1910e150bc332abcfcbcbc1d0f8589605dc990abc8112d810e7 err="hotstuff proposal validation pending"
+        t=2026-09-22T08:09:36+0200 lvl=warn msg="reject new-view before storage"        from=127.0.0.1:42097 viewID=0x2c13b7207a6fd1910e150bc332abcfcbcbc1d0f8589605dc990abc8112d810e7 err="hotstuff proposal validation pending"
+        t=2026-09-22T08:09:36+0200 lvl=warn msg="reject new-view before storage"        from=127.0.0.1:45149 viewID=0x2c13b7207a6fd1910e150bc332abcfcbcbc1d0f8589605dc990abc8112d810e7 err="hotstuff proposal validation pending"
+        t=2026-09-22T08:09:36+0200 lvl=warn msg="reject new-view before storage"        from=127.0.0.1:54119 viewID=0x2c13b7207a6fd1910e150bc332abcfcbcbc1d0f8589605dc990abc8112d810e7 err="hotstuff proposal validation pending"
+        t=2026-09-22T08:09:36+0200 lvl=warn msg="reject new-view before storage"        from=127.0.0.1:39783 viewID=0x2c13b7207a6fd1910e150bc332abcfcbcbc1d0f8589605dc990abc8112d810e7 err="hotstuff proposal validation pending"
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL REF"                 number=8 viewID=0x2c13b7207a6fd1910e150bc332abcfcbcbc1d0f8589605dc990abc8112d810e7 proposalID=0x97272904951b6a55a8c6c2c1ce25906074cb5707a5866dc0c727d7cb84ec58a5 blockHash=0xb9d13a07637083156f6c2645aea85682add6df87b504a09b23bf4733a328be2e bodyHash=0xa7951fa8e4eaebd6f4cb7c9c404c3c84a628e9164c0cf34c2179f32c99e47e28 bodySize=830 refBytes=439
+        t=2026-09-22T08:09:36+0200 lvl=warn msg="Send msg try again"                    address=[::]:49606 Couldn't send to=127.0.0.1:45149 error="Operation Canceled"
+        t=2026-09-22T08:09:36+0200 lvl=eror msg=CloseConnect                            =[::]:49606 having error closing conn to=127.0.0.1:45149 error="Connection Closed"
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:41+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:46+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:51+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:56+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:01+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:06+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:11+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:16+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:21+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+    fhs_process_recovery_test.go:225: validator 922373 complete log: /tmp/fhs-process-failure-2244270023.log
+    fhs_process_recovery_test.go:230: validator 922373 log tail:
+        t=2026-09-22T08:09:08+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-22T08:09:08+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:52335 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:42097 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:54119 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:29+0200 lvl=warn msg=SendRawData                             couldn't send to=127.0.0.1:45149 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-22T08:09:33+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=1 proposalID=0x50aea57752285eefc53aacf8e2e4d6bab65a3057a2e0ae68cdd53eb4472c5e5f manifestBytes=1219 missing=0 bodyBytes=1314
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:50747 number=2 proposalID=0xeec58ccb93d31a572e92ff697ffac7cd62a47f0bdd0e403cea25dfdd0d3530aa manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:34+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:45149 number=3 proposalID=0xc5a74c939048cd3f9e52c9258906380aba4b4b7ac17d0b4d8189af2fb3f25ae9 manifestBytes=1219 missing=1 bodyBytes=1314
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL REF"                 number=4 viewID=0x19e8b096c83eb00f97757f9ea878513bee212f58999d23489ba4abfc7f1cf47d proposalID=0xcd369373b8a9dc6995df3561bffa7f1f77d1eaad485afb80f21219a3b9f6fafd blockHash=0x806e84517ee0fb4f3db51b858276fbf37254105b8f5245188d779557da44acc5 bodyHash=0x6f53e83a320c249a6beaf0d61f7cff9492703f6a829af49c8538f49154d26b90 bodySize=830 refBytes=439
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL REF"                 number=5 viewID=0x2ca4f67557e0761a7084ec71077bf6cba09a3de7e20eb6b7ae6ee2ae6357be44 proposalID=0xcd2306c02d2b2b761c1627bd8f549c064e6a0c7038fa33aa462a4fac70918010 blockHash=0x14b0fc50753e581848feeb82d72dea09cc35c7d910a784ac2117d7bbb95fd139 bodyHash=0x0562a8301628b37c3cc7f0167438683ff77d82effbff3104540bf7c2b1331162 bodySize=1314 refBytes=442
+        t=2026-09-22T08:09:35+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=6 proposalID=0x018b840e4837fe7260c060b76bc8efd23f2d2f2985fa680c0a615baa73d2d35a manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:52335 number=7 proposalID=0x277c91a149f458fd1ef82d88238db8e2b60f3491ab0b80461d6335356d5ed646 manifestBytes=1219 missing=0 bodyBytes=1313
+        t=2026-09-22T08:09:36+0200 lvl=info msg="HOTSTUFF PROPOSAL MANIFEST stored"     from=127.0.0.1:49606 number=8 proposalID=0x97272904951b6a55a8c6c2c1ce25906074cb5707a5866dc0c727d7cb84ec58a5 manifestBytes=830  missing=0 bodyBytes=830
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=1
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=2
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=3
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=4
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=5
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=6
+        t=2026-09-22T08:09:36+0200 lvl=warn msg=GetBlockByNumer                         number=7
+        t=2026-09-22T08:09:41+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:46+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:51+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:09:56+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:01+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:06+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:11+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:16+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+        t=2026-09-22T08:10:21+0200 lvl=warn msg="HOTSTUFF RECOVERY resend NewView"      number=9 viewID=0x664baed0c66b724b584ded038a8acf78bf8a6bbfbafc7367aa343b1d2ccbacce to=127.0.0.1:42097
+    dex_financial_process_test.go:104: DEX child6 full log /tmp/dex-financial-failure-20473536.log
+    dex_financial_process_test.go:109: DEX child6 log: 
+    dex_financial_process_test.go:104: DEX child5 full log /tmp/dex-financial-failure-7887312.log
+    dex_financial_process_test.go:109: DEX child5 log: 
+    dex_financial_process_test.go:104: DEX child4 full log /tmp/dex-financial-failure-1800088217.log
+    dex_financial_process_test.go:109: DEX child4 log: 
+    dex_financial_process_test.go:104: DEX child3 full log /tmp/dex-financial-failure-357468976.log
+    dex_financial_process_test.go:109: DEX child3 log: 
+    dex_financial_process_test.go:104: DEX child2 full log /tmp/dex-financial-failure-3421272494.log
+    dex_financial_process_test.go:109: DEX child2 log: 
+    dex_financial_process_test.go:104: DEX child1 full log /tmp/dex-financial-failure-3373071174.log
+    dex_financial_process_test.go:109: DEX child1 log: 
+    dex_financial_process_test.go:104: DEX child0 full log /tmp/dex-financial-failure-927638151.log
+    dex_financial_process_test.go:109: DEX child0 log: 
+--- FAIL: TestFHSNativeFinancialOrdinaryCLI (78.10s)
+FAIL

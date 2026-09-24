@@ -1,0 +1,72 @@
+{
+  "observed_utc": "2026-09-23T11:46:14.149415+00:00",
+  "protected_processes": [
+    {
+      "pid": 477749,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb1",
+      "matches_start": true
+    },
+    {
+      "pid": 477750,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb0",
+      "matches_start": true
+    },
+    {
+      "pid": 477760,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb2",
+      "matches_start": true
+    },
+    {
+      "pid": 477766,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb3",
+      "matches_start": true
+    },
+    {
+      "pid": 477767,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb4",
+      "matches_start": true
+    },
+    {
+      "pid": 477781,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb6",
+      "matches_start": true
+    },
+    {
+      "pid": 477787,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindb5",
+      "matches_start": true
+    },
+    {
+      "pid": 561356,
+      "comm": "cypher-linux-am",
+      "cwd": "/root/cypher",
+      "datadir": "chaindbmine",
+      "matches_start": true
+    }
+  ],
+  "memory": {
+    "MemTotal": "49325352 kB",
+    "MemAvailable": "17705724 kB",
+    "SwapTotal": "0 kB",
+    "SwapFree": "0 kB"
+  },
+  "memlock_bytes": [
+    8388608,
+    8388608
+  ],
+  "scope": "Read-only allowlisted PID/comm/cwd/datadir inspection; no signals. No start ticks recorded at G0, so this is not a PID reuse proof; running DB self-updates are not claimed immutable."
+}

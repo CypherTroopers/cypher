@@ -1,0 +1,9 @@
+{"Time":"2026-09-22T08:58:07.496672879+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/consensus"}
+{"Time":"2026-09-22T08:58:07.58512114+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/consensus","Test":"TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews"}
+{"Time":"2026-09-22T08:58:07.586331502+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/consensus","Test":"TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews","Output":"=== RUN   TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews\n","OutputType":"frame"}
+{"Time":"2026-09-22T08:58:12.107101359+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/consensus","Test":"TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews","Output":"    finality_gap_test.go:65: five live: QC heights5/6 at views5/8 keep finalized4; real child height7/view9 finalizes5 and6\n"}
+{"Time":"2026-09-22T08:58:12.107692329+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/consensus","Test":"TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews","Output":"--- PASS: TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews (4.52s)\n","OutputType":"frame"}
+{"Time":"2026-09-22T08:58:12.107713348+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/consensus","Test":"TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews","Elapsed":4.52}
+{"Time":"2026-09-22T08:58:12.107756267+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/consensus","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-22T08:58:13.114004419+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/consensus","Output":"ok  \tgithub.com/cypherium/cypher/dex/consensus\t5.616s\n"}
+{"Time":"2026-09-22T08:58:13.114097112+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/consensus","Elapsed":5.618}

@@ -1,0 +1,7 @@
+Captured UTC: 2026-09-21T21:52:43.041436+00:00
+Source: /proc/meminfo
+MemTotal:       49325352 kB
+MemAvailable:   25220656 kB
+SwapTotal:             0 kB
+SwapFree:              0 kB
+RLIMIT_MEMLOCK soft/hard bytes: (8388608, 8388608)

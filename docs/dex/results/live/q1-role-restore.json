@@ -1,0 +1,64 @@
+{
+  "phase": "restore",
+  "utc": 1790176668.908499,
+  "records": [
+    {
+      "app": "cypher0",
+      "unlocked_existing_account": true,
+      "committee_start": true,
+      "mining": true,
+      "role": "I'm leader.is Running."
+    },
+    {
+      "app": "cypher1",
+      "unlocked_existing_account": true,
+      "committee_start": true,
+      "mining": true,
+      "role": "I'm committee member.is Running."
+    },
+    {
+      "app": "cypher2",
+      "unlocked_existing_account": true,
+      "committee_start": true,
+      "mining": true,
+      "role": "I'm committee member.is Running."
+    },
+    {
+      "app": "cypher3",
+      "unlocked_existing_account": true,
+      "committee_start": true,
+      "mining": true,
+      "role": "I'm committee member.is Running."
+    },
+    {
+      "app": "cypher4",
+      "unlocked_existing_account": true,
+      "committee_start": true,
+      "mining": true,
+      "role": "I'm committee member.is Running."
+    },
+    {
+      "app": "cypher5",
+      "unlocked_existing_account": true,
+      "committee_start": true,
+      "mining": true,
+      "role": "I'm committee member.is Running."
+    },
+    {
+      "app": "cypher6",
+      "unlocked_existing_account": true,
+      "committee_start": true,
+      "mining": true,
+      "role": "I'm committee member.is Running."
+    },
+    {
+      "app": "cyphermine",
+      "unlocked_existing_account": true,
+      "committee_start": false,
+      "mining": false,
+      "role": "I'm common node.Stopped."
+    }
+  ],
+  "Common_miner_start_called": false,
+  "credential_material_recorded": false
+}

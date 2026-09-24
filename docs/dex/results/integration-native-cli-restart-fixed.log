@@ -1,0 +1,17 @@
+=== RUN   TestCommonCLIEmptyTrieJournalRestartDEXOff
+    dex_common_restart_test.go:57: CLOSED_GENESIS stage=DEX-OFF-after-init path=/tmp/TestCommonCLIEmptyTrieJournalRestartDEXOff91049861/001/common/cypher/chaindata key0=0xb2c098e3acc2acfa646b152f8fa7d9634c8f1f0fde74440a9e19f4b9300690f7 tx0=0xe7953c0e319c10052da55740b9beee5d79cdd50199a4120f27aba8cff0ec20c0
+    dex_common_restart_test.go:77: CLOSED_GENESIS stage=DEX-OFF-closed-0 path=/tmp/TestCommonCLIEmptyTrieJournalRestartDEXOff91049861/001/common/cypher/chaindata key0=0xb2c098e3acc2acfa646b152f8fa7d9634c8f1f0fde74440a9e19f4b9300690f7 tx0=0xe7953c0e319c10052da55740b9beee5d79cdd50199a4120f27aba8cff0ec20c0
+    dex_common_restart_test.go:77: CLOSED_GENESIS stage=DEX-OFF-closed-1 path=/tmp/TestCommonCLIEmptyTrieJournalRestartDEXOff91049861/001/common/cypher/chaindata key0=0xb2c098e3acc2acfa646b152f8fa7d9634c8f1f0fde74440a9e19f4b9300690f7 tx0=0xe7953c0e319c10052da55740b9beee5d79cdd50199a4120f27aba8cff0ec20c0
+    dex_common_restart_test.go:81: ordinary Common DEX OFF restarted without init; disabled trie journal preserved tx/key genesis and chaindata; no PoW nonce search
+--- PASS: TestCommonCLIEmptyTrieJournalRestartDEXOff (7.29s)
+=== RUN   TestDEXNormalCLINativeFinanceRestart
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-init path=/tmp/TestDEXNormalCLINativeFinanceRestart3430011286/001/common/cypher/chaindata key0=0x8535cf0b30923dcbb42dda5368affa49f38b1d46b4d3e94f12652bc7cfb92fb5 tx0=0x9c6c87c49366cc2a6825f85f7d18bb7e39ded206412ea2f63ee069a350d45593
+    dex_finance_test.go:39: pre-inbox economic rejection: native finalized inbox anchor required
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-parent-stop-before-probe path=/tmp/TestDEXNormalCLINativeFinanceRestart3430011286/001/common/cypher/chaindata key0=0x8535cf0b30923dcbb42dda5368affa49f38b1d46b4d3e94f12652bc7cfb92fb5 tx0=0x9c6c87c49366cc2a6825f85f7d18bb7e39ded206412ea2f63ee069a350d45593
+    dex_finance_test.go:39: CLOSED_GENESIS stage=after-probe path=/tmp/TestDEXNormalCLINativeFinanceRestart3430011286/001/common/cypher/chaindata key0=0x8535cf0b30923dcbb42dda5368affa49f38b1d46b4d3e94f12652bc7cfb92fb5 tx0=0x9c6c87c49366cc2a6825f85f7d18bb7e39ded206412ea2f63ee069a350d45593
+    dex_finance_test.go:39: RESTART_SAME_ARGS executable=/tmp/go-build3209570950/b001/cypher.test args=["--datadir" "/tmp/TestDEXNormalCLINativeFinanceRestart3430011286/001/common" "--nat" "extip:127.0.0.1" "--rnetport" "41331" "--port" "0" "--nodiscover" "--maxpeers" "0" "--ipcpath" "/tmp/native-cli-ipc-330613185/node.ipc" "--syncmode" "full" "--cache" "32" "--cache.trie.journal" "" "--dex.validator" "--dex.config" "/tmp/TestDEXNormalCLINativeFinanceRestart3430011286/001/native-0.json"]
+    dex_finance_test.go:39: native Common restarted same datadir=/tmp/TestDEXNormalCLINativeFinanceRestart3430011286/001/common without init; oldPID=949429 newPID=949509; rejected recipient probe before restart
+    dex_finance_test.go:39: ordinary Common owns native-finance child; seven real TLS peers; signed HTTP admission and economic rejection; no PoW nonce work, no funded CLX scenario in this smoke
+--- PASS: TestDEXNormalCLINativeFinanceRestart (7.58s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/cypher	14.926s

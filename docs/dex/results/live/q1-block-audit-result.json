@@ -1,0 +1,41 @@
+{
+  "completed_utc": "2026-09-23T15:37:53.226656+00:00",
+  "scope": "standalone local-observation issuance audit, not FHS authentication",
+  "source_sha256": {
+    "cmd/dex-block-audit/main.go": "8836c43131f50909d85316abced556e1a24884f6cb0b2dac68762a0d980177e6",
+    "cmd/dex-block-audit/README.md": "854e78f8b89c5a161ff32bf01a2685f6fe9d3cb69e36e16619a564d1adee9b9e",
+    "cmd/dex-block-audit/main_test.go": "131e97544e451003031fbbfef82b5fe83ee28c0b0d81388ac78070caeb585596"
+  },
+  "binary": "/tmp/common-dex-live.8gezz_j9/dex-block-audit",
+  "binary_sha256": "ffcfc880dc13d83d5120e07550278eb63b0d9ad344b9764808ac56dce0b3888b",
+  "unit": "PASS(UNIT), 9 top-level / 20 pass events",
+  "race": "PASS(UNIT), 9 top-level / 20 pass events",
+  "fuzz": "PASS(UNIT), 5-second budget, 618 executions, 5 valid/invalid seeds",
+  "observed_blocks": {
+    "range": [
+      3515,
+      3533
+    ],
+    "count": 19,
+    "parent_links_match": true,
+    "nonempty_fast": 10,
+    "empty_fast": 9,
+    "static_issuance_atoms": "1000000000000000000000000"
+  },
+  "review_corrections": [
+    "Key carrier Header.KeyHash equals carried key parent hash; independent review caught and corrected wrong self-hash expectation before final run",
+    "RLP list count preflight added before allocations"
+  ],
+  "legacy_reward_callsites": {
+    "ApplyFixedModeKeyblockPowReward": 0,
+    "RewardCommites": 0
+  },
+  "normal_cypher_binary_changed": false,
+  "network_or_state_mutated": false,
+  "results": {
+    "q1-block-audit-deps.txt": "92e314051eddbf4dcfe627d8f0b97e3058a95f52e73c095e3e7219fef3d33014",
+    "q1-block-audit-fuzz.log": "a3a3385fb63f073ad7bb1213471ecb096d423d2d6b4a38a086da65e4c78af58b",
+    "q1-block-audit-race.jsonl": "d88b79f0d4fbad70969a1bdf3745a79570644ce1e1f03a7a9db168676b35337d",
+    "q1-block-audit-unit.jsonl": "1b4233074fe871b82bdcde6c08786d90cfac08ff0d826bce6b3aa2c26ebb3f14"
+  }
+}

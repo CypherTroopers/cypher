@@ -1,0 +1,12 @@
+{
+  "artifact_root": "/tmp/common-dex-check.f0qD7OPx",
+  "source_manifest_sha256": "061f4a0b6bed257c6ba8ad60f377f52cf8640cb6dcb8d4dcbd01a1575cfe1630",
+  "test_exit": "1",
+  "run_exit": "1",
+  "source_diff_bytes": 0,
+  "failed_tests": [
+    "TestCreation",
+    "TestValidation"
+  ],
+  "passed_packages": 16
+}

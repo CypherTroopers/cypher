@@ -1,0 +1,10 @@
+Cypher
+Version: 1.9.20-stable
+Cypher Version: 2.0.0
+Architecture: amd64
+Protocol Versions: [66]
+Network Id: 1
+Go Version: go1.27.1
+Operating System: linux
+GOPATH=
+GOROOT=/usr/local/go

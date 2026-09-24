@@ -121,9 +121,14 @@ type paceMakerTimer struct {
 	candidatepool    *core.CandidatePool
 	retryNumber      int
 	lastKeyTriggerAt time.Time
-	config           *params.ChainConfig
-	kbc              *core.KeyBlockChain
-	mu               sync.Mutex
+	// Process-local deadline progress only. These fields never authorize votes,
+	// replace durable safety state, or alter the authenticated FHS view.
+	fhsDeadlineView      uint64
+	fhsDeadlineCertified bool
+	fhsDeadlineTracked   bool
+	config               *params.ChainConfig
+	kbc                  *core.KeyBlockChain
+	mu                   sync.Mutex
 
 	txsCh  chan core.NewTxsEvent
 	txsSub event.Subscription
@@ -155,12 +160,43 @@ func (t *paceMakerTimer) start() error {
 	if t.service != nil && t.service.hasDeferredFHSRecovery() {
 		return errFHSRecoveryPending
 	}
+	// Read service state before taking the timer mutex. Callers may already
+	// hold lifecycle locks, while the timer loop never holds mu across service
+	// calls. A normal lifecycle/timeout restart remains an explicit new lease.
+	var view uint64
+	tracked := t.service != nil && t.config != nil && t.config.FairHotstuff
+	if tracked {
+		view = t.service.GetCurrentView().ViewNumber
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.startTime = time.Now()
 
 	t.beStop = false
+	if tracked {
+		t.fhsDeadlineView, t.fhsDeadlineCertified, t.fhsDeadlineTracked = view, true, true
+	}
 
+	return nil
+}
+
+// startForFHSProgress grants at most one deadline extension for a validated
+// proposal and one for its certification in each view. Authenticated retries
+// are necessary for repair, but must not indefinitely postpone a timeout when
+// a persisted same-view vote prevents a regenerated proposal from succeeding.
+// The caller must have finished proposal/QC authentication before calling.
+func (t *paceMakerTimer) startForFHSProgress(view uint64, certified bool) error {
+	if t.service != nil && t.service.hasDeferredFHSRecovery() {
+		return errFHSRecoveryPending
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.beStop && t.fhsDeadlineTracked && (view < t.fhsDeadlineView || view == t.fhsDeadlineView && (!certified || t.fhsDeadlineCertified)) {
+		return nil
+	}
+	t.startTime = time.Now()
+	t.beStop = false
+	t.fhsDeadlineView, t.fhsDeadlineCertified, t.fhsDeadlineTracked = view, certified, true
 	return nil
 }
 

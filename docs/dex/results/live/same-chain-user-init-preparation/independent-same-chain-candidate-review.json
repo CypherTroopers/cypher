@@ -1,0 +1,136 @@
+{
+  "status": "PASS(READ_ONLY_REVIEW)",
+  "created_utc": "2026-09-23T18:17:20Z",
+  "scope": "Actual same-chain candidate, current genesis, public identity bindings and exact release production-source manifest. No PM2, runtime/DB access, init, signing, private-key-content read or network call.",
+  "genesis": {
+    "path": "/root/work/cypher-FHS-D-ExchangeCore/genesis.json",
+    "sha256": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147"
+  },
+  "candidate_inventory": {
+    "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/public/inventory.json",
+    "sha256": "ffffa2b0c1581516c7f7050baf1faae3806f4a850e999021da133fee37329fcb"
+  },
+  "archived_inventory": {
+    "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-candidate-history/retired-chain10101920-20260923/public/inventory.json",
+    "sha256": "13f069e4705ea3234dcc61f00e556aa67e9241288d9cf907298e2a60e8946578"
+  },
+  "chain_id": 10101919,
+  "old_candidate_chain_id": 10101920,
+  "actual_candidate_genesis": "0xa4a61fa952509cde79c14e152702a1d7dea1cc0320b4552566b2efb9e4a575de",
+  "actual_candidate_key_genesis": "0x2e2c6be19a05958b75c2f163fed60d3380c4616a2c14aa12ca396cd73cc61ee2",
+  "actual_candidate_state_root": "0xd3e0fd99e2cbcafe3ca718d616b73ea47664153c0ffc01888c3cedef893a33f0",
+  "dex_id": "0x433b712c48506710a611d48e351ff827d00e64941fff9c085817c266585af497",
+  "original_json_preservation": {
+    "only_changed_fields": [
+      "config.dexDevnet",
+      "mixHash"
+    ],
+    "original_config_keys": 27,
+    "original_top_level_keys": 9,
+    "alloc_entries": 12,
+    "all_other_json_values_equal": true
+  },
+  "identity_review": {
+    "same_common_wallet_purposes": [
+      "cypherdex1-common-wallet",
+      "cypherdex2-common-wallet",
+      "cypherdex3-common-wallet",
+      "cypherdex4-common-wallet",
+      "cypherdex5-common-wallet",
+      "cypherdex6-common-wallet"
+    ],
+    "fresh_other_account_purposes": [
+      "trader-a",
+      "trader-b",
+      "synthetic-oracle",
+      "insurance-owner",
+      "support-owner",
+      "dex-0-reward",
+      "dex-1-reward",
+      "dex-2-reward",
+      "dex-3-reward",
+      "dex-4-reward",
+      "dex-5-reward",
+      "dex-6-reward",
+      "relay-0-anchor-gas",
+      "relay-0-checkpoint-gas",
+      "relay-0-claim-gas",
+      "relay-1-anchor-gas",
+      "relay-1-checkpoint-gas",
+      "relay-1-claim-gas"
+    ],
+    "dex_vote_tls_reward_distinct": 7,
+    "relay_payers_distinct": 6,
+    "all_keys_metadata_private_owned_single_link": true,
+    "private_key_contents_read_or_hashed_by_this_audit": false,
+    "private_key_address_derivation_evidence": "Generator validates reused six key/address pairs before output; actual two relay manifests passed normal Go CLI local signer validation in same-chain-normal-cli-race.jsonl. This metadata audit does not repeat private-key derivation."
+  },
+  "all_seven_manifest_domain_source_trust_bindings_equal": true,
+  "manifests": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cyphermine.json",
+      "sha256": "8c0b7916351f93c5937aff80639595439341674703d9f00659aabf8d18e9ff48"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex1.json",
+      "sha256": "a7e1babd34293cd99b21c9ae76d5f8fb3b7588a0d981bfde5a724e34c2c3c5db"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex2.json",
+      "sha256": "32890b75d2dceddad962175f35d9d4e6cdc3dda5278ccac5cc5a1459fcb2b0da"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex3.json",
+      "sha256": "5993421891bbe45660d95df23d893caf69865d5ddf31dd455ad770b3eba580e1"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex4.json",
+      "sha256": "31fc9eae580e808efbd34f972f1890e8b07d94890071f3852e6f037f88214b5c"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex5.json",
+      "sha256": "393dddf3d1a87f346e18c1bab3e843b726c2e5393be091cdf7c2ec1336d1559d"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex6.json",
+      "sha256": "3e4c4c76d8ef796a621cec7359e293a4cac6f189ae5d523dc2f7f6108186e253"
+    }
+  ],
+  "relay_configs": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/relays/relay-0.json",
+      "sha256": "d6d38892740a3ed5d25c5acf0bc1e8dc11909d9d09568a015cebccdf40d035ef"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/relays/relay-1.json",
+      "sha256": "c53a0ec13c8395d0c08ffbb8eea73a42443d2ec59b12c41a5a6d997f8e15ba07"
+    }
+  ],
+  "runtime_exists": false,
+  "active_deployment_exists": false,
+  "funding_budget_atoms": "254000000000000000000",
+  "binary": {
+    "release": {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-q3-release/bin/cypher-linux-amd64",
+      "sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    "deployed": {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    "production_manifest": {
+      "path": "/tmp/common-dex-live.8gezz_j9/public/q3-build-source-r3.json",
+      "sha256": "b0c62fc3cc5c9298d2b4321da5c7a84f57a831ee51171d47bf3f1ba57476213c"
+    },
+    "production_file_count": 600,
+    "current_source_mismatches": [],
+    "build_metadata_evidence": "/tmp/common-dex-live.8gezz_j9/public/q3-final-release-go-version.txt"
+  },
+  "caveats": [
+    "Genesis preparation is not live network initialization. Last observed active eight nodes still run old genesis e690...; runtime/activation absent at this audit.",
+    "Same chain ID preserves old protected and unprotected ordinary CLX signature recovery. New genesis and DEX ID do not provide ordinary CLX TX replay separation.",
+    "Historical source manifest covers the 600 production dependencies of the normal cypher binary, not newly changed external Python launchers or standalone candidate/finance tools.",
+    "init.sh/helper is being changed separately and requires a final read-only review."
+  ],
+  "blockers_found": []
+}

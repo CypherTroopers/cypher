@@ -1,0 +1,37 @@
+{
+  "started_utc": "2026-09-22T10:33:02.315357+00:00",
+  "finished_utc": "2026-09-22T10:33:56.401750+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-v",
+    "./reconfig",
+    "-run",
+    "^TestFHSNativeOrdinaryETHSource$"
+  ],
+  "exit_code": 0,
+  "network_namespace": "net:[4026532343]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [
+    {
+      "path": "node/dex_rpc_public_test.go",
+      "before": "4a4c2e945ba0e8711bd8e89b5fd2d879f6264b8b866222af2c15b31f9f446ceb",
+      "after": "b5ff4fbe57570681591190f87ca525e0826c0658eb9efe0970b637d04f821c18"
+    }
+  ],
+  "log": "docs/dex/results/continuous-g2-ordinary-eth-unit.log",
+  "log_sha256": "6f06b5c236f4bff2a5a14ef172886203021f0493f2795cabe60666cac329b1db"
+}

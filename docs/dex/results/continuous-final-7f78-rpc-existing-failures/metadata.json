@@ -1,0 +1,50 @@
+{
+  "mode": "rpc-existing-failures",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "command": [
+    "unshare",
+    "-Urn",
+    "sh",
+    "-c",
+    "ip link set lo up && test -z \"$(ip route show default)\" && exec \"$@\"",
+    "sh",
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=90s",
+    "-json",
+    "./internal/ethapi",
+    "-run",
+    "^(TestRawTxIngressStopDrainsDetachedCancelledBulk|TestSendRawTransactionsBusySenderDoesNotBlockIndependentGroups|TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves)$"
+  ],
+  "start_utc": "2026-09-23T11:29:05.859542+00:00",
+  "end_utc": "2026-09-23T11:29:30.534519+00:00",
+  "test_exit": 1,
+  "source_before_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_equal": true,
+  "raw_sha256": "adee6c6382fc6481813df365957a19b4b4ba777b90aa82709708d04783b452db",
+  "counts": {
+    "fail_test_events": 3,
+    "fail_top_level": 3,
+    "fail_packages": 1
+  },
+  "details": {
+    "fail": [
+      "github.com/cypherium/cypher/internal/ethapi:TestRawTxIngressStopDrainsDetachedCancelledBulk",
+      "github.com/cypherium/cypher/internal/ethapi:TestSendRawTransactionsBusySenderDoesNotBlockIndependentGroups",
+      "github.com/cypherium/cypher/internal/ethapi:TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves"
+    ],
+    "skip": []
+  },
+  "network": "fresh loopback-only user/network namespace; no fallback",
+  "scope": "Local isolated devnet regression. Counts are not a safety proof.",
+  "run_exit": 1,
+  "classification": "Existing issue reproduced at G0 source; no test expectation or production scheduler change in this work."
+}

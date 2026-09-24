@@ -1,0 +1,34 @@
+{
+  "scope": "JSON ordering and bound file digests only; no value/key/domain/chain/DB/PM2 changes",
+  "chain_id": 10101919,
+  "expected_genesis": "0xa4a61fa952509cde79c14e152702a1d7dea1cc0320b4552566b2efb9e4a575de",
+  "expected_root": "0xd3e0fd99e2cbcafe3ca718d616b73ea47664153c0ffc01888c3cedef893a33f0",
+  "json_value_equality": true,
+  "changes": [
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/genesis.json",
+      "before_sha256": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147",
+      "after_sha256": "ac548d8dc6da5e32b471fc3fb863e5bc0e9c243af6b404825cf9cd3933a5634c"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/genesis.json",
+      "before_sha256": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147",
+      "after_sha256": "ac548d8dc6da5e32b471fc3fb863e5bc0e9c243af6b404825cf9cd3933a5634c"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/public/inventory.json",
+      "before_sha256": "ffffa2b0c1581516c7f7050baf1faae3806f4a850e999021da133fee37329fcb",
+      "after_sha256": "f6c18079436a2da7e4ee0028983d4f441ab14173956132608dfc008162f51dac"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/local-deployment.json",
+      "before_sha256": "0a2f84d6de87f2c53aa6a4c7ae49bb0a879625ee9b2e3d38ccf91ea6024c4af5",
+      "after_sha256": "60a12dfdee516e50dde7744c565411b88ec059bc31ba897fc2b20043f911df3f"
+    },
+    {
+      "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/plan.json",
+      "before_sha256": "f1719bf5762854434a3a15f7bc8d98d3b20d381311c2b53a7a895acf1a5010f2",
+      "after_sha256": "eed63eb8ea6e168e60b6b7e478d6733b5039a1e34748972ef0207a57278db78d"
+    }
+  ]
+}

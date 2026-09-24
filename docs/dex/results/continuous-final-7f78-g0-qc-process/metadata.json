@@ -1,0 +1,45 @@
+{
+  "mode": "g0-qc-process",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "command": [
+    "unshare",
+    "-Urn",
+    "sh",
+    "-c",
+    "ip link set lo up && test -z \"$(ip route show default)\" && exec \"$@\"",
+    "sh",
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-json",
+    "./reconfig",
+    "-run",
+    "^TestFHSProcessRecoveryQCBeforePrepare$"
+  ],
+  "start_utc": "2026-09-23T11:31:09.132948+00:00",
+  "end_utc": "2026-09-23T11:31:37.483343+00:00",
+  "test_exit": 0,
+  "source_before_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_equal": true,
+  "raw_sha256": "2897fd43a5a1ae1bfd3a425301327ccc1b207f94165505e6b02af0208650b6bc",
+  "counts": {
+    "pass_test_events": 1,
+    "pass_top_level": 1,
+    "pass_packages": 1
+  },
+  "details": {
+    "fail": [],
+    "skip": []
+  },
+  "network": "fresh loopback-only user/network namespace; no fallback",
+  "scope": "Local isolated devnet regression. Counts are not a safety proof.",
+  "run_exit": 0
+}

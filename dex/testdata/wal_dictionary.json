@@ -1,0 +1,43 @@
+{
+  "description": "structural dictionary component only; not an accepted WAL or consensus proof",
+  "records": {
+    "a": "c2FtZS1ib2R5",
+    "b": "AP8=",
+    "c": "c2FtZS1ib2R5",
+    "empty": "",
+    "nil": null,
+    "orphan": "/wA="
+  },
+  "component": {
+    "ActionDictionary": [
+      null,
+      "",
+      "AP8=",
+      "c2FtZS1ib2R5",
+      "/wA="
+    ],
+    "ActionRefs": {
+      "a": 3,
+      "b": 2,
+      "c": 3,
+      "empty": 1,
+      "nil": 0,
+      "orphan": 4
+    }
+  },
+  "expanded_action_bytes": 22,
+  "unique_action_bytes": 13,
+  "payload": "7b22416374696f6e44696374696f6e617279223a5b6e756c6c2c22222c224150383d222c22633246745a53316962325235222c222f77413d225d2c22416374696f6e52656673223a7b2261223a332c2262223a322c2263223a332c22656d707479223a312c226e696c223a302c226f727068616e223a347d7d",
+  "checksum": "0f9c055452fb8f764e5e7830c1c8e59156d641b9374329e422682b7f342e2b4b",
+  "limits": {
+    "wal_bytes": 2097152,
+    "records": 128,
+    "action_bytes": 65536,
+    "expanded_action_bytes": 2097152
+  },
+  "expansion_boundary": {
+    "action_bytes": 65536,
+    "references_accepted": 32,
+    "references_rejected": 33
+  }
+}

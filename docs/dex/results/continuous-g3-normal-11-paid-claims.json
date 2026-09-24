@@ -1,0 +1,440 @@
+{
+  "status": "partial_failed_run",
+  "leaf_hash_is_not_protocol_claim_id": true,
+  "claims": [
+    {
+      "leaf_hash": "9f94ab0cb0aa0b9105d3bfa179ef8128474282491842e61f1bfcc507f3539caf",
+      "sequence": 18,
+      "recipient": "01ad37013effebfc9ae794af0924186700526e33",
+      "amount_atoms": "166666666666666667",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "96df06a3c79860b385126423f41220d9eed8fb270d52d21b5c711f088da11bbb",
+      "sequence": 18,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "166666666666666667",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "9e7af9874b2541b56e18f83c352c59d2d53a4473c258a203b4653943b7dd4bb4",
+      "sequence": 18,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "166666666666666666",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "f4c8a42e61fd391f0bafabec81c469192be8d210b3aba3cab73283f18a1c4c94",
+      "sequence": 18,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "166666666666666666",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "6cd5bd94a93efc18367a937e750a86293470012e60e5ffdddc64c1924ccf5f8e",
+      "sequence": 18,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "166666666666666667",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "763631794e6652d70e406371180cd11892e8df4aafafebca49ebdc096f493b25",
+      "sequence": 18,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "166666666666666667",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "5c1d8be9fc4de5dab132fa5140e903b030b7bea9a8cfe3f811d2e2381b03cf15",
+      "sequence": 38,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "2f97d7844fbc38b7468b856d0795716ad90a119e67f6449b8993aaffd9a2d43d",
+      "sequence": 38,
+      "recipient": "06dddbc5b0eb3c81d9eff29168fb8f2a7ad20fa7",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "7f1a1c2a38202854912bd877c6c6d450b5e0edb0a9d976f27a4f1a5f36412194",
+      "sequence": 34,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "166666666666666666",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "75d07efbe8def8f42ab645e84ad84502226a5f3017dc3f8d594ade02ce5f9a30",
+      "sequence": 34,
+      "recipient": "01ad37013effebfc9ae794af0924186700526e33",
+      "amount_atoms": "166666666666666667",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "b8af6e117eaaf0f5fb4776f002f23300c152a5aaefebfd9d9eb84da3686870be",
+      "sequence": 34,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "166666666666666666",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "0bc6ccb6d912a490231a9862fe0044474f10b3e42e3605ba3a175da1da8475ff",
+      "sequence": 34,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "166666666666666667",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "d09d8cc291aa4bb9c1b53b58740391cf8b58353924dea24f17585b4412a16188",
+      "sequence": 34,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "166666666666666667",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "c1208491c482187c272cea2ccf1e0c367f7c6b63dde7ad7541c139465a0a35b4",
+      "sequence": 34,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "166666666666666667",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "edb416ff94f8f81b624ea84c3a4027321ca52b292b90f40b65a946c33e3f86a0",
+      "sequence": 37,
+      "recipient": "853e9882c2f61735d1b67038c267a8dcffe738bf",
+      "amount_atoms": "10000000000000000000",
+      "kind": 1
+    },
+    {
+      "leaf_hash": "5ad559a7c9ea060ae64cb8685a3e6d93d9d3f6b7119c3963c5cb6ec224f65b85",
+      "sequence": 38,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "11d08167cd58e4b6fada07e496294d41dc47d1180192303cdf53e68d5f1cad0d",
+      "sequence": 38,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "a2fcce1b03c122625afeda4bbf69a02aedf683d9e7c773c5957421194ab5c974",
+      "sequence": 38,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "eff1dc164bf35919454210389a4410d12a6661dae92bcf30e158ec83b16194a1",
+      "sequence": 38,
+      "recipient": "01ad37013effebfc9ae794af0924186700526e33",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "cfb9ab0d74263c62e7cc97d0c1f1b09ba2f235c2c6a62997770328dc2fdf3a79",
+      "sequence": 38,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "142857142857142858",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "a5f02e1451eb7379b9f1869e29cee80503d9553e83dcc8c73d4353c5a08277cd",
+      "sequence": 54,
+      "recipient": "06dddbc5b0eb3c81d9eff29168fb8f2a7ad20fa7",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "49e943b9508396048f2a00ab573139048b05c83a12cc64c8c1ead742530eccce",
+      "sequence": 54,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "661a1781d837780814b53d8e62ce9745cd0b3789434ce4ebdfeed1864aa438ad",
+      "sequence": 54,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "ea0af43ea753ddd93a97d970e20fb3a5ded9e5f9caf9a412d4ad01ce48372776",
+      "sequence": 54,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "142857142857142858",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "97e464bdc615df3845890e3bfc3586b579e45d53ea24b8a55924e3706ae5db59",
+      "sequence": 54,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "94230e5b7d0d3dab6379cf39813177f344a57ef8bdaef6ed20ef5d047c61b3d1",
+      "sequence": 58,
+      "recipient": "06dddbc5b0eb3c81d9eff29168fb8f2a7ad20fa7",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "6e3160eadb7331762c488ea8f81a2e7afe3535593980cc4a50d1640f38a966ff",
+      "sequence": 58,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "f2296d75c2afc63198e326cdb61f93b39bc731c227ad5511c07df6666bfae01d",
+      "sequence": 58,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "f0fd1903f218de880fde801c983736008ff38cc3b2df66598f33c7a827d6f97f",
+      "sequence": 58,
+      "recipient": "01ad37013effebfc9ae794af0924186700526e33",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "035f180e165799fe1969310e92d0e936c93e50b9f1f9ab6dbef5359849d0ef1a",
+      "sequence": 58,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "1b356c87d47fbfffe9defcf06a99ed44d92761d94e3ad6fb66e9bb9a0addf173",
+      "sequence": 58,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "03151a61ecaa6222f5e58208028253dca248aaa136a688f7129bc4d5b41f54a3",
+      "sequence": 58,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "142857142857142858",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "3ed5c43e7601d4114871cdcc2c852666b6b737e24c2ecc55c565147ba0f078be",
+      "sequence": 54,
+      "recipient": "01ad37013effebfc9ae794af0924186700526e33",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "8cb7ed2a0d9561a60a0c62c74ac2aa9d06b35b7f35769ab2d26f42480e511126",
+      "sequence": 54,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "af745d7e852bf04eb5b49b3faa7e6909eea5f3978d2aeabf264c1f2ae7b91756",
+      "sequence": 74,
+      "recipient": "06dddbc5b0eb3c81d9eff29168fb8f2a7ad20fa7",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "448e4d4bef15776e798d7ac4888b1ca3efb3b1dcea33045ab02c5704fb9edf70",
+      "sequence": 74,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "6249d4fa821bf4a031cc0627b2b1eca0c1792e68ddcfe3911c6702e0f37bb499",
+      "sequence": 74,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "2e08286234039eaecc828ae9f2e39340aef181260e00fc5df07af784bfbb42e9",
+      "sequence": 78,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "142857142857142858",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "4a051eb9888e2d81e57c992d72e45bc4a9c726d140698299c8a00c616b236133",
+      "sequence": 74,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "61cd2d6ea6aa9689b406b6e68a91f5ea6b5b436475a728976b4418787485501b",
+      "sequence": 78,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "077ba5f2fd4c9bf52f24f23b0aee0730044a5ec7d2514a778b0a2ee0cf3e7e24",
+      "sequence": 74,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "142857142857142858",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "2f88b35d8bc51f9139872d8cc3d033d617ec2cebc546312dd3b6808afffe9732",
+      "sequence": 78,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "7ecca3511c79d0f56208a0cc9bf5ba0c01ddfa6c622b8394c0f89d7743a4f069",
+      "sequence": 74,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "60a0a97043f41d012a9072b6c630381750ade4becf5cbde4bb18cc9e4f4f9d46",
+      "sequence": 78,
+      "recipient": "06dddbc5b0eb3c81d9eff29168fb8f2a7ad20fa7",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "219b2f0b248b2b4296394b8368c472920dfc609c7132b251c564398cec9a601b",
+      "sequence": 78,
+      "recipient": "01ad37013effebfc9ae794af0924186700526e33",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "68b904ae649faa7b8589ab250a3963df04b409322575cc20349d4ba95003f95b",
+      "sequence": 77,
+      "recipient": "853e9882c2f61735d1b67038c267a8dcffe738bf",
+      "amount_atoms": "10000000000000000000",
+      "kind": 1
+    },
+    {
+      "leaf_hash": "dc3c0df0a7d559ef3e842f62045a2f1e3b4403b0d2097e0d7884f8c9f52d821f",
+      "sequence": 78,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "45a2117eeb8ec9e96279cca7d415435f0c7efd5d461e0779d849f451887e0646",
+      "sequence": 78,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "9d4416328af446f85c6340f50e3fc620ffcbffe0af25ab66fd05fec6f540f31d",
+      "sequence": 94,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "db3ebb082851ce5625e02beb273f3b79e6e542d9c14c125fe6a93f4486ba1e1a",
+      "sequence": 94,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "c528192cad89ad648a24dcb1f7f9f80d35b0527b4d4941c2bea013df01897000",
+      "sequence": 94,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "4c55050cf41eb2424a1a334ab3ed83f7f5595576edcd57e4ae03036cf8c9675d",
+      "sequence": 94,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "142857142857142858",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "522b28d76da7d9c83c5e207841123307a1400cbc12fc99e6551d748e5e1d1399",
+      "sequence": 97,
+      "recipient": "853e9882c2f61735d1b67038c267a8dcffe738bf",
+      "amount_atoms": "10000000000000000000",
+      "kind": 1
+    },
+    {
+      "leaf_hash": "fb6fb74e40047515d9282d29c9f6d21020e000acdc3ce390757b61b1fcae0ea7",
+      "sequence": 98,
+      "recipient": "efb5f9548ea71fb111768db0609eaf01eaee93f5",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "b9cee5d7307d2afa2769721035ba7ef49e8460dd456f7549672985b21a32f1aa",
+      "sequence": 98,
+      "recipient": "74331fa878798528eb07e30002d1183bc3a9ab61",
+      "amount_atoms": "142857142857142858",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "6eae352ca9de45e32b6568c0cdb32ccf5072c04227a80bf81369ab0329f2ff6e",
+      "sequence": 98,
+      "recipient": "01ad37013effebfc9ae794af0924186700526e33",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "ddf38c39d2b7e42ba208cfe23db90ada4e9f6613a542cae7363f5c73859c9a38",
+      "sequence": 98,
+      "recipient": "b2898bd9e5d56ec29647e8980e87c95ecbdaab8b",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "86869d73f7a937ea6947966dcadf86ffb4d43240cb8532ec15d0dc11c784d58c",
+      "sequence": 98,
+      "recipient": "be1f777d25d68ec3b8abfe684d4a030bf3574bac",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "7865c1efd0b06bc1354b7571e2a4fb69735cdfcae830deaf5796b19553786960",
+      "sequence": 98,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "1324079265b33820a9c3fdae0de20910a22ebe7d52da96acb767fdba6165d2d4",
+      "sequence": 98,
+      "recipient": "06dddbc5b0eb3c81d9eff29168fb8f2a7ad20fa7",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "a8143ac9e8a9220b4cab82712eab0bb03238fde577260b11f8f12ddbf777f106",
+      "sequence": 108,
+      "recipient": "01ad37013effebfc9ae794af0924186700526e33",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    },
+    {
+      "leaf_hash": "6f118309469905c39cfe2c650aa4aacb1fbb0f783237116fb985d568dba07555",
+      "sequence": 108,
+      "recipient": "157e041a6ae1506b757421814ed8c7a67af619ae",
+      "amount_atoms": "142857142857142857",
+      "kind": 2
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "time": 1790191163.3918288,
+  "records": [
+    {
+      "name": "cypherdex-relay0",
+      "old_pid": 1320692,
+      "start_ticks": "46839761",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "reason": "pause retries after prerequisite DEX finality liveness failure; preserve all relay nonce/WAL/jobs",
+      "exit": 0,
+      "after": {
+        "pid": 0,
+        "status": "stopped"
+      }
+    },
+    {
+      "name": "cypherdex-relay1",
+      "old_pid": 1320711,
+      "start_ticks": "46839801",
+      "exe": "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64",
+      "reason": "pause retries after prerequisite DEX finality liveness failure; preserve all relay nonce/WAL/jobs",
+      "exit": 0,
+      "after": {
+        "pid": 0,
+        "status": "stopped"
+      }
+    }
+  ],
+  "runtime_deleted": false
+}

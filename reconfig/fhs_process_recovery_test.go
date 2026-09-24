@@ -75,23 +75,26 @@ type fhsProcessGate struct {
 	TimeoutCollector  bool
 	AcceptTC          bool
 	DropManifest      bool
+	DropPrepare       bool
 	FirstProposalOnly bool
 	DropEverything    bool
 	Healed            bool
 }
 
 type fhsProcessCommand struct {
-	ID              uint64
-	Op              string
-	Genesis         json.RawMessage
-	Committee       []*common.Cnode
-	SenderKey       string
-	OperatorKey     string
-	RewardRecipient common.Address
-	NetworkIngress  bool
-	Timestamp       uint64
-	Gate            fhsProcessGate
-	Workload        bool
+	ID               uint64
+	Op               string
+	Genesis          json.RawMessage
+	Committee        []*common.Cnode
+	SenderKey        string
+	OperatorKey      string
+	RewardRecipient  common.Address
+	NetworkIngress   bool
+	PreserveAlloc    bool
+	NormalKeyGenesis bool // Native fixtures use the same GenesisKey codec as CLI init.
+	Timestamp        uint64
+	Gate             fhsProcessGate
+	Workload         bool
 }
 
 type fhsProcessReport struct {
@@ -113,6 +116,7 @@ type fhsProcessReport struct {
 	DroppedVotes           uint64
 	DroppedOther           uint64
 	DroppedDA              uint64
+	DroppedPrepare         uint64
 	DataTimeouts           uint64
 	Manifests              uint64
 	RepairData             uint64
@@ -136,6 +140,7 @@ type fhsProcessReport struct {
 	RewardReceiptStatus    uint64
 	RewardStateRoot        common.Hash
 	ReceiptEndpoint        string
+	ETHPeerURL             string
 	FinalizedFixtureTxs    uint64
 }
 
@@ -151,13 +156,29 @@ type fhsRecoveryChild struct {
 }
 
 func startFHSRecoveryChild(t *testing.T, dir string) *fhsRecoveryChild {
+	return startFHSRecoveryChildMode(t, dir, false)
+}
+
+func startFHSRecoveryChildMode(t *testing.T, dir string, restart bool) *fhsRecoveryChild {
 	t.Helper()
 	binary, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(binary, "-test.run=^TestFHSRecoveryProcessHelper$", "-test.timeout=6m")
+	continuous := os.Getenv("CYPHER_DEX_CONTINUOUS_DEVNET") == "1" && strings.Split(t.Name(), "/")[0] == "TestFHSNativeContinuousOrdinaryCLI"
+	deadline, hasDeadline := t.Deadline()
+	lifetime, err := fhsChildLifetime(continuous, time.Until(deadline), hasDeadline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(binary, "-test.run=^TestFHSRecoveryProcessHelper$", "-test.timeout="+lifetime.String())
+	if continuous {
+		t.Logf("CONTINUOUS_CLX_CHILD_LIFETIME timeout=%s parentDeadline=%s finite=true protocolTimeoutsUnchanged=true", lifetime, deadline.UTC().Format(time.RFC3339))
+	}
 	cmd.Env = append(os.Environ(), "CYPHER_FHS_PROCESS_CHILD="+dir, "GOMAXPROCS=2")
+	if restart {
+		cmd.Env = append(cmd.Env, "CYPHER_FHS_CHILD_RESTART=1")
+	}
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +187,7 @@ func startFHSRecoveryChild(t *testing.T, dir string) *fhsRecoveryChild {
 	if err != nil {
 		t.Fatal(err)
 	}
-	logPath := filepath.Join(dir, "child.log")
+	logPath := filepath.Join(dir, fmt.Sprintf("child-%d.log", time.Now().UnixNano()))
 	logFile, err := os.Create(logPath)
 	if err != nil {
 		t.Fatal(err)
@@ -708,15 +729,44 @@ func TestFHSRecoveryProcessHelper(t *testing.T) {
 		}
 		return record.Lvl <= log.LvlWarn || strings.Contains(record.Msg, "HOTSTUFF PROPOSAL") || strings.Contains(record.Msg, "HighQC")
 	}, log.StreamHandler(os.Stderr, log.LogfmtFormat())))
-	process.secret.SetByCSPRNG()
-	if err := os.WriteFile(filepath.Join(dir, "test-bls.key"), []byte(process.secret.SerializeToHexStr()), 0600); err != nil {
-		t.Fatal(err)
+	const marker = "COMMON_DEX_CLX_PROCESS_TEST_V1\n"
+	address := "127.0.0.1:0"
+	if os.Getenv("CYPHER_FHS_CHILD_RESTART") == "1" {
+		owner, err := os.ReadFile(filepath.Join(dir, "TEST_OWNER"))
+		if err != nil || string(owner) != marker {
+			t.Fatal("refuse unowned CLX restart directory")
+		}
+		key, err := os.ReadFile(filepath.Join(dir, "test-bls.key"))
+		if err != nil || process.secret.DeserializeHexStr(string(key)) != nil {
+			t.Fatal("CLX restart key unavailable")
+		}
+		endpoint, err := os.ReadFile(filepath.Join(dir, "test-address"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		address = string(endpoint)
+	} else {
+		if _, err := os.Lstat(filepath.Join(dir, "test-bls.key")); !os.IsNotExist(err) {
+			t.Fatal("refuse existing CLX test identity")
+		}
+		process.secret.SetByCSPRNG()
+		if err := os.WriteFile(filepath.Join(dir, "test-bls.key"), []byte(process.secret.SerializeToHexStr()), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "TEST_OWNER"), []byte(marker), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	socket, err := net.ListenPacket("udp", "127.0.0.1:0")
+	socket, err := net.ListenPacket("udp", address)
 	if err != nil {
 		t.Fatal(err)
 	}
 	process.address = socket.LocalAddr().String()
+	if os.Getenv("CYPHER_FHS_CHILD_RESTART") != "1" {
+		if err := os.WriteFile(filepath.Join(dir, "test-address"), []byte(process.address), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	process.reserved = socket
 	defer socket.Close()
 	process.stats = fhsProcessReport{PID: os.Getpid(), Address: process.address, Public: process.secret.GetPublicKey().SerializeToHexStr()}
@@ -795,6 +845,9 @@ func (p *fhsRecoveryProcess) report() fhsProcessReport {
 	if FHSRewardReceiptEndpoint != nil {
 		report.ReceiptEndpoint = FHSRewardReceiptEndpoint(p.backend)
 	}
+	if FHSRewardETHPeerURL != nil {
+		report.ETHPeerURL = FHSRewardETHPeerURL(p.backend)
+	}
 	view := s.GetCurrentView()
 	report.View = view.ViewNumber
 	report.CommitteeHash = view.CommitteeHash
@@ -859,7 +912,9 @@ func (p *fhsRecoveryProcess) initialize(command fhsProcessCommand) error {
 		return err
 	}
 	sender := crypto.PubkeyToAddress(clientKey.PublicKey)
-	genesis.Alloc = core.GenesisAlloc{sender: core.GenesisAccount{Balance: new(big.Int).Exp(big.NewInt(10), big.NewInt(27), nil)}}
+	if !command.PreserveAlloc {
+		genesis.Alloc = core.GenesisAlloc{sender: core.GenesisAccount{Balance: new(big.Int).Exp(big.NewInt(10), big.NewInt(27), nil)}}
+	}
 	operatorKey := clientKey
 	if command.OperatorKey != "" {
 		operatorKey, err = crypto.HexToECDSA(command.OperatorKey)
@@ -888,6 +943,15 @@ func (p *fhsRecoveryProcess) initialize(command fhsProcessCommand) error {
 	backend := &ReconfigBackend{chainDb: db, eventMux: mux, engine: engine, pendingLogsFeed: new(event.Feed), calcGasLimitFunc: func(block *types.Block) uint64 { return block.GasLimit() }}
 	backend.candidatePool = core.NewCandidatePool(backend, mux, db)
 	key := types.NewKeyBlock(&types.KeyBlockHeader{Number: big.NewInt(0), Difficulty: big.NewInt(1), Time: command.Timestamp, CommitteeHash: committee.RlpHash()})
+	if command.NormalKeyGenesis {
+		key, err = normalFHSFixtureKeyGenesis(command.Genesis, command.Committee)
+		if err != nil {
+			return err
+		}
+		if key.Time() != command.Timestamp {
+			return fmt.Errorf("native normal key genesis timestamp differs from command")
+		}
+	}
 	rawdb.WriteKeyBlock(db, key)
 	rawdb.WriteKeyBlockHash(db, key.Hash(), 0)
 	rawdb.WriteHeadKeyBlockHash(db, key.Hash())
@@ -901,9 +965,17 @@ func (p *fhsRecoveryProcess) initialize(command fhsProcessCommand) error {
 	if err != nil {
 		return err
 	}
-	genesisBlock, err := genesis.Commit(db)
-	if err != nil {
-		return err
+	var genesisBlock *types.Block
+	if os.Getenv("CYPHER_FHS_CHILD_RESTART") == "1" {
+		genesisBlock = rawdb.ReadBlock(db, rawdb.ReadCanonicalHash(db, 0), 0)
+		if genesisBlock == nil || genesisBlock.Hash() != genesis.ToBlock(nil).Hash() {
+			return fmt.Errorf("CLX restart genesis mismatch")
+		}
+	} else {
+		genesisBlock, err = genesis.Commit(db)
+		if err != nil {
+			return err
+		}
 	}
 	backend.blockchain, err = core.NewBlockChain(db, nil, config, engine, vm.Config{}, nil, nil, backend.keyBlockchain)
 	if err != nil {
@@ -963,6 +1035,10 @@ func (p *fhsRecoveryProcess) receive(envelope *network.Envelope) {
 	gate := p.gate
 	drop := gate.DropEverything
 	if h := msg.Hmsg; h != nil {
+		if gate.DropPrepare && h.Code == hotstuff.MsgPrepare {
+			drop = true
+			p.stats.DroppedPrepare++
+		}
 		// A leader may automatically pipeline an empty successor after QC1.
 		// Freeze that successor's network quorum until the controlled TC2 split.
 		if gate.FirstProposalOnly && h.Number > 1 {

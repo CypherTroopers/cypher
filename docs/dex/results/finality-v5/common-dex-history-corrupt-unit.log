@@ -1,0 +1,4 @@
+=== RUN   TestHistoryColdReplayRejectsRechecksummedMissingFrontier
+--- PASS: TestHistoryColdReplayRejectsRechecksummedMissingFrontier (1.83s)
+PASS
+ok  	github.com/cypherium/cypher/dex/consensus	2.003s

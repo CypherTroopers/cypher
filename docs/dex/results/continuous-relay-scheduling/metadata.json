@@ -1,0 +1,74 @@
+{
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "go": "go version go1.27.1 linux/amd64",
+  "owned_sources": {
+    "dex/relay/relay.go": "aa49b74ace08ba534a56120f5d32b57bb5310cf4bbd083d85109cb88090539d5",
+    "dex/relay/payer_scheduling_test.go": "d5e2dff77f2a1868edb8ad67e88dbeb92915a8a444f45c848ee2009d670705c5"
+  },
+  "source_manifest_sha256": "bb70d188134e2a3602451c08cabcd003fa5f7620f53482076b7957f5b7f37c8e",
+  "capture": "After focused gates; no scheduling source edits during either successful gate. Final G3 runner must bind own before/after whole-source manifests.",
+  "network_isolation": "Fresh unshare -Urn, loopback up, no default route. CYPHER_DEX_SOURCE_DEVNET=1; GOMAXPROCS=2; readonly module; offline dedicated Go cache.",
+  "network_command": "go test -p 1 -mod=readonly -race -json ./dex/clxevidence -run ^Test(Relay|KeyRenewalSource) -count=1 -timeout=3m",
+  "unit_command": "go test -p 1 -mod=readonly -race -json ./dex/relay -count=1 -timeout=3m",
+  "results": {
+    "relay-payer-scheduling-before.jsonl": {
+      "sha256": "8a26ba597e43174f95a3b0ef2c187da0b80942a44fe036629675764cc9dccafd",
+      "top_level": {
+        "fail": 2
+      },
+      "test_events": {
+        "fail": 4
+      },
+      "skips": [],
+      "package_results": [
+        {
+          "Time": "2026-09-23T10:17:48.436663773+02:00",
+          "Action": "fail",
+          "Package": "github.com/cypherium/cypher/dex/relay",
+          "Elapsed": 0.048
+        }
+      ]
+    },
+    "relay-payer-scheduling-after-race.jsonl": {
+      "sha256": "98828eab5e5d9f72484acd2165b04a9316137f80a0db018d86fc02e06175085d",
+      "top_level": {
+        "pass": 15,
+        "skip": 1
+      },
+      "test_events": {
+        "pass": 83,
+        "skip": 1
+      },
+      "skips": [
+        "TestRelaySIGKILLChild"
+      ],
+      "package_results": [
+        {
+          "Time": "2026-09-23T10:18:34.05758406+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/relay",
+          "Elapsed": 3.376
+        }
+      ]
+    },
+    "relay-payer-scheduling-network-race.jsonl": {
+      "sha256": "ff72956271457eac5c223f3c772756e43fd02cd1aea2aebb571bb9c0534e0348",
+      "top_level": {
+        "pass": 14
+      },
+      "test_events": {
+        "pass": 106
+      },
+      "skips": [],
+      "package_results": [
+        {
+          "Time": "2026-09-23T10:20:40.805291404+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/clxevidence",
+          "Elapsed": 80.622
+        }
+      ]
+    }
+  },
+  "limits": "Unit observations are private fixture values, network uses real BLS/MPT/HTTP. No per-step wall improvement was measured. Trial9 remains failed; not final G3 or ordinary financial-network PASS."
+}

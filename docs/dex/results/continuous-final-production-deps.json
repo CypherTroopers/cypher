@@ -1,0 +1,10 @@
+{
+  "command": "go list -mod=readonly -deps ./dex/settlement ./dex/relay",
+  "exit": 0,
+  "packages": 363,
+  "forbidden_dependencies": [],
+  "sha256": "7bfc6eed5b9a4ab1df1ad721bf9a10ebf5fbe65a5d6daa41ed46685571bcaff4",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "source_manifest_sha256": "061f4a0b6bed257c6ba8ad60f377f52cf8640cb6dcb8d4dcbd01a1575cfe1630",
+  "scope": "Production dependencies only; runtime engine zero measured separately in network tests."
+}

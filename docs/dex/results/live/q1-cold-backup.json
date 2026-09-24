@@ -1,0 +1,57 @@
+{
+  "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-q1-release/cold-backup",
+  "apps": [
+    "cypher0",
+    "cypher1",
+    "cypher2",
+    "cypher3",
+    "cypher4",
+    "cypher5",
+    "cypher6",
+    "cyphermine"
+  ],
+  "method": "cp -a --reflink=auto while all DB writers stopped; every regular file size/hash compared; sync -f",
+  "inventory": [
+    {
+      "datadir": "chaindb0",
+      "regular_files_verified": 224,
+      "bytes_verified": 1250099358
+    },
+    {
+      "datadir": "chaindb1",
+      "regular_files_verified": 224,
+      "bytes_verified": 1251288037
+    },
+    {
+      "datadir": "chaindb2",
+      "regular_files_verified": 237,
+      "bytes_verified": 1684142458
+    },
+    {
+      "datadir": "chaindb3",
+      "regular_files_verified": 237,
+      "bytes_verified": 1700857090
+    },
+    {
+      "datadir": "chaindb4",
+      "regular_files_verified": 237,
+      "bytes_verified": 1716330786
+    },
+    {
+      "datadir": "chaindb5",
+      "regular_files_verified": 237,
+      "bytes_verified": 1682872420
+    },
+    {
+      "datadir": "chaindb6",
+      "regular_files_verified": 237,
+      "bytes_verified": 1602637207
+    },
+    {
+      "datadir": "chaindbmine",
+      "regular_files_verified": 368,
+      "bytes_verified": 1471704590
+    }
+  ],
+  "auto_restore": false
+}

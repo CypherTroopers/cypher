@@ -856,6 +856,17 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) error {
 	if err := bc.validateFHSCanonicalExtension(block); err != nil {
 		return err
 	}
+	if bc.chainConfig != nil && bc.chainConfig.FairHotstuff {
+		if bc.stateCache == nil {
+			return errors.New("FHS canonical state database unavailable")
+		}
+		// Also cover a previously staged known block whose state is still only
+		// in this process's trie cache. The later synchronous head batch orders
+		// these writes before canonical publication and certificate pruning.
+		if err := bc.stateCache.TrieDB().Commit(block.Root(), false, nil); err != nil {
+			return fmt.Errorf("persist FHS canonical state: %w", err)
+		}
+	}
 	if bc.chainConfig != nil && bc.chainConfig.FairHotstuff && block != nil && block.BlockType() == types.Key_Block {
 		if bc.keyBlockChain == nil {
 			return errors.New("Fair HotStuff key block chain is unavailable")
@@ -915,8 +926,20 @@ func (bc *BlockChain) writeHeadBlock(block *types.Block) error {
 	// can decide whether to persist; releasing immediately after batch.Write
 	// would allow it to resurrect the admission in that narrow interval.
 	defer releaseAdmissionStripes()
-	// Flush the whole batch into the disk, exit the node if failed
-	if err := batch.Write(); err != nil {
+	// On FHS the canonical marker is the durable boundary following the trie
+	// writes above. Sync the shared database journal before publishing it or
+	// allowing certificate-history pruning to advance beyond this state.
+	var writeErr error
+	if bc.chainConfig != nil && bc.chainConfig.FairHotstuff {
+		syncBatch, ok := batch.(ethdb.SyncBatch)
+		if !ok {
+			return errors.New("database does not support synchronous FHS canonical writes")
+		}
+		writeErr = syncBatch.WriteSync()
+	} else {
+		writeErr = batch.Write()
+	}
+	if err := writeErr; err != nil {
 		return fmt.Errorf("failed to update transaction/key chain indexes and markers: %w", err)
 	}
 	// Publish finalized bits and remove cached winners before exposing the new
@@ -2754,8 +2777,13 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	}
 	triedb := bc.stateCache.TrieDB()
 
-	// If we're running an archive node, always flush
-	if bc.cacheConfig.TrieDirtyDisabled {
+	// A finalized FHS head cannot rely on the PoW reorg-oriented in-memory
+	// trie window. After a process crash, rewinding that head can put canonical
+	// state behind the durable vote/lock watermark and pruned certificate
+	// history. Persist the already validated root before publishing the head.
+	// This is storage ordering only: execution, roots and finality rules agree
+	// for validators, DEX-OFF full nodes and ordinary full-sync imports.
+	if bc.cacheConfig.TrieDirtyDisabled || (bc.chainConfig != nil && bc.chainConfig.FairHotstuff) {
 		if err := triedb.Commit(root, false, nil); err != nil {
 			return NonStatTy, err
 		}

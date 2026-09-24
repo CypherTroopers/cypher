@@ -1,0 +1,9 @@
+{
+  "chain_id": 10101919,
+  "preserved_fields": "all except config.dexDevnet and mixHash",
+  "old_genesis_sha256": "ac548d8dc6da5e32b471fc3fb863e5bc0e9c243af6b404825cf9cd3933a5634c",
+  "new_genesis_sha256": "06e879c0c1277008cc915b8a0ad4c73704f45119ec64cef875f503360d7d15ff",
+  "new_genesis": "0xb2385f44d0adaf948957528f4e6c7c493fddf1311555c960d925b12dbe0f1626",
+  "new_dex_id": "0xae8b961b841fb8b270e87639314f2881c8ac3c6154480eb96b44296ad9c1be62",
+  "init_executed": false
+}

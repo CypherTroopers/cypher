@@ -1,0 +1,32 @@
+{
+  "started_utc": "2026-09-22T09:47:07.902422+00:00",
+  "finished_utc": "2026-09-22T09:47:13.798621+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-race",
+    "-json",
+    "./dex/clxevidence",
+    "-run",
+    "^TestAccountStorage"
+  ],
+  "exit_code": 0,
+  "network_namespace": "net:[4026532340]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [],
+  "log": "docs/dex/results/continuous-g2-account-proof-unit.jsonl",
+  "log_sha256": "1a0222bbe041840121f1affd8478cf663baaf1b9126ab1a819e3cbff4e802842"
+}

@@ -220,6 +220,16 @@ func NewProtocolManager(config *params.ChainConfig, checkpoint *params.TrustedCh
 	return manager, nil
 }
 
+// Protocols returns the standard ETH protocol descriptors. Hosts may add their
+// own discovery attributes without changing protocol execution or sync rules.
+func (pm *ProtocolManager) Protocols() []p2p.Protocol {
+	protos := make([]p2p.Protocol, len(ProtocolVersions))
+	for i, version := range ProtocolVersions {
+		protos[i] = pm.makeProtocol(version)
+	}
+	return protos
+}
+
 func (pm *ProtocolManager) makeProtocol(version uint) p2p.Protocol {
 	length, ok := protocolLengths[version]
 	if !ok {

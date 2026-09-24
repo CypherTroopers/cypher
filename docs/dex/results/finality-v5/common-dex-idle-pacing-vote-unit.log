@@ -1,0 +1,4 @@
+=== RUN   TestReadinessDistinguishesCertifiedAndPendingOwnVoteAfterRestart
+--- PASS: TestReadinessDistinguishesCertifiedAndPendingOwnVoteAfterRestart (3.28s)
+PASS
+ok  	github.com/cypherium/cypher/dex/consensus	3.308s

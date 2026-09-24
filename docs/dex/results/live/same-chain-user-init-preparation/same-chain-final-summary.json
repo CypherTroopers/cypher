@@ -1,0 +1,35 @@
+{
+  "scope": "same-chain genesis and USER initialization entry prepared; no live init/stop/restart/funding",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "chain_id": 10101919,
+  "genesis": "0xa4a61fa952509cde79c14e152702a1d7dea1cc0320b4552566b2efb9e4a575de",
+  "tests": {
+    "python_final": "PASS(UNIT): 70 tests",
+    "init_shell": "PASS(UNIT): bash -n",
+    "generator_finance_race": "PASS(UNIT): 10 top-level",
+    "normal_relay_cli_race": "PASS(UNIT): 1 test",
+    "actual_init_readonly_preflight": "PASS: READY_FOR_USER_INIT, executed=false",
+    "live_initialization": "NOT_RUN",
+    "new_generation_live_finance": "NOT_RUN",
+    "live_60min": "NOT_RUN"
+  },
+  "init_targets": {
+    "clx": 14,
+    "dex": 7,
+    "relay": 2
+  },
+  "source_sha256": {
+    "init.sh": "568a3391d2b1634144f0eef7396e7e77bfc049b3a27107524c6deced35179a87",
+    "genesis.json": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147",
+    "scripts/dex/live_user_init.py": "5a0277f8fa1a462a7a049d8731fd1b8244645eb1f65f5eb10533c1ec1f680ed0",
+    "scripts/dex/test_live_user_init.py": "9fcf238de17cebb101e7641188d248b7b0de8c0e7e084d40fdf16ffb1ce83154",
+    "scripts/dex/live_generation_plan.py": "608c27de7f9b653fc2bce4f1fca1fb39992a7979360dd2f64d3f1fe7b6cbbad9",
+    "scripts/dex/live_switch_generation.py": "4dc5d8db00a8dc57a2089890a67dc5304308858e1759804843dcc8e717e82d1f",
+    "scripts/dex/live_auth.py": "04195e2ddd5b02d43ca965881906efea7e0537159044841eb2f72f6af07ed03a",
+    "scripts/dex/live_roles.py": "7a7f714847b8fbb3f443168149454ee2df94a1f8223c06885558e12a737922e7",
+    "scripts/dex/live_relay.py": "65162cb1f47f2d93b7e9e8dd020c3cdb76466534940cb392074ac34711b9258b",
+    "scripts/dex/live_finance.py": "3ca42ab94f437831b0de2b92c12bcbb6e999269d8f844d79790ce00dd8581d8e",
+    "cmd/dex-live-candidate/main.go": "f91eeb52c8119ca488f456a43dabf69af21dbbfaafd9822cfbd7ec9651ac740b",
+    "cmd/dex-live-finance/main.go": "57a8c79527bcf5732a588d3bf79f63f25f0375ab5d4847c323d3fc2ece9f6a04"
+  }
+}

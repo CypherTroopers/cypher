@@ -1,0 +1,6 @@
+=== RUN   TestFHSProcessRecoveryQCBeforePrepare
+    fhs_process_recovery_test.go:285: fixture committee permutation=[0 1 2 3 6 4 5]; proposer=3 laggard=5; both excluded from scheduled views2..10
+    fhs_early_qc_process_test.go:35: QC_BEFORE_PREPARE laggard_pid=987252 dropped_prepares=2 finalized=1 certified=2 canonical1=0xde91b7d7a9b58ea958285a12c53c3a379c4b3a337acdb0f558ac4304155f569c; seven independent QUIC validators agree on hash, receipt, gas and state root
+--- PASS: TestFHSProcessRecoveryQCBeforePrepare (26.89s)
+PASS
+ok  	github.com/cypherium/cypher/reconfig	26.976s

@@ -1,0 +1,89 @@
+{
+  "scope": "Independent Python structural representation estimate only; no FHS authentication or successful recovery assertion. Original public files unchanged; no converted WAL written to a datadir. Spec WALv3 exact-actions dictionary, all other fields retained.",
+  "rows": [
+    {
+      "node": "common-0",
+      "old_version": 2,
+      "records": 110,
+      "dictionary_entries": 105,
+      "expanded_raw_actions": 940033,
+      "before_bytes": 1927081,
+      "proposed_bytes": 1830394,
+      "saved_bytes": 96687,
+      "proposed_payload_sha256": "3032151710658f2a6d047dcb37c9e7edba0c0723e9023f527e33209ef58bf78c",
+      "input_sha256": "e9e622c69a4c43463e0e0d884c4ce6b24a4f16c90d2e752f6d0e1eeae76b20bd"
+    },
+    {
+      "node": "common-1",
+      "old_version": 2,
+      "records": 111,
+      "dictionary_entries": 105,
+      "expanded_raw_actions": 1008689,
+      "before_bytes": 2031731,
+      "proposed_bytes": 1843579,
+      "saved_bytes": 188152,
+      "proposed_payload_sha256": "52b4ad98f0113861549bb3bd091129fddf703533dad1d20e145d5621af05061c",
+      "input_sha256": "5b0eecc118660410b2970c7b2925c01af9136ca609c6e65d155f688c3fa26a21"
+    },
+    {
+      "node": "common-2",
+      "old_version": 2,
+      "records": 112,
+      "dictionary_entries": 105,
+      "expanded_raw_actions": 1020053,
+      "before_bytes": 2080398,
+      "proposed_bytes": 1877155,
+      "saved_bytes": 203243,
+      "proposed_payload_sha256": "29f9d91b3b46cddf90cd53b4bcc1143ff805c2dc7225eed3dfd94021514f4777",
+      "input_sha256": "744b9a49f0fb6f8e3cde82343b41eeff0965c68327c416ccb972786fe9b0db85"
+    },
+    {
+      "node": "common-3",
+      "old_version": 2,
+      "records": 110,
+      "dictionary_entries": 105,
+      "expanded_raw_actions": 940033,
+      "before_bytes": 1927076,
+      "proposed_bytes": 1830391,
+      "saved_bytes": 96685,
+      "proposed_payload_sha256": "9659e9316f675d64263f9ed54f6c1ffb4cc56be01cbdea5c5584692ff597b6b1",
+      "input_sha256": "dcfdbdff55c1b3b28bae97ca9f13376140e21cad330b46ff28cd2a4c6f6c39d5"
+    },
+    {
+      "node": "common-4",
+      "old_version": 2,
+      "records": 111,
+      "dictionary_entries": 104,
+      "expanded_raw_actions": 1025511,
+      "before_bytes": 2078433,
+      "proposed_bytes": 1867466,
+      "saved_bytes": 210967,
+      "proposed_payload_sha256": "461cccd4769f6390ad09973d5ca40b2283cea77668880900812b6d4aaca7a3a8",
+      "input_sha256": "e849101da1eda498af7b32106bc973298317c0eeae7c9298b1b3ed25cbfa50f9"
+    },
+    {
+      "node": "common-5",
+      "old_version": 2,
+      "records": 110,
+      "dictionary_entries": 105,
+      "expanded_raw_actions": 940033,
+      "before_bytes": 1927077,
+      "proposed_bytes": 1830395,
+      "saved_bytes": 96682,
+      "proposed_payload_sha256": "222e0a7b610dc01f723011a721466717ca5bab19591c29901d3d363e1c86ef8b",
+      "input_sha256": "62387cc852783e0bea6cddca61ed782f41a7fcd92d391f8eb9cae982cfa46b49"
+    },
+    {
+      "node": "common-6",
+      "old_version": 2,
+      "records": 110,
+      "dictionary_entries": 105,
+      "expanded_raw_actions": 940033,
+      "before_bytes": 1927164,
+      "proposed_bytes": 1830467,
+      "saved_bytes": 96697,
+      "proposed_payload_sha256": "495d159c891170d77d1c6403f948a86ffeccd33e246c657bbf3c00938e2dbb29",
+      "input_sha256": "c3d7b52289eecf115e51e351a950dd9e1e0bd4abc5f9058fb084c21fcc0f4be3"
+    }
+  ]
+}

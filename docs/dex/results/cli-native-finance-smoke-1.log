@@ -1,0 +1,6 @@
+=== RUN   TestDEXNormalCLINativeFinanceSmoke
+    dex_finance_test.go:190: pre-inbox economic rejection: native finalized inbox anchor required
+    dex_finance_test.go:211: ordinary Common owns native-finance child; seven real TLS peers; signed HTTP admission and economic rejection; no PoW nonce work, no funded CLX scenario in this smoke
+--- PASS: TestDEXNormalCLINativeFinanceSmoke (4.25s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/cypher	4.302s

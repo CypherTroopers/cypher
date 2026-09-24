@@ -1,0 +1,18 @@
+=== RUN   TestFHSNativeContinuousRelayShort
+    dex_continuous_relay_test.go:15: open ../genesis.json: no such file or directory
+    dex_financial_process_test.go:104: DEX child6 full log /tmp/dex-financial-failure-684245542.log
+    dex_financial_process_test.go:109: DEX child6 log: 
+    dex_financial_process_test.go:104: DEX child5 full log /tmp/dex-financial-failure-2828078496.log
+    dex_financial_process_test.go:109: DEX child5 log: 
+    dex_financial_process_test.go:104: DEX child4 full log /tmp/dex-financial-failure-824336615.log
+    dex_financial_process_test.go:109: DEX child4 log: 
+    dex_financial_process_test.go:104: DEX child3 full log /tmp/dex-financial-failure-842665429.log
+    dex_financial_process_test.go:109: DEX child3 log: 
+    dex_financial_process_test.go:104: DEX child2 full log /tmp/dex-financial-failure-376034426.log
+    dex_financial_process_test.go:109: DEX child2 log: 
+    dex_financial_process_test.go:104: DEX child1 full log /tmp/dex-financial-failure-2079962234.log
+    dex_financial_process_test.go:109: DEX child1 log: 
+    dex_financial_process_test.go:104: DEX child0 full log /tmp/dex-financial-failure-1664774567.log
+    dex_financial_process_test.go:109: DEX child0 log: 
+--- FAIL: TestFHSNativeContinuousRelayShort (0.30s)
+FAIL

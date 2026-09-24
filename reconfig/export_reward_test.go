@@ -19,6 +19,7 @@ import (
 // external test package installs actual eth TxQUIC endpoints in every child.
 var FHSRewardIngressFactory func(*ReconfigBackend, string, string) (func() error, func(), error)
 var FHSRewardReceiptEndpoint func(*ReconfigBackend) string
+var FHSRewardETHPeerURL func(*ReconfigBackend) string
 
 func FHSRewardSetTransactionResolver(backend *ReconfigBackend, resolve func(common.Hash) (*types.Transaction, error)) {
 	backend.resolveTxQUICTransaction = resolve

@@ -1,0 +1,149 @@
+[
+  {
+    "index": 0,
+    "State": "active",
+    "Certified": 2,
+    "Finalized": 0,
+    "PendingTransport": 6,
+    "Error": "",
+    "Execution": {
+      "Instances": 1,
+      "Actions": 5,
+      "InboxImports": 2
+    },
+    "Storage": {
+      "generation": 0,
+      "base_height": 0,
+      "hot_records": 3,
+      "archive_bytes": 0,
+      "budget_bytes": 268435456,
+      "blocked": false
+    }
+  },
+  {
+    "index": 1,
+    "State": "active",
+    "Certified": 2,
+    "Finalized": 0,
+    "PendingTransport": 5,
+    "Error": "",
+    "Execution": {
+      "Instances": 1,
+      "Actions": 5,
+      "InboxImports": 2
+    },
+    "Storage": {
+      "generation": 0,
+      "base_height": 0,
+      "hot_records": 3,
+      "archive_bytes": 0,
+      "budget_bytes": 268435456,
+      "blocked": false
+    }
+  },
+  {
+    "index": 2,
+    "State": "active",
+    "Certified": 2,
+    "Finalized": 0,
+    "PendingTransport": 11,
+    "Error": "",
+    "Execution": {
+      "Instances": 1,
+      "Actions": 3,
+      "InboxImports": 2
+    },
+    "Storage": {
+      "generation": 0,
+      "base_height": 0,
+      "hot_records": 3,
+      "archive_bytes": 0,
+      "budget_bytes": 268435456,
+      "blocked": false
+    }
+  },
+  {
+    "index": 3,
+    "State": "active",
+    "Certified": 2,
+    "Finalized": 0,
+    "PendingTransport": 4,
+    "Error": "",
+    "Execution": {
+      "Instances": 1,
+      "Actions": 3,
+      "InboxImports": 1
+    },
+    "Storage": {
+      "generation": 0,
+      "base_height": 0,
+      "hot_records": 3,
+      "archive_bytes": 0,
+      "budget_bytes": 268435456,
+      "blocked": false
+    }
+  },
+  {
+    "index": 4,
+    "State": "active",
+    "Certified": 2,
+    "Finalized": 0,
+    "PendingTransport": 7,
+    "Error": "",
+    "Execution": {
+      "Instances": 1,
+      "Actions": 3,
+      "InboxImports": 2
+    },
+    "Storage": {
+      "generation": 0,
+      "base_height": 0,
+      "hot_records": 3,
+      "archive_bytes": 0,
+      "budget_bytes": 268435456,
+      "blocked": false
+    }
+  },
+  {
+    "index": 5,
+    "State": "active",
+    "Certified": 2,
+    "Finalized": 0,
+    "PendingTransport": 7,
+    "Error": "",
+    "Execution": {
+      "Instances": 1,
+      "Actions": 3,
+      "InboxImports": 4
+    },
+    "Storage": {
+      "generation": 0,
+      "base_height": 0,
+      "hot_records": 4,
+      "archive_bytes": 0,
+      "budget_bytes": 268435456,
+      "blocked": false
+    }
+  },
+  {
+    "index": 6,
+    "State": "active",
+    "Certified": 2,
+    "Finalized": 0,
+    "PendingTransport": 8,
+    "Error": "",
+    "Execution": {
+      "Instances": 1,
+      "Actions": 3,
+      "InboxImports": 3
+    },
+    "Storage": {
+      "generation": 0,
+      "base_height": 0,
+      "hot_records": 3,
+      "archive_bytes": 0,
+      "budget_bytes": 268435456,
+      "blocked": false
+    }
+  }
+]

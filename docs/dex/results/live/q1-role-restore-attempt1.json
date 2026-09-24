@@ -1,0 +1,6 @@
+{
+  "status": "NOT_READY",
+  "error": "FileNotFoundError: IPC not created yet immediately after PM2 startup",
+  "stateful_calls": 0,
+  "followup": "q1-first-start-observation.json confirms all 8 IPC ready before retry"
+}

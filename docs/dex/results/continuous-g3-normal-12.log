@@ -1,0 +1,69 @@
+=== RUN   TestFHSNativeContinuousOrdinaryCLI
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.701245654s parentDeadline=2026-09-23T10:29:11Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.670241363s parentDeadline=2026-09-23T10:29:11Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.630706089s parentDeadline=2026-09-23T10:29:11Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.597017725s parentDeadline=2026-09-23T10:29:11Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.564335863s parentDeadline=2026-09-23T10:29:11Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.534895834s parentDeadline=2026-09-23T10:29:11Z finite=true protocolTimeoutsUnchanged=true
+    fhs_process_recovery_test.go:159: CONTINUOUS_CLX_CHILD_LIFETIME timeout=46m59.501701468s parentDeadline=2026-09-23T10:29:11Z finite=true protocolTimeoutsUnchanged=true
+    dex_continuous_network_test.go:19: validator 1183311 start: listen udp 127.0.0.1:42754: bind: address already in use
+    fhs_process_recovery_test.go:236: validator 1183311 complete log: /tmp/fhs-process-failure-385287880.log
+    fhs_process_recovery_test.go:241: validator 1183311 log tail:
+        t=2026-09-23T11:44:35+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-23T11:44:35+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+    fhs_process_recovery_test.go:236: validator 1183304 complete log: /tmp/fhs-process-failure-800522521.log
+    fhs_process_recovery_test.go:241: validator 1183304 log tail:
+        t=2026-09-23T11:44:32+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-23T11:44:32+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+    fhs_process_recovery_test.go:236: validator 1183298 complete log: /tmp/fhs-process-failure-2955837993.log
+    fhs_process_recovery_test.go:241: validator 1183298 log tail:
+        t=2026-09-23T11:44:29+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-23T11:44:29+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:40754 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    fhs_process_recovery_test.go:236: validator 1183292 complete log: /tmp/fhs-process-failure-998771349.log
+    fhs_process_recovery_test.go:241: validator 1183292 log tail:
+        t=2026-09-23T11:44:25+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-23T11:44:25+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:40754 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47416 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    fhs_process_recovery_test.go:236: validator 1183286 complete log: /tmp/fhs-process-failure-653031601.log
+    fhs_process_recovery_test.go:241: validator 1183286 log tail:
+        t=2026-09-23T11:44:22+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-23T11:44:22+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:32917 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:40754 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47416 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    fhs_process_recovery_test.go:236: validator 1183281 complete log: /tmp/fhs-process-failure-3288192846.log
+    fhs_process_recovery_test.go:241: validator 1183281 log tail:
+        t=2026-09-23T11:44:18+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-23T11:44:18+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:59455 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47416 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:40754 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:32917 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    fhs_process_recovery_test.go:236: validator 1183276 complete log: /tmp/fhs-process-failure-2302480576.log
+    fhs_process_recovery_test.go:241: validator 1183276 log tail:
+        t=2026-09-23T11:44:15+0200 lvl=warn msg=GetBlockByNumer number=0
+        t=2026-09-23T11:44:15+0200 lvl=warn msg="Failed to load snapshot, regenerating" err="missing or corrupted snapshot"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:32917 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:47416 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:56307 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:40754 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+        t=2026-09-23T11:44:36+0200 lvl=eror msg=Connect                                 Could not connect to=127.0.0.1:59455 error="CRYPTO_ERROR 0x150 (remote): tls: internal error"
+    dex_financial_process_test.go:104: DEX child6 full log /tmp/dex-financial-failure-4114682834.log
+    dex_financial_process_test.go:109: DEX child6 log: 
+    dex_financial_process_test.go:104: DEX child5 full log /tmp/dex-financial-failure-3905646739.log
+    dex_financial_process_test.go:109: DEX child5 log: 
+    dex_financial_process_test.go:104: DEX child4 full log /tmp/dex-financial-failure-753719806.log
+    dex_financial_process_test.go:109: DEX child4 log: 
+    dex_financial_process_test.go:104: DEX child3 full log /tmp/dex-financial-failure-2473948989.log
+    dex_financial_process_test.go:109: DEX child3 log: 
+    dex_financial_process_test.go:104: DEX child2 full log /tmp/dex-financial-failure-3792366879.log
+    dex_financial_process_test.go:109: DEX child2 log: 
+    dex_financial_process_test.go:104: DEX child1 full log /tmp/dex-financial-failure-1942017360.log
+    dex_financial_process_test.go:109: DEX child1 log: 
+    dex_financial_process_test.go:104: DEX child0 full log /tmp/dex-financial-failure-3690251022.log
+    dex_financial_process_test.go:109: DEX child0 log: 
+    dex_continuous_fixture_test.go:69: CONTINUOUS_PUBLIC_FAILURE_ARCHIVE path=/tmp/continuous-public-failure-1022682575 privateKeysExcluded=true noOperationalData=true
+--- FAIL: TestFHSNativeContinuousOrdinaryCLI (25.43s)
+FAIL

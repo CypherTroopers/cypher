@@ -1,0 +1,267 @@
+{
+  "reason": "Prepare incompatible DEX schema6/version5 for user-performed init; no DB/WAL deletion",
+  "time_ns": 1790194267022154988,
+  "before": [
+    {
+      "name": "cypher0",
+      "id": 0,
+      "pid": 1315272,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher0.sh"
+    },
+    {
+      "name": "cypher1",
+      "id": 1,
+      "pid": 1315273,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher1.sh"
+    },
+    {
+      "name": "cypher2",
+      "id": 2,
+      "pid": 1315274,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher2.sh"
+    },
+    {
+      "name": "cypher3",
+      "id": 3,
+      "pid": 1315275,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher3.sh"
+    },
+    {
+      "name": "cypher4",
+      "id": 4,
+      "pid": 1315276,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher4.sh"
+    },
+    {
+      "name": "cypher5",
+      "id": 5,
+      "pid": 1315277,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher5.sh"
+    },
+    {
+      "name": "cypher6",
+      "id": 6,
+      "pid": 1315278,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher6.sh"
+    },
+    {
+      "name": "cyphermine",
+      "id": 7,
+      "pid": 1324785,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cyphermine.sh"
+    },
+    {
+      "name": "cypherdex1",
+      "id": 8,
+      "pid": 1324811,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common1/start.sh"
+    },
+    {
+      "name": "cypherdex2",
+      "id": 9,
+      "pid": 1324837,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common2/start.sh"
+    },
+    {
+      "name": "cypherdex3",
+      "id": 10,
+      "pid": 1324863,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common3/start.sh"
+    },
+    {
+      "name": "cypherdex4",
+      "id": 11,
+      "pid": 1324889,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common4/start.sh"
+    },
+    {
+      "name": "cypherdex5",
+      "id": 12,
+      "pid": 1324916,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common5/start.sh"
+    },
+    {
+      "name": "cypherdex6",
+      "id": 13,
+      "pid": 1324942,
+      "status": "online",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common6/start.sh"
+    },
+    {
+      "name": "cypherdex-relay0",
+      "id": 14,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/start-cypherdex-relay0.sh"
+    },
+    {
+      "name": "cypherdex-relay1",
+      "id": 15,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/start-cypherdex-relay1.sh"
+    }
+  ],
+  "after": [
+    {
+      "name": "cypher0",
+      "id": 0,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher0.sh"
+    },
+    {
+      "name": "cypher1",
+      "id": 1,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher1.sh"
+    },
+    {
+      "name": "cypher2",
+      "id": 2,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher2.sh"
+    },
+    {
+      "name": "cypher3",
+      "id": 3,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher3.sh"
+    },
+    {
+      "name": "cypher4",
+      "id": 4,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher4.sh"
+    },
+    {
+      "name": "cypher5",
+      "id": 5,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher5.sh"
+    },
+    {
+      "name": "cypher6",
+      "id": 6,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher6.sh"
+    },
+    {
+      "name": "cyphermine",
+      "id": 7,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/start-cyphermine.sh"
+    },
+    {
+      "name": "cypherdex1",
+      "id": 8,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common1/start.sh"
+    },
+    {
+      "name": "cypherdex2",
+      "id": 9,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common2/start.sh"
+    },
+    {
+      "name": "cypherdex3",
+      "id": 10,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common3/start.sh"
+    },
+    {
+      "name": "cypherdex4",
+      "id": 11,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common4/start.sh"
+    },
+    {
+      "name": "cypherdex5",
+      "id": 12,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common5/start.sh"
+    },
+    {
+      "name": "cypherdex6",
+      "id": 13,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common6/start.sh"
+    },
+    {
+      "name": "cypherdex-relay0",
+      "id": 14,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/start-cypherdex-relay0.sh"
+    },
+    {
+      "name": "cypherdex-relay1",
+      "id": 15,
+      "pid": 0,
+      "status": "stopped",
+      "cwd": "/root/work/cypher-FHS-D-ExchangeCore",
+      "script": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/start-cypherdex-relay1.sh"
+    }
+  ],
+  "non_target_apps_unchanged": true,
+  "remaining_project_cypher_pids": [],
+  "init_executed": false
+}

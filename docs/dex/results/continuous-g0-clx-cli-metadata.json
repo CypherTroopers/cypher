@@ -1,0 +1,31 @@
+{
+  "started_utc": "2026-09-22T09:08:44.295560+00:00",
+  "finished_utc": "2026-09-22T09:09:20.609279+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-v",
+    "./cmd/cypher",
+    "-run",
+    "^TestG0CommonCLIJournalPathRestart$"
+  ],
+  "exit_code": 0,
+  "network_namespace": "net:[4026532448]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [],
+  "log": "docs/dex/results/continuous-g0-clx-cli.log",
+  "log_sha256": "0bc5641930e2e3bda97bfcb967380358319f943ea5e1d7092c6df8a6e6e8467c"
+}

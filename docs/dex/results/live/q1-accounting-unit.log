@@ -1,0 +1,8 @@
+test_missing_receipt_and_fork_are_rejected (test_live_clx_accounting.IntervalAccounting.test_missing_receipt_and_fork_are_rejected) ... ok
+test_static_issuance_is_distinct_from_rpc_reward_and_gas (test_live_clx_accounting.IntervalAccounting.test_static_issuance_is_distinct_from_rpc_reward_and_gas) ... ok
+test_unrelated_workload_is_not_silently_ignored (test_live_clx_accounting.IntervalAccounting.test_unrelated_workload_is_not_silently_ignored) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.001s
+
+OK

@@ -1,0 +1,128 @@
+{
+  "observed_utc": "2026-09-23T18:15:45Z",
+  "source": "/tmp/common-dex-live-resume-496b6e0e/public/same-chain-prepared-live-observation.json",
+  "source_sha256": "9b60df0e2fcee61b21b3646d6b9dcabaaf8a6a58e71288b53dd5a294ddf143a6",
+  "active": [
+    {
+      "name": "cypher0",
+      "pid": 1296670,
+      "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+      "height": 1049,
+      "hash": "0xe4640edd75a7793bba042f02bca74efd4176a949b42e4861baabbe128de9a79b",
+      "root": "0xb32185b296238d838812943a7594cc5838b4a014247badc8adb764f680dbcba5",
+      "engine": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      },
+      "exe_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    {
+      "name": "cypher1",
+      "pid": 1296671,
+      "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+      "height": 1049,
+      "hash": "0xe4640edd75a7793bba042f02bca74efd4176a949b42e4861baabbe128de9a79b",
+      "root": "0xb32185b296238d838812943a7594cc5838b4a014247badc8adb764f680dbcba5",
+      "engine": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      },
+      "exe_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    {
+      "name": "cypher2",
+      "pid": 1296672,
+      "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+      "height": 1049,
+      "hash": "0xe4640edd75a7793bba042f02bca74efd4176a949b42e4861baabbe128de9a79b",
+      "root": "0xb32185b296238d838812943a7594cc5838b4a014247badc8adb764f680dbcba5",
+      "engine": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      },
+      "exe_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    {
+      "name": "cypher3",
+      "pid": 1296673,
+      "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+      "height": 1049,
+      "hash": "0xe4640edd75a7793bba042f02bca74efd4176a949b42e4861baabbe128de9a79b",
+      "root": "0xb32185b296238d838812943a7594cc5838b4a014247badc8adb764f680dbcba5",
+      "engine": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      },
+      "exe_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    {
+      "name": "cypher4",
+      "pid": 1296674,
+      "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+      "height": 1049,
+      "hash": "0xe4640edd75a7793bba042f02bca74efd4176a949b42e4861baabbe128de9a79b",
+      "root": "0xb32185b296238d838812943a7594cc5838b4a014247badc8adb764f680dbcba5",
+      "engine": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      },
+      "exe_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    {
+      "name": "cypher5",
+      "pid": 1296675,
+      "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+      "height": 1049,
+      "hash": "0xe4640edd75a7793bba042f02bca74efd4176a949b42e4861baabbe128de9a79b",
+      "root": "0xb32185b296238d838812943a7594cc5838b4a014247badc8adb764f680dbcba5",
+      "engine": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      },
+      "exe_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    {
+      "name": "cypher6",
+      "pid": 1296691,
+      "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+      "height": 1049,
+      "hash": "0xe4640edd75a7793bba042f02bca74efd4176a949b42e4861baabbe128de9a79b",
+      "root": "0xb32185b296238d838812943a7594cc5838b4a014247badc8adb764f680dbcba5",
+      "engine": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      },
+      "exe_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    },
+    {
+      "name": "cyphermine",
+      "pid": 1298339,
+      "genesis": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+      "height": 1049,
+      "hash": "0xe4640edd75a7793bba042f02bca74efd4176a949b42e4861baabbe128de9a79b",
+      "root": "0xb32185b296238d838812943a7594cc5838b4a014247badc8adb764f680dbcba5",
+      "engine": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      },
+      "exe_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+    }
+  ],
+  "stopped": [
+    "cypherdex1",
+    "cypherdex2",
+    "cypherdex3",
+    "cypherdex4",
+    "cypherdex5",
+    "cypherdex6"
+  ],
+  "scope": "read-only; no PM2/DB operations; actual processes still previous genesis; new genesis only prepared on disk"
+}

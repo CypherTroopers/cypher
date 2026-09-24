@@ -1,0 +1,183 @@
+{
+  "status": "READY_FOR_SEPARATE_INIT_APPROVAL",
+  "init_executed": false,
+  "final_source_manifest_sha256": "f30c04920c75b95a0a05e868fd367c13c5fcd716a42138bbe5453107d973cc0e",
+  "build_source_sha256": "b0c62fc3cc5c9298d2b4321da5c7a84f57a831ee51171d47bf3f1ba57476213c",
+  "binary_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+  "binary_deployed": false,
+  "tests": [
+    {
+      "log": "q3-final-dex-race-r2.jsonl",
+      "sha256": "4da5eb416d3a660779d88cb72e1b69806997e93d24ff559636220d20e4e9ff82",
+      "package_pass": 21,
+      "top_level_pass": 182,
+      "test_pass_events": 656,
+      "skips": 29,
+      "failures": []
+    },
+    {
+      "log": "q3-consensus-final-race-v4.jsonl",
+      "sha256": "5e6cb2b05e3becd32a39a73b494a03eca746c9bdd23f198dd969d6a6567818ae",
+      "package_pass": 1,
+      "top_level_pass": 52,
+      "test_pass_events": 130,
+      "skips": 3,
+      "failures": []
+    },
+    {
+      "log": "q3-final-cli-roles.jsonl",
+      "sha256": "269bae39da490810459d259d79a106a68312f0ba4e604cb53fabd29dc40ebf4e",
+      "package_pass": 1,
+      "top_level_pass": 3,
+      "test_pass_events": 15,
+      "skips": 0,
+      "failures": []
+    },
+    {
+      "log": "q3-final-socket.jsonl",
+      "sha256": "19a44841336ca748dce76833824d54e78d15f12600ed4bb8df17a22848104312",
+      "package_pass": 6,
+      "top_level_pass": 67,
+      "test_pass_events": 331,
+      "skips": 0,
+      "failures": []
+    },
+    {
+      "log": "q3-final-core-regression.jsonl",
+      "sha256": "19b7ceb7a5cd5e1818890a6ccba323ba8d8902a6340e5481230d9fda81b24a48",
+      "package_pass": 4,
+      "top_level_pass": 442,
+      "test_pass_events": 673,
+      "skips": 0,
+      "failures": [
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportQUICAcknowledgesOnlyAfterAdmission"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportFallsBackToRealTLSTCP"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportSemanticNACKDoesNotFallback"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportEncodesReceiverBehindNACK"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportMissingACKIsFailure"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportDuplicateACKIsSuccess"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportStopAllowsSamePortRebind"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportRejectsBLSCertificateMismatch"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportPinsKeyBlockGeneration"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportConcurrentQUICAndTCP"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": "TestPoWResultTransportSlowTCPDoesNotExhaustQUIC"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core",
+          "test": null
+        }
+      ]
+    },
+    {
+      "log": "q3-final-core-transport-rerun.jsonl",
+      "sha256": "a8edbb5bdd4b1f6f92cb215d4fb3e803dd5994ef2ca1e49797f5d3a6f45ad21c",
+      "package_pass": 1,
+      "top_level_pass": 18,
+      "test_pass_events": 20,
+      "skips": 0,
+      "failures": []
+    },
+    {
+      "log": "q3-final-candidate-relay-validation.jsonl",
+      "sha256": "1dc9870ad94f14f475c6db3edc0bea555a7bdde130d1982705ae6170d903b409",
+      "package_pass": 1,
+      "top_level_pass": 1,
+      "test_pass_events": 1,
+      "skips": 0,
+      "failures": []
+    },
+    {
+      "log": "q3-current-forkid.jsonl",
+      "sha256": "8881aa78756e3b9a4e0f3306cef58b83078a93a1185d6af4c5d624ebbc27f5e9",
+      "package_pass": 0,
+      "top_level_pass": 4,
+      "test_pass_events": 4,
+      "skips": 0,
+      "failures": [
+        {
+          "package": "github.com/cypherium/cypher/core/forkid",
+          "test": "TestCreation"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core/forkid",
+          "test": "TestValidation"
+        },
+        {
+          "package": "github.com/cypherium/cypher/core/forkid",
+          "test": null
+        }
+      ]
+    },
+    {
+      "log": "q3-current-rpc-baseline.jsonl",
+      "sha256": "d5b38b7a38673a3df88e632a60e225bb1b14bf2198712e9c9b1ed944f3c773c3",
+      "package_pass": 0,
+      "top_level_pass": 0,
+      "test_pass_events": 0,
+      "skips": 0,
+      "failures": [
+        {
+          "package": "github.com/cypherium/cypher/internal/ethapi",
+          "test": "TestRawTxIngressStopDrainsDetachedCancelledBulk"
+        },
+        {
+          "package": "github.com/cypherium/cypher/internal/ethapi",
+          "test": "TestSendRawTransactionsBusySenderDoesNotBlockIndependentGroups"
+        },
+        {
+          "package": "github.com/cypherium/cypher/internal/ethapi",
+          "test": "TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves"
+        },
+        {
+          "package": "github.com/cypherium/cypher/internal/ethapi",
+          "test": null
+        }
+      ]
+    }
+  ],
+  "classifications": {
+    "q3-final-core-regression.jsonl": "11 transport tests blocked by sandbox socket EPERM; unchanged source rerun in loopback namespace q3-final-core-transport-rerun PASS. Raw FAIL retained.",
+    "q3-final-dex-race.jsonl": "historical interim FAIL: version4 supported but old future-version assertion used4; rejection test changed to unsupported5. final r2 PASS.",
+    "q3-current-forkid.jsonl": "two existing FAIL; see live-rpc-ingress-audit and baseline documents; not relabeled PASS",
+    "q3-current-rpc-baseline.jsonl": "three existing FAIL, includes current ingress head-of-line liveness issue; not all RETIRED"
+  },
+  "limits": [
+    "race only covers executed Go paths, not C BLS or full financial/consensus proof",
+    "CLI/TLS namespace results are ISOLATED, not designated LIVE finance",
+    "normal PoW NOT_RUN: MemAvailable18457468KiB < 32GiB DAG plus cache and node footprint",
+    "LIVE finance, two storage cuts, 60min, A/B/C remain BLOCKED/NOT_RUN until new generation",
+    "signature committee trust, no validity proof or DA availability guarantee"
+  ]
+}

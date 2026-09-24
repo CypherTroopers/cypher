@@ -1,0 +1,53 @@
+{
+  "status": "FAIL",
+  "duration_seconds": 716.63,
+  "reason": "13-slot flat catchup exhausted with certified53/finalized51 cursor6 expected8. Bounded source steps reached247 but new deposits266/268 were not included; matching and later phases remained NOT_RUN.",
+  "artifact": "/tmp/common-dex-check.vKneKqYn",
+  "source_manifest_sha256": "2a438c5f1f35aca9084d14e2fcb69174db27766df88217aac50d449602607585",
+  "source_during_run_bytes": 0,
+  "raw_sha256": "eb346592e46926f34ae4f73ddb27fd467809c0ab13c5f6339a5f3e32810065ca",
+  "binary_sha256": {
+    "cypher": "f5948716cb4f807961cc3dc1d8260d44e9500ca72bd25a672d35cf74a9c71389",
+    "reconfig.test": "0efd272b66c942ce84c06b37b67ba68b1f791fb399aaf1a1faff036068e0e645"
+  },
+  "test_exit": "1",
+  "run_exit": "1",
+  "public_failure_archive": "/tmp/continuous-public-failure-2623034258",
+  "public_periodic_watch": "/tmp/common-dex-continuous.uye5vgqi/trial10-public-watch",
+  "last_relay_source": 285,
+  "last_relay_source_version": 2,
+  "last_native_accepted": 40,
+  "last_dex_finalized": 51,
+  "last_dex_certified": 53,
+  "finalized_dex_anchor": 231,
+  "certified_dex_anchor": 247,
+  "finalized_dex_inbox": 6,
+  "certified_dex_inbox": 6,
+  "cold_absence_before": 176,
+  "cold_absence_after": 241,
+  "actual_cold_height_delta": 65,
+  "normal_key_hint_before": 242,
+  "normal_key_hint_after": 264,
+  "normal_key_hint_wait_seconds": 347.683574586,
+  "normal_key_hint_carriers": 3,
+  "new_native_deposits": [
+    266,
+    268
+  ],
+  "source_steps": [
+    119,
+    151,
+    183,
+    215,
+    231,
+    247
+  ],
+  "remaining_NOT_RUN": [
+    "flat cursor8 / finalized DEX v2 assertion",
+    "last40 native inputs",
+    "cycle3/4",
+    "CLX outage and postrestart settlement",
+    "72claims and295 finalledger",
+    "late DEX OFF common sync"
+  ]
+}

@@ -1,0 +1,6 @@
+=== RUN   TestLiveFinalityBacklogBeyondProofBoundFailsClosed
+    live_finality_backlog_test.go:29: handle 127.0.0.1:27000 code 9 view 2: hotstuff view id not match
+--- FAIL: TestLiveFinalityBacklogBeyondProofBoundFailsClosed (0.58s)
+FAIL
+FAIL	github.com/cypherium/cypher/dex/consensus	0.678s
+FAIL

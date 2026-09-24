@@ -255,6 +255,9 @@ func activePrecompileAddresses(rules params.Rules) []common.Address {
 	if rules.IsOsaka {
 		addresses = append(addresses, common.BytesToAddress([]byte{0x01, 0x00}))
 	}
+	if rules.IsDEXDevnet {
+		addresses = append(addresses, params.DEXSettlementAddress)
+	}
 	return addresses
 }
 
@@ -556,6 +559,11 @@ func (st *StateTransition) prepareAccessList(sender common.Address, to *common.A
 }
 
 func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
+	// A missing/corrupt local trust anchor is an execution failure, never a
+	// successful block containing a semantic revert receipt with another root.
+	if st.msg.To() != nil && *st.msg.To() == params.DEXSettlementAddress && st.evm.NativeContextError != nil {
+		return nil, st.evm.NativeContextError
+	}
 	if err := st.preCheck(); err != nil {
 		return nil, err
 	}
@@ -638,6 +646,9 @@ func (st *StateTransition) validateAuthorization(auth *types.SetCodeAuthorizatio
 		return authority, fmt.Errorf("%w: %v", ErrAuthorizationInvalidSignature, err)
 	}
 	st.state.AddAddressToAccessList(authority)
+	if st.evm.ChainConfig().DEXDevnet != nil && authority == params.DEXSettlementAddress {
+		return authority, ErrAuthorizationDestinationHasCode
+	}
 	code := st.state.GetCode(authority)
 	if _, delegated := types.ParseDelegation(code); len(code) != 0 && !delegated {
 		return authority, ErrAuthorizationDestinationHasCode

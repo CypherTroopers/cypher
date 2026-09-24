@@ -1,0 +1,25 @@
+test_ambiguous_stop_includes_attempted_node_in_restore (__main__.Tests.test_ambiguous_stop_includes_attempted_node_in_restore) ... ok
+test_bad_preflight_never_stops_anything (__main__.Tests.test_bad_preflight_never_stops_anything) ... ok
+test_dex_only_blocks_every_clx_entry_and_restores_on_error (__main__.Tests.test_dex_only_blocks_every_clx_entry_and_restores_on_error) ... ok
+test_financial_failure_restores_every_node_and_auth (__main__.Tests.test_financial_failure_restores_every_node_and_auth) ... ok
+test_foreign_duplicate_identity_and_action_limit_reject (__main__.Tests.test_foreign_duplicate_identity_and_action_limit_reject) ... ok
+test_interrupt_restores_network (__main__.Tests.test_interrupt_restores_network) ... ok
+test_journal_failure_during_restore_does_not_stop_recovery (__main__.Tests.test_journal_failure_during_restore_does_not_stop_recovery) ... ok
+test_normal_exact_names_and_reverse_recovery (__main__.Tests.test_normal_exact_names_and_reverse_recovery) ... ok
+test_one_restart_failure_does_not_skip_remaining_or_auth (__main__.Tests.test_one_restart_failure_does_not_skip_remaining_or_auth) ... ok
+test_saved_recovery_rechecks_previous_restored_entries (__main__.Tests.test_saved_recovery_rechecks_previous_restored_entries) ... ok
+test_sigterm_handler_requests_restore_and_second_signal_is_deferred (__main__.Tests.test_sigterm_handler_requests_restore_and_second_signal_is_deferred) ... ERROR
+
+======================================================================
+ERROR: test_sigterm_handler_requests_restore_and_second_signal_is_deferred (__main__.Tests.test_sigterm_handler_requests_restore_and_second_signal_is_deferred)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/common-dex-live-test.x5z_05oq/test_clx_fault_coordinator.py", line 131, in test_sigterm_handler_requests_restore_and_second_signal_is_deferred
+    self.assertEqual(len(states[-1]['deferred_restore_interrupts']),7)
+                         ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyError: 'deferred_restore_interrupts'
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.022s
+
+FAILED (errors=1)

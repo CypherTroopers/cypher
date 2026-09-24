@@ -1,0 +1,11 @@
+=== RUN   TestFHSNativeOrdinaryETHSource
+    dex_native_eth_source_test.go:113: ORDINARY_ETH_SOURCE_PROGRESS deposit=1 height=1 hash=0xcb81574b9bd368cc1de0a9e69877bf018b32f7dd70af0cebfdb0db6ce68141e2 root=0xe25e3fa47778bbaccb55e27118f06ed64fafe58d506d562bd69de902b32ebe67 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:113: ORDINARY_ETH_SOURCE_PROGRESS deposit=2 height=3 hash=0x44c9178148f864551aedc23523dc2f40d68bec1ed9fe32a64765ca41c9b201e0 root=0xaaaaef437b2d98b23325b9f63fbcb7b622bddff4b0c8a135ce266d83eedf2a03 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:113: ORDINARY_ETH_SOURCE_PROGRESS deposit=3 height=5 hash=0xf147e17319830710c6292c29b4601040c33e5f4f89d4be3f8eee643eea16e7f9 root=0x8d0012c159d86f64b3854fbb47c2e0fc87f150f06bd5da93cc7d766aafcafb31 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:113: ORDINARY_ETH_SOURCE_PROGRESS deposit=4 height=7 hash=0xf7aa1cc3f9e5f95d12f94f63ce06ea62ec14534f9f879d0dd9a675c3aac52f9b root=0x79a53b5f1f86a95b39b404e487514a62803ab37dbe831d4e41dedf7392a731e2 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:113: ORDINARY_ETH_SOURCE_PROGRESS deposit=5 height=9 hash=0x70737c0a916eb0bf6465008c01d16cc702774b4aa9423545e4220ad1d089325e root=0x3db08f93bc4203aeb08d1ac230e722fcbce3244cc95f6a719ea5c047858a1a63 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:113: ORDINARY_ETH_SOURCE_PROGRESS deposit=6 height=11 hash=0x48faba769c118226251e36b2a1c237a3ce75a92557f2025438bafc5abb8dab63 root=0x3137c583293f31e10d1332e1c496e453eaf694af902ef23f64dec45b34a1c97d peers=1 engineDelta=0
+    dex_native_eth_source_test.go:168: ORDINARY_ETH_SOURCE_RESTART_PROOF sourceHeight=11 inbox=6 balance=6000000000000000000 CLXChildren=7 sourceRPC=true sourcePoW=false sourceDEX=false noCoordinatorInsertChain=true
+    dex_native_eth_source_test.go:174: DEX_OFF_CONTINUOUS_AUTO_ETH_RESTART_PASS pid=1197722 restartPid=1197833 height=11 root=0x3137c583293f31e10d1332e1c496e453eaf694af902ef23f64dec45b34a1c97d receipts=0x19e5e94a93dfba868dd07d7f41d0edd5c67be45b27ac6e42c4b9f7f4367b2ad3 gas=271600 engine=0/0/0 blocks=12 manualSync=false
+--- PASS: TestFHSNativeOrdinaryETHSource (55.65s)
+PASS

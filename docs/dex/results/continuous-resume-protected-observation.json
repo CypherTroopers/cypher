@@ -1,0 +1,643 @@
+{
+  "observed_utc": "2026-09-23T08:51:29.784019+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "baseline_file": "/tmp/common-dex-continuous.uye5vgqi/baseline/protected-before.sha256",
+  "baseline_sha256": "5adbed65301ddc2da3090d4eb357ded2492fc6dbd4e5438cc0dfd4a490def869",
+  "changed": [
+    "build/bin/cypher",
+    "build/bin/cypher-linux-amd64"
+  ],
+  "provenance": "UNRESOLVED; no restore or binary build performed; user asynchronously asked about separate changes",
+  "files": [
+    {
+      "path": "build/bin/cypher",
+      "expected_g0": "ae6ae08d01d731a963344bfc8ea16f7e84586535fcecf78649b823d91402edf1",
+      "observed_sha256": "bcfb21b13a82eb0a9ffdfec843a5d7c3dededf735607da680b8dfa43db2759f8",
+      "matches_g0": false,
+      "size": 54155784,
+      "mtime_ns": 1790083360266975066,
+      "ctime_ns": 1790083360755968057
+    },
+    {
+      "path": "build/bin/cypher-darwin-arm64",
+      "expected_g0": "443f58abc77d6b2204b1264a42a6b6572900c877665f6de2960da3efbd81ad12",
+      "observed_sha256": "443f58abc77d6b2204b1264a42a6b6572900c877665f6de2960da3efbd81ad12",
+      "matches_g0": true,
+      "size": 48964754,
+      "mtime_ns": 1790010469258458761,
+      "ctime_ns": 1790010469258458761
+    },
+    {
+      "path": "build/bin/cypher-linux-amd64",
+      "expected_g0": "ae6ae08d01d731a963344bfc8ea16f7e84586535fcecf78649b823d91402edf1",
+      "observed_sha256": "bcfb21b13a82eb0a9ffdfec843a5d7c3dededf735607da680b8dfa43db2759f8",
+      "matches_g0": false,
+      "size": 54155784,
+      "mtime_ns": 1790083360745968200,
+      "ctime_ns": 1790083360766967899
+    },
+    {
+      "path": "build/bin/cypher.exe",
+      "expected_g0": "7ac04c1649eba0d075029121f10330635dc817f07a9b458bd47e3e893ffe5f3e",
+      "observed_sha256": "7ac04c1649eba0d075029121f10330635dc817f07a9b458bd47e3e893ffe5f3e",
+      "matches_g0": true,
+      "size": 69555318,
+      "mtime_ns": 1790010470239444723,
+      "ctime_ns": 1790010470239444723
+    },
+    {
+      "path": "build/bin/libcrypto-3-x64.dll",
+      "expected_g0": "4d2e724eb852f78ec0adbd1b7265325f79f503c9572658a26434f27f0cedb051",
+      "observed_sha256": "4d2e724eb852f78ec0adbd1b7265325f79f503c9572658a26434f27f0cedb051",
+      "matches_g0": true,
+      "size": 5495118,
+      "mtime_ns": 1790010470276444194,
+      "ctime_ns": 1790010470276444194
+    },
+    {
+      "path": "build/bin/libgcc_s_seh-1.dll",
+      "expected_g0": "278f1101f2371c58b6b412a3206718e22343940a5164aceb4fb75f2bf3b38ed4",
+      "observed_sha256": "278f1101f2371c58b6b412a3206718e22343940a5164aceb4fb75f2bf3b38ed4",
+      "matches_g0": true,
+      "size": 151732,
+      "mtime_ns": 1790010470277444180,
+      "ctime_ns": 1790010470277444180
+    },
+    {
+      "path": "build/bin/libgmp-10.dll",
+      "expected_g0": "37248cda33845e7c5c35a574e57da762dd0a8268f0270d179f30a33746809681",
+      "observed_sha256": "37248cda33845e7c5c35a574e57da762dd0a8268f0270d179f30a33746809681",
+      "matches_g0": true,
+      "size": 679747,
+      "mtime_ns": 1790010470283444094,
+      "ctime_ns": 1790010470283444094
+    },
+    {
+      "path": "build/bin/libstdc++-6.dll",
+      "expected_g0": "3529d11c422b2aaf0bbad7221bf62ba7b5a39f854e89a015bb58b6b55a677da1",
+      "observed_sha256": "3529d11c422b2aaf0bbad7221bf62ba7b5a39f854e89a015bb58b6b55a677da1",
+      "matches_g0": true,
+      "size": 2667040,
+      "mtime_ns": 1790010470298443879,
+      "ctime_ns": 1790010470298443879
+    },
+    {
+      "path": "build/bin/libwinpthread-1.dll",
+      "expected_g0": "4869aa8ab2e7e19ee43109b8832749aa1cd9c6e5302475439eae42d0b60b969f",
+      "observed_sha256": "4869aa8ab2e7e19ee43109b8832749aa1cd9c6e5302475439eae42d0b60b969f",
+      "matches_g0": true,
+      "size": 65954,
+      "mtime_ns": 1790010470298443879,
+      "ctime_ns": 1790010470298443879
+    },
+    {
+      "path": "cmd/cypher/data/geth/LOCK",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470708403253,
+      "ctime_ns": 1790010470708403253
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/000014.ldb",
+      "expected_g0": "e51b38e56734fbe27e19c140b626ca25c96d89e7589948b70439b64fcc45ff3d",
+      "observed_sha256": "e51b38e56734fbe27e19c140b626ca25c96d89e7589948b70439b64fcc45ff3d",
+      "matches_g0": true,
+      "size": 5090,
+      "mtime_ns": 1790010470708619676,
+      "ctime_ns": 1790010470708619676
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/000015.ldb",
+      "expected_g0": "b8b015b515d2f41dba9b09aa09b8b5a84c909bef4ac624996030f81b63b6830a",
+      "observed_sha256": "b8b015b515d2f41dba9b09aa09b8b5a84c909bef4ac624996030f81b63b6830a",
+      "matches_g0": true,
+      "size": 219,
+      "mtime_ns": 1790010470708935473,
+      "ctime_ns": 1790010470708935473
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/000018.ldb",
+      "expected_g0": "cb915f6c7a13c9e7a34325adf4fd8e15ce330d09f6a3a7f894b6db4b04f24519",
+      "observed_sha256": "cb915f6c7a13c9e7a34325adf4fd8e15ce330d09f6a3a7f894b6db4b04f24519",
+      "matches_g0": true,
+      "size": 219,
+      "mtime_ns": 1790010470708935473,
+      "ctime_ns": 1790010470708935473
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/000021.ldb",
+      "expected_g0": "4fd591c1f0cdedc07da833a6fbff11e490e195465a264f4576e01b850a375038",
+      "observed_sha256": "4fd591c1f0cdedc07da833a6fbff11e490e195465a264f4576e01b850a375038",
+      "matches_g0": true,
+      "size": 219,
+      "mtime_ns": 1790010470708935473,
+      "ctime_ns": 1790010470708935473
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/000022.log",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470708935473,
+      "ctime_ns": 1790010470708935473
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/CURRENT",
+      "expected_g0": "368b5cdab2ff128767296bb4f19bfcd39baa627eaaf43cafba54fc223feec47f",
+      "observed_sha256": "368b5cdab2ff128767296bb4f19bfcd39baa627eaaf43cafba54fc223feec47f",
+      "matches_g0": true,
+      "size": 16,
+      "mtime_ns": 1790010470708935473,
+      "ctime_ns": 1790010470708935473
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/LOCK",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470708935473,
+      "ctime_ns": 1790010470708935473
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/LOG",
+      "expected_g0": "b67ba9318155e30d7686ec8e4bb533ecdee83e1ccaee1d5f3b29abf93bdf7814",
+      "observed_sha256": "b67ba9318155e30d7686ec8e4bb533ecdee83e1ccaee1d5f3b29abf93bdf7814",
+      "matches_g0": true,
+      "size": 5232,
+      "mtime_ns": 1790010470708935473,
+      "ctime_ns": 1790010470708935473
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/MANIFEST-000023",
+      "expected_g0": "f544438f31a4189b42ce21764714594bdca6076ba920707e0eb2fb5de59b15b1",
+      "observed_sha256": "f544438f31a4189b42ce21764714594bdca6076ba920707e0eb2fb5de59b15b1",
+      "matches_g0": true,
+      "size": 367,
+      "mtime_ns": 1790010470708935473,
+      "ctime_ns": 1790010470708935473
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/FLOCK",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470709437998,
+      "ctime_ns": 1790010470709437998
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/bodies.0000.cdat",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470709437998,
+      "ctime_ns": 1790010470709437998
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/bodies.cidx",
+      "expected_g0": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "observed_sha256": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "matches_g0": true,
+      "size": 6,
+      "mtime_ns": 1790010470709993903,
+      "ctime_ns": 1790010470709993903
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/diffs.0000.rdat",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470709993903,
+      "ctime_ns": 1790010470709993903
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/diffs.ridx",
+      "expected_g0": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "observed_sha256": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "matches_g0": true,
+      "size": 6,
+      "mtime_ns": 1790010470709993903,
+      "ctime_ns": 1790010470709993903
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/hashes.0000.rdat",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470710437984,
+      "ctime_ns": 1790010470710437984
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/hashes.ridx",
+      "expected_g0": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "observed_sha256": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "matches_g0": true,
+      "size": 6,
+      "mtime_ns": 1790010470710437984,
+      "ctime_ns": 1790010470710437984
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/headers.0000.cdat",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470710437984,
+      "ctime_ns": 1790010470710437984
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/headers.cidx",
+      "expected_g0": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "observed_sha256": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "matches_g0": true,
+      "size": 6,
+      "mtime_ns": 1790010470710437984,
+      "ctime_ns": 1790010470710437984
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/receipts.0000.cdat",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470711437970,
+      "ctime_ns": 1790010470711437970
+    },
+    {
+      "path": "cmd/cypher/data/geth/chaindata/ancient/receipts.cidx",
+      "expected_g0": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "observed_sha256": "b0f66adc83641586656866813fd9dd0b8ebb63796075661ba45d1aa8089e1d44",
+      "matches_g0": true,
+      "size": 6,
+      "mtime_ns": 1790010470711437970,
+      "ctime_ns": 1790010470711437970
+    },
+    {
+      "path": "cmd/cypher/data/geth/nodekey",
+      "expected_g0": "16271f30fe149dfeea464fc533011e2a0af95911f2174c2a6e9cdfdfb7bdf4b3",
+      "observed_sha256": "16271f30fe149dfeea464fc533011e2a0af95911f2174c2a6e9cdfdfb7bdf4b3",
+      "matches_g0": true,
+      "size": 64,
+      "mtime_ns": 1790010470711437970,
+      "ctime_ns": 1790010470711437970
+    },
+    {
+      "path": "cmd/cypher/data/geth/nodes/000013.ldb",
+      "expected_g0": "4142ebb640507fc361795d1d49ac91b8239e1b0410983dbceb2e45602334e190",
+      "observed_sha256": "4142ebb640507fc361795d1d49ac91b8239e1b0410983dbceb2e45602334e190",
+      "matches_g0": true,
+      "size": 2588,
+      "mtime_ns": 1790010470711437970,
+      "ctime_ns": 1790010470711437970
+    },
+    {
+      "path": "cmd/cypher/data/geth/nodes/000014.log",
+      "expected_g0": "d6be86698b29c12edd910430e95e60985c8b72af6d2b2a8af3f02f2b83749b0f",
+      "observed_sha256": "d6be86698b29c12edd910430e95e60985c8b72af6d2b2a8af3f02f2b83749b0f",
+      "matches_g0": true,
+      "size": 1429210,
+      "mtime_ns": 1790010470714437926,
+      "ctime_ns": 1790010470714437926
+    },
+    {
+      "path": "cmd/cypher/data/geth/nodes/000016.ldb",
+      "expected_g0": "7979a2e151a45a2ac7d4571ae14d7ded9b97d78b450b09b5e7e6e1699bd063ae",
+      "observed_sha256": "7979a2e151a45a2ac7d4571ae14d7ded9b97d78b450b09b5e7e6e1699bd063ae",
+      "matches_g0": true,
+      "size": 1289,
+      "mtime_ns": 1790010470714437926,
+      "ctime_ns": 1790010470714437926
+    },
+    {
+      "path": "cmd/cypher/data/geth/nodes/CURRENT",
+      "expected_g0": "f6a28e2e41d451b4de8597a14916d7a3058ebdd8046a89109658321142660d69",
+      "observed_sha256": "f6a28e2e41d451b4de8597a14916d7a3058ebdd8046a89109658321142660d69",
+      "matches_g0": true,
+      "size": 16,
+      "mtime_ns": 1790010470715437912,
+      "ctime_ns": 1790010470715437912
+    },
+    {
+      "path": "cmd/cypher/data/geth/nodes/LOCK",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470715437912,
+      "ctime_ns": 1790010470715437912
+    },
+    {
+      "path": "cmd/cypher/data/geth/nodes/LOG",
+      "expected_g0": "331a5ba3849ae0a45a0377e5ab9cab821ab9304e4680f4a0eebe40facce90519",
+      "observed_sha256": "331a5ba3849ae0a45a0377e5ab9cab821ab9304e4680f4a0eebe40facce90519",
+      "matches_g0": true,
+      "size": 4005,
+      "mtime_ns": 1790010470715437912,
+      "ctime_ns": 1790010470715437912
+    },
+    {
+      "path": "cmd/cypher/data/geth/nodes/MANIFEST-000015",
+      "expected_g0": "6274279f13185e01f055e2f95b0195c206ed5272bc14c74f3cc42e51fc5d2a9f",
+      "observed_sha256": "6274279f13185e01f055e2f95b0195c206ed5272bc14c74f3cc42e51fc5d2a9f",
+      "matches_g0": true,
+      "size": 605,
+      "mtime_ns": 1790010470715437912,
+      "ctime_ns": 1790010470715437912
+    },
+    {
+      "path": "cmd/cypher/data/geth/transactions.rlp",
+      "expected_g0": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "observed_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches_g0": true,
+      "size": 0,
+      "mtime_ns": 1790010470715437912,
+      "ctime_ns": 1790010470715437912
+    },
+    {
+      "path": "cmd/cypher/data/geth/triecache/data.0.bin",
+      "expected_g0": "90d87dfd24bd8718463d694643ca3768647c71cbcc8d5f7ecd834c2d30764573",
+      "observed_sha256": "90d87dfd24bd8718463d694643ca3768647c71cbcc8d5f7ecd834c2d30764573",
+      "matches_g0": true,
+      "size": 11443,
+      "mtime_ns": 1790010470715437912,
+      "ctime_ns": 1790010470715437912
+    },
+    {
+      "path": "cmd/cypher/data/geth/triecache/metadata.bin",
+      "expected_g0": "5eb6da0e0e522104c6d50b0748e6893762f7f2c00a7163a46ccbb535bfd61a0d",
+      "observed_sha256": "5eb6da0e0e522104c6d50b0748e6893762f7f2c00a7163a46ccbb535bfd61a0d",
+      "matches_g0": true,
+      "size": 8,
+      "mtime_ns": 1790010470716540504,
+      "ctime_ns": 1790010470716540504
+    },
+    {
+      "path": "cmd/cypher/data/keystore/ED25519--2022-03-01T06-09-01.951391000Z--592ffc305d3c78cadadb49166823ef8dddd16ed5",
+      "expected_g0": "e464a1050bf5cee3004316de961686c041b6666b40569955dc8ff67940d7122a",
+      "observed_sha256": "e464a1050bf5cee3004316de961686c041b6666b40569955dc8ff67940d7122a",
+      "matches_g0": true,
+      "size": 555,
+      "mtime_ns": 1790010470716540504,
+      "ctime_ns": 1790010470716540504
+    },
+    {
+      "path": "cmd/cypher/data/keystore/UTC--2022-03-01T06-08-58.365578000Z--f9f71b2f0f8d0baf081c57101662568b7dfc7448",
+      "expected_g0": "ed44cec578ef3686327f88c5609270f0f6b672c7ffe6fb91ab7410f6f75e48dc",
+      "observed_sha256": "ed44cec578ef3686327f88c5609270f0f6b672c7ffe6fb91ab7410f6f75e48dc",
+      "matches_g0": true,
+      "size": 491,
+      "mtime_ns": 1790010470716741658,
+      "ctime_ns": 1790010470716741658
+    },
+    {
+      "path": "cmd/cypher/data/keystore/UTC--2022-03-01T06-09-00.161565000Z--4360da708fb0d5209627ac5dc09b0e10a6b45c4a",
+      "expected_g0": "757e1080755764f6dd26a042830aae63fddb9b9b8d74d1fbd247d803fa4d3a6b",
+      "observed_sha256": "757e1080755764f6dd26a042830aae63fddb9b9b8d74d1fbd247d803fa4d3a6b",
+      "matches_g0": true,
+      "size": 491,
+      "mtime_ns": 1790010470716741658,
+      "ctime_ns": 1790010470716741658
+    },
+    {
+      "path": "crypto/bls/lib/darwin/libbls256.a",
+      "expected_g0": "29eeb8a34da6af6f1bf7d609d8d374b1aa4ec8beb09afbe58927cadc58fcba95",
+      "observed_sha256": "29eeb8a34da6af6f1bf7d609d8d374b1aa4ec8beb09afbe58927cadc58fcba95",
+      "matches_g0": true,
+      "size": 2385512,
+      "mtime_ns": 1790010470866435751,
+      "ctime_ns": 1790010470866435751
+    },
+    {
+      "path": "crypto/bls/lib/darwin/libbls384.a",
+      "expected_g0": "1fbe75fb6998dba31732ebeca11e00cda58c3e733881ef5d13f7686bb3275e76",
+      "observed_sha256": "1fbe75fb6998dba31732ebeca11e00cda58c3e733881ef5d13f7686bb3275e76",
+      "matches_g0": true,
+      "size": 2390896,
+      "mtime_ns": 1790010470876435608,
+      "ctime_ns": 1790010470876435608
+    },
+    {
+      "path": "crypto/bls/lib/darwin/libbls384_256.a",
+      "expected_g0": "c63746b0cad8681ac2c14bc9f54d31673471590f18c246901149046a1ab5ab0e",
+      "observed_sha256": "c63746b0cad8681ac2c14bc9f54d31673471590f18c246901149046a1ab5ab0e",
+      "matches_g0": true,
+      "size": 2400712,
+      "mtime_ns": 1790010470886435465,
+      "ctime_ns": 1790010470886435465
+    },
+    {
+      "path": "crypto/bls/lib/darwin/libbls512.a",
+      "expected_g0": "faf9a13f06e0a485a072d27b6e885181e3316a268151ea4df614146f0f0c2760",
+      "observed_sha256": "faf9a13f06e0a485a072d27b6e885181e3316a268151ea4df614146f0f0c2760",
+      "matches_g0": true,
+      "size": 2393552,
+      "mtime_ns": 1790010470895435337,
+      "ctime_ns": 1790010470895435337
+    },
+    {
+      "path": "crypto/bls/lib/darwin/libmcl.a",
+      "expected_g0": "cf070706a2beb9e09ca01df0e334754833f892379c93ac39de30ca578d325a11",
+      "observed_sha256": "cf070706a2beb9e09ca01df0e334754833f892379c93ac39de30ca578d325a11",
+      "matches_g0": true,
+      "size": 4776304,
+      "mtime_ns": 1790010470914435065,
+      "ctime_ns": 1790010470914435065
+    },
+    {
+      "path": "crypto/bls/lib/libbls256.a",
+      "expected_g0": "e5db265ece2f03e43e09311a85e00d190fdf5e3bd82d82a9db97f5e2c0cb47b6",
+      "observed_sha256": "e5db265ece2f03e43e09311a85e00d190fdf5e3bd82d82a9db97f5e2c0cb47b6",
+      "matches_g0": true,
+      "size": 4049796,
+      "mtime_ns": 1790010470928434864,
+      "ctime_ns": 1790010470928434864
+    },
+    {
+      "path": "crypto/bls/lib/libbls384.a",
+      "expected_g0": "0a18efcff1cba436c779020d3701177a42ebaec45efe5f081ef0ad7a1e971549",
+      "observed_sha256": "0a18efcff1cba436c779020d3701177a42ebaec45efe5f081ef0ad7a1e971549",
+      "matches_g0": true,
+      "size": 4028676,
+      "mtime_ns": 1790010470944434635,
+      "ctime_ns": 1790010470944434635
+    },
+    {
+      "path": "crypto/bls/lib/libbls384_256.a",
+      "expected_g0": "5ed7c0479703b643ef999b65032861c50ce7ab8d97448078767b531234fda258",
+      "observed_sha256": "5ed7c0479703b643ef999b65032861c50ce7ab8d97448078767b531234fda258",
+      "matches_g0": true,
+      "size": 4028948,
+      "mtime_ns": 1790010470960434406,
+      "ctime_ns": 1790010470960434406
+    },
+    {
+      "path": "crypto/bls/lib/libbls512.a",
+      "expected_g0": "d7ef2f71f6bf6fbb0e4b851f93cd2c7a0763c1886899410301d5a9ec172877b8",
+      "observed_sha256": "d7ef2f71f6bf6fbb0e4b851f93cd2c7a0763c1886899410301d5a9ec172877b8",
+      "matches_g0": true,
+      "size": 4035370,
+      "mtime_ns": 1790010470975434192,
+      "ctime_ns": 1790010470975434192
+    },
+    {
+      "path": "crypto/bls/lib/libmcl.a",
+      "expected_g0": "f6944353d6d8a54e65fd88d23843cdb8219770fff5f66cd0d152580fa6b2f120",
+      "observed_sha256": "f6944353d6d8a54e65fd88d23843cdb8219770fff5f66cd0d152580fa6b2f120",
+      "matches_g0": true,
+      "size": 8018574,
+      "mtime_ns": 1790010471007433734,
+      "ctime_ns": 1790010471007433734
+    },
+    {
+      "path": "crypto/bls/lib/linux/libbls256.a",
+      "expected_g0": "e5db265ece2f03e43e09311a85e00d190fdf5e3bd82d82a9db97f5e2c0cb47b6",
+      "observed_sha256": "e5db265ece2f03e43e09311a85e00d190fdf5e3bd82d82a9db97f5e2c0cb47b6",
+      "matches_g0": true,
+      "size": 4049796,
+      "mtime_ns": 1790010471022433519,
+      "ctime_ns": 1790010471022433519
+    },
+    {
+      "path": "crypto/bls/lib/linux/libbls384.a",
+      "expected_g0": "0a18efcff1cba436c779020d3701177a42ebaec45efe5f081ef0ad7a1e971549",
+      "observed_sha256": "0a18efcff1cba436c779020d3701177a42ebaec45efe5f081ef0ad7a1e971549",
+      "matches_g0": true,
+      "size": 4028676,
+      "mtime_ns": 1790010471037433305,
+      "ctime_ns": 1790010471037433305
+    },
+    {
+      "path": "crypto/bls/lib/linux/libbls384_256.a",
+      "expected_g0": "5ed7c0479703b643ef999b65032861c50ce7ab8d97448078767b531234fda258",
+      "observed_sha256": "5ed7c0479703b643ef999b65032861c50ce7ab8d97448078767b531234fda258",
+      "matches_g0": true,
+      "size": 4028948,
+      "mtime_ns": 1790010471052433090,
+      "ctime_ns": 1790010471052433090
+    },
+    {
+      "path": "crypto/bls/lib/linux/libbls512.a",
+      "expected_g0": "d7ef2f71f6bf6fbb0e4b851f93cd2c7a0763c1886899410301d5a9ec172877b8",
+      "observed_sha256": "d7ef2f71f6bf6fbb0e4b851f93cd2c7a0763c1886899410301d5a9ec172877b8",
+      "matches_g0": true,
+      "size": 4035370,
+      "mtime_ns": 1790010471067432875,
+      "ctime_ns": 1790010471067432875
+    },
+    {
+      "path": "crypto/bls/lib/linux/libmcl.a",
+      "expected_g0": "f6944353d6d8a54e65fd88d23843cdb8219770fff5f66cd0d152580fa6b2f120",
+      "observed_sha256": "f6944353d6d8a54e65fd88d23843cdb8219770fff5f66cd0d152580fa6b2f120",
+      "matches_g0": true,
+      "size": 8018574,
+      "mtime_ns": 1790010471096432460,
+      "ctime_ns": 1790010471096432460
+    },
+    {
+      "path": "crypto/bls/lib/mac/libbls256.a",
+      "expected_g0": "29eeb8a34da6af6f1bf7d609d8d374b1aa4ec8beb09afbe58927cadc58fcba95",
+      "observed_sha256": "29eeb8a34da6af6f1bf7d609d8d374b1aa4ec8beb09afbe58927cadc58fcba95",
+      "matches_g0": true,
+      "size": 2385512,
+      "mtime_ns": 1790010471106432317,
+      "ctime_ns": 1790010471106432317
+    },
+    {
+      "path": "crypto/bls/lib/mac/libbls384.a",
+      "expected_g0": "1fbe75fb6998dba31732ebeca11e00cda58c3e733881ef5d13f7686bb3275e76",
+      "observed_sha256": "1fbe75fb6998dba31732ebeca11e00cda58c3e733881ef5d13f7686bb3275e76",
+      "matches_g0": true,
+      "size": 2390896,
+      "mtime_ns": 1790010471118432146,
+      "ctime_ns": 1790010471118432146
+    },
+    {
+      "path": "crypto/bls/lib/mac/libbls384_256.a",
+      "expected_g0": "c63746b0cad8681ac2c14bc9f54d31673471590f18c246901149046a1ab5ab0e",
+      "observed_sha256": "c63746b0cad8681ac2c14bc9f54d31673471590f18c246901149046a1ab5ab0e",
+      "matches_g0": true,
+      "size": 2400712,
+      "mtime_ns": 1790010471137431874,
+      "ctime_ns": 1790010471137431874
+    },
+    {
+      "path": "crypto/bls/lib/mac/libbls512.a",
+      "expected_g0": "faf9a13f06e0a485a072d27b6e885181e3316a268151ea4df614146f0f0c2760",
+      "observed_sha256": "faf9a13f06e0a485a072d27b6e885181e3316a268151ea4df614146f0f0c2760",
+      "matches_g0": true,
+      "size": 2393552,
+      "mtime_ns": 1790010471147431731,
+      "ctime_ns": 1790010471147431731
+    },
+    {
+      "path": "crypto/bls/lib/mac/libmcl.a",
+      "expected_g0": "cf070706a2beb9e09ca01df0e334754833f892379c93ac39de30ca578d325a11",
+      "observed_sha256": "cf070706a2beb9e09ca01df0e334754833f892379c93ac39de30ca578d325a11",
+      "matches_g0": true,
+      "size": 4776304,
+      "mtime_ns": 1790010471170431402,
+      "ctime_ns": 1790010471170431402
+    },
+    {
+      "path": "crypto/bls/lib/win/libbls256.a",
+      "expected_g0": "13b262cb352b4ef2b749d8d5bb5b0cbf5db89b45beeedc63f66d9718644993b4",
+      "observed_sha256": "13b262cb352b4ef2b749d8d5bb5b0cbf5db89b45beeedc63f66d9718644993b4",
+      "matches_g0": true,
+      "size": 3712840,
+      "mtime_ns": 1790010471192431087,
+      "ctime_ns": 1790010471192431087
+    },
+    {
+      "path": "crypto/bls/lib/win/libbls384.a",
+      "expected_g0": "435369f4819aad98d7070fa535fb59ca78fb59a634796df6b76a1000ffc22d56",
+      "observed_sha256": "435369f4819aad98d7070fa535fb59ca78fb59a634796df6b76a1000ffc22d56",
+      "matches_g0": true,
+      "size": 3701070,
+      "mtime_ns": 1790010471227430586,
+      "ctime_ns": 1790010471227430586
+    },
+    {
+      "path": "crypto/bls/lib/win/libbls384_256.a",
+      "expected_g0": "7d4762c1bf9cca02df8faf4d27ddd02f2cf2feaca848e6fd376b01b76dfdb443",
+      "observed_sha256": "7d4762c1bf9cca02df8faf4d27ddd02f2cf2feaca848e6fd376b01b76dfdb443",
+      "matches_g0": true,
+      "size": 3723070,
+      "mtime_ns": 1790010471253430214,
+      "ctime_ns": 1790010471253430214
+    },
+    {
+      "path": "crypto/bls/lib/win/libbls512.a",
+      "expected_g0": "de812f4d8f294672cde299a53167efe6e7851be71ee0c96fe14e524fa605b83b",
+      "observed_sha256": "de812f4d8f294672cde299a53167efe6e7851be71ee0c96fe14e524fa605b83b",
+      "matches_g0": true,
+      "size": 3703798,
+      "mtime_ns": 1790010471271429956,
+      "ctime_ns": 1790010471271429956
+    },
+    {
+      "path": "crypto/bls/lib/win/libmcl.a",
+      "expected_g0": "1c6090067516333448e7b840c45d5397d5f6addd156afc933e54522d4d28762b",
+      "observed_sha256": "1c6090067516333448e7b840c45d5397d5f6addd156afc933e54522d4d28762b",
+      "matches_g0": true,
+      "size": 9011924,
+      "mtime_ns": 1790010471305429470,
+      "ctime_ns": 1790010471305429470
+    },
+    {
+      "path": "genesis.json",
+      "expected_g0": "131acbb21ef77f4229c91a639c51348bc1d0f0f5b6c4cbf4299e46c90efd4b1f",
+      "observed_sha256": "131acbb21ef77f4229c91a639c51348bc1d0f0f5b6c4cbf4299e46c90efd4b1f",
+      "matches_g0": true,
+      "size": 5244,
+      "mtime_ns": 1790010471353428783,
+      "ctime_ns": 1790010471353428783
+    }
+  ]
+}

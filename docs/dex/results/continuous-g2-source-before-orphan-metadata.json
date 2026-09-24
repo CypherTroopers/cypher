@@ -1,0 +1,39 @@
+{
+  "started_utc": "2026-09-22T10:32:11.283586+00:00",
+  "finished_utc": "2026-09-22T10:32:28.845507+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-race",
+    "-json",
+    "./dex/clxevidence",
+    "./dex/relay/source",
+    "-run",
+    "^(TestSource|TestRelaySource)"
+  ],
+  "exit_code": 0,
+  "network_namespace": "net:[4026532340]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [
+    {
+      "path": "node/dex_rpc_public_test.go",
+      "before": null,
+      "after": "4a4c2e945ba0e8711bd8e89b5fd2d879f6264b8b866222af2c15b31f9f446ceb"
+    }
+  ],
+  "log": "docs/dex/results/continuous-g2-source-before-orphan.jsonl",
+  "log_sha256": "6c34f2b72796408be766057996e909ad3fab0c4287de79b954cd89127f417a66"
+}

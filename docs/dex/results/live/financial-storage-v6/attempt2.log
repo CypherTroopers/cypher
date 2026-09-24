@@ -1,0 +1,8 @@
+ok  	github.com/cypherium/cypher/dex/rewards	2.064s
+# github.com/cypherium/cypher/dex/consensus
+dex/consensus/generation.go:32:129: a.storageBlocked undefined (type *Application has no field or method storageBlocked)
+dex/consensus/generation.go:158:4: a.storageBlocked undefined (type *Application has no field or method storageBlocked)
+FAIL	github.com/cypherium/cypher/dex/devnet [build failed]
+FAIL	github.com/cypherium/cypher/dex/service/replication [build failed]
+FAIL	github.com/cypherium/cypher/dex/service/finance [build failed]
+FAIL

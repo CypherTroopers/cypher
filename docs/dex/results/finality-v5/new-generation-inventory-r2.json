@@ -1,0 +1,345 @@
+{
+  "Status": "BLOCKED",
+  "ResetAuthorized": false,
+  "Deployed": false,
+  "StorageGenerationReady": false,
+  "ChainID": 10101919,
+  "OldGenesis": "0xa4a61fa952509cde79c14e152702a1d7dea1cc0320b4552566b2efb9e4a575de",
+  "Genesis": "0xb2385f44d0adaf948957528f4e6c7c493fddf1311555c960d925b12dbe0f1626",
+  "StateRoot": "0xd3e0fd99e2cbcafe3ca718d616b73ea47664153c0ffc01888c3cedef893a33f0",
+  "KeyGenesis": "0x444fc4af4bcbab16da2ffe8f9702739e6f2cd779df6096843417cbfeedf42a5a",
+  "DEXID": "0xae8b961b841fb8b270e87639314f2881c8ac3c6154480eb96b44296ad9c1be62",
+  "DEXCommittee": "0x7f67e883ec382c363c3bb019168874fe098eebe58067bd61effa80b789141681",
+  "TransportRegistry": "0xda1f00c18e4fb187462f642169e76811549a3de91cbad35bfef2009269fab21c",
+  "BootstrapAnchor": "0xfce8e62640563d9fe91825a8f801b25b3b3328bc00b4b30bcfec4293a6a553b2",
+  "ConfigurationVersion": 5,
+  "MaxHeight": 4096,
+  "MaxCheckpoints": 4096,
+  "GenesisFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/genesis.json",
+  "GenesisSHA256": "06e879c0c1277008cc915b8a0ad4c73704f45119ec64cef875f503360d7d15ff",
+  "AllocPreserved": true,
+  "CLXCommitteePreserved": true,
+  "ChainIDPreserved": true,
+  "OrdinaryCLXReplaySeparated": false,
+  "CommonIdentitiesReused": true,
+  "ReusedCommonIdentitySource": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate",
+  "AllocEntries": 12,
+  "Participants": [
+    {
+      "Name": "cyphermine",
+      "CLXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/chaindbmine",
+      "DEXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/runtime/cyphermine/dex",
+      "Manifest": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/manifests/cyphermine.json",
+      "API": "127.0.0.1:19000",
+      "TLS": "127.0.0.1:18000",
+      "P2PPort": 6099,
+      "RnetPort": 7155,
+      "VotePublic": "f855aa6f8d57cb0f1518cf901d1354ab636402dd6348edd435dec6a283f15111ac5aa1ed785adecb74bd14701b8bcd9aa1997f236a25db15e384689bb27b808f",
+      "RewardRecipient": "0x15fa779515F8632e656653c7B49DCeE40Eed5cdb",
+      "CommonWallet": "0xeb8c07def4c5a2541de730b027376e1068aa861a",
+      "CommonKeyFile": ""
+    },
+    {
+      "Name": "cypherdex1",
+      "CLXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex1",
+      "DEXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/runtime/cypherdex1/dex",
+      "Manifest": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/manifests/cypherdex1.json",
+      "API": "127.0.0.1:19001",
+      "TLS": "127.0.0.1:18001",
+      "P2PPort": 6201,
+      "RnetPort": 7202,
+      "VotePublic": "a01081f61993ba7755b594e4a2f2f90b1ac4444e420a32f3244a5c8b564fb50e40811eaf364e9834770160d575030bc7ee291a54b9d716339e9c7ac03120e307",
+      "RewardRecipient": "0x7efAea9ED8bB7Ea77518D8EF5144f2e6fB99eFCE",
+      "CommonWallet": "0xb1E9EEA6888cD1FEC4d8b6f85D465Fb3c2d819ab",
+      "CommonKeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex1-common-wallet.key"
+    },
+    {
+      "Name": "cypherdex2",
+      "CLXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex2",
+      "DEXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/runtime/cypherdex2/dex",
+      "Manifest": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/manifests/cypherdex2.json",
+      "API": "127.0.0.1:19002",
+      "TLS": "127.0.0.1:18002",
+      "P2PPort": 6202,
+      "RnetPort": 7204,
+      "VotePublic": "87eb84095c290a4a6ca5dcfc71808c70d3fc609ab832492c476b45b606259b208b49e0648ef8f14a69ccb968f5e368eacb99d55d24607b5ca087bb8877fb8a19",
+      "RewardRecipient": "0xb3512C385C484839910C1aDA1d7B9988d9207C01",
+      "CommonWallet": "0x64E12CAce3386eEd55F1FA05cdED9bd59A5fD57b",
+      "CommonKeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex2-common-wallet.key"
+    },
+    {
+      "Name": "cypherdex3",
+      "CLXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex3",
+      "DEXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/runtime/cypherdex3/dex",
+      "Manifest": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/manifests/cypherdex3.json",
+      "API": "127.0.0.1:19003",
+      "TLS": "127.0.0.1:18003",
+      "P2PPort": 6203,
+      "RnetPort": 7206,
+      "VotePublic": "50a8fcbe72f8b87f09caaf0405e060d96121c69897085be14de0fa98a6db72133a98254647a8a13e975755a051bf7837c2d2e65d6c2a9d4e8db85370fc1ea18a",
+      "RewardRecipient": "0x422a852B41b8F22aB179e2AEc31888Cae9B1a7eE",
+      "CommonWallet": "0x09400940D102293911a76974fA3C3E9e0df95f16",
+      "CommonKeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex3-common-wallet.key"
+    },
+    {
+      "Name": "cypherdex4",
+      "CLXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex4",
+      "DEXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/runtime/cypherdex4/dex",
+      "Manifest": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/manifests/cypherdex4.json",
+      "API": "127.0.0.1:19004",
+      "TLS": "127.0.0.1:18004",
+      "P2PPort": 6204,
+      "RnetPort": 7208,
+      "VotePublic": "c4668b08b9d01599f0e926deca7da13e2578d18c75bf1893e69dc6cfd5ebde2030e6ad3be5037c7ec57fb27654e467d2da3902a537ee7b1e8b92a8de74e29309",
+      "RewardRecipient": "0xd393641743c7C39D34bAfa6770ccD57F301ea92A",
+      "CommonWallet": "0x68a8E9E2470B08336b999C3B59C6B31613E04174",
+      "CommonKeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex4-common-wallet.key"
+    },
+    {
+      "Name": "cypherdex5",
+      "CLXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex5",
+      "DEXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/runtime/cypherdex5/dex",
+      "Manifest": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/manifests/cypherdex5.json",
+      "API": "127.0.0.1:19005",
+      "TLS": "127.0.0.1:18005",
+      "P2PPort": 6205,
+      "RnetPort": 7210,
+      "VotePublic": "68cf08814decdefb193a6a07ecd960d63dc4d9342bde2d3ff788424489fb6c016401be52359d1b086dbafc3bb895ef735539ebe8a1d5eaddb3c7830208916c1a",
+      "RewardRecipient": "0x3427eB445a37F4D042b5Ff918e438F575C19E34F",
+      "CommonWallet": "0x653e45e8199b4c914bC4D2e1635C25989747B4c7",
+      "CommonKeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex5-common-wallet.key"
+    },
+    {
+      "Name": "cypherdex6",
+      "CLXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex6",
+      "DEXDataDir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/runtime/cypherdex6/dex",
+      "Manifest": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/manifests/cypherdex6.json",
+      "API": "127.0.0.1:19006",
+      "TLS": "127.0.0.1:18006",
+      "P2PPort": 6206,
+      "RnetPort": 7212,
+      "VotePublic": "06a2b98d327deaa9d2af5e1aac262d5b260a9972c6ec5c1e955778bbb1a42320bbf140bf0a0ce37c806e0dab0c1a651e9c5d4297574cc52e931aadd190ccf417",
+      "RewardRecipient": "0x47EC77eFA0c9E33DB23864DF6aFdEF84dA3482de",
+      "CommonWallet": "0xe520175dFb1b5B59F856Ba7A7a558f7fC126B248",
+      "CommonKeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex6-common-wallet.key"
+    }
+  ],
+  "Keys": [
+    {
+      "Purpose": "trader-a",
+      "Address": "0x87dA972122Af640c0087857E279d02b1C0d10225",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/trader-a.key"
+    },
+    {
+      "Purpose": "trader-b",
+      "Address": "0x67DCf6D1ffD2aE6C827810f3Af0310292305eaf0",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/trader-b.key"
+    },
+    {
+      "Purpose": "synthetic-oracle",
+      "Address": "0x0923E1bBd604b9c49fef76E3030eeCa72CfD8Ff6",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/synthetic-oracle.key"
+    },
+    {
+      "Purpose": "insurance-owner",
+      "Address": "0x28f01119D242401Bae19D142eA9CF38E82EC1792",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/insurance-owner.key"
+    },
+    {
+      "Purpose": "support-owner",
+      "Address": "0x2C0ec7e22ba7b040B63e4e883186dE9F21e65A4b",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/support-owner.key"
+    },
+    {
+      "Purpose": "dex-0-reward",
+      "Address": "0x15fa779515F8632e656653c7B49DCeE40Eed5cdb",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/dex-0-reward.key"
+    },
+    {
+      "Purpose": "dex-1-reward",
+      "Address": "0x7efAea9ED8bB7Ea77518D8EF5144f2e6fB99eFCE",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/dex-1-reward.key"
+    },
+    {
+      "Purpose": "cypherdex1-common-wallet",
+      "Address": "0xb1E9EEA6888cD1FEC4d8b6f85D465Fb3c2d819ab",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex1-common-wallet.key"
+    },
+    {
+      "Purpose": "dex-2-reward",
+      "Address": "0xb3512C385C484839910C1aDA1d7B9988d9207C01",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/dex-2-reward.key"
+    },
+    {
+      "Purpose": "cypherdex2-common-wallet",
+      "Address": "0x64E12CAce3386eEd55F1FA05cdED9bd59A5fD57b",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex2-common-wallet.key"
+    },
+    {
+      "Purpose": "dex-3-reward",
+      "Address": "0x422a852B41b8F22aB179e2AEc31888Cae9B1a7eE",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/dex-3-reward.key"
+    },
+    {
+      "Purpose": "cypherdex3-common-wallet",
+      "Address": "0x09400940D102293911a76974fA3C3E9e0df95f16",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex3-common-wallet.key"
+    },
+    {
+      "Purpose": "dex-4-reward",
+      "Address": "0xd393641743c7C39D34bAfa6770ccD57F301ea92A",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/dex-4-reward.key"
+    },
+    {
+      "Purpose": "cypherdex4-common-wallet",
+      "Address": "0x68a8E9E2470B08336b999C3B59C6B31613E04174",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex4-common-wallet.key"
+    },
+    {
+      "Purpose": "dex-5-reward",
+      "Address": "0x3427eB445a37F4D042b5Ff918e438F575C19E34F",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/dex-5-reward.key"
+    },
+    {
+      "Purpose": "cypherdex5-common-wallet",
+      "Address": "0x653e45e8199b4c914bC4D2e1635C25989747B4c7",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex5-common-wallet.key"
+    },
+    {
+      "Purpose": "dex-6-reward",
+      "Address": "0x47EC77eFA0c9E33DB23864DF6aFdEF84dA3482de",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/dex-6-reward.key"
+    },
+    {
+      "Purpose": "cypherdex6-common-wallet",
+      "Address": "0xe520175dFb1b5B59F856Ba7A7a558f7fC126B248",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/cypherdex6-common-wallet.key"
+    },
+    {
+      "Purpose": "relay-0-anchor-gas",
+      "Address": "0x82A3B6E4EE74D2d5D8aaD13aB5c96Fc51f3Fc794",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/relay-0-anchor-gas.key"
+    },
+    {
+      "Purpose": "relay-0-checkpoint-gas",
+      "Address": "0xDcD783dCd49ccB5c4CC9D15554D57b181530b59E",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/relay-0-checkpoint-gas.key"
+    },
+    {
+      "Purpose": "relay-0-claim-gas",
+      "Address": "0xC01cfbB1297a7847CEcb04FC1B31DBD26a750df9",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/relay-0-claim-gas.key"
+    },
+    {
+      "Purpose": "relay-1-anchor-gas",
+      "Address": "0x2887db89BBe1AB0eC7225799b2db905764cc3945",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/relay-1-anchor-gas.key"
+    },
+    {
+      "Purpose": "relay-1-checkpoint-gas",
+      "Address": "0xF9662C6235792e0Dc3C729b272304Ba6CAD90430",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/relay-1-checkpoint-gas.key"
+    },
+    {
+      "Purpose": "relay-1-claim-gas",
+      "Address": "0x5E27B2E4E971B3DDf6df97B28190770F751122ba",
+      "KeyFile": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/keys/relay-1-claim-gas.key"
+    }
+  ],
+  "RelayConfigs": [
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/relays/relay-0.json",
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-finality-v5/relays/relay-1.json"
+  ],
+  "Gates": [
+    "USER_PERFORMS_INIT; generator never initializes or restarts the network",
+    "Same CLX chain ID retained: ordinary CLX signature replay is not separated by genesis or DEX ID",
+    "Bounded-history finality v5 implementation/review and LIVE verification remain separate from candidate validation",
+    "Normal relay CLI load validation NOT_RUN; local shape and trust checked only",
+    "Live port availability/PM2/resource budget NOT_RUN",
+    "No live data/init/PM2/signing/network operations executed"
+  ],
+  "Validation": [
+    "core.SetupGenesisKeyBlock(memory DB) before core.SetupGenesisBlock(memory DB), same ordinary CLI init order",
+    "genesis ToBlock matches formal committed hash; original CLX chain ID, allocations and seven committee identities unchanged",
+    "clxevidence.New and BootstrapAnchor authenticate actual header/config/first historical key hash",
+    "checkpoint.NewEpoch and transport.RegistryCommitment check seven distinct DEX identities",
+    "all seven service.LoadManifest JSON roundtrips and finance.ValidateRegistration pass",
+    "all seven TLS private/certificate matches and canonical BLS vote keys match registered public identities",
+    "candidate-only: no live datadir open, no network, no PM2, no consensus votes/CLX transactions"
+  ],
+  "FinancialAssumptions": [
+    "BTC/CLX only; synthetic oracle; fixed DEX epoch 1, seven equal voters and quorum five",
+    "No pre-credited deposits/support/insurance; every new key has zero genesis allocation",
+    "Existing CLX chain ID, alloc and committee retained; old ordinary EIP-155 and unprotected TX signatures may remain valid when nonce and balances recur. Fresh DEX domain does not prevent ordinary CLX TX replay",
+    "Never import old raw TX, nonce or ingress/relay queues; do not claim this operational restriction is cryptographic replay protection",
+    "Existing market fee/funding/reward fixture economics preserved; not production settings"
+  ],
+  "Funding": [
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0x82A3B6E4EE74D2d5D8aaD13aB5c96Fc51f3Fc794",
+      "Purpose": "relay-0-anchor-gas",
+      "AmountAtoms": "1000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0xDcD783dCd49ccB5c4CC9D15554D57b181530b59E",
+      "Purpose": "relay-0-checkpoint-gas",
+      "AmountAtoms": "6000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0xC01cfbB1297a7847CEcb04FC1B31DBD26a750df9",
+      "Purpose": "relay-0-claim-gas",
+      "AmountAtoms": "1000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0x2887db89BBe1AB0eC7225799b2db905764cc3945",
+      "Purpose": "relay-1-anchor-gas",
+      "AmountAtoms": "1000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0xF9662C6235792e0Dc3C729b272304Ba6CAD90430",
+      "Purpose": "relay-1-checkpoint-gas",
+      "AmountAtoms": "6000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0x5E27B2E4E971B3DDf6df97B28190770F751122ba",
+      "Purpose": "relay-1-claim-gas",
+      "AmountAtoms": "1000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0x28f01119D242401Bae19D142eA9CF38E82EC1792",
+      "Purpose": "insurance-owner; subsequent ordinary signed deposit, no direct StateDB mutation",
+      "AmountAtoms": "6000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0x0923E1bBd604b9c49fef76E3030eeCa72CfD8Ff6",
+      "Purpose": "synthetic-oracle; subsequent ordinary signed deposit, no direct StateDB mutation",
+      "AmountAtoms": "1000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0x87dA972122Af640c0087857E279d02b1C0d10225",
+      "Purpose": "trader-a; subsequent ordinary signed deposit, no direct StateDB mutation",
+      "AmountAtoms": "105000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0x67DCf6D1ffD2aE6C827810f3Af0310292305eaf0",
+      "Purpose": "trader-b; subsequent ordinary signed deposit, no direct StateDB mutation",
+      "AmountAtoms": "105000000000000000000"
+    },
+    {
+      "From": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+      "Recipient": "0x2C0ec7e22ba7b040B63e4e883186dE9F21e65A4b",
+      "Purpose": "support-owner; subsequent ordinary signed deposit, no direct StateDB mutation",
+      "AmountAtoms": "21000000000000000000"
+    }
+  ]
+}

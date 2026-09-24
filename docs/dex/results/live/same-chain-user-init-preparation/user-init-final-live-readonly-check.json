@@ -1,0 +1,276 @@
+{
+  "status": "READY_FOR_USER_INIT",
+  "executed": false,
+  "plan": {
+    "version": 1,
+    "chain_id": 10101919,
+    "genesis": "0xa4a61fa952509cde79c14e152702a1d7dea1cc0320b4552566b2efb9e4a575de",
+    "genesis_sha256": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147",
+    "dex_id": "0x433b712c48506710a611d48e351ff827d00e64941fff9c085817c266585af497",
+    "boot_id": "fcd0df19-9bbb-4d09-a76d-fedbbed8541a",
+    "apps": [
+      "cypher0",
+      "cypher1",
+      "cypher2",
+      "cypher3",
+      "cypher4",
+      "cypher5",
+      "cypher6",
+      "cyphermine",
+      "cypherdex1",
+      "cypherdex2",
+      "cypherdex3",
+      "cypherdex4",
+      "cypherdex5",
+      "cypherdex6"
+    ],
+    "targets": [
+      {
+        "name": "cypher0",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/chaindb0",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          1756402
+        ]
+      },
+      {
+        "name": "cypher1",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/chaindb1",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          1756403
+        ]
+      },
+      {
+        "name": "cypher2",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/chaindb2",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          1756404
+        ]
+      },
+      {
+        "name": "cypher3",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/chaindb3",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          1756405
+        ]
+      },
+      {
+        "name": "cypher4",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/chaindb4",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          1756406
+        ]
+      },
+      {
+        "name": "cypher5",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/chaindb5",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          1756407
+        ]
+      },
+      {
+        "name": "cypher6",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/chaindb6",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          1756408
+        ]
+      },
+      {
+        "name": "cyphermine",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/chaindbmine",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          1756409
+        ]
+      },
+      {
+        "name": "cypherdex1",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex1",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          288450
+        ]
+      },
+      {
+        "name": "cypherdex2",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex2",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          288504
+        ]
+      },
+      {
+        "name": "cypherdex3",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex3",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          288538
+        ]
+      },
+      {
+        "name": "cypherdex4",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex4",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          288572
+        ]
+      },
+      {
+        "name": "cypherdex5",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex5",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          288611
+        ]
+      },
+      {
+        "name": "cypherdex6",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex6",
+        "kind": "clx",
+        "present": true,
+        "identity": [
+          2049,
+          288655
+        ]
+      },
+      {
+        "name": "dex-cyphermine",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cyphermine",
+        "kind": "dex",
+        "present": false,
+        "identity": null
+      },
+      {
+        "name": "dex-cypherdex1",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex1",
+        "kind": "dex",
+        "present": false,
+        "identity": null
+      },
+      {
+        "name": "dex-cypherdex2",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex2",
+        "kind": "dex",
+        "present": false,
+        "identity": null
+      },
+      {
+        "name": "dex-cypherdex3",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex3",
+        "kind": "dex",
+        "present": false,
+        "identity": null
+      },
+      {
+        "name": "dex-cypherdex4",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex4",
+        "kind": "dex",
+        "present": false,
+        "identity": null
+      },
+      {
+        "name": "dex-cypherdex5",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex5",
+        "kind": "dex",
+        "present": false,
+        "identity": null
+      },
+      {
+        "name": "dex-cypherdex6",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex6",
+        "kind": "dex",
+        "present": false,
+        "identity": null
+      },
+      {
+        "name": "relay-0",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/relay-0",
+        "kind": "relay",
+        "present": false,
+        "identity": null
+      },
+      {
+        "name": "relay-1",
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/relay-1",
+        "kind": "relay",
+        "present": false,
+        "identity": null
+      }
+    ],
+    "files": {
+      "/root/work/cypher-FHS-D-ExchangeCore/genesis.json": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/genesis.json": "a4e4df1be5f88e72c0b12699a5faa9b1e4a4cdf51a75a6194c19f66438559147",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/public/inventory.json": "ffffa2b0c1581516c7f7050baf1faae3806f4a850e999021da133fee37329fcb",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/relays/relay-0.json": "d6d38892740a3ed5d25c5acf0bc1e8dc11909d9d09568a015cebccdf40d035ef",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/relays/relay-1.json": "c53a0ec13c8395d0c08ffbb8eea73a42443d2ec59b12c41a5a6d997f8e15ba07",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/bin/cypher-linux-amd64": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cyphermine.json": "8c0b7916351f93c5937aff80639595439341674703d9f00659aabf8d18e9ff48",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex1.json": "a7e1babd34293cd99b21c9ae76d5f8fb3b7588a0d981bfde5a724e34c2c3c5db",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex2.json": "32890b75d2dceddad962175f35d9d4e6cdc3dda5278ccac5cc5a1459fcb2b0da",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex3.json": "5993421891bbe45660d95df23d893caf69865d5ddf31dd455ad770b3eba580e1",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex4.json": "31fc9eae580e808efbd34f972f1890e8b07d94890071f3852e6f037f88214b5c",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex5.json": "393dddf3d1a87f346e18c1bab3e843b726c2e5393be091cdf7c2ec1336d1559d",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/manifests/cypherdex6.json": "3e4c4c76d8ef796a621cec7359e293a4cac6f189ae5d523dc2f7f6108186e253",
+      "/root/work/cypher-FHS-D-ExchangeCore/start-cypher0.sh": "ac65350b45d028e1680acf450728e3625bc5d924f34934ef3ed8d3842487b94c",
+      "/root/work/cypher-FHS-D-ExchangeCore/start-cypher1.sh": "18f8a7a3c331368ff2832818ceb98cd251e056f14299bc95f2c1606353b06291",
+      "/root/work/cypher-FHS-D-ExchangeCore/start-cypher2.sh": "6776c3ed802f66e2cecd419d35d4d89e59334ba1ff5a02f83fe88741da91d868",
+      "/root/work/cypher-FHS-D-ExchangeCore/start-cypher3.sh": "c55f484b58e369ce935f776a01fe69e06aff7b7cc649a517b7f8d643162211c4",
+      "/root/work/cypher-FHS-D-ExchangeCore/start-cypher4.sh": "f126cc26cc722b7efe02edc4ef8163c96a478793dc37be6abe3691d52bf6735c",
+      "/root/work/cypher-FHS-D-ExchangeCore/start-cypher5.sh": "d737103d44fb6484675601235d223ebe62da76766b95db092ec9f6bf6e3cadff",
+      "/root/work/cypher-FHS-D-ExchangeCore/start-cypher6.sh": "d46fd0902542bc76c6cd615d371c6ce8ce56cb987a92630e508e90d45f96d5b6",
+      "/root/work/cypher-FHS-D-ExchangeCore/start-cyphermine.sh": "d0b8c1f92edad1044f2996a8c7eaf8e94457d2d663f4e85185b7403cb7957b3a",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common1/start.sh": "23b9d2d849a0378aa4cd8540f2f8e8ba2e9bd7ce0fdb257807981a4057762ac6",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common2/start.sh": "d48831703b64d65a00df990d6f4948482a55a3d9674168af7a69b2b5b05d4d57",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common3/start.sh": "b89e7311f7ce58a2248249a651c5a7af1a8204a7d30a2f89e30c8c8abcf5c335",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common4/start.sh": "e5c2601ffa0c1896048dac6bcb66becab1c7f6433a5c67b96fd3af19066a818e",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common5/start.sh": "d33bd1940adfd4779f89d5a84b0e149c822750020ad5536096440ae2dd3da57e",
+      "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common6/start.sh": "f3a53716ef30b2178d5e428f5ddb2e9b71de763352c52871a752267a46c97c1c"
+    },
+    "old_processes": {
+      "1296670": 46261192,
+      "1296671": 46261196,
+      "1296672": 46261198,
+      "1296673": 46261201,
+      "1296674": 46261202,
+      "1296675": 46261204,
+      "1296691": 46261210,
+      "1298339": 46333433
+    },
+    "archive": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-user-init/a4a61fa952509cde79c14e152702a1d7dea1cc0320b4552566b2efb9e4a575de",
+    "starts_processes": false,
+    "activates_roles": false,
+    "ordinary_clx_replay_separated": false
+  }
+}

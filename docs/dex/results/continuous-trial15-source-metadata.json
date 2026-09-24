@@ -1,0 +1,10 @@
+{
+  "status": "PASS",
+  "duration_seconds": 55.65,
+  "artifact": "/tmp/common-dex-check.CPDk7uJa",
+  "source_manifest_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_after_sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "diff_bytes": 0,
+  "raw_sha256": "dee9ef4a5f14fea247badf40c642059f46082fb2f15380031222a801f6ce5982",
+  "scope": "six normal signed deposits, ordinary ETH source restart/authenticated MPT, explicit RPC projection, fresh late DEX OFF Common automatic full ETH sync+same DBrestart,12 blocks athead11,engine0/0/0; not long-run PASS"
+}

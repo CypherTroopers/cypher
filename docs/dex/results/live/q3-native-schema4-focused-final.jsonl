@@ -1,0 +1,28 @@
+{"Time":"2026-09-23T17:47:03.542764467+02:00","Action":"start","Package":"github.com/cypherium/cypher/params"}
+{"Time":"2026-09-23T17:47:03.579127457+02:00","Action":"run","Package":"github.com/cypherium/cypher/params","Test":"TestDEXDevnetConsensusConfigRoundTripAndBinding"}
+{"Time":"2026-09-23T17:47:03.57939286+02:00","Action":"output","Package":"github.com/cypherium/cypher/params","Test":"TestDEXDevnetConsensusConfigRoundTripAndBinding","Output":"=== RUN   TestDEXDevnetConsensusConfigRoundTripAndBinding\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:03.583260356+02:00","Action":"output","Package":"github.com/cypherium/cypher/params","Test":"TestDEXDevnetConsensusConfigRoundTripAndBinding","Output":"--- PASS: TestDEXDevnetConsensusConfigRoundTripAndBinding (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:03.583333732+02:00","Action":"pass","Package":"github.com/cypherium/cypher/params","Test":"TestDEXDevnetConsensusConfigRoundTripAndBinding","Elapsed":0}
+{"Time":"2026-09-23T17:47:03.58382707+02:00","Action":"output","Package":"github.com/cypherium/cypher/params","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:03.586075274+02:00","Action":"output","Package":"github.com/cypherium/cypher/params","Output":"ok  \tgithub.com/cypherium/cypher/params\t0.042s\n"}
+{"Time":"2026-09-23T17:47:03.586158168+02:00","Action":"pass","Package":"github.com/cypherium/cypher/params","Elapsed":0.043}
+{"Time":"2026-09-23T17:47:04.495805536+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/protocol"}
+{"Time":"2026-09-23T17:47:04.501693451+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/protocol","Test":"TestNativeContinuousIndependentBootstrap"}
+{"Time":"2026-09-23T17:47:04.501793388+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/protocol","Test":"TestNativeContinuousIndependentBootstrap","Output":"=== RUN   TestNativeContinuousIndependentBootstrap\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:04.501815579+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/protocol","Test":"TestNativeContinuousIndependentBootstrap","Output":"--- PASS: TestNativeContinuousIndependentBootstrap (0.00s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:04.501822091+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/protocol","Test":"TestNativeContinuousIndependentBootstrap","Elapsed":0}
+{"Time":"2026-09-23T17:47:04.501975476+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/protocol","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:04.503188303+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/protocol","Output":"ok  \tgithub.com/cypherium/cypher/dex/protocol\t0.007s\n"}
+{"Time":"2026-09-23T17:47:04.503216635+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/protocol","Elapsed":0.007}
+{"Time":"2026-09-23T17:47:08.01128385+02:00","Action":"start","Package":"github.com/cypherium/cypher/dex/settlement"}
+{"Time":"2026-09-23T17:47:08.050230898+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeRollingStagingHistoricalCheckpointClaimsRestartAndRollback"}
+{"Time":"2026-09-23T17:47:08.050346823+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeRollingStagingHistoricalCheckpointClaimsRestartAndRollback","Output":"=== RUN   TestNativeRollingStagingHistoricalCheckpointClaimsRestartAndRollback\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:08.712263586+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeRollingStagingHistoricalCheckpointClaimsRestartAndRollback","Output":"--- PASS: TestNativeRollingStagingHistoricalCheckpointClaimsRestartAndRollback (0.66s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:08.712336391+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeRollingStagingHistoricalCheckpointClaimsRestartAndRollback","Elapsed":0.66}
+{"Time":"2026-09-23T17:47:08.712361477+02:00","Action":"run","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeContinuousHistoricalCheckpointClaimsRestartAndRollback"}
+{"Time":"2026-09-23T17:47:08.712450944+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeContinuousHistoricalCheckpointClaimsRestartAndRollback","Output":"=== RUN   TestNativeContinuousHistoricalCheckpointClaimsRestartAndRollback\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:09.377601292+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeContinuousHistoricalCheckpointClaimsRestartAndRollback","Output":"--- PASS: TestNativeContinuousHistoricalCheckpointClaimsRestartAndRollback (0.66s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:09.377670421+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/settlement","Test":"TestNativeContinuousHistoricalCheckpointClaimsRestartAndRollback","Elapsed":0.66}
+{"Time":"2026-09-23T17:47:09.377685279+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-23T17:47:09.383024393+02:00","Action":"output","Package":"github.com/cypherium/cypher/dex/settlement","Output":"ok  \tgithub.com/cypherium/cypher/dex/settlement\t1.372s\n"}
+{"Time":"2026-09-23T17:47:09.383140278+02:00","Action":"pass","Package":"github.com/cypherium/cypher/dex/settlement","Elapsed":1.3719999999999999}

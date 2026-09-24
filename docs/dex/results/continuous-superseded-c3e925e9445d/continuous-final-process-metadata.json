@@ -1,0 +1,19 @@
+{
+  "mode": "process",
+  "artifact_root": "/tmp/common-dex-check.av49jaKX",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "test_exit": 0,
+  "run_exit": 0,
+  "source_manifest_sha256": "c3e925e9445d6b51e1f28aa7dbf0c18966cc696fb7143489a674a78bdb6d3c14",
+  "source_manifest_after_sha256": "c3e925e9445d6b51e1f28aa7dbf0c18966cc696fb7143489a674a78bdb6d3c14",
+  "source_diff_bytes": 0,
+  "packages_pass": 1,
+  "top_level_pass": 1,
+  "pass_events": 1,
+  "top_level_fail": 0,
+  "fail_events": 0,
+  "top_level_skip": 0,
+  "skip_events": 0,
+  "raw_sha256": "be9c3eaca78d9312d5d28736063ed63ebbf218c8b8ff314e211887703a6bfc39",
+  "scope": "Owned isolated devnet network namespace; no host fallback. PASS events include subtests and are not a security proof."
+}

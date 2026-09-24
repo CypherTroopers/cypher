@@ -1,0 +1,35 @@
+{
+  "artifact": "/tmp/common-dex-check.b8tduU03",
+  "source_before": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_after": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "source_diff_bytes": 0,
+  "run_exit": 1,
+  "test_exit": 1,
+  "packages_pass": [
+    "github.com/cypherium/cypher/commonrpcreward",
+    "github.com/cypherium/cypher/params",
+    "github.com/cypherium/cypher/consensus/colossusX",
+    "github.com/cypherium/cypher/miner",
+    "github.com/cypherium/cypher/eth",
+    "github.com/cypherium/cypher/reconfig",
+    "github.com/cypherium/cypher/reconfig/bftview",
+    "github.com/cypherium/cypher/reconfig/hotstuff",
+    "github.com/cypherium/cypher/core",
+    "github.com/cypherium/cypher/core/asm",
+    "github.com/cypherium/cypher/core/bloombits",
+    "github.com/cypherium/cypher/core/rawdb",
+    "github.com/cypherium/cypher/core/state",
+    "github.com/cypherium/cypher/core/state/snapshot",
+    "github.com/cypherium/cypher/core/types",
+    "github.com/cypherium/cypher/core/vm"
+  ],
+  "failed_tests": [
+    "--- FAIL: TestCreation (0.00s)",
+    "--- FAIL: TestValidation (0.00s)"
+  ],
+  "failed_packages": [
+    "FAIL\tgithub.com/cypherium/cypher/core/forkid\t0.027s"
+  ],
+  "raw_sha256": "2087622487e4b0535292f97de79e89a1bdb584f65ccae370b0e6ede39aa440d0",
+  "classification": "FAIL; previously recorded core/forkid TestCreation/TestValidation reproduced; expectations and protocol unchanged; no other package failure in this run."
+}

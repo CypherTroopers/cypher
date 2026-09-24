@@ -1,0 +1,63 @@
+{
+  "source_manifest_sha256": "a64dc7053ad435113f488cb0f457683cd0d9cf69e05dbea6593bf7d840ae4e16",
+  "source_unchanged": true,
+  "gates": {
+    "consensus": {
+      "exit": 0,
+      "command": "go test -p 1 -mod=readonly -race -count=1 -timeout=5m -json ./dex/consensus -run ^Test(WALDictionary|Compact|WALOrphan)",
+      "pass_top_level": 21,
+      "pass_events": 86,
+      "skips": [
+        "TestWALOrphanSIGKILLChild",
+        "TestWALOrphanUnsafeOrUnverifiedRecoveryDeletesNothing/foreign-owner"
+      ],
+      "package_seconds": [
+        83.706
+      ],
+      "raw": "initial.jsonl"
+    },
+    "financial": {
+      "exit": 0,
+      "source_unchanged": true,
+      "command": "go test -p 1 -mod=readonly -race -count=1 -timeout=5m -json ./dex/clxevidence ./dex/devnet ./dex/settlement ./reconfig -run ^(TestRollingFinancialCreditBeyond257AndColdReplay|TestFinancialSnapshotDistinctRegisteredLateVoter|TestNativeCLXFinancialFHSScenario|TestNativeRollingPaidClaimAdvanceColdReopenAndDifferentRelay|TestNativeRollingStagingHistoricalCheckpointClaimsRestartAndRollback|TestFinancialFaultWALChecksumVersions)$",
+      "pass_top_level": 6,
+      "pass_events": 41,
+      "skips": [],
+      "failures": [],
+      "packages": [
+        {
+          "Package": "github.com/cypherium/cypher/dex/clxevidence",
+          "Elapsed": 13.736
+        },
+        {
+          "Package": "github.com/cypherium/cypher/dex/devnet",
+          "Elapsed": 46.873
+        },
+        {
+          "Package": "github.com/cypherium/cypher/dex/settlement",
+          "Elapsed": 2.976
+        },
+        {
+          "Package": "github.com/cypherium/cypher/reconfig",
+          "Elapsed": 1.1400000000000001
+        }
+      ],
+      "raw": "financial.jsonl"
+    }
+  },
+  "scope": [
+    "Local WAL codec v3, existing authenticated v2 replay after bounded expansion; snapshot v2 unchanged",
+    "Real FHS restart, vote/timeout/outbox and owned-child SIGKILL recovery; not disk-fault or power-loss proof",
+    "Seven retained Trial13 public files structurally match independent Python payload SHA/bytes; no conversion written to original datadirs, not financial authentication of those archived files",
+    "Trial13 original failure is preserved; final G3 and whole-source final regressions remain pending"
+  ],
+  "environment": {
+    "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+    "GOPROXY": "off",
+    "GOMAXPROCS": 2,
+    "optional_public_structural_fixture": {
+      "DEX_WAL_DICTIONARY_PUBLIC_ROOT": "/tmp/continuous-public-failure-4143780618",
+      "DEX_WAL_DICTIONARY_ESTIMATE": "/tmp/common-dex-continuous.uye5vgqi/trial13-dictionary-independent-estimate.json"
+    }
+  }
+}

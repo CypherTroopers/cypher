@@ -1,0 +1,25 @@
+{
+  "completed_utc": "2026-09-22T08:08:03.851440+00:00",
+  "head_start": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "head_end": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "branch": "FHS-D-ExchangeCore",
+  "scope": "Isolated devnet integration; A-D overall remains incomplete as identified in acceptance-matrix.md. No commit/push/production/real funds.",
+  "ordinary_cli_financial": "PASS 262.12s; 35 CLX TX, 4 deposits, 18 checkpoints, 8 claims, native225->214, CLX69 sync+restart, RPC+DEX relay",
+  "legacy_financial_socket": "PASS 219.08s; v3 binary; only later difference is uncalled normal-CLI peer refresh helper, exercised in final ordinary CLI run",
+  "existing_baseline": "FAIL core/forkid TestCreation and TestValidation only; 16 other packages PASS",
+  "validation_index": "docs/dex/results/integration-validation-index.json",
+  "not_run": [
+    "normal32GiB PoW nonce/DAG+cache/proof delivery/combined load: final MemAvailable21566464KiB, memlock8MiB",
+    "WAN/independent operators,60min open-loop/performance comparison",
+    "maximum proof runtime/C heap and exhaustive disk/power-cut fault matrix"
+  ],
+  "not_implemented": [
+    "rolling authenticated CLX anchor and ordinary native epoch rotation",
+    "general reward inclusion/delivery guarantee",
+    "full frozen/open-position recovery contract and long-running automatic relay"
+  ],
+  "archive_directory": "/tmp/common-dex-integration.hnc63_8r/final",
+  "protected_hash_checks": 70,
+  "operational_identity_matches": 8,
+  "remaining_owned_integration_processes": 0
+}

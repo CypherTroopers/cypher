@@ -1,0 +1,10 @@
+{"Time":"2026-09-23T13:31:12.804885287+02:00","Action":"start","Package":"github.com/cypherium/cypher/reconfig"}
+{"Time":"2026-09-23T13:31:12.842787379+02:00","Action":"run","Package":"github.com/cypherium/cypher/reconfig","Test":"TestFHSProcessRecoveryQCBeforePrepare"}
+{"Time":"2026-09-23T13:31:12.842982602+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Test":"TestFHSProcessRecoveryQCBeforePrepare","Output":"=== RUN   TestFHSProcessRecoveryQCBeforePrepare\n","OutputType":"frame"}
+{"Time":"2026-09-23T13:31:13.098336052+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Test":"TestFHSProcessRecoveryQCBeforePrepare","Output":"    fhs_process_recovery_test.go:295: fixture committee permutation=[0 1 2 3 4 5 6]; proposer=4 laggard=1; both excluded from scheduled views2..10\n"}
+{"Time":"2026-09-23T13:31:37.396703834+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Test":"TestFHSProcessRecoveryQCBeforePrepare","Output":"    fhs_early_qc_process_test.go:35: QC_BEFORE_PREPARE laggard_pid=1203233 dropped_prepares=3 finalized=1 certified=2 canonical1=0xa349d0d6c777cdef04a65ba357feba7d55147227d376ef3e9928901222921457; seven independent QUIC validators agree on hash, receipt, gas and state root\n"}
+{"Time":"2026-09-23T13:31:37.460916032+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Test":"TestFHSProcessRecoveryQCBeforePrepare","Output":"--- PASS: TestFHSProcessRecoveryQCBeforePrepare (24.62s)\n","OutputType":"frame"}
+{"Time":"2026-09-23T13:31:37.460984379+02:00","Action":"pass","Package":"github.com/cypherium/cypher/reconfig","Test":"TestFHSProcessRecoveryQCBeforePrepare","Elapsed":24.62}
+{"Time":"2026-09-23T13:31:37.461006851+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-23T13:31:37.465006211+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Output":"ok  \tgithub.com/cypherium/cypher/reconfig\t24.656s\n"}
+{"Time":"2026-09-23T13:31:37.465123048+02:00","Action":"pass","Package":"github.com/cypherium/cypher/reconfig","Elapsed":24.66}

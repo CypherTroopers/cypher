@@ -1,0 +1,11 @@
+{
+  "status": "NOT_RUN",
+  "reason": "External interruption; partial execution ends at CLX height 46 with no test completion or cleanup footer. This is neither PASS nor an established product failure.",
+  "artifact_root": "/tmp/common-dex-check.TYKlqZVD",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "source_sha256": "061f4a0b6bed257c6ba8ad60f377f52cf8640cb6dcb8d4dcbd01a1575cfe1630",
+  "has_final_test_result": false,
+  "has_after_source_manifest": false,
+  "has_after_diff": false,
+  "raw_sha256": "b55993c73dfc359a755f5863081263d27ea54b272de258007db8ce2facf6f8c5"
+}

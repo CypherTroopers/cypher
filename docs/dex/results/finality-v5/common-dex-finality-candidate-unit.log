@@ -1,0 +1,44 @@
+=== RUN   TestCandidateDerivesActualGenesisAndKeepsAllocAndChainID
+--- PASS: TestCandidateDerivesActualGenesisAndKeepsAllocAndChainID (0.11s)
+=== RUN   TestCandidateReusesOnlySixCommonWalletsFromRenamedPrivateArchive
+--- PASS: TestCandidateReusesOnlySixCommonWalletsFromRenamedPrivateArchive (0.14s)
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/false-address
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/external-key-metadata
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/wrong-secret
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/key-symlink
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/public-key-permission
+=== RUN   TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/root-symlink
+--- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput (0.08s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/false-address (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/external-key-metadata (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/wrong-secret (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/key-symlink (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/public-key-permission (0.00s)
+    --- PASS: TestCandidateReuseRejectsUnownedLayoutAndFalseKeyAddressBeforeOutput/root-symlink (0.00s)
+=== RUN   TestCandidateRejectsManifestIdentityTampering
+=== RUN   TestCandidateRejectsManifestIdentityTampering/vote-key
+=== RUN   TestCandidateRejectsManifestIdentityTampering/unknown-epoch
+=== RUN   TestCandidateRejectsManifestIdentityTampering/genesis
+=== RUN   TestCandidateRejectsManifestIdentityTampering/committee
+=== RUN   TestCandidateRejectsManifestIdentityTampering/domain
+=== RUN   TestCandidateRejectsManifestIdentityTampering/tls-pin
+--- PASS: TestCandidateRejectsManifestIdentityTampering (0.09s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/vote-key (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/unknown-epoch (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/genesis (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/committee (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/domain (0.00s)
+    --- PASS: TestCandidateRejectsManifestIdentityTampering/tls-pin (0.00s)
+=== RUN   TestCandidateRejectsUnsafePathsAndWrongGeneration
+--- PASS: TestCandidateRejectsUnsafePathsAndWrongGeneration (0.00s)
+=== RUN   TestHistoricalDifferentChainTransactionReplayScope
+--- PASS: TestHistoricalDifferentChainTransactionReplayScope (0.00s)
+=== RUN   TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay
+=== RUN   TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay/protected
+=== RUN   TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay/unprotected
+--- PASS: TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay (0.00s)
+    --- PASS: TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay/protected (0.00s)
+    --- PASS: TestCurrentSameChainCandidateDoesNotSeparateOrdinaryTXReplay/unprotected (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/dex-live-candidate	0.471s

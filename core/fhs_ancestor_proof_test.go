@@ -18,7 +18,7 @@ import (
 
 func makeFHSAncestorProofChain(t *testing.T, validator *BlockValidator, secrets []bls.SecretKey, public []*bls.PublicKey, keyHash common.Hash, views []uint64) ([]*types.Block, []*hotstuff.SignedState) {
 	t.Helper()
-	genesis := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(0), Difficulty: big.NewInt(1), KeyHash: keyHash})
+	genesis := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(0), Difficulty: big.NewInt(1), KeyHash: keyHash, Root: types.EmptyRootHash})
 	validator.bc.currentBlock.Store(genesis)
 	parentHash := genesis.Hash()
 	parentQCID := common.Hash{}
@@ -28,6 +28,7 @@ func makeFHSAncestorProofChain(t *testing.T, validator *BlockValidator, secrets 
 		block := types.NewBlockWithHeader(&types.Header{
 			ParentHash: parentHash, Number: new(big.Int).SetUint64(uint64(index + 1)),
 			Difficulty: big.NewInt(1), BlockType: types.FastTx_Block, KeyHash: keyHash,
+			Root: types.EmptyRootHash,
 		})
 		ref, qc := makeFHSCommitProofQC(t, block, view, fmt.Sprintf("leader-%d", view), parentQCID, secrets, public)
 		block.SetFHSSignature(qc.Sign, qc.Mask, qc.ViewID, qc.LeaderID, qc.Number, ref.ExtraHash, ref.ParentQCID)
@@ -82,6 +83,7 @@ func TestFHSAncestorProofCommitsOnlyAfterConsecutiveTerminalViews(t *testing.T) 
 
 func TestFHSAncestorProofMetadataPreservesFullPathAtCanonicalBoundary(t *testing.T) {
 	validator, secrets, public, keyHash := makeFHSCommitProofValidator(t)
+	validator.bc.stateCache = state.NewDatabase(validator.bc.db)
 	blocks, qcs := makeFHSAncestorProofChain(t, validator, secrets, public, keyHash, []uint64{1, 4, 5})
 	proof := &FHSCommitProof{QCs: qcs[1:]}
 	encoded, err := EncodeFHSCommitProof(proof)

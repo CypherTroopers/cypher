@@ -1,0 +1,173 @@
+{
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "go": "go version go1.27.1 linux/amd64",
+  "owned_sources": {
+    "dex/relay/relay.go": "7c3477f4b43c7dfa5d98a81be28369e714475974f4a0f0127945b4fca9b6b3dd",
+    "dex/relay/cold_scheduling_test.go": "6bb93165e5837f3dadef41f450dc00d7565f1569716d1356f3a7fee6d962876e"
+  },
+  "source_manifest_sha256": "4b33eb9259c4f5a3346bd55073de85cd63e1305c3721fa4c281bee1a2f9e977e",
+  "capture": "After focused gates; owned sources unchanged during final unit/network gates. Whole-tree before/after must be captured by final G3/regression runner.",
+  "network_isolation": "Fresh unshare -Urn, loopback up, no default route; no host fallback. CYPHER_DEX_SOURCE_DEVNET=1; GOMAXPROCS=2; readonly module; offline dedicated Go cache.",
+  "network_command": "go test -p 1 -mod=readonly -race -json ./dex/clxevidence -run ^Test(Relay|KeyRenewalSource) -count=1 -timeout=3m",
+  "unit_command": "go test -p 1 -mod=readonly -race -json ./dex/relay -count=1 -timeout=3m",
+  "results": {
+    "relay-cold-scheduling-before.jsonl": {
+      "sha256": "3183e69a725832c9ffb0243dd6c0c871716e588fbbb424ec2ea23d881da1e734",
+      "top_level": {
+        "fail": 1
+      },
+      "test_events": {
+        "fail": 1
+      },
+      "skips": [],
+      "package_results": [
+        {
+          "Time": "2026-09-23T11:21:55.775556371+02:00",
+          "Action": "fail",
+          "Package": "github.com/cypherium/cypher/dex/relay",
+          "Elapsed": 1.492
+        }
+      ],
+      "scheduling": [
+        "cold_scheduling_test.go:115: COLD_SCHEDULER records=204 firstCP=203 firstClaim=204 firstInbox=1 first8History=6 completedAt=208 ObserveCalls=208 elapsed=710.028188ms fakeBackend=true"
+      ]
+    },
+    "relay-cold-scheduling-narrow.jsonl": {
+      "sha256": "2f9fc7bbaf6e7e8e273402b513793ebd6865ad35e15ed95bcc8dadd1f0a0c189",
+      "top_level": {
+        "pass": 1
+      },
+      "test_events": {
+        "pass": 1
+      },
+      "skips": [],
+      "package_results": [
+        {
+          "Time": "2026-09-23T11:26:11.006094138+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/relay",
+          "Elapsed": 1.588
+        }
+      ],
+      "scheduling": [
+        "cold_scheduling_test.go:118: COLD_SCHEDULER records=204 firstCP=5 firstClaim=6 firstInbox=1 firstNewClaim=12 first8History=4 completedAt=208 ObserveCalls=208 elapsed=943.033061ms fakeBackend=true"
+      ]
+    },
+    "relay-cold-scheduling-narrow-mixed.jsonl": {
+      "sha256": "ac63805f451a493734af1e5c71f0b0e5d0509a49cb34a35b08b7e78b17a3b26c",
+      "top_level": {
+        "pass": 1
+      },
+      "test_events": {
+        "pass": 3
+      },
+      "skips": [],
+      "package_results": [
+        {
+          "Time": "2026-09-23T11:27:17.398294545+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/relay",
+          "Elapsed": 2.5709999999999997
+        }
+      ],
+      "scheduling": [
+        "cold_scheduling_test.go:146: COLD_SCHEDULER records=204 olderQueued=false firstCP=5 firstClaim=6 firstInbox=1 firstNewClaim=12 firstOlder=0 first8History=4 completedAt=208 ObserveCalls=208 elapsed=743.388776ms fakeBackend=true",
+        "cold_scheduling_test.go:146: COLD_SCHEDULER records=204 olderQueued=true firstCP=5 firstClaim=6 firstInbox=1 firstNewClaim=12 firstOlder=180 first8History=4 completedAt=218 ObserveCalls=218 elapsed=926.494228ms fakeBackend=true"
+      ]
+    },
+    "relay-cold-scheduling-classes.jsonl": {
+      "sha256": "a97d9df1624d0fbe27a8b866ea2c5874e4a8a8b1fc08f343ce7ff2b2cc5c8ebe",
+      "top_level": {
+        "pass": 1
+      },
+      "test_events": {
+        "pass": 3
+      },
+      "skips": [],
+      "package_results": [
+        {
+          "Time": "2026-09-23T11:34:18.6653995+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/relay",
+          "Elapsed": 3.6189999999999998
+        }
+      ],
+      "scheduling": [
+        "cold_scheduling_test.go:146: COLD_SCHEDULER records=204 olderQueued=false firstCP=2 firstClaim=3 firstInbox=1 firstNewClaim=12 firstOlder=0 first8History=2 completedAt=208 ObserveCalls=208 elapsed=853.476303ms fakeBackend=true",
+        "cold_scheduling_test.go:146: COLD_SCHEDULER records=204 olderQueued=true firstCP=2 firstClaim=3 firstInbox=1 firstNewClaim=12 firstOlder=20 first8History=2 completedAt=218 ObserveCalls=218 elapsed=1.656736643s fakeBackend=true"
+      ]
+    },
+    "relay-cold-scheduling-full-race.jsonl": {
+      "sha256": "b6d59711cbb7ef359d473c7677606695f80c6d46ef7ff6799c536a69833a3213",
+      "top_level": {
+        "pass": 17,
+        "skip": 1
+      },
+      "test_events": {
+        "pass": 95,
+        "skip": 1
+      },
+      "skips": [
+        "TestRelaySIGKILLChild"
+      ],
+      "package_results": [
+        {
+          "Time": "2026-09-23T11:35:59.17549524+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/relay",
+          "Elapsed": 25.85
+        }
+      ],
+      "scheduling": [
+        "cold_scheduling_test.go:147: COLD_SCHEDULER records=204 olderQueued=false firstCP=2 firstClaim=3 firstInbox=1 firstNewClaim=12 firstOlder=0 first8History=2 completedAt=208 ObserveCalls=208 elapsed=5.624428728s fakeBackend=true",
+        "cold_scheduling_test.go:147: COLD_SCHEDULER records=204 olderQueued=true firstCP=2 firstClaim=3 firstInbox=1 firstNewClaim=12 firstOlder=20 first8History=2 completedAt=218 ObserveCalls=218 elapsed=8.086271564s fakeBackend=true"
+      ]
+    },
+    "relay-cold-scheduling-final-race.jsonl": {
+      "sha256": "24e189f3cf4ca29ec94beb720aad140a2633b5d82a457acb635281783f21b5b5",
+      "top_level": {
+        "pass": 18,
+        "skip": 1
+      },
+      "test_events": {
+        "pass": 96,
+        "skip": 1
+      },
+      "skips": [
+        "TestRelaySIGKILLChild"
+      ],
+      "package_results": [
+        {
+          "Time": "2026-09-23T11:37:05.981874388+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/relay",
+          "Elapsed": 26.17
+        }
+      ],
+      "scheduling": [
+        "cold_scheduling_test.go:147: COLD_SCHEDULER records=204 olderQueued=false firstCP=2 firstClaim=3 firstInbox=1 firstNewClaim=12 firstOlder=0 first8History=2 completedAt=208 ObserveCalls=208 elapsed=5.266849988s fakeBackend=true",
+        "cold_scheduling_test.go:147: COLD_SCHEDULER records=204 olderQueued=true firstCP=2 firstClaim=3 firstInbox=1 firstNewClaim=12 firstOlder=20 first8History=2 completedAt=218 ObserveCalls=218 elapsed=7.659186868s fakeBackend=true"
+      ]
+    },
+    "relay-cold-scheduling-network-race.jsonl": {
+      "sha256": "d1c80556a5e8defd3d2718910f57b234aff46fefdcda81d3c4094dcba9f22833",
+      "top_level": {
+        "pass": 14
+      },
+      "test_events": {
+        "pass": 106
+      },
+      "skips": [],
+      "package_results": [
+        {
+          "Time": "2026-09-23T11:38:16.409463624+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/clxevidence",
+          "Elapsed": 66.982
+        }
+      ],
+      "scheduling": []
+    }
+  },
+  "limits": "204-record scheduling uses private fake backend observations; elapsed drain is not BLS/MPT throughput. Network gate uses real BLS/MPT/HTTP fixtures. Trial11 remains failed; these are not ordinary final G3 PASS."
+}

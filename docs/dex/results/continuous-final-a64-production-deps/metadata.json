@@ -1,0 +1,32 @@
+{
+  "mode": "production-deps",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "list",
+    "-mod=readonly",
+    "-deps",
+    "./dex/settlement",
+    "./dex/relay"
+  ],
+  "start_utc": "2026-09-23T11:02:18.452275+00:00",
+  "end_utc": "2026-09-23T11:02:18.745535+00:00",
+  "test_exit": 0,
+  "source_before_sha256": "a64dc7053ad435113f488cb0f457683cd0d9cf69e05dbea6593bf7d840ae4e16",
+  "source_after_sha256": "a64dc7053ad435113f488cb0f457683cd0d9cf69e05dbea6593bf7d840ae4e16",
+  "source_equal": true,
+  "raw_sha256": "7bfc6eed5b9a4ab1df1ad721bf9a10ebf5fbe65a5d6daa41ed46685571bcaff4",
+  "counts": {},
+  "details": {
+    "fail": [],
+    "skip": []
+  },
+  "network": "no network fixture",
+  "scope": "Local isolated devnet regression. Counts are not a safety proof.",
+  "dependency_count": 363,
+  "forbidden_dependencies": [],
+  "run_exit": 0
+}

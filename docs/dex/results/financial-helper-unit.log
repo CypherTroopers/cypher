@@ -1,0 +1,8 @@
+=== RUN   TestProcessEnvelopeIndependentGoldenAndBounds
+--- PASS: TestProcessEnvelopeIndependentGoldenAndBounds (0.00s)
+=== RUN   TestProcessAuthenticatedQueueConflictAndPersistenceUncertainty
+--- PASS: TestProcessAuthenticatedQueueConflictAndPersistenceUncertainty (0.00s)
+=== RUN   TestProcessIdentityOwnershipAndRestart
+--- PASS: TestProcessIdentityOwnershipAndRestart (0.01s)
+PASS
+ok  	github.com/cypherium/cypher/dex/devnet/testnet	1.087s

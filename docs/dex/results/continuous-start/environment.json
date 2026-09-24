@@ -1,0 +1,16 @@
+{
+  "time_utc": "2026-09-22T08:48:03.870409+00:00",
+  "go": "go version go1.27.1 linux/amd64",
+  "meminfo": {
+    "MemTotal": "49325352 kB",
+    "MemAvailable": "21282628 kB",
+    "SwapTotal": "0 kB"
+  },
+  "memlock": [
+    8388608,
+    8388608
+  ],
+  "prior_manifest_entries": 377,
+  "prior_manifest_differences": [],
+  "previous_archive_sha256": "f6253d4d51b968cef56e78c389c6f6354a94473f41273e59cfc2444e66804367"
+}

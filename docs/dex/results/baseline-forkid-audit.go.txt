@@ -1,0 +1,13 @@
+package main
+import("encoding/json";"fmt";"hash/crc32";"math/big";"os";"reflect";"sort";"strings";"github.com/cypherium/cypher/common";"github.com/cypherium/cypher/core";"github.com/cypherium/cypher/core/types";"github.com/cypherium/cypher/core/forkid";"github.com/cypherium/cypher/params")
+type chain struct{config *params.ChainConfig;genesis *types.Block;head uint64}
+func(c chain)Config()*params.ChainConfig{return c.config}
+func(c chain)Genesis()*types.Block{return c.genesis}
+func(c chain)CurrentHeader()*types.Header{return &types.Header{Number:new(big.Int).SetUint64(c.head)}}
+func forks(c *params.ChainConfig)[]uint64{v:=reflect.ValueOf(c).Elem();typ:=v.Type();seen:=map[uint64]bool{};for i:=0;i<v.NumField();i++{f:=typ.Field(i);if strings.HasSuffix(f.Name,"Block")&&f.Type==reflect.TypeOf(new(big.Int)){n:=v.Field(i).Interface().(*big.Int);if n!=nil&&n.Sign()>0{seen[n.Uint64()]=true}}};out:=[]uint64{};for n:=range seen{out=append(out,n)};sort.Slice(out,func(i,j int)bool{return out[i]<out[j]});return out}
+func main(){for _,x:=range []struct{name string;c *params.ChainConfig;g common.Hash}{{"Mainnet",params.MainnetChainConfig,params.MainnetGenesisHash},{"Ropsten",params.RopstenChainConfig,params.RopstenGenesisHash},{"Rinkeby",params.RinkebyChainConfig,params.RinkebyGenesisHash},{"Goerli",params.GoerliChainConfig,params.GoerliGenesisHash}}{fmt.Printf("%s chainID=%s genesis=%s crc=%08x positiveBlockForks=%v\n",x.name,x.c.ChainID,x.g.Hex(),crc32.ChecksumIEEE(x.g[:]),forks(x.c))}
+ b,err:=os.ReadFile("genesis.json");if err!=nil{panic(err)};var g core.Genesis;if err=json.Unmarshal(b,&g);err!=nil{panic(err)};block:=g.ToBlock(nil);ch:=chain{g.Config,block,0};id:=forkid.NewID(ch);fmt.Printf("repository genesis memory-only chainID=%s hash=%s forkID=%x/%d selfFilter=%v FairHotstuff=%v positiveBlockForks=%v\n",g.Config.ChainID,block.Hash().Hex(),id.Hash,id.Next,forkid.NewFilter(ch)(id),g.Config.FairHotstuff,forks(g.Config))
+ // Separate diagnostic: one configured block fork at 8, local exactly at 8,
+ // remote at 7 advertising that fork. This is not one of the baseline failures.
+ cfg:=&params.ChainConfig{ChainID:big.NewInt(999),HomesteadBlock:big.NewInt(8)};local:=chain{cfg,block,8};remote:=chain{cfg,block,7};fmt.Printf("separate exact-boundary diagnostic localHead=8 remoteHead=7 remoteNext=%d filter=%v\n",forkid.NewID(remote).Next,forkid.NewFilter(local)(forkid.NewID(remote)))
+}

@@ -1,0 +1,31 @@
+{
+  "source": "docs/dex/execution-adapter-spec.md",
+  "max_action_bytes": 65536,
+  "max_wire_bytes": 131072,
+  "actions": [
+    {
+      "name": "empty",
+      "action": "",
+      "envelope": "000200000000",
+      "root": "ef4da703eb52f310df442309cb5d9972f415e3faa6ab9805600fcf5278f51598"
+    },
+    {
+      "name": "binary",
+      "action": "0001ff",
+      "envelope": "0002000000030001ff",
+      "root": "28c67aed4f11756c61e8fcf36143d518cc82da602b37eff26c8e5dfe24651b5e"
+    },
+    {
+      "name": "fixture",
+      "action": "666978747572652d616374696f6e",
+      "envelope": "00020000000e666978747572652d616374696f6e",
+      "root": "d79447a637b1ba4f9f964437f1759fcf0470410c30e9f68787b276b3764753ed"
+    }
+  ],
+  "genesis": {
+    "epoch_key": "2222222222222222222222222222222222222222222222222222222222222222",
+    "root": "3333333333333333333333333333333333333333333333333333333333333333",
+    "execution_id": "fixture-execution/v1",
+    "parent": "84f5cb6c0335a1815b9b93ffb400ad5b55be9aee2ffa5d82c2cacee3b8eb42e3"
+  }
+}

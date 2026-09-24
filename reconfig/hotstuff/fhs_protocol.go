@@ -517,7 +517,10 @@ func (hsm *HotstuffProtocolManager) fhsCommittee(ctx *FHSViewContext, needIP boo
 	if ctx == nil {
 		return nil, nil, ErrInvalidLeaderView
 	}
-	committee := bftview.LoadMember(ctx.KeyNumber, ctx.KeyHash, needIP)
+	committee, err := hsm.loadCommittee(ctx.KeyNumber, ctx.KeyHash, ctx.CommitteeHash, needIP)
+	if err != nil {
+		return nil, nil, err
+	}
 	if committee == nil || committee.RlpHash() != ctx.CommitteeHash {
 		return nil, nil, ErrInvalidLeaderView
 	}
@@ -525,7 +528,7 @@ func (hsm *HotstuffProtocolManager) fhsCommittee(ctx *FHSViewContext, needIP boo
 	if err != nil {
 		return nil, nil, err
 	}
-	keys, err = snapshotPublicKeys(keys)
+	keys, err = hsm.snapshotApplicationKeys(keys)
 	if err != nil {
 		return nil, nil, err
 	}

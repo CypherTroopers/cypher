@@ -1,0 +1,6 @@
+ok  	github.com/cypherium/cypher/dex/accounting	1.054s
+ok  	github.com/cypherium/cypher/dex/checkpoint	1.294s
+ok  	github.com/cypherium/cypher/dex/consensus	13.693s
+ok  	github.com/cypherium/cypher/dex/data	1.031s
+ok  	github.com/cypherium/cypher/dex/protocol	1.042s
+ok  	github.com/cypherium/cypher/dex/runtime	1.031s

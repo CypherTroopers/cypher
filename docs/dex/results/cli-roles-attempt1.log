@@ -1,0 +1,7 @@
+=== RUN   TestDEXNormalCLIEightRoleCombinations
+=== RUN   TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_false
+    dex_test.go:377: ordinary CLI Common pow=false rpc=false dex=false; signed HTTP admission and dedicated TLS sidecar checked; normal-size PoW nonces NOT_RUN; payer=3094f139f8b2675b060855fe7e960984aff73e60
+--- PASS: TestDEXNormalCLIEightRoleCombinations (4.46s)
+    --- PASS: TestDEXNormalCLIEightRoleCombinations/pow_false_rpc_false_dex_false (4.46s)
+PASS
+ok  	github.com/cypherium/cypher/cmd/cypher	4.521s

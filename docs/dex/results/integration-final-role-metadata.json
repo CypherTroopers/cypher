@@ -1,0 +1,59 @@
+{
+  "started_utc": "2026-09-22T06:35:06.619837+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "go": "go version go1.27.1 linux/amd64",
+  "source_scope": "all rg-visible repository *.go files, docs excluded",
+  "source_files": 1162,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "GOMAXPROCS": 2,
+  "network": "separate unshare -Urn namespace per suite, only loopback enabled",
+  "pow": "existing 8-byte wrong-size CLI dataset / empty API dataset path only; normal nonce search NOT_RUN",
+  "suites": {
+    "cli-roles": "CYPHER_DEX_CLI_DEVNET=1 go test -p 1 -mod=readonly -count=1 -timeout=6m -v ./cmd/cypher -run ^TestDEXNormalCLI",
+    "api-roles": "CYPHER_DEX_ROLE_API_DEVNET=1 go test -p 1 -mod=readonly -count=1 -timeout=5m -v ./eth -run ^TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset$",
+    "sockets": "CYPHER_DEX_SOCKET_DEVNET=1 go test -p 1 -mod=readonly -race -count=1 -timeout=3m -v ./dex/service/... ./dex/transport ./dex/devnet/testnet"
+  },
+  "finished_utc": "2026-09-22T06:36:52.061034+00:00",
+  "source_changes": [
+    {
+      "path": "core/dex_native_rollback_test.go",
+      "before": "cbd2d8284bbbb65bb9d3a433a2716ef14d9784bd9c13796bc964ea2b34a3752f",
+      "after": "b0e54386d4c8c4a3e812229a979b5e478705b4c177f916792f1097bfc5430bde"
+    }
+  ],
+  "concurrent_work_note": "Observed concurrent change: core/dex_native_rollback_test.go only. That independent core package test is not compiled into the selected CLI/API/socket suites. All production Go files and all selected test sources were unchanged between the before/after snapshots. Parent separately planned an additional reconfig financial omission/retry test, which was not present in this interval diff.",
+  "results": {
+    "cli-roles": {
+      "exit_code": 0,
+      "pass_records": 10,
+      "fail_records": 0,
+      "skip_records": 0,
+      "package_results": [
+        "ok  \tgithub.com/cypherium/cypher/cmd/cypher\t44.193s"
+      ]
+    },
+    "api-roles": {
+      "exit_code": 0,
+      "pass_records": 9,
+      "fail_records": 0,
+      "skip_records": 0,
+      "package_results": [
+        "ok  \tgithub.com/cypherium/cypher/eth\t14.949s"
+      ]
+    },
+    "sockets": {
+      "exit_code": 0,
+      "pass_records": 25,
+      "fail_records": 0,
+      "skip_records": 0,
+      "package_results": [
+        "ok  \tgithub.com/cypherium/cypher/dex/service\t5.955s",
+        "ok  \tgithub.com/cypherium/cypher/dex/service/finance\t1.381s",
+        "ok  \tgithub.com/cypherium/cypher/dex/service/replication\t1.064s",
+        "ok  \tgithub.com/cypherium/cypher/dex/transport\t2.018s",
+        "ok  \tgithub.com/cypherium/cypher/dex/devnet/testnet\t1.080s"
+      ]
+    }
+  }
+}

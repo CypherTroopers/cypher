@@ -1,0 +1,33 @@
+{
+  "status": "PASS(UNIT)",
+  "live_status": "NOT_RUN",
+  "live_gate": "BLOCKED: certified15/finalized0; no fault execution",
+  "tests": 11,
+  "created_utc": "2026-09-23T19:19:48.619582+00:00",
+  "files": [
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/clx_fault_coordinator.py",
+      "sha256": "a0ab70ac2ae7b646582c4e6b232942d8124dbdd7d73d50b299fbf35134925f2d"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/test_clx_fault_coordinator.py",
+      "sha256": "f496824b6fa0b26a137d439e72165121e5135cfe643e3a15a75ace7f2909df2d"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/clx_fault_coordinator.README.md",
+      "sha256": "d8f7ebb488ad34f8a5c9db3602df044f8cd42c879e91ac7160c0f1daceab4b9f"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/public/clx-fault-coordinator-unit.log",
+      "sha256": "2776a7a5436777b6cad6034b294f787fdf03c08d1f439c00000c4b3033c27fea"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/public/clx-fault-coordinator-unit-attempt2.log",
+      "sha256": "a2ed348ecc68cb41d2d152cb0665695900832f03caf42539c8040aafb51e8bc6"
+    },
+    {
+      "path": "/tmp/common-dex-live-test.x5z_05oq/public/clx-fault-coordinator-unit-final.log",
+      "sha256": "5516310466d0105c9205b6d12ca4541aff94fada130a6e45e0fbf0c59c3456d1"
+    }
+  ]
+}

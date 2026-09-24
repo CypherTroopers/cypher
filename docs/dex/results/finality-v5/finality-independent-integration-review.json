@@ -1,0 +1,38 @@
+{
+  "mode": "read-only independent integration review; not an independent financial/security certification",
+  "findings": [],
+  "checked": [
+    "Proposal build/validation derives schema6 HistoryFrontier from actual selected authenticated parent and binds action hash/root/count into DataRoot; timeout/localhead cannot append leaves.",
+    "Cold archive replay recomputes every frontier with one actual parent; hot cut compares full frontier; WAL finality reuses stateless Epoch.Verify; repair imports require QC/ref and full replay validation.",
+    "Proofv2 keeps targetQC, authenticates target semanticQCID including view/proposal and requires genuine consecutive parent/child anchorfinality; reward compute and retirement decode target identically.",
+    "Factory chooses schema6 only from genesis-authenticated config5; helper validates inventory configversion/genesis hash then manifest registration; certified helper recomputes frontier DataRoot and verifies QC.",
+    "Ancestry execution ID differs from legacy continuous ID, preventing silent old-WAL reuse; financial state6 formulas retained.",
+    "Native settlement and relay archive gate schema6 from config5; L1 production settlement has no engine/finance/consensus/runtime dependency.",
+    "Idle scheduling inspects authenticated parent and revision-cached bounded ingress; it does not change proposal validity/root; unresolved votes/timeouts preserve timeout progress."
+  ],
+  "limits": [
+    "128 unfinalized hot records and 4096 operating height remain finite fail-closed limits; this repair does not promise arbitrary unbounded view gaps.",
+    "Generation storage rejects legacy single-file snapshot import/export; cold archive replay is covered, not a new general snapshot bootstrap feature.",
+    "Final action still needs an authenticated descendant; no synthetic oracle action or financial clock progression was added.",
+    "Three RPC ingress regression failures remain in internal/ethapi; package rpc itself passes in isolated network namespace."
+  ],
+  "source_sha256": {
+    "dex/consensus/history.go": "ebeef10ecf3e2e06ac1c33a741615d4ba2747a7be06380bd4db2ca1cb612fc5e",
+    "dex/consensus/app.go": "2e17a2e77a12cea4f5cf018c2e201e76be9fbb9641c443432f7242fe1660a129",
+    "dex/consensus/generation.go": "ee240766888d3858a117476e1f8e23cbbb6cd8516ec045bc912dd209ee43db80",
+    "dex/consensus/wal.go": "9806bf74d66df658648ea09f0249dfbf635259762979df9adce72f55672480e1",
+    "dex/consensus/repair.go": "8bacbd495bd7c6aaecf94c2055b3503a7e9c994fa10027b63b76612e9c75550d",
+    "dex/checkpoint/proof.go": "e9cf9aa11b6033a91dec01438a8ee27cfd333e8840f2a71fb40e1ba43f511487",
+    "dex/protocol/history.go": "a16132166c0b8b6a015c3861b5e972222beca47b0e59604d0ea069d70ada0799",
+    "dex/service/finance/factory.go": "67be3249de173322b365b8edde6a7e604df46d0602b95546e43d696e4f160fa3",
+    "dex/service/finance/readiness.go": "51dc6d54b5edb822d912d82ebd79b4b95d4ec5e16af0e4ece0eba22d45eb3ff3",
+    "dex/service/service.go": "958671cf9be349c8d95900dd9e8b751c2c5143f329a857d429f3e3e1ac0152d5",
+    "dex/devnet/execution.go": "3235a87baa27447827555d76dede5777b9abf21474ff15e164f164643a801c20",
+    "dex/rewards/verify.go": "34d57778dc2f147f08e49dc2537a8a3504c693dd875b98a2e2b4d37884477d96",
+    "dex/rewards/retirement.go": "61997f4fcd42dff8b17955e6f3ba272afc174d1814f20a4a564f8549a1f9b195",
+    "cmd/dex-live-finance/main.go": "65ed31002b1aabc59dee4e0f57bd011652b30b3d166bbaf3387885c64186f88b",
+    "cmd/dex-live-source-observer/main.go": "e03b66df06538d2ed8a9234bfec5c0103fa1849cadc4e912ac2e403886292d3d",
+    "dex/relay/network.go": "8fc47dafbcb17eab70e613ff1d684be304848e5a524a4a08167e8cd4c86ac386",
+    "dex/relay/bundle_archive.go": "1d75b2b6d8c1ee76480954602125d8f7c130d2e70293dfb6dfc64836bde4ad6c"
+  }
+}

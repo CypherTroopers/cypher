@@ -1,0 +1,64 @@
+{
+  "status": "SAVED; INIT NOT EXECUTED",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "changed_paths": 1294,
+  "classification": {
+    "build/binary": 2,
+    "CLX production/config": 27,
+    "tests/tooling": 248,
+    "DEX production": 98,
+    "documents": 98,
+    "logs/generated": 821
+  },
+  "start_manifest_sha256": "c04709c78c95dfeefdad367623564c67d6979d5eeef2d115030d533abceee9c5",
+  "artifacts": [
+    {
+      "file": "changed-source-sha256.json",
+      "sha256": "0880a74b84f0394cf9b74c53052542d6f36c66ca835152afaf3028b0de78d9ba",
+      "bytes": 213085
+    },
+    {
+      "file": "end-changed-source-manifest.json",
+      "sha256": "36a55c9885b9b8e9f23d6de690d73750d1a1e299b685938dba3c14ae614e51f1",
+      "bytes": 242713
+    },
+    {
+      "file": "head.txt",
+      "sha256": "d58111740e13ab29a67b59dc039a64d9f31bf914f110e2cd9f51b6e5874eadf8",
+      "bytes": 41
+    },
+    {
+      "file": "launch-and-candidate-sha256.json",
+      "sha256": "9ad618005c92f33f6722309ce76eff488cd9749bd00261875bcec58b3793a6ba",
+      "bytes": 6731
+    },
+    {
+      "file": "reviewable-archive-sha256.txt",
+      "sha256": "84557e2313aa3bfce47c12bbbce6ad4c610514e43789e30e1dfd92ac6c3a59ed",
+      "bytes": 93
+    },
+    {
+      "file": "reviewable-launch-and-candidate.tar.gz",
+      "sha256": "38039a4789c23abb9fba9f4095de41128e71ded52942fa5e868b4022abe6083a",
+      "bytes": 20339
+    },
+    {
+      "file": "reviewable-worktree.tar.gz",
+      "sha256": "73c9f8908d5ddca6ce4993e523f88af7779e50d27b2d31e0666dd3671cfbb6bf",
+      "bytes": 12436300
+    },
+    {
+      "file": "status.z",
+      "sha256": "beb9ac630c8b8048f213d13aee599f74fce61bcaeabf5386903cfe0862318944",
+      "bytes": 3284
+    },
+    {
+      "file": "tracked-source.patch",
+      "sha256": "e705e1a9e30f016efc22474514cb4b281b6488de422022c96f3b62040b9d47d1",
+      "bytes": 54711
+    }
+  ],
+  "secret_keys_and_operational_data_in_public_archives": false,
+  "normal_deployment_q1_recorded": true,
+  "O26_historical_status_unchanged": true
+}

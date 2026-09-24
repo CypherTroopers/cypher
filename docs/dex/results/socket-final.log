@@ -1,0 +1,150 @@
+=== RUN   TestSocketGolden
+--- PASS: TestSocketGolden (0.00s)
+=== RUN   TestTLSOutboxReconnectDuplicatesAndRestart
+--- PASS: TestTLSOutboxReconnectDuplicatesAndRestart (0.28s)
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/partial
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/old_epoch
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/wrong_source
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/huge_length
+--- PASS: TestTLSIdentityEpochPartialAndOutOfOrder (0.64s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/partial (0.50s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/old_epoch (0.02s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/wrong_source (0.02s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/huge_length (0.01s)
+=== RUN   TestOutboxOwnershipAndRegistryRebind
+--- PASS: TestOutboxOwnershipAndRegistryRebind (0.03s)
+PASS
+ok  	github.com/cypherium/cypher/dex/transport	1.972s
+=== RUN   TestSevenFHSActorsOverPinnedTLSSockets
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:118: 0 {active 5 2 0 } <nil>
+    service_test.go:118: 1 {active 5 2 0 } <nil>
+    service_test.go:118: 2 {active 5 2 0 } <nil>
+    service_test.go:118: 3 {active 5 2 0 } <nil>
+    service_test.go:118: 4 {active 5 2 0 } <nil>
+    service_test.go:118: 5 {active 5 2 0 } <nil>
+    service_test.go:118: 6 {active 5 2 0 } <nil>
+    service_test.go:128: real TLS FHS finality did not progress
+--- FAIL: TestSevenFHSActorsOverPinnedTLSSockets (30.36s)
+=== RUN   TestAuthenticatedActionAPIAndSerializedActor
+--- PASS: TestAuthenticatedActionAPIAndSerializedActor (0.32s)
+=== RUN   TestManifestDisabledAndUnknownFields
+--- PASS: TestManifestDisabledAndUnknownFields (0.00s)
+FAIL
+FAIL	github.com/cypherium/cypher/dex/service	30.739s
+FAIL

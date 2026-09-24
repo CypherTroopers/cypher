@@ -1,0 +1,16 @@
+=== RUN   TestBundleArchiveSchemaBoundToDeploymentVersion
+=== RUN   TestBundleArchiveSchemaBoundToDeploymentVersion/config4-schema5
+=== RUN   TestBundleArchiveSchemaBoundToDeploymentVersion/config4-schema6
+=== RUN   TestBundleArchiveSchemaBoundToDeploymentVersion/config5-schema5
+=== RUN   TestBundleArchiveSchemaBoundToDeploymentVersion/config5-schema6
+--- PASS: TestBundleArchiveSchemaBoundToDeploymentVersion (0.04s)
+    --- PASS: TestBundleArchiveSchemaBoundToDeploymentVersion/config4-schema5 (0.01s)
+    --- PASS: TestBundleArchiveSchemaBoundToDeploymentVersion/config4-schema6 (0.01s)
+    --- PASS: TestBundleArchiveSchemaBoundToDeploymentVersion/config5-schema5 (0.01s)
+    --- PASS: TestBundleArchiveSchemaBoundToDeploymentVersion/config5-schema6 (0.01s)
+=== RUN   TestAncestryBundleArchiveColdRestartAndLegacyRefusal
+--- PASS: TestAncestryBundleArchiveColdRestartAndLegacyRefusal (0.38s)
+=== RUN   TestNetworkExpectedSchemaRemainsConfigured
+--- PASS: TestNetworkExpectedSchemaRemainsConfigured (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/dex/relay	0.511s

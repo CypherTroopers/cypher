@@ -1,0 +1,102 @@
+[
+  {
+    "script": "codec_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "claim_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "reference_model.py",
+    "returncode": 0
+  },
+  {
+    "script": "counter_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "execution_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "finance_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "participation_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "participation_commit_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "engine_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "inbox_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "native_tx_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "native_rolling_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "process_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "transport_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "relay_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "relay_job_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "settlement_bundle_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "continuous_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "continuous_extended_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "continuous_early_final_deposit_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "compact_replay_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "wal_dictionary_vectors.py",
+    "returncode": 0
+  },
+  {
+    "script": "rolling_anchor_golden.py",
+    "returncode": 0
+  },
+  {
+    "script": "key_renewal_golden.py",
+    "returncode": 0
+  },
+  {
+    "script": "source_wal_golden.py",
+    "returncode": 0
+  }
+]

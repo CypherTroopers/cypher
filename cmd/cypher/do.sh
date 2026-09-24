@@ -57,7 +57,7 @@ eth.sendTransaction({from: eth.accounts[0], to: '0x403C18004054a745a83A7AC94f9C2
 	"--datadir","data", "--nodiscover","--verbosity", "5","--networkid", "31337", "--port", "21000",
 	"--raft", "--raftport", "50000","--http", "--http.addr", "0.0.0.0", "--http.port", "22000",
 	"--http.api", "admin,db,eth,debug,miner,net,shh,txpool,personal,web3,quorum,raft", "--emitcheckpoints"                
-], // 启动参数
+], // Startup arguments
 
 
 

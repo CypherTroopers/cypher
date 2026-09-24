@@ -1,0 +1,14 @@
+{
+  "time": 1790190086.0571213,
+  "initial_attempt": "FAIL: participant runtime parent missing; sidecars exited, Common/CLX continued",
+  "created_private_empty_parents": [
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cyphermine",
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex1",
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex2",
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex3",
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex4",
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex5",
+    "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/runtime/cypherdex6"
+  ],
+  "no_databases_reset": true
+}

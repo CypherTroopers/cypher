@@ -1,0 +1,26 @@
+{
+  "command": "GOCACHE=/tmp/common-dex-devnet.0wvjd5/gocache GOPROXY=off go test ./dex/settlement ./dex/relay -race -count=1 -json",
+  "packages": [
+    {
+      "Package": "github.com/cypherium/cypher/dex/relay",
+      "Action": "pass",
+      "Elapsed": 2.394
+    },
+    {
+      "Package": "github.com/cypherium/cypher/dex/settlement",
+      "Action": "pass",
+      "Elapsed": 7.42
+    }
+  ],
+  "top_level_pass": 29,
+  "pass_events": 99,
+  "skip_events": 1,
+  "fail_events": 0,
+  "manifest_timing": "Captured immediately after go test started; final global frozen-source gate remains parent responsibility",
+  "changed_after_manifest": [
+    "dex/relay/source/key_context.go",
+    "dex/clxevidence/key_renewal_test.go",
+    "dex/clxevidence/rolling.go"
+  ],
+  "scope": "Native real BLS/header/finality/MPT handler unit fixtures; relay words parser after MPT auth; no actual process renewal claim."
+}

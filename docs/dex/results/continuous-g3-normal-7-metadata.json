@@ -1,0 +1,16 @@
+{
+  "status": "FAIL",
+  "duration_seconds": 110.7,
+  "reason": "The finite progress observer treated a single bounded API HTTP503 as a fatal status. It occurred after height18 reward-close ingress. No service error/panic or invalid financial root was observed. Later phases were NOT_RUN.",
+  "source_during_run_bytes": 0,
+  "source_manifest_sha256": "061f4a0b6bed257c6ba8ad60f377f52cf8640cb6dcb8d4dcbd01a1575cfe1630",
+  "test_exit": "1",
+  "run_exit": "1",
+  "artifact": "/tmp/common-dex-check.ue3TEEPe",
+  "public_failure_archive": "/tmp/continuous-public-failure-1212014166",
+  "binary_sha256": {
+    "cypher": "fbcc9fc866ebd31fcbfe9ab56d8d241d4eaf56110e5291ba1e100d3deaaedd65",
+    "reconfig.test": "d1620c658777e611744855fdf67a14872f3d7ddb0b749451a18b7e442f8b63de"
+  },
+  "raw_sha256": "cd8e395a136a8d48eca1e12035b0b4c351224a02fce98e9c9bf8bc14c6eb099b"
+}

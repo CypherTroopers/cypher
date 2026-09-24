@@ -215,6 +215,7 @@ func TestFHSCanonicalHeadStagesTransactionAndKeyHeadTogether(t *testing.T) {
 		Difficulty: big.NewInt(1),
 		Number:     big.NewInt(0),
 		BlockType:  types.FastTx_Block,
+		Root:       types.EmptyRootHash,
 	})
 	txKey := types.NewBlockWithHeader(&types.Header{
 		ParentHash: txGenesis.Hash(),
@@ -222,6 +223,7 @@ func TestFHSCanonicalHeadStagesTransactionAndKeyHeadTogether(t *testing.T) {
 		Number:     big.NewInt(1),
 		BlockType:  types.Key_Block,
 		KeyHash:    keyGenesis.Hash(),
+		Root:       types.EmptyRootHash,
 	})
 	txKey.SetKeyblock(keyChild)
 	// Avoid exercising HeaderChain cache maintenance in this focused test;
@@ -233,6 +235,7 @@ func TestFHSCanonicalHeadStagesTransactionAndKeyHeadTogether(t *testing.T) {
 		db:            db,
 		keyBlockChain: kbc,
 		validator:     &fhsCanonicalHeadTestValidator{},
+		stateCache:    state.NewDatabase(db),
 	}
 	bc.currentBlock.Store(txGenesis)
 	proof, err := encodeFHSFinalityProof(&hotstuff.SignedState{

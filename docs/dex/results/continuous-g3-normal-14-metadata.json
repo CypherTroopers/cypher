@@ -1,0 +1,128 @@
+{
+  "status": "FAIL",
+  "duration_seconds": 1412.09,
+  "reason": "After all72 native payments, final295 ledger and410 freshly authenticated complete relay jobs, unchanged parent Common check rehashed incomplete RPC Header and failed generic block/root/gas comparison. Real RPCMarshalHeader reproduction confirms lossy reconstruction; actual parent response was not retained. Late fresh OFF Common gate NOT_RUN.",
+  "artifact": "/tmp/common-dex-check.dNYMv7SW",
+  "source_manifest_sha256": "a64dc7053ad435113f488cb0f457683cd0d9cf69e05dbea6593bf7d840ae4e16",
+  "source_after_sha256": "a64dc7053ad435113f488cb0f457683cd0d9cf69e05dbea6593bf7d840ae4e16",
+  "source_during_run_bytes": 0,
+  "raw_sha256": "b71fbaf578c78efc1c756e6799dc3cdbb5ca8cb4cbe5cdcd74f898e6223fdcf9",
+  "binary_sha256": {
+    "cypher": "2a2d63680e18a26217a5c691bdcfeb3e26c2931354a8eade06bb12b50cc583f7",
+    "reconfig.test": "28d2c965a5de58acc7d942eb15e2006ec063535bd60058ff5f6910bff46bab31"
+  },
+  "public_failure_archive": "/tmp/continuous-public-failure-307668115",
+  "public_periodic_watch": "/tmp/common-dex-continuous.uye5vgqi/trial14-public-watch",
+  "final_financial_observation": {
+    "CLXHeight": 754,
+    "DEXFinalized": 109,
+    "CLXAccepted": 109,
+    "uniqueClaims": 72,
+    "fundingAtoms": "345000000000000000000",
+    "withdrawalsAtoms": "40000000000000000000",
+    "rewardsAtoms": "10000000000000000000",
+    "custodyAtoms": "295000000000000000000",
+    "gasAtoms": "4468278246400000000",
+    "commonRewardAtoms": "893655649280000000",
+    "burnAtoms": "3574622597120000000",
+    "bucketsAtoms": {
+      "T": "279664000000000000000",
+      "F": "168000000000000000",
+      "S": "10168000000000000000",
+      "I": "5000000000000000000",
+      "R": "0",
+      "U": "0",
+      "W": "0",
+      "Z": "0"
+    },
+    "engine": "0/0/0"
+  },
+  "relayAudit": {
+    "total": 410,
+    "freshComplete": 410,
+    "relays": 2
+  },
+  "limits": {
+    "maxCalldata": 64610,
+    "maxHeaders": 32,
+    "maxMPTNodes": 7,
+    "maxMPTBytes": 2137,
+    "WALWireLimit": 2097152,
+    "recordsLimit": 128
+  },
+  "cold_absence": {
+    "startCLX": 164,
+    "intermediateAdvanceCheckCLX": 230,
+    "preRestartVerifiedSourceCLX": 256,
+    "minimumAbsentHeights": 92
+  },
+  "outage": {
+    "CLXHeight": 381,
+    "acceptedBefore": 61,
+    "DEXFinalizedDuringOutage": 78,
+    "unsettled": 17
+  },
+  "WAL": [
+    {
+      "path": "common-0/dex/fhs/state.json",
+      "bytes": 1743876,
+      "sha256": "b11bf3261c7e6433a47cd369bd7926c75481c8d1cdafc787218488815976779e",
+      "version": 3,
+      "records": 111,
+      "dictionary": 110
+    },
+    {
+      "path": "common-1/dex/fhs/state.json",
+      "bytes": 1772560,
+      "sha256": "eb80c29d522a512dd35deb1a25c12c9adbec3e9dff95c2fdd6e599691e171412",
+      "version": 3,
+      "records": 113,
+      "dictionary": 110
+    },
+    {
+      "path": "common-2/dex/fhs/state.json",
+      "bytes": 1743880,
+      "sha256": "7afa6ddc8e01575b2951b53e0c97866a791ff6b9321ea7c661b178ebf98cd1ff",
+      "version": 3,
+      "records": 111,
+      "dictionary": 110
+    },
+    {
+      "path": "common-3/dex/fhs/state.json",
+      "bytes": 1743884,
+      "sha256": "903c32557bdf0b5cd98cad3e3b6fb5dcd5bceb3bf1c3f1136ff2b9bf88a9257f",
+      "version": 3,
+      "records": 111,
+      "dictionary": 110
+    },
+    {
+      "path": "common-4/dex/fhs/state.json",
+      "bytes": 1743872,
+      "sha256": "a44ae65e622839e033f671381f3cdfba14038f6dc0f5b7cf938ef4f73cf1f3b3",
+      "version": 3,
+      "records": 111,
+      "dictionary": 110
+    },
+    {
+      "path": "common-5/dex/fhs/state.json",
+      "bytes": 1743875,
+      "sha256": "f1b35c9070491e4fd7efc1a14b5c2828451a2871681422f8ed26c229810c4a42",
+      "version": 3,
+      "records": 111,
+      "dictionary": 110
+    },
+    {
+      "path": "common-6/dex/fhs/state.json",
+      "bytes": 1786022,
+      "sha256": "87767b0644318067896053b95ce9f997eb3e583da68f66524de2311ee8266e88",
+      "version": 3,
+      "records": 113,
+      "dictionary": 110
+    }
+  ],
+  "remaining_NOT_RUN": [
+    "late fresh DEX OFF Common fullsync and sameDBrestart",
+    "remaining existing Common parent checks and receipt comparisons after parent0 generic failure"
+  ],
+  "not_final_pass": true
+}

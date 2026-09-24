@@ -1,0 +1,30 @@
+{
+  "started_utc": "2026-09-22T09:35:34.228253+00:00",
+  "finished_utc": "2026-09-22T09:36:00.029186+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-race",
+    "-json",
+    "./dex/clxevidence"
+  ],
+  "exit_code": 0,
+  "network_namespace": "net:[4026532340]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [],
+  "log": "docs/dex/results/continuous-g1-evidence-unit.jsonl",
+  "log_sha256": "5d02c37e53ecb907af688f0ee531e28130b7c84ff854b17f198af213dc7167bc"
+}

@@ -1,0 +1,8 @@
+{"Time":"2026-09-22T13:38:24.015091984+02:00","Action":"start","Package":"github.com/cypherium/cypher/reconfig"}
+{"Time":"2026-09-22T13:38:24.087903713+02:00","Action":"run","Package":"github.com/cypherium/cypher/reconfig","Test":"TestContinuousParticipationSelectsAuthenticatedProposal"}
+{"Time":"2026-09-22T13:38:24.088124904+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Test":"TestContinuousParticipationSelectsAuthenticatedProposal","Output":"=== RUN   TestContinuousParticipationSelectsAuthenticatedProposal\n","OutputType":"frame"}
+{"Time":"2026-09-22T13:38:24.848286724+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Test":"TestContinuousParticipationSelectsAuthenticatedProposal","Output":"--- PASS: TestContinuousParticipationSelectsAuthenticatedProposal (0.76s)\n","OutputType":"frame"}
+{"Time":"2026-09-22T13:38:24.848351265+02:00","Action":"pass","Package":"github.com/cypherium/cypher/reconfig","Test":"TestContinuousParticipationSelectsAuthenticatedProposal","Elapsed":0.76}
+{"Time":"2026-09-22T13:38:24.848400616+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Output":"PASS\n","OutputType":"frame"}
+{"Time":"2026-09-22T13:38:25.870731028+02:00","Action":"output","Package":"github.com/cypherium/cypher/reconfig","Output":"ok  \tgithub.com/cypherium/cypher/reconfig\t1.853s\n"}
+{"Time":"2026-09-22T13:38:25.870824872+02:00","Action":"pass","Package":"github.com/cypherium/cypher/reconfig","Elapsed":1.8559999999999999}

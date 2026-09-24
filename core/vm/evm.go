@@ -46,6 +46,9 @@ func activePrecompiledContracts(rules params.Rules) map[common.Address]Precompil
 // RPC gas estimation uses the same selector as EVM execution so a precompile is
 // never mistaken for a plain 21,000-gas EOA transfer merely because it has no code.
 func IsPrecompiledContract(addr common.Address, rules params.Rules) bool {
+	if rules.IsDEXDevnet && addr == params.DEXSettlementAddress {
+		return true
+	}
 	_, ok := activePrecompiledContracts(rules)[addr]
 	return ok
 }
@@ -102,6 +105,14 @@ type Context struct {
 	BaseFee     *big.Int
 	BlobBaseFee *big.Int
 	BlobHashes  []common.Hash
+	// Native settlement identity is supplied by authenticated chain execution,
+	// independently of whether this node runs any Common DEX workload.
+	NativeGenesis        *types.Header
+	NativeGenesisKeyHash common.Hash
+	NativeGenesisConfig  *params.ChainConfig
+	NativeGenesisForks   *params.ModernForkConfig
+	NativeContextError   error
+	TransactionNonce     uint64
 }
 
 type EVM struct {
@@ -155,8 +166,9 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	}
 	snapshot := evm.StateDB.Snapshot()
 	p, isPrecompile := evm.precompile(addr)
+	isNative := evm.chainRules.IsDEXDevnet && addr == params.DEXSettlementAddress
 	if !evm.StateDB.Exist(addr) {
-		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
+		if !isPrecompile && !isNative && evm.chainRules.IsEIP158 && value.Sign() == 0 {
 			if evm.vmConfig.Debug && evm.depth == 0 {
 				evm.vmConfig.Tracer.CaptureStart(caller.Address(), addr, false, input, gas, value)
 				evm.vmConfig.Tracer.CaptureEnd(nil, 0, 0, nil)
@@ -173,7 +185,9 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		evm.vmConfig.Tracer.CaptureStart(caller.Address(), addr, false, input, gas, value)
 		defer func() { evm.vmConfig.Tracer.CaptureEnd(ret, startGas-gas, time.Since(startTime), err) }()
 	}
-	if isPrecompile {
+	if isNative {
+		ret, gas, err = evm.runNativeSettlement(caller, input, gas, value)
+	} else if isPrecompile {
 		ret, gas, err = evm.runPrecompiledContract(p, input, gas)
 	} else if code := evm.resolveCode(addr); len(code) > 0 {
 		addrCopy := addr
@@ -192,6 +206,9 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 }
 
 func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, gas uint64, value *big.Int) ([]byte, uint64, error) {
+	if evm.chainRules.IsDEXDevnet && addr == params.DEXSettlementAddress {
+		return rejectNativeContext(gas)
+	}
 	if evm.vmConfig.NoRecursion && evm.depth > 0 {
 		return nil, gas, nil
 	}
@@ -223,6 +240,9 @@ func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, 
 }
 
 func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []byte, gas uint64) ([]byte, uint64, error) {
+	if evm.chainRules.IsDEXDevnet && addr == params.DEXSettlementAddress {
+		return rejectNativeContext(gas)
+	}
 	if evm.vmConfig.NoRecursion && evm.depth > 0 {
 		return nil, gas, nil
 	}
@@ -251,6 +271,9 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 }
 
 func (evm *EVM) StaticCall(caller ContractRef, addr common.Address, input []byte, gas uint64) ([]byte, uint64, error) {
+	if evm.chainRules.IsDEXDevnet && addr == params.DEXSettlementAddress {
+		return rejectNativeContext(gas)
+	}
 	if evm.vmConfig.NoRecursion && evm.depth > 0 {
 		return nil, gas, nil
 	}
@@ -330,6 +353,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		return nil, common.Address{}, gas, ErrNonceUintOverflow
 	}
 	evm.StateDB.SetNonce(caller.Address(), nonce+1)
+	if evm.chainRules.IsDEXDevnet && address == params.DEXSettlementAddress {
+		return nil, address, 0, ErrContractAddressCollision
+	}
 	// EIP-2929 warms a CREATE/CREATE2 target before collision checks and before
 	// the execution snapshot, so a failed creation leaves the address warm.
 	if evm.chainRules.IsBerlin {

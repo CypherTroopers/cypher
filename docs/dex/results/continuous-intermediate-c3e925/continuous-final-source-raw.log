@@ -1,0 +1,10 @@
+=== RUN   TestFHSNativeOrdinaryETHSource
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=1 height=1 hash=0x732d530dc06679278accb9fc6b666979c45e11b08598b29d4483fbd4c724321e root=0x343c8f408ac652eb03d2b6fdb6afd235a470270492eb2e66f1df892067fc8970 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=2 height=3 hash=0xb97da0678a273679bb21f9b5f5d4dc9b072b68d326367be96bea8c5e936a6ca0 root=0xeefbffa7d016c8df965bb0f6d558be2a33de94adbbee1b3fe27868a84f1240d7 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=3 height=5 hash=0xcc6f8d23906c7bf7ddcbc73ed5d1ba7ead7bd905e37cd862a1bc74283e44eecd root=0x45e9f0024ebd26ed92abfe51e91a9588034d29348c191d051e88e5dd818b33a5 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=4 height=7 hash=0xf6b9858aac8c4cc1473393d426d02b518dfde91fd48a1fb08bbdd7547e090184 root=0x344b29e96032663eeb6cf3bb9fe7325ad02e9262495b4f906098970e72f64dfa peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=5 height=9 hash=0xb71ca25beb4ffc2dad3db1005d7fce3be5410fc39f2dee4882cfc510f4ecbc92 root=0xa40ce4dd960bf5a929a1fd994d2459d6cf59a6dd334d7d41d9fcaf65d7529a44 peers=1 engineDelta=0
+    dex_native_eth_source_test.go:112: ORDINARY_ETH_SOURCE_PROGRESS deposit=6 height=11 hash=0xba1e02cc9eeff50fadde299e35b155cbda8f3ffed4410499de97a23be7b66b70 root=0xcb7716eb2a792578ffed7ef1541614329b44c26f96a440dfdd2cd7218546d1fc peers=1 engineDelta=0
+    dex_native_eth_source_test.go:167: ORDINARY_ETH_SOURCE_RESTART_PROOF sourceHeight=11 inbox=6 balance=6000000000000000000 CLXChildren=7 sourceRPC=true sourcePoW=false sourceDEX=false noCoordinatorInsertChain=true
+--- PASS: TestFHSNativeOrdinaryETHSource (40.96s)
+PASS

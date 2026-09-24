@@ -1,0 +1,105 @@
+{
+  "created_utc": "2026-09-23T19:20:22.718245+00:00",
+  "boot_id": "fcd0df19-9bbb-4d09-a76d-fedbbed8541a",
+  "scope": "read-only /proc parent-child binding; no PM2 call/RPC/signal",
+  "apps": [
+    {
+      "expected_pm2_name": "cyphermine",
+      "actual_pm2_status": "NOT_QUERIED: process-level read-only audit",
+      "datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindbmine",
+      "datadir_identity": [
+        2049,
+        1756409
+      ],
+      "parent_processes": [],
+      "owned_sidecars": [],
+      "manifest_sha256": "8c0b7916351f93c5937aff80639595439341674703d9f00659aabf8d18e9ff48",
+      "parent_count": 0,
+      "child_count": 0
+    },
+    {
+      "expected_pm2_name": "cypherdex1",
+      "actual_pm2_status": "NOT_QUERIED: process-level read-only audit",
+      "datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex1",
+      "datadir_identity": [
+        2049,
+        288450
+      ],
+      "parent_processes": [],
+      "owned_sidecars": [],
+      "manifest_sha256": "a7e1babd34293cd99b21c9ae76d5f8fb3b7588a0d981bfde5a724e34c2c3c5db",
+      "parent_count": 0,
+      "child_count": 0
+    },
+    {
+      "expected_pm2_name": "cypherdex2",
+      "actual_pm2_status": "NOT_QUERIED: process-level read-only audit",
+      "datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex2",
+      "datadir_identity": [
+        2049,
+        288504
+      ],
+      "parent_processes": [],
+      "owned_sidecars": [],
+      "manifest_sha256": "32890b75d2dceddad962175f35d9d4e6cdc3dda5278ccac5cc5a1459fcb2b0da",
+      "parent_count": 0,
+      "child_count": 0
+    },
+    {
+      "expected_pm2_name": "cypherdex3",
+      "actual_pm2_status": "NOT_QUERIED: process-level read-only audit",
+      "datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex3",
+      "datadir_identity": [
+        2049,
+        288538
+      ],
+      "parent_processes": [],
+      "owned_sidecars": [],
+      "manifest_sha256": "5993421891bbe45660d95df23d893caf69865d5ddf31dd455ad770b3eba580e1",
+      "parent_count": 0,
+      "child_count": 0
+    },
+    {
+      "expected_pm2_name": "cypherdex4",
+      "actual_pm2_status": "NOT_QUERIED: process-level read-only audit",
+      "datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex4",
+      "datadir_identity": [
+        2049,
+        288572
+      ],
+      "parent_processes": [],
+      "owned_sidecars": [],
+      "manifest_sha256": "31fc9eae580e808efbd34f972f1890e8b07d94890071f3852e6f037f88214b5c",
+      "parent_count": 0,
+      "child_count": 0
+    },
+    {
+      "expected_pm2_name": "cypherdex5",
+      "actual_pm2_status": "NOT_QUERIED: process-level read-only audit",
+      "datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex5",
+      "datadir_identity": [
+        2049,
+        288611
+      ],
+      "parent_processes": [],
+      "owned_sidecars": [],
+      "manifest_sha256": "393dddf3d1a87f346e18c1bab3e843b726c2e5393be091cdf7c2ec1336d1559d",
+      "parent_count": 0,
+      "child_count": 0
+    },
+    {
+      "expected_pm2_name": "cypherdex6",
+      "actual_pm2_status": "NOT_QUERIED: process-level read-only audit",
+      "datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex6",
+      "datadir_identity": [
+        2049,
+        288655
+      ],
+      "parent_processes": [],
+      "owned_sidecars": [],
+      "manifest_sha256": "3e4c4c76d8ef796a621cec7359e293a4cac6f189ae5d523dc2f7f6108186e253",
+      "parent_count": 0,
+      "child_count": 0
+    }
+  ]
+}

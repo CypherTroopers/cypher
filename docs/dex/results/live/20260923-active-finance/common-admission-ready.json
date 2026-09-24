@@ -1,0 +1,20 @@
+{
+  "utc": 1790190023.0208006,
+  "scope": "existing test owner unlock and Common RPC admission configuration; no transfers; no miner start/stop",
+  "records": [
+    {
+      "app": "cypher0",
+      "existing_account_unlocked": true,
+      "mining_before": true,
+      "miner_start_called": false
+    },
+    {
+      "app": "cyphermine",
+      "existing_account_unlocked": true,
+      "mining_before": false,
+      "miner_start_called": false,
+      "rpc_reward_was_configured": true,
+      "common_rpc_recipient": "0xed2772838f7a7aec042a972084998cb30d63b660"
+    }
+  ]
+}

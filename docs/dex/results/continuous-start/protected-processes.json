@@ -1,0 +1,58 @@
+[
+  {
+    "pid": 477749,
+    "comm": "cypher-linux-am",
+    "cwd": "/root/cypher",
+    "datadir": "chaindb1",
+    "matches_previous": true
+  },
+  {
+    "pid": 477750,
+    "comm": "cypher-linux-am",
+    "cwd": "/root/cypher",
+    "datadir": "chaindb0",
+    "matches_previous": true
+  },
+  {
+    "pid": 477760,
+    "comm": "cypher-linux-am",
+    "cwd": "/root/cypher",
+    "datadir": "chaindb2",
+    "matches_previous": true
+  },
+  {
+    "pid": 477766,
+    "comm": "cypher-linux-am",
+    "cwd": "/root/cypher",
+    "datadir": "chaindb3",
+    "matches_previous": true
+  },
+  {
+    "pid": 477767,
+    "comm": "cypher-linux-am",
+    "cwd": "/root/cypher",
+    "datadir": "chaindb4",
+    "matches_previous": true
+  },
+  {
+    "pid": 477781,
+    "comm": "cypher-linux-am",
+    "cwd": "/root/cypher",
+    "datadir": "chaindb6",
+    "matches_previous": true
+  },
+  {
+    "pid": 477787,
+    "comm": "cypher-linux-am",
+    "cwd": "/root/cypher",
+    "datadir": "chaindb5",
+    "matches_previous": true
+  },
+  {
+    "pid": 561356,
+    "comm": "cypher-linux-am",
+    "cwd": "/root/cypher",
+    "datadir": "chaindbmine",
+    "matches_previous": true
+  }
+]

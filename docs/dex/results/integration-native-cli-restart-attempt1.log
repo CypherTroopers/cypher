@@ -1,0 +1,77 @@
+=== RUN   TestDEXNormalCLINativeFinanceRestart
+    dex_finance_test.go:37: pre-inbox economic rejection: native finalized inbox anchor required
+    dex_finance_test.go:37: Common exited before IPC
+        INFO [09-22|08:49:18.573] Starting Geth on Ethereum mainnet... 
+        INFO [09-22|08:49:18.578] Allocated trie memory caches             clean=7.00MiB dirty=8.00MiB
+        INFO [09-22|08:49:18.578] Allocated cache and file handles         database=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/common/cypher/chaindata cache=16.00MiB handles=262144
+        INFO [09-22|08:49:18.584] Opened ancient database                  database=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/common/cypher/chaindata/ancient
+        INFO [09-22|08:49:18.584] SetCommitteeConfig                       len=0
+        panic: Writing genesis key block error!
+        
+        goroutine 1 [running]:
+        github.com/cypherium/cypher/core.SetupGenesisKeyBlock({0x279d558, 0x2b18c5ac2030}, 0x0)
+        	/root/work/cypher-FHS-D-ExchangeCore/core/key_genesis.go:151 +0x2a8
+        github.com/cypherium/cypher/eth.New(0x2b18c5cdbd40, 0x2b18c5e12008)
+        	/root/work/cypher-FHS-D-ExchangeCore/eth/backend.go:194 +0x634
+        github.com/cypherium/cypher/cmd/utils.RegisterEthService(0x0?, 0x0?)
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/utils/flags.go:1745 +0x1d
+        github.com/cypherium/cypher/cmd/cypher.makeFullNode(0x2b18c5d9e580)
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/config.go:141 +0xeb
+        github.com/cypherium/cypher/cmd/cypher.cypher(0x2b18c5d9e580)
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/main.go:360 +0xdc
+        gopkg.in/urfave/cli%2ev1.HandleAction({0x2554ba0?, 0x27a4918?}, 0x2b18c5f28008?)
+        	/root/go/pkg/mod/gopkg.in/urfave/cli.v1@v1.20.0/app.go:490 +0x50
+        gopkg.in/urfave/cli%2ev1.(*App).Run(0x2b18c5beb040, {0x2b18c5bb6000, 0x17, 0x18})
+        	/root/go/pkg/mod/gopkg.in/urfave/cli.v1@v1.20.0/app.go:264 +0x678
+        github.com/cypherium/cypher/cmd/cypher.init.2.func1()
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/run_test.go:51 +0x2f
+        github.com/moby/sys/reexec.Init(...)
+        	/root/go/pkg/mod/github.com/moby/sys/reexec@v0.1.0/reexec.go:33
+        github.com/docker/docker/pkg/reexec.Init(...)
+        	/root/go/pkg/mod/github.com/docker/docker@v28.5.2+incompatible/pkg/reexec/reexec_deprecated.go:25
+        github.com/cypherium/cypher/cmd/cypher.TestMain(0x2b18c5efa0a0)
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/run_test.go:61 +0x51
+        main.main()
+        	_testmain.go:54 +0xa5
+    dex_finance_test.go:141: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/child-1790059758165572487.log: INFO [09-22|08:49:18.257] DEX sidecar active                       index=1 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/dex-1
+    dex_finance_test.go:141: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/child-1790059758170017739.log: INFO [09-22|08:49:18.267] DEX sidecar active                       index=2 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/dex-2
+    dex_finance_test.go:141: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/child-1790059758170925969.log: INFO [09-22|08:49:18.295] DEX sidecar active                       index=3 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/dex-3
+    dex_finance_test.go:141: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/child-1790059758175721011.log: INFO [09-22|08:49:18.304] DEX sidecar active                       index=4 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/dex-4
+    dex_finance_test.go:141: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/child-1790059758190921455.log: INFO [09-22|08:49:18.288] DEX sidecar active                       index=5 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/dex-5
+    dex_finance_test.go:141: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/child-1790059758199979330.log: INFO [09-22|08:49:18.292] DEX sidecar active                       index=6 mode=native-finance datadir=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/dex-6
+    dex_finance_test.go:141: owned CLI log /tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/child-1790059758530399662.log: INFO [09-22|08:49:18.573] Starting Geth on Ethereum mainnet... 
+        INFO [09-22|08:49:18.578] Allocated trie memory caches             clean=7.00MiB dirty=8.00MiB
+        INFO [09-22|08:49:18.578] Allocated cache and file handles         database=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/common/cypher/chaindata cache=16.00MiB handles=262144
+        INFO [09-22|08:49:18.584] Opened ancient database                  database=/tmp/TestDEXNormalCLINativeFinanceRestart2917332169/001/common/cypher/chaindata/ancient
+        INFO [09-22|08:49:18.584] SetCommitteeConfig                       len=0
+        panic: Writing genesis key block error!
+        
+        goroutine 1 [running]:
+        github.com/cypherium/cypher/core.SetupGenesisKeyBlock({0x279d558, 0x2b18c5ac2030}, 0x0)
+        	/root/work/cypher-FHS-D-ExchangeCore/core/key_genesis.go:151 +0x2a8
+        github.com/cypherium/cypher/eth.New(0x2b18c5cdbd40, 0x2b18c5e12008)
+        	/root/work/cypher-FHS-D-ExchangeCore/eth/backend.go:194 +0x634
+        github.com/cypherium/cypher/cmd/utils.RegisterEthService(0x0?, 0x0?)
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/utils/flags.go:1745 +0x1d
+        github.com/cypherium/cypher/cmd/cypher.makeFullNode(0x2b18c5d9e580)
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/config.go:141 +0xeb
+        github.com/cypherium/cypher/cmd/cypher.cypher(0x2b18c5d9e580)
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/main.go:360 +0xdc
+        gopkg.in/urfave/cli%2ev1.HandleAction({0x2554ba0?, 0x27a4918?}, 0x2b18c5f28008?)
+        	/root/go/pkg/mod/gopkg.in/urfave/cli.v1@v1.20.0/app.go:490 +0x50
+        gopkg.in/urfave/cli%2ev1.(*App).Run(0x2b18c5beb040, {0x2b18c5bb6000, 0x17, 0x18})
+        	/root/go/pkg/mod/gopkg.in/urfave/cli.v1@v1.20.0/app.go:264 +0x678
+        github.com/cypherium/cypher/cmd/cypher.init.2.func1()
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/run_test.go:51 +0x2f
+        github.com/moby/sys/reexec.Init(...)
+        	/root/go/pkg/mod/github.com/moby/sys/reexec@v0.1.0/reexec.go:33
+        github.com/docker/docker/pkg/reexec.Init(...)
+        	/root/go/pkg/mod/github.com/docker/docker@v28.5.2+incompatible/pkg/reexec/reexec_deprecated.go:25
+        github.com/cypherium/cypher/cmd/cypher.TestMain(0x2b18c5efa0a0)
+        	/root/work/cypher-FHS-D-ExchangeCore/cmd/cypher/run_test.go:61 +0x51
+        main.main()
+        	_testmain.go:54 +0xa5
+--- FAIL: TestDEXNormalCLINativeFinanceRestart (4.32s)
+FAIL
+FAIL	github.com/cypherium/cypher/cmd/cypher	4.372s
+FAIL

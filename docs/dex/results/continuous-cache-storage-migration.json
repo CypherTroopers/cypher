@@ -1,0 +1,21 @@
+{
+  "source": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "destination": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/common-dex-cache.dck1uf5i/gocache",
+  "started_unix": 1790163863.377294,
+  "operation": "verified copy to block filesystem; original dedicated cache path now symlink; original cache bytes reclaimed",
+  "reason": "reduce reviewed shared tmpfs exhaustion risk after full byte verification",
+  "source_filesystem": "tmpfs",
+  "destination_filesystem": "/dev/sda1",
+  "status": "MIGRATED_VERIFIED_CACHE",
+  "copied_unix": 1790163889.3941457,
+  "files": 23545,
+  "bytes": 5281325292,
+  "file_manifest": "/tmp/common-dex-continuous.uye5vgqi/cache-migration-file-manifest.json",
+  "file_manifest_sha256": "d213c671fc19a6721fd6ed71045b1cdd308efe3ce45aea0d6cf3a87c30ce4ed6",
+  "verified_unix": 1790163929.787178,
+  "completed_unix": 1790163961.0945003,
+  "tmp_free_before": 1733455872,
+  "tmp_free_after": 7099351040,
+  "source_unchanged": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2",
+  "active_build_processes_before_swap": []
+}

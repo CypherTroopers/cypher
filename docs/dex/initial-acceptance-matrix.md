@@ -1,0 +1,62 @@
+# Acceptance item execution scope — 2026-09-22
+
+Scope: uncommitted development changes on starting HEAD `70862a71dfaf2b00694dc1354c6a64e9504d7db5`.
+**This is not an overall completion assessment for A–D.** `PASS(component)` means success only within
+the specified test boundary; `PASS(isolated integration)` means end-to-end success of a limited fixture.
+Read these alongside NOT_RUN in the separate column. Distinguish unselected production parameters
+from insufficient implementation/testing within the authorized devnet scope.
+
+The financial experiment connecting a real native StateDB from a new genesis to 7 real FHS actors succeeded.
+It ran native deposit → DEX credit → authenticated orders/trades → fee/funding → authenticated
+participation rewards → 2-chain checkpoint acceptance → native withdrawal/reward claims → DEX WAL/StateDB restart.
+After 18 finalized blocks, custody paid withdrawal 10 and reward 1 from 225 CLX, leaving 214 CLX,
+F=0.064, S=19.020, and I=5 CLX. Evidence for 7 participants comes from actual prepare votes and receipts.
+Evidence: [financial-finality-callback.log](results/financial-finality-callback.log) and
+[final-unit.jsonl](results/final-unit.jsonl) after all changes (11 packages race PASS).
+The 8 real API combinations / 14 processes also achieved PASS in the [final process regression](results/final-process-regression.log).
+This is neither a public network operated by multiple independent parties nor a test of including
+CLX transactions in CLX blocks and finalizing them. Native-call sender/finality anchors are supplied
+by a trusted devnet execution context.
+
+|ID|Executed result and evidence|Remaining boundary / NOT_RUN|
+|---|---|---|
+|R01|PASS(component/real API). Worker start/stop across all 8 runtime combinations, IPC miner lifecycle, HTTP Common admission, and all 8 combinations with a separate DEX process. [runtime](results/runtime-race.jsonl), [real API](results/real-role-api.log)|Concurrent normal PoW dataset nonce search/candidate delivery is NOT_RUN. The 32 GiB dataset exceeded the then MemAvailable of about 24 GiB; memlock 8 MiB. See [resource conditions](real-role-prerequisites.md).|
+|R02|PASS(component). DEX settings/reward recipients use separate structures and keys; real Common API tests verify independence of coinbase/committee/RPC signer. Rewards fixtures separate voting keys and recipients. [lifecycle](lifecycle-audit.md), [real API](results/real-role-api.log)|Public registration and a DEX participation UI exercising all setters during operation are not connected.|
+|R03|PASS(component). `TestDisabledCreatesNoDEXResources`; no sidecar starts with DEX OFF in the real API. [runtime](results/runtime-race.jsonl), [real API](results/real-role-api.log)|Normal startup has no automatic DEX registration. Arbitrary DEX participation through a product CLI is unimplemented.|
+|R04|PASS(isolated integration/component). With 7 DEX processes stopped, 7 CLX processes advance height 1→3, then resume after DEX WAL recovery. Queue-saturation/crash independence. [two domains](results/two-domain-process.log), [runtime](results/runtime-race.jsonl)|DEX in this process test is an unfunded counter. CLX progress-budget measurement under financial load is NOT_RUN.|
+|R05|PASS(existing primary scope) + EXISTING_FAIL. Baselines for PoW/RPC/miner/eth/core and existing FHS process tests. The 2 `core/forkid` tests returned FAIL before changes. [baseline](results/baseline-isolated-tests.log), [analysis](baseline-failures.md)|Not all repository tests pass. Normal PoW dataset regression is NOT_RUN. Separate existing fork-boundary defects remain unfixed.|
+|C01|PASS(component). Rejects mixed domain/DEX/epoch, vote/timeout/QC/checkpoint data, empty signatures, and internal control. [proof](results/checkpoint-tests.log), [consensus tests](../../dex/consensus/app_test.go)|Comprehensive testing against public-network adversaries is NOT_RUN.|
+|C02|PASS(component/isolated integration). Rejects single QCs; verifies semantic ParentQCID and height/view 2-chain rules. Financial finality uses the same rule in 7 real FHS actors. [proof](results/checkpoint-tests.log), [financial integration](results/financial-finality-callback.log)|QC is not proof of computational validity. No different finality rule was introduced.|
+|C03|PASS(component/isolated integration). Durable votes/WAL, correct parent reexecution, and conflict rejection after restart. All WALs recover after 18 financial blocks. [consensus tests](../../dex/consensus/app_test.go), [financial integration](results/financial-finality-callback.log)|Host power loss, total disk failure, and real-network rejoining are NOT_RUN.|
+|C04|PASS(component). Looks up CLX-authenticated immutable epoch boundaries by sequence; does not judge old proofs using the current committee. [acceptance race](results/acceptance-race.jsonl)|Live DEX committee rotation and connection between old/new networks are NOT_RUN. Fixed 7-member fixture.|
+|C05|PASS(static boundary/component). Checkpoint/settlement imports no engine and runs only bounded proofs/native accounting. [checkpoint dependencies](results/checkpoint-dependencies.txt), [settlement dependencies](results/settlement-dependencies.txt)|Measuring actual verification time/budget from added DEX load under the same CLX workload is NOT_RUN.|
+|C06|PASS(component). Rejects proof size/count/codec/bitmap/metadata limits before cryptography; bounded fuzzing executed. [proof tests](results/checkpoint-tests.log), [proof fuzz](results/proof-fuzz.log), [native race](results/native-settlement-race.jsonl)|Unlimited/long-running fuzzing and real-network DoS measurement are NOT_RUN.|
+|L01|PASS(component/isolated integration). Derives consecutive cursor/total/root from StateDB inbox and rejects unfinalized anchors, duplicates, and different domains/custodies. [native race](results/native-settlement-race.jsonl), [financial integration](results/financial-finality-callback.log)|Native calls use a preinstalled finalized-anchor fixture. Inbox integration observing real CLX block inclusion → finality is unimplemented.|
+|L02|PASS(component/isolated integration). Claims after DEX debit/reservation, StateDB nullifiers, and rejection of double withdrawal/reclaim after restart. [native race](results/native-settlement-race.jsonl), [financial integration](results/financial-finality-callback.log)|Double claims through the real CLX transaction handler are NOT_RUN.|
+|L03|PASS(component/isolated integration). Same-checkpoint replay is a no-op, different payload at the same sequence is rejected, and history persists after snapshot rollback/restart. [acceptance race](results/acceptance-race.jsonl), [native race](results/native-settlement-race.jsonl)|Replay within CLX consensus execution is NOT_RUN.|
+|L04|PASS(component/isolated integration). 39 independent arithmetic goldens, native U/T/F/S/I/Z/W/R conservation, actual native 225→214. Separates fee transfers/insurance shortfalls/funding dust/reservations. [arithmetic](../../dex/testdata/accounting.json), [native race](results/native-settlement-race.jsonl), [financial integration](results/financial-finality-callback.log)|Conservation testing connecting all failures to 7 financial processes + 7 CLX processes is NOT_RUN.|
+|L05|PASS(component). Owner/recipient/amount/domain commitments, counted inclusion, cumulative reserve limits, recipient-overflow atomicity, cross-custody binding. [native race](results/native-settlement-race.jsonl)|Real CLX dispatch sender authentication is not connected. See the [finance specification](finance-spec.md) for the trust boundary of senders passed to the adapter.|
+|L06|PASS(specification trust assumptions explicit). QC authentication is not independent verification against improper account reallocations; it depends on the committee and correct implementation. [protocol](protocol-spec.md), [finance](finance-spec.md)|Validity Proof/ZK/trustless bridge/CLX-equivalent security are neither implemented nor claimed.|
+|L07|PASS(engine component). Oracle freshness is judged by authenticated DEX height, with stale-price cancel/withdraw restrictions and no fabricated prices. [engine tests](../../dex/engine/engine_test.go)|External price sources and long oracle outage/recovery across both financial domains are NOT_RUN.|
+|L08|PASS(halt policy/component). Errors on missing DA, no refunds from unfinalized state. Only claims against accepted reserves may continue. [data](results/data-tests.log), [finance](finance-spec.md)|Emergency prices/loss allocation/recovery procedures for closing open positions are unimplemented. No claim that frozen funds can be released.|
+|W01|PASS(component/isolated integration). Actual votes + 5/7 timely receipts authenticate target/period/deadline; no duplicate points; signatures produced only after the fact are rejected. [participation race](results/participation-race.jsonl), [financial integration](results/financial-finality-callback.log)|Signatures do not prove actual CPU execution. Public-operator exclusion audits are NOT_RUN.|
+|W02|PASS(component). Rejects self-trades, fixes period support/cap, and does not increase subsidies with volume or signature counts. [engine tests](../../dex/engine/engine_test.go), [native race](results/native-settlement-race.jsonl)|Long market experiments with multi-account economic attacks are NOT_RUN.|
+|W03|PASS(component/isolated integration). Receipts count participation beyond the first QC bitmap, without duplicates; independent goldens verify allocation/backing. Financial end-to-end pays all 7 members. [participation race](results/participation-race.jsonl), [financial integration](results/financial-finality-callback.log)|L1 does not reexecute participation work and relies on committee authentication. Public operation/profitability evaluation is NOT_RUN.|
+|W04|PASS(component). Zero fees/support shortage/period cap, rejection of unreserved backing, rejection of next-period fee mixing, delayed close. [native race](results/native-settlement-race.jsonl)|Long-term sustainability from fees alone is NOT_RUN. No additional issuance or use of margin was introduced.|
+|D01|PASS(component). Third-party replay and snapshot rejoining for counter/generic execution; financial WAL restart. [consensus tests](../../dex/consensus/app_test.go), [generic tests](../../dex/consensus/execution_test.go), [financial integration](results/financial-finality-callback.log)|Real-network retention/recovery by delivering a financial snapshot to another operator for joining is NOT_RUN.|
+|D02|PASS(component). Separate errors for missing/mismatched data, roots alone do not establish DA success, and missing parent data prevents voting. [data](results/data-tests.log), [consensus tests](../../dex/consensus/app_test.go)|Retrieval from multiple public DEX nodes and retention SLOs are NOT_RUN.|
+|P01|PARTIAL. Ingress admission, DEX finality, native checkpoint acceptance, and native claim completion are separate specification/test stages. [financial integration](results/financial-finality-callback.log)|User API stage timestamps and real CLX finality latency are NOT_RUN.|
+|P02|NOT_RUN|Open-loop p50/p95/p99/p99.9, rejection rate, and backlog are unmeasured.|
+|P03|NOT_RUN|At least 60 minutes of mixed new/cancel/amend/trade/failure/duplicate load has not run.|
+|P04|NOT_RUN|Baseline versus mixed DEX settlement comparison on the same hardware/CLX load has not run.|
+|P05|NOT_RUN|Resource recommendations for DEX tail latency/CLX synchronization/admission alongside normal PoW are unmeasured.|
+|P06|PARTIAL. Source, goldens, starting HEAD, environment, configuration, raw logs, and reproduction scripts retained. [environment](environment.md), [script](../../scripts/dex/check.sh)|Reproduction also requires source hashes because changes are uncommitted. No performance raw results exist for P02–P05.|
+
+PASS for rejecting faulty input does not mean full recovery from a failure. Financial components cover bad
+roots/signatures, nullifiers, insufficient sources, insufficient insurance, oracle outages, snapshot rollback,
+and disk reopening, but full D combining partition/delay/minority faults/domain outages across 7 financial
+DEX processes and 7 CLX processes is NOT_RUN. No path directly converts the current signature-authenticated
+devnet into public operation.
+
+Baseline FAIL, initial sandbox/cache/network environment failures, and subsequent PASS remain in their
+respective raw logs. Do not omit unrun items and report "all tests PASS," "A–D complete," or "outperformed Hyperliquid."

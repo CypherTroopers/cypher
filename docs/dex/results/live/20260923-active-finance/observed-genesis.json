@@ -1,0 +1,202 @@
+{
+  "config": {
+    "chainId": 10101919,
+
+    "homesteadBlock": 0,
+    "eip150Block": 0,
+    "eip155Block": 0,
+    "eip158Block": 0,
+    "byzantiumBlock": 0,
+    "constantinopleBlock": 0,
+    "petersburgBlock": 0,
+    "istanbulBlock": 0,
+    "berlinBlock": 0,
+    "londonBlock": 0,
+    "shanghaiTime": 0,
+    "cancunTime": 0,
+    "pragueTime": 0,
+    "osakaTime": 0,
+
+    "blobSchedule": {
+      "cancun": {
+        "target": 192,
+        "max": 288,
+        "baseFeeUpdateFraction": 213662528
+      },
+      "prague": {
+        "target": 192,
+        "max": 288,
+        "baseFeeUpdateFraction": 160246912
+      },
+      "osaka": {
+        "target": 192,
+        "max": 288,
+        "baseFeeUpdateFraction": 160246912
+      }
+    },
+
+    "evmParallel": {
+      "maxTransactionsPerBlock": 1048576,
+      "maxBlockBytes": 268435456,
+      "maxTransactionBytes": 1048576,
+      "maxAccessesPerTransaction": 1024,
+      "maxAccessesPerBlock": 2097152,
+      "maxComputePerTransaction": 4294967296,
+      "maxComputePerBlock": 17592186044416,
+      "maxCriticalPathCompute": 268435456,
+      "maxDependencyDepth": 12782,
+      "maxMemoryBytesPerTransaction": 67108864,
+      "maxLogBytesPerTransaction": 262144,
+      "maxLogBytesPerBlock": 67108864,
+      "maxReceiptBytesPerBlock": 234881024,
+      "maxOutputBytesPerTransaction": 1048576,
+      "replayWindowBlocks": 512
+    },
+    "maxCodeSizeConfig": [
+      {
+        "block": 0,
+        "size": 128
+      }
+    ],
+    "txnSizeLimit": 128,
+
+    "colossusX": {},
+    "fixedCommittee": true,
+    "fixedLeader": false,
+    "fairHotstuff": true,
+    "rnettransport": "quic",
+    "rnetfallbacktransport": "none",
+    "fairHotstuffSeed": "0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627",
+
+    "committee": {
+      "0": {
+        "address": "13.140.169.170:7102",
+        "coinbase": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+        "public": "3912d236e16d97b70244a6c3f0693c8ff855bca8771b521bb3af948f0c682a15a8ca1a90265f7db37dacd2621e389c1cc8526eca9efd31a66e6ce6debdb1560b"
+      },
+      "1": {
+        "address": "13.140.169.170:7104",
+        "coinbase": "60746B20D36500f3353163226Ad62bF7E92e1F3C",
+        "public": "e79f42fc639c2bb3fb489641d4643aed30f3095948283362a11f35074175081632e251cad8e718bbbfa22ce58720968a092ae9d326df681ccc9efb1828ab380a"
+      },
+      "2": {
+        "address": "13.140.169.170:7106",
+        "coinbase": "01cBCB9b60E73f0244eA1deBbEe0FD1b8BB11B31",
+        "public": "c5248a6fdfe58a4b442293c84dcb2d08d2d6c6cdaf2cd42732723ca238b0c2198f9e047170bef68af6b690327b6bbab8af258eba20db0679ddc897f0ea108388"
+      },
+      "3": {
+        "address": "13.140.169.170:7108",
+        "coinbase": "4b91661f2659A62cB1A0EE54f6540c283D448a86",
+        "public": "e1f5313fea570fbef1013335a91afc186a35aca491a08bcaedc3566c18beac1f969ee7303de787b2861c5bc4a874b2887bd027f2562b9807bac7c171098a308b"
+      },
+      "4": {
+        "address": "13.140.169.170:7110",
+        "coinbase": "9c01A453dAF5c36951301ea26C1605cE7489B186",
+        "public": "48a16b06d3771797644cce84d1bb0bfba9525ff6b19fab48cb29f7b108a8971a35630a7c0355fe69f95263faaf48a4ed515028b20e7bc6b306448cddeb3ea61e"
+      },
+      "5": {
+        "address": "13.140.169.170:7112",
+        "coinbase": "f1cf67fD1669dDf1dF76FD887B2f6da0d11b2cd9",
+        "public": "0ea28b3fad0c3ef992e8d51fa2e0b158c0ba1101629e4516f999f66c672222257d3d4b0e20024fdcc1d09100c2d040c006cd32dbb7ccb416c7dc5a03af9c8d02"
+      },
+      "6": {
+        "address": "13.140.169.170:7114",
+        "coinbase": "3abb765B281d2Ef60aAC35Bc85B62692f89c7Ee3",
+        "public": "bbf99348f4f81b296d0fceeb3d7f1b25ad4d3f50eb44baffa80a290d1a56a0177394455ce8d8a69452b453e5de5568df58f68077d57e7ff54df0aa4ade7d0e14"
+      }
+    },
+
+    "dexDevnet": {
+      "version": 4,
+      "activationBlock": 1,
+      "dexId": "0x433b712c48506710a611d48e351ff827d00e64941fff9c085817c266585af497",
+      "genesisSeed": "0x69f46c87a90f2daf6b3a3e1f44736b7697ac475e4327d5fd90f94fe1c436b5c6",
+      "custody": "0x0000000000000000000000000000000000de0001",
+      "committee": [
+        {
+          "address": "127.0.0.1:18000",
+          "coinbase": "0xb0935B5A65C8DD1Fb0cb884Dc487bA4Ed6395A0D",
+          "public": "d3447f091ba8e025013ed92cdc8e87c82245355533c355448faa73748b4d4b01f0e8153e5fcbf72e313607d5625ece8f2a15fdde4d0ddc0923a38585bd927208"
+        },
+        {
+          "address": "127.0.0.1:18001",
+          "coinbase": "0x7a300baf03F0074101CC70C9df6eD6753843F2a2",
+          "public": "7ff764c3a28675c68f65b765eed7ca16eb073c111bfe9b33468b681e314fde05e81ca6bdcc985d81850b23ed1ba3e89bcd021b3d7ffb2b07eb3775a150919d04"
+        },
+        {
+          "address": "127.0.0.1:18002",
+          "coinbase": "0xFB4c9A68791f02A59e16ae4e8114636C13956b3e",
+          "public": "3de05eb9bf5d778231df386e0f5f05fcb4e5d4456b1d68d3dbcc5477185db30ef69c62c449d8aaac7454e3fda4407f18bb5fb5bb3d8eaa7c37507a8ed22d888d"
+        },
+        {
+          "address": "127.0.0.1:18003",
+          "coinbase": "0x0e201d654339B2bEA8A2428D544Edf34f3fF952E",
+          "public": "9a8ebdccf4cea4594f0d311c9c993696ded48d605208c269a6975caea957b609eb192b97d23c163489a3c5dc0588627311eb9f5f9f0e888bdf97d8a9f70fec1d"
+        },
+        {
+          "address": "127.0.0.1:18004",
+          "coinbase": "0xA72f486f801B8e33012AF3d83d081B399d04342b",
+          "public": "d9dbd09ed23ecf096db261ef01edd2f13e83815702583f637f216b09915ad90a770fe678c06ca7a031d3bddfffb86b0a5fdca9bb9af7c321a711161355d74f85"
+        },
+        {
+          "address": "127.0.0.1:18005",
+          "coinbase": "0x40422bC7BbBEF6F8c249401E91AF7e70e04D1a6E",
+          "public": "c77db98cf5db96dbebf4e9d157ea917de22a1837c14626f8118cc6a1154e7510bb522095f8f09df2d2656d3c0b107c98508d4f67d0036a397e4401c8e43f348e"
+        },
+        {
+          "address": "127.0.0.1:18006",
+          "coinbase": "0xff7Ad2Ea10507c264d85aAC8f29e486cd05bFb8f",
+          "public": "cc02cde754adae29696b3bdd77e54894afe19ab5023dac94fc57f64a0525f70af9563ec0f98c6cc62ffb1415fdef36b6da9fd963dfb961613c0b75e6aa638593"
+        }
+      ],
+      "maxCheckpoints": 4096
+    }
+  },
+
+  "alloc": {
+    "380Ae1a000eb03930bb2F64d4A75dfE54b3e7e18": {
+      "balance": "100000000000000000000000000"
+    },
+    "7d7cC2AbEB8256d11E9Ec63C13782E77300c7e30": {
+      "balance": "100000000000000000000000000"
+    },
+    "2Dcf9cd01CF19022183E7CC788D21A03407dfee5": {
+      "balance": "100000000000000000000000000"
+    },
+    "21833C75dE48FaBC8fBDC4CD7002e6C96d98CB99": {
+      "balance": "100000000000000000000000000"
+    },
+    "3555d2c2af8ff75009f7dbfcf7de7ed80f68588d": {
+      "balance": "100000000000000000000000000"
+    },
+    "60746b20d36500f3353163226ad62bf7e92e1f3c": {
+      "balance": "100000000000000000000000000"
+    },
+    "01cbcb9b60e73f0244ea1debbee0fd1b8bb11b31": {
+      "balance": "100000000000000000000000000"
+    },
+    "4b91661f2659a62cb1a0ee54f6540c283d448a86": {
+      "balance": "100000000000000000000000000"
+    },
+    "9c01a453daf5c36951301ea26c1605ce7489b186": {
+      "balance": "100000000000000000000000000"
+    },
+    "f1cf67fd1669ddf1df76fd887b2f6da0d11b2cd9": {
+      "balance": "100000000000000000000000000"
+    },
+    "3abb765b281d2ef60aac35bc85b62692f89c7ee3": {
+      "balance": "100000000000000000000000000"
+    },
+    "eb8c07def4c5a2541de730b027376e1068aa861a": {
+      "balance": "100000000000000000000000000"
+    }
+  },
+
+  "difficulty": "0x44C",
+  "gasLimit": "0x100000000000",
+  "baseFeePerGas": "0x2faf0800",
+  "nonce": "0x0",
+  "mixHash": "0xa28647a7c2a61b40470077284fcf4ad8d8981bc72237ce3f56cd1afbea705214",
+  "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "timestamp": "0x6AAF4C30"
+}

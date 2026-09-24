@@ -1,0 +1,31 @@
+=== RUN   TestOutboundTLSUsesRegisteredListenerIPAndEphemeralPort
+    source_test.go:85: actual pinned TLS accepted source 127.0.0.2 with an ephemeral port; frame identity checks retained
+--- PASS: TestOutboundTLSUsesRegisteredListenerIPAndEphemeralPort (0.06s)
+=== RUN   TestSocketGolden
+--- PASS: TestSocketGolden (0.00s)
+=== RUN   TestTLSOutboxReconnectDuplicatesAndRestart
+--- PASS: TestTLSOutboxReconnectDuplicatesAndRestart (0.31s)
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/partial
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/old_epoch
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/wrong_source
+=== RUN   TestTLSIdentityEpochPartialAndOutOfOrder/huge_length
+--- PASS: TestTLSIdentityEpochPartialAndOutOfOrder (0.61s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/partial (0.50s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/old_epoch (0.01s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/wrong_source (0.02s)
+    --- PASS: TestTLSIdentityEpochPartialAndOutOfOrder/huge_length (0.01s)
+=== RUN   TestOutboxOwnershipAndRegistryRebind
+--- PASS: TestOutboxOwnershipAndRegistryRebind (0.03s)
+PASS
+ok  	github.com/cypherium/cypher/dex/transport	2.035s
+=== RUN   TestProcessEnvelopeIndependentGoldenAndBounds
+--- PASS: TestProcessEnvelopeIndependentGoldenAndBounds (0.00s)
+=== RUN   TestNativeRegistrationMatchesAuthenticatedGenesis
+--- PASS: TestNativeRegistrationMatchesAuthenticatedGenesis (0.00s)
+=== RUN   TestProcessAuthenticatedQueueConflictAndPersistenceUncertainty
+--- PASS: TestProcessAuthenticatedQueueConflictAndPersistenceUncertainty (0.01s)
+=== RUN   TestProcessIdentityOwnershipAndRestart
+--- PASS: TestProcessIdentityOwnershipAndRestart (0.02s)
+PASS
+ok  	github.com/cypherium/cypher/dex/devnet/testnet	1.099s

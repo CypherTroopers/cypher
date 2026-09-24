@@ -1,0 +1,5 @@
+=== RUN   TestHistoryFinalityLongViewGapsBoundedProofAndColdRestart
+    history_test.go:112: real7 FHS managers:32 certified view gaps; genuine33rd child finalizesall32; maxproof=2003 maxsignatures=3; 7coldrestarts preserve state/safety; legacy descendant cap=8 unchanged
+--- PASS: TestHistoryFinalityLongViewGapsBoundedProofAndColdRestart (38.65s)
+PASS
+ok  	github.com/cypherium/cypher/dex/consensus	38.695s

@@ -1,0 +1,83 @@
+/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-q3-release/bin/cypher-linux-amd64: go1.27.1
+	path	github.com/cypherium/cypher/cmd/cypher
+	mod	github.com/cypherium/cypher	(devel)	
+	dep	github.com/VictoriaMetrics/fastcache	v1.13.3	h1:rBabE0iIxcqKEMCwUmwHZ9dgEqXerg8FRbRDUvC7OVc=
+	dep	github.com/aristanetworks/goarista	v0.0.0-20251201112602-a373d7c9f0d9	h1:sUmkQn9Eg+C0sRvW5jtAYUcfT1OWJf747YIh9MIvpWY=
+	dep	github.com/bits-and-blooms/bitset	v1.20.0	h1:2F+rfL86jE2d/bmw7OhqUg2Sj/1rURkBn3MdfoPyRVU=
+	dep	github.com/cespare/xxhash/v2	v2.3.0	h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
+	dep	github.com/clipperhouse/displaywidth	v0.10.0	h1:GhBG8WuerxjFQQYeuZAeVTuyxuX+UraiZGD4HJQ3Y8g=
+	dep	github.com/clipperhouse/uax29/v2	v2.6.0	h1:z0cDbUV+aPASdFb2/ndFnS9ts/WNXgTNNGFoKXuhpos=
+	dep	github.com/consensys/bavard	v0.1.27	h1:j6hKUrGAy/H+gpNrpLU3I26n1yc+VMGmd6ID5+gAhOs=
+	dep	github.com/consensys/gnark-crypto	v0.16.0	h1:8Dl4eYmUWK9WmlP1Bj6je688gBRJCJbT8Mw4KoTAawo=
+	dep	github.com/crate-crypto/go-eth-kzg	v1.5.0	h1:FYRiJMJG2iv+2Dy3fi14SVGjcPteZ5HAAUe4YWlJygc=
+	dep	github.com/davecgh/go-spew	v1.1.1	h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+	dep	github.com/deckarep/golang-set	v1.8.0	h1:sk9/l/KqpunDwP7pSjUg0keiOOLEnOBHzykLrsPppp4=
+	dep	github.com/dedis/protobuf	v0.0.0-00010101000000-000000000000
+	=>	go.dedis.ch/protobuf	v1.0.11	h1:FTYVIEzY/bfl37lu3pR4lIj+F9Vp1jE8oh91VmxKgLo=
+	
+	dep	github.com/dlclark/regexp2/v2	v2.2.1	h1:mf4KkFUj0gJuarK8P+LgiS+Lit7m9N1yAwEfPbee7R0=
+	dep	github.com/dop251/goja	v0.0.0-20260607120635-348e6bea910d	h1:xbM5U2EvWKkHxzEQJ2DEn20FwolWZahuTnVHr6WL3Q4=
+	dep	github.com/edsrzf/mmap-go	v1.2.0	h1:hXLYlkbaPzt1SaQk+anYwKSRNhufIDCchSPkUD6dD84=
+	dep	github.com/fatih/color	v1.19.0	h1:Zp3PiM21/9Ld6FzSKyL5c/BULoe/ONr9KlbYVOfG8+w=
+	dep	github.com/gballet/go-libpcsclite	v0.0.0-20250918194357-1ec6f2e601c6	h1:ko+DlyhLqUHpgrvwqs5ybydoGAqjpJQTXpAS7vUqVlM=
+	dep	github.com/go-sourcemap/sourcemap	v2.1.3+incompatible	h1:W1iEw64niKVGogNgBN3ePyLFfuisuzeidWPMPWmECqU=
+	dep	github.com/go-stack/stack	v1.8.1	h1:ntEHSVwIt7PNXNpgPmVfMrNhLtgjlmnZha2kOpuRiDw=
+	dep	github.com/golang/snappy	v1.0.0	h1:Oy607GVXHs7RtbggtPBnr2RmDArIsAefDwvrdWvRhGs=
+	dep	github.com/google/pprof	v0.0.0-20230207041349-798e818bf904	h1:4/hN5RUoecvl+RmJRE2YxKWtnnQls6rQjjW5oV7qg2U=
+	dep	github.com/google/uuid	v1.6.0	h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=
+	dep	github.com/gorilla/websocket	v1.5.3	h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
+	dep	github.com/hashicorp/golang-lru	v1.0.2	h1:dV3g9Z/unq5DpblPpw+Oqcv4dU/1omnb4Ok8iPY6p1c=
+	dep	github.com/holiman/uint256	v1.3.2	h1:a9EgMPSC1AAaj1SZL5zIQD3WbwTuHrMGOerLjGmM/TA=
+	dep	github.com/huin/goupnp	v1.3.0	h1:UvLUlWDNpoUdYzb2TCn+MuTWtcjXKSza2n6CBdQ0xXc=
+	dep	github.com/influxdata/influxdb1-client	v0.0.0-20220302092344-a9ab5670611c	h1:qSHzRbhzK8RdXOsAdfDgO49TtqC1oZ+acxPrkfTxcCs=
+	dep	github.com/jackpal/go-nat-pmp	v1.0.2	h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=
+	dep	github.com/klauspost/cpuid/v2	v2.3.0	h1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=
+	dep	github.com/klauspost/reedsolomon	v1.12.6	h1:8pqE9aECQG/ZFitiUD1xK/E83zwosBAZtE3UbuZM8TQ=
+	dep	github.com/mattn/go-colorable	v0.1.15	h1:+u9SLTRGnXv73cEsnsmoZBom+dMU88B2M0aDcWy0/jY=
+	dep	github.com/mattn/go-isatty	v0.0.22	h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw4=
+	dep	github.com/mattn/go-runewidth	v0.0.19	h1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byFGLdw=
+	dep	github.com/mmcloughlin/addchain	v0.4.0	h1:SobOdjm2xLj1KkXN5/n0xTIWyZA2+s99UCY1iPfkHRY=
+	dep	github.com/naoina/go-stringutil	v0.1.0	h1:rCUeRUHjBjGTSHl0VC00jUPLz8/F9dDzYI70Hzifhks=
+	dep	github.com/naoina/toml	v0.1.1	h1:PT/lllxVVN0gzzSqSlHEmP8MJB4MY2U7STGxiouV4X8=
+	dep	github.com/olekukonko/cat	v0.0.0-20250911104152-50322a0618f6	h1:zrbMGy9YXpIeTnGj4EljqMiZsIcE09mmF8XsD5AYOJc=
+	dep	github.com/olekukonko/errors	v1.2.0	h1:10Zcn4GeV59t/EGqJc8fUjtFT/FuUh5bTMzZ1XwmCRo=
+	dep	github.com/olekukonko/ll	v0.1.6	h1:lGVTHO+Qc4Qm+fce/2h2m5y9LvqaW+DCN7xW9hsU3uA=
+	dep	github.com/olekukonko/tablewriter	v1.1.4	h1:ORUMI3dXbMnRlRggJX3+q7OzQFDdvgbN9nVWj1drm6I=
+	dep	github.com/pborman/uuid	v1.2.1	h1:+ZZIw58t/ozdjRaXh/3awHfmWRbzYxJoAdNJxe/3pvw=
+	dep	github.com/peterh/liner	v1.2.2	h1:aJ4AOodmL+JxOZZEL2u9iJf8omNRpqHc/EbrK+3mAXw=
+	dep	github.com/pkg/errors	v0.9.1	h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+	dep	github.com/prometheus/tsdb	v0.10.0	h1:If5rVCMTp6W2SiRAQFlbpJNgVlgMEd+U2GZckwK38ic=
+	dep	github.com/quic-go/qpack	v0.6.0	h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=
+	dep	github.com/quic-go/quic-go	v0.60.0	h1:xcQioE8OM66UQLeUMHltK1CCcOu3JbVB4JAQdDQSB+0=
+	dep	github.com/rjeczalik/notify	v0.9.3	h1:6rJAzHTGKXGj76sbRgDiDcYj/HniypXmSJo1SWakZeY=
+	dep	github.com/rs/cors	v1.11.1	h1:eU3gRzXLRK57F5rKMGMZURNdIG4EoAmX8k94r9wXWHA=
+	dep	github.com/shirou/gopsutil	v3.21.11+incompatible	h1:+1+c1VGhc88SSonWP6foOcLhvnKlUeu/erjjvaPEYiI=
+	dep	github.com/steakknife/bloomfilter	v0.0.0-20180922174646-6819c0d2a570	h1:gIlAHnH1vJb5vwEjIp5kBj/eu99p/bl0Ay2goiPe5xE=
+	dep	github.com/steakknife/hamming	v0.0.0-20180906055917-c99c65617cd3	h1:njlZPzLwU639dk2kqnCPPv+wNjq7Xb6EfUxe/oX0/NM=
+	dep	github.com/syndtr/goleveldb	v1.0.1-0.20220721030215-126854af5e6d	h1:vfofYNRScrDdvS342BElfbETmL1Aiz3i2t0zfRj16Hs=
+	dep	github.com/templexxx/cpufeat	v0.0.0-20180724012125-cef66df7f161	h1:89CEmDvlq/F7SJEOqkIdNDGJXrQIhuIx9D2DBXjavSU=
+	dep	github.com/templexxx/xor	v0.0.0-20191217153810-f85b25db303b	h1:fj5tQ8acgNUr6O8LEplsxDhUIe2573iLkJc+PqnzZTI=
+	dep	github.com/tjfoc/gmsm	v1.4.1	h1:aMe1GlZb+0bLjn+cKTPEvvn9oUEBlJitaZiiBwsbgho=
+	dep	github.com/tklauser/go-sysconf	v0.4.0	h1:7H0uAN+7RkwWRaxhYXDLqa5V3LPrJeV8wmD9dRUgPQU=
+	dep	github.com/tklauser/numcpus	v0.12.0	h1:NR85qdvHA9pFse3x3weVZ0r0ST8R6l5RHbZrlRaqob4=
+	dep	github.com/xtaci/kcp-go	v5.4.20+incompatible	h1:TN1uey3Raw0sTz0Fg8GkfM0uH3YwzhnZWQ1bABv5xAg=
+	dep	github.com/zeebo/blake3	v0.2.4	h1:KYQPkhpRtcqh0ssGYcKLG1JYvddkEA8QwCM/yBqhaZI=
+	dep	golang.org/x/crypto	v0.53.0	h1:QZ4Muo8THX6CizN2vPPd5fBGHyogrdK9fG4wLPFUsto=
+	dep	golang.org/x/net	v0.55.0	h1:bcvxaJn3e1U6InsFWt1JUq1aSjnRxLzT2rtD2KfkDF8=
+	dep	golang.org/x/sync	v0.21.0	h1:HLII4xRRTtCRkxYp4HNFF0Js/Og6q2i++KXbg0gHCwM=
+	dep	golang.org/x/sys	v0.46.0	h1:noSf2Fq6F8DBgS+LysIkx7rIExoNHJsxOAtPp4rthXw=
+	dep	golang.org/x/text	v0.38.0	h1:sXmwo9DwP3OK9EZ7PqAdaooSGozfl/3a6/xJcbzPRhE=
+	dep	golang.org/x/time	v0.15.0	h1:bbrp8t3bGUeFOx08pvsMYRTCVSMk89u4tKbNOZbp88U=
+	dep	gopkg.in/olebedev/go-duktape.v3	v3.0.0-20210326210528-650f7c854440	h1:SxFAMd+8zfpL/Rk4pgdb8leeZDiL3M/gCWCbBvmLkoE=
+	dep	gopkg.in/oleiade/lane.v1	v1.0.0	h1:Xs7/GTdnZNGuuXV7z8gTrHoHEeHdCnhuNXm4n0UpxjY=
+	dep	gopkg.in/satori/go.uuid.v1	v1.2.0	h1:AH9uksa7bGe9rluapecRKBCpZvxaBEyu0RepitcD0Hw=
+	dep	gopkg.in/urfave/cli.v1	v1.20.0	h1:NdAVW6RYxDif9DhDHaAortIu956m2c0v+09AZBPTbE0=
+	dep	rsc.io/tmplfunc	v0.0.3	h1:53XFQh69AfOa8Tw0Jm7t+GV7KZhOi6jzsCzTtKbMvzU=
+	build	-buildmode=exe
+	build	-compiler=gc
+	build	-trimpath=true
+	build	DefaultGODEBUG=cryptocustomrand=1,tlssecpmlkem=0,tracebacklabels=0,urlstrictcolons=0,x509sslcertoverrideplatform=0
+	build	CGO_ENABLED=1
+	build	GOARCH=amd64
+	build	GOOS=linux
+	build	GOAMD64=v1

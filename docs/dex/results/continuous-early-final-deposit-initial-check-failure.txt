@@ -1,0 +1,1 @@
+Candidate check initial failure: JSON reload changes integer fees_by_period keys to strings. No arithmetic assertion failed. Corrected trace keys to canonical strings before regenerating candidate JSON. No repository file changed.

@@ -1,0 +1,58 @@
+{
+  "finished_utc": "2026-09-22T07:04:53.427436+00:00",
+  "source_changes_during_postfix_tests": [
+    {
+      "path": "dex/consensus/finality_gap_test.go",
+      "before": null,
+      "after": "583eb5fb867a127b17611c9359b4dd84bacad8856cf113a4e86ea0976103ef71"
+    },
+    {
+      "path": "reconfig/dex_financial_cli_test.go",
+      "before": "734b5d302816deb478f077e31ee37e8466339ba2cbbf508330e23db27f90a5d3",
+      "after": "940d633c24f3e618df68b7093d3e2359805685b4718b75ea3e1b7f732485560a"
+    },
+    {
+      "path": "reconfig/dex_financial_faults_test.go",
+      "before": "c2ae4d3e0a9017f2b96c340e1a922ef7aaa10ad5de9fcbdd57d9ccd95470133d",
+      "after": "2a54f857445347953df6daee69707ba9cdec4cddbbac58d472f3beedea2a2e08"
+    },
+    {
+      "path": "reconfig/dex_financial_network_test.go",
+      "before": "fa87ab3446751780296866550ca1ee65ab245c8349336f993acfc0ee7084c5ee",
+      "after": "af61f648ded260e5a0fd6725f48900f6ad99492e43674948ab680fd3305d251a"
+    }
+  ],
+  "production_fix": "eth/backend.go: preserve empty TrieCleanCacheJournal before ResolvePath",
+  "reference_head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "reference_evidence": "same unconditional ResolvePath expression at eth/backend.go:272",
+  "build_binary": "/tmp/common-dex-baseline-final.7_jf8e11/bin/cypher-journal-fixed",
+  "build_exit": 0,
+  "build_sha256": "3ee2d36713c5beb5220994bcba1ea48c226e6f7cac9d3ecc9d92554ef6e45bc3",
+  "network": "new separate loopback-only unshare -Urn namespaces",
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "normal_pow_nonce_search": "NOT_RUN; existing safe dataset rejection fixtures only",
+  "cli": {
+    "exit_code": 0,
+    "failed_tests": [],
+    "skipped_tests": [],
+    "pass_records": 12,
+    "package_results": [
+      "ok  \tgithub.com/cypherium/cypher/cmd/cypher\t54.756s"
+    ]
+  },
+  "eth": {
+    "exit_code": 0,
+    "failed_tests": [],
+    "skipped_tests": [
+      "TestCommonRPCRewardCrashChild",
+      "TestDEXRoleSidecarHelper",
+      "TestDEXActualCommonAPIEightCombinationsWithoutPoWDataset"
+    ],
+    "pass_records": 305,
+    "package_results": [
+      "ok  \tgithub.com/cypherium/cypher/eth\t19.897s"
+    ]
+  },
+  "concurrent_changes_note": "Only independent dex/consensus and reconfig test files changed during these CLI/eth runs. All production sources and selected CLI test sources were unchanged."
+}

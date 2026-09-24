@@ -1,0 +1,3 @@
+COMMAND ['nice', '-n', '10', 'go', 'build', '-p', '1', '-mod=readonly', '-o', '/tmp/common-dex-baseline-final.7_jf8e11/bin/cypher', './cmd/cypher']
+EXIT 0
+BINARY_SHA256 6372309db03ba120f7de16de713556b0645d34c4c8a55bb46595e55f2e7d9c3a PATH /tmp/common-dex-baseline-final.7_jf8e11/bin/cypher

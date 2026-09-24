@@ -1,0 +1,9 @@
+{
+  "result": "PASS",
+  "test": "TestFHSProcessRecoveryQCBeforePrepare",
+  "elapsed_seconds": 33.13,
+  "source_manifest_sha256": "c3e925e9445d6b51e1f28aa7dbf0c18966cc696fb7143489a674a78bdb6d3c14",
+  "binary_sha256": "21f731154293f932dbfa7c1a87fb804b13068138ea6748f3fd4c2f43bfcf3a2c",
+  "conditions": "fresh user/network namespace, loopback only, 7 CLX helpers, DEX OFF; normal QUIC body repair; no host fallback",
+  "raw": "/tmp/common-dex-continuous.uye5vgqi/logs/continuous-final-g0-qc-process.log"
+}

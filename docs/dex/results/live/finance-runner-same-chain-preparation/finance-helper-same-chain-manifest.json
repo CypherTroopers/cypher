@@ -1,0 +1,30 @@
+{
+  "time_utc": "2026-09-23T18:10:04.159088+00:00",
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "binary": "/tmp/common-dex-live-resume-496b6e0e/dex-live-finance-same-chain",
+  "binary_sha256": "7c3f8ffdf68cf35dca98d52e24d1173b58d319db54b04f31024bb25601a4e190",
+  "build_info": "/tmp/common-dex-live-resume-496b6e0e/dex-live-finance-same-chain: go1.27.1\n\tpath\tgithub.com/cypherium/cypher/cmd/dex-live-finance\n\tmod\tgithub.com/cypherium/cypher\tv0.0.0-20260920101338-70862a71dfaf+dirty\t\n\tdep\tgithub.com/VictoriaMetrics/fastcache\tv1.13.3\th1:rBabE0iIxcqKEMCwUmwHZ9dgEqXerg8FRbRDUvC7OVc=\n\tdep\tgithub.com/aristanetworks/goarista\tv0.0.0-20251201112602-a373d7c9f0d9\th1:sUmkQn9Eg+C0sRvW5jtAYUcfT1OWJf747YIh9MIvpWY=\n\tdep\tgithub.com/bits-and-blooms/bitset\tv1.20.0\th1:2F+rfL86jE2d/bmw7OhqUg2Sj/1rURkBn3MdfoPyRVU=\n\tdep\tgithub.com/cespare/xxhash/v2\tv2.3.0\th1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=\n\tdep\tgithub.com/clipperhouse/displaywidth\tv0.10.0\th1:GhBG8WuerxjFQQYeuZAeVTuyxuX+UraiZGD4HJQ3Y8g=\n\tdep\tgithub.com/clipperhouse/uax29/v2\tv2.6.0\th1:z0cDbUV+aPASdFb2/ndFnS9ts/WNXgTNNGFoKXuhpos=\n\tdep\tgithub.com/consensys/bavard\tv0.1.27\th1:j6hKUrGAy/H+gpNrpLU3I26n1yc+VMGmd6ID5+gAhOs=\n\tdep\tgithub.com/consensys/gnark-crypto\tv0.16.0\th1:8Dl4eYmUWK9WmlP1Bj6je688gBRJCJbT8Mw4KoTAawo=\n\tdep\tgithub.com/crate-crypto/go-eth-kzg\tv1.5.0\th1:FYRiJMJG2iv+2Dy3fi14SVGjcPteZ5HAAUe4YWlJygc=\n\tdep\tgithub.com/fatih/color\tv1.19.0\th1:Zp3PiM21/9Ld6FzSKyL5c/BULoe/ONr9KlbYVOfG8+w=\n\tdep\tgithub.com/go-stack/stack\tv1.8.1\th1:ntEHSVwIt7PNXNpgPmVfMrNhLtgjlmnZha2kOpuRiDw=\n\tdep\tgithub.com/golang/snappy\tv1.0.0\th1:Oy607GVXHs7RtbggtPBnr2RmDArIsAefDwvrdWvRhGs=\n\tdep\tgithub.com/hashicorp/golang-lru\tv1.0.2\th1:dV3g9Z/unq5DpblPpw+Oqcv4dU/1omnb4Ok8iPY6p1c=\n\tdep\tgithub.com/klauspost/cpuid/v2\tv2.3.0\th1:S4CRMLnYUhGeDFDqkGriYKdfoFlDnMtqTiI/sFzhA9Y=\n\tdep\tgithub.com/mattn/go-colorable\tv0.1.15\th1:+u9SLTRGnXv73cEsnsmoZBom+dMU88B2M0aDcWy0/jY=\n\tdep\tgithub.com/mattn/go-isatty\tv0.0.22\th1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw4=\n\tdep\tgithub.com/mattn/go-runewidth\tv0.0.19\th1:v++JhqYnZuu5jSKrk9RbgF5v4CGUjqRfBm05byFGLdw=\n\tdep\tgithub.com/mmcloughlin/addchain\tv0.4.0\th1:SobOdjm2xLj1KkXN5/n0xTIWyZA2+s99UCY1iPfkHRY=\n\tdep\tgithub.com/olekukonko/cat\tv0.0.0-20250911104152-50322a0618f6\th1:zrbMGy9YXpIeTnGj4EljqMiZsIcE09mmF8XsD5AYOJc=\n\tdep\tgithub.com/olekukonko/errors\tv1.2.0\th1:10Zcn4GeV59t/EGqJc8fUjtFT/FuUh5bTMzZ1XwmCRo=\n\tdep\tgithub.com/olekukonko/ll\tv0.1.6\th1:lGVTHO+Qc4Qm+fce/2h2m5y9LvqaW+DCN7xW9hsU3uA=\n\tdep\tgithub.com/olekukonko/tablewriter\tv1.1.4\th1:ORUMI3dXbMnRlRggJX3+q7OzQFDdvgbN9nVWj1drm6I=\n\tdep\tgithub.com/pkg/errors\tv0.9.1\th1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=\n\tdep\tgithub.com/prometheus/tsdb\tv0.10.0\th1:If5rVCMTp6W2SiRAQFlbpJNgVlgMEd+U2GZckwK38ic=\n\tdep\tgithub.com/shirou/gopsutil\tv3.21.11+incompatible\th1:+1+c1VGhc88SSonWP6foOcLhvnKlUeu/erjjvaPEYiI=\n\tdep\tgithub.com/steakknife/bloomfilter\tv0.0.0-20180922174646-6819c0d2a570\th1:gIlAHnH1vJb5vwEjIp5kBj/eu99p/bl0Ay2goiPe5xE=\n\tdep\tgithub.com/steakknife/hamming\tv0.0.0-20180906055917-c99c65617cd3\th1:njlZPzLwU639dk2kqnCPPv+wNjq7Xb6EfUxe/oX0/NM=\n\tdep\tgithub.com/syndtr/goleveldb\tv1.0.1-0.20220721030215-126854af5e6d\th1:vfofYNRScrDdvS342BElfbETmL1Aiz3i2t0zfRj16Hs=\n\tdep\tgithub.com/tklauser/go-sysconf\tv0.4.0\th1:7H0uAN+7RkwWRaxhYXDLqa5V3LPrJeV8wmD9dRUgPQU=\n\tdep\tgithub.com/tklauser/numcpus\tv0.12.0\th1:NR85qdvHA9pFse3x3weVZ0r0ST8R6l5RHbZrlRaqob4=\n\tdep\tgithub.com/zeebo/blake3\tv0.2.4\th1:KYQPkhpRtcqh0ssGYcKLG1JYvddkEA8QwCM/yBqhaZI=\n\tdep\tgolang.org/x/crypto\tv0.53.0\th1:QZ4Muo8THX6CizN2vPPd5fBGHyogrdK9fG4wLPFUsto=\n\tdep\tgolang.org/x/sync\tv0.21.0\th1:HLII4xRRTtCRkxYp4HNFF0Js/Og6q2i++KXbg0gHCwM=\n\tdep\tgolang.org/x/sys\tv0.46.0\th1:noSf2Fq6F8DBgS+LysIkx7rIExoNHJsxOAtPp4rthXw=\n\tdep\trsc.io/tmplfunc\tv0.0.3\th1:53XFQh69AfOa8Tw0Jm7t+GV7KZhOi6jzsCzTtKbMvzU=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tDefaultGODEBUG=cryptocustomrand=1,tlssecpmlkem=0,tracebacklabels=0,urlstrictcolons=0,x509sslcertoverrideplatform=0\n\tbuild\tCGO_ENABLED=1\n\tbuild\tCGO_CFLAGS=\n\tbuild\tCGO_CPPFLAGS=\n\tbuild\tCGO_CXXFLAGS=\n\tbuild\tCGO_LDFLAGS=\n\tbuild\tGOARCH=amd64\n\tbuild\tGOOS=linux\n\tbuild\tGOAMD64=v1\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=70862a71dfaf2b00694dc1354c6a64e9504d7db5\n\tbuild\tvcs.time=2026-09-20T10:13:38Z\n\tbuild\tvcs.modified=true\n",
+  "sources": {
+    "cmd/dex-live-finance/main.go": "57a8c79527bcf5732a588d3bf79f63f25f0375ab5d4847c323d3fc2ece9f6a04",
+    "cmd/dex-live-finance/main_test.go": "509a6cd972e6beb7885a439bbf26a36d58683e40ab2a855867ad8ed2023ebe63",
+    "cmd/dex-live-finance/native.go": "6ec6fb3ebc48405494d90223b65b5a65acd29dac4c46b3c0443ee5d2c3479655",
+    "scripts/dex/live_finance.py": "3ca42ab94f437831b0de2b92c12bcbb6e999269d8f844d79790ce00dd8581d8e",
+    "scripts/dex/live_finance_accounting.py": "cf4c94badfcfcdfb3bddb2e86313ce8dc8515d9fccb08163cc4b6bee22d714f1",
+    "scripts/dex/test_live_finance.py": "d27388c2501d206f2d9914c9fb000c7e630fc45ad209521996e1f58df108f299",
+    "docs/dex/live-finance-runner-preparation.md": "44b760ca5e5b0c5cc8c4df39df9daaffbc0207162b6a23db1f2d50a1142b0262"
+  },
+  "wip_unverified_sources": {
+    "cmd/dex-live-source-observer/main.go": "a579364f8557ae70fd53a02a3f0b7589a5a2024543f814aa47ba378068cb6903",
+    "cmd/dex-live-source-observer/main_test.go": "120be90a61c05723c7fad5d676b0bd8d1997b3d3b3b847e44a1879d0fc104733",
+    "scripts/dex/live_finance_load.py": "3ebb2f4ead5553b67e20e0a9e08ef53bd6475fc7dd8e7e7b0723670c2b822390"
+  },
+  "unit": {
+    "go_top_level": 3,
+    "python": 8,
+    "status": "PASS(UNIT)"
+  },
+  "live_finance": "NOT_RUN",
+  "generation": "inventory-bound approved chainId/genesisSHA256/config4/manifest-domain; no hardcoded alternate chain ID",
+  "wip_gate": "observer/A-B-C/new fund-wallets and observer drain are unverified, not required for user genesis preparation",
+  "no_live_rpc_tx_pm2_init": true
+}

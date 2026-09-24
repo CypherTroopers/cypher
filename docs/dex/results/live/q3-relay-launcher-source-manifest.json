@@ -1,0 +1,17 @@
+{
+  "status": "PREPARED_NOT_STARTED",
+  "pm2_names": [
+    "cypherdex-relay0",
+    "cypherdex-relay1"
+  ],
+  "unit": "PASS(UNIT) 5 top-level tests, fake RPC only",
+  "files": {
+    "scripts/dex/live_relay.py": "5136438849621e661f1498d4ccd7f338817658256fc164f245edf9e0bfbd00ae",
+    "scripts/dex/test_live_relay.py": "039ff315c8590231bfdd417bc3f46ad3db7407abb98242e22c91b2b1709b0dd1",
+    "build/stage/live-generation-candidate/pm2-relays/README.md": "b31f3ee169653b60847104758f8d6e61ac1bb4527ea8b6208fecb6ff4ee04572",
+    "build/stage/live-generation-candidate/pm2-relays/ecosystem.json": "4140fa2025e7172c2d97cac4ec11a9271845314b10b3b966bd5a392a14f215c4",
+    "build/stage/live-generation-candidate/pm2-relays/plan.json": "596b510beb64788434cc7a02ec88b518658fc4888f8e9ee92caa02c903c5b9cb",
+    "build/stage/live-generation-candidate/pm2-relays/start-cypherdex-relay0.sh": "87444c67d74abacd5fff00a1652f4dfc9fe7f8ae62582f5ab7dd406a9ac5768b",
+    "build/stage/live-generation-candidate/pm2-relays/start-cypherdex-relay1.sh": "7bf7dd06331bae83ebe96be99f9bf540887a0dd45d280ed49c9b42d6db3e1a4c"
+  }
+}

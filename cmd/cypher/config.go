@@ -75,6 +75,7 @@ type gethConfig struct {
 	Eth      eth.Config
 	Node     node.Config
 	Ethstats ethstatsConfig
+	DEX      utils.DEXConfig
 }
 
 func loadConfig(file string, cfg *gethConfig) error {
@@ -119,6 +120,7 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 
 	// Apply flags.
 	utils.SetNodeConfig(ctx, &cfg.Node)
+	utils.SetDEXConfig(ctx, &cfg.DEX)
 	utils.SetExternalIp(ctx, &cfg.Node, &cfg.Eth)
 	stack, err := node.New(&cfg.Node)
 	if err != nil {
@@ -137,6 +139,7 @@ func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 	stack, cfg := makeConfigNode(ctx)
 
 	backend, _ := utils.RegisterEthService(stack, &cfg.Eth)
+	registerDEXSidecar(stack, backend, cfg.DEX)
 	// Add the Ethereum Stats daemon if requested.
 	if cfg.Ethstats.URL != "" {
 		//utils.RegisterEthStatsService(stack, backend, cfg.Ethstats.URL)

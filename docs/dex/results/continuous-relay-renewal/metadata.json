@@ -1,0 +1,66 @@
+{
+  "head": "70862a71dfaf2b00694dc1354c6a64e9504d7db5",
+  "go": "go version go1.27.1 linux/amd64",
+  "frozen_owned_sources": {
+    "dex/relay/network.go": "7039c6ee1cb75020f029d30f576ce24a183d1b5e630024657b1ac065e94b3178",
+    "dex/relay/source/key_context.go": "5dd69417a3d55fb472934bc720d121f77706a2dcb248d9bae4e643e40e6179a9",
+    "dex/clxevidence/relay_renewal_observation_test.go": "479a632c5731b3da1b1f179d7f1111f00d4f2981b7c5efe3135567ecec8810e1"
+  },
+  "source_manifest_sha256": "ba9db6e5719d96bcfdec7853746e4497056a94dc03d525dc8f0ba594fb2c46b8",
+  "manifest_capture": "Immediately after final focused gate, no source edits during the gate; parent joint freeze must independently bind final G3. This gate did not capture a whole-tree before manifest.",
+  "isolation": "Fresh unshare -Urn, loopback up, no default route; no host fallback. CYPHER_DEX_SOURCE_DEVNET=1; GOMAXPROCS=2; GOPROXY=off; go test -race -p 1 -mod=readonly -json ./dex/clxevidence -run ^TestRelayInboxRenewal -count=1 -timeout=3m.",
+  "results": {
+    "relay-renewal-observation-before.jsonl": {
+      "sha256": "a3139f9a8fbcfaada651f5cebd6e0ca46206554c5d41b2331acddf6a2c06d2a7",
+      "top_level": {
+        "fail": 1
+      },
+      "test_events": {
+        "fail": 9
+      },
+      "package_results": [
+        {
+          "Time": "2026-09-23T09:36:20.41244178+02:00",
+          "Action": "fail",
+          "Package": "github.com/cypherium/cypher/dex/clxevidence",
+          "Elapsed": 2.936
+        }
+      ]
+    },
+    "relay-renewal-observation-after.jsonl": {
+      "sha256": "3375b25556d3748927c59e20eb9b4d3eb15751eef984e66660e19569602d445c",
+      "top_level": {
+        "pass": 2
+      },
+      "test_events": {
+        "pass": 57
+      },
+      "package_results": [
+        {
+          "Time": "2026-09-23T09:39:09.541595846+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/clxevidence",
+          "Elapsed": 13.01
+        }
+      ]
+    },
+    "relay-renewal-observation-ready-race.jsonl": {
+      "sha256": "1b686dbc3e0b2a8a44e43b3ddd19b834167f7fa1e45b610485acdafaffa43fb1",
+      "top_level": {
+        "pass": 3
+      },
+      "test_events": {
+        "pass": 63
+      },
+      "package_results": [
+        {
+          "Time": "2026-09-23T09:50:06.459522196+02:00",
+          "Action": "pass",
+          "Package": "github.com/cypherium/cypher/dex/clxevidence",
+          "Elapsed": 16.902
+        }
+      ]
+    }
+  },
+  "scope": "Real BLS/MPT witnesses and isolated loopback HTTP fixture; three focused tests. Not ordinary CLI/FHS process E2E, final G3, WAN, C heap proof, or quarantine migration."
+}

@@ -1,0 +1,8 @@
+{
+  "utc": 1790190173.1429899,
+  "app": "cyphermine",
+  "unlocked": true,
+  "configured_reward_recipient": "0xed2772838f7a7aec042a972084998cb30d63b660",
+  "mining": false,
+  "miner_start_stop_called": false
+}

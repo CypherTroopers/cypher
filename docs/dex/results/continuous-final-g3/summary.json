@@ -1,0 +1,1104 @@
+{
+  "test_observation": "PASS_MARKERS",
+  "final_marker": {
+    "line": 1759,
+    "label": "NORMAL_CONTINUOUS_PASS",
+    "fields": {
+      "fixture": "extended10-early-final-deposit",
+      "CLXHeight": "749",
+      "DEXFinalized": "109",
+      "CLXAccepted": "109",
+      "nextUnusedDEXHeight": "111",
+      "funding": "345",
+      "custody": "295",
+      "withdrawals": "40",
+      "rewards": "10",
+      "uniqueClaims": "72",
+      "inbox": "10",
+      "periods": "10",
+      "lateOwnKeySnapshot": "true",
+      "coldDEXOver64": "true",
+      "CLXOutageDEXProgress": "true",
+      "relays": "2",
+      "oldClaimSequence": "14",
+      "oldClaimRoot": "9ba637d859bc20d8174fed5ae7a76ec13f97b75bb08b91a87c3e882ab86548cf",
+      "engine": "0/0/0"
+    },
+    "raw": "dex_continuous_network_test.go:127: NORMAL_CONTINUOUS_PASS fixture=extended10-early-final-deposit CLXHeight=749 DEXFinalized=109 CLXAccepted=109 nextUnusedDEXHeight=111 funding=345 custody=295 withdrawals=40 rewards=10 uniqueClaims=72 inbox=10 periods=10 lateOwnKeySnapshot=true coldDEXOver64=true CLXOutageDEXProgress=true relays=2 oldClaimSequence=14 oldClaimRoot=9ba637d859bc20d8174fed5ae7a76ec13f97b75bb08b91a87c3e882ab86548cf engine=0/0/0"
+  },
+  "last_reconciliation": {
+    "line": 1741,
+    "label": "NATIVE_LEDGER_RECONCILED",
+    "fields": {
+      "height": "749",
+      "custody": "295000000000000000000",
+      "gas": "4473920409600000000",
+      "commonReward": "894784081920000000",
+      "burn": "3579136327680000000",
+      "accounts": "17",
+      "engine": "0/0/0"
+    },
+    "raw": "dex_continuous_network_test.go:123: NATIVE_LEDGER_RECONCILED height=749 custody=295000000000000000000 gas=4473920409600000000 commonReward=894784081920000000 burn=3579136327680000000 accounts=17 engine=0/0/0"
+  },
+  "latest_wallets": [
+    {
+      "line": 1724,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x000000000000000000000000000000000000B123",
+        "initial": "123",
+        "final": "894784081920000123",
+        "delta": "894784081920000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x000000000000000000000000000000000000B123 initial=123 final=894784081920000123 delta=894784081920000000"
+    },
+    {
+      "line": 1725,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x0000000000000000000000000000000000De0001",
+        "initial": "0",
+        "final": "295000000000000000000",
+        "delta": "295000000000000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x0000000000000000000000000000000000De0001 initial=0 final=295000000000000000000 delta=295000000000000000000"
+    },
+    {
+      "line": 1726,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x031ffCDA4a3cbf4Ae9ffBafD66263D3b9D7C3449",
+        "initial": "0",
+        "final": "1142857142857142856",
+        "delta": "1142857142857142856"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x031ffCDA4a3cbf4Ae9ffBafD66263D3b9D7C3449 initial=0 final=1142857142857142856 delta=1142857142857142856"
+    },
+    {
+      "line": 1727,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x08F389Bc3bef2e7495254158cdD49e9178A303A2",
+        "initial": "0",
+        "final": "10000000000000000000",
+        "delta": "10000000000000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x08F389Bc3bef2e7495254158cdD49e9178A303A2 initial=0 final=10000000000000000000 delta=10000000000000000000"
+    },
+    {
+      "line": 1728,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x12a025b972e8bC244FF4Ae8fC89E028150F27Ea3",
+        "initial": "1000000000000000000000",
+        "final": "997759441926400000000",
+        "delta": "-2240558073600000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x12a025b972e8bC244FF4Ae8fC89E028150F27Ea3 initial=1000000000000000000000 final=997759441926400000000 delta=-2240558073600000000"
+    },
+    {
+      "line": 1729,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x34982A282B5cF900B54df3A4e07672e43a08097d",
+        "initial": "1000000000000000000000",
+        "final": "974997551680000000000",
+        "delta": "-25002448320000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x34982A282B5cF900B54df3A4e07672e43a08097d initial=1000000000000000000000 final=974997551680000000000 delta=-25002448320000000000"
+    },
+    {
+      "line": 1730,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x3fB187aF2CA2E5DbFb28E56d0AfcfD028274633f",
+        "initial": "0",
+        "final": "1476190476190476188",
+        "delta": "1476190476190476188"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x3fB187aF2CA2E5DbFb28E56d0AfcfD028274633f initial=0 final=1476190476190476188 delta=1476190476190476188"
+    },
+    {
+      "line": 1731,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x4902cAE82C265a0C5204F968af923B1819daadaa",
+        "initial": "0",
+        "final": "1476190476190476190",
+        "delta": "1476190476190476190"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x4902cAE82C265a0C5204F968af923B1819daadaa initial=0 final=1476190476190476190 delta=1476190476190476190"
+    },
+    {
+      "line": 1732,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x4d57aD290bB35078f8fEd3d19a4473524624eD3c",
+        "initial": "0",
+        "final": "1476190476190476190",
+        "delta": "1476190476190476190"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x4d57aD290bB35078f8fEd3d19a4473524624eD3c initial=0 final=1476190476190476190 delta=1476190476190476190"
+    },
+    {
+      "line": 1733,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x6AA32A6a6b85eb0e65859804f2665139868524A1",
+        "initial": "1000000000000000000000",
+        "final": "997772562464000000000",
+        "delta": "-2227437536000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x6AA32A6a6b85eb0e65859804f2665139868524A1 initial=1000000000000000000000 final=997772562464000000000 delta=-2227437536000000000"
+    },
+    {
+      "line": 1734,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x80E15c782f9f2386060741c54f18ff41B2359E9E",
+        "initial": "0",
+        "final": "1476190476190476188",
+        "delta": "1476190476190476188"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x80E15c782f9f2386060741c54f18ff41B2359E9E initial=0 final=1476190476190476188 delta=1476190476190476188"
+    },
+    {
+      "line": 1735,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0x8C468f4eBbE4c3d17d0E346EF574852C176320E6",
+        "initial": "0",
+        "final": "1476190476190476190",
+        "delta": "1476190476190476190"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0x8C468f4eBbE4c3d17d0E346EF574852C176320E6 initial=0 final=1476190476190476190 delta=1476190476190476190"
+    },
+    {
+      "line": 1736,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0xE7CA5fF5C20FF72e1A1e45a11083a0E640663e90",
+        "initial": "1000000000000000000000",
+        "final": "839998261760000000000",
+        "delta": "-160001738240000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0xE7CA5fF5C20FF72e1A1e45a11083a0E640663e90 initial=1000000000000000000000 final=839998261760000000000 delta=-160001738240000000000"
+    },
+    {
+      "line": 1737,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0xb27862213A666048ebd414DD0E46D5247501e0c4",
+        "initial": "1000000000000000000000000000",
+        "final": "1000000000000000000000000000",
+        "delta": "0"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0xb27862213A666048ebd414DD0E46D5247501e0c4 initial=1000000000000000000000000000 final=1000000000000000000000000000 delta=0"
+    },
+    {
+      "line": 1738,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0xdA727833F3383E29DfA8A1c082d7FEeE7a10AA20",
+        "initial": "0",
+        "final": "1476190476190476198",
+        "delta": "1476190476190476198"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0xdA727833F3383E29DfA8A1c082d7FEeE7a10AA20 initial=0 final=1476190476190476198 delta=1476190476190476198"
+    },
+    {
+      "line": 1739,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0xe835CB3A8F9407103E54053CAb9f0373133600e4",
+        "initial": "77",
+        "final": "77",
+        "delta": "0"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0xe835CB3A8F9407103E54053CAb9f0373133600e4 initial=77 final=77 delta=0"
+    },
+    {
+      "line": 1740,
+      "label": "NATIVE_BALANCE",
+      "fields": {
+        "height": "749",
+        "account": "0xfa1a89887B3d554B5A15733FFFE4F642De3910b8",
+        "initial": "1000000000000000000000",
+        "final": "869998261760000000000",
+        "delta": "-130001738240000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: NATIVE_BALANCE height=749 account=0xfa1a89887B3d554B5A15733FFFE4F642De3910b8 initial=1000000000000000000000 final=869998261760000000000 delta=-130001738240000000000"
+    }
+  ],
+  "latest_bucket_batch": [
+    {
+      "line": 1742,
+      "label": "CONTINUOUS_BUCKET",
+      "fields": {
+        "key": "F",
+        "atoms": "168000000000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: CONTINUOUS_BUCKET key=F atoms=168000000000000000"
+    },
+    {
+      "line": 1743,
+      "label": "CONTINUOUS_BUCKET",
+      "fields": {
+        "key": "I",
+        "atoms": "5000000000000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: CONTINUOUS_BUCKET key=I atoms=5000000000000000000"
+    },
+    {
+      "line": 1744,
+      "label": "CONTINUOUS_BUCKET",
+      "fields": {
+        "key": "R",
+        "atoms": "0"
+      },
+      "raw": "dex_continuous_network_test.go:123: CONTINUOUS_BUCKET key=R atoms=0"
+    },
+    {
+      "line": 1745,
+      "label": "CONTINUOUS_BUCKET",
+      "fields": {
+        "key": "S",
+        "atoms": "10168000000000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: CONTINUOUS_BUCKET key=S atoms=10168000000000000000"
+    },
+    {
+      "line": 1746,
+      "label": "CONTINUOUS_BUCKET",
+      "fields": {
+        "key": "T",
+        "atoms": "279664000000000000000"
+      },
+      "raw": "dex_continuous_network_test.go:123: CONTINUOUS_BUCKET key=T atoms=279664000000000000000"
+    },
+    {
+      "line": 1747,
+      "label": "CONTINUOUS_BUCKET",
+      "fields": {
+        "key": "U",
+        "atoms": "0"
+      },
+      "raw": "dex_continuous_network_test.go:123: CONTINUOUS_BUCKET key=U atoms=0"
+    },
+    {
+      "line": 1748,
+      "label": "CONTINUOUS_BUCKET",
+      "fields": {
+        "key": "W",
+        "atoms": "0"
+      },
+      "raw": "dex_continuous_network_test.go:123: CONTINUOUS_BUCKET key=W atoms=0"
+    },
+    {
+      "line": 1749,
+      "label": "CONTINUOUS_BUCKET",
+      "fields": {
+        "key": "Z",
+        "atoms": "0"
+      },
+      "raw": "dex_continuous_network_test.go:123: CONTINUOUS_BUCKET key=Z atoms=0"
+    }
+  ],
+  "canonical_tx_count": 410,
+  "operation_counts": {
+    "funding-1": 8,
+    "funding-2": 1,
+    "funding-3": 1,
+    "anchor": 21,
+    "checkpoint": 109,
+    "checkpoint-replay": 91,
+    "claim": 72,
+    "claim-replay": 60,
+    "transfer": 47
+  },
+  "canonical_gas": {
+    "gas_units": 2796200256,
+    "gas_atoms": "4473920409600000000",
+    "common_atoms": "894784081920000000",
+    "burn_atoms": "3579136327680000000"
+  },
+  "ledger_crosscheck": {
+    "gas_atoms_match_all_logged_canonical_txs": true,
+    "common_atoms_match_all_logged_canonical_txs": true,
+    "burn_atoms_match_all_logged_canonical_txs": true
+  },
+  "gas_by_payer_and_operation": {
+    "payer:0xfa1a89887B3d554B5A15733FFFE4F642De3910b8": {
+      "transactions": 4,
+      "gas_units": 1086400,
+      "gas_atoms": "1738240000000000",
+      "common_atoms": "347648000000000",
+      "burn_atoms": "1390592000000000"
+    },
+    "operation:funding-1": {
+      "transactions": 8,
+      "gas_units": 2172800,
+      "gas_atoms": "3476480000000000",
+      "common_atoms": "695296000000000",
+      "burn_atoms": "2781184000000000"
+    },
+    "payer:0xE7CA5fF5C20FF72e1A1e45a11083a0E640663e90": {
+      "transactions": 4,
+      "gas_units": 1086400,
+      "gas_atoms": "1738240000000000",
+      "common_atoms": "347648000000000",
+      "burn_atoms": "1390592000000000"
+    },
+    "payer:0x34982A282B5cF900B54df3A4e07672e43a08097d": {
+      "transactions": 49,
+      "gas_units": 1530200,
+      "gas_atoms": "2448320000000000",
+      "common_atoms": "489664000000000",
+      "burn_atoms": "1958656000000000"
+    },
+    "operation:funding-2": {
+      "transactions": 1,
+      "gas_units": 271600,
+      "gas_atoms": "434560000000000",
+      "common_atoms": "86912000000000",
+      "burn_atoms": "347648000000000"
+    },
+    "operation:funding-3": {
+      "transactions": 1,
+      "gas_units": 271600,
+      "gas_atoms": "434560000000000",
+      "common_atoms": "86912000000000",
+      "burn_atoms": "347648000000000"
+    },
+    "payer:0x12a025b972e8bC244FF4Ae8fC89E028150F27Ea3": {
+      "transactions": 176,
+      "gas_units": 1400348796,
+      "gas_atoms": "2240558073600000000",
+      "common_atoms": "448111614720000000",
+      "burn_atoms": "1792446458880000000"
+    },
+    "operation:anchor": {
+      "transactions": 21,
+      "gas_units": 314568880,
+      "gas_atoms": "503310208000000000",
+      "common_atoms": "100662041600000000",
+      "burn_atoms": "402648166400000000"
+    },
+    "payer:0x6AA32A6a6b85eb0e65859804f2665139868524A1": {
+      "transactions": 177,
+      "gas_units": 1392148460,
+      "gas_atoms": "2227437536000000000",
+      "common_atoms": "445487507200000000",
+      "burn_atoms": "1781950028800000000"
+    },
+    "operation:checkpoint": {
+      "transactions": 109,
+      "gas_units": 1322442536,
+      "gas_atoms": "2115908057600000000",
+      "common_atoms": "423181611520000000",
+      "burn_atoms": "1692726446080000000"
+    },
+    "operation:checkpoint-replay": {
+      "transactions": 91,
+      "gas_units": 1104030092,
+      "gas_atoms": "1766448147200000000",
+      "common_atoms": "353289629440000000",
+      "burn_atoms": "1413158517760000000"
+    },
+    "operation:claim": {
+      "transactions": 72,
+      "gas_units": 28068744,
+      "gas_atoms": "44909990400000000",
+      "common_atoms": "8981998080000000",
+      "burn_atoms": "35927992320000000"
+    },
+    "operation:claim-replay": {
+      "transactions": 60,
+      "gas_units": 23387004,
+      "gas_atoms": "37419206400000000",
+      "common_atoms": "7483841280000000",
+      "burn_atoms": "29935365120000000"
+    },
+    "operation:transfer": {
+      "transactions": 47,
+      "gas_units": 987000,
+      "gas_atoms": "1579200000000000",
+      "common_atoms": "315840000000000",
+      "burn_atoms": "1263360000000000"
+    }
+  },
+  "unique_claim_leaf_count": 72,
+  "claim_paid_atoms_by_kind": {
+    "2": "10000000000000000000",
+    "1": "40000000000000000000"
+  },
+  "observed_native_anchor_cost_maxima": {
+    "calldata": 63566,
+    "headers": 32,
+    "mptNodes": 7,
+    "mptBytes": 2105,
+    "gas": 15416776
+  },
+  "proof_measurement_limits": "These are observed native-anchor TX maxima only, not all-proof theoretical maxima, crypto call counts, C heap or wall-clock work.",
+  "last_logged_limits": {
+    "line": 1750,
+    "label": "CONTINUOUS_LIMITS",
+    "fields": {
+      "maxCalldata": "63566",
+      "maxHeaders": "32",
+      "maxMPTNodes": "7",
+      "maxMPTBytes": "2105",
+      "operationCounts": "map[anchor:21 checkpoint:109 checkpoint-replay:91 claim:72 claim-replay:60 funding-1:8 funding-2:1 funding-3:1 transfer:47]"
+    },
+    "raw": "dex_continuous_network_test.go:123: CONTINUOUS_LIMITS maxCalldata=63566 maxHeaders=32 maxMPTNodes=7 maxMPTBytes=2105 operationCounts=map[anchor:21 checkpoint:109 checkpoint-replay:91 claim:72 claim-replay:60 funding-1:8 funding-2:1 funding-3:1 transfer:47]"
+  },
+  "processes": {
+    "roles": {
+      "CLX validator": {
+        "distinct_slots": 7,
+        "successful_launch_events": 14,
+        "distinct_logged_pids": 14,
+        "explicit_or_retrospective_stops": 7,
+        "inferred_stops": 0
+      },
+      "Common DEX parent": {
+        "distinct_slots": 7,
+        "successful_launch_events": 14,
+        "distinct_logged_pids": 14,
+        "explicit_or_retrospective_stops": 7,
+        "inferred_stops": 0
+      },
+      "DEX sidecar": {
+        "distinct_slots": 7,
+        "successful_launch_events": 14,
+        "distinct_logged_pids": 14,
+        "explicit_or_retrospective_stops": 0,
+        "inferred_stops": 7
+      },
+      "late DEX OFF Common": {
+        "distinct_slots": 1,
+        "successful_launch_events": 2,
+        "distinct_logged_pids": 2,
+        "explicit_or_retrospective_stops": 2,
+        "inferred_stops": 0
+      },
+      "relay": {
+        "distinct_slots": 2,
+        "successful_launch_events": 6,
+        "distinct_logged_pids": 6,
+        "explicit_or_retrospective_stops": 6,
+        "inferred_stops": 0
+      }
+    },
+    "distinct_role_slots": 24,
+    "successful_launch_events": 50,
+    "distinct_logged_role_pids": 50,
+    "coordinator_processes": 1,
+    "source_common_extra_processes": 0,
+    "scope": "Successful role launches and logged stops; not all OS subprocesses or peak concurrency. Source Common lives in test coordinator. Init/bad-identity probes and final general cleanup are not exhaustively logged.",
+    "launches": [
+      {
+        "role": "CLX validator",
+        "slot": 0,
+        "pid": 1206059,
+        "line": 9,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 1,
+        "pid": 1206064,
+        "line": 9,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 2,
+        "pid": 1206069,
+        "line": 9,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 3,
+        "pid": 1206075,
+        "line": 9,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 4,
+        "pid": 1206081,
+        "line": 9,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 5,
+        "pid": 1206087,
+        "line": 9,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 6,
+        "pid": 1206094,
+        "line": 9,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 0,
+        "pid": 1206294,
+        "line": 41,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 0,
+        "pid": 1206329,
+        "line": 41,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 1,
+        "pid": 1206348,
+        "line": 43,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 1,
+        "pid": 1206359,
+        "line": 43,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 2,
+        "pid": 1206376,
+        "line": 45,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 2,
+        "pid": 1206385,
+        "line": 45,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 3,
+        "pid": 1206415,
+        "line": 47,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 3,
+        "pid": 1206467,
+        "line": 47,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 4,
+        "pid": 1206483,
+        "line": 49,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 4,
+        "pid": 1206494,
+        "line": 49,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 5,
+        "pid": 1206515,
+        "line": 51,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 5,
+        "pid": 1206525,
+        "line": 51,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "relay",
+        "slot": 0,
+        "pid": 1206536,
+        "line": 53,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "relay",
+        "slot": 1,
+        "pid": 1206537,
+        "line": 54,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 6,
+        "pid": 1206736,
+        "line": 216,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 6,
+        "pid": 1206745,
+        "line": 216,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "relay",
+        "slot": 0,
+        "pid": 1206771,
+        "line": 239,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "relay",
+        "slot": 1,
+        "pid": 1206772,
+        "line": 240,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 0,
+        "pid": 1207869,
+        "line": 569,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 0,
+        "pid": 1207880,
+        "line": 569,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 1,
+        "pid": 1207897,
+        "line": 571,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 1,
+        "pid": 1207909,
+        "line": 571,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 2,
+        "pid": 1207933,
+        "line": 573,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 2,
+        "pid": 1207943,
+        "line": 573,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 3,
+        "pid": 1207978,
+        "line": 575,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 3,
+        "pid": 1207988,
+        "line": 575,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 4,
+        "pid": 1208015,
+        "line": 577,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 4,
+        "pid": 1208035,
+        "line": 577,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 5,
+        "pid": 1208055,
+        "line": 579,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 5,
+        "pid": 1208085,
+        "line": 579,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 6,
+        "pid": 1208114,
+        "line": 581,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 6,
+        "pid": 1208127,
+        "line": 581,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 0,
+        "pid": 1208675,
+        "line": 889,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 1,
+        "pid": 1208790,
+        "line": 889,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 2,
+        "pid": 1208815,
+        "line": 889,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 3,
+        "pid": 1208832,
+        "line": 889,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 4,
+        "pid": 1208842,
+        "line": 889,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 5,
+        "pid": 1208885,
+        "line": 889,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 6,
+        "pid": 1208895,
+        "line": 889,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "relay",
+        "slot": 0,
+        "pid": 1209418,
+        "line": 1434,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "relay",
+        "slot": 1,
+        "pid": 1209419,
+        "line": 1435,
+        "source": "explicit PID log"
+      },
+      {
+        "role": "late DEX OFF Common",
+        "slot": 0,
+        "pid": 1209785,
+        "line": 1758,
+        "source": "successful lifecycle reported retrospectively by final check"
+      },
+      {
+        "role": "late DEX OFF Common",
+        "slot": 0,
+        "pid": 1210069,
+        "line": 1758,
+        "source": "successful lifecycle reported retrospectively by final check"
+      }
+    ],
+    "stops": [
+      {
+        "role": "relay",
+        "slot": 0,
+        "pid": 1206536,
+        "line": 220,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "relay",
+        "slot": 1,
+        "pid": 1206537,
+        "line": 221,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 0,
+        "pid": 1206294,
+        "line": 429,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 0,
+        "pid": 1206329,
+        "line": 429,
+        "source": "inferred from verified parent-stop helper; sidecar PID from earlier launch"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 1,
+        "pid": 1206348,
+        "line": 430,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 1,
+        "pid": 1206359,
+        "line": 430,
+        "source": "inferred from verified parent-stop helper; sidecar PID from earlier launch"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 2,
+        "pid": 1206376,
+        "line": 431,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 2,
+        "pid": 1206385,
+        "line": 431,
+        "source": "inferred from verified parent-stop helper; sidecar PID from earlier launch"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 3,
+        "pid": 1206415,
+        "line": 432,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 3,
+        "pid": 1206467,
+        "line": 432,
+        "source": "inferred from verified parent-stop helper; sidecar PID from earlier launch"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 4,
+        "pid": 1206483,
+        "line": 433,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 4,
+        "pid": 1206494,
+        "line": 433,
+        "source": "inferred from verified parent-stop helper; sidecar PID from earlier launch"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 5,
+        "pid": 1206515,
+        "line": 434,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 5,
+        "pid": 1206525,
+        "line": 434,
+        "source": "inferred from verified parent-stop helper; sidecar PID from earlier launch"
+      },
+      {
+        "role": "Common DEX parent",
+        "slot": 6,
+        "pid": 1206736,
+        "line": 435,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "DEX sidecar",
+        "slot": 6,
+        "pid": 1206745,
+        "line": 435,
+        "source": "inferred from verified parent-stop helper; sidecar PID from earlier launch"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 0,
+        "pid": 1206059,
+        "line": 881,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 1,
+        "pid": 1206064,
+        "line": 881,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 2,
+        "pid": 1206069,
+        "line": 881,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 3,
+        "pid": 1206075,
+        "line": 881,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 4,
+        "pid": 1206081,
+        "line": 881,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 5,
+        "pid": 1206087,
+        "line": 881,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "CLX validator",
+        "slot": 6,
+        "pid": 1206094,
+        "line": 881,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "relay",
+        "slot": 0,
+        "pid": 1206771,
+        "line": 1432,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "relay",
+        "slot": 1,
+        "pid": 1206772,
+        "line": 1433,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "relay",
+        "slot": 0,
+        "pid": 1209418,
+        "line": 1721,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "relay",
+        "slot": 1,
+        "pid": 1209419,
+        "line": 1722,
+        "source": "explicit stop log"
+      },
+      {
+        "role": "late DEX OFF Common",
+        "slot": 0,
+        "pid": 1209785,
+        "line": 1758,
+        "source": "successful initial stop reported retrospectively by final check"
+      },
+      {
+        "role": "late DEX OFF Common",
+        "slot": 0,
+        "pid": 1210069,
+        "line": 1758,
+        "source": "successful reopened stop reported retrospectively by final check"
+      }
+    ]
+  },
+  "warnings": [],
+  "claim_identifier_mapping": {
+    "path": "/tmp/common-dex-continuous.uye5vgqi/final-report/claim-identifiers.json",
+    "sha256": "cd60fa214747cd45e6e3f3e4f197bf68070a711d3dca083b221292af33a9a119",
+    "mapped_payment_events": 72,
+    "missing_leaf_hashes": [],
+    "mismatched_leaf_hashes": [],
+    "authority": "Claim.ID decoded offline and Claim.Hash recomputed from public persisted bytes, matched to canonical-log leaf/sequence/kind/recipient/amount. This adds identifier metadata, not independent FHS finality authentication."
+  },
+  "evidence": {
+    "input_log": "/tmp/common-dex-check.SKj8bHWv/continuous.log",
+    "input_log_sha256": "ac45652614b46d0c800e450064acebe3c2fff87beab6aa88d512a8d66ee523df",
+    "parser_sha256": "0881e3df5739a5718137073a3a3a8ad414af7f3086c03d39dece704fc2257685",
+    "mode": "final",
+    "source_before": {
+      "path": "/tmp/common-dex-check.SKj8bHWv/source-sha256.txt",
+      "sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2"
+    },
+    "source_after": {
+      "path": "/tmp/common-dex-check.SKj8bHWv/source-sha256-after.txt",
+      "sha256": "7f786223801e567b77c6c37bf437c189ea440de3db91f0b93d4fae705cdc97e2"
+    },
+    "runner_exit": {
+      "path": "/tmp/common-dex-check.SKj8bHWv/run-exit-code.txt",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    "source_stable": true,
+    "runner_success": true,
+    "eligible_final_run": true,
+    "status": "PASS"
+  }
+}

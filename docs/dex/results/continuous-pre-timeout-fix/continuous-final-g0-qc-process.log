@@ -1,0 +1,5 @@
+=== RUN   TestFHSProcessRecoveryQCBeforePrepare
+    fhs_process_recovery_test.go:286: fixture committee permutation=[0 1 2 4 3 5 6]; proposer=0 laggard=4; both excluded from scheduled views2..10
+    fhs_early_qc_process_test.go:35: QC_BEFORE_PREPARE laggard_pid=1092451 dropped_prepares=2 finalized=1 certified=2 canonical1=0x3c447e4de45cd0632ab1d844b6e9fefa433c430a712260f5ddab16f675bb4a7b; seven independent QUIC validators agree on hash, receipt, gas and state root
+--- PASS: TestFHSProcessRecoveryQCBeforePrepare (33.13s)
+PASS

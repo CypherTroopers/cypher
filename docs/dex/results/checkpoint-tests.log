@@ -1,0 +1,52 @@
+=== RUN   TestFHSFinalityGolden
+=== RUN   TestFHSFinalityGolden/single_qc_not_final
+=== RUN   TestFHSFinalityGolden/direct_child
+=== RUN   TestFHSFinalityGolden/view_gap
+=== RUN   TestFHSFinalityGolden/ancestor_after_gap
+=== RUN   TestFHSFinalityGolden/missing_height
+=== RUN   TestFHSFinalityGolden/repeated_view
+=== RUN   TestFHSFinalityGolden/descending_view
+=== RUN   TestFHSFinalityGolden/terminal_gap
+--- PASS: TestFHSFinalityGolden (0.03s)
+    --- PASS: TestFHSFinalityGolden/single_qc_not_final (0.00s)
+    --- PASS: TestFHSFinalityGolden/direct_child (0.01s)
+    --- PASS: TestFHSFinalityGolden/view_gap (0.00s)
+    --- PASS: TestFHSFinalityGolden/ancestor_after_gap (0.01s)
+    --- PASS: TestFHSFinalityGolden/missing_height (0.00s)
+    --- PASS: TestFHSFinalityGolden/repeated_view (0.00s)
+    --- PASS: TestFHSFinalityGolden/descending_view (0.00s)
+    --- PASS: TestFHSFinalityGolden/terminal_gap (0.00s)
+=== RUN   TestProofDomainBoundsTampering
+=== RUN   TestProofDomainBoundsTampering/bad_signature
+=== RUN   TestProofDomainBoundsTampering/bad_mask
+=== RUN   TestProofDomainBoundsTampering/four_votes
+=== RUN   TestProofDomainBoundsTampering/large_signature
+=== RUN   TestProofDomainBoundsTampering/large_ref
+=== RUN   TestProofDomainBoundsTampering/large_leader
+=== RUN   TestProofDomainBoundsTampering/long_catchup
+=== RUN   TestProofDomainBoundsTampering/wrong_parent_qc
+=== RUN   TestProofDomainBoundsTampering/different_dex
+=== RUN   TestProofDomainBoundsTampering/clx_chain_replay
+=== RUN   TestProofDomainBoundsTampering/old_epoch
+--- PASS: TestProofDomainBoundsTampering (0.02s)
+    --- PASS: TestProofDomainBoundsTampering/bad_signature (0.01s)
+    --- PASS: TestProofDomainBoundsTampering/bad_mask (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/four_votes (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/large_signature (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/large_ref (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/large_leader (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/long_catchup (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/wrong_parent_qc (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/different_dex (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/clx_chain_replay (0.00s)
+    --- PASS: TestProofDomainBoundsTampering/old_epoch (0.00s)
+=== RUN   TestEpochRegistrationSnapshot
+--- PASS: TestEpochRegistrationSnapshot (0.01s)
+=== RUN   FuzzProofDecode
+=== RUN   FuzzProofDecode/seed#0
+=== RUN   FuzzProofDecode/seed#1
+--- PASS: FuzzProofDecode (0.00s)
+    --- PASS: FuzzProofDecode/seed#0 (0.00s)
+    --- PASS: FuzzProofDecode/seed#1 (0.00s)
+PASS
+ok  	github.com/cypherium/cypher/dex/checkpoint	0.083s

@@ -1,0 +1,16 @@
+[
+  {
+    "time": 1790190259.3304632,
+    "action": "start",
+    "app": "cypherdex-relay0",
+    "config": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/ecosystem.json",
+    "exit_code": 0
+  },
+  {
+    "time": 1790190259.778843,
+    "action": "start",
+    "app": "cypherdex-relay1",
+    "config": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/pm2-relays/ecosystem.json",
+    "exit_code": 0
+  }
+]

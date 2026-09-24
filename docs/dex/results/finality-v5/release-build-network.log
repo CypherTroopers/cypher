@@ -1,0 +1,67 @@
+From https://github.com/herumi/bls
+ * branch            2026abe5e97e9a10fa7d7c66279ee728630d6219 -> FETCH_HEAD
+Submodule 'mcl' (https://github.com/herumi/mcl) registered for path 'mcl'
+Cloning into '/root/work/cypher-FHS-D-ExchangeCore/build/stage/finality-v5-release/tmp/cypher-build.kF5cd1RU/herumi-bls/mcl'...
+From https://github.com/herumi/mcl
+ * branch            877aa82ecc55dc111922492ad600e177d78dfc29 -> FETCH_HEAD
+Submodule path 'mcl': checked out '877aa82ecc55dc111922492ad600e177d78dfc29'
+make[1]: Entering directory '/root/work/cypher-FHS-D-ExchangeCore/build/stage/finality-v5-release/tmp/cypher-build.kF5cd1RU/herumi-bls/mcl'
+python3 src/gen_bint_header.py > src/bint_switch.hpp switch 
+gcc -c src/asm/x86-64.S -o obj/base64.o  -g3 -Wall -Wextra -Wformat=2 -Wcast-qual -Wcast-align -Wwrite-strings -Wfloat-equal -Wpointer-arith -Wundef -m64 -I include -I test -fomit-frame-pointer -DNDEBUG -fno-stack-protector -O3 -g0 -fpic -DMCL_FP_BIT=256 -DMCL_FR_BIT=256 -DMCL_USE_LLVM=1 -DMCL_BINT_ASM=1 -DMCL_MSM=1 -g0
+python3 src/gen_bint_x64.py -curveBit=381 -m gas  > src/asm/bint-x64-amd64.S
+g++ -c src/msm_avx.cpp -o obj/msm_avx.o  -g3 -Wall -Wextra -Wformat=2 -Wcast-qual -Wcast-align -Wwrite-strings -Wfloat-equal -Wpointer-arith -Wundef -m64 -I include -I test -fomit-frame-pointer -DNDEBUG -fno-stack-protector -O3 -g0 -fpic -DMCL_FP_BIT=256 -DMCL_FR_BIT=256 -DMCL_USE_LLVM=1 -DMCL_BINT_ASM=1 -DMCL_MSM=1 -mavx512f -mavx512ifma -std=c++11 -g0
+g++  -g3 -Wall -Wextra -Wformat=2 -Wcast-qual -Wcast-align -Wwrite-strings -Wfloat-equal -Wpointer-arith -Wundef -m64 -I include -I test -fomit-frame-pointer -DNDEBUG -fno-stack-protector -O3 -g0 -fpic -DMCL_FP_BIT=256 -DMCL_FR_BIT=256 -DMCL_USE_LLVM=1 -DMCL_BINT_ASM=1 -DMCL_MSM=1 -c src/fp.cpp -o obj/fp.o -MMD -MP -MF obj/fp.d
+In file included from include/mcl/vint.hpp:14,
+                 from include/mcl/gmp_util.hpp:31,
+                 from include/mcl/op.hpp:9,
+                 from include/mcl/fp.hpp:23,
+                 from include/mcl/fp_def.hpp:10,
+                 from include/mcl/ec.hpp:10,
+                 from include/mcl/g1_def.hpp:10,
+                 from include/mcl/bn.hpp:9,
+                 from include/mcl/bls12_381.hpp:9,
+                 from src/msm_avx.cpp:9:
+In member function ‘void mcl::FixedArray<T, maxSize>::push(bool*, const T&) [with T = signed char; long unsigned int maxSize = 257]’,
+    inlined from ‘void mcl::gmp::getNAFwidth(bool*, Vec&, mpz_class, size_t) [with Vec = mcl::FixedArray<signed char, 257>]’ at include/mcl/gmp_util.hpp:643:12,
+    inlined from ‘static void mcl::EcT<_Fp>::mulArray(mcl::EcT<_Fp>&, const mcl::EcT<_Fp>&, const mcl::Unit*, size_t, bool, bool) [with _Fp = mcl::FpT<0, 256>]’ at include/mcl/ec.hpp:1707:19:
+include/mcl/array.hpp:135:26: warning: writing 32 bytes into a region of size 16 [-Wstringop-overflow=]
+  135 |                 p_[n_++] = x;
+      |                 ~~~~~~~~~^~~
+include/mcl/ec.hpp: In static member function ‘static void mcl::EcT<_Fp>::mulArray(mcl::EcT<_Fp>&, const mcl::EcT<_Fp>&, const mcl::Unit*, size_t, bool, bool) [with _Fp = mcl::FpT<0, 256>]’:
+include/mcl/ec.hpp:1705:26: note: at offset [256, 272] into destination object ‘naf’ of size 272
+ 1705 |                 NafArray naf;
+      |                          ^~~
+gcc  -g3 -Wall -Wextra -Wformat=2 -Wcast-qual -Wcast-align -Wwrite-strings -Wfloat-equal -Wpointer-arith -Wundef -m64 -I include -I test -fomit-frame-pointer -DNDEBUG -fno-stack-protector -O3 -g0 -fpic -DMCL_FP_BIT=256 -DMCL_FR_BIT=256 -DMCL_USE_LLVM=1 -DMCL_BINT_ASM=1 -DMCL_MSM=1 -c src/asm/bint-x64-amd64.S -o obj/bint64.o
+ar -rv lib/libmcl.a obj/fp.o obj/base64.o obj/bint64.o obj/msm_avx.o
+ar: creating lib/libmcl.a
+a - obj/fp.o
+a - obj/base64.o
+a - obj/bint64.o
+a - obj/msm_avx.o
+make[1]: Leaving directory '/root/work/cypher-FHS-D-ExchangeCore/build/stage/finality-v5-release/tmp/cypher-build.kF5cd1RU/herumi-bls/mcl'
+make[1]: Entering directory '/root/work/cypher-FHS-D-ExchangeCore/build/stage/finality-v5-release/tmp/cypher-build.kF5cd1RU/herumi-bls'
+g++  -g3 -Wall -Wextra -Wformat=2 -Wcast-qual -Wcast-align -Wwrite-strings -Wfloat-equal -Wpointer-arith -Wundef -m64 -I include -I test -fomit-frame-pointer -DNDEBUG -fno-stack-protector -O3 -g0 -fpic -std=c++11 -I/root/work/cypher-FHS-D-ExchangeCore/build/stage/finality-v5-release/tmp/cypher-build.kF5cd1RU/herumi-bls/mcl/include -c src/bls_c256.cpp -o obj/bls_c256.o -MMD -MP -MF obj/bls_c256.d
+ar -rv lib/libbls256.a obj/bls_c256.o
+ar: creating lib/libbls256.a
+a - obj/bls_c256.o
+make[1]: Leaving directory '/root/work/cypher-FHS-D-ExchangeCore/build/stage/finality-v5-release/tmp/cypher-build.kF5cd1RU/herumi-bls'
+all modules verified
+ok  	github.com/cypherium/cypher/crypto/bls	1.073s
+# gopkg.in/olebedev/go-duktape.v3
+duk_logging.c: In function ‘duk__logger_prototype_log_shared’:
+duk_logging.c:184:71: warning: ‘Z’ directive writing 1 byte into a region of size between 0 and 9 [-Wformat-overflow=]
+  184 |         sprintf((char *) date_buf, "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+      |                                                                       ^
+In file included from /usr/include/stdio.h:974,
+                 from duk_logging.c:5:
+In function ‘sprintf’,
+    inlined from ‘duk__logger_prototype_log_shared’ at duk_logging.c:184:2:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:30:10: note: ‘__builtin___sprintf_chk’ output between 25 and 85 bytes into a destination of size 32
+   30 |   return __builtin___sprintf_chk (__s, __USE_FORTIFY_LEVEL - 1,
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   31 |                                   __glibc_objsize (__s), __fmt,
+      |                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   32 |                                   __va_arg_pack ());
+      |                                   ~~~~~~~~~~~~~~~~~
+Built /root/work/cypher-FHS-D-ExchangeCore/build/stage/finality-v5-release/bin/cypher-linux-amd64 (linux/amd64)
+Staged artifacts in /root/work/cypher-FHS-D-ExchangeCore/build/stage/finality-v5-release/stage/linux-amd64

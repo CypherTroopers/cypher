@@ -1,0 +1,130 @@
+{
+  "processes": 23,
+  "roles": {
+    "clx-or-wrapper": 14,
+    "dex-validator": 7,
+    "dex-relay": 2
+  },
+  "total_rss_kib": 3781344,
+  "mem_available_kib": 25140264,
+  "heavy_engine_on_clx": [
+    {
+      "pid": 1315272,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1315273,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1315274,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1315275,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1315276,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1315277,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1315278,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1319552,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1319579,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1319606,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1319631,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1319656,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1319683,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    },
+    {
+      "pid": 1319708,
+      "stats": {
+        "Instances": 0,
+        "Actions": 0,
+        "InboxImports": 0
+      }
+    }
+  ],
+  "exe_hashes": [
+    "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c"
+  ],
+  "all_clx_roots": [
+    "0x058c8e78b16820dcdaeb31659d8d422109ecdaaa76b62e7bc720d3969598dae4"
+  ]
+}

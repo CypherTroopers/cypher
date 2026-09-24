@@ -1,0 +1,5 @@
+--- FAIL: TestCollectorRetiredPinSurvivesRepeatedCollectorAheadCrashes (0.05s)
+    retirement_test.go:237: actual durable FHS vote lost before retry collector WAL does not cover restored FHS vote
+FAIL
+FAIL	github.com/cypherium/cypher/dex/rewards	0.087s
+FAIL

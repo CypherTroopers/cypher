@@ -1,0 +1,20 @@
+test_interleaved_inbox_reconciles_exact_action_and_atomically_advances_phase (scripts.dex.test_live_finance.DurableIntentTest.test_interleaved_inbox_reconciles_exact_action_and_atomically_advances_phase) ... ok
+test_known_mempool_transaction_is_not_resent_or_finalized (scripts.dex.test_live_finance.DurableIntentTest.test_known_mempool_transaction_is_not_resent_or_finalized) ... ok
+test_action_kind_is_logged_without_shadowing_event_name (scripts.dex.test_live_finance.FinalityDrainTest.test_action_kind_is_logged_without_shadowing_event_name) ... ok
+test_drain_finishes_only_started_cycle_and_records_authenticated_end (scripts.dex.test_live_finance.FinalityDrainTest.test_drain_finishes_only_started_cycle_and_records_authenticated_end) ... ok
+test_ledger_end_uses_exact_authenticated_block (scripts.dex.test_live_finance.FinalityDrainTest.test_ledger_end_uses_exact_authenticated_block) ... ok
+test_paid_ledger_reauthenticates_nullifiers_and_wallet_deltas (scripts.dex.test_live_finance.FinalityDrainTest.test_paid_ledger_reauthenticates_nullifiers_and_wallet_deltas) ... ok
+test_participation_interleaved_slot_can_commit_before_original_deadline (scripts.dex.test_live_finance.FinalityDrainTest.test_participation_interleaved_slot_can_commit_before_original_deadline) ... ok
+test_relay_ack_stale_status_or_pending_claim_is_not_drained (scripts.dex.test_live_finance.FinalityDrainTest.test_relay_ack_stale_status_or_pending_claim_is_not_drained) ... ok
+test_wallet_funding_entry_has_no_native_deposit (scripts.dex.test_live_finance.FinalityDrainTest.test_wallet_funding_entry_has_no_native_deposit) ... ok
+test_amount_byte_width (scripts.dex.test_live_finance.FinanceTest.test_amount_byte_width) ... ok
+test_funding_total_identity_and_checkpoint_budget (scripts.dex.test_live_finance.FinanceTest.test_funding_total_identity_and_checkpoint_budget) ... ok
+test_independent_225_to_214_native_ledger_and_duplicate_claim (scripts.dex.test_live_finance.FinanceTest.test_independent_225_to_214_native_ledger_and_duplicate_claim) ... ok
+test_journal_atomic_and_exclusive_next_file (scripts.dex.test_live_finance.FinanceTest.test_journal_atomic_and_exclusive_next_file) ... ok
+test_no_remote_network_fallback (scripts.dex.test_live_finance.FinanceTest.test_no_remote_network_fallback) ... ok
+test_dedicated_owner_marker_reuse_and_foreign_directory (scripts.dex.test_live_finance.OutputOwnershipTest.test_dedicated_owner_marker_reuse_and_foreign_directory) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.008s
+
+OK

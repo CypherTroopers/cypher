@@ -1,0 +1,12 @@
+=== RUN   TestReadinessCertifiedVoteAfterRealViewGaps
+--- PASS: TestReadinessCertifiedVoteAfterRealViewGaps (3.00s)
+=== RUN   TestReadinessDistinguishesCertifiedAndPendingOwnVoteAfterRestart
+--- PASS: TestReadinessDistinguishesCertifiedAndPendingOwnVoteAfterRestart (3.96s)
+PASS
+ok  	github.com/cypherium/cypher/dex/consensus	7.038s
+=== RUN   TestTimeoutReadinessIgnoresCertifiedIngressWithoutMutatingQueue
+--- PASS: TestTimeoutReadinessIgnoresCertifiedIngressWithoutMutatingQueue (0.01s)
+=== RUN   TestTimeoutReadinessCachesEconomicChecksUntilParentOrIngressChanges
+--- PASS: TestTimeoutReadinessCachesEconomicChecksUntilParentOrIngressChanges (0.01s)
+PASS
+ok  	github.com/cypherium/cypher/dex/service/finance	0.068s

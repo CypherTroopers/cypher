@@ -19,3 +19,4 @@ build/stage/
 
 # Local mining script
 start-mining.sh
+init.sh

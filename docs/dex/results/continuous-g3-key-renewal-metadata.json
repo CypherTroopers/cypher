@@ -1,0 +1,26 @@
+{
+  "command": "unshare -Urn bash -c \"ip link set lo up; GOMAXPROCS=2 GOPROXY=off GOCACHE=/tmp/common-dex-devnet.0wvjd5/gocache CYPHER_DEX_SOURCE_DEVNET=1 nice -n 10 go test -mod=readonly -race -p 1 ./dex/clxevidence ./dex/relay/source -count=1 -json -timeout 5m\"",
+  "scope": "unit-generated BLS/CLX codecs + actual StateDB MPT proofs; real HTTP only inside fresh numeric-loopback namespace; not actual CLX FHS process longrun",
+  "top_level": {
+    "pass": 45
+  },
+  "test_events": {
+    "pass": 243
+  },
+  "packages": [
+    {
+      "package": "github.com/cypherium/cypher/dex/clxevidence",
+      "status": "pass",
+      "seconds": 87.202
+    },
+    {
+      "package": "github.com/cypherium/cypher/dex/relay/source",
+      "status": "pass",
+      "seconds": 1.098
+    }
+  ],
+  "source_scope": "all Go files in dex/clxevidence and dex/relay/source, dex/relay/planner.go, independent key_renewal_golden.py and key_renewal.json; transitive package source not independently hashed here",
+  "source_changes": [],
+  "raw_sha256": "7d8c0f8c0a047b34182b7034e1e1939a9182305bf0bdb324cadcbd4192f5e58d",
+  "prior_attempt": "Attempt1 unshare sandbox EPERM, no test executed; permitted escalation uses same new isolated namespace. Component race passed before final valid-signature lifetime negatives. Initial constructor fixture failures were corrected: a skipped view requires two descendants; zero-time genesis exception allows timestamp601, so negative uses599. No production rule was relaxed."
+}

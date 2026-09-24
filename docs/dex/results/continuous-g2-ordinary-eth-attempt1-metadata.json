@@ -1,0 +1,32 @@
+{
+  "started_utc": "2026-09-22T10:22:44.642947+00:00",
+  "finished_utc": "2026-09-22T10:22:45.810992+00:00",
+  "command": [
+    "nice",
+    "-n",
+    "10",
+    "go",
+    "test",
+    "-p",
+    "1",
+    "-mod=readonly",
+    "-count=1",
+    "-timeout=5m",
+    "-v",
+    "./reconfig",
+    "-run",
+    "^TestFHSNativeOrdinaryETHSource$"
+  ],
+  "exit_code": 1,
+  "network_namespace": "net:[4026532340]",
+  "loopback_only": true,
+  "GOMAXPROCS": 2,
+  "nice": 10,
+  "GOCACHE": "/tmp/common-dex-devnet.0wvjd5/gocache",
+  "GOPROXY": "off",
+  "normal_pow_nonce_search": "NOT_RUN",
+  "source_changes": [],
+  "log": "docs/dex/results/continuous-g2-ordinary-eth-attempt1.log",
+  "log_sha256": "981189550b106f38b740f440852b8ce915f78c032ce12fc905f11199e6037de2",
+  "scope": "Compile failure in new test status cast; no test child started."
+}

@@ -1,0 +1,33 @@
+{
+  "changed_paths": 1097,
+  "classification_note": "G0 grouping; shared bounded CLX verification packages and non-dex Go including cmd are CLXprod; tests take priority. No engine execution inference.",
+  "counts": {
+    "CLXprod": 49,
+    "DEXprod": 61,
+    "docs": 80,
+    "generated": 2,
+    "protected": 2,
+    "results": 713,
+    "tests": 190
+  },
+  "errors": [],
+  "mode": "read-only classification/public-text preflight; no archive produced",
+  "reviewed_exit_results": [
+    {
+      "bytes": 2,
+      "category": "results",
+      "path": "docs/dex/results/continuous-wal-dictionary/financial.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source_manifest_selects": false,
+      "supplement_selects": true
+    },
+    {
+      "bytes": 2,
+      "category": "results",
+      "path": "docs/dex/results/continuous-wal-dictionary/initial.exit",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "source_manifest_selects": false,
+      "supplement_selects": true
+    }
+  ]
+}

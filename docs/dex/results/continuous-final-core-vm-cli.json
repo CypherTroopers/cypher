@@ -1,0 +1,10 @@
+{
+  "raw": "/tmp/common-dex-continuous.uye5vgqi/logs/continuous-final3-core-vm-cli.jsonl",
+  "source_manifest_sha256": "061f4a0b6bed257c6ba8ad60f377f52cf8640cb6dcb8d4dcbd01a1575cfe1630",
+  "counts": {
+    "pass_test_events": 135,
+    "pass_top_level": 63,
+    "pass_packages": 6,
+    "skip_test_events": 5
+  }
+}

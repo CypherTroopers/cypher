@@ -1,0 +1,6 @@
+fuzz: elapsed: 0s, gathering baseline coverage: 0/3 completed
+fuzz: elapsed: 0s, gathering baseline coverage: 3/3 completed, now fuzzing with 1 workers
+fuzz: elapsed: 3s, execs: 14956 (4982/sec), new interesting: 3 (total: 6)
+fuzz: elapsed: 5s, execs: 25375 (5006/sec), new interesting: 3 (total: 6)
+PASS
+ok  	github.com/cypherium/cypher/dex/service/replication	5.234s

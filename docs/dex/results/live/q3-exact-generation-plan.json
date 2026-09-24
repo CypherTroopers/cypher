@@ -1,0 +1,518 @@
+{
+  "version": 1,
+  "mode": "EXACT_PLAN_REQUIRES_USER_APPROVAL",
+  "status": "BLOCKED",
+  "reset_authorized": false,
+  "executor_implemented": true,
+  "host": "vmi3365213",
+  "workspace": "/root/work/cypher-FHS-D-ExchangeCore",
+  "observed_boot_id": "fcd0df19-9bbb-4d09-a76d-fedbbed8541a",
+  "observation_utc": "2026-09-23T16:55:34Z",
+  "generation_label": "chain-10101920-dex-12ca5d25e81fb6ee",
+  "old_generation": {
+    "chain_id": 10101919,
+    "genesis_hash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e",
+    "genesis_state_root": "0x4ff47f7df865cb444bec5079d060aa505bfe528f15d65424082e1727edd4a103",
+    "genesis_file_sha256": "131acbb21ef77f4229c91a639c51348bc1d0f0f5b6c4cbf4299e46c90efd4b1f",
+    "dex_configured": false
+  },
+  "new_generation": {
+    "chain_id": 10101920,
+    "dex_deployment_id": "0x12ca5d25e81fb6eeaefb371f049e922f1c7bb763d55a7c910174b27b8e095086",
+    "epoch": 1,
+    "genesis_hash": "0x986078d0f7c08949cf2070d3a863fb3b2c7db73fd2108b1af87ce4d20be1aa16",
+    "genesis_validation": "PASS(UNIT): formal Go memory genesis + seven manifests + final relay CLI validation; LIVE NOT_RUN",
+    "genesis_file": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/genesis.json",
+    "genesis_sha256": "fbb36fe9a2a9e460ad6af1febfc0b48cecd43215e3e1a987129f0afac6850a08",
+    "genesis_state_root": "0xd3e0fd99e2cbcafe3ca718d616b73ea47664153c0ffc01888c3cedef893a33f0"
+  },
+  "targets": [
+    {
+      "pm2_name": "cypher0",
+      "pm2_id": 0,
+      "observed_pid": 1230220,
+      "observed_start_ticks": 45471558,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb0",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindb0",
+      "datadir_device": 2049,
+      "datadir_inode": 1756402,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 1,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypher1",
+      "pm2_id": 1,
+      "observed_pid": 1230221,
+      "observed_start_ticks": 45471559,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb1",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindb1",
+      "datadir_device": 2049,
+      "datadir_inode": 1756403,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 1,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypher2",
+      "pm2_id": 2,
+      "observed_pid": 1230223,
+      "observed_start_ticks": 45471562,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb2",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindb2",
+      "datadir_device": 2049,
+      "datadir_inode": 1756404,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 1,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypher3",
+      "pm2_id": 3,
+      "observed_pid": 1230222,
+      "observed_start_ticks": 45471561,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb3",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindb3",
+      "datadir_device": 2049,
+      "datadir_inode": 1756405,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 1,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypher4",
+      "pm2_id": 4,
+      "observed_pid": 1230224,
+      "observed_start_ticks": 45471563,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb4",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindb4",
+      "datadir_device": 2049,
+      "datadir_inode": 1756406,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 1,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypher5",
+      "pm2_id": 5,
+      "observed_pid": 1230225,
+      "observed_start_ticks": 45471564,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb5",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindb5",
+      "datadir_device": 2049,
+      "datadir_inode": 1756407,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 1,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypher6",
+      "pm2_id": 6,
+      "observed_pid": 1230226,
+      "observed_start_ticks": 45471566,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindb6",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindb6",
+      "datadir_device": 2049,
+      "datadir_inode": 1756408,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 1,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cyphermine",
+      "pm2_id": 7,
+      "observed_pid": 1230232,
+      "observed_start_ticks": 45471567,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/chaindbmine",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindbmine",
+      "datadir_device": 2049,
+      "datadir_inode": 1756409,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 1,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypherdex1",
+      "pm2_id": 8,
+      "observed_pid": 1250429,
+      "observed_start_ticks": 45721464,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex1",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindbdex1",
+      "datadir_device": 2049,
+      "datadir_inode": 288450,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 0,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypherdex2",
+      "pm2_id": 9,
+      "observed_pid": 1250566,
+      "observed_start_ticks": 45725181,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex2",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindbdex2",
+      "datadir_device": 2049,
+      "datadir_inode": 288504,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 0,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypherdex3",
+      "pm2_id": 10,
+      "observed_pid": 1250621,
+      "observed_start_ticks": 45725280,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex3",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindbdex3",
+      "datadir_device": 2049,
+      "datadir_inode": 288538,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 0,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypherdex4",
+      "pm2_id": 11,
+      "observed_pid": 1250728,
+      "observed_start_ticks": 45725394,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex4",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindbdex4",
+      "datadir_device": 2049,
+      "datadir_inode": 288572,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 0,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypherdex5",
+      "pm2_id": 12,
+      "observed_pid": 1250796,
+      "observed_start_ticks": 45725522,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex5",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindbdex5",
+      "datadir_device": 2049,
+      "datadir_inode": 288611,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 0,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    },
+    {
+      "pm2_name": "cypherdex6",
+      "pm2_id": 13,
+      "observed_pid": 1271425,
+      "observed_start_ticks": 45999112,
+      "old_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/chaindbdex6",
+      "archive_datadir": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generations/chain-10101920-dex-12ca5d25e81fb6ee/chaindbdex6",
+      "datadir_device": 2049,
+      "datadir_inode": 288655,
+      "selected_identity_copy": [
+        {
+          "relative_path": "keystore",
+          "regular_file_count": 0,
+          "purpose": "wallet keys only; do not import old nonce or balances"
+        },
+        {
+          "relative_path": "cypher/nodekey",
+          "regular_file_count": 1,
+          "purpose": "P2P identity only; never duplicate a running identity"
+        }
+      ]
+    }
+  ],
+  "gates": [
+    "explicit user approval for this intermediate reset and exact plan digest",
+    "full Go validation of candidate genesis, computed hash, DEX manifest, Oracle/market and relay bindings",
+    "fresh host/process inventory and exact target hashes immediately before stopping",
+    "graceful target-only PM2 stop; verify descendants exited and all writers/locks stopped",
+    "private same-filesystem archive destination and free space; never merge or overwrite an archive",
+    "preserve source, config, keys and final results before any generation switch"
+  ],
+  "ordered_procedure": [
+    {
+      "step": "stop",
+      "apps": [
+        "cypher0",
+        "cypher1",
+        "cypher2",
+        "cypher3",
+        "cypher4",
+        "cypher5",
+        "cypher6",
+        "cyphermine",
+        "cypherdex1",
+        "cypherdex2",
+        "cypherdex3",
+        "cypherdex4",
+        "cypherdex5",
+        "cypherdex6"
+      ],
+      "scope": "these exact app names only; never all"
+    },
+    {
+      "step": "verify_stopped",
+      "scope": "PM2, descendants, start ticks/boot ID, open data files and locks"
+    },
+    {
+      "step": "archive",
+      "method": "rename each whole exact datadir to its non-existing archive path; do not delete"
+    },
+    {
+      "step": "identity_only",
+      "method": "create fresh datadirs; selectively copy inventoried keystore and cypher/nodekey with restrictive modes"
+    },
+    {
+      "step": "configure",
+      "method": "retain reviewed static peer/local settings; bind new genesis, DEX domain/registry, unique vote/TLS keys, market, synthetic Oracle and relay"
+    },
+    {
+      "step": "init",
+      "method": "explicit inventoried new datadirs and approved candidate genesis; never invoke the existing destructive reset script"
+    },
+    {
+      "step": "start_and_smoke",
+      "method": "normal PM2, full sync, independent DEX roles, authenticated native deposit/trade/reward/claim; record actual hashes"
+    }
+  ],
+  "never_copy_into_new_generation": [
+    "chaindata",
+    "CLX/DEX vote WAL",
+    "snapshot",
+    "financial state",
+    "relay journal/raw TX/nonce",
+    "tx ingress/outbox",
+    "old peer database or caches"
+  ],
+  "rollback": "Before new generation signing, stop all new writers and restore exact archived datadirs/config/binary after review. After new signing/payment, never overwrite newer safety/payment history or run old/new generations together; retain both for an explicit recovery decision.",
+  "replay_policy": "New non-equal CLX chain ID plus actual genesis and fresh DEX domain/registry. DEX ID alone does not prevent replay of ordinary CLX signed TX. Preserve wallet keys separately from balances/nonces and use dedicated test accounts; no balance or nonce import.",
+  "secrets": "Key contents, hashes and keystore filenames are not read or emitted. This public plan contains paths/counts only; the later whole-datadir archive must remain private.",
+  "execution": {
+    "release_file": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-q3-release/bin/cypher-linux-amd64",
+    "release_sha256": "76d2d104bb101451b2729cd1f6c55374350ea9ee297dbf2e5f5d27ab70f5ad1c",
+    "old_running_exe_sha256": "33f22a4677f35baf7d6e492b46931b8436566a17a2d5fa3f0aed1977ebee768e",
+    "candidate_inventory_file": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/public/inventory.json",
+    "candidate_inventory_sha256": "13f069e4705ea3234dcc61f00e556aa67e9241288d9cf907298e2a60e8946578",
+    "validation_status": "PASS(UNIT)",
+    "validation_source_manifest": {
+      "path": "/tmp/common-dex-live.8gezz_j9/public/q3-generation-validation-source.sha256",
+      "sha256": "f30c04920c75b95a0a05e868fd367c13c5fcd716a42138bbe5453107d973cc0e"
+    },
+    "ecosystem_files": [
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/scripts/dex/live-ecosystem.json",
+        "sha256": "660ec689f483b520be536b4a06ec83c7662fefbf565352e521ecbe3f55f0f8a3"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common1/ecosystem.json",
+        "sha256": "2bdc6add13d6030c5623fbb57041ed2e9fcd3d4374cb514bdeb29dcf41fb3801"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common2/ecosystem.json",
+        "sha256": "c23a6f6bfec2e8755f2096d44c493eb058636c95570bc25dc6626e9343325ea4"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common3/ecosystem.json",
+        "sha256": "8b96900fff99ffa2e25c0353098882e239eaad77886b218b8ab0ed4830cc0dc2"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common4/ecosystem.json",
+        "sha256": "428d4233c7a855cecd94295d5d25a2d4aad31f929d26c2388a088b97fefff96b"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common5/ecosystem.json",
+        "sha256": "7058cfa84a8dbb0f518b787349fa28fec7d3719749196efc803e11e1c458be98"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common6/ecosystem.json",
+        "sha256": "c5e38c49dade4953eb61c2d98cda56341435b91ff309ffb47a1398a67de9c5df"
+      }
+    ],
+    "launcher_files": [
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher0.sh",
+        "sha256": "ac65350b45d028e1680acf450728e3625bc5d924f34934ef3ed8d3842487b94c"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher1.sh",
+        "sha256": "18f8a7a3c331368ff2832818ceb98cd251e056f14299bc95f2c1606353b06291"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher2.sh",
+        "sha256": "6776c3ed802f66e2cecd419d35d4d89e59334ba1ff5a02f83fe88741da91d868"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher3.sh",
+        "sha256": "c55f484b58e369ce935f776a01fe69e06aff7b7cc649a517b7f8d643162211c4"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher4.sh",
+        "sha256": "f126cc26cc722b7efe02edc4ef8163c96a478793dc37be6abe3691d52bf6735c"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher5.sh",
+        "sha256": "d737103d44fb6484675601235d223ebe62da76766b95db092ec9f6bf6e3cadff"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/start-cypher6.sh",
+        "sha256": "d46fd0902542bc76c6cd615d371c6ce8ce56cb987a92630e508e90d45f96d5b6"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/start-cyphermine.sh",
+        "sha256": "d0b8c1f92edad1044f2996a8c7eaf8e94457d2d663f4e85185b7403cb7957b3a"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common1/start.sh",
+        "sha256": "23b9d2d849a0378aa4cd8540f2f8e8ba2e9bd7ce0fdb257807981a4057762ac6"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common2/start.sh",
+        "sha256": "d48831703b64d65a00df990d6f4948482a55a3d9674168af7a69b2b5b05d4d57"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common3/start.sh",
+        "sha256": "b89e7311f7ce58a2248249a651c5a7af1a8204a7d30a2f89e30c8c8abcf5c335"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common4/start.sh",
+        "sha256": "e5c2601ffa0c1896048dac6bcb66becab1c7f6433a5c67b96fd3af19066a818e"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common5/start.sh",
+        "sha256": "d33bd1940adfd4779f89d5a84b0e149c822750020ad5536096440ae2dd3da57e"
+      },
+      {
+        "path": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-commons/common6/start.sh",
+        "sha256": "f3a53716ef30b2178d5e428f5ddb2e9b71de763352c52871a752267a46c97c1c"
+      }
+    ],
+    "activation": {
+      "source": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-generation-candidate/local-deployment.json",
+      "sha256": "de9a69be7926842c64f8196a4f1c6082bf24c036f9b16e88f2c5276a5b1353ec",
+      "destination": "/root/work/cypher-FHS-D-ExchangeCore/build/stage/live-deployment.json"
+    }
+  },
+  "init_reason": "Current authenticated genesis has no DEX settlement configuration; config4 and native genesis root require a new generation. No canonical state edits or current generation DB/WAL deletion.",
+  "known_limitations": [
+    "existing forkid two failures and RPC ingress three failures retained",
+    "normal PoW insufficient RAM; no ordinary nonce search",
+    "protected EIP-155 replay separated by new chain ID; old unprotected CLX signatures remain a separate risk",
+    "LIVE finance, storage cuts, A/B/C and 60 minute mixed operation still NOT_RUN",
+    "no public epoch rotation or new FROZEN recovery"
+  ]
+}

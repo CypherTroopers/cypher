@@ -1,0 +1,8 @@
+=== RUN   TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews
+    finality_gap_test.go:65: five live: QC heights5/6 at views5/8 keep finalized4; real child height7/view9 finalizes5 and6
+--- PASS: TestFiniteWorkloadNeedsChildAfterSkippedLeaderViews (5.72s)
+=== RUN   TestLiveFinalityBacklogBeyondProofBoundFailsClosed
+    live_finality_backlog_test.go:79: KNOWN LIVE LIVENESS FAILURE reproduced: 9 certified gapped heights; genuine height10/view18 child rejected by unchanged 8-descendant cap; finality stays0; safety survives same-WAL restart; this test PASS is fail-closed coverage, not LIVE recovery PASS
+--- PASS: TestLiveFinalityBacklogBeyondProofBoundFailsClosed (15.86s)
+PASS
+ok  	github.com/cypherium/cypher/dex/consensus	22.678s

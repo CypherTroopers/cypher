@@ -1,0 +1,10 @@
+test_changed_config_symlink_and_duplicate_payer_rejected (test_live_relay.RelayLauncherTest.test_changed_config_symlink_and_duplicate_payer_rejected) ... ok
+test_no_third_index_or_runtime_parent_creation (test_live_relay.RelayLauncherTest.test_no_third_index_or_runtime_parent_creation) ... ok
+test_old_genesis_missing_activation_and_foreign_domain_reject_before_rpc (test_live_relay.RelayLauncherTest.test_old_genesis_missing_activation_and_foreign_domain_reject_before_rpc) ... ok
+test_prepare_only_two_relays_and_exec_command (test_live_relay.RelayLauncherTest.test_prepare_only_two_relays_and_exec_command) ... ok
+test_source_running_old_database_rejected (test_live_relay.RelayLauncherTest.test_source_running_old_database_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.050s
+
+OK

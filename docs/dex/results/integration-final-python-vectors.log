@@ -1,0 +1,62 @@
+codec
+PASS: 2 canonical checkpoint and epoch-domain vectors (525 bytes each)
+claim
+PASS: 2 claim encodings, leaf hashes, cross-epoch nullifiers and Merkle root
+counter
+counter vectors: PASS
+execution
+execution vectors: PASS
+finance
+PASS: 2 finance, 3 deposit, 4 counted-tree independent golden vectors
+participation
+engine
+PASS: 10 action codecs + independent trade/funding/withdrawal trace
+inbox
+inbox vectors: PASS
+native_tx
+PASS: 5 native call envelopes, 6 funding payload/source identities and genesis commitment
+process
+process golden PASS
+transport
+transport golden PASS
+PASS notional_one_btc
+PASS notional_short_absolute
+PASS notional_smallest_lot_tick
+PASS fee_taker_300_ppm
+PASS fee_maker_100_ppm
+PASS fee_round_up_one_atom
+PASS fee_zero_rate
+PASS initial_margin_10_percent
+PASS maintenance_margin_5_percent
+PASS long_realized_gain
+PASS short_realized_loss
+PASS partial_close_long_loss
+PASS funding_positive_rate
+PASS funding_negative_rate
+PASS funding_asymmetric_rounding
+PASS funding_reverse_rounding
+PASS funding_zero_rate
+PASS insurance_sufficient
+PASS insurance_insufficient_freezes
+PASS insurance_no_positive_balance_subsidy
+PASS reward_funded_capped
+PASS reward_remainder_canonical_id
+PASS reward_largest_fraction_first
+PASS reward_support_ended_zero_fees
+PASS reward_zero_points_does_not_reserve
+PASS reward_fee_only_cap
+PASS reject_zero_price
+PASS reject_noncanonical_integer
+PASS reject_quantity_dust
+PASS reject_off_tick_price
+PASS reject_amount_overflow
+PASS reject_unbalanced_funding
+PASS reject_unbounded_funding_rate
+PASS reject_self_declared_excess_points
+PASS deposit_trade_fee_funding_reward_withdrawal_arithmetic_trace
+PASS three_trader_close_new_preserves_equity
+PASS three_trader_second_close_negative_unrealized
+PASS reject_cash_only_custody_for_open_positions
+PASS big_intermediate_fits_final_amount
+accounting vectors: 39/39 PASS
+Arithmetic only; cryptography, FHS, native settlement and distributed tests: NOT_RUN

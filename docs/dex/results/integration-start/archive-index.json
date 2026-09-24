@@ -1,0 +1,50 @@
+{
+  "environment.json": {
+    "bytes": 2259,
+    "sha256": "af864db0210a5505ff69057263959ed9bd1651d9e0a08165269a4dcde1cf8f47"
+  },
+  "final-baseline-regression.log": {
+    "bytes": 6709,
+    "sha256": "5faf6b549934001be65046730c5fd81fbb1d2ed03c21dd0a458cbbadbb358233"
+  },
+  "final-process-regression.log": {
+    "bytes": 4522,
+    "sha256": "3a65b38b7bba0daaa61f25512f9be497c2631c5bfe64848ea60ddccb0a0499d4"
+  },
+  "final-source-sha256.txt": {
+    "bytes": 7618,
+    "sha256": "acd9c741657c09a5de5c8270421e2f91e5f67a658f628083f70d0ddb29113d32"
+  },
+  "final-unit.jsonl": {
+    "bytes": 358730,
+    "sha256": "8a7dced8bdfde8a5c7e45cf0c95a405ae5119a1edcf99615f7c0a43d7d05d1b3"
+  },
+  "head.txt": {
+    "bytes": 41,
+    "sha256": "d58111740e13ab29a67b59dc039a64d9f31bf914f110e2cd9f51b6e5874eadf8"
+  },
+  "prior-source-check.log": {
+    "bytes": 2658,
+    "sha256": "89537715c6b63a15b74b38c5da0476e0260fa459c685dff1d3db160a629c34a9"
+  },
+  "protected-processes.json": {
+    "bytes": 902,
+    "sha256": "31e2135b2e7a3bbe452f374ed3b314481b8b7c00b67dd5302d5621d12cca8371"
+  },
+  "source-sha256.json": {
+    "bytes": 14254,
+    "sha256": "6f2b4617ddd3d0ff65fb8b8ad33b351a104bda12f5c8f3c9e4e38b84174de77d"
+  },
+  "status.txt": {
+    "bytes": 4731,
+    "sha256": "bc25779a9da3b6662434b84842b6c1a21e68aec84b3ca322e1c07c528be0d822"
+  },
+  "tracked.patch": {
+    "bytes": 4172,
+    "sha256": "11ec76fc8fb9d0582b620b9237acb331d97309449440d2d06d4ecba57dea594f"
+  },
+  "worktree-sources.tar.gz": {
+    "bytes": 288431,
+    "sha256": "1c9e6be4c13d036cf7c19b01501591de7950cf28c929196a73ad666236471199"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "source": "local HEAD FHS 2-chain rules; topology fixtures fixed before verifier",
+  "vectors": [
+    {"name":"single_qc_not_final", "heights":[1], "views":[1], "valid":false},
+    {"name":"direct_child", "heights":[1,2], "views":[1,2], "valid":true},
+    {"name":"view_gap", "heights":[1,2], "views":[1,3], "valid":false},
+    {"name":"ancestor_after_gap", "heights":[1,2,3], "views":[1,3,4], "valid":true},
+    {"name":"missing_height", "heights":[1,3], "views":[1,2], "valid":false},
+    {"name":"repeated_view", "heights":[1,2], "views":[1,1], "valid":false},
+    {"name":"descending_view", "heights":[1,2], "views":[2,1], "valid":false},
+    {"name":"terminal_gap", "heights":[1,2,3], "views":[1,2,4], "valid":false}
+  ]
+}
