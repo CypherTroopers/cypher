@@ -1,0 +1,23 @@
+[Eth]
+NetworkId = 10101919
+SyncMode = "full"
+
+[Eth.TxQUIC]
+AutoRole = false
+Enabled = false
+BridgeEnabled = false
+HTTP3Enabled = false
+
+[Node]
+HTTPHost = ""
+WSHost = ""
+
+[Node.P2P]
+MaxPeers = 40
+MaxPendingPeers = 4
+NoDiscovery = true
+NoDial = false
+ListenAddr = "127.0.0.1:30446"
+StaticNodes = []
+BootstrapNodes = []
+ReservedNodes = []

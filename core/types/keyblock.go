@@ -79,9 +79,9 @@ type keyBlockBodyMarshaling struct {
 type KeyBlockBody struct {
 	LeaderPubKey  string `json:"leaderPubKey"           gencodec:"required"`
 	LeaderAddress string `json:"leaderAddress"           gencodec:"required"`
-	InPubKey      string `json:"inPubKey"            	gencodec:"required"`
+	InPubKey      string `json:"inPubKey"             gencodec:"required"`
 	InAddress     string `json:"inAddress"            gencodec:"required"`
-	OutPubKey     string `json:"outPubKey"            	gencodec:"required"`
+	OutPubKey     string `json:"outPubKey"             gencodec:"required"`
 	OutAddress    string `json:"outAddress"            gencodec:"required"`
 }
 
@@ -221,6 +221,13 @@ func (b *KeyBlock) Nonce() uint64                { return binary.BigEndian.Uint6
 func (b *KeyBlock) ParentHash() common.Hash      { return b.header.ParentHash }
 func (b *KeyBlock) BlockType() uint8             { return b.header.BlockType }
 func (b *KeyBlock) SetBlockType(blockType uint8) { b.header.BlockType = blockType }
+
+// IsZeroTimeGenesis reports the legacy devnet bootstrap sentinel. Its first
+// child establishes the wall-clock cadence anchor; later fixed-mode children
+// use exact KeyBlockMinInterval slots.
+func (b *KeyBlock) IsZeroTimeGenesis() bool {
+	return b != nil && b.NumberU64() == 0 && b.Time() == 0 && b.BlockType() == Initialization
+}
 
 func (b *KeyBlock) CommitteeHash() common.Hash        { return b.header.CommitteeHash }
 func (b *KeyBlock) SetCommitteeHash(hash common.Hash) { b.header.CommitteeHash = hash }

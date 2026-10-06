@@ -1,0 +1,1088 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T16:29:29.201Z",
+  "sameHostOnly": true,
+  "nativeFixture": true,
+  "nativeRLPx": false,
+  "webRTC": true,
+  "physicalMobile": false,
+  "checkpoints": [
+    {
+      "name": "Two separate gateways and browser processes establish signed discovery, WebRTC, exact fixture bytes and hop ACK",
+      "at": "2026-10-03T16:29:50.758Z",
+      "delivered": [
+        {
+          "circuitId": "76147f46f56689d2c7065b210e3ff357",
+          "seq": 1,
+          "bytes": 724,
+          "sha256": "c01b56a5222e674f2732b1b664a8343fe0573cc776b2b8c6036b89a3a82a0dbe",
+          "at": 1791044988966
+        },
+        {
+          "circuitId": "76147f46f56689d2c7065b210e3ff357",
+          "seq": 2,
+          "bytes": 724,
+          "sha256": "7fbe6a1dac3ac437ce5b658b02bf78576fff293c6647b038acd58cd6801434e6",
+          "at": 1791044989473
+        },
+        {
+          "circuitId": "76147f46f56689d2c7065b210e3ff357",
+          "seq": 3,
+          "bytes": 724,
+          "sha256": "de02fdd2a68d2aa4c44271376e93c59f3169167f06e34bb96ee427417f3916d9",
+          "at": 1791044989990
+        },
+        {
+          "circuitId": "76147f46f56689d2c7065b210e3ff357",
+          "seq": 4,
+          "bytes": 724,
+          "sha256": "dc4cc88e431bad2614ac46803eb013de92f1787527f5cc0218dca4f60e9a10c5",
+          "at": 1791044990495
+        }
+      ],
+      "a": {
+        "receivedBytes": 4006,
+        "sentBytes": 8173,
+        "nativeReceivedBytes": 6204,
+        "nativeSentBytes": 1487,
+        "streamReceivedBytes": 2896,
+        "streamForwardedBytes": 2896,
+        "acknowledgedBytes": 2896,
+        "acknowledgedCount": 4,
+        "nativeCreditBytes": 2896,
+        "gatewayBytes": 5152,
+        "signalingBytes": 25884,
+        "totalBytes": 50906,
+        "rejectedFrames": 0,
+        "circuitsOpened": 1,
+        "circuitsClosed": 0,
+        "connectedPeers": 1,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "common-a",
+            "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "browserId": "f44d69539f829a78723ddaf4e8285d33",
+            "endpointCircuits": 1,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 1,
+        "pendingHandshakes": 0,
+        "routes": 2,
+        "queuedBytes": 0,
+        "appBytes": 76982,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "sourceId": "common-a",
+            "issuedAt": 1791044970713,
+            "expiresAt": 1791045090713,
+            "browserSignatureVerified": true
+          },
+          {
+            "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "sourceId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "issuedAt": 1791044971946,
+            "expiresAt": 1791045091946,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [
+          {
+            "circuitId": "76147f46f56689d2c7065b210e3ff357",
+            "seq": 1,
+            "direction": "forward",
+            "digest": "c01b56a5222e674f2732b1b664a8343fe0573cc776b2b8c6036b89a3a82a0dbe",
+            "rawBytes": 724,
+            "requestId": "fd9292b1f96a6d0b96761cfddc8fe193",
+            "peerId": "b57a8755a2c8e1b46e0edaa8285fa3ae",
+            "fromSessionId": "27b8015a3d6996a8474eaea8efbb026e",
+            "toSessionId": "0963b226de134799719bc90bd32f188c",
+            "path": "direct",
+            "at": 1791044988968,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "76147f46f56689d2c7065b210e3ff357",
+            "seq": 2,
+            "direction": "forward",
+            "digest": "7fbe6a1dac3ac437ce5b658b02bf78576fff293c6647b038acd58cd6801434e6",
+            "rawBytes": 724,
+            "requestId": "5ff00bbaf60ea3a89c0b411068b3ed2d",
+            "peerId": "b57a8755a2c8e1b46e0edaa8285fa3ae",
+            "fromSessionId": "27b8015a3d6996a8474eaea8efbb026e",
+            "toSessionId": "0963b226de134799719bc90bd32f188c",
+            "path": "direct",
+            "at": 1791044989472,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "76147f46f56689d2c7065b210e3ff357",
+            "seq": 3,
+            "direction": "forward",
+            "digest": "de02fdd2a68d2aa4c44271376e93c59f3169167f06e34bb96ee427417f3916d9",
+            "rawBytes": 724,
+            "requestId": "2453bfec010718d9776074590a73974b",
+            "peerId": "b57a8755a2c8e1b46e0edaa8285fa3ae",
+            "fromSessionId": "27b8015a3d6996a8474eaea8efbb026e",
+            "toSessionId": "0963b226de134799719bc90bd32f188c",
+            "path": "direct",
+            "at": 1791044989992,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "76147f46f56689d2c7065b210e3ff357",
+            "seq": 4,
+            "direction": "forward",
+            "digest": "dc4cc88e431bad2614ac46803eb013de92f1787527f5cc0218dca4f60e9a10c5",
+            "rawBytes": 724,
+            "requestId": "c3e647fe6e5a1754542ab6fd6c79e6bc",
+            "peerId": "b57a8755a2c8e1b46e0edaa8285fa3ae",
+            "fromSessionId": "27b8015a3d6996a8474eaea8efbb026e",
+            "toSessionId": "0963b226de134799719bc90bd32f188c",
+            "path": "direct",
+            "at": 1791044990496,
+            "meaning": "bounded-hop-queue-acceptance"
+          }
+        ],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 1,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "requested": true,
+        "sourceErrors": {},
+        "sessionId": "0963b226de134799719bc90bd32f188c",
+        "sessionExpiresAt": 1791045270528,
+        "signalConnected": true,
+        "selfGeo": null,
+        "peers": [
+          {
+            "peerId": "b57a8755a2c8e1b46e0edaa8285fa3ae",
+            "sessionId": "27b8015a3d6996a8474eaea8efbb026e",
+            "state": "connected",
+            "path": "direct",
+            "geo": null,
+            "connected": true
+          }
+        ],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "common-a",
+        "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+        "browserId": "f44d69539f829a78723ddaf4e8285d33",
+        "nativeConnected": true,
+        "nativeSession": "9582d81100f9b82477948372f229f61d",
+        "commonConnections": [
+          {
+            "id": "0963b226de134799719bc90bd32f188c",
+            "sourceId": "common-a",
+            "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "browserId": "f44d69539f829a78723ddaf4e8285d33",
+            "connected": true,
+            "expiresAt": 1791045270528,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 2,
+          "knownGatewayOrigins": [
+            "https://gateway-a.example.org:38137",
+            "https://gateway-b.example.org:38137"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 1
+        },
+        "reconnects": 0,
+        "rtcStats": [
+          {
+            "peerId": "b57a8755a2c8e1b46e0edaa8285fa3ae",
+            "bytesSent": 8173,
+            "bytesReceived": 4006,
+            "messagesSent": 7,
+            "messagesReceived": 11,
+            "path": "direct"
+          }
+        ],
+        "nativeStatus": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 0,
+          "candidates": 0,
+          "receivedBytes": 0,
+          "sentBytes": 0,
+          "routes": [],
+          "sourceId": "common-a",
+          "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+          "participants": 0,
+          "leases": 1,
+          "nativeLimits": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          },
+          "session": {
+            "transferredBytes": 1451,
+            "transferLimitBytes": 104857600,
+            "attachments": 1,
+            "maxAttachments": 20
+          },
+          "gateway": {
+            "dropReasons": {
+              "session_ended": 0,
+              "session_expired": 0,
+              "pong_timeout": 0,
+              "transfer_limit": 0,
+              "response_failed": 0,
+              "native_capacity": 0,
+              "invalid_native_frame": 0,
+              "invalid_native_hello": 0,
+              "invalid_native_advertisement": 0,
+              "native_pin_mismatch": 0,
+              "upstream_closed": 0,
+              "upstream_error": 0,
+              "native_auth_timeout": 0,
+              "invalid_control": 0,
+              "signal_capacity": 0,
+              "client_closed": 0,
+              "manual_off": 0,
+              "gateway_shutdown": 0
+            }
+          }
+        }
+      },
+      "b": {
+        "receivedBytes": 5271,
+        "sentBytes": 2754,
+        "nativeReceivedBytes": 1223,
+        "nativeSentBytes": 4886,
+        "streamReceivedBytes": 1448,
+        "streamForwardedBytes": 1448,
+        "acknowledgedBytes": 0,
+        "acknowledgedCount": 0,
+        "nativeCreditBytes": 1448,
+        "gatewayBytes": 7224,
+        "signalingBytes": 23758,
+        "totalBytes": 51714,
+        "rejectedFrames": 0,
+        "circuitsOpened": 1,
+        "circuitsClosed": 0,
+        "connectedPeers": 1,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "common-b",
+            "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "browserId": "0a176994f67e96eba703782011f7f80d",
+            "endpointCircuits": 1,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 1,
+        "pendingHandshakes": 0,
+        "routes": 2,
+        "queuedBytes": 0,
+        "appBytes": 62646,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "sourceId": "common-b",
+            "issuedAt": 1791044971946,
+            "expiresAt": 1791045091946,
+            "browserSignatureVerified": true
+          },
+          {
+            "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "sourceId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "issuedAt": 1791044970713,
+            "expiresAt": 1791045090713,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 1,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "requested": true,
+        "sourceErrors": {},
+        "sessionId": "27b8015a3d6996a8474eaea8efbb026e",
+        "sessionExpiresAt": 1791045271675,
+        "signalConnected": true,
+        "selfGeo": null,
+        "peers": [
+          {
+            "peerId": "c4e9eedda898f8fc6b3a460279a368a6",
+            "sessionId": "0963b226de134799719bc90bd32f188c",
+            "state": "connected",
+            "path": "direct",
+            "geo": null,
+            "connected": true
+          }
+        ],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "common-b",
+        "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+        "browserId": "0a176994f67e96eba703782011f7f80d",
+        "nativeConnected": true,
+        "nativeSession": "040b56171d0137353098d68559d3b7da",
+        "commonConnections": [
+          {
+            "id": "27b8015a3d6996a8474eaea8efbb026e",
+            "sourceId": "common-b",
+            "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "browserId": "0a176994f67e96eba703782011f7f80d",
+            "connected": true,
+            "expiresAt": 1791045271675,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 2,
+          "knownGatewayOrigins": [
+            "https://gateway-b.example.org:38137",
+            "https://gateway-a.example.org:38137"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 1
+        },
+        "reconnects": 0,
+        "rtcStats": [
+          {
+            "peerId": "c4e9eedda898f8fc6b3a460279a368a6",
+            "bytesSent": 0,
+            "bytesReceived": 0,
+            "messagesSent": 0,
+            "messagesReceived": 0,
+            "path": "unknown"
+          }
+        ],
+        "nativeStatus": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 0,
+          "candidates": 0,
+          "receivedBytes": 0,
+          "sentBytes": 0,
+          "routes": [],
+          "sourceId": "common-b",
+          "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+          "participants": 0,
+          "leases": 1,
+          "nativeLimits": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          },
+          "session": {
+            "transferredBytes": 1451,
+            "transferLimitBytes": 104857600,
+            "attachments": 1,
+            "maxAttachments": 20
+          },
+          "gateway": {
+            "dropReasons": {
+              "session_ended": 0,
+              "session_expired": 0,
+              "pong_timeout": 0,
+              "transfer_limit": 0,
+              "response_failed": 0,
+              "native_capacity": 0,
+              "invalid_native_frame": 0,
+              "invalid_native_hello": 0,
+              "invalid_native_advertisement": 0,
+              "native_pin_mismatch": 0,
+              "upstream_closed": 0,
+              "upstream_error": 0,
+              "native_auth_timeout": 0,
+              "invalid_control": 0,
+              "signal_capacity": 0,
+              "client_closed": 0,
+              "manual_off": 0,
+              "gateway_shutdown": 0
+            }
+          }
+        }
+      },
+      "nativeRLPx": false
+    },
+    {
+      "name": "A OFF stops new RTC stream and removes its native fixture lease",
+      "at": "2026-10-03T16:29:53.853Z",
+      "stoppedFrames": 4
+    },
+    {
+      "name": "New browser C automatically replaces departed A across gateways",
+      "at": "2026-10-03T16:30:12.880Z",
+      "peerId": "8c9e733d9cdd230b50be6007dd141946",
+      "b": {
+        "receivedBytes": 13444,
+        "sentBytes": 6760,
+        "nativeReceivedBytes": 1848,
+        "nativeSentBytes": 12087,
+        "streamReceivedBytes": 4344,
+        "streamForwardedBytes": 4344,
+        "acknowledgedBytes": 0,
+        "acknowledgedCount": 0,
+        "nativeCreditBytes": 4344,
+        "gatewayBytes": 15086,
+        "signalingBytes": 51326,
+        "totalBytes": 103850,
+        "rejectedFrames": 0,
+        "circuitsOpened": 2,
+        "circuitsClosed": 1,
+        "connectedPeers": 1,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "common-b",
+            "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "browserId": "0a176994f67e96eba703782011f7f80d",
+            "endpointCircuits": 1,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 1,
+        "pendingHandshakes": 0,
+        "routes": 2,
+        "queuedBytes": 0,
+        "appBytes": 71862,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "sourceId": "common-b",
+            "issuedAt": 1791044971946,
+            "expiresAt": 1791045091946,
+            "browserSignatureVerified": true
+          },
+          {
+            "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "sourceId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "issuedAt": 1791044994884,
+            "expiresAt": 1791045114884,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 1,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "requested": true,
+        "sourceErrors": {
+          "common-b": "Gateway 502"
+        },
+        "sessionId": "27b8015a3d6996a8474eaea8efbb026e",
+        "sessionExpiresAt": 1791045271675,
+        "signalConnected": true,
+        "selfGeo": null,
+        "peers": [
+          {
+            "peerId": "8c9e733d9cdd230b50be6007dd141946",
+            "sessionId": "79c78b6237342c4d88257bda537a647f",
+            "state": "connected",
+            "path": "direct",
+            "geo": null,
+            "connected": true
+          }
+        ],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "common-b",
+        "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+        "browserId": "0a176994f67e96eba703782011f7f80d",
+        "nativeConnected": true,
+        "nativeSession": "040b56171d0137353098d68559d3b7da",
+        "commonConnections": [
+          {
+            "id": "27b8015a3d6996a8474eaea8efbb026e",
+            "sourceId": "common-b",
+            "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "browserId": "0a176994f67e96eba703782011f7f80d",
+            "connected": true,
+            "expiresAt": 1791045271675,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 2,
+          "connectedGateways": 2,
+          "knownGatewayOrigins": [
+            "https://gateway-b.example.org:38137",
+            "https://gateway-a.example.org:38137"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 1
+        },
+        "reconnects": 0,
+        "rtcStats": [
+          {
+            "peerId": "8c9e733d9cdd230b50be6007dd141946",
+            "bytesSent": 2128,
+            "bytesReceived": 3820,
+            "messagesSent": 5,
+            "messagesReceived": 4,
+            "path": "direct"
+          }
+        ],
+        "nativeStatus": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 0,
+          "candidates": 1,
+          "receivedBytes": 2896,
+          "sentBytes": 0,
+          "routes": [],
+          "sourceId": "common-b",
+          "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+          "participants": 0,
+          "leases": 1,
+          "nativeLimits": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          },
+          "session": {
+            "transferredBytes": 11009,
+            "transferLimitBytes": 104857600,
+            "attachments": 1,
+            "maxAttachments": 20
+          },
+          "gateway": {
+            "dropReasons": {
+              "session_ended": 0,
+              "session_expired": 0,
+              "pong_timeout": 0,
+              "transfer_limit": 0,
+              "response_failed": 0,
+              "native_capacity": 0,
+              "invalid_native_frame": 0,
+              "invalid_native_hello": 0,
+              "invalid_native_advertisement": 0,
+              "native_pin_mismatch": 0,
+              "upstream_closed": 0,
+              "upstream_error": 0,
+              "native_auth_timeout": 0,
+              "invalid_control": 0,
+              "signal_capacity": 0,
+              "client_closed": 0,
+              "manual_off": 0,
+              "gateway_shutdown": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Browser discovers unpinned remote Common, verifies descriptor and native hello, and opens its own foreign WSS lease",
+      "at": "2026-10-03T16:30:16.628Z",
+      "snapshot": {
+        "receivedBytes": 0,
+        "sentBytes": 0,
+        "nativeReceivedBytes": 856,
+        "nativeSentBytes": 0,
+        "streamReceivedBytes": 0,
+        "streamForwardedBytes": 0,
+        "acknowledgedBytes": 0,
+        "acknowledgedCount": 0,
+        "nativeCreditBytes": 0,
+        "gatewayBytes": 6360,
+        "signalingBytes": 11386,
+        "totalBytes": 21829,
+        "rejectedFrames": 0,
+        "circuitsOpened": 0,
+        "circuitsClosed": 0,
+        "connectedPeers": 0,
+        "nativeConnections": 2,
+        "connections": [
+          {
+            "sourceId": "common-a",
+            "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "browserId": "0f46d7322fb58156164b29dffbd6a34a",
+            "endpointCircuits": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 1,
+        "queuedBytes": 0,
+        "appBytes": 31414,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "sourceId": "common-a",
+            "issuedAt": 1791045015180,
+            "expiresAt": 1791045135180,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "WAITING_PEER",
+        "reason": "Common connected. Waiting for a browser peer.",
+        "requested": true,
+        "sourceErrors": {},
+        "sessionId": "42a5980105a330e023a8e66c50467e95",
+        "sessionExpiresAt": 1791045315008,
+        "signalConnected": true,
+        "selfGeo": null,
+        "peers": [
+          {
+            "peerId": "b57a8755a2c8e1b46e0edaa8285fa3ae",
+            "sessionId": "27b8015a3d6996a8474eaea8efbb026e",
+            "state": "new",
+            "path": "unknown",
+            "geo": null,
+            "connected": false
+          }
+        ],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "common-a",
+        "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+        "browserId": "0f46d7322fb58156164b29dffbd6a34a",
+        "nativeConnected": true,
+        "nativeSession": "9664d170fe19bdfd33242308f3db9ab1",
+        "commonConnections": [
+          {
+            "id": "42a5980105a330e023a8e66c50467e95",
+            "sourceId": "common-a",
+            "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+            "browserId": "0f46d7322fb58156164b29dffbd6a34a",
+            "connected": true,
+            "expiresAt": 1791045315008,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          },
+          {
+            "id": "34b6711ed5ea7ccdec9ceb1d14cebdcc",
+            "sourceId": "common-b",
+            "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+            "browserId": "14cadc36e52f01e2490e6526ca7e5eb1",
+            "connected": true,
+            "expiresAt": 1791045316410,
+            "remoteOrigin": "https://gateway-b.example.org:38137",
+            "endpointVerified": true,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 2,
+          "knownGatewayOrigins": [
+            "https://gateway-a.example.org:38137",
+            "https://gateway-b.example.org:38137"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 20
+        },
+        "reconnects": 0,
+        "rtcStats": [],
+        "nativeStatus": null
+      },
+      "controllerNodes": [
+        "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b"
+      ],
+      "worker": null,
+      "endpoints": [
+        {
+          "nodeId": "44cd2ce3922987badb7164363838073360b71e3d00b1c27b7bf3d4da523aa12b",
+          "origin": "https://gateway-a.example.org:38137",
+          "bootId": "1857b05fd2be2c75f2396d54ea3e5dee"
+        },
+        {
+          "nodeId": "eedd0e6ac03895fd6fbe4a9c71c1a784dd2b83f7b9d656bdfc1221b9ba2221cd",
+          "origin": "https://gateway-b.example.org:38137",
+          "bootId": "87b149785424f9b71f0e27ed2150ed2e"
+        }
+      ]
+    },
+    {
+      "name": "Signed browser records renew beyond the initial 30 second refresh interval",
+      "at": "2026-10-03T16:30:48.676Z",
+      "rendezvous": [
+        {
+          "origin": "https://gateway-a.example.org:38137",
+          "expiresAt": 1791045165253,
+          "lastRenew": 1791045045253
+        },
+        {
+          "origin": "https://gateway-b.example.org:38137",
+          "expiresAt": 1791045166475,
+          "lastRenew": 1791045046475
+        }
+      ]
+    },
+    {
+      "name": "OFF removes all owned gateway and fixture leases and leaves product source unchanged",
+      "at": "2026-10-03T16:30:49.109Z",
+      "gateways": [
+        {
+          "discovery": {
+            "enabled": true,
+            "endpoints": 1,
+            "peers": 0,
+            "visitors": 0,
+            "replayEntries": 3,
+            "publishing": 0,
+            "publicationSlots": 1,
+            "queuedBytes": 0,
+            "acceptedEndpoints": 0,
+            "rejectedEndpoints": 0,
+            "authentications": 4,
+            "signals": 21,
+            "expired": 0,
+            "invalid": 0,
+            "receivedBytes": 29222,
+            "sentBytes": 61265,
+            "publications": 0,
+            "publicationFailures": 3
+          },
+          "sessions": 0,
+          "pendingAdmissions": 0,
+          "webSockets": 0,
+          "connections": 2,
+          "rateBuckets": 1,
+          "nodes": {
+            "common-a": {
+              "sessions": 0,
+              "pending": 0,
+              "releasing": 0,
+              "metadata": 0,
+              "limits": {
+                "maxSessions": 80,
+                "nativePeers": 40,
+                "circuits": 40,
+                "circuitsPerSession": 40,
+                "pendingInbound": 4,
+                "pendingOutbound": 4
+              }
+            }
+          },
+          "dropReasons": {
+            "session_ended": 0,
+            "session_expired": 0,
+            "pong_timeout": 0,
+            "transfer_limit": 0,
+            "response_failed": 0,
+            "native_capacity": 0,
+            "invalid_native_frame": 0,
+            "invalid_native_hello": 0,
+            "invalid_native_advertisement": 0,
+            "native_pin_mismatch": 0,
+            "upstream_closed": 0,
+            "upstream_error": 0,
+            "native_auth_timeout": 0,
+            "invalid_control": 0,
+            "signal_capacity": 0,
+            "client_closed": 3,
+            "manual_off": 0,
+            "gateway_shutdown": 0
+          }
+        },
+        {
+          "discovery": {
+            "enabled": true,
+            "endpoints": 1,
+            "peers": 0,
+            "visitors": 0,
+            "replayEntries": 3,
+            "publishing": 0,
+            "publicationSlots": 1,
+            "queuedBytes": 0,
+            "acceptedEndpoints": 0,
+            "rejectedEndpoints": 0,
+            "authentications": 4,
+            "signals": 15,
+            "expired": 0,
+            "invalid": 0,
+            "receivedBytes": 23674,
+            "sentBytes": 49441,
+            "publications": 0,
+            "publicationFailures": 3
+          },
+          "sessions": 0,
+          "pendingAdmissions": 0,
+          "webSockets": 0,
+          "connections": 1,
+          "rateBuckets": 1,
+          "nodes": {
+            "common-b": {
+              "sessions": 0,
+              "pending": 0,
+              "releasing": 0,
+              "metadata": 0,
+              "limits": {
+                "maxSessions": 80,
+                "nativePeers": 40,
+                "circuits": 40,
+                "circuitsPerSession": 40,
+                "pendingInbound": 4,
+                "pendingOutbound": 4
+              }
+            }
+          },
+          "dropReasons": {
+            "session_ended": 0,
+            "session_expired": 0,
+            "pong_timeout": 0,
+            "transfer_limit": 0,
+            "response_failed": 0,
+            "native_capacity": 0,
+            "invalid_native_frame": 0,
+            "invalid_native_hello": 0,
+            "invalid_native_advertisement": 0,
+            "native_pin_mismatch": 0,
+            "upstream_closed": 0,
+            "upstream_error": 0,
+            "native_auth_timeout": 0,
+            "invalid_control": 0,
+            "signal_capacity": 0,
+            "client_closed": 2,
+            "manual_off": 0,
+            "gateway_shutdown": 0
+          }
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "participants": {
+    "A": {
+      "pid": 3298040,
+      "origin": "https://gateway-a.example.org:38137",
+      "maxCommonConnections": 1
+    },
+    "B": {
+      "pid": 3298164,
+      "origin": "https://gateway-b.example.org:38137",
+      "maxCommonConnections": 1
+    },
+    "C": {
+      "pid": 3298320,
+      "origin": "https://gateway-a.example.org:38137",
+      "maxCommonConnections": 1
+    },
+    "D": {
+      "pid": 3298532,
+      "origin": "https://gateway-a.example.org:38137",
+      "maxCommonConnections": 20
+    }
+  },
+  "sourceHashes": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "7673f0b3cc203b18e414778b64dd76692977064552a36f760e80b1d23646b8f1",
+    "public/mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "public/mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+    "public/mesh-protocol.js": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+    "relay/gateway.mjs": "9d2df965c423266cf8bca2b54d86e7b1b0530063da3fc3ffd529d6442e186601",
+    "relay/discovery.mjs": "0edf76bc5f91e40a235bd5dadac708c152397aaf03f5534e9a023131edc1e5df"
+  },
+  "origins": [
+    "https://gateway-a.example.org:38137",
+    "https://gateway-b.example.org:38137"
+  ],
+  "sourceHashesAfter": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "7673f0b3cc203b18e414778b64dd76692977064552a36f760e80b1d23646b8f1",
+    "public/mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "public/mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+    "public/mesh-protocol.js": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+    "relay/gateway.mjs": "9d2df965c423266cf8bca2b54d86e7b1b0530063da3fc3ffd529d6442e186601",
+    "relay/discovery.mjs": "0edf76bc5f91e40a235bd5dadac708c152397aaf03f5534e9a023131edc1e5df"
+  },
+  "finishedAt": "2026-10-03T16:30:50.208Z"
+}

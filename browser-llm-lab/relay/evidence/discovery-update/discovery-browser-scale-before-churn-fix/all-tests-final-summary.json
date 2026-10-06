@@ -1,0 +1,51 @@
+{
+  "command": "node --test --test-concurrency=2 tests/*.test.mjs",
+  "exitCode": 0,
+  "tests": 327,
+  "pass": 324,
+  "fail": 0,
+  "cancelled": 0,
+  "skipped": 3,
+  "durationMs": 25092.130486,
+  "log": "all-tests-final.log",
+  "skips": [
+    "actual isolated coturn rejects unauthenticated, expired and forged credentials",
+    "actual isolated coturn enforces six allocations per peer and rejects private peer permissions",
+    "actual isolated coturn delivers data between two public relay allocations"
+  ],
+  "skipReason": "Existing real coturn tests are opt-in using RELAY_TURN_TEST=1; it was not enabled for this unit regression run.",
+  "productHashes": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+    "public/mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "public/mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+    "public/mesh-protocol.js": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+    "public/relay-protocol.js": "ac2aed7970a424d493cbe21629efbc99aacb0d961b9d6b520985c560768e9359",
+    "relay/gateway.mjs": "45cb9edf9df7cc7b5e209cb7b73cb5608ae58b3982a5e45bac767869b84dc1c1",
+    "relay/discovery.mjs": "1689b52a3f51e71d86a1afc38650a90d41df8cd59fbe95cffb1b625720611440",
+    "relay/config.mjs": "f5246dbba952cafaa9f6b58182882426827bb84d3c102457386686f25da1f88e"
+  },
+  "newFixtureDependencies": {
+    "repositoryRelative": [
+      "tests/mesh-signing-fixtures.mjs",
+      "tests/mesh-tls-fixture.mjs",
+      "public/vendor/mesh-crypto.js",
+      "public/vendor/mesh-crypto-provenance.json",
+      "public/vendor/mesh-crypto-LICENSE.txt",
+      "package.json",
+      "package-lock.json",
+      "scripts/build-mesh-crypto.mjs"
+    ],
+    "runtime": [
+      "Node.js >=22",
+      "openssl executable on PATH",
+      "Writable temporary directory /tmp"
+    ],
+    "browserOnlyEnvironment": [
+      "PLAYWRIGHT_MODULE: absolute path to installed playwright index.mjs; current fallback /tmp/browser-llm-preview/node_modules/playwright/index.mjs",
+      "CHROMIUM: absolute path to installed Chromium executable; current fallback /tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome"
+    ],
+    "nativeCheckoutDependency": false,
+    "privateKeyArtifactsToCopy": []
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "preparedAt": "2026-10-03T05:53:30.107259+00:00",
+  "files": {
+    "public/relay-map.js": {
+      "before": null,
+      "after": "9a11d04588d5ab90f4787898c82613e5bebcd3912d9635fde5ce07f03de93c1b"
+    },
+    "public/relay-ui.js": {
+      "before": "f3e59a20da8a34b72e09f4e397dc01be99229ec923ae65241c42d26170093ff2",
+      "after": "732fd2722136dd5338e6210486881c6c9eb8ce1e5ca7d6730e7bdafe02a9a0ac"
+    },
+    "public/mesh-worker.js": {
+      "before": "2cf47229ee018f3f1175355a238fa14b1db126af4ad6479bce1f6b66d1103698",
+      "after": "7cfc7cfa0cb57ccdc0ef3681c8b5cf3100d44baf5affb9dcb6e9768a31dfe1a4"
+    },
+    "public/relay.css": {
+      "before": "f6193e72d9d95df96bf8e503a444109b75b572e76f4d41124ea9259e663bac15",
+      "after": "0e82f9759abb0149b8a453a6be8f69f366d40c63eacce4dec7131402c5e7affa"
+    },
+    "public/index.html": {
+      "before": "cd829dd12d94704ed24fb3d741819dc5caa49c03dde6111ca6d63948e2b78304",
+      "after": "dde9758e9789d25c21f7f612124a89c76eec27012b8a044a49b9d1ec827ceb2d"
+    },
+    "server.py": {
+      "before": "1d09a414ffc2fd44137e607eeebc4f929ba8e6e585fe88832661a26170a1b014",
+      "after": "d0cf5094d8080f8954d608fc733ebf0b7c35474dae37ed965cfba73906b54a5c"
+    },
+    "relay/geo.mjs": {
+      "before": "80d640f0a58370585ccb635c6d43155a1e63c194f512f5b26b02434240e67ab0",
+      "after": "5d0ef4a321d415919de35fe455a5db7feeca07d69598e94ad84d37873acc4624"
+    },
+    "relay/geo-data.md": {
+      "before": null,
+      "after": "e7312f1d0fce96f428a804116ceba5c9489a91674764dfc28a4802c5a84720ea"
+    },
+    "relay/geo-data-sources.json": {
+      "before": null,
+      "after": "5ad0cd52a0dcaccf0d693c4315def081215af45c951e8076965ada31e9a66420"
+    }
+  },
+  "publicExchange": true,
+  "note": "Map rendering, country anchors and send telemetry only; native nodes/config and protocol framing unchanged",
+  "deployedAt": "2026-10-03T05:55:20.983649+00:00"
+}

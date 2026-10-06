@@ -1,0 +1,25 @@
+{
+  "utc": "2026-10-03T03:53:15Z",
+  "oldSourceSocketRemoved": true,
+  "apps": [
+    {
+      "name": "cypher-browser-relay-source",
+      "id": 10,
+      "pid": 0,
+      "status": "stopped"
+    },
+    {
+      "name": "cypher-browser-mesh-a",
+      "id": 11,
+      "pid": 3088210,
+      "status": "online"
+    },
+    {
+      "name": "cypher-browser-mesh-b",
+      "id": 12,
+      "pid": 3088211,
+      "status": "online"
+    }
+  ],
+  "oldFilesRetained": true
+}

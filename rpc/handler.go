@@ -28,6 +28,20 @@ import (
 	"github.com/cypherium/cypher/log"
 )
 
+// Keep enough callbacks admitted to sustain the 200k TPS architecture target
+// when the durable ingress path takes up to roughly 20 ms to acknowledge a
+// transaction. The downstream coalescer, WAL and TxPool schedulers apply the
+// tighter CPU, byte and storage bounds; this lane only prevents unbounded RPC
+// callback fan-out across connections.
+const rawTransactionBatchParallelism = 4096
+
+// rawTransactionBatchSlots bounds transaction callbacks across every RPC
+// connection on the node. The downstream transaction ingress scheduler owns
+// the heavier state/WAL/QUIC limits; this earlier bound prevents a large JSON
+// batch from creating one goroutine per item while still allowing the standard
+// eth_sendRawTransaction method to feed that scheduler concurrently.
+var rawTransactionBatchSlots = make(chan struct{}, rawTransactionBatchParallelism)
+
 // handler handles JSON-RPC messages. There is one handler per connection. Note that
 // handler is not safe for concurrent use. Message handling never blocks indefinitely
 // because RPCs are processed on background goroutines launched by handler.
@@ -66,8 +80,9 @@ type handler struct {
 }
 
 type callProc struct {
-	ctx       context.Context
-	notifiers []*Notifier
+	ctx                       context.Context
+	notifiers                 []*Notifier
+	rawTransactionSlotAlready bool
 }
 
 func newHandler(connCtx context.Context, conn jsonWriter, idgen func() ID, reg *serviceRegistry) *handler {
@@ -113,12 +128,7 @@ func (h *handler) handleBatch(msgs []*jsonrpcMessage) {
 	}
 	// Process calls on a goroutine because they may block indefinitely:
 	h.startCallProc(func(cp *callProc) {
-		answers := make([]*jsonrpcMessage, 0, len(msgs))
-		for _, msg := range calls {
-			if answer := h.handleCallMsg(cp, msg); answer != nil {
-				answers = append(answers, answer)
-			}
-		}
+		answers := h.handleCallBatch(cp, calls, len(msgs))
 		h.addSubscriptions(cp.notifiers)
 		if len(answers) > 0 {
 			h.conn.writeJSON(cp.ctx, answers)
@@ -127,6 +137,57 @@ func (h *handler) handleBatch(msgs []*jsonrpcMessage) {
 			n.activate()
 		}
 	})
+}
+
+// handleCallBatch retains serial execution for mixed JSON-RPC batches because
+// management methods, notifications and subscriptions may intentionally
+// observe ordering through handler-owned state. A homogeneous batch of the
+// standard EVM submission method has no handler-side mutable state, so execute
+// it through a node-global bounded parallel lane. Results remain aligned with
+// request order even when callbacks finish out of order.
+func (h *handler) handleCallBatch(cp *callProc, calls []*jsonrpcMessage, capacity int) []*jsonrpcMessage {
+	if !isRawTransactionCallBatch(calls) {
+		answers := make([]*jsonrpcMessage, 0, capacity)
+		for _, msg := range calls {
+			if answer := h.handleCallMsg(cp, msg); answer != nil {
+				answers = append(answers, answer)
+			}
+		}
+		return answers
+	}
+	answers := make([]*jsonrpcMessage, len(calls))
+	var group sync.WaitGroup
+	for index, msg := range calls {
+		select {
+		case rawTransactionBatchSlots <- struct{}{}:
+			group.Add(1)
+			go func(index int, msg *jsonrpcMessage) {
+				defer group.Done()
+				defer func() { <-rawTransactionBatchSlots }()
+				// The outer admission prevents a large JSON batch from first
+				// allocating one blocked goroutine per item. Mark the child call
+				// so handleCall doesn't acquire the same node-global slot twice.
+				batchCP := &callProc{ctx: cp.ctx, rawTransactionSlotAlready: true}
+				answers[index] = h.handleCallMsg(batchCP, msg)
+			}(index, msg)
+		case <-cp.ctx.Done():
+			answers[index] = msg.errorResponse(cp.ctx.Err())
+		}
+	}
+	group.Wait()
+	return answers
+}
+
+func isRawTransactionCallBatch(calls []*jsonrpcMessage) bool {
+	if len(calls) < 2 {
+		return false
+	}
+	for _, msg := range calls {
+		if msg == nil || !msg.isCall() || msg.Method != "eth_sendRawTransaction" {
+			return false
+		}
+	}
+	return true
 }
 
 // handleMsg handles a single message.
@@ -318,6 +379,18 @@ func (h *handler) handleCallMsg(ctx *callProc, msg *jsonrpcMessage) *jsonrpcMess
 func (h *handler) handleCall(cp *callProc, msg *jsonrpcMessage) *jsonrpcMessage {
 	if msg.isSubscribe() {
 		return h.handleSubscribe(cp, msg)
+	}
+	// Homogeneous batches acquire before spawning their bounded workers. All
+	// other request shapes, including ordinary MetaMask calls and one-element
+	// JSON batches, enter the same node-global lane here. This makes the bound
+	// apply across connections instead of only within the batch fast path.
+	if msg.Method == "eth_sendRawTransaction" && !cp.rawTransactionSlotAlready {
+		select {
+		case rawTransactionBatchSlots <- struct{}{}:
+			defer func() { <-rawTransactionBatchSlots }()
+		case <-cp.ctx.Done():
+			return msg.errorResponse(cp.ctx.Err())
+		}
 	}
 	var callb *callback
 	if msg.isUnsubscribe() {

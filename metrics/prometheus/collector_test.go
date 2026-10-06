@@ -29,7 +29,7 @@ func TestCollector(t *testing.T) {
 	c.addGaugeFloat64("test/gauge_float64", gaugeFloat64)
 
 	histogram := metrics.NewHistogram(&metrics.NilSample{})
-	c.addHistogram("test/histogram", histogram)
+	c.addSummary("test/histogram", histogram)
 
 	meter := metrics.NewMeter()
 	defer meter.Stop()
@@ -44,7 +44,7 @@ func TestCollector(t *testing.T) {
 	timer.Update(120 * time.Millisecond)
 	timer.Update(23 * time.Millisecond)
 	timer.Update(24 * time.Millisecond)
-	c.addTimer("test/timer", timer)
+	c.addSummary("test/timer", timer)
 
 	resettingTimer := metrics.NewResettingTimer()
 	resettingTimer.Update(10 * time.Millisecond)

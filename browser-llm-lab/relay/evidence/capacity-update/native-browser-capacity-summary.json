@@ -1,0 +1,183 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T09:25:57.310Z",
+  "finishedAt": "2026-10-03T09:31:12.178Z",
+  "soakElapsedMs": 180001,
+  "checkpoints": 12,
+  "processes": {
+    "A": {
+      "browserPid": 25,
+      "separateProfile": true,
+      "mobileViewport": false,
+      "actualPhone": false,
+      "webGPUInitialization": false
+    },
+    "B": {
+      "browserPid": 191,
+      "separateProfile": true,
+      "mobileViewport": true,
+      "actualPhone": false,
+      "webGPUInitialization": false
+    },
+    "C": {
+      "browserPid": 397,
+      "separateProfile": true,
+      "mobileViewport": false,
+      "actualPhone": false,
+      "webGPUInitialization": false
+    },
+    "D": {
+      "browserPid": 742,
+      "separateProfile": true,
+      "mobileViewport": false,
+      "actualPhone": false,
+      "webGPUInitialization": false
+    }
+  },
+  "headProgress": {
+    "before": 3813,
+    "after": 3870,
+    "nearTip": true
+  },
+  "rawProofs": {
+    "rawProof": {
+      "sender": "A",
+      "receiver": "B",
+      "bytes": 333,
+      "digest": "2c41b21303901e1fe60d08cd762b300409274d2400ef8f64dcb0927d30ad049e",
+      "circuitId": "835ec66f8f1a865a9b757817f4f34175"
+    },
+    "alternativeRawProof": {
+      "sender": "C",
+      "receiver": "B",
+      "bytes": 516,
+      "digest": "40209ef6b7a8b0712a1a652cc17b10d766a9d55a36b8e643bae7dc64ed89e5d2",
+      "circuitId": "8135f16da295689dd044cdb839b3ae00"
+    },
+    "abruptReplacementRawProof": {
+      "sender": "D",
+      "receiver": "B",
+      "bytes": 356,
+      "digest": "7a1f41e0d40ab9774dc6542e3236d9c8ec3be2f7ddc86bad66169e08efefc124",
+      "circuitId": "6c9708567a336f343c08180a08a5b1cb"
+    }
+  },
+  "renewal": {
+    "B": {
+      "events": 1,
+      "sessionsWithAdvancedExpiry": [
+        {
+          "sessionId": "537203ce4364ecd794c2a78e96a6dcdc",
+          "first": 1791019978639,
+          "last": 1791020098755
+        }
+      ]
+    },
+    "C": {
+      "events": 1,
+      "sessionsWithAdvancedExpiry": [
+        {
+          "sessionId": "e825e478c74e9a61ca421f47d980d967",
+          "first": 1791019878569,
+          "last": 1791019998708
+        }
+      ]
+    }
+  },
+  "metrics": {
+    "B": {
+      "samples": 18,
+      "finalState": "ACTIVE",
+      "finalTotalApplicationBytes": 1457252,
+      "finalHopReceipts": 391,
+      "maxApplicationReservationBytes": 303762,
+      "maxSampledQueuedBytes": 275,
+      "maxSampleIntervalAverageApplicationBytesPerSecond": 13786.72891626105,
+      "sampleIntervalSecondsRange": [
+        10.042,
+        10.554
+      ],
+      "automaticReadmissionsDuringTimedInterval": 0,
+      "observedRTCPaths": [
+        "direct"
+      ],
+      "sessionRenewalEvents": 1
+    },
+    "C": {
+      "samples": 18,
+      "finalState": "ACTIVE",
+      "finalTotalApplicationBytes": 1335722,
+      "finalHopReceipts": 351,
+      "maxApplicationReservationBytes": 302992,
+      "maxSampledQueuedBytes": 0,
+      "maxSampleIntervalAverageApplicationBytesPerSecond": 13927.08850700308,
+      "sampleIntervalSecondsRange": [
+        10.042,
+        10.554
+      ],
+      "automaticReadmissionsDuringTimedInterval": 1,
+      "observedRTCPaths": [
+        "direct"
+      ],
+      "sessionRenewalEvents": 1
+    },
+    "uninterrupted": false,
+    "unsolicitedPairedLosses": [],
+    "interpretation": "Manual participation continued through recovery; this is not an uninterrupted-circuit stability claim."
+  },
+  "capacity": {
+    "advertisedCircuitCapacity": 40,
+    "observedMaximumBrowserCircuits": 1,
+    "observedMaximumEndpointCircuits": 1,
+    "observedLeaseRenewals": {
+      "B": {
+        "events": 1,
+        "sessionsWithAdvancedExpiry": [
+          {
+            "sessionId": "537203ce4364ecd794c2a78e96a6dcdc",
+            "first": 1791019978639,
+            "last": 1791020098755
+          }
+        ]
+      },
+      "C": {
+        "events": 1,
+        "sessionsWithAdvancedExpiry": [
+          {
+            "sessionId": "e825e478c74e9a61ca421f47d980d967",
+            "first": 1791019878569,
+            "last": 1791019998708
+          }
+        ]
+      }
+    },
+    "nativeCapacityBoundaryTest": "Separate native/gateway/Worker fixture evidence; not established by this two-Common browser run.",
+    "fortyDistinctNativePeers": "NOT_RUN; deployment has two registered Common identities.",
+    "eightyBrowserSustainedPerformance": "NOT_RUN",
+    "meaning": "Applied capacity and successful real transport are separate from sustained load at the configured maximum."
+  },
+  "ownLeaseCleanupCount": 6,
+  "allOwnLeases401": true,
+  "cleanup": {
+    "a": {
+      "sessions": 0,
+      "circuits": 0,
+      "candidates": 0
+    },
+    "b": {
+      "sessions": 0,
+      "circuits": 0,
+      "candidates": 0
+    }
+  },
+  "unchangedCore": [],
+  "browserPageErrors": [],
+  "limitations": {
+    "sameHostOnly": true,
+    "actualLLM": false,
+    "actualPhoneHardware": false,
+    "differentAccessNetworks": "NOT_RUN",
+    "actualFourBrowserNativePath": "NOT_RUN",
+    "applicationBytesExcludeTransportFraming": true
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "at": "2026-10-03T05:18:19.112446+00:00",
+  "scope": "Only obsolete header-prototype files created in isolated staging for this task; reusable public modules and all pre-existing workspace files retained",
+  "historicalArchive": "/tmp/cypher-header-relay-snapshot.tar.gz",
+  "removed": [
+    {
+      "path": "/tmp/cypher-relay-work/relay/source-operations.md",
+      "sha256": "5473816f4bdb015a93cc6d5be397e8ad56b5cfaa1bc91b155ebde4399745f490"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source-build.sh",
+      "sha256": "c58603c6479277b1cfa5d2cfa0b1e4a3a99998d964172f7bb86c89fb3140ffe1"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source-config.example.json",
+      "sha256": "2deeafd90dd92ccbc4e457098c48a9a0ab978755138d81442e92713d6436a943"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source-node.toml",
+      "sha256": "8f84c2cf6efa05b4b323cf9f0ad5775d877ea63cc93ea73c66bee6af91ffee1c"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source-verify.mjs",
+      "sha256": "2e25046942921d63bddaa4f75082c7076149834f406be105f03dfce507812090"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source-start.sh",
+      "sha256": "fa16c88eba0d043e9c99eb6395db895b940fe68f98c292b7916163b713524f8c"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source-public.json",
+      "sha256": "f00f311066a731940224fb4fadbef5bdf0fb0b02bfde56f3676e4ba1fb3965c5"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source-native-baseline.json",
+      "sha256": "bbb0f91bcb0c948ad57ae4f0633c9e40737d26d367b25498ce96dc48940ebe7d"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source.mjs",
+      "sha256": "27e267e3ce692846b01ecc44cef742fdb67e567c9f83de3f98fad80385aedcd3"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/relay/source.ecosystem.json",
+      "sha256": "8fbf9a2c4261c3dcb9f0c8b7a70bd62fe7d9c4aa4d3035dbd966506900665f4a"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/tests/relay-browser.mjs",
+      "sha256": "0c390568054f8b3f14d985b8f52d6d95181a48a9d12f9328ff37161ae49ee68a"
+    },
+    {
+      "path": "/tmp/cypher-relay-work/tests/relay-acceptance.md",
+      "sha256": "156064352c633e442773000f1d8a8b5314f15d50dbf8841f9244a646d2283c14"
+    }
+  ]
+}

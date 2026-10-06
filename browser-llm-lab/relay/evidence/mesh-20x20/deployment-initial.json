@@ -1,0 +1,88 @@
+{
+  "preparedAt": "2026-10-03T11:37:32.181137+00:00",
+  "state": "DEPLOYED",
+  "changes": {
+    "public/relay-ui.js": {
+      "before": "c30018ec18743c315967e01f4e02ef89e6dd9c7056a6b824582c4b72d2086f29",
+      "after": "960187dc3ff137acc6aa89289043c3606d84a5a6621761ec849b9d00bdd64e25"
+    },
+    "public/mesh-protocol.js": {
+      "before": "4eca1f7f847e5aea27d75b84074fbf62bcb89ffc05cc24621d7b5e4b5189c20e",
+      "after": "85935ec5ee1009e2b9533ad15641bb0865ccb222014e575de1391df0292794c3"
+    },
+    "public/relay-controller.js": {
+      "before": "d854ec2f60ad71cfff3cd58f3a68d41c6b807b843dc3c3eee60b08691b05bbc5",
+      "after": "231ecfb2c7d930516a6d1e5ed21ead7c759224f9c3a2be5ded6fd6bfecf9a21a"
+    },
+    "public/relay-map.js": {
+      "before": "9a11d04588d5ab90f4787898c82613e5bebcd3912d9635fde5ce07f03de93c1b",
+      "after": "dca720b93620589154616b3a4f6bb36e68282656f62f105dd80fa0e44ed170b8"
+    },
+    "public/mesh-worker.js": {
+      "before": "1f105975e68e8b16ed2c94f49beac53331c5c4f73290e9578ceff7907fc679ba",
+      "after": "d213ad7d21d12b5ebfb9c492c80cbc37b2fb7c6538e35dd32323b895ec94d8e3"
+    },
+    "public/mesh-controller.js": {
+      "before": "9e332ebeb251bb26c77befdb93baa03011649aa0b4ac5fd790fcb29a1df25236",
+      "after": "21c3439eaa5951b53060a54f752e0de89748c242075ab9b8b4cf1faa45d76c17"
+    },
+    "public/index.html": {
+      "before": "3513f7b07625b2aafffe085cf46689c7e06ca0b6e511e74ca26a119eba474843",
+      "after": "77db139088e4a26e3376aadd8727da6e63d8de172bf1f1af186b437611ac3971"
+    },
+    "tests/mesh-ui-browser.mjs": {
+      "before": "407dc747ee626b391ec5c01a8cef605402c7b8d560e969a75aad303363dc38bf",
+      "after": "7cf83083fae930e360a22cb40e1835440443ac77f281ce9aa869267882b80160"
+    },
+    "tests/mesh-protocol.test.mjs": {
+      "before": "d087fc5cab911f52253f1bb72ee21d4518899f1d0d09cce41971e640535d1a0e",
+      "after": "57459358ad6f2c36ec2d2ef763200d3aead25b0bd76f90eec7620449e92b75f7"
+    },
+    "tests/mesh-controller.test.mjs": {
+      "before": "4e1722a58b15be5686363907228ebaa7f95e5b57053c3007b1bc8e33a0b26b96",
+      "after": "ddfab174f850bb2f45510447b0737a21598c6654e92f79823a0425ecce38cf00"
+    },
+    "tests/ui-state.test.mjs": {
+      "before": "e024fe5ec7dfe35ed4e884df52b712bf1463cc08afeb32b3f68ce44851de2718",
+      "after": "9512036a6398bd831044ecac824d26a836fd4d462a13b9a55d8d706de7bc37bd"
+    },
+    "tests/relay-gateway.test.mjs": {
+      "before": "1bba768fb0da65ea56cd2b7df0ce9adba1f98015e20e3e2861e277b81545d199",
+      "after": "3396cc54e13e89ee2da7aab40360fbd33ff3b160407c1104e4ad3d0802f17d97"
+    },
+    "tests/mesh-browser.mjs": {
+      "before": "c6265977c803907d0241c33c9cc6d2cc74e3d2feb6b5e61ad2a891df1d466540",
+      "after": "06c6ee28df75f82644218e7735c6877f191da54066997fb09b4c195a6598d05a"
+    },
+    "tests/mesh-worker.test.mjs": {
+      "before": "202ef6e2b333637c73af8173e1c659c89375e17240f41f8221249cb4fb6f1f5f",
+      "after": "5b2e4bfc553f3569f7d60fa88b1a56aa8f7feb7b414eee5da516fe44c5f342d8"
+    },
+    "tests/relay-map-browser.mjs": {
+      "before": "ce9211939f92c7939370d5fa64309edb57cba4fce2d8e50db764cd10acf8fc35",
+      "after": "800075c8d6a090ca3311367fe5f02ada09665df97275b88de1f353272ca6cd14"
+    },
+    "relay/config.mjs": {
+      "before": "fc5548db0a0a94af971e7ab54f85f24756d31d028e501f48a28864d501a763fc",
+      "after": "42c9de861540158b278e59f5d4bbf3b683c9ce04e1c4a4e9e381243408385ea1"
+    },
+    "relay/gateway-operations.md": {
+      "before": "df08661e049e5a15f09000db07184497da6dfccc2f5e905426d03a1786a696fc",
+      "after": "14cfcd82351972a2c89040bf63ec5428556b1dd5df50f3d9a4d85786a54c9af0"
+    },
+    "relay/config.json": {
+      "before": "e8debb1cc3d4b3603b9f971fffea80e0dfe38aa4e445ed115c3a7f694b586cc6",
+      "after": "4fb2f3361c9d516a4604b18f0d28fb7823fe1640f981e28da1bb4a2010cc6045"
+    },
+    "relay/README.md": {
+      "before": "889356a366f1efdf29cede28ee5ab70f10dea18417a8ba52fa2c334782e6f1a8",
+      "after": "3b69c85cf862a2e68e0053591fc41646a6503c9762fa94815befa3e77899a27a"
+    },
+    "relay/gateway.mjs": {
+      "before": "254aa1a14761a56a2815184ae7fb14eb8181fd1d14f2ed29c97247f17eda3236",
+      "after": "9bba39fdbbe42c8276ba95ab51b272ba352dfa75ce363fc0e36d3da1ad4edea2"
+    }
+  },
+  "nativeModified": false,
+  "deployedAt": "2026-10-03T11:42:39.370991+00:00"
+}

@@ -1,0 +1,55 @@
+{
+  "kind": "ACTUAL_PUBLIC_UI",
+  "files": {
+    "cypher-map-ui-final-report.json": {
+      "file": "cypher-map-ui-final-report.json",
+      "bytes": 15293,
+      "sha256": "c7c7ee7a54c96b061a1915448f865b7fe8ab5ba05a56bb5608b2f713e7b6c12c"
+    },
+    "cypher-map-ui-final.log": {
+      "file": "cypher-map-ui-final.log",
+      "bytes": 547,
+      "sha256": "2341b261b7fd15ea6ebdc0f29d90d391c37a1230560f80e297bf027137f8c721"
+    },
+    "cypher-map-ui-final-desktop-map-actual-activity.png": {
+      "file": "cypher-map-ui-final-desktop-map-actual-activity.png",
+      "bytes": 565238,
+      "sha256": "b84849d23cb0bf96e01c6a7cb4b326429a47f8d36e4eb3fdb2640fc2be8b66c2"
+    },
+    "cypher-map-ui-final-mobile-map-actual-activity.png": {
+      "file": "cypher-map-ui-final-mobile-map-actual-activity.png",
+      "bytes": 168327,
+      "sha256": "9fe92926bbb7df7ce4933fef5278b990ed292575c607ce033b15d3d76504a1a4"
+    },
+    "cypher-map-ui-final-desktop-active.png": {
+      "file": "cypher-map-ui-final-desktop-active.png",
+      "bytes": 565065,
+      "sha256": "1db5d4ff493b7b6a2c8409243065d3b60cad45267cf3788eb6f4871fea9f3e15"
+    },
+    "cypher-map-ui-final-desktop-metrics.png": {
+      "file": "cypher-map-ui-final-desktop-metrics.png",
+      "bytes": 564884,
+      "sha256": "3f91b732e58e3dc257ee826625e0a08bc8457a43c498ce96419cf6ca638b1bfe"
+    },
+    "cypher-map-ui-final-mobile-active.png": {
+      "file": "cypher-map-ui-final-mobile-active.png",
+      "bytes": 168190,
+      "sha256": "b8b6acda8e647fa5ea76f9978cf60852ad6a6e62e1d3f2ed35248a07ace3f9d5"
+    },
+    "cypher-map-ui-final-mobile-metrics.png": {
+      "file": "cypher-map-ui-final-mobile-metrics.png",
+      "bytes": 118100,
+      "sha256": "b1a4f9246a49da6f2045200fbf971494b1c045a4f9fd1b8197570aad8af9b7e1"
+    },
+    "cypher-map-ui-final-desktop-off.png": {
+      "file": "cypher-map-ui-final-desktop-off.png",
+      "bytes": 560887,
+      "sha256": "51b96b13cf9990e980c685996e6a07adfbb53693fd9bdb6748f4a696a570d782"
+    },
+    "cypher-map-ui-final-mobile-off.png": {
+      "file": "cypher-map-ui-final-mobile-off.png",
+      "bytes": 165914,
+      "sha256": "ea7e163eb47b5e71d7ca0c21b6b3fdcafb3d33cf56a07be2eeba60f5673dd172"
+    }
+  }
+}

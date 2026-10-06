@@ -1,6 +1,7 @@
 package miner
 
 import (
+	"context"
 	"math/big"
 	"time"
 
@@ -29,6 +30,8 @@ type Backend interface {
 	CandidatePool() *core.CandidatePool
 	TxPool() *core.TxPool
 	ChainDb() ethdb.Database
+	PoWRewardRecipient(signer common.Address) (common.Address, error)
+	BroadcastPoWResult(context.Context, string, []*common.Cnode, *types.PoWResult) error
 }
 
 // Config is the configuration parameters of mining.

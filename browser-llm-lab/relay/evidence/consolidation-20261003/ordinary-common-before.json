@@ -1,0 +1,140 @@
+{
+  "nodeInfo": {
+    "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+    "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+    "enode": "enode://5e09dc887c5da47914aaa3b9fef97ae1c25b7d5b353713af0140bef497a3ef82089a074024ec3feca3bbfba9d09bd34eb05fda80cc3c906c158fa62f59218e57@13.140.169.170:6099",
+    "enr": "enr:-Je4QCfPc9rZqdDeV0dLCSKBgzwFSKrbOJNakFL1f02VmFWqEZOkPyzIcY9KetdZ7-8omMEjk2leP2JqN8kMPZoRm3ECg2V0aMfGhELdyM-AgmlkgnY0gmlwhA2MqaqJc2VjcDI1NmsxoQNeCdyIfF2keRSqo7n--Xrhwlt9WzU3E68BQL70l6PvgoN0Y3CCF9ODdWRwghfT",
+    "ip": "13.140.169.170",
+    "ports": {
+      "discovery": 6099,
+      "listener": 6099
+    },
+    "listenAddr": "[::]:6099",
+    "protocols": {
+      "eth": {
+        "network": 10101919,
+        "difficulty": 4449500,
+        "genesis": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+        "config": {
+          "berlinBlock": 0,
+          "blobSchedule": {
+            "cancun": {
+              "target": 192,
+              "max": 288,
+              "baseFeeUpdateFraction": 213662528
+            },
+            "prague": {
+              "target": 192,
+              "max": 288,
+              "baseFeeUpdateFraction": 160246912
+            },
+            "osaka": {
+              "target": 192,
+              "max": 288,
+              "baseFeeUpdateFraction": 160246912
+            }
+          },
+          "byzantiumBlock": 0,
+          "cancunTime": 0,
+          "chainId": 10101919,
+          "colossusX": {},
+          "committee": {
+            "0": {
+              "address": "13.140.169.170:7102",
+              "coinbase": "3555D2c2Af8ff75009F7dbFCF7de7Ed80F68588d",
+              "public": "3912d236e16d97b70244a6c3f0693c8ff855bca8771b521bb3af948f0c682a15a8ca1a90265f7db37dacd2621e389c1cc8526eca9efd31a66e6ce6debdb1560b"
+            },
+            "1": {
+              "address": "13.140.169.170:7104",
+              "coinbase": "60746B20D36500f3353163226Ad62bF7E92e1F3C",
+              "public": "e79f42fc639c2bb3fb489641d4643aed30f3095948283362a11f35074175081632e251cad8e718bbbfa22ce58720968a092ae9d326df681ccc9efb1828ab380a"
+            },
+            "2": {
+              "address": "13.140.169.170:7106",
+              "coinbase": "01cBCB9b60E73f0244eA1deBbEe0FD1b8BB11B31",
+              "public": "c5248a6fdfe58a4b442293c84dcb2d08d2d6c6cdaf2cd42732723ca238b0c2198f9e047170bef68af6b690327b6bbab8af258eba20db0679ddc897f0ea108388"
+            },
+            "3": {
+              "address": "13.140.169.170:7108",
+              "coinbase": "4b91661f2659A62cB1A0EE54f6540c283D448a86",
+              "public": "e1f5313fea570fbef1013335a91afc186a35aca491a08bcaedc3566c18beac1f969ee7303de787b2861c5bc4a874b2887bd027f2562b9807bac7c171098a308b"
+            },
+            "4": {
+              "address": "13.140.169.170:7110",
+              "coinbase": "9c01A453dAF5c36951301ea26C1605cE7489B186",
+              "public": "48a16b06d3771797644cce84d1bb0bfba9525ff6b19fab48cb29f7b108a8971a35630a7c0355fe69f95263faaf48a4ed515028b20e7bc6b306448cddeb3ea61e"
+            },
+            "5": {
+              "address": "13.140.169.170:7112",
+              "coinbase": "f1cf67fD1669dDf1dF76FD887B2f6da0d11b2cd9",
+              "public": "0ea28b3fad0c3ef992e8d51fa2e0b158c0ba1101629e4516f999f66c672222257d3d4b0e20024fdcc1d09100c2d040c006cd32dbb7ccb416c7dc5a03af9c8d02"
+            },
+            "6": {
+              "address": "13.140.169.170:7114",
+              "coinbase": "3abb765B281d2Ef60aAC35Bc85B62692f89c7Ee3",
+              "public": "bbf99348f4f81b296d0fceeb3d7f1b25ad4d3f50eb44baffa80a290d1a56a0177394455ce8d8a69452b453e5de5568df58f68077d57e7ff54df0aa4ade7d0e14"
+            }
+          },
+          "constantinopleBlock": 0,
+          "eip150Block": 0,
+          "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "eip155Block": 0,
+          "eip158Block": 0,
+          "evmParallel": {
+            "maxAccessesPerBlock": 2097152,
+            "maxAccessesPerTransaction": 1024,
+            "maxBlockBytes": 268435456,
+            "maxComputePerBlock": 17592186044416,
+            "maxComputePerTransaction": 4294967296,
+            "maxCriticalPathCompute": 268435456,
+            "maxDependencyDepth": 12782,
+            "maxLogBytesPerBlock": 67108864,
+            "maxLogBytesPerTransaction": 262144,
+            "maxMemoryBytesPerTransaction": 67108864,
+            "maxOutputBytesPerTransaction": 1048576,
+            "maxReceiptBytesPerBlock": 234881024,
+            "maxTransactionBytes": 1048576,
+            "maxTransactionsPerBlock": 1048576,
+            "replayWindowBlocks": 512
+          },
+          "fairHotstuff": true,
+          "fairHotstuffSeed": "0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627",
+          "fixedCommittee": true,
+          "hasPrivate": false,
+          "homesteadBlock": 0,
+          "istanbulBlock": 0,
+          "londonBlock": 0,
+          "maxCodeSize": 0,
+          "maxCodeSizeConfig": [
+            {
+              "block": 0,
+              "size": 128
+            }
+          ],
+          "osakaTime": 0,
+          "petersburgBlock": 0,
+          "pragueTime": 0,
+          "rnetfallbacktransport": "none",
+          "rnetport": "7155",
+          "rnettransport": "quic",
+          "shanghaiTime": 0,
+          "txnSizeLimit": 128
+        },
+        "head": "0x2627f328489a028d88897eae2c4d215d736e4de1ee5fdd10e718c146b7af44c4"
+      }
+    }
+  },
+  "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+  "head": "0xfcc",
+  "networkId": "10101919",
+  "peerCount": 7,
+  "peerTransports": [
+    "tcp",
+    "tcp",
+    "tcp",
+    "tcp",
+    "tcp",
+    "tcp",
+    "tcp"
+  ]
+}

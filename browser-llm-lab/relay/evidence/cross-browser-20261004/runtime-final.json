@@ -1,0 +1,92 @@
+{
+  "observedAt": "2026-10-04T09:43:50.072Z",
+  "originalNodeAndPageProcessesPreserved": true,
+  "rows": [
+    {
+      "name": "cypher0",
+      "pid": 18515,
+      "status": "online",
+      "startedAt": 1791099482446,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "cypher1",
+      "pid": 18517,
+      "status": "online",
+      "startedAt": 1791099482448,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "cypher2",
+      "pid": 18520,
+      "status": "online",
+      "startedAt": 1791099482464,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "cypher3",
+      "pid": 18523,
+      "status": "online",
+      "startedAt": 1791099482466,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "cypher4",
+      "pid": 18527,
+      "status": "online",
+      "startedAt": 1791099482505,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "cypher5",
+      "pid": 18529,
+      "status": "online",
+      "startedAt": 1791099482509,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "cypher6",
+      "pid": 18532,
+      "status": "online",
+      "startedAt": 1791099482539,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "cyphermine",
+      "pid": 18536,
+      "status": "online",
+      "startedAt": 1791099482551,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "server",
+      "pid": 18539,
+      "status": "online",
+      "startedAt": 1791099482553,
+      "restarts": 0,
+      "matchesOriginalProcess": true
+    },
+    {
+      "name": "cypher-browser-mesh-gateway",
+      "pid": 35512,
+      "status": "online",
+      "startedAt": 1791104202568,
+      "restarts": 0
+    },
+    {
+      "name": "cypher-header-turn",
+      "pid": 35395,
+      "status": "online",
+      "startedAt": 1791104200951,
+      "restarts": 0
+    }
+  ]
+}

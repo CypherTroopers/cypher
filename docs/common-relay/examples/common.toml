@@ -1,0 +1,42 @@
+# Documentation-only TEST-NET identities. Replace every enode before use.
+# Durations are nanoseconds. This file does not start a node.
+[Eth]
+NetworkId = 10101919
+SyncMode = "full"
+LightServ = 0
+
+[Eth.TxQUIC]
+AutoRole = true
+
+[Eth.Relay]
+Enabled = true
+Gateway = false
+MaxPeers = 16
+MaxPending = 128
+MaxPendingBytes = 134217728
+PeerPending = 16
+PeerPendingBytes = 16777216
+PeerQueue = 16
+PeerQueueBytes = 8388608
+Workers = 4
+GatewayWorkers = 8
+Fanout = 2
+Hops = 4
+Timeout = 15000000000
+RequestsPerSecond = 64
+BytesPerSecond = 8388608
+CacheEntries = 128
+CacheBytes = 4194304
+
+[Node.P2P]
+ReservedPeerMode = true
+MaxPeers = 16
+MaxPublicPeers = 16
+DialRatio = 2
+MaxPendingPeers = 16
+NoDial = false
+NoDiscovery = false
+ListenAddr = ":30303"
+ReservedNodes = []
+StaticNodes = ["enode://5cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc6aebca40ba255960a3178d6d861a54dba813d0b813fde7b5a5082628087264da@192.0.2.7:30303", "enode://2f01e5e15cca351daff3843fb70f3c2f0a1bdd05e5af888a67784ef3e10a2a015c4da8a741539949293d082a132d13b4c2e213d6ba5b7617b5da2cb76cbde904@192.0.2.8:30303"]
+BootstrapNodes = ["enode://5cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc6aebca40ba255960a3178d6d861a54dba813d0b813fde7b5a5082628087264da@192.0.2.7:30303", "enode://2f01e5e15cca351daff3843fb70f3c2f0a1bdd05e5af888a67784ef3e10a2a015c4da8a741539949293d082a132d13b4c2e213d6ba5b7617b5da2cb76cbde904@192.0.2.8:30303"]

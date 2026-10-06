@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"unicode"
 
+	"github.com/cypherium/cypher/cmd/cypher/browserstartup"
 	"github.com/cypherium/cypher/cmd/utils"
 	"github.com/cypherium/cypher/eth"
 	"github.com/cypherium/cypher/internal/ethapi"
@@ -72,9 +73,12 @@ type ethstatsConfig struct {
 }
 
 type gethConfig struct {
-	Eth      eth.Config
-	Node     node.Config
-	Ethstats ethstatsConfig
+	Eth                eth.Config
+	Node               node.Config
+	Ethstats           ethstatsConfig
+	browserGateway     *browserGatewayStartup     `toml:"-"`
+	browserLightnode   *browserLightnodeStartup   `toml:"-"`
+	browserPublicRelay *browserPublicRelayStartup `toml:"-"`
 }
 
 func loadConfig(file string, cfg *gethConfig) error {
@@ -120,10 +124,38 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 	// Apply flags.
 	utils.SetNodeConfig(ctx, &cfg.Node)
 	utils.SetExternalIp(ctx, &cfg.Node, &cfg.Eth)
+	prepared, err := prepareBrowserGateway(ctx, &cfg)
+	if err != nil {
+		utils.Fatalf("Browser gateway preparation failed: %v", err)
+		return nil, cfg
+	}
+	cfg.browserGateway = prepared
+	lightnode, err := prepareBrowserLightnode(ctx)
+	if err != nil {
+		_ = cfg.browserGateway.Close()
+		utils.Fatalf("Browser light-node preparation failed: %v", err)
+		return nil, cfg
+	}
+	cfg.browserLightnode = lightnode
+	publicRelay, err := prepareBrowserPublicRelay(ctx)
+	if err != nil {
+		_ = browserstartup.CloseOnError(err, cfg.browserLightnode.Close, cfg.browserGateway.Close)
+		utils.Fatalf("Browser public-header preparation failed: %v", err)
+		return nil, cfg
+	}
+	cfg.browserPublicRelay = publicRelay
+	// Browser services require the Common role throughout the process lifetime,
+	// including later miner.start calls that establish a verified BLS identity.
+	cfg.Eth.CommonOnly = cfg.browserGateway != nil || cfg.browserLightnode != nil || cfg.browserPublicRelay != nil
 	stack, err := node.New(&cfg.Node)
 	if err != nil {
+		_ = browserstartup.CloseOnError(err, cfg.browserPublicRelay.Close, cfg.browserLightnode.Close, cfg.browserGateway.Close)
 		utils.Fatalf("Failed to create the protocol stack: %v", err)
+		return nil, cfg
 	}
+	bindBrowserGateway(stack, cfg.browserGateway)
+	bindBrowserLightnode(stack, cfg.browserLightnode)
+	bindBrowserPublicRelay(stack, cfg.browserPublicRelay)
 	utils.SetEthConfig(ctx, stack, &cfg.Eth)
 	if ctx.GlobalIsSet(utils.EthStatsURLFlag.Name) {
 		cfg.Ethstats.URL = ctx.GlobalString(utils.EthStatsURLFlag.Name)
@@ -136,7 +168,37 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 	stack, cfg := makeConfigNode(ctx)
 
-	backend, _ := utils.RegisterEthService(stack, &cfg.Eth)
+	var backend ethapi.Backend
+	if cfg.browserGateway == nil && cfg.browserLightnode == nil && cfg.browserPublicRelay == nil {
+		backend, _ = utils.RegisterEthService(stack, &cfg.Eth)
+	} else {
+		// The optional path handles constructor errors before Fatalf's os.Exit.
+		service, err := eth.New(stack, &cfg.Eth)
+		if err == nil && service == nil {
+			err = errors.New("Ethereum constructor returned no backend")
+		}
+		if err != nil {
+			_ = browserstartup.CloseOnError(err, cfg.browserPublicRelay.Close, cfg.browserLightnode.Close, cfg.browserGateway.Close, stack.Close)
+			utils.Fatalf("Failed to register the Ethereum service: %v", err)
+			return nil, nil
+		}
+		backend = service.APIBackend
+		err = bindBrowserGatewayBackend(cfg.browserGateway, service.APIBackend)
+		if err == nil {
+			err = initializeBrowserGateway(&cfg)
+		}
+		if err == nil {
+			err = initializeBrowserLightnode(&cfg, stack, service.APIBackend)
+		}
+		if err == nil {
+			err = initializeBrowserPublicRelay(&cfg, stack, service.APIBackend)
+		}
+		if err != nil {
+			_ = browserstartup.CloseOnError(err, cfg.browserPublicRelay.Close, cfg.browserLightnode.Close, cfg.browserGateway.Close, stack.Close)
+			utils.Fatalf("Browser gateway startup rejected: %v", err)
+			return nil, nil
+		}
+	}
 	// Add the Ethereum Stats daemon if requested.
 	if cfg.Ethstats.URL != "" {
 		//utils.RegisterEthStatsService(stack, backend, cfg.Ethstats.URL)

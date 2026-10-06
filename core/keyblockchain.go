@@ -24,8 +24,9 @@ import (
 )
 
 var (
-	ErrNoKeyGenesis   = errors.New("Genesis not found in key block chain")
-	ErrNoGenCommittee = errors.New("Genesis not found in db")
+	ErrNoKeyGenesis         = errors.New("Genesis not found in key block chain")
+	ErrNoGenCommittee       = errors.New("Genesis not found in db")
+	ErrNonCanonicalKeyBlock = errors.New("key block does not extend the canonical key head")
 )
 
 type KeyBlockChain struct {
@@ -193,7 +194,28 @@ func (kbc *KeyBlockChain) Reset() error {
 // ResetWithGenesisBlock purges the entire blockchain, restoring it to the
 // specified genesis state.
 func (kbc *KeyBlockChain) ResetWithGenesisBlock(genesis *types.KeyBlock) error {
-
+	if genesis == nil {
+		return ErrNoKeyGenesis
+	}
+	kbc.chainmu.Lock()
+	defer kbc.chainmu.Unlock()
+	var oldHead uint64
+	if value := kbc.currentBlock.Load(); value != nil && value.(*types.KeyBlock) != nil {
+		oldHead = value.(*types.KeyBlock).NumberU64()
+	}
+	batch := kbc.db.NewBatch()
+	for number := genesis.NumberU64() + 1; number <= oldHead; number++ {
+		rawdb.DeleteKeyBlockHash(batch, number)
+	}
+	kbc.stageCanonicalKeyBlock(batch, genesis)
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("failed to reset key block chain: %w", err)
+	}
+	kbc.genesisBlock = genesis.CopyMe()
+	kbc.setCanonicalKeyBlock(genesis)
+	if kbc.khc != nil {
+		kbc.khc.SetGenesis(genesis.Header())
+	}
 	return nil
 }
 
@@ -219,7 +241,7 @@ func (kbc *KeyBlockChain) loadLastState() error {
 	kbc.currentBlock.Store(currentBlock)
 	// Restore the last known head header
 	currentHeader := currentBlock.Header()
-	if head := rawdb.ReadHeadHeaderHash(kbc.db); head != (common.Hash{}) {
+	if head := rawdb.ReadHeadKeyHeaderHash(kbc.db); head != (common.Hash{}) {
 		if header := kbc.GetHeaderByHash(head); header != nil {
 			currentHeader = header
 		}
@@ -254,10 +276,10 @@ func (kbc *KeyBlockChain) insert(block *types.KeyBlock) error {
 func (kbc *KeyBlockChain) InsertBlockFromData(data []byte) error {
 	b := types.DecodeToKeyBlock(data)
 	if b == nil {
-		log.Error("InsertBlockFromData DecodeToKeyBlock return nil")
+		return fmt.Errorf("invalid encoded key block")
 	}
 	_, err := kbc.insert_Chain(types.KeyBlocks{b})
-	if err != nil {
+	if err != nil && kbc.candidatePool != nil {
 		kbc.candidatePool.ClearObsolete(b.Number())
 	}
 	return err
@@ -303,10 +325,19 @@ func (kbc *KeyBlockChain) insert_Chain(chain types.KeyBlocks) (int, error) {
 		err := kbc.ValidateKeyBlock(block)
 		switch {
 		case err == types.ErrKnownBlock:
-			// Block and state both already known. However if the current block is below
-			// this number we did a rollback and we should reimport it nonetheless.
-			if kbc.CurrentBlockN() >= block.NumberU64() {
+			// The exact current head is an idempotent re-import. A known direct
+			// child can be applied after a crash that persisted its body before
+			// advancing the head. Any other known block is a sibling or stale
+			// branch and must not replace the canonical key head.
+			current := kbc.CurrentBlock()
+			if current.Hash() == block.Hash() && current.NumberU64() == block.NumberU64() {
 				continue
+			}
+			if block.NumberU64() != current.NumberU64()+1 || block.ParentHash() != current.Hash() {
+				err = fmt.Errorf("%w: known block=%d/%s parent=%s head=%d/%s", ErrNonCanonicalKeyBlock,
+					block.NumberU64(), block.Hash(), block.ParentHash(), current.NumberU64(), current.Hash())
+				kbc.reportBlock(block, err)
+				return i, err
 			}
 
 		case err != nil:
@@ -440,15 +471,83 @@ func (kbc *KeyBlockChain) EncodeBlockToBytes(hash common.Hash, block *types.KeyB
 }
 
 func (kbc *KeyBlockChain) ValidateKeyBlock(block *types.KeyBlock) error {
+	if block == nil {
+		return fmt.Errorf("%w: nil block", ErrNonCanonicalKeyBlock)
+	}
 	blockNumber := block.NumberU64()
 	if kbc.HasBlock(block.Hash(), blockNumber) {
 		return types.ErrKnownBlock
 	}
-
+	if blockNumber == 0 {
+		return fmt.Errorf("%w: unexpected genesis block", ErrNonCanonicalKeyBlock)
+	}
 	if !kbc.HasBlock(block.ParentHash(), blockNumber-1) {
 		return types.ErrUnknownAncestor
 	}
+	current := kbc.CurrentBlock()
+	if blockNumber != current.NumberU64()+1 || block.ParentHash() != current.Hash() {
+		return fmt.Errorf("%w: block=%d/%s parent=%s head=%d/%s", ErrNonCanonicalKeyBlock,
+			blockNumber, block.Hash(), block.ParentHash(), current.NumberU64(), current.Hash())
+	}
 	return nil
+}
+
+// ValidateKeyBlockForCanonicalInsert is the preflight used by the transaction
+// chain before it makes a key-carrying block canonical. A key transition must
+// extend the exact current key head; a sibling at the same height must never
+// replace it.
+func (kbc *KeyBlockChain) ValidateKeyBlockForCanonicalInsert(block *types.KeyBlock) error {
+	if block == nil {
+		return fmt.Errorf("%w: nil block", ErrNonCanonicalKeyBlock)
+	}
+	if block.NumberU64() == 0 {
+		return fmt.Errorf("%w: unexpected genesis block", ErrNonCanonicalKeyBlock)
+	}
+	current := kbc.CurrentBlock()
+	if block.NumberU64() != current.NumberU64()+1 || block.ParentHash() != current.Hash() {
+		return fmt.Errorf("%w: block=%d/%s parent=%s head=%d/%s", ErrNonCanonicalKeyBlock,
+			block.NumberU64(), block.Hash(), block.ParentHash(), current.NumberU64(), current.Hash())
+	}
+	if !kbc.HasBlock(current.Hash(), current.NumberU64()) {
+		return fmt.Errorf("%w: canonical parent %d/%s is missing", types.ErrUnknownAncestor,
+			current.NumberU64(), current.Hash())
+	}
+	return nil
+}
+
+// stageCanonicalKeyBlock writes all durable key-head records into the caller's
+// batch. The transaction-chain head and key-chain head therefore become visible
+// atomically when both chains share the same database.
+func (kbc *KeyBlockChain) stageCanonicalKeyBlock(batch ethdb.KeyValueWriter, block *types.KeyBlock) {
+	rawdb.WriteTd(batch, block.Hash(), block.NumberU64(), block.Difficulty())
+	rawdb.WriteKeyBlock(batch, block)
+	rawdb.WriteKeyBlockHash(batch, block.Hash(), block.NumberU64())
+	rawdb.WriteHeadKeyBlockHash(batch, block.Hash())
+	rawdb.WriteHeadKeyHeaderHash(batch, block.Hash())
+}
+
+// setCanonicalKeyBlock updates in-memory key-chain markers after the shared
+// transaction/key head batch has committed successfully.
+func (kbc *KeyBlockChain) setCanonicalKeyBlock(block *types.KeyBlock) {
+	block = block.CopyMe()
+	if kbc.blockCache != nil {
+		kbc.blockCache.Add(block.Hash(), block)
+	}
+	if kbc.khc != nil {
+		header := block.Header()
+		if kbc.khc.headerCache != nil {
+			kbc.khc.headerCache.Add(block.Hash(), header)
+		}
+		if kbc.khc.numberCache != nil {
+			kbc.khc.numberCache.Add(block.Hash(), block.NumberU64())
+		}
+		if kbc.khc.tdCache != nil {
+			kbc.khc.tdCache.Add(block.Hash(), block.Difficulty())
+		}
+		kbc.khc.currentHeader.Store(header)
+		kbc.khc.currentHeaderHash = block.Hash()
+	}
+	kbc.currentBlock.Store(block)
 }
 
 // SubscribeChainEvent registers a subscription of ChainEvent.
@@ -460,7 +559,27 @@ func (kbc *KeyBlockChain) GetCommitteeByHash(hash common.Hash) []*common.Cnode {
 	if number == nil {
 		return nil
 	}
-	return kbc.GetCommitteeByNumber(*number)
+	header := kbc.khc.GetHeader(hash, *number)
+	if header == nil {
+		log.Warn("GetCommitteeByHash not found key block", "number", *number, "hash", hash)
+		return nil
+	}
+	// A key-block height can have multiple historical hashes while the
+	// canonical key chain is being reorganized. Resolve the committee by the
+	// exact requested hash; looking it up again by number silently substitutes
+	// the current canonical key block at that height and makes otherwise valid
+	// historical FHS quorum certificates fail verification during sync.
+	committee := bftview.LoadMember(*number, hash, false)
+	if committee == nil {
+		log.Warn("GetCommitteeByHash not found committee", "number", *number, "hash", hash)
+		return nil
+	}
+	if committee.RlpHash() != header.CommitteeHash {
+		log.Error("GetCommitteeByHash committee commitment mismatch", "number", *number, "hash", hash,
+			"have", committee.RlpHash(), "want", header.CommitteeHash)
+		return nil
+	}
+	return committee.List
 }
 
 // CurrentBlock retrieves the current committee of the canonical chain. The

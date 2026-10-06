@@ -1,0 +1,53 @@
+{
+  "allUnchanged": true,
+  "files": [
+    {
+      "file": "node/browserrelay/mesh_protocol.go",
+      "before": "78f3fb5f36ecbcc5494b05bcfa843ad133318a5b5d49557cedcb43e8452d57e4",
+      "after": "78f3fb5f36ecbcc5494b05bcfa843ad133318a5b5d49557cedcb43e8452d57e4",
+      "unchanged": true
+    },
+    {
+      "file": "node/browserrelay/mesh.go",
+      "before": "6522acfb60f010c114ed207caf11ac6f8faceaf54b7c20238969c2d6ee6b1e61",
+      "after": "6522acfb60f010c114ed207caf11ac6f8faceaf54b7c20238969c2d6ee6b1e61",
+      "unchanged": true
+    },
+    {
+      "file": "p2p/browser_mesh.go",
+      "before": "efeb2d50eb0c2173dbba76e026cc27b80be5b27a099438e09f7d682e1c3e9702",
+      "after": "efeb2d50eb0c2173dbba76e026cc27b80be5b27a099438e09f7d682e1c3e9702",
+      "unchanged": true
+    },
+    {
+      "file": "cmd/cypher/browser_mesh.go",
+      "before": "be5476c007c017b6c7c3844c043bb952398cf1970116ade08762baeff1856355",
+      "after": "be5476c007c017b6c7c3844c043bb952398cf1970116ade08762baeff1856355",
+      "unchanged": true
+    },
+    {
+      "file": "cmd/cypher/browser_public_relay.go",
+      "before": "196c5f1cf640b5444995a7187ed9c2d0449e6b68819211898bb7c2546bbc3213",
+      "after": "196c5f1cf640b5444995a7187ed9c2d0449e6b68819211898bb7c2546bbc3213",
+      "unchanged": true
+    },
+    {
+      "file": "docs/common-relay/browser-public-header-relay-spec.md",
+      "before": "7e63a1b7cc2cf3b2675233d9ee151cc5fe8a51023df717c6d0bd127d4925e4af",
+      "after": "7e63a1b7cc2cf3b2675233d9ee151cc5fe8a51023df717c6d0bd127d4925e4af",
+      "unchanged": true
+    },
+    {
+      "file": "build/bin/cypher",
+      "before": "3efc534447a00e0abb0926f04325d78f498e5077d75e31ffd5b4e48c29f9ee29",
+      "after": "3efc534447a00e0abb0926f04325d78f498e5077d75e31ffd5b4e48c29f9ee29",
+      "unchanged": true
+    },
+    {
+      "file": "build/bin/cypher-linux-amd64",
+      "before": "3efc534447a00e0abb0926f04325d78f498e5077d75e31ffd5b4e48c29f9ee29",
+      "after": "3efc534447a00e0abb0926f04325d78f498e5077d75e31ffd5b4e48c29f9ee29",
+      "unchanged": true
+    }
+  ]
+}

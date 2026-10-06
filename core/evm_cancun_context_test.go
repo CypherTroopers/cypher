@@ -33,6 +33,10 @@ func (m cancunContextMessage) BlobHashes() []common.Hash {
 
 func TestNewEVMContextWithConfigSetsCancunBlobFields(t *testing.T) {
 	cfg := blobGasTestConfig(0)
+	modern := cfg.ModernForkConfig()
+	shanghai := uint64(0)
+	modern.ShanghaiTime = &shanghai
+	cfg.SetModernForkConfig(modern)
 	blobCfg := cfg.ActiveBlobConfig(0)
 	excessBlobGas := params.BlobBaseFeeUpdateFraction(blobCfg) * 2
 	header := &types.Header{
@@ -42,6 +46,7 @@ func TestNewEVMContextWithConfigSetsCancunBlobFields(t *testing.T) {
 		GasLimit:      10_000_000,
 		BaseFee:       big.NewInt(7),
 		ExcessBlobGas: excessBlobGas,
+		MixDigest:     common.HexToHash("0x1234"),
 	}
 	author := common.HexToAddress("0x1000000000000000000000000000000000000000")
 	to := common.HexToAddress("0x2000000000000000000000000000000000000000")
@@ -56,6 +61,9 @@ func TestNewEVMContextWithConfigSetsCancunBlobFields(t *testing.T) {
 	}
 
 	ctx := NewEVMContextWithConfig(cfg, msg, header, nil, &author)
+	if ctx.Random == nil || *ctx.Random != header.MixDigest {
+		t.Fatalf("PREVRANDAO mismatch: got %v want %s", ctx.Random, header.MixDigest)
+	}
 	wantBlobBaseFee := params.CalcBlobBaseFeeAtTime(cfg, header.Time, header.ExcessBlobGas)
 	if ctx.BlobBaseFee.Cmp(wantBlobBaseFee) != 0 {
 		t.Fatalf("blob base fee mismatch: got %s want %s", ctx.BlobBaseFee, wantBlobBaseFee)

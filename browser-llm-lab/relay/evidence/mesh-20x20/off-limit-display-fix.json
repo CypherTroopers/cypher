@@ -1,0 +1,33 @@
+{
+  "changes": [
+    {
+      "file": "public/relay-ui.js",
+      "before": "960187dc3ff137acc6aa89289043c3606d84a5a6621761ec849b9d00bdd64e25",
+      "after": "39c0366c5f4f10a8b1f64f9b21c37732aa344054b1d59befc2d00709acc21f90"
+    },
+    {
+      "file": "tests/ui-state.test.mjs",
+      "before": "9512036a6398bd831044ecac824d26a836fd4d462a13b9a55d8d706de7bc37bd",
+      "after": "dfc7cc44dc79670f865e3d1203e4cfebd6296663d06e865f0181a518c179a831"
+    },
+    {
+      "file": "tests/mesh-ui-browser.mjs",
+      "before": "7cf83083fae930e360a22cb40e1835440443ac77f281ce9aa869267882b80160",
+      "after": "de6b8807c732a9c862fe2588250ac23d582202e9691c412951ebffff1c994004"
+    }
+  ],
+  "transportCoreChanged": false,
+  "tests": "16 UI tests PASS",
+  "connectingFollowup": [
+    {
+      "file": "public/relay-ui.js",
+      "before": "39c0366c5f4f10a8b1f64f9b21c37732aa344054b1d59befc2d00709acc21f90",
+      "after": "438bff5c763cbe57cc883768353e7ee66238ff18c74fd5f36c2c20ed856462d9"
+    },
+    {
+      "file": "tests/ui-state.test.mjs",
+      "before": "dfc7cc44dc79670f865e3d1203e4cfebd6296663d06e865f0181a518c179a831",
+      "after": "085e49365bb5f0e010da1fc8fbdfc1ab5f55d6f235bc873aee8513f062f42199"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "observedAt": "2026-10-03T19:11:20.138393+00:00",
+  "root": "/root/cypher",
+  "files": {
+    "genesis.json": "cbba1850877ca5d2a4b2f2c9ef759c357ef579918130196ce773c29ee0c06b6c",
+    "core/genesis.go": "310b594835d47cfe2e65c6f3283eded5ccc3aa99d2939b82c59dc8e3deea4482",
+    "core/key_genesis.go": "a53f1f4bc19af2b240cad83d7d043ee56433e4d43b77dcd7ecc8a78f10641d78",
+    "core/types/block.go": "7f2abe0a3cd9b43c724b72edc18fa59776f7dfdfd34f917e8dbf62e815c2f8e4",
+    "params/config.go": "da5b5e2973e91b3c6e10972a16002b66c707ca8952aa290b9311fac9999b1a3d",
+    "build/goleveldb-bounded.patch": "38349bc371c7cdda2fa7f0f59c047c368959778bda2327a0f7625434833aa6f1",
+    "go.mod": "a6756c360f5c4f75f1a304ce130232b00d800cc29b6c415a9a7ee5a45cd680ea",
+    "go.sum": "5b731bb4ff9fcccf9765d47d69294f586816ca57b201aaa27e2ed5228a1225c6"
+  },
+  "boundedFork": "/tmp/cypher-mesh-regression-mftgn6ta/leveldb-bounded",
+  "noExistingDatadirOpened": true
+}

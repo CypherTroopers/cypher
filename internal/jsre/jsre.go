@@ -28,7 +28,6 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/dop251/goja"
-	"github.com/dop251/goja/parser"
 )
 
 // JSRE is a JS runtime environment embedding the goja interpreter.
@@ -69,15 +68,13 @@ type evalReq struct {
 
 // runtime must be stopped with Stop() after use and cannot be used after stopping
 func New(assetPath string, output io.Writer) *JSRE {
-	vm := goja.New()
-	vm.SetParserOptions(parser.WithDisableSourceMaps)
 	re := &JSRE{
 		assetPath:     assetPath,
 		output:        output,
 		closed:        make(chan struct{}),
 		evalQueue:     make(chan *evalReq),
 		stopEventLoop: make(chan bool),
-		vm:            vm,
+		vm:            goja.New(),
 	}
 	go re.runEventLoop()
 	re.Set("loadScript", MakeCallback(re.vm, re.loadScript))
@@ -307,11 +304,7 @@ func (re *JSRE) loadScript(call Call) (goja.Value, error) {
 }
 
 func compileAndRun(vm *goja.Runtime, filename string, src string) (goja.Value, error) {
-	prg, err := goja.Parse(filename, src, parser.WithDisableSourceMaps)
-	if err != nil {
-		return goja.Null(), err
-	}
-	script, err := goja.CompileAST(prg, false)
+	script, err := goja.Compile(filename, src, false)
 	if err != nil {
 		return goja.Null(), err
 	}

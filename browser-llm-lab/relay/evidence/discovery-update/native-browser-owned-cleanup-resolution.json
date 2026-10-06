@@ -1,0 +1,40 @@
+{
+  "startedAt": "2026-10-03T17:51:08.726103+00:00",
+  "originalAudit": "/tmp/cypher-mesh-discovery-20261003/evidence/native-browser-owned-cleanup.json",
+  "originalAuditSHA256": "6feb9403ba61e1cfe11df24a088a00d1079426da6a599b9d9b37e7664d7cb2b5",
+  "scope": "Only two explicitly authorized, recorded test browser profiles; no process signals or native calls",
+  "hostPidNamespace": "pid:[4026531836]",
+  "profiles": [
+    {
+      "name": "B",
+      "pid": 3314889,
+      "path": "/tmp/cypher-mesh-B-owrVNs",
+      "pidAbsentBefore": true,
+      "wasDirectory": true,
+      "wasSymlink": false,
+      "ownerUID": 0,
+      "device": 34,
+      "inode": 5756034,
+      "removedAt": "2026-10-03T17:51:08.727164+00:00",
+      "pathAbsentAfter": true,
+      "pidAbsentAfter": true
+    },
+    {
+      "name": "D",
+      "pid": 3320303,
+      "path": "/tmp/cypher-mesh-D-iG4yFg",
+      "pidAbsentBefore": true,
+      "wasDirectory": true,
+      "wasSymlink": false,
+      "ownerUID": 0,
+      "device": 34,
+      "inode": 5766312,
+      "removedAt": "2026-10-03T17:51:08.727373+00:00",
+      "pathAbsentAfter": true,
+      "pidAbsentAfter": true
+    }
+  ],
+  "status": "RESOLVED",
+  "finishedAt": "2026-10-03T17:51:08.727467+00:00",
+  "originalAuditPreserved": true
+}

@@ -1,0 +1,8 @@
+{
+  "at": "2026-10-03T18:12:54.399Z",
+  "originalBodyBytes": 845,
+  "paddedBodyBytes": 2048,
+  "status": 413,
+  "expected": 202,
+  "scope": "Republish existing locally signed endpoint with legal JSON whitespace; no lease/admission and no remote fetch"
+}

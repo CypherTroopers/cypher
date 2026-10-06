@@ -1,0 +1,142 @@
+{
+  "recordedAt": "2026-10-03T18:17:26.558142+00:00",
+  "status": "NOT_PROVEN",
+  "source": "/tmp/cypher-mesh-discovery-20261003/evidence/public-native-first-snapshot-failure/public-native-browser-report.json",
+  "sourceSHA256": "8e25c297420fa217f84b39b8f9e06693e7f509080aa278e118281b091f9a4f6b",
+  "hostInspection": "Scoped host /proc and /tmp/cypher-mesh-{A,B,C}-* SingletonLock inspection; no profile contents read",
+  "hostPidNamespace": "pid:[4026531836]",
+  "failedAttemptPIDs": {
+    "A": 3321293,
+    "B": 3321528,
+    "C": 3321926
+  },
+  "failedPIDPresenceAtHostInspection": {
+    "3321293": false,
+    "3321528": false,
+    "3321926": false
+  },
+  "protectedCurrentPIDsAtInspection": [
+    3325046,
+    3325252
+  ],
+  "earlierRerunPIDsAlsoExcluded": [
+    3323392,
+    3323599,
+    3323860
+  ],
+  "candidates": [
+    {
+      "path": "/tmp/cypher-mesh-A-2o57gW",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-A-3lWzO5",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-A-F8IKPp",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-A-v20x3g",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-B-HtnAB3",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-B-P09snT",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-B-eHRKYd",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-B-uVA3Y2",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-C-MqY5gt",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-C-mr9det",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-C-yVBnEH",
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "lockTarget": null,
+      "decision": "NOT_PROVEN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-A-eY2Lhi",
+      "lockTarget": "vmi3365213-3325046",
+      "lockPID": 3325046,
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "decision": "CURRENT_RERUN_LEAVE_UNTOUCHED"
+    },
+    {
+      "path": "/tmp/cypher-mesh-B-zxCedL",
+      "lockTarget": "vmi3365213-3325252",
+      "lockPID": 3325252,
+      "isDirectory": true,
+      "isSymlink": false,
+      "ownerUID": 0,
+      "decision": "CURRENT_RERUN_LEAVE_UNTOUCHED"
+    }
+  ],
+  "positivelyMatchedFailedAttemptProfiles": [],
+  "removedProfiles": [],
+  "reason": "All first-attempt PIDs are dead, but no remaining inspected SingletonLock contains one of those exact PIDs. Missing locks cannot establish ownership; no wildcard cleanup performed.",
+  "processSignals": 0,
+  "nativeCalls": 0,
+  "productChanges": 0,
+  "approvalReview": "Initial read-only inspection review timed out; the permitted retry was approved and completed."
+}

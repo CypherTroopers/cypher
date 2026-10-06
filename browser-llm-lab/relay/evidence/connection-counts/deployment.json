@@ -1,0 +1,23 @@
+{
+  "at": "2026-10-03T10:45:17.807743+00:00",
+  "atomicPublicExchange": true,
+  "serviceRestarts": false,
+  "files": {
+    "public/index.html": {
+      "before": "9e699b962e52c9cf1b9ef2b6fcde9b3bcaeac2c2b6c87a9a0f5b736dd5fb9723",
+      "after": "3513f7b07625b2aafffe085cf46689c7e06ca0b6e511e74ca26a119eba474843"
+    },
+    "public/relay-ui.js": {
+      "before": "1139fda461a9aad36c161f5213f41031e4fa308b0f96dc3fc23e1bcbc05becab",
+      "after": "c30018ec18743c315967e01f4e02ef89e6dd9c7056a6b824582c4b72d2086f29"
+    },
+    "tests/ui-state.test.mjs": {
+      "before": "8c6fd4dc52a8dbfa96227ea0d7c4f2f52611e158d48999c7c7d22e0fd6505b08",
+      "after": "e024fe5ec7dfe35ed4e884df52b712bf1463cc08afeb32b3f68ce44851de2718"
+    },
+    "tests/mesh-ui-browser.mjs": {
+      "before": "06635a873d5ac99afb15cc02b4839023b5f0dbe57667bb24ccf58c68be285809",
+      "after": "02fc856444efb5a76551fb4956c451cb8c6da315f36330f82ef50a0c3a0b2ba6"
+    }
+  }
+}

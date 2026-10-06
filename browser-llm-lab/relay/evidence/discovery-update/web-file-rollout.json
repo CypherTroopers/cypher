@@ -1,0 +1,188 @@
+{
+  "status": "APPLIED_FILES_SERVICES_REQUIRE_RESTART",
+  "at": "2026-10-03T17:01:33.854345+00:00",
+  "backup": "/root/browser-llm-lab/.runtime/releases/mesh-discovery-v1/web-before",
+  "changes": [
+    {
+      "path": "package.json",
+      "before": "600e34bd54a70add3c4b0b7e2ab84058b2573b5ac23e2710b670831539b85508",
+      "after": "edafbec70b9c2a4f16093d4e5014045d4f6dae9cf3acd6f5c8da840010576bb2"
+    },
+    {
+      "path": "package-lock.json",
+      "before": "fafa595b4f30383a3411cbabd7d8ea4144adf75e6b9fccabf90febd5fbf3562f",
+      "after": "4bd03685f3ff8398431ce4238cb5d5f81062fefeb93c7526fc315958c0385fe1"
+    },
+    {
+      "path": "server.py",
+      "before": "d0cf5094d8080f8954d608fc733ebf0b7c35474dae37ed965cfba73906b54a5c",
+      "after": "307d56af40161e3c6b9a506d4fefb4cb233836a22bba21d475ff840d10870e45"
+    },
+    {
+      "path": "public/mesh-discovery-client.js",
+      "before": null,
+      "after": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951"
+    },
+    {
+      "path": "public/mesh-discovery.js",
+      "before": null,
+      "after": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8"
+    },
+    {
+      "path": "public/mesh-controller.js",
+      "before": "21c3439eaa5951b53060a54f752e0de89748c242075ab9b8b4cf1faa45d76c17",
+      "after": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20"
+    },
+    {
+      "path": "public/mesh-worker.js",
+      "before": "d213ad7d21d12b5ebfb9c492c80cbc37b2fb7c6538e35dd32323b895ec94d8e3",
+      "after": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495"
+    },
+    {
+      "path": "public/relay-protocol.js",
+      "before": "33ec669dc7b1d237cf6efc690cc2d127048c92d94e5b31a6e1d26c7610e90261",
+      "after": "ac2aed7970a424d493cbe21629efbc99aacb0d961b9d6b520985c560768e9359"
+    },
+    {
+      "path": "public/mesh-protocol.js",
+      "before": "85935ec5ee1009e2b9533ad15641bb0865ccb222014e575de1391df0292794c3",
+      "after": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b"
+    },
+    {
+      "path": "public/relay-ui.js",
+      "before": "438bff5c763cbe57cc883768353e7ee66238ff18c74fd5f36c2c20ed856462d9",
+      "after": "da00b58c06d02a658a4d025a9eb41967ed44008fee759b3246099cb536c6f854"
+    },
+    {
+      "path": "public/vendor/mesh-crypto-provenance.json",
+      "before": null,
+      "after": "9102f2ab7416c1cc22db06824362759b05745d4c6c2e79f9e570af7f361494bd"
+    },
+    {
+      "path": "public/vendor/mesh-crypto-LICENSE.txt",
+      "before": null,
+      "after": "27452c985616d501fb724988b2174f07955062425f8db1b5e461e9c0058b30b9"
+    },
+    {
+      "path": "public/vendor/mesh-crypto.js",
+      "before": null,
+      "after": "736696fb9c856ab1dad7a639f49fbb456320d3341575d702285ca3fe407eabc6"
+    },
+    {
+      "path": "relay/common-endpoint-native-handoff.md",
+      "before": null,
+      "after": "e6713f1500d731d619dde48d57cd0a74b70a8f0a4b16d73b9f102b2b318e4098"
+    },
+    {
+      "path": "relay/discovery-protocol.md",
+      "before": null,
+      "after": "416bd1967be46b8dbf6f531b4e65567028dcca00b6c5a7e5e416b8eb8989c3ff"
+    },
+    {
+      "path": "relay/discovery.mjs",
+      "before": null,
+      "after": "1689b52a3f51e71d86a1afc38650a90d41df8cd59fbe95cffb1b625720611440"
+    },
+    {
+      "path": "relay/gateway.mjs",
+      "before": "9bba39fdbbe42c8276ba95ab51b272ba352dfa75ce363fc0e36d3da1ad4edea2",
+      "after": "45cb9edf9df7cc7b5e209cb7b73cb5608ae58b3982a5e45bac767869b84dc1c1"
+    },
+    {
+      "path": "relay/README.md",
+      "before": "0b10fc19e7bbef3949542c34fdf5e71e5d840e80933381db2ec005999e82ea44",
+      "after": "4dbca0be2f31c13aa10cdec4a50e99677da367a6b99971e73f1e857d94e15ada"
+    },
+    {
+      "path": "relay/config.json",
+      "before": "4fb2f3361c9d516a4604b18f0d28fb7823fe1640f981e28da1bb4a2010cc6045",
+      "after": "c49823ccfa68f5d8166c88d2e2a7bf3026a5df994443fd943b16e5c226c59d48"
+    },
+    {
+      "path": "relay/gateway-operations.md",
+      "before": "14cfcd82351972a2c89040bf63ec5428556b1dd5df50f3d9a4d85786a54c9af0",
+      "after": "772fc65add3ba381c7b28365cb0f4b6ed6bc828f89c999118aed5f1d8031092d"
+    },
+    {
+      "path": "relay/mesh-native-operations.md",
+      "before": "39a0e97f6c68522e725ae1d86629480e87c788f9dab5430cc29e4eca81ba4c2a",
+      "after": "8219366d4759a8cc95db7a60f0efb6895975847d868325a45a8be7e463b3de71"
+    },
+    {
+      "path": "relay/config.mjs",
+      "before": "42c9de861540158b278e59f5d4bbf3b683c9ce04e1c4a4e9e381243408385ea1",
+      "after": "f5246dbba952cafaa9f6b58182882426827bb84d3c102457386686f25da1f88e"
+    },
+    {
+      "path": "relay/native/b/source.json",
+      "before": "88e3fd12ffed3f9c1a21570e037f033181fe136131fbd05e96a6660dd7199f4d",
+      "after": "9201ae0093d330ea4a9ed92de1a96a117313611f2d4e72a26a0ec8439d60153c"
+    },
+    {
+      "path": "relay/native/a/source.json",
+      "before": "17d26b22eee750728fbe14cfb85e439b3cc0d8085ed3c4de522e7157ad4863a6",
+      "after": "1ad4d558b6d3541d76b38b06a06fc3193c5068d255c4910ccbdd8ce4bd5cacc0"
+    },
+    {
+      "path": "tests/mesh-tls-fixture.mjs",
+      "before": null,
+      "after": "adc4287ce292d5244154dc9930f82f164258fb6a205e2fc0fd9646b27cb4ddbe"
+    },
+    {
+      "path": "tests/mesh-discovery-browser.mjs",
+      "before": null,
+      "after": "3b09ffeb7eef88cb37d06fc3217bf576a28ede481690a896f8cbbb799d13f885"
+    },
+    {
+      "path": "tests/relay-discovery.test.mjs",
+      "before": null,
+      "after": "bef8f949a6492491b28d55badef9a5dbb655c87c3cc4454a4ed26c78250c700e"
+    },
+    {
+      "path": "tests/mesh-discovery-client.test.mjs",
+      "before": null,
+      "after": "6e218146de2096284243e30c7272678dbd40d8166f6487edf486309981d1c99f"
+    },
+    {
+      "path": "tests/mesh-discovery.test.mjs",
+      "before": null,
+      "after": "6d4be35204f97c8991678d21bfdde9218be40992f0fc69a7134930b964e4b2a3"
+    },
+    {
+      "path": "tests/mesh-signing-fixtures.mjs",
+      "before": null,
+      "after": "451e09550129940f140db30de22b4c319cceec8f8ed7c17e110355a7789a8d11"
+    },
+    {
+      "path": "tests/relay-protocol.test.mjs",
+      "before": "b426c0701e516c4e37a2927562a2db2c81c5cf330c1c7162a988f5e2bfa022ae",
+      "after": "56895bd8738a807282b970748326362c078af8ed2bb2e18fd67024e216697db0"
+    },
+    {
+      "path": "tests/mesh-worker.test.mjs",
+      "before": "5b2e4bfc553f3569f7d60fa88b1a56aa8f7feb7b414eee5da516fe44c5f342d8",
+      "after": "44392dbdcdae0eb3a7a1e8a2227126710ab56164ecd35af92eadcfb4d0df7120"
+    },
+    {
+      "path": "tests/mesh-browser.mjs",
+      "before": "06c6ee28df75f82644218e7735c6877f191da54066997fb09b4c195a6598d05a",
+      "after": "0fd637de56f459c27727058836494a9148ae6a9054b2d144a30daf3e3f8a16cb"
+    },
+    {
+      "path": "tests/relay-gateway.test.mjs",
+      "before": "3396cc54e13e89ee2da7aab40360fbd33ff3b160407c1104e4ad3d0802f17d97",
+      "after": "985ffcd3c82b7bfdecc4b01b9bea2bb693cd9fc14ae453afe295511e75dfbc63"
+    },
+    {
+      "path": "tests/mesh-protocol.test.mjs",
+      "before": "57459358ad6f2c36ec2d2ef763200d3aead25b0bd76f90eec7620449e92b75f7",
+      "after": "b8251db189d6d5e779b9401f691203ddd7a6bf95c950fe20282e829a3814ad9c"
+    },
+    {
+      "path": "scripts/build-mesh-crypto.mjs",
+      "before": null,
+      "after": "9c9b10d700ef791285a628ee2b47a831a0f0be0f6340281e990445cbe9e5ef0f"
+    }
+  ],
+  "headUnchanged": true
+}

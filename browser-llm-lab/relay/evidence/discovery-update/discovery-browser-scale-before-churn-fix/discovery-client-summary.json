@@ -1,0 +1,113 @@
+{
+  "status": "PASS_WITH_SIGNALING_RECONNECT_CAVEAT",
+  "focusedTests": 39,
+  "browserReport": "discovery-browser-scale-report.json",
+  "browserCheckpoints": 7,
+  "browserErrors": 0,
+  "sameHostOnly": true,
+  "nativeRLPx": false,
+  "nativeFixtures": true,
+  "directBrowserDataInjection": false,
+  "independentScaleBrowsers": 21,
+  "connectedPeersPerScaleBrowser": [
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20
+  ],
+  "remoteCommonWorkerVerification": [
+    {
+      "id": "86994db548f4adb867ae2135b8758eeb",
+      "sourceId": "common-a",
+      "nodeId": "a69331a1afec94e4d732bafeaf01eb93c3892bcc783f68b1a1484658a9c4480b",
+      "browserId": "345f8e1900cc9d7a880e4b3ccdf7bf88",
+      "connected": true,
+      "expiresAt": 1791046135135,
+      "remoteOrigin": null,
+      "endpointVerified": false,
+      "browserSignatureVerified": true
+    },
+    {
+      "id": "0a7cc1da5d2ea70e183d519ea7cea40a",
+      "sourceId": "common-b",
+      "nodeId": "8204ad8320bc210b59970b47e5e2bd9685a16a483320e78df34b51b71df86647",
+      "browserId": "1b358eb642c40cfda786aad22f4f70f2",
+      "connected": true,
+      "expiresAt": 1791046136445,
+      "remoteOrigin": "https://gateway-b.example.org:42505",
+      "endpointVerified": true,
+      "browserSignatureVerified": true
+    }
+  ],
+  "rendezvousMetrics": [
+    {
+      "enabled": true,
+      "endpoints": 1,
+      "peers": 0,
+      "visitors": 0,
+      "replayEntries": 21,
+      "publishing": 0,
+      "publicationSlots": 1,
+      "queuedBytes": 0,
+      "acceptedEndpoints": 0,
+      "rejectedEndpoints": 0,
+      "authentications": 72,
+      "signals": 1886,
+      "expired": 0,
+      "invalid": 42,
+      "receivedBytes": 2149614,
+      "sentBytes": 14327748,
+      "publications": 0,
+      "publicationFailures": 9
+    },
+    {
+      "enabled": true,
+      "endpoints": 1,
+      "peers": 0,
+      "visitors": 0,
+      "replayEntries": 21,
+      "publishing": 0,
+      "publicationSlots": 1,
+      "queuedBytes": 0,
+      "acceptedEndpoints": 0,
+      "rejectedEndpoints": 0,
+      "authentications": 71,
+      "signals": 1633,
+      "expired": 0,
+      "invalid": 44,
+      "receivedBytes": 1897251,
+      "sentBytes": 14969997,
+      "publications": 0,
+      "publicationFailures": 9
+    }
+  ],
+  "cleanupReport": "discovery-browser-scale-cleanup.json",
+  "limitations": [
+    "TLS uses temporary self-signed test certificates with browser ignoreHTTPSErrors for this fixture only.",
+    "Common sockets are explicitly signed stream fixtures, not real RLPx nodes.",
+    "Rendezvous gateways counted automatic reconnects and aggregate invalid messages; individual reasons were not recorded, so this is convergence acceptance rather than uninterrupted stability.",
+    "The browser still requires an initial home gateway Common session; independent remote Common attachments are discovered afterward."
+  ],
+  "fixedRegression": "A valid older renewal from another rendezvous socket is accepted for the same immutable browser generation without rolling back the current cache lease or signal replay high-water mark.",
+  "productHashes": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951"
+  }
+}

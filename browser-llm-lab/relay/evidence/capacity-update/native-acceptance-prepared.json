@@ -1,0 +1,26 @@
+{
+  "mode": "prepared; browser admissions NOT_RUN until root readiness",
+  "files": {
+    "tests/mesh-browser.mjs": "c6265977c803907d0241c33c9cc6d2cc74e3d2feb6b5e61ad2a891df1d466540",
+    "tests/mesh-ui-browser.mjs": "06635a873d5ac99afb15cc02b4839023b5f0dbe57667bb24ccf58c68be285809",
+    "tests/mesh-audit.mjs": "63170147875ecef2a77e011b65d9d9c387652cb630288bf78b6ce0aaa04bb7ba",
+    "relay/native/a/node.toml": "a07159760cdb066893d9e22cb4244d25f916ea5fd707b389a6bec6a6ce91b78e",
+    "relay/native/b/node.toml": "30cdd39ab0b60901e7748e40ff2c75ae5b1661ef9c03829aafa4d6a7755f182b",
+    "evidence/apply-native-capacity.py": "cc6cc3ef5c2004ea37d4fe92a0509261ea8240347b3e0315dfb86bf0522df28d"
+  },
+  "recommendedAcceptance": {
+    "MESH_PUBLIC_ORIGIN": "https://ai-test.make-cph-great-again.community",
+    "MESH_FORCE_DIRECT": "1",
+    "MESH_CHECK_LIFECYCLE": "1",
+    "MESH_CHECK_WORKLOAD": "1",
+    "MESH_CHECK_READMISSION": "1",
+    "MESH_CHECK_ABRUPT": "1",
+    "MESH_SOAK_MS": "180000",
+    "MESH_REQUIRE_RENEWAL": "1",
+    "MESH_EXPECT_NATIVE_CAPACITY": "40"
+  },
+  "physicalPhones": "NOT_RUN",
+  "distinctAccessNetworks": "NOT_RUN",
+  "eightyBrowserSustainedPerformance": "NOT_RUN",
+  "fortyDistinctNativePeers": "NOT_RUN; two registered Commons"
+}

@@ -1,0 +1,20 @@
+{
+  "at": "2026-10-03T09:40:38.374048+00:00",
+  "deployedFilesMatch": {
+    "public/mesh-protocol.js": true,
+    "public/mesh-worker.js": true,
+    "public/mesh-controller.js": true,
+    "public/relay-ui.js": true,
+    "public/index.html": true,
+    "relay/config.mjs": true,
+    "relay/gateway.mjs": true,
+    "relay/config.json": true
+  },
+  "allMatch": true,
+  "diffCheck": true,
+  "publicManifest": ".runtime/releases/capacity-v1/public-manifest.json",
+  "ownedServices": "cypher-browser-mesh-a: online, pid=3208962\ncypher-browser-mesh-b: online, pid=3208999\ncypher-header-turn: online, pid=3068233\ncypher-browser-mesh-gateway: online, pid=3209434\n",
+  "docs": "relay/capacity-update.md",
+  "unplannedReadmissionObserved": true,
+  "uninterruptedStabilityClaim": false
+}

@@ -1,0 +1,139 @@
+{
+  "recordedAt": "2026-10-03T04:35:51.439676+00:00",
+  "unit": {
+    "ActiveState": "inactive",
+    "SubState": "dead",
+    "FragmentPath": "/etc/systemd/system/cypher-browser-mesh.service",
+    "UnitFileState": "enabled"
+  },
+  "unitMatchesReviewedFile": true,
+  "unitSha256": "a4f38944fc963f14d0f66e5abc4ab5b06ba151adfdb400a09e95a6d89058bd29",
+  "installStartedUnit": false,
+  "hostRebootTest": "NOT_RUN",
+  "globalPm2SaveResurrect": "NOT_RUN",
+  "idempotentStartObservation": {
+    "beforePids": {
+      "cypher-browser-mesh-a": 3088210,
+      "cypher-browser-mesh-b": 3088211,
+      "cypher-header-turn": 3068233,
+      "cypher-browser-mesh-gateway": 3107376
+    },
+    "afterPids": {
+      "cypher-browser-mesh-a": 3088210,
+      "cypher-browser-mesh-b": 3088211,
+      "cypher-header-turn": 3068233,
+      "cypher-browser-mesh-gateway": 3107376
+    },
+    "changed": false
+  },
+  "currentApps": [
+    {
+      "name": "cypher-browser-mesh-a",
+      "pm2Home": "/root/.pm2",
+      "pmId": 11,
+      "pid": 3088210,
+      "status": "online",
+      "script": "/root/browser-llm-lab/.runtime/mesh-a/mesh-start.sh"
+    },
+    {
+      "name": "cypher-browser-mesh-b",
+      "pm2Home": "/root/.pm2",
+      "pmId": 12,
+      "pid": 3088211,
+      "status": "online",
+      "script": "/root/browser-llm-lab/.runtime/mesh-b/mesh-start.sh"
+    },
+    {
+      "name": "cypher-header-turn",
+      "pm2Home": "/root/browser-llm-lab/.runtime/relay-turn/pm2",
+      "pmId": 0,
+      "pid": 3068233,
+      "status": "online",
+      "script": "/root/browser-llm-lab/.runtime/relay-turn/start.sh"
+    },
+    {
+      "name": "cypher-browser-mesh-gateway",
+      "pm2Home": "/root/browser-llm-lab/.runtime/mesh-gateway/pm2",
+      "pmId": 0,
+      "pid": 3119522,
+      "status": "online",
+      "script": "/root/browser-llm-lab/relay/main.mjs"
+    }
+  ],
+  "originalNativeProcesses": [
+    {
+      "pid": 2979374,
+      "baselineStarttime": "126555080",
+      "currentStarttime": "126555080",
+      "unchanged": true
+    },
+    {
+      "pid": 2979375,
+      "baselineStarttime": "126555080",
+      "currentStarttime": "126555080",
+      "unchanged": true
+    },
+    {
+      "pid": 2979381,
+      "baselineStarttime": "126555081",
+      "currentStarttime": "126555081",
+      "unchanged": true
+    },
+    {
+      "pid": 2979382,
+      "baselineStarttime": "126555081",
+      "currentStarttime": "126555081",
+      "unchanged": true
+    },
+    {
+      "pid": 2979383,
+      "baselineStarttime": "126555082",
+      "currentStarttime": "126555082",
+      "unchanged": true
+    },
+    {
+      "pid": 2979384,
+      "baselineStarttime": "126555082",
+      "currentStarttime": "126555082",
+      "unchanged": true
+    },
+    {
+      "pid": 2979385,
+      "baselineStarttime": "126555082",
+      "currentStarttime": "126555082",
+      "unchanged": true
+    },
+    {
+      "pid": 2979412,
+      "baselineStarttime": "126555083",
+      "currentStarttime": null,
+      "unchanged": false
+    }
+  ],
+  "originalMinerDrift": {
+    "currentPM2": {
+      "name": "cyphermine",
+      "pmId": 7,
+      "pid": 0,
+      "status": "errored",
+      "restarts": 16
+    },
+    "firstPM2Transition": "2026-10-03T06:27:07 +02:00 Stopping app:cyphermine id:7",
+    "launcherModifiedUTC": "2026-10-03T04:27:00.053489+00:00",
+    "launcherNewFlag": "--browser.public-relay",
+    "restartError": "Browser public-header preparation failed: absolute canonical public-header paths are required",
+    "ourMinerActions": [],
+    "kernelOOMEntriesInBoundedWindow": 0,
+    "attribution": "External launcher edit and explicit PM2 stop observed; responsible actor not established."
+  },
+  "commonBNetworkNamespace": "net:[4026532462]",
+  "hostNetworkNamespace": "net:[4026531833]",
+  "commonBStillIsolated": true,
+  "unitTestsPassed": 9,
+  "existingBootHooks": {
+    "pm2RootService": "not-found",
+    "otherPm2MeshTurnUnits": [],
+    "rcLocalExists": false,
+    "rootCrontabExists": false
+  }
+}

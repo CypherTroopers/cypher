@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/rlp"
 	"github.com/pkg/errors"
@@ -129,6 +130,17 @@ func DecodeToCandidate(data []byte) *Candidate {
 }
 
 func (c *Candidate) HashNoNonce() common.Hash {
+	hash, _ := c.SealHash()
+	return hash
+}
+
+// SealHash is the fresh-genesis seal preimage. The pointer is essential:
+// Candidate.EncodeRLP has a pointer receiver. Consensus callers must handle
+// errors instead of silently mining/verifying Keccak(empty).
+func (c *Candidate) SealHash() (common.Hash, error) {
+	if c == nil || c.KeyCandidate == nil || c.KeyCandidate.Number == nil || c.KeyCandidate.Difficulty == nil {
+		return common.Hash{}, errors.New("incomplete candidate seal preimage")
+	}
 	keyBlockHeader := &KeyBlockHeader{
 		ParentHash:    c.KeyCandidate.ParentHash,
 		Difficulty:    c.KeyCandidate.Difficulty,
@@ -138,7 +150,11 @@ func (c *Candidate) HashNoNonce() common.Hash {
 		T_Number:      c.KeyCandidate.T_Number,
 	}
 	candidate := Candidate{IP: c.IP, KeyCandidate: keyBlockHeader, PubKey: c.PubKey, Coinbase: c.Coinbase, Port: c.Port}
-	return rlpHash(candidate)
+	encoded, err := rlp.EncodeToBytes(&candidate)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return crypto.Keccak256Hash(encoded), nil
 }
 
 type Candidates []*Candidate

@@ -1,0 +1,53 @@
+{
+  "at": "2026-10-03T10:48:37.379998+00:00",
+  "status": "PASS",
+  "unitTests": 16,
+  "publicUICheckpoints": 6,
+  "publicUI": {
+    "startedAt": "2026-10-03T10:46:44.153Z",
+    "finishedAt": "2026-10-03T10:47:30.662Z",
+    "counts": {
+      "desktop": {
+        "peers": "1",
+        "common": "1",
+        "circuits": "1",
+        "receipts": "21",
+        "acknowledged": "1.0 KiB acknowledged by peers"
+      },
+      "mobile": {
+        "peers": "1",
+        "common": "1",
+        "circuits": "1",
+        "receipts": "21",
+        "acknowledged": "9.1 KiB acknowledged by peers"
+      }
+    },
+    "offCleanup": [
+      {
+        "browser": "desktop",
+        "ownedPageOFF": true
+      },
+      {
+        "browser": "mobile",
+        "ownedPageOFF": true
+      }
+    ],
+    "physicalMobile": false
+  },
+  "changedRuntimeAndTestFiles": [
+    "public/relay-ui.js",
+    "public/index.html",
+    "tests/mesh-ui-browser.mjs",
+    "tests/ui-state.test.mjs"
+  ],
+  "missingBaselineFiles": [],
+  "nativeWorkerGatewayChanges": false,
+  "runtimeLimitsChanged": false,
+  "runtimeSHA256": {
+    "public/index.html": "3513f7b07625b2aafffe085cf46689c7e06ca0b6e511e74ca26a119eba474843",
+    "public/relay-ui.js": "c30018ec18743c315967e01f4e02ef89e6dd9c7056a6b824582c4b72d2086f29"
+  },
+  "finalHarnessSHA256": "407dc747ee626b391ec5c01a8cef605402c7b8d560e969a75aad303363dc38bf",
+  "initialHarnessFailure": "Map title expectation omitted the displayed suffix; failed before any admission. Preserved initial report.",
+  "rollback": ".runtime/releases/connection-counts-v1/"
+}

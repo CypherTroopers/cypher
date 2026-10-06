@@ -1,0 +1,25 @@
+{
+  "at": "2026-10-03T05:37:07.075555+00:00",
+  "services": [
+    {
+      "name": "server",
+      "pm2Home": "/root/.pm2",
+      "id": 8,
+      "pid": 3108211,
+      "status": "online",
+      "script": "/root/browser-llm-lab/server.py",
+      "cwd": "/root/browser-llm-lab",
+      "restartCount": 1
+    },
+    {
+      "name": "cypher-browser-mesh-gateway",
+      "pm2Home": "/root/browser-llm-lab/.runtime/mesh-gateway/pm2",
+      "id": 0,
+      "pid": 3119522,
+      "status": "online",
+      "script": "/root/browser-llm-lab/relay/main.mjs",
+      "cwd": "/root/browser-llm-lab",
+      "restartCount": 2
+    }
+  ]
+}

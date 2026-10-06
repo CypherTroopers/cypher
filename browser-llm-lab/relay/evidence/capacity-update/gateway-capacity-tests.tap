@@ -1,0 +1,38 @@
+✔ mesh admission is disabled by default and operator pins are bounded (133.291036ms)
+✔ public config contains Common pins but no Unix path, token or TURN secret (69.011816ms)
+✔ Origin, bearer and allowlisted source enforce admission with no URL or old owner API (47.844308ms)
+✔ round-robin assigns fixed Commons and native secret is never returned (86.886447ms)
+✔ actual Unix WebSocket preserves native hello and native frame bytes in both directions (94.345506ms)
+✔ native identity mismatch revokes the browser session (56.756923ms)
+✔ native connect authenticates its first message, rejects query tokens and duplicate attachment (131.018016ms)
+✔ native close invalidates app lease and signaling; reconnect requires a new POST (72.081057ms)
+✔ native Ping waits for browser Pong, and withheld Pong is never masked by proxy autopong (154.924481ms)
+✔ pending POST abandoned by browser deletes the newborn native lease (161.594323ms)
+✔ renew and OFF propagate native bearer privately and refresh TURN credentials (317.016038ms)
+✔ bounded native responses and frames stop abusive sources or clients (64.308715ms)
+✔ peer signaling prefers another Common and enforces assigned pairs, ICE caps and no token forwarding (1175.002357ms)
+✔ per-client concurrent admission reservations, aggregate quota and proxy metadata remain bounded (46.510736ms)
+✔ duplicate JSON, extra fields, body limits and expired session revival are rejected (37.324502ms)
+✔ native payload counts both directions against the ON quota, and renewal does not reset it (560.680486ms)
+✔ a new native lease is released when the initial public session response has no bandwidth budget (104.81524ms)
+✔ authenticated diagnostics distinguish upstream close from withheld browser Pong using fixed counters only (111.331313ms)
+✔ expanded capacity preserves resource budgets and reserves both browser sockets plus metadata (48.165045ms)
+✔ per-Common admission accepts 80, rejects 81 and reuses a released slot (693.215395ms)
+✔ 160 global leases include pending reservations and support 320 simultaneous browser sockets (7071.788771ms)
+✔ native admission pacing stays one per second with a burst of eight at expanded capacity (82.572319ms)
+✔ live native capability checks honor legacy limits and refresh safely after upgrade (71.124587ms)
+✔ unknown, malformed and duplicate-key native capability profiles fail before issuing any lease (32.062511ms)
+✔ 40 maximum-length routes exceed 16 KiB but fit bounded status metadata and remain coalesced (209.750611ms)
+✔ metadata requests reserve at most eight IPC slots with no hidden keep-alive backlog (180.81606ms)
+✔ OFF revokes all local leases immediately and retries bounded native cleanup when metadata is full (307.041849ms)
+✔ upstream restart invalidates cached capacities before the next public lease (29.676341ms)
+✔ aborted admission stops after a shared metadata read and does not probe another Common (117.765986ms)
+✔ unavailable native cleanup retains capacity until acknowledgement or the actual lease deadline (48.062043ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12710.520905

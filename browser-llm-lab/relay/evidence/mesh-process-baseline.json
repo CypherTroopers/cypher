@@ -1,0 +1,121 @@
+[
+  {
+    "pid": 2979374,
+    "exe": "/root/cypher/build/bin/cypher-linux-amd64 (deleted)",
+    "starttime": "126555080",
+    "selected": [
+      "--config",
+      "static-nodes.toml",
+      "--rnetport",
+      "7112",
+      "--datadir",
+      "chaindb5"
+    ]
+  },
+  {
+    "pid": 2979375,
+    "exe": "/root/cypher/build/bin/cypher-linux-amd64 (deleted)",
+    "starttime": "126555080",
+    "selected": [
+      "--config",
+      "static-nodes.toml",
+      "--rnetport",
+      "7108",
+      "--datadir",
+      "chaindb3"
+    ]
+  },
+  {
+    "pid": 2979381,
+    "exe": "/root/cypher/build/bin/cypher-linux-amd64 (deleted)",
+    "starttime": "126555081",
+    "selected": [
+      "--config",
+      "static-nodes.toml",
+      "--rnetport",
+      "7106",
+      "--datadir",
+      "chaindb2"
+    ]
+  },
+  {
+    "pid": 2979382,
+    "exe": "/root/cypher/build/bin/cypher-linux-amd64 (deleted)",
+    "starttime": "126555081",
+    "selected": [
+      "--config",
+      "static-nodes.toml",
+      "--rnetport",
+      "7102",
+      "--datadir",
+      "chaindb0"
+    ]
+  },
+  {
+    "pid": 2979383,
+    "exe": "/root/cypher/build/bin/cypher-linux-amd64 (deleted)",
+    "starttime": "126555082",
+    "selected": [
+      "--config",
+      "static-nodes.toml",
+      "--rnetport",
+      "7114",
+      "--datadir",
+      "chaindb6"
+    ]
+  },
+  {
+    "pid": 2979384,
+    "exe": "/root/cypher/build/bin/cypher-linux-amd64 (deleted)",
+    "starttime": "126555082",
+    "selected": [
+      "--config",
+      "static-nodes.toml",
+      "--rnetport",
+      "7104",
+      "--datadir",
+      "chaindb1"
+    ]
+  },
+  {
+    "pid": 2979385,
+    "exe": "/root/cypher/build/bin/cypher-linux-amd64 (deleted)",
+    "starttime": "126555082",
+    "selected": [
+      "--config",
+      "static-nodes.toml",
+      "--rnetport",
+      "7110",
+      "--datadir",
+      "chaindb4"
+    ]
+  },
+  {
+    "pid": 2979412,
+    "exe": "/root/cypher/build/bin/cypher-linux-amd64 (deleted)",
+    "starttime": "126555083",
+    "selected": [
+      "--config",
+      "static-nodes.toml",
+      "--rnetport",
+      "7155",
+      "--datadir",
+      "chaindbmine"
+    ]
+  },
+  {
+    "pid": 3040668,
+    "exe": "/root/browser-llm-lab/.runtime/relay-source/cypher",
+    "starttime": "127295786",
+    "selected": [
+      "--config",
+      "./node.toml",
+      "--datadir",
+      "./data",
+      "--rnetport",
+      "7302",
+      "--browser.public-relay.config",
+      "/root/browser-llm-lab/.runtime/relay-source/source.json"
+    ]
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "build": "npm ci && npm run build:mesh-crypto",
+  "bundler": "0.28.2",
+  "artifact": "mesh-crypto.js",
+  "sha256": "736696fb9c856ab1dad7a639f49fbb456320d3341575d702285ca3fe407eabc6",
+  "packages": [
+    {
+      "name": "@noble/curves",
+      "version": "2.4.0",
+      "license": "MIT",
+      "repository": "git+https://github.com/paulmillr/noble-curves.git"
+    },
+    {
+      "name": "@noble/hashes",
+      "version": "2.4.0",
+      "license": "MIT",
+      "repository": "git+https://github.com/paulmillr/noble-hashes.git"
+    }
+  ]
+}

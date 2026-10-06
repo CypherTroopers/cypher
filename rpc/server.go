@@ -19,6 +19,7 @@ package rpc
 import (
 	"context"
 	"io"
+	"sort"
 	"sync/atomic"
 
 	"github.com/cypherium/cypher/log"
@@ -64,6 +65,35 @@ func NewServer() *Server {
 // service collection this server provides to clients.
 func (s *Server) RegisterName(name string, receiver interface{}) error {
 	return s.services.registerName(name, receiver)
+}
+
+// RegisterNameAllowed registers only callbacks accepted by allow. Filtering happens
+// after reflection (including promoted methods), before callbacks become reachable.
+// The method passed to allow includes the namespace; subscription is true for
+// subscription callbacks. A service with no allowed callbacks is not registered.
+func (s *Server) RegisterNameAllowed(name string, receiver interface{}, allow func(method string, subscription bool) bool) error {
+	if allow == nil {
+		return s.RegisterName(name, receiver)
+	}
+	return s.services.registerNameAllowed(name, receiver, allow)
+}
+
+// RegisteredMethods returns an inventory of the actual registered callbacks.
+// Subscriptions use namespace_subscribe:subscriptionName notation.
+func (s *Server) RegisteredMethods() []string {
+	s.services.mu.Lock()
+	defer s.services.mu.Unlock()
+	var methods []string
+	for namespace, service := range s.services.services {
+		for method := range service.callbacks {
+			methods = append(methods, namespace+"_"+method)
+		}
+		for method := range service.subscriptions {
+			methods = append(methods, namespace+"_subscribe:"+method)
+		}
+	}
+	sort.Strings(methods)
+	return methods
 }
 
 // ServeCodec reads incoming requests from codec, calls the appropriate callback and writes

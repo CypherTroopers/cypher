@@ -1,0 +1,17 @@
+{
+  "name": "D",
+  "pid": 3320303,
+  "firstSeenAt": "2026-10-03T17:47:04.755796+00:00",
+  "origin": "https://native-gateway-a.example.org:45541",
+  "initialProcess": {
+    "present": true,
+    "state": "S",
+    "startTicks": "132775524",
+    "argv": [
+      "/tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome --no-sandbox --no-proxy-server --ignore-certificate-errors --host-resolver-rules=MAP native-gateway-a.example.org 127.0.0.1,MAP native-gateway-b.example.org 127.0.0.1 --headless=new --remote-debugging-port=0 --user-data-dir=/tmp/cypher-mesh-D-iG4yFg --noerrdialogs --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+    ]
+  },
+  "profile": "/tmp/cypher-mesh-D-iG4yFg",
+  "profileValidated": true,
+  "profilePresentWhenCaptured": true
+}

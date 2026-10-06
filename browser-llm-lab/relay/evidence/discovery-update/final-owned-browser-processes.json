@@ -1,0 +1,73 @@
+{
+  "status": "PASS",
+  "at": "2026-10-03T18:24:52.304933+00:00",
+  "scope": "Final31minute,finalpublic240second,realremoteattachment,publicUI owned browsers only",
+  "processes": [
+    {
+      "report": "native-discovery-browser-report.json",
+      "browser": "A",
+      "pid": 3314585,
+      "absent": true
+    },
+    {
+      "report": "native-discovery-browser-report.json",
+      "browser": "B",
+      "pid": 3314889,
+      "absent": true
+    },
+    {
+      "report": "native-discovery-browser-report.json",
+      "browser": "C",
+      "pid": 3315541,
+      "absent": true
+    },
+    {
+      "report": "native-discovery-browser-report.json",
+      "browser": "D",
+      "pid": 3320303,
+      "absent": true
+    },
+    {
+      "report": "public-native-browser-report.json",
+      "browser": "A",
+      "pid": 3325046,
+      "absent": true
+    },
+    {
+      "report": "public-native-browser-report.json",
+      "browser": "B",
+      "pid": 3325252,
+      "absent": true
+    },
+    {
+      "report": "public-native-browser-report.json",
+      "browser": "C",
+      "pid": 3325556,
+      "absent": true
+    },
+    {
+      "report": "public-native-browser-report.json",
+      "browser": "D",
+      "pid": 3326649,
+      "absent": true
+    },
+    {
+      "report": "public-remote-discovery-browser-report.json",
+      "browser": "remote",
+      "pid": 3321030,
+      "absent": true
+    },
+    {
+      "report": "public-ui/report.json",
+      "browser": "desktop",
+      "pid": 3327103,
+      "absent": true
+    },
+    {
+      "report": "public-ui/report.json",
+      "browser": "mobile",
+      "pid": 3327290,
+      "absent": true
+    }
+  ]
+}

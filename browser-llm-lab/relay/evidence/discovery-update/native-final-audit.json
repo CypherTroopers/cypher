@@ -1,0 +1,273 @@
+{
+  "auditAtUTC": "2026-10-03T17:04:29.513798+00:00",
+  "mode": "read-only native/product/runtime audit; wrote only this evidence report",
+  "result": "PASS_WITH_DOCUMENTATION_NOTES",
+  "nativeSource": [
+    {
+      "path": "/root/cypher/node/browserrelay/mesh_protocol.go",
+      "expectedSHA256": "0e758d46ac34e9e8a0cfd18d636e64d90ecdd445d2cb545b8b436a783b73105f",
+      "actualSHA256": "0e758d46ac34e9e8a0cfd18d636e64d90ecdd445d2cb545b8b436a783b73105f",
+      "matchesTestedSource": true
+    },
+    {
+      "path": "/root/cypher/node/browserrelay/mesh.go",
+      "expectedSHA256": "6492b83e56c9708b02ca5d92242445c3f6304d466afc23c59ca255a434b7cecc",
+      "actualSHA256": "6492b83e56c9708b02ca5d92242445c3f6304d466afc23c59ca255a434b7cecc",
+      "matchesTestedSource": true
+    },
+    {
+      "path": "/root/cypher/node/browserrelay/mesh_test.go",
+      "expectedSHA256": "c940b54cec160445ebb2d85e409c6511cdfa0dd368ed8e12be634774b5d2cc67",
+      "actualSHA256": "c940b54cec160445ebb2d85e409c6511cdfa0dd368ed8e12be634774b5d2cc67",
+      "matchesTestedSource": true
+    },
+    {
+      "path": "/root/cypher/cmd/cypher/browser_mesh.go",
+      "expectedSHA256": "68528c369d5f9939cfe552c093a9950deb16b448f394e70b9738c2b0d009df59",
+      "actualSHA256": "68528c369d5f9939cfe552c093a9950deb16b448f394e70b9738c2b0d009df59",
+      "matchesTestedSource": true
+    },
+    {
+      "path": "/root/cypher/cmd/cypher/browser_mesh_test.go",
+      "expectedSHA256": "0ee7a5137208f5e7663c696c1854f6da069846cdece7f766940d0be0bc4f6b4e",
+      "actualSHA256": "0ee7a5137208f5e7663c696c1854f6da069846cdece7f766940d0be0bc4f6b4e",
+      "matchesTestedSource": true
+    },
+    {
+      "path": "/root/cypher/cmd/cypher/browser_public_relay.go",
+      "expectedSHA256": "b237c8e6e727405141758883138898d563fc5722ce6ac1dbf72d27dfc34ff930",
+      "actualSHA256": "b237c8e6e727405141758883138898d563fc5722ce6ac1dbf72d27dfc34ff930",
+      "matchesTestedSource": true
+    },
+    {
+      "path": "/root/cypher/cmd/cypher/browser_public_relay_test.go",
+      "expectedSHA256": "afbf7b98671c65a51fcc07b50cf1fb3f2169ff369dc90abfa2b59e32a7903268",
+      "actualSHA256": "afbf7b98671c65a51fcc07b50cf1fb3f2169ff369dc90abfa2b59e32a7903268",
+      "matchesTestedSource": true
+    },
+    {
+      "path": "/root/cypher/node/browserrelay/testdata/mesh-endpoint-vector.json",
+      "expectedSHA256": "5dd7b445cc6a044ff3d501ec2c3e78c9e5305792c56c7ef6aaa48f36c8da6508",
+      "actualSHA256": "5dd7b445cc6a044ff3d501ec2c3e78c9e5305792c56c7ef6aaa48f36c8da6508",
+      "matchesTestedSource": true
+    }
+  ],
+  "nativeSpecification": {
+    "path": "/root/cypher/docs/common-relay/browser-public-header-relay-spec.md",
+    "sha256": "67af605d410e4ebeea702dfbc683e42ceb87a455954eddc8690506d37270f548",
+    "historicalVerificationSectionPreserved": true
+  },
+  "artifact": {
+    "path": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/bin/cypher",
+    "sha256": "be38686525295758caecfad9e76ddda4fc9579e3521b3651662fbf464e07052c",
+    "manifest": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/build-stage/linux-amd64/manifest.txt",
+    "manifestSHA256": "078b4cbce666fd90e52c037efb35b6507a80f95eeee4b8adb19083edb2cdb9e4",
+    "buildCommand": "make cypher BINDIR=/tmp/cypher-mesh-discovery-20261003/native-endpoint/bin STAGE_ROOT=/tmp/cypher-mesh-discovery-20261003/native-endpoint/build-stage JOBS=4",
+    "raceFlags": "go test -mod=readonly -modfile=<isolated native-bounded.mod> -tags=cypher_bounded_storage -race ./node/browserrelay ./cmd/cypher ./p2p -count=1 -timeout=120s",
+    "raceDependencyPreparation": "Reused exactly the helper-created pinned bounded LevelDB fork, BLS headers and libraries under native-endpoint/race-build; original go.mod/go.sum were not edited by the endpoint implementation. To reproduce after cleanup, use the existing build helper with a temporary GO wrapper that adds -race only to its cmd/cypher/node/browserrelay/p2p test invocation."
+  },
+  "mandatoryVerification": {
+    "native-endpoint-build-final.log": {
+      "sha256": "2048f15bdb12a48f13cb9ded79eb8a59a12f164a6d0047b3b808690b2c3df7f9",
+      "summaryLines": [
+        "ok  \tgithub.com/cypherium/cypher/crypto/bls\t1.121s",
+        "ok  \tgithub.com/cypherium/cypher/ethdb/leveldb\t0.062s",
+        "ok  \tgithub.com/cypherium/cypher/cmd/cypher\t0.155s",
+        "ok  \tgithub.com/cypherium/cypher/node/browserrelay\t7.222s",
+        "ok  \tgithub.com/cypherium/cypher/p2p\t0.110s",
+        "Built /tmp/cypher-mesh-discovery-20261003/native-endpoint/bin/cypher-linux-amd64 (linux/amd64)",
+        "Staged artifacts in /tmp/cypher-mesh-discovery-20261003/native-endpoint/build-stage/linux-amd64"
+      ]
+    },
+    "native-endpoint-race-final.log": {
+      "sha256": "a33cf679079d6a6364470409a0bca614f09bee20fbaa31e95264ae3d0cd82026",
+      "summaryLines": [
+        "ok  \tgithub.com/cypherium/cypher/node/browserrelay\t17.492s",
+        "ok  \tgithub.com/cypherium/cypher/cmd/cypher\t1.674s",
+        "ok  \tgithub.com/cypherium/cypher/p2p\t6.181s"
+      ]
+    },
+    "crypto-tests.txt": {
+      "sha256": "acf1db95e19ee2855ad4f7bb0d22e21f28ef8566263442b15c566406618c1178",
+      "summaryLines": [
+        "ℹ tests 29",
+        "ℹ pass 29",
+        "ℹ fail 0"
+      ]
+    },
+    "crypto-origin-regression.txt": {
+      "sha256": "0ddd9eae3383093258f2b47a27737266b6be2b52dde042e73059e60cc7923a50",
+      "summaryLines": [
+        "ℹ tests 1",
+        "ℹ pass 1",
+        "ℹ fail 0"
+      ]
+    }
+  },
+  "runtime": [
+    {
+      "common": "a",
+      "pm2Name": "cypher-browser-mesh-a",
+      "pm2Home": "/root/.pm2",
+      "pidObserved": 3298940,
+      "binary": "/root/browser-llm-lab/.runtime/mesh-a/cypher",
+      "binarySHA256": "be38686525295758caecfad9e76ddda4fc9579e3521b3651662fbf464e07052c",
+      "runningProcExecutableSHA256": "be38686525295758caecfad9e76ddda4fc9579e3521b3651662fbf464e07052c",
+      "procObservation": "fresh escalated readlink + sha256sum on recorded PID; both matched final artifact",
+      "datadir": "/root/browser-llm-lab/.runtime/mesh-a/data",
+      "launcher": "/root/browser-llm-lab/.runtime/mesh-a/mesh-start.sh",
+      "nativeConfig": "/root/browser-llm-lab/.runtime/mesh-a/node.toml",
+      "relayConfig": "/root/browser-llm-lab/.runtime/mesh-a/source.json",
+      "sourceSocket": "/root/browser-llm-lab/.runtime/mesh-a/source.sock",
+      "ownerIPC": "/root/browser-llm-lab/.runtime/mesh-a/node.ipc",
+      "sourceId": "common-a",
+      "gatewayOrigin": "https://ai-test.make-cph-great-again.community",
+      "nativeAllowedOrigins": [
+        "https://ai-test.make-cph-great-again.community"
+      ],
+      "runtimeMode": "0o700",
+      "configMode": "0o600",
+      "sourceSocketMode": "0o600",
+      "nativeKeyFiles": [
+        {
+          "path": "/root/browser-llm-lab/.runtime/mesh-a/data/cypher/nodekey",
+          "mode": "0o600",
+          "contentsReadByAudit": false
+        }
+      ],
+      "optionalHeaderKeyConfigured": false,
+      "networkNamespaceObserved": "net:[4026531833]"
+    },
+    {
+      "common": "b",
+      "pm2Name": "cypher-browser-mesh-b",
+      "pm2Home": "/root/.pm2",
+      "pidObserved": 3299041,
+      "binary": "/root/browser-llm-lab/.runtime/mesh-b/cypher",
+      "binarySHA256": "be38686525295758caecfad9e76ddda4fc9579e3521b3651662fbf464e07052c",
+      "runningProcExecutableSHA256": "be38686525295758caecfad9e76ddda4fc9579e3521b3651662fbf464e07052c",
+      "procObservation": "fresh escalated readlink + sha256sum on recorded PID; both matched final artifact",
+      "datadir": "/root/browser-llm-lab/.runtime/mesh-b/data",
+      "launcher": "/root/browser-llm-lab/.runtime/mesh-b/mesh-start.sh",
+      "nativeConfig": "/root/browser-llm-lab/.runtime/mesh-b/node.toml",
+      "relayConfig": "/root/browser-llm-lab/.runtime/mesh-b/source.json",
+      "sourceSocket": "/root/browser-llm-lab/.runtime/mesh-b/source.sock",
+      "ownerIPC": "/root/browser-llm-lab/.runtime/mesh-b/node.ipc",
+      "sourceId": "common-b",
+      "gatewayOrigin": "https://ai-test.make-cph-great-again.community",
+      "nativeAllowedOrigins": [
+        "https://ai-test.make-cph-great-again.community"
+      ],
+      "runtimeMode": "0o700",
+      "configMode": "0o600",
+      "sourceSocketMode": "0o600",
+      "nativeKeyFiles": [
+        {
+          "path": "/root/browser-llm-lab/.runtime/mesh-b/data/cypher/nodekey",
+          "mode": "0o600",
+          "contentsReadByAudit": false
+        }
+      ],
+      "optionalHeaderKeyConfigured": false,
+      "networkNamespaceObserved": "net:[4026532462]"
+    }
+  ],
+  "repositoryBuildBin": {
+    "intentionallyUnchangedByThisTask": true,
+    "reason": "All endpoint builds used explicit isolated BINDIR and STAGE_ROOT; runtime copies were deployed separately by the parent. No before-task build/bin hash was captured by this subagent, so cross-session absence of unrelated changes is not independently asserted.",
+    "files": [
+      {
+        "path": "/root/cypher/build/bin/cypher",
+        "sha256": "5500535b3ab126e9996718ec60466f0e01ad71284c562b6c7696ff34edbe8a3f"
+      },
+      {
+        "path": "/root/cypher/build/bin/cypher-linux-amd64",
+        "sha256": "5500535b3ab126e9996718ec60466f0e01ad71284c562b6c7696ff34edbe8a3f"
+      }
+    ]
+  },
+  "operations": {
+    "cwd": "/root/browser-llm-lab",
+    "status": "./relay/start-managed.sh status",
+    "validate": "./relay/start-managed.sh check",
+    "start": "./relay/start-managed.sh start",
+    "stop": "./relay/start-managed.sh stop",
+    "scope": "Common A, Common B, dedicated TURN, dedicated gateway only; original eight nodes excluded",
+    "nativeDescriptor": "/root/browser-llm-lab/relay/mesh.ecosystem.json",
+    "gatewayDescriptor": "/root/browser-llm-lab/relay/gateway.ecosystem.json",
+    "gatewayRuntime": "/root/browser-llm-lab/relay/main.mjs /root/browser-llm-lab/relay/config.json",
+    "gatewayPM2Home": "/root/browser-llm-lab/.runtime/mesh-gateway/pm2",
+    "gatewayName": "cypher-browser-mesh-gateway",
+    "gatewayListen": "127.0.0.1:8091",
+    "publicOrigin": "https://ai-test.make-cph-great-again.community",
+    "gatewayCaveat": "B must retain the unshare -Urn launcher; never replace it with a direct native invocation. No operations were executed during this audit."
+  },
+  "secretMaterialAudit": {
+    "jsonEvidenceFilesScanned": 25,
+    "nonemptySensitiveFields": [],
+    "privatePEMMaterial": [],
+    "intentionalPublicFixture": {
+      "path": "/root/cypher/node/browserrelay/testdata/mesh-endpoint-vector.json",
+      "fields": [
+        "digest",
+        "domain",
+        "envelope",
+        "nodeId",
+        "payloadUTF8",
+        "testPrivateScalar"
+      ],
+      "containsExplicitTestPrivateScalar": true,
+      "classification": "Known public deterministic scalar 1 for reproducibility, intentionally disclosed and never used operationally. The envelope itself has only payloadBase64 and signatureHex; payload has nine public descriptor fields. It is inaccurate to describe the complete vector as containing only public-key fields.",
+      "descriptorFields": [
+        "version",
+        "network",
+        "enode",
+        "sourceId",
+        "gatewayOrigin",
+        "bootId",
+        "sequence",
+        "issuedAt",
+        "expiresAt"
+      ],
+      "noOperationalNativePrivateKeyMaterial": true
+    },
+    "realNativeKeys": "Existing runtime nodekey files remain owner-only 0600 in their original datadirs; their bytes were not read by this audit. They are operational keys and must not be deleted as test cleanup.",
+    "scopeLimit": "Structured-field and PEM scanning plus manual review of authored codec/vector paths; this is not a general forensic proof over arbitrary unrelated binary files.",
+    "deployedNativeIdentitiesDifferFromPublicFixture": {
+      "a": true,
+      "b": true
+    }
+  },
+  "cleanupAndReproduction": {
+    "retain": [
+      "Native seven modified source/test files and testdata/mesh-endpoint-vector.json",
+      "Canonical native specification and Web common-endpoint-native-handoff.md",
+      "Final build/race logs, final build manifest, source hashes and baseline record",
+      "Native Go vector reproduction sources and JSON output",
+      "Deployment records and owned rollback snapshots according to release retention policy"
+    ],
+    "removableAfterEvidenceArchived": [
+      "/tmp/cypher-mesh-discovery-20261003/native-endpoint/race-build (public headers/libraries/fork, no secrets)",
+      "native-endpoint/before and after scratch source copies once baseline/diff evidence is preserved",
+      "isolated staged native-endpoint/bin and build-stage copies after runtime hashes and rollback records are preserved",
+      "task-owned npm/Go caches and temporary helper files after all users finish"
+    ],
+    "neverRemove": [
+      "Existing Common A/B datadirs, native nodekeys, source configs/sockets, IPC and launchers",
+      "Existing unrelated uncommitted native files",
+      "Original eight native node data or process state"
+    ],
+    "alreadyRemoved": [
+      "/tmp/mesh-native-vector.go duplicate scratch helper",
+      "/tmp/native-endpoint-edit.py scratch editing driver",
+      "/tmp/discovery-tests-body empty scratch file"
+    ]
+  },
+  "documentationNotes": [
+    {
+      "path": "relay/mesh-native-operations.md",
+      "finding": "Existing paragraphs still say current dedicated binary SHA is 3efc... and list old capacity-upgrade PIDs. Label those as historical or add a discovery update link; actual current runtime SHA is the final be386... artifact. This audit did not edit product documentation."
+    }
+  ],
+  "approvalObservation": "Initial read-only host /proc approval review timed out. One explicitly allowed retry with minimal readlink/sha256sum succeeded; no approval block remains."
+}

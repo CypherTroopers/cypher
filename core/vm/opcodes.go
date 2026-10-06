@@ -400,3 +400,17 @@ func (op OpCode) String() string {
 	}
 	return str
 }
+
+// StringToOp resolves the canonical EVM mnemonic used by the assembler and
+// transition tooling. Fork-specific opcodes register themselves in
+// opCodeToString during package initialization, so deriving the reverse lookup
+// here also covers later additions such as Osaka's CLZ without maintaining a
+// second table that can silently drift.
+func StringToOp(mnemonic string) OpCode {
+	for op, name := range opCodeToString {
+		if name == mnemonic {
+			return op
+		}
+	}
+	return STOP
+}

@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-03T04:33:12.991996+00:00",
+  "pm2Home": "/root/browser-llm-lab/.runtime/mesh-gateway/pm2",
+  "app": "cypher-browser-mesh-gateway",
+  "listen": "127.0.0.1:8091",
+  "files": {
+    "gateway.mjs": "03a45dd93f36acec1d4cff1e20789b9d47b273f975f3dd9145f871feeaf07100",
+    "config.mjs": "72c9183ff4f54fee3dff469d102c6f44ddc47781092ea4c27670b56fdb222f4c",
+    "geo.mjs": "80d640f0a58370585ccb635c6d43155a1e63c194f512f5b26b02434240e67ab0",
+    "turn.mjs": "a9f91c24a621a7e5e4b1c366b694881a333dff4fa8f6f02a9aa4713b0779d2c9",
+    "main.mjs": "9fa3dc18454c4a1c88685c1296292072e9ced4e185621a5221859d578778e648",
+    "config.json": "e747ffb7ad2403da3778434c0ae763cafc8606964a7cfd7786a0fb5320b2a34e",
+    "gateway.ecosystem.json": "02ece0b19d4e3bd4e14813905806459e0a1696907a994f48678fde90c1df094c"
+  },
+  "packageLockSHA256": "fafa595b4f30383a3411cbabd7d8ea4144adf75e6b9fccabf90febd5fbf3562f",
+  "publicHelperSHA256": "33ec669dc7b1d237cf6efc690cc2d127048c92d94e5b31a6e1d26c7610e90261",
+  "nginxSHA256": "812be7106a163c5227dfbbb93106651a5dd201796f0e638a3acdb13c8c459d5f",
+  "targetSource": "relay/mesh-targets.json",
+  "limits": {
+    "maxSessions": 16,
+    "maxSessionsPerClient": 4
+  },
+  "note": "Final gateway includes validated-config startup fix, failed admission response cleanup and bounded fixed-enum drop counters; no per-event private logs; unrelated nginx root/TLS preserved."
+}

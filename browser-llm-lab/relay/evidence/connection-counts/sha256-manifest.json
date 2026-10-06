@@ -1,0 +1,19 @@
+{
+  "deployment.json": "dd51c4ba88dd44e8ed3ebfd413a9cd519daadbe5d344c15dad7094dee72de9fd",
+  "baseline.json": "e29d4cdf9453a55748d6656ca6dc286b8317527b6a6ee94d109698c27aa11252",
+  "ui-state.log": "1b427a525da4394234890212617594636d7d677c0d28cccf48e48e2a23f98955",
+  "public-assets.json": "eaecd270f1c31ccaee548bbe010446ef7506b0ec809fba2719eb69e37e1035fd",
+  "summary.json": "e8f739d6c42e136c9846d80cfdda6036638fe4df97c219807e17ccdbfac20579",
+  "public-ui/screen-desktop-metrics.png": "e3c994909349efbfb384ada3ca22bf63abb04aa60716e20fe9aec56e141efac8",
+  "public-ui/screen-mobile-map-actual-activity.png": "52b767e374f509e768cb5323e1049a2797b3a603e90eb9db48dbcb5af0ac7e28",
+  "public-ui/screen-desktop-off.png": "270030fa0101bac743f62c842c1a64d5f9354939cbe1bfe99f9f39f446713154",
+  "public-ui/log.txt": "21425c2d11f2d9513ebccf317e583275c8966add35987a13bf763327ffa634c3",
+  "public-ui/screen-mobile-metrics.png": "b3bbaf097293bbc728ca4dbf3802f5602140a9c7e279ec691f8913fab64131ba",
+  "public-ui/screen-desktop-active.png": "aad06a791757ab6aa3341597501d1e3df927814480bf816b404852eef1c2abf7",
+  "public-ui/report.json": "36be8a70b02daae0f22e7e63def84a84fae1b68a439fb17079ab7236e68891e2",
+  "public-ui/screen-mobile-active.png": "8484c5d95ce21e4d5e2a2c882e5b4c58d5be82c58337030f172f2399a7234c1d",
+  "public-ui/initial-log.txt": "ecfb368d59d718cf87bcbc291b7f020c54e9b99d9f6c4bc4d9cd4a0718300e3a",
+  "public-ui/initial-report.json": "eccd43801cc43152d2a89652faabe53dc380ba644fb0af1e2701042a0e106eb1",
+  "public-ui/screen-mobile-off.png": "cf1deddb48291769d3e134ed6b21824005bb05e3bee66f7d7b4feb699d864cf1",
+  "public-ui/screen-desktop-map-actual-activity.png": "877d2d661cd341cd713105a66f02f28a8396bd2594b233567926f4cb9007833f"
+}

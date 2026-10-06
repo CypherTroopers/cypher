@@ -1,0 +1,16 @@
+{
+  "at": "2026-10-03T17:14:47.356259+00:00",
+  "changes": [
+    {
+      "path": "relay/discovery.mjs",
+      "before": "1689b52a3f51e71d86a1afc38650a90d41df8cd59fbe95cffb1b625720611440",
+      "after": "ada83d15070ee19a7076de2e2665234cf9706aa5dc6e4b0ead5521d6dddac178"
+    },
+    {
+      "path": "tests/relay-discovery.test.mjs",
+      "before": "bef8f949a6492491b28d55badef9a5dbb655c87c3cc4454a4ed26c78250c700e",
+      "after": "9defb88cc2e10f2ab3edc8891107ce8ddd800050eb8c1f31f205843bf0107e7a"
+    }
+  ],
+  "reason": "Valid delayed signaling to a departed peer must not terminate a healthy sender"
+}

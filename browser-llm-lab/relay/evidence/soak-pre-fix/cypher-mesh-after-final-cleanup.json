@@ -1,0 +1,93 @@
+{
+  "utc": "2026-10-03T05:10:09Z",
+  "nodes": {
+    "a": {
+      "head": 3792,
+      "peers": [
+        {
+          "enode": "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@127.0.0.1:6000",
+          "id": "16d705509956e20c8ac91de61ba75b122228fd14287f1082ce8b9a6f9c122e53",
+          "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+          "caps": [
+            "eth/66"
+          ],
+          "network": {
+            "localAddress": "127.0.0.1:55996",
+            "remoteAddress": "127.0.0.1:6000",
+            "inbound": false,
+            "trusted": false,
+            "static": true
+          },
+          "protocols": {
+            "eth": {
+              "version": 66,
+              "difficulty": 4170100,
+              "head": "0xb50e20f01092907504e4f7732930b0d56b8ddb48f1dd14f0b1786bb68d8ceb1e"
+            }
+          }
+        }
+      ],
+      "meshStatus": {
+        "running": true,
+        "sessions": 0,
+        "circuits": 0,
+        "candidates": 0,
+        "receivedBytes": 716411,
+        "sentBytes": 3038537,
+        "routes": []
+      },
+      "mining": false,
+      "accountsCount": 0
+    },
+    "b": {
+      "head": 3789,
+      "peers": [],
+      "meshStatus": {
+        "running": true,
+        "sessions": 0,
+        "circuits": 0,
+        "candidates": 0,
+        "receivedBytes": 3031174,
+        "sentBytes": 715396,
+        "routes": []
+      },
+      "mining": false,
+      "accountsCount": 0
+    },
+    "reference": {
+      "head": 3792
+    }
+  },
+  "hashes": {
+    "0": {
+      "a": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "b": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "reference": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    },
+    "1": {
+      "a": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+      "b": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+      "reference": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca"
+    },
+    "1000": {
+      "a": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+      "b": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+      "reference": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e"
+    },
+    "3789": {
+      "a": "0xece6c8ffd37d6ded3c5b53ae848c0f00a3fd16766bbef803cecea05204086811",
+      "b": "0xece6c8ffd37d6ded3c5b53ae848c0f00a3fd16766bbef803cecea05204086811",
+      "reference": "0xece6c8ffd37d6ded3c5b53ae848c0f00a3fd16766bbef803cecea05204086811"
+    }
+  },
+  "reference": {
+    "path": "/root/cypher/chaindb0/cypher.ipc",
+    "selection": "fallback",
+    "fallbackReason": "Default reference /root/cypher/chaindbmine/cypher.ipc unavailable (FileNotFoundError)",
+    "role": "canonical-hash-reference-only"
+  },
+  "verification": "native-owner-rpc-canonical-hashes",
+  "bOnlyMeshPeers": true,
+  "bHasTransferredNativeStream": false,
+  "pass": true
+}

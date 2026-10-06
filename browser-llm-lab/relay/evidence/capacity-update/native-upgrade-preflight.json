@@ -1,0 +1,145 @@
+{
+  "at": "2026-10-03T09:17:32Z",
+  "status": "PREFLIGHT",
+  "apply": false,
+  "oldSHA256": "3bafe0f18343f18533ef8528ab314ddaa7264953c2bc2ad9f33376ef5756bc6f",
+  "candidateSHA256": "3efc534447a00e0abb0926f04325d78f498e5077d75e31ffd5b4e48c29f9ee29",
+  "nodes": {
+    "a": {
+      "before": {
+        "name": "cypher-browser-mesh-a",
+        "pmId": 11,
+        "pid": 3088210,
+        "startedAt": 1790999372543,
+        "restarts": 0,
+        "status": "online",
+        "script": "/root/browser-llm-lab/.runtime/mesh-a/mesh-start.sh"
+      },
+      "oldConfig": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 8,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 4,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      },
+      "nodeConfigSHA256": "fed738432bddb2eef2bb28f18d84637666db256766bd14821c2998d96c98c304",
+      "sourceConfigSHA256": "17d26b22eee750728fbe14cfb85e439b3cc0d8085ed3c4de522e7157ad4863a6",
+      "launcherSHA256": "8bbb0c14257f995a26100e9ed2f9a743a5c8f24c72b2165ae4febe852dee468a",
+      "execSHA256": "4a340e8b0b11e109b61f59fa8eb722c53c3cd69ec1d038a68dc2c1f040f44470"
+    },
+    "b": {
+      "before": {
+        "name": "cypher-browser-mesh-b",
+        "pmId": 12,
+        "pid": 3088211,
+        "startedAt": 1790999372549,
+        "restarts": 0,
+        "status": "online",
+        "script": "/root/browser-llm-lab/.runtime/mesh-b/mesh-start.sh"
+      },
+      "oldConfig": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 8,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 4,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      },
+      "nodeConfigSHA256": "31cf47a7c964438e72943552873869d78960f0dc35f26d094a1052a73011bb2c",
+      "sourceConfigSHA256": "88e3fd12ffed3f9c1a21570e037f033181fe136131fbd05e96a6660dd7199f4d",
+      "launcherSHA256": "cb6ddd1f2c39f795facd259780b9d1fcc0d7bdace20486497d87b9bfc5e1710b",
+      "execSHA256": "8f9bdb9342cccc8e8842748c7ddbaffec4c59eb00b131ba7f82a20a9eec56b1b"
+    }
+  },
+  "actions": [],
+  "databaseOrKeyMutation": false,
+  "nativeSourceMutation": false,
+  "unrelatedBefore": [
+    {
+      "name": "cypher0",
+      "pmId": 0,
+      "pid": 2979345,
+      "startedAt": 1790987412162,
+      "restarts": 0,
+      "status": "online",
+      "script": "/root/cypher/start-cypher0.sh"
+    },
+    {
+      "name": "cypher1",
+      "pmId": 1,
+      "pid": 2979347,
+      "startedAt": 1790987412163,
+      "restarts": 0,
+      "status": "online",
+      "script": "/root/cypher/start-cypher1.sh"
+    },
+    {
+      "name": "cypher2",
+      "pmId": 2,
+      "pid": 2979349,
+      "startedAt": 1790987412197,
+      "restarts": 0,
+      "status": "online",
+      "script": "/root/cypher/start-cypher2.sh"
+    },
+    {
+      "name": "cypher3",
+      "pmId": 3,
+      "pid": 2979350,
+      "startedAt": 1790987412198,
+      "restarts": 0,
+      "status": "online",
+      "script": "/root/cypher/start-cypher3.sh"
+    },
+    {
+      "name": "cypher4",
+      "pmId": 4,
+      "pid": 2979353,
+      "startedAt": 1790987412231,
+      "restarts": 0,
+      "status": "online",
+      "script": "/root/cypher/start-cypher4.sh"
+    },
+    {
+      "name": "cypher5",
+      "pmId": 5,
+      "pid": 2979355,
+      "startedAt": 1790987412233,
+      "restarts": 0,
+      "status": "online",
+      "script": "/root/cypher/start-cypher5.sh"
+    },
+    {
+      "name": "cypher6",
+      "pmId": 6,
+      "pid": 2979362,
+      "startedAt": 1790987412297,
+      "restarts": 0,
+      "status": "online",
+      "script": "/root/cypher/start-cypher6.sh"
+    },
+    {
+      "name": "cyphermine",
+      "pmId": 7,
+      "pid": 0,
+      "startedAt": 1791002750452,
+      "restarts": 31,
+      "status": "errored",
+      "script": "/root/cypher/start-cyphermine.sh"
+    },
+    {
+      "name": "server",
+      "pmId": 8,
+      "pid": 3182526,
+      "startedAt": 1791006894337,
+      "restarts": 2,
+      "status": "online",
+      "script": "/root/browser-llm-lab/server.py"
+    }
+  ]
+}

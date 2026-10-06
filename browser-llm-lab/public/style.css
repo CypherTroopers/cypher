@@ -1,0 +1,32 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #10151e; color: #e5eaf3; }
+main { max-width: 880px; margin: auto; padding: 24px 16px 48px; }
+header { padding: 16px 0; }
+small { color: #70dbc5; letter-spacing: .14em; }
+h1 { font-size: clamp(28px, 6vw, 40px); margin: 12px 0; }
+h2 { font-size: 18px; margin-top: 0; }
+p { line-height: 1.7; }
+section, details { background: #19212e; border: 1px solid #2c394d;
+  border-radius: 14px; padding: 20px; margin: 16px 0; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+label { display: block; font-size: 14px; flex: 1; min-width: 160px; }
+select, textarea, button { font: inherit; border-radius: 8px; padding: 12px; }
+select, textarea { display: block; width: 100%; margin: 8px 0;
+  border: 1px solid #465673; background: #101722; color: inherit; }
+textarea { resize: vertical; }
+button { border: 0; background: #71dfc2; color: #10241e;
+  font-weight: 700; cursor: pointer; }
+button.secondary { background: #303d53; color: #e5eaf3; }
+button:disabled, textarea:disabled { opacity: .45; cursor: not-allowed; }
+button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #8cc7ff; }
+.notice, footer { color: #afbacd; font-size: 13px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; font-size: 12px; }
+progress { width: 100%; margin-top: 18px; height: 12px; }
+#status { color: #8ce6d0; overflow-wrap: anywhere; }
+#selected { overflow-wrap: anywhere; }
+#chat { max-height: 480px; overflow-y: auto; }
+.message { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75;
+  padding: 14px; margin-bottom: 12px; border-radius: 10px; background: #111923; }
+.message.user { background: #24374a; }
+#log { max-height: 260px; overflow: auto; }

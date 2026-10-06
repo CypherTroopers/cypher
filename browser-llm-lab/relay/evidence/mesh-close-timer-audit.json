@@ -1,0 +1,281 @@
+{
+  "recordedAt": "2026-10-03T05:17:58.139701+00:00",
+  "scope": "Read-only diagnosis of the pre-fix 31-minute forced-TURN run. This is not a passing uninterrupted circuit TTL acceptance result.",
+  "closeCause": "UNKNOWN",
+  "observedCloseEvents": [
+    {
+      "name": "circuit_closed",
+      "at": 1791002523804,
+      "reason": "peer-left",
+      "circuitId": "066fa29b8ca4ae104d796dd1e6c20145",
+      "createdAt": 1791002316469,
+      "expiresAt": 1791004116469,
+      "generation": 2,
+      "browser": "B",
+      "sourceArtifact": "cypher-mesh-midrun-events.json",
+      "capturedAt": "2026-10-03T04:44:15.500Z",
+      "utc": "2026-10-03T04:42:03.804000+00:00"
+    },
+    {
+      "name": "peer_closed",
+      "at": 1791002523804,
+      "reason": "closed",
+      "generation": 2,
+      "browser": "B",
+      "sourceArtifact": "cypher-mesh-midrun-events.json",
+      "capturedAt": "2026-10-03T04:44:15.500Z",
+      "utc": "2026-10-03T04:42:03.804000+00:00"
+    },
+    {
+      "name": "circuit_closed",
+      "at": 1791002523804,
+      "reason": "peer-left",
+      "circuitId": "066fa29b8ca4ae104d796dd1e6c20145",
+      "createdAt": 1791002316463,
+      "expiresAt": 1791004116463,
+      "generation": 1,
+      "browser": "C",
+      "sourceArtifact": "cypher-mesh-midrun-events.json",
+      "capturedAt": "2026-10-03T04:44:15.500Z",
+      "utc": "2026-10-03T04:42:03.804000+00:00"
+    },
+    {
+      "name": "peer_closed",
+      "at": 1791002523805,
+      "reason": "closed",
+      "generation": 1,
+      "browser": "C",
+      "sourceArtifact": "cypher-mesh-midrun-events.json",
+      "capturedAt": "2026-10-03T04:44:15.500Z",
+      "utc": "2026-10-03T04:42:03.805000+00:00"
+    },
+    {
+      "name": "circuit_closed",
+      "at": 1791003440160,
+      "reason": "peer-left",
+      "circuitId": "0aef11f90c5168bf3e7c019ad6b6ef10",
+      "createdAt": 1791002525969,
+      "expiresAt": 1791004325969,
+      "generation": 3,
+      "browser": "B",
+      "sourceArtifact": "cypher-mesh-midrun-events-2.json",
+      "capturedAt": "2026-10-03T04:59:21.920Z",
+      "utc": "2026-10-03T04:57:20.160000+00:00"
+    },
+    {
+      "name": "peer_closed",
+      "at": 1791003440160,
+      "reason": "closed",
+      "generation": 3,
+      "browser": "B",
+      "sourceArtifact": "cypher-mesh-midrun-events-2.json",
+      "capturedAt": "2026-10-03T04:59:21.920Z",
+      "utc": "2026-10-03T04:57:20.160000+00:00"
+    },
+    {
+      "name": "circuit_closed",
+      "at": 1791003440155,
+      "reason": "peer-left",
+      "circuitId": "0aef11f90c5168bf3e7c019ad6b6ef10",
+      "createdAt": 1791002525985,
+      "expiresAt": 1791004325985,
+      "generation": 2,
+      "browser": "C",
+      "sourceArtifact": "cypher-mesh-midrun-events-2.json",
+      "capturedAt": "2026-10-03T04:59:21.920Z",
+      "utc": "2026-10-03T04:57:20.155000+00:00"
+    },
+    {
+      "name": "peer_closed",
+      "at": 1791003440156,
+      "reason": "closed",
+      "generation": 2,
+      "browser": "C",
+      "sourceArtifact": "cypher-mesh-midrun-events-2.json",
+      "capturedAt": "2026-10-03T04:59:21.920Z",
+      "utc": "2026-10-03T04:57:20.156000+00:00"
+    },
+    {
+      "name": "circuit_closed",
+      "at": 1791003740105,
+      "reason": "peer-left",
+      "circuitId": "cb7192403d2dfad5eeb11ab4e9fedf3d",
+      "createdAt": 1791003469205,
+      "expiresAt": 1791005269205,
+      "generation": 4,
+      "browser": "B",
+      "sourceArtifact": "cypher-mesh-midrun-events-3.json",
+      "capturedAt": "2026-10-03T05:05:10.005Z",
+      "utc": "2026-10-03T05:02:20.105000+00:00"
+    },
+    {
+      "name": "peer_closed",
+      "at": 1791003740106,
+      "reason": "closed",
+      "generation": 4,
+      "browser": "B",
+      "sourceArtifact": "cypher-mesh-midrun-events-3.json",
+      "capturedAt": "2026-10-03T05:05:10.005Z",
+      "utc": "2026-10-03T05:02:20.106000+00:00"
+    }
+  ],
+  "readiness401Samples": [
+    {
+      "at": "2026-10-03T04:41:50.706Z",
+      "browser": "B",
+      "state": "ACTIVE",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791002734900,
+      "reconnects": 1,
+      "sourceErrors": {
+        "common-b": "Gateway 401"
+      }
+    },
+    {
+      "at": "2026-10-03T04:41:50.706Z",
+      "browser": "C",
+      "state": "ACTIVE",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791002713582,
+      "reconnects": 0,
+      "sourceErrors": {
+        "common-a": "Gateway 401"
+      }
+    },
+    {
+      "at": "2026-10-03T04:42:00.765Z",
+      "browser": "B",
+      "state": "ACTIVE",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791002734900,
+      "reconnects": 1,
+      "sourceErrors": {
+        "common-b": "Gateway 401"
+      }
+    },
+    {
+      "at": "2026-10-03T04:42:00.765Z",
+      "browser": "C",
+      "state": "ACTIVE",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791002713582,
+      "reconnects": 0,
+      "sourceErrors": {
+        "common-a": "Gateway 401"
+      }
+    },
+    {
+      "at": "2026-10-03T04:57:24.796Z",
+      "browser": "C",
+      "state": "WAITING_PEER",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791003665734,
+      "reconnects": 1,
+      "sourceErrors": {
+        "common-a": "Gateway 401"
+      }
+    },
+    {
+      "at": "2026-10-03T04:57:34.873Z",
+      "browser": "B",
+      "state": "WAITING_PEER",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791003665769,
+      "reconnects": 2,
+      "sourceErrors": {
+        "common-b": "Gateway 401"
+      }
+    },
+    {
+      "at": "2026-10-03T04:57:34.873Z",
+      "browser": "C",
+      "state": "WAITING_PEER",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791003665734,
+      "reconnects": 1,
+      "sourceErrors": {
+        "common-a": "Gateway 401"
+      }
+    },
+    {
+      "at": "2026-10-03T04:57:44.954Z",
+      "browser": "B",
+      "state": "WAITING_PEER",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791003665769,
+      "reconnects": 2,
+      "sourceErrors": {
+        "common-b": "Gateway 401"
+      }
+    },
+    {
+      "at": "2026-10-03T04:57:44.954Z",
+      "browser": "C",
+      "state": "WAITING_PEER",
+      "nativeConnected": true,
+      "sessionExpiresAt": 1791003665734,
+      "reconnects": 1,
+      "sourceErrors": {
+        "common-a": "Gateway 401"
+      }
+    }
+  ],
+  "excludedForInitialPairedLoss": [
+    "Dedicated Common A and B processes kept their PID/starttime, with zero PM2 restarts.",
+    "Ordinary browser session lease expiry and advertisement expiry were later than the first observed loss; see mesh-native-close-investigation.json.",
+    "Second loss occurred at 04:57:20 UTC before the additional ordinary TCP upstream on Common A at 04:59:35.936146 UTC."
+  ],
+  "timers": {
+    "nativeHeartbeatIntervalMs": 5000,
+    "nativeHeartbeatReadDeadlineMs": 15000,
+    "browserPeerHeartbeatIntervalMs": 5000,
+    "browserPeerTimeoutMs": 15000,
+    "advertisementTTLms": 120000,
+    "advertisementRefreshMs": 30000,
+    "circuitTTLms": 1800000,
+    "nativeOpenTimeoutMs": 8000,
+    "sessionLeaseMs": 300000,
+    "sessionRenewAfterMs": 120000,
+    "signalingKeepaliveMs": 20000,
+    "fifteenMinuteHardTimerFound": false,
+    "sourceLocations": [
+      "/root/cypher/node/browserrelay/mesh_protocol.go:35",
+      "/root/cypher/node/browserrelay/mesh.go:168",
+      "/root/cypher/node/browserrelay/mesh.go:260",
+      "public/mesh-protocol.js",
+      "public/mesh-worker.js:365",
+      "public/relay-controller.js:344"
+    ]
+  },
+  "observabilityLimits": [
+    "cmd/cypher/browser_mesh.go discards the Mesh.Attach return error. The native shutdown reason was not logged.",
+    "Browser controller closePeer events collapse DataChannel/ICE/signaling departure paths to a generic closed reason. Preserved midrun events do not identify the initiating transport failure.",
+    "Coturn allocation logs were disabled. Independent source review found cached integrity keys survive ordinary stale-nonce rotation; 300-second REST credential expiry alone does not establish a deterministic 15-minute allocation failure.",
+    "A fresh allocation or integrity-key lookup after REST username expiry can fail, but no preserved evidence establishes that path for these losses."
+  ],
+  "recoveryFix": {
+    "problem": "Pre-fix status 401 was displayed as sourceErrors while nativeConnected stayed true until another transport event or renewal triggered recovery.",
+    "behavior": "Current-generation status 401 invalidates readiness and invokes the existing bounded fresh-session recovery. Transfer budget is preserved. Old-generation responses and ordinary 503 errors do not rejoin.",
+    "causalClaim": "This addresses delayed readiness invalidation and recovery, not the initiating transport-close cause.",
+    "tests": "mesh-controller-401-regressions.tap",
+    "testResult": {
+      "tests": 24,
+      "pass": 24,
+      "fail": 0,
+      "skip": 0
+    },
+    "productionChangeDuringSoak": false,
+    "sourceSha256": {
+      "mesh-controller.js": "670aa4fa466ee3a778a5c08beeb9cefac8ab1fce0946d9085590d32eae62b651",
+      "relay-controller.js": "d854ec2f60ad71cfff3cd58f3a68d41c6b807b843dc3c3eee60b08691b05bbc5"
+    }
+  },
+  "runOutcome": {
+    "runnerStatus": "FAIL",
+    "runnerError": "AssertionError [ERR_ASSERTION]: Both five-minute leases renew throughout the 31-minute interval\n    at file:///tmp/cypher-relay-work/tests/mesh-browser.mjs:255:5\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)",
+    "soakElapsedMs": 1860002,
+    "uninterruptedNaturalCircuitTTL": "NOT_PROVEN",
+    "auditedAcceptance": "See soak-pre-fix/cypher-mesh-final-audit-summary.json"
+  },
+  "runtimeMutationsDuringDiagnosis": []
+}

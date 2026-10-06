@@ -1,0 +1,15 @@
+{
+  "apps": [
+    {
+      "name": "cypher-header-turn",
+      "script": "/root/cypher/browser-llm-lab/.runtime/relay-turn/start.sh",
+      "cwd": "/root/cypher/browser-llm-lab/.runtime/relay-turn",
+      "interpreter": "none",
+      "autorestart": true,
+      "max_memory_restart": "96M",
+      "restart_delay": 3000,
+      "kill_timeout": 5000,
+      "watch": false
+    }
+  ]
+}

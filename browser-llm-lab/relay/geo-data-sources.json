@@ -1,0 +1,50 @@
+{
+  "retrievedAt": "2026-10-03T05:37:23.698833+00:00",
+  "entries": 249,
+  "coordinateMeaning": "Static country/territory display anchor, not user coordinates or an exact geometric centroid",
+  "countryCodeSource": "Trusted Cloudflare country header only; never inferred from other headers or IP addresses",
+  "sources": [
+    {
+      "name": "Google DSPL countries.csv",
+      "url": "https://developers.google.com/public-data/docs/canonical/countries_csv?hl=en",
+      "sha256": "46d744799c8c739418bab7a3ebe041125caff4d2cf0a173e69a623766efce0ed",
+      "license": "CC-BY-4.0",
+      "licenseUrl": "https://developers.google.com/terms/site-policies",
+      "extractedCoordinateRows": 244,
+      "usedRows": 242
+    },
+    {
+      "name": "Natural Earth 10m Admin 0 Countries v5.1.2",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson",
+      "sha256": "239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255",
+      "license": "Public domain",
+      "licenseUrl": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "usedCodes": [
+        "AX",
+        "BL",
+        "CW",
+        "MF",
+        "SS",
+        "SX",
+        "UM"
+      ],
+      "fields": [
+        "ISO_A2_EH",
+        "NAME_EN",
+        "LABEL_Y",
+        "LABEL_X"
+      ]
+    }
+  ],
+  "changes": [
+    "Coordinates rounded to two decimal places for static country display.",
+    "Google AN (retired Netherlands Antilles code) and GZ (non-ISO Gaza Strip code) excluded.",
+    "Natural Earth supplies AX, BL, CW, MF, SS, SX, UM absent or without coordinates in the Google source."
+  ],
+  "unplaced": [
+    "BQ: no coordinate row in the selected source tables; do not infer a position.",
+    "XX/T1: provider unknown/Tor values; never plot.",
+    "All missing, malformed, or unlisted country codes remain null."
+  ],
+  "networkAtRuntime": false
+}

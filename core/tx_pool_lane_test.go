@@ -30,4 +30,13 @@ func TestIsFastLaneEligible(t *testing.T) {
 	if IsFastLaneEligible(heavyData) {
 		t.Fatalf("expected tx above fast-lane data limit to be slow-lane")
 	}
+
+	// RouteHint is not signed or included in canonical transaction encoding.
+	// It must therefore have no effect on deterministic lane classification.
+	if !IsFastLaneEligible(regular.WithRouteHint(types.TxRouteSlow)) {
+		t.Fatalf("unsigned slow route hint changed bounded native transaction lane")
+	}
+	if IsFastLaneEligible(heavyData.WithRouteHint(types.TxRouteFast)) {
+		t.Fatalf("unsigned fast route hint changed heavy transaction lane")
+	}
 }

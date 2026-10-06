@@ -1,0 +1,95 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T06:02:01.966Z",
+  "finishedAt": "2026-10-03T06:02:52.719Z",
+  "error": null,
+  "normalPublicDNS": true,
+  "independentBrowserProcesses": true,
+  "syntheticCoordinates": false,
+  "syntheticEvents": false,
+  "controllerInjection": false,
+  "requestInterception": false,
+  "physicalPhone": false,
+  "viewportPhoneOnly": true,
+  "pageErrors": [],
+  "navigationRetries": [],
+  "checkpoints": [
+    "Two independent public UI pages initially OFF with no admission and no horizontal overflow",
+    "Actual UI Common1/1, browser peers and ACK counters increased from initial zero",
+    "Actual received/sent/ACK events animate map pixels; every connected browser is represented without invented country coordinates",
+    "Desktop1440 and mobile390 active UI screenshots saved with no horizontal overflow",
+    "Owned Node OFF shows Common0/1 and peers0; Home navigation and reload do not restart participation"
+  ],
+  "cleanup": [
+    {
+      "browser": "desktop",
+      "ownedPageOFF": true
+    },
+    {
+      "browser": "mobile",
+      "ownedPageOFF": true
+    }
+  ],
+  "mapEvidence": {
+    "desktop": {
+      "capturedDuringActualAnimation": true,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "countryCodes": [
+        "FR"
+      ],
+      "knownNodes": 2,
+      "unlocatedNodes": 0,
+      "capturedEventCounters": {
+        "events": 83,
+        "received": 31,
+        "sent": 26,
+        "acknowledged": 26
+      },
+      "drawFramesBeforeAfter": [
+        43,
+        49
+      ],
+      "canvasPixelHashes": [
+        "777104ae5076a4cf44be0fc44b2b36217ca56f07b1e784a2b6ee158f0ae0b110",
+        "d72ab8e719268ea4bf901c13a66d94e18570b2cfa6a8c618cb649d1344d78db3"
+      ],
+      "canvasPixelsChanged": true,
+      "admissions": 1,
+      "finalUIState": "OFF",
+      "bestScreenshot": "cypher-map-ui-final-desktop-map-actual-activity.png"
+    },
+    "mobile": {
+      "capturedDuringActualAnimation": true,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "countryCodes": [
+        "FR"
+      ],
+      "knownNodes": 2,
+      "unlocatedNodes": 0,
+      "capturedEventCounters": {
+        "events": 114,
+        "received": 36,
+        "sent": 41,
+        "acknowledged": 37
+      },
+      "drawFramesBeforeAfter": [
+        85,
+        90
+      ],
+      "canvasPixelHashes": [
+        "d31f9afea183fd7c73acf671f6fd20544d44af5572b52e21d4d227ca53d0eb08",
+        "bfb3287ac640874b6f8d314dd6eb15686fc1b75bd109bdd455b004acdf318498"
+      ],
+      "canvasPixelsChanged": true,
+      "admissions": 1,
+      "finalUIState": "OFF",
+      "bestScreenshot": "cypher-map-ui-final-mobile-map-actual-activity.png"
+    }
+  }
+}

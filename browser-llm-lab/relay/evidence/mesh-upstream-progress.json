@@ -1,0 +1,30 @@
+{
+  "utc": "2026-10-03T05:00:37.333135+00:00",
+  "heads": {
+    "a": 3789,
+    "b": 3789,
+    "reference": 3789
+  },
+  "targetPeer": {
+    "enode": "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@127.0.0.1:6000",
+    "id": "16d705509956e20c8ac91de61ba75b122228fd14287f1082ce8b9a6f9c122e53",
+    "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+    "caps": [
+      "eth/66"
+    ],
+    "network": {
+      "localAddress": "127.0.0.1:55996",
+      "remoteAddress": "127.0.0.1:6000",
+      "inbound": false,
+      "trusted": false,
+      "static": true
+    },
+    "protocols": {
+      "eth": {
+        "version": 66,
+        "difficulty": 4166800,
+        "head": "0x2622ad64927e13013a96a1df18c98f7e46831b423bf3ad8d8e333f3644fd3b7f"
+      }
+    }
+  }
+}

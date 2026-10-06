@@ -1,0 +1,8 @@
+{
+  "at": "2026-10-03T09:41:13.745690+00:00",
+  "removedIsolatedStage": "/tmp/cypher-mesh-capacity-20261003",
+  "evidenceArchivedAndHashVerified": true,
+  "privateRollbackRetained": ".runtime/releases/capacity-v1/",
+  "nativeDatadirsAndOperationalKeysRetained": true,
+  "testOwnedBrowserSessionsAlreadyReleased": true
+}

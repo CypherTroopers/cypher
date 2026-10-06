@@ -1,0 +1,113 @@
+{
+  "operationUTC": "2026-10-03T05:15:02.822440+00:00",
+  "retiredProcessBefore": {
+    "id": 10,
+    "name": "cypher-browser-relay-source",
+    "pid": 0,
+    "status": "stopped",
+    "script": "/root/browser-llm-lab/.runtime/relay-source/source-start.sh",
+    "cwd": "/root/browser-llm-lab/.runtime/relay-source",
+    "interpreter": "none",
+    "restarts": 4
+  },
+  "removedPM2Id": 10,
+  "removedKeyPath": "/root/browser-llm-lab/.runtime/relay-source/signing-key.pem",
+  "removedKeyMode": "0600",
+  "retainedArchive": "/root/browser-llm-lab/.runtime/relay-source",
+  "retainedFilesBefore": {
+    "entries": 50,
+    "metadataSha256": "37f78dfec82d7db81020654467344bb61d3e504395df641437c0fcef46e28868"
+  },
+  "retainedFilesAfter": {
+    "entries": 50,
+    "metadataSha256": "37f78dfec82d7db81020654467344bb61d3e504395df641437c0fcef46e28868"
+  },
+  "actions": [
+    "pm2 delete 10 after exact stopped identity check",
+    "unlink only signing-key.pem"
+  ],
+  "noRestartOrGlobalSave": true,
+  "originalNativeProcesses": [
+    {
+      "pid": 2979374,
+      "baselineStarttime": "126555080",
+      "currentStarttime": "126555080",
+      "unchanged": true
+    },
+    {
+      "pid": 2979375,
+      "baselineStarttime": "126555080",
+      "currentStarttime": "126555080",
+      "unchanged": true
+    },
+    {
+      "pid": 2979381,
+      "baselineStarttime": "126555081",
+      "currentStarttime": "126555081",
+      "unchanged": true
+    },
+    {
+      "pid": 2979382,
+      "baselineStarttime": "126555081",
+      "currentStarttime": "126555081",
+      "unchanged": true
+    },
+    {
+      "pid": 2979383,
+      "baselineStarttime": "126555082",
+      "currentStarttime": "126555082",
+      "unchanged": true
+    },
+    {
+      "pid": 2979384,
+      "baselineStarttime": "126555082",
+      "currentStarttime": "126555082",
+      "unchanged": true
+    },
+    {
+      "pid": 2979385,
+      "baselineStarttime": "126555082",
+      "currentStarttime": "126555082",
+      "unchanged": true
+    },
+    {
+      "pid": 2979412,
+      "baselineStarttime": "126555083",
+      "currentStarttime": null,
+      "unchanged": false
+    }
+  ],
+  "currentMinerAndMeshApps": [
+    {
+      "id": 7,
+      "name": "cyphermine",
+      "pid": 0,
+      "status": "errored",
+      "script": "/root/cypher/start-cyphermine.sh",
+      "cwd": "/root/cypher",
+      "interpreter": "bash",
+      "restarts": 31
+    },
+    {
+      "id": 11,
+      "name": "cypher-browser-mesh-a",
+      "pid": 3088210,
+      "status": "online",
+      "script": "/root/browser-llm-lab/.runtime/mesh-a/mesh-start.sh",
+      "cwd": "/root/browser-llm-lab/.runtime/mesh-a",
+      "interpreter": "none",
+      "restarts": 0
+    },
+    {
+      "id": 12,
+      "name": "cypher-browser-mesh-b",
+      "pid": 3088211,
+      "status": "online",
+      "script": "/root/browser-llm-lab/.runtime/mesh-b/mesh-start.sh",
+      "cwd": "/root/browser-llm-lab/.runtime/mesh-b",
+      "interpreter": "none",
+      "restarts": 0
+    }
+  ],
+  "minerNote": "Already errored before cleanup; external restart counter drift was observed, no miner action taken."
+}

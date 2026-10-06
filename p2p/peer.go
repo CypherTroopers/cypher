@@ -113,6 +113,7 @@ type Peer struct {
 	protoErr chan error
 	closed   chan struct{}
 	disc     chan DiscReason
+	meshPong chan struct{} // Coalesced requests, serviced by the existing ping loop.
 
 	// events receives message send / receive events if set
 	events *event.Feed
@@ -190,6 +191,9 @@ func newPeer(log log.Logger, conn *conn, protocols []Protocol) *Peer {
 		closed:   make(chan struct{}),
 		log:      log.New("id", conn.node.ID(), "conn", conn.flags),
 	}
+	if browserMeshInfo(conn.fd) != nil {
+		p.meshPong = make(chan struct{}, 1)
+	}
 	return p
 }
 
@@ -259,6 +263,11 @@ func (p *Peer) pingLoop() {
 				return
 			}
 			ping.Reset(pingInterval)
+		case <-p.meshPong:
+			if err := SendItems(p.rw, pongMsg); err != nil {
+				p.protoErr <- err
+				return
+			}
 		case <-p.closed:
 			return
 		}
@@ -285,7 +294,14 @@ func (p *Peer) handle(msg Msg) error {
 	switch {
 	case msg.Code == pingMsg:
 		msg.Discard()
-		go SendItems(p.rw, pongMsg)
+		if p.meshPong != nil {
+			select {
+			case p.meshPong <- struct{}{}:
+			default:
+			}
+		} else {
+			go SendItems(p.rw, pongMsg)
+		}
 	case msg.Code == discMsg:
 		var reason [1]DiscReason
 		// This is the last message. We don't need to discard or
@@ -443,11 +459,13 @@ type PeerInfo struct {
 	Name    string   `json:"name"`          // Name of the node, including client type, version, OS, custom data
 	Caps    []string `json:"caps"`          // Protocols advertised by this peer
 	Network struct {
-		LocalAddress  string `json:"localAddress"`  // Local endpoint of the TCP data connection
-		RemoteAddress string `json:"remoteAddress"` // Remote endpoint of the TCP data connection
-		Inbound       bool   `json:"inbound"`
-		Trusted       bool   `json:"trusted"`
-		Static        bool   `json:"static"`
+		LocalAddress  string           `json:"localAddress"`  // Local endpoint of the TCP data connection
+		RemoteAddress string           `json:"remoteAddress"` // Remote endpoint of the TCP data connection
+		Inbound       bool             `json:"inbound"`
+		Trusted       bool             `json:"trusted"`
+		Static        bool             `json:"static"`
+		Transport     string           `json:"transport,omitempty"`
+		BrowserMesh   *BrowserMeshInfo `json:"browserMesh,omitempty"`
 	} `json:"network"`
 	Protocols map[string]interface{} `json:"protocols"` // Sub-protocol specific metadata fields
 }
@@ -475,6 +493,9 @@ func (p *Peer) Info() *PeerInfo {
 	info.Network.Inbound = p.rw.is(inboundConn)
 	info.Network.Trusted = p.rw.is(trustedConn)
 	info.Network.Static = p.rw.is(staticDialedConn)
+	if route := browserMeshInfo(p.rw.fd); route != nil {
+		info.Network.Transport, info.Network.BrowserMesh = "browser-mesh", route
+	}
 
 	// Gather all the running protocol infos
 	for _, proto := range p.running {

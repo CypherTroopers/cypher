@@ -1,0 +1,152 @@
+{
+  "checkedAt": "2026-10-03T21:52:34.501097+00:00",
+  "status": "READ_ONLY_SCOPE_AUDIT_COMPLETE",
+  "scope": "Reviewed actual temporary Common config/launch metadata/logs and native source paths; no IPC call, DB open, nodekey read or process mutation.",
+  "processMetadata": "/tmp/cysu-4lrx3c1o/process.json",
+  "nodeConfig": "/tmp/cysu-4lrx3c1o/node.toml",
+  "sourceConfig": "/tmp/cysu-4lrx3c1o/source.json",
+  "sourceNodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+  "binarySha256": "c1de58cd90029433be02658bb08a463bed78a3fadddddd12136046c1e067f059",
+  "configIsolation": {
+    "NoDiscovery": true,
+    "StaticNodes": [],
+    "TrustedNodes": [],
+    "BootstrapNodes": [],
+    "BootstrapNodesV5": [],
+    "ListenAddr": "127.0.0.1:19861",
+    "natAdvertisedIP": "127.0.0.1",
+    "mineRequested": false,
+    "httpOrWSRPCFlagRequested": false,
+    "networkNamespaceIsolation": false
+  },
+  "findings": [
+    {
+      "area": "ordinary P2P discovery",
+      "conclusion": "NoDiscovery disables both ordinary discovery and the eth DNS candidate iterator; static/trusted/bootstrap sets empty. Native browser mesh candidates retain their mesh transport identity.",
+      "source": [
+        "eth/discovery.go:68",
+        "node/node.go:131",
+        "p2p/browser_mesh.go"
+      ]
+    },
+    {
+      "area": "TxQUIC",
+      "conclusion": "AutoRole enables Common RPC bridge while native ingress Enabled remains false. This is transaction submission plus authenticated receipt delivery, not block/header synchronization. Start returns before UDP ingress listener when Enabled=false; live log records http3rpc=false and initial outbox records/bytes=0. No block/header insertion or downloader delivery occurs in the audited TxQUIC file.",
+      "source": [
+        "eth/tx_quic_ingress.go:1356",
+        "eth/tx_quic_ingress.go:1756",
+        "eth/tx_quic_ingress.go:1848",
+        "eth/tx_quic_ingress.go:3975",
+        "eth/tx_quic_ingress.go:4137",
+        "eth/tx_quic_ingress.go:4298"
+      ],
+      "limitation": "Initial outbox=0 is a log observation, not packet capture for the entire test."
+    },
+    {
+      "area": "Rnet consensus transport",
+      "conclusion": "Normal ReconfigBackend.Start is a no-op. MinerStart invokes Service.start; the recorded launch requests no mining. Even an explicit non-committee start returns before configuring and starting authenticated consensus transport. netService.StartStop(true) is what calls server.Start. Creating a service and its log message do not establish an active consensus participant.",
+      "source": [
+        "reconfig/backend.go:165",
+        "reconfig/backend.go:185",
+        "reconfig/service.go:640",
+        "reconfig/service.go:681",
+        "reconfig/gossip.go:742",
+        "rnet/server.go:156"
+      ]
+    },
+    {
+      "area": "chain synchronization",
+      "conclusion": "Native header/body responses enter downloader through the established native eth peer. Actual report observes temporary Common peers only with transport browser-mesh; only owned A/B then C/B browser labels. OFF leaves peer/circuit/queue zero and stable RTC counters.",
+      "source": [
+        "eth/handler.go:580",
+        "eth/handler.go:628",
+        "eth/sync.go:346"
+      ]
+    },
+    {
+      "area": "older header exporter",
+      "conclusion": "Temporary source config is mesh-only; no keyId/signingKeyPath. The source-uplink API allowlist is config/status/session/renew/connect, without owner header/bootstrap APIs."
+    }
+  ],
+  "conclusion": "Evidence supports actual native Common chain traffic over the owned browser relay route in this configured single-host test. TxQUIC bridge is not an alternative chain downloader in the reviewed paths. Report configuration-based path isolation plus observed browser-mesh peers; do not claim OS-enforced network exclusion or separate physical networks.",
+  "namespaceFixtureRecommendation": "Not required to establish this change with the stronger exact RTC data proof plus native peer/hash observations. If a future acceptance claim requires proving all other network paths physically impossible, use a separate Common network namespace with no default route and a fixed TLS byte-forwarder to only the configured gateway. Preserve end-to-end TLS hostname verification; bind its other port to the namespace loopback and record netns routes/listeners. This was not executed.",
+  "priorReportReview": {
+    "path": "/tmp/cypher-source-uplink-review/browser-report-before-large-chunk.json",
+    "sha256": "7facf5db5571d556d62f720f694d716e33b4540003ab6234ddad6e2b893ddd01",
+    "status": "PASS",
+    "sourceHeadBefore": 192,
+    "sourceHeadAfterFirst": 194,
+    "sourceHeadAfterOffDrain": 249,
+    "sourceHeadAfterReplacement": 384,
+    "firstProof": {
+      "sender": "A",
+      "receiver": "B",
+      "circuitId": "88596811fb72be381083e684ffbd7478",
+      "seq": 1,
+      "bytes": 510,
+      "digest": "a4fa09ad69eb31c9570e7e4e8bca4c22514f6f827831fbd653999186cbde2986",
+      "bytesEqual": true,
+      "acknowledgementMatched": true,
+      "path": "direct",
+      "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+    },
+    "replacementProof": {
+      "sender": "C",
+      "receiver": "B",
+      "circuitId": "7fa6ae9e5c9190b3a0b1fc94e5a757b2",
+      "seq": 1,
+      "bytes": 571,
+      "digest": "6d83bfc9fdcd04df98db657e52ed251596a85a5af7a232b318bf14c1265cf829",
+      "bytesEqual": true,
+      "acknowledgementMatched": true,
+      "path": "direct",
+      "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+    },
+    "cleanupComplete": true,
+    "limitation": "Raw samples were seq1 510/571 bytes; native chain progress separately proves useful transfer. Strengthened harness now captures seq>1 and >=1024 bytes, and root is rerunning with renewal soak."
+  },
+  "noSecretMaterialRead": true,
+  "nativeProcessOperations": 0,
+  "strengthenedRerunObservation": {
+    "observedAt": "2026-10-03T21:53:44.979579+00:00",
+    "status": "PASS",
+    "report": "/tmp/cypher-source-uplink-review/browser-report.json",
+    "reportSha256": "f0c3b02b528b95a2fc7d9c337b53e2c7c1ff2a770a24fc66be0cc11daa98d95d",
+    "firstRawProof": {
+      "sender": "A",
+      "receiver": "B",
+      "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+      "seq": 19,
+      "bytes": 7734,
+      "digest": "437bfca6ac4b4fbd21356a88c4169d115fc712f51e42aa14beabee9d4341c27c",
+      "bytesEqual": true,
+      "acknowledgementMatched": true,
+      "path": "direct",
+      "samplePolicy": {
+        "minimumRawBytes": 1024,
+        "minimumSequence": 2
+      },
+      "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+    },
+    "replacementRawProof": {
+      "sender": "C",
+      "receiver": "B",
+      "circuitId": "e7d9f174ec6ae7c93af4aa7344d0700f",
+      "seq": 19,
+      "bytes": 7734,
+      "digest": "63677df12e705c6f3a54194234849c45b1ba85dbe06f8ade39e6f37a616f8557",
+      "bytesEqual": true,
+      "acknowledgementMatched": true,
+      "path": "direct",
+      "samplePolicy": {
+        "minimumRawBytes": 1024,
+        "minimumSequence": 2
+      },
+      "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+    },
+    "renewalSoakStatus": "PASS",
+    "renewalSoakElapsedMs": 130043,
+    "cleanupComplete": true,
+    "finishedAt": "2026-10-03T21:53:31.954Z"
+  }
+}

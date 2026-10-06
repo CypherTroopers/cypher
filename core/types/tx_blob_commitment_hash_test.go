@@ -10,14 +10,14 @@ import (
 func TestValidateBlobCommitmentHashes(t *testing.T) {
 	commitment := testKZGCommitment(41)
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}
 	if err := sidecar.ValidateBlobCommitmentHashes([]common.Hash{KZGToVersionedHash(commitment)}); err != nil {
 		t.Fatalf("expected valid commitment hashes, got %v", err)
 	}
-	if err := sidecar.ValidateBlobCommitmentHashes([]common.Hash{common.Hash{}}); !errors.Is(err, ErrBlobVersionedHashMismatch) {
+	if err := sidecar.ValidateBlobCommitmentHashes([]common.Hash{{}}); !errors.Is(err, ErrBlobVersionedHashMismatch) {
 		t.Fatalf("expected versioned hash mismatch, got %v", err)
 	}
 }
@@ -25,7 +25,7 @@ func TestValidateBlobCommitmentHashes(t *testing.T) {
 func TestValidateBlobHashesAlias(t *testing.T) {
 	commitment := testKZGCommitment(42)
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1}},
+		Blobs:       []Blob{{1}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}

@@ -1,0 +1,1 @@
+{"test": "clock-behind-after-first-cleanup-failure", "remainingTestProcesses": [], "profileRemoved": true, "cause": "ENOTEMPTY during recursive removal after Chrome exit; bounded removal retries added to test harness only"}

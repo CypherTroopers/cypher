@@ -1,0 +1,4142 @@
+{
+  "status": "FAIL",
+  "startedAt": "2026-10-04T09:31:44.003Z",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "transportFilter": "both",
+  "icePolicy": "relay",
+  "simulatedClockOffsetA": -1000,
+  "sameHostOnly": true,
+  "realDevices": false,
+  "separatePhysicalNetworks": false,
+  "scope": "Independent Chrome processes; genuine public discovery/signaling/native hello; actual selected relay ICE pair and ordered reliable DataChannel. No separate Common RLPx transfer acceptance claim.",
+  "privateDataCaptured": false,
+  "injectedPeerOrSourceData": false,
+  "nodeOrDaemonChanges": false,
+  "processes": {
+    "A": {
+      "pid": 23
+    },
+    "B": {
+      "pid": 245
+    }
+  },
+  "checkpoints": [
+    {
+      "name": "Two independent Chrome processes admitted via genuine public mesh",
+      "at": "2026-10-04T09:31:58.316Z",
+      "value": [
+        {
+          "at": 1791106317301,
+          "state": "WAITING_PEER",
+          "requested": true,
+          "sourceId": "common-mine",
+          "nativeConnections": 1,
+          "nativeVerified": true,
+          "turnEnabled": true,
+          "signalReady": false,
+          "discovery": {
+            "knownCandidates": 1,
+            "readyGateways": 0
+          },
+          "adoptedOwnedCandidates": [],
+          "workerPresent": true,
+          "pendingSends": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "traces": [],
+          "peers": []
+        },
+        {
+          "at": 1791106318307,
+          "state": "CONNECTING",
+          "requested": true,
+          "sourceId": "common-mine",
+          "nativeConnections": 0,
+          "nativeVerified": true,
+          "turnEnabled": true,
+          "signalReady": false,
+          "discovery": {
+            "knownCandidates": 0,
+            "readyGateways": 0
+          },
+          "adoptedOwnedCandidates": [],
+          "workerPresent": true,
+          "pendingSends": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "traces": [],
+          "peers": []
+        }
+      ]
+    }
+  ],
+  "samples": [
+    [
+      {
+        "at": 1791106317351,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106318363,
+        "state": "CONNECTING",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 0,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106317809,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106318816,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106318324,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106319358,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106319160,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106320137,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106320480,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106321680,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106321306,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106322374,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106321809,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106322885,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106322436,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106323421,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106322874,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106323885,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106323467,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106324468,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106323905,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106324901,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106324390,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106325366,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106324820,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106325823,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106325242,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106326246,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106325667,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106326668,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106326096,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106327098,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106326531,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106327552,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106327444,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106328444,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106327860,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106328864,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106328289,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106329288,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106328729,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106329739,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106329162,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106330165,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106329579,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106330579,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106329990,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106330991,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106330420,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106331424,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106330864,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106331865,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106331283,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106332293,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106331709,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106332709,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106332145,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106333164,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106332594,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106333594,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106333009,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106334013,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106333455,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106334463,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106333927,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106334957,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106334372,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106335373,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106334783,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106335784,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106335197,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106336199,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106335794,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106336799,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106336326,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106337324,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106336799,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106337820,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106337251,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106338250,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106337660,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106338660,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106338085,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106339103,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106338544,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106339544,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106338961,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106339987,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106339465,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106340460,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106339878,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106340878,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106340312,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106341291,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106340810,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106341809,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106341240,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106342246,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106341674,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106342675,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106342103,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106343112,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106342537,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106343540,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106342952,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106343954,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106343363,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106344363,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106343782,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106344787,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106344212,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106345229,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106344837,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106345955,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106345409,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106346410,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106345822,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106346822,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106346296,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106347297,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106346725,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106347725,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106347138,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106348139,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106347550,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106348551,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106347960,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106348962,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106348392,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106349392,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106348816,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106349817,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106349234,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106350234,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106349667,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106350661,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106350139,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106351156,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106350577,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106351679,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106351109,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106352116,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106351531,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106352533,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106351952,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106352953,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106352380,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106353378,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106352823,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106353823,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106353243,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106354239,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106353687,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106354685,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106354099,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106355103,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106354535,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106355534,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106354966,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106355965,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106355395,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106356427,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106355881,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106356879,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106356304,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106357304,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106356717,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106357717,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106357138,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106358135,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106357554,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106358557,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106357967,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106358968,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106358382,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106359389,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106358819,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106359815,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106359294,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106360299,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ]
+  ],
+  "pageErrors": [],
+  "httpErrors": [
+    {
+      "browser": "A",
+      "path": "/relay/v1/mesh/sessions",
+      "status": 401
+    },
+    {
+      "browser": "A",
+      "path": "/relay/v1/mesh/status",
+      "status": 401
+    },
+    {
+      "browser": "B",
+      "path": "/relay/v1/mesh/sessions",
+      "status": 401
+    },
+    {
+      "browser": "B",
+      "path": "/relay/v1/mesh/status",
+      "status": 401
+    }
+  ],
+  "cleanup": [
+    {
+      "browser": "A",
+      "leaseRevoked": true,
+      "chromeExited": true,
+      "profileRemoved": true,
+      "stopped": {
+        "leaseStatus": 401,
+        "requested": false,
+        "workerPresent": false,
+        "peers": 0,
+        "nativeConnections": 0,
+        "circuits": 0,
+        "queuedBytes": 0
+      }
+    },
+    {
+      "browser": "B",
+      "leaseRevoked": true,
+      "chromeExited": true,
+      "profileRemoved": true,
+      "stopped": {
+        "leaseStatus": 401,
+        "requested": false,
+        "workerPresent": false,
+        "peers": 0,
+        "nativeConnections": 0,
+        "circuits": 0,
+        "queuedBytes": 0
+      }
+    }
+  ],
+  "error": "Error: Owned ordered DataChannels with selected relay candidates timed out\n    at until (file:///tmp/cypher-cross-browser-20261004/forced-turn.mjs:30:9)\n    at async file:///tmp/cypher-cross-browser-20261004/forced-turn.mjs:113:18",
+  "failureObservation": [
+    {
+      "status": "fulfilled",
+      "value": {
+        "at": 1791106377347,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    },
+    {
+      "status": "fulfilled",
+      "value": {
+        "at": 1791106378349,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    }
+  ],
+  "finishedAt": "2026-10-04T09:33:04.882Z"
+}

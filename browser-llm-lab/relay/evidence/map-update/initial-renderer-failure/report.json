@@ -1,0 +1,117 @@
+{
+  "kind": "SYNTHETIC_RENDERER_FIXTURES",
+  "syntheticCoordinates": true,
+  "realMeshParticipation": false,
+  "startedAt": "2026-10-03T05:42:57.835Z",
+  "status": "FAIL",
+  "cases": [
+    {
+      "name": "390: JP self and US peer",
+      "layout": {
+        "width": 364,
+        "height": 180,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 59.6
+            },
+            "x": 302,
+            "y": 59.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 248,
+              "y": 77.6,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "us-peer",
+            "self": false,
+            "label": "Peer us-pee",
+            "geo": {
+              "countryCode": "US",
+              "label": "United States",
+              "lat": 38,
+              "lon": -97,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 91.46666666666667,
+              "y": 57.911111111111104
+            },
+            "x": 91.46666666666667,
+            "y": 57.911111111111104,
+            "pinSize": 30,
+            "countryLabel": "US · United States",
+            "labelBox": {
+              "x": 37.46666666666667,
+              "y": 75.9111111111111,
+              "width": 108,
+              "height": 34
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "us-peer",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 302,
+                "y": 59.6
+              },
+              "control": {
+                "x": 196.73333333333335,
+                "y": 10
+              },
+              "b": {
+                "x": 91.46666666666667,
+                "y": 57.911111111111104
+              }
+            }
+          }
+        ],
+        "dock": null,
+        "mapBounds": {
+          "x": 14,
+          "y": 14,
+          "width": 336,
+          "height": 152
+        }
+      },
+      "geometry": {
+        "width": 390,
+        "scrollWidth": 390,
+        "canvas": {
+          "width": 364,
+          "height": 169.859375
+        }
+      }
+    }
+  ],
+  "screenshots": [
+    "/tmp/cypher-map-fixtures/390-jp-us-idle.png",
+    "/tmp/cypher-map-fixtures/390-jp-us-transfer.png"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "sessionAdmissions": 0,
+  "error": "AssertionError [ERR_ASSERTION]: A new transfer starts animation while the prior static activity badge is still visible\n    at file:///tmp/cypher-map-fix/tests/relay-map-browser.mjs:91:5",
+  "finishedAt": "2026-10-03T05:43:04.495Z"
+}

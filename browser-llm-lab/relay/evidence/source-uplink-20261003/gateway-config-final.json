@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "enabled": true,
+  "protocol": "cypher-browser-mesh/1",
+  "initialState": "OFF",
+  "network": {
+    "chainId": 10101919,
+    "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+  },
+  "nodes": [
+    {
+      "id": "common-mine",
+      "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+      "enode": "enode://5e09dc887c5da47914aaa3b9fef97ae1c25b7d5b353713af0140bef497a3ef82089a074024ec3feca3bbfba9d09bd34eb05fda80cc3c906c158fa62f59218e57@13.140.169.170:6099"
+    }
+  ],
+  "sessionSeconds": 300,
+  "renewAfterSeconds": 120,
+  "maxFrameBytes": 16384,
+  "nativeMaxFrameBytes": 4194304,
+  "signalPath": "/relay/v1/mesh/signal",
+  "connectPath": "/relay/v1/mesh/connect",
+  "iceServers": [
+    {
+      "urls": "stun:stun.cloudflare.com:3478"
+    }
+  ],
+  "turnEnabled": true,
+  "limits": {
+    "maxSessions": 80,
+    "maxConnections": 384,
+    "maxPeers": 20,
+    "maxCommonConnections": 20,
+    "httpRequestsPerSecond": 128,
+    "httpBytesPerSecond": 1048576,
+    "sessionRequestsPerSecond": 8,
+    "sessionBytesPerSecond": 65536,
+    "admissionsPerMinute": 32,
+    "signalingBytesPerSecond": 4096,
+    "sessionLeaseMs": 300000,
+    "renewAfterMs": 120000,
+    "authTimeoutMs": 5000,
+    "maxSignalBytes": 32768,
+    "maxSignalBufferedBytes": 65536,
+    "maxIceCandidates": 64,
+    "maxNativeFrameBytes": 16384,
+    "maxNativeBufferedBytes": 65536,
+    "maxNativeResponseBytes": 16384,
+    "maxNativeStatusBytes": 65536,
+    "nativeAuthTimeoutMs": 3000,
+    "maxSessionsPerCommon": 80,
+    "nativeMetadataConcurrency": 8,
+    "nativeConfigCacheMs": 30000,
+    "nativeStatusCacheMs": 1000,
+    "nativeAdmissionsPerSecond": 1,
+    "nativeAdmissionBurst": 8,
+    "nativePingTimeoutMs": 15000,
+    "maxNativeControlBytes": 125,
+    "maxNativeControlPerSecond": 10,
+    "maxSessionsPerClient": 80,
+    "maxSignalConnectionsPerClient": 82,
+    "maxSessionTransferBytes": 104857600
+  },
+  "discovery": {
+    "version": 1,
+    "bootstrapOrigins": [
+      "https://ai-test.make-cph-great-again.community"
+    ],
+    "directoryPath": "/relay/v1/mesh/discovery",
+    "rendezvousPath": "/relay/v1/mesh/rendezvous"
+  }
+}

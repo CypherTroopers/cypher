@@ -1,0 +1,83 @@
+{
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "normalPublicDNS": true,
+  "hashes": {
+    "public/index.html": "77db139088e4a26e3376aadd8727da6e63d8de172bf1f1af186b437611ac3971",
+    "public/relay-ui.js": "438bff5c763cbe57cc883768353e7ee66238ff18c74fd5f36c2c20ed856462d9",
+    "public/relay-map.js": "dca720b93620589154616b3a4f6bb36e68282656f62f105dd80fa0e44ed170b8",
+    "public/mesh-controller.js": "21c3439eaa5951b53060a54f752e0de89748c242075ab9b8b4cf1faa45d76c17",
+    "public/mesh-worker.js": "d213ad7d21d12b5ebfb9c492c80cbc37b2fb7c6538e35dd32323b895ec94d8e3",
+    "public/mesh-protocol.js": "85935ec5ee1009e2b9533ad15641bb0865ccb222014e575de1391df0292794c3",
+    "public/relay-controller.js": "231ecfb2c7d930516a6d1e5ed21ead7c759224f9c3a2be5ded6fd6bfecf9a21a"
+  },
+  "config": {
+    "version": 1,
+    "enabled": true,
+    "protocol": "cypher-browser-mesh/1",
+    "initialState": "OFF",
+    "network": {
+      "chainId": 10101919,
+      "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    },
+    "nodes": [
+      {
+        "id": "common-a",
+        "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+        "enode": "enode://5584da0f97c9ed9f25d3469b41acbfbc0105f5cc4b55121cc775ff8de8cc90fe10be3124f6f0a482e832d8a4b48ed01f794e7db7edf8a5e6f433cad68a2973b1@127.0.0.1:30445?discport=0"
+      },
+      {
+        "id": "common-b",
+        "nodeId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+        "enode": "enode://4a571904b34c4dee7161387f286914ee79b95ece03221f4304f0a1b8c0dfb49fd8fd318df8187b886ad4716af45ebed856eaf32359bfc2e29f2e0f3861a4324c@127.0.0.1:30446?discport=0"
+      }
+    ],
+    "sessionSeconds": 300,
+    "renewAfterSeconds": 120,
+    "maxFrameBytes": 16384,
+    "nativeMaxFrameBytes": 4194304,
+    "signalPath": "/relay/v1/mesh/signal",
+    "connectPath": "/relay/v1/mesh/connect",
+    "iceServers": [
+      {
+        "urls": "stun:stun.cloudflare.com:3478"
+      }
+    ],
+    "turnEnabled": true,
+    "limits": {
+      "maxSessions": 160,
+      "maxConnections": 384,
+      "maxPeers": 20,
+      "maxCommonConnections": 20,
+      "httpRequestsPerSecond": 128,
+      "httpBytesPerSecond": 1048576,
+      "sessionRequestsPerSecond": 8,
+      "sessionBytesPerSecond": 65536,
+      "admissionsPerMinute": 32,
+      "signalingBytesPerSecond": 4096,
+      "sessionLeaseMs": 300000,
+      "renewAfterMs": 120000,
+      "authTimeoutMs": 5000,
+      "maxSignalBytes": 32768,
+      "maxSignalBufferedBytes": 65536,
+      "maxIceCandidates": 64,
+      "maxNativeFrameBytes": 16384,
+      "maxNativeBufferedBytes": 65536,
+      "maxNativeResponseBytes": 16384,
+      "maxNativeStatusBytes": 65536,
+      "nativeAuthTimeoutMs": 3000,
+      "maxSessionsPerCommon": 80,
+      "nativeMetadataConcurrency": 8,
+      "nativeConfigCacheMs": 30000,
+      "nativeStatusCacheMs": 1000,
+      "nativeAdmissionsPerSecond": 1,
+      "nativeAdmissionBurst": 8,
+      "nativePingTimeoutMs": 15000,
+      "maxNativeControlBytes": 125,
+      "maxNativeControlPerSecond": 10,
+      "maxSessionsPerClient": 80,
+      "maxSignalConnectionsPerClient": 82,
+      "maxSessionTransferBytes": 104857600
+    }
+  },
+  "finalOffDisplayFixVerified": true
+}

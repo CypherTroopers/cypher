@@ -1,0 +1,35 @@
+{
+  "command": "node --test --test-concurrency=2 tests/*.test.mjs",
+  "status": "PASS",
+  "exitCode": 0,
+  "metrics": {
+    "tests": 331,
+    "suites": 0,
+    "pass": 328,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 3,
+    "todo": 0,
+    "duration_ms": 25514.561645
+  },
+  "skippedLines": [
+    "\ufe63 actual isolated coturn rejects unauthenticated, expired and forged credentials (1.619202ms) # SKIP",
+    "\ufe63 actual isolated coturn enforces six allocations per peer and rejects private peer permissions (0.397268ms) # SKIP",
+    "\ufe63 actual isolated coturn delivers data between two public relay allocations (0.20955ms) # SKIP"
+  ],
+  "sourceHashes": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+    "public/mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "public/mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+    "public/mesh-protocol.js": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+    "relay/gateway.mjs": "45cb9edf9df7cc7b5e209cb7b73cb5608ae58b3982a5e45bac767869b84dc1c1",
+    "relay/discovery.mjs": "ada83d15070ee19a7076de2e2665234cf9706aa5dc6e4b0ead5521d6dddac178"
+  },
+  "fixtureEnvironment": {
+    "playwrightModule": "PLAYWRIGHT_MODULE (fallback /tmp/browser-llm-preview/node_modules/playwright/index.mjs)",
+    "chromium": "CHROMIUM (fallback /tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome)",
+    "openssl": "openssl command must be installed",
+    "unitTests": "node --test tests/*.test.mjs; no Chrome or live native Common required"
+  }
+}

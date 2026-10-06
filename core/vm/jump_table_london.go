@@ -5,6 +5,7 @@ var londonInstructionSet = newLondonInstructionSet()
 
 func newLondonInstructionSet() JumpTable {
 	instructionSet := newBerlinInstructionSet()
+	instructionSet[SSTORE].dynamicGas = gasSStoreEIP3529
 	instructionSet[BASEFEE] = &operation{
 		execute:     opBaseFee,
 		constantGas: GasQuickStep,

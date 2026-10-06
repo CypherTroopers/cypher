@@ -233,7 +233,7 @@ func readTxs(path string) ([]string, error) {
 	var txs []string
 	s := bufio.NewScanner(f)
 
-	// 長い raw tx 用
+	// Allow long raw transaction lines.
 	buf := make([]byte, 0, 1024*1024)
 	s.Buffer(buf, 4*1024*1024)
 

@@ -10,3 +10,16 @@ chaindb*/
 
 # Local start scripts
 start-cypher*.sh
+reset-chain.sh
+status.sh
+start-cyphermine.sh
+unlock.sh
+init.sh
+# Ephemeral native-build staging
+build/stage/
+
+# Local mining script
+start-mining.sh
+init.sh
+
+browser-llm-lab/searxng/config/settings.yml

@@ -1,0 +1,32 @@
+{
+  "cwd": "/root/cypher",
+  "command": [
+    "go",
+    "run",
+    "-p=1",
+    "-mod=readonly",
+    "-modfile=/tmp/cypher-consolidation-genesis-proof/proof.mod",
+    "-tags=cypher_bounded_storage",
+    "/tmp/cypher-consolidation-genesis-proof/main.go",
+    "/root/cypher/genesis.json",
+    "/root/cypher/config/browser-relay/common-mine.json",
+    "/tmp/cypher-consolidation-genesis-proof/result.json"
+  ],
+  "environment": {
+    "GOPROXY": "off",
+    "GOSUMDB": "off",
+    "GOTOOLCHAIN": "local",
+    "GOWORK": "off",
+    "GOMAXPROCS": "1",
+    "GOCACHE": "/tmp/cypher-browser-relay-gocache",
+    "GOTMPDIR": "/tmp/cypher-consolidation-genesis-proof/go-tmp"
+  },
+  "priority": [
+    "nice",
+    "-n",
+    "15"
+  ],
+  "exitCode": 0,
+  "goVersion": "go1.27.1 linux/amd64",
+  "genesisProgramSHA256": "884fa41e127c3039913ec4959b43cff3ccb9787de5e3cf7865255f6abe7ea911"
+}

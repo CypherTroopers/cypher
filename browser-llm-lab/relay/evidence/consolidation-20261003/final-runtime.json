@@ -1,0 +1,122 @@
+{
+  "status": "PASS",
+  "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+  "enode": "enode://5e09dc887c5da47914aaa3b9fef97ae1c25b7d5b353713af0140bef497a3ef82089a074024ec3feca3bbfba9d09bd34eb05fda80cc3c906c158fa62f59218e57@13.140.169.170:6099",
+  "sameNativeIdentity": true,
+  "sameGenesis": true,
+  "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+  "chainId": 10101919,
+  "networkId": 10101919,
+  "head": 4047,
+  "nativePeerCount": 7,
+  "nativeTransports": [
+    "tcp",
+    "tcp",
+    "tcp",
+    "tcp",
+    "tcp",
+    "tcp",
+    "tcp"
+  ],
+  "meshStatusAfterOwnedBrowsersClosed": {
+    "running": true,
+    "sessions": 0,
+    "circuits": 0,
+    "candidates": 0,
+    "receivedBytes": 0,
+    "sentBytes": 2544,
+    "routes": []
+  },
+  "processes": [
+    {
+      "name": "cypher0",
+      "pid": 3232245,
+      "status": "online",
+      "script": "/root/cypher/start-cypher0.sh",
+      "cwd": "/root/cypher",
+      "started": 1791025748990
+    },
+    {
+      "name": "cypher1",
+      "pid": 3232241,
+      "status": "online",
+      "script": "/root/cypher/start-cypher1.sh",
+      "cwd": "/root/cypher",
+      "started": 1791025748887
+    },
+    {
+      "name": "cypher2",
+      "pid": 3232256,
+      "status": "online",
+      "script": "/root/cypher/start-cypher2.sh",
+      "cwd": "/root/cypher",
+      "started": 1791025749171
+    },
+    {
+      "name": "cypher3",
+      "pid": 3232273,
+      "status": "online",
+      "script": "/root/cypher/start-cypher3.sh",
+      "cwd": "/root/cypher",
+      "started": 1791025749274
+    },
+    {
+      "name": "cypher4",
+      "pid": 3232284,
+      "status": "online",
+      "script": "/root/cypher/start-cypher4.sh",
+      "cwd": "/root/cypher",
+      "started": 1791025749412
+    },
+    {
+      "name": "cypher5",
+      "pid": 3232314,
+      "status": "online",
+      "script": "/root/cypher/start-cypher5.sh",
+      "cwd": "/root/cypher",
+      "started": 1791025750047
+    },
+    {
+      "name": "cypher6",
+      "pid": 3232356,
+      "status": "online",
+      "script": "/root/cypher/start-cypher6.sh",
+      "cwd": "/root/cypher",
+      "started": 1791025751273
+    },
+    {
+      "name": "cyphermine",
+      "pid": 3352262,
+      "status": "online",
+      "script": "/root/cypher/start-cyphermine.sh",
+      "cwd": "/root/cypher",
+      "started": 1791055154968
+    },
+    {
+      "name": "server",
+      "pid": 3350918,
+      "status": "online",
+      "script": "/root/cypher/browser-llm-lab/server.py",
+      "cwd": "/root/cypher/browser-llm-lab",
+      "started": 1791055086528
+    },
+    {
+      "name": "cypher-browser-mesh-gateway",
+      "pid": 3351382,
+      "status": "online",
+      "script": "/root/cypher/browser-llm-lab/relay/main.mjs",
+      "cwd": "/root/cypher/browser-llm-lab",
+      "started": 1791055089196
+    },
+    {
+      "name": "cypher-header-turn",
+      "pid": 3351143,
+      "status": "online",
+      "script": "/root/cypher/browser-llm-lab/.runtime/relay-turn/start.sh",
+      "cwd": "/root/cypher/browser-llm-lab/.runtime/relay-turn",
+      "started": 1791055087997
+    }
+  ],
+  "sevenCommitteeProcessesUnchanged": true,
+  "genesisFileSHA256": "cbba1850877ca5d2a4b2f2c9ef759c357ef579918130196ce773c29ee0c06b6c"
+}

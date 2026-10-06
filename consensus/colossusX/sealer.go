@@ -6,6 +6,7 @@ package colossusX
 import (
 	"bytes"
 	crand "crypto/rand"
+	"fmt"
 	"math"
 	"math/big"
 	"math/rand"
@@ -26,11 +27,20 @@ type sealedCandidate struct {
 // SealCandidate implements pow.Engine, attempting to find a nonce that satisfies
 // the candidate's difficulty requirements.
 func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-chan struct{}) (*types.Candidate, error) {
+	if _, err := candidate.SealHash(); err != nil {
+		return nil, err
+	}
 	log.Info("pow work,finding...", "PowMode", colossusX.config.PowMode)
 	// If we're running a fake PoW, simply return a 0 nonce immediately
 	if colossusX.config.PowMode == ModeFake || colossusX.config.PowMode == ModeFullFake {
 		candidate.KeyCandidate.Nonce, candidate.KeyCandidate.MixDigest = types.BlockNonce{}, common.Hash{}
 		return candidate, nil
+	}
+	// Initialize and pin the DAG before starting any nonce-search workers, so
+	// allocation or locking failures reach the caller instead of leaving it waiting.
+	dataset, err := colossusX.dataset(candidate.KeyCandidate.Number.Uint64())
+	if err != nil {
+		return nil, fmt.Errorf("colossusX mining aborted: dataset initialization failed: %w", err)
 	}
 	// Create a runner and the multiple search threads it directs
 	abort := make(chan struct{})
@@ -59,7 +69,7 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 		pend.Add(1)
 		go func(id int, nonce uint64) {
 			defer pend.Done()
-			colossusX.mineCandidate(candidate, id, nonce, abort, found)
+			colossusX.mineCandidate(candidate, dataset, id, nonce, abort, found)
 		}(i, uint64(colossusX.rand.Int63()))
 	}
 	// Wait until sealing is terminated or a nonce is found
@@ -89,7 +99,7 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 
 // mineCandidate is the actual proof-of-work miner that searches for a nonce starting from
 // seed that results in correct final block difficulty.
-func (colossusX *colossusX) mineCandidate(candidate *types.Candidate, id int, seed uint64, abort chan struct{}, found chan *sealedCandidate) {
+func (colossusX *colossusX) mineCandidate(candidate *types.Candidate, dataset *dataset, id int, seed uint64, abort chan struct{}, found chan *sealedCandidate) {
 	// Extract some data from the header
 	var (
 		hash   = candidate.HashNoNonce().Bytes()
@@ -100,11 +110,6 @@ func (colossusX *colossusX) mineCandidate(candidate *types.Candidate, id int, se
 	size := datasetSize(number)
 	if colossusX.config.PowMode == ModeTest {
 		size = 32 * 1024
-	}
-	dataset, err := colossusX.dataset(number)
-	if err != nil {
-		log.Error("colossusX mining aborted: dataset initialization failed", "epoch", number/epochLength, "err", err)
-		return
 	}
 	// Start generating random nonces until we abort or find a good one
 	var (

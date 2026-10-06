@@ -1,0 +1,55 @@
+{
+  "kind": "ACTUAL_PUBLIC_UI",
+  "files": {
+    "cypher-map-ui-report.json": {
+      "file": "cypher-map-ui-report.json",
+      "bytes": 15706,
+      "sha256": "72f0eb00298992f81383e98f1711abf2e7bb0e8c1cf616c8f8dca0712480b8c3"
+    },
+    "cypher-map-ui.log": {
+      "file": "cypher-map-ui.log",
+      "bytes": 437,
+      "sha256": "8769bd00b523aa566eb290568a5103281f01b78b2f144fee534d6a53c2c42e6c"
+    },
+    "cypher-map-ui-desktop-map-actual-activity.png": {
+      "file": "cypher-map-ui-desktop-map-actual-activity.png",
+      "bytes": 565404,
+      "sha256": "f68730ee09905485955e058915ee98a2b68882f18dc3cb47d9aa8a305cd21995"
+    },
+    "cypher-map-ui-mobile-map-actual-activity.png": {
+      "file": "cypher-map-ui-mobile-map-actual-activity.png",
+      "bytes": 168260,
+      "sha256": "29e4a1d1b61ef6e93f1e4ce5c6c8094c165c907e97f98f54a4998f9387c2a129"
+    },
+    "cypher-map-ui-desktop-active.png": {
+      "file": "cypher-map-ui-desktop-active.png",
+      "bytes": 565122,
+      "sha256": "b923491d78cd9b1e5670684bf39ef8bb53220b5a5098996be0a12beb16ae7717"
+    },
+    "cypher-map-ui-desktop-metrics.png": {
+      "file": "cypher-map-ui-desktop-metrics.png",
+      "bytes": 565083,
+      "sha256": "01281c8868b122ecd2b7b6098aa1396af8d5c8eaf04f3281488cab0158538ea8"
+    },
+    "cypher-map-ui-mobile-active.png": {
+      "file": "cypher-map-ui-mobile-active.png",
+      "bytes": 168157,
+      "sha256": "ab5e6b8034e513c7b3786f2dfb22b0b6becf4c5c6c82b9675cb34c5a32877aee"
+    },
+    "cypher-map-ui-mobile-metrics.png": {
+      "file": "cypher-map-ui-mobile-metrics.png",
+      "bytes": 118378,
+      "sha256": "492f2af0b667a0ef8abe1c66451fd3db091a90435def9c1fe6b034779fc15fc0"
+    },
+    "cypher-map-ui-desktop-off.png": {
+      "file": "cypher-map-ui-desktop-off.png",
+      "bytes": 560709,
+      "sha256": "36dfa5bd850745aebe8bfebdb693b44e7877716ad8ab6d5f7a61f6b43ab37cc4"
+    },
+    "cypher-map-ui-mobile-off.png": {
+      "file": "cypher-map-ui-mobile-off.png",
+      "bytes": 165914,
+      "sha256": "ea7e163eb47b5e71d7ca0c21b6b3fdcafb3d33cf56a07be2eeba60f5673dd172"
+    }
+  }
+}

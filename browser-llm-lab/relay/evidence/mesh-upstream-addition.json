@@ -1,0 +1,353 @@
+{
+  "operationStartedUTC": "2026-10-03T04:59:35.897326+00:00",
+  "adminAddPeerUTC": "2026-10-03T04:59:35.936146+00:00",
+  "completedUTC": "2026-10-03T04:59:35.939462+00:00",
+  "targetEnode": "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@127.0.0.1:6000",
+  "targetNodeId": "16d705509956e20c8ac91de61ba75b122228fd14287f1082ce8b9a6f9c122e53",
+  "scope": "only Common A StaticNodes plus owner-IPC admin_addPeer",
+  "oldStaticNodes": [
+    "enode://5e09dc887c5da47914aaa3b9fef97ae1c25b7d5b353713af0140bef497a3ef82089a074024ec3feca3bbfba9d09bd34eb05fda80cc3c906c158fa62f59218e57@127.0.0.1:6099"
+  ],
+  "newStaticNodes": [
+    "enode://5e09dc887c5da47914aaa3b9fef97ae1c25b7d5b353713af0140bef497a3ef82089a074024ec3feca3bbfba9d09bd34eb05fda80cc3c906c158fa62f59218e57@127.0.0.1:6099",
+    "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@127.0.0.1:6000"
+  ],
+  "runtimeConfigBeforeSha256": "9821e40069bf65bb1a4a0cd9be28241b31987adcbbfc8ef5010494d65950358c",
+  "runtimeConfigAfterSha256": "fed738432bddb2eef2bb28f18d84637666db256766bd14821c2998d96c98c304",
+  "adminAddPeerAccepted": true,
+  "meaning": "Accepted into A static dial scheduler; actual transport/catch-up verified separately",
+  "before": {
+    "a": {
+      "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+      "head": 3777,
+      "peers": [
+        {
+          "enode": "enode://4a571904b34c4dee7161387f286914ee79b95ece03221f4304f0a1b8c0dfb49fd8fd318df8187b886ad4716af45ebed856eaf32359bfc2e29f2e0f3861a4324c",
+          "id": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+          "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+          "caps": [
+            "eth/66"
+          ],
+          "network": {
+            "localAddress": "browser-mesh:cb7192403d2dfad5eeb11ab4e9fedf3d",
+            "remoteAddress": "browser-mesh:cb7192403d2dfad5eeb11ab4e9fedf3d",
+            "inbound": true,
+            "trusted": false,
+            "static": false,
+            "transport": "browser-mesh",
+            "browserMesh": {
+              "circuitId": "cb7192403d2dfad5eeb11ab4e9fedf3d",
+              "remoteId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+              "relayIds": [
+                "aa1a77203d2d4655d499597e3528a968",
+                "ebe48b7551991e49ace53cbebfb9d62a"
+              ],
+              "bytesReceived": 1818,
+              "bytesSent": 1568
+            }
+          },
+          "protocols": {
+            "eth": {
+              "version": 66,
+              "difficulty": 4155800,
+              "head": "0x09c3392399b2502ec4b19b32dc5ee3295447d39d0c6aad95581d99c8dcc71388"
+            }
+          }
+        }
+      ]
+    },
+    "b": {
+      "nodeId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+      "head": 3777,
+      "peers": [
+        {
+          "enode": "enode://5584da0f97c9ed9f25d3469b41acbfbc0105f5cc4b55121cc775ff8de8cc90fe10be3124f6f0a482e832d8a4b48ed01f794e7db7edf8a5e6f433cad68a2973b1@127.0.0.1:30445?discport=0",
+          "id": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+          "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+          "caps": [
+            "eth/66"
+          ],
+          "network": {
+            "localAddress": "browser-mesh:cb7192403d2dfad5eeb11ab4e9fedf3d",
+            "remoteAddress": "browser-mesh:cb7192403d2dfad5eeb11ab4e9fedf3d",
+            "inbound": false,
+            "trusted": false,
+            "static": false,
+            "transport": "browser-mesh",
+            "browserMesh": {
+              "circuitId": "cb7192403d2dfad5eeb11ab4e9fedf3d",
+              "remoteId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+              "relayIds": [
+                "aa1a77203d2d4655d499597e3528a968",
+                "ebe48b7551991e49ace53cbebfb9d62a"
+              ],
+              "bytesReceived": 1568,
+              "bytesSent": 1818
+            }
+          },
+          "protocols": {
+            "eth": {
+              "version": 66,
+              "difficulty": 4155800,
+              "head": "0x09c3392399b2502ec4b19b32dc5ee3295447d39d0c6aad95581d99c8dcc71388"
+            }
+          }
+        }
+      ]
+    },
+    "reference": {
+      "nodeId": "16d705509956e20c8ac91de61ba75b122228fd14287f1082ce8b9a6f9c122e53",
+      "head": 3786,
+      "peers": []
+    }
+  },
+  "originalNodeOperations": [],
+  "processRestarts": [],
+  "browserGatewayPinChanges": false,
+  "bConfigChanges": false,
+  "duringSoak": true,
+  "verifiedUTC": "2026-10-03T05:01:36.285373+00:00",
+  "actualSourceTcpPeer": {
+    "enode": "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@127.0.0.1:6000",
+    "id": "16d705509956e20c8ac91de61ba75b122228fd14287f1082ce8b9a6f9c122e53",
+    "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+    "caps": [
+      "eth/66"
+    ],
+    "network": {
+      "localAddress": "127.0.0.1:55996",
+      "remoteAddress": "127.0.0.1:6000",
+      "inbound": false,
+      "trusted": false,
+      "static": true
+    },
+    "protocols": {
+      "eth": {
+        "version": 66,
+        "difficulty": 4166800,
+        "head": "0x2622ad64927e13013a96a1df18c98f7e46831b423bf3ad8d8e333f3644fd3b7f"
+      }
+    }
+  },
+  "after": {
+    "utc": "2026-10-03T05:01:36Z",
+    "nodes": {
+      "a": {
+        "head": 3789,
+        "peers": [
+          {
+            "enode": "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@127.0.0.1:6000",
+            "id": "16d705509956e20c8ac91de61ba75b122228fd14287f1082ce8b9a6f9c122e53",
+            "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+            "caps": [
+              "eth/66"
+            ],
+            "network": {
+              "localAddress": "127.0.0.1:55996",
+              "remoteAddress": "127.0.0.1:6000",
+              "inbound": false,
+              "trusted": false,
+              "static": true
+            },
+            "protocols": {
+              "eth": {
+                "version": 66,
+                "difficulty": 4166800,
+                "head": "0x2622ad64927e13013a96a1df18c98f7e46831b423bf3ad8d8e333f3644fd3b7f"
+              }
+            }
+          },
+          {
+            "enode": "enode://4a571904b34c4dee7161387f286914ee79b95ece03221f4304f0a1b8c0dfb49fd8fd318df8187b886ad4716af45ebed856eaf32359bfc2e29f2e0f3861a4324c",
+            "id": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+            "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+            "caps": [
+              "eth/66"
+            ],
+            "network": {
+              "localAddress": "browser-mesh:cb7192403d2dfad5eeb11ab4e9fedf3d",
+              "remoteAddress": "browser-mesh:cb7192403d2dfad5eeb11ab4e9fedf3d",
+              "inbound": true,
+              "trusted": false,
+              "static": false,
+              "transport": "browser-mesh",
+              "browserMesh": {
+                "circuitId": "cb7192403d2dfad5eeb11ab4e9fedf3d",
+                "remoteId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+                "relayIds": [
+                  "aa1a77203d2d4655d499597e3528a968",
+                  "ebe48b7551991e49ace53cbebfb9d62a"
+                ],
+                "bytesReceived": 3386,
+                "bytesSent": 18288
+              }
+            },
+            "protocols": {
+              "eth": {
+                "version": 66,
+                "difficulty": 4155800,
+                "head": "0x09c3392399b2502ec4b19b32dc5ee3295447d39d0c6aad95581d99c8dcc71388"
+              }
+            }
+          }
+        ],
+        "meshStatus": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 1,
+          "candidates": 1,
+          "receivedBytes": 611148,
+          "sentBytes": 2932641,
+          "routes": [
+            {
+              "circuitId": "cb7192403d2dfad5eeb11ab4e9fedf3d",
+              "remoteId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+              "relayIds": [
+                "aa1a77203d2d4655d499597e3528a968",
+                "ebe48b7551991e49ace53cbebfb9d62a"
+              ],
+              "sessionId": "d2bc36aff5f5c941923fbece346abe52"
+            }
+          ]
+        },
+        "mining": false,
+        "accountsCount": 0
+      },
+      "b": {
+        "head": 3789,
+        "peers": [
+          {
+            "enode": "enode://5584da0f97c9ed9f25d3469b41acbfbc0105f5cc4b55121cc775ff8de8cc90fe10be3124f6f0a482e832d8a4b48ed01f794e7db7edf8a5e6f433cad68a2973b1@127.0.0.1:30445?discport=0",
+            "id": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+            "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+            "caps": [
+              "eth/66"
+            ],
+            "network": {
+              "localAddress": "browser-mesh:cb7192403d2dfad5eeb11ab4e9fedf3d",
+              "remoteAddress": "browser-mesh:cb7192403d2dfad5eeb11ab4e9fedf3d",
+              "inbound": false,
+              "trusted": false,
+              "static": false,
+              "transport": "browser-mesh",
+              "browserMesh": {
+                "circuitId": "cb7192403d2dfad5eeb11ab4e9fedf3d",
+                "remoteId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+                "relayIds": [
+                  "aa1a77203d2d4655d499597e3528a968",
+                  "ebe48b7551991e49ace53cbebfb9d62a"
+                ],
+                "bytesReceived": 18288,
+                "bytesSent": 3386
+              }
+            },
+            "protocols": {
+              "eth": {
+                "version": 66,
+                "difficulty": 4167900,
+                "head": "0x3c3e2a48fa38b59cabd9a65ecb5bc93e6c6f9a47ae21832aa5d4b061762396f3"
+              }
+            }
+          }
+        ],
+        "meshStatus": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 1,
+          "candidates": 1,
+          "receivedBytes": 2926378,
+          "sentBytes": 612752,
+          "routes": [
+            {
+              "circuitId": "cb7192403d2dfad5eeb11ab4e9fedf3d",
+              "remoteId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+              "relayIds": [
+                "aa1a77203d2d4655d499597e3528a968",
+                "ebe48b7551991e49ace53cbebfb9d62a"
+              ],
+              "sessionId": "845c788ff4768f5480d5cca1b84c3633"
+            }
+          ]
+        },
+        "mining": false,
+        "accountsCount": 0
+      },
+      "reference": {
+        "head": 3789
+      }
+    },
+    "hashes": {
+      "0": {
+        "a": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+        "b": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+        "reference": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+      },
+      "1": {
+        "a": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+        "b": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+        "reference": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca"
+      },
+      "1000": {
+        "a": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+        "b": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+        "reference": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e"
+      },
+      "3789": {
+        "a": "0xece6c8ffd37d6ded3c5b53ae848c0f00a3fd16766bbef803cecea05204086811",
+        "b": "0xece6c8ffd37d6ded3c5b53ae848c0f00a3fd16766bbef803cecea05204086811",
+        "reference": "0xece6c8ffd37d6ded3c5b53ae848c0f00a3fd16766bbef803cecea05204086811"
+      }
+    },
+    "reference": {
+      "path": "/root/cypher/chaindb0/cypher.ipc",
+      "selection": "fallback",
+      "fallbackReason": "Default reference /root/cypher/chaindbmine/cypher.ipc unavailable (FileNotFoundError)",
+      "role": "canonical-hash-reference-only"
+    },
+    "verification": "native-owner-rpc-canonical-hashes",
+    "bOnlyMeshPeers": true,
+    "bHasTransferredNativeStream": true,
+    "pass": true
+  },
+  "ownedBrowserRouteTraffic": [
+    {
+      "circuitId": "cb7192403d2dfad5eeb11ab4e9fedf3d",
+      "relayIds": [
+        "aa1a77203d2d4655d499597e3528a968",
+        "ebe48b7551991e49ace53cbebfb9d62a"
+      ],
+      "beforeBytesReceived": 1568,
+      "afterBytesReceived": 18288
+    }
+  ],
+  "bIsolation": {
+    "pid": 3088211,
+    "hostNetNS": "net:[4026531833]",
+    "netNS": "net:[4026532462]",
+    "interfaces": [
+      {
+        "ifindex": 1,
+        "ifname": "lo",
+        "flags": [
+          "LOOPBACK",
+          "UP",
+          "LOWER_UP"
+        ],
+        "mtu": 65536,
+        "qdisc": "noqueue",
+        "operstate": "UNKNOWN",
+        "linkmode": "DEFAULT",
+        "group": "default",
+        "txqlen": 1000,
+        "link_type": "loopback",
+        "address": "00:00:00:00:00:00",
+        "broadcast": "00:00:00:00:00:00"
+      }
+    ],
+    "ipv4Routes": [],
+    "ipv6Routes": []
+  },
+  "verificationPassed": true,
+  "staticPeerSemantics": "Both configured upstreams are maintained concurrently; no primary/failover priority.",
+  "meshBoundary": "Gateway/browser Common pins remain only A/B. node0 is ordinary TCP only; StaticNodes alone is not a native mesh exclusion list (ReservedNodes is separate)."
+}

@@ -1,0 +1,422 @@
+{
+  "recordedUTC": "2026-10-03T04:52:51.678293+00:00",
+  "sourceReport": "/tmp/cypher-mesh-final-report.json",
+  "investigation": "read-only",
+  "nativeProcesses": [
+    {
+      "name": "common-a",
+      "pid": 3088210,
+      "starttime": "127751090",
+      "pm2Restarts": 0
+    },
+    {
+      "name": "common-b",
+      "pid": 3088211,
+      "starttime": "127751091",
+      "pm2Restarts": 0
+    }
+  ],
+  "nonRpcNativeLogRowsInWindow": 0,
+  "ordinaryLeaseAndAdvertisementExpiryExcluded": true,
+  "exactCloseReason": "UNKNOWN; native Attach returned error is discarded and writer termination is not logged",
+  "remainingPossiblePath": "15-second native heartbeat/read deadline is consistent with the receive gap but not proven",
+  "samples": [
+    {
+      "at": "2026-10-03T04:41:20.300Z",
+      "B": {
+        "reconnects": 1,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 61847,
+        "nativeSentBytes": 64980,
+        "queuedBytes": 0,
+        "rejectedFrames": 0,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:45:34.900000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          },
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:42:51.341000+00:00"
+          }
+        ]
+      },
+      "C": {
+        "reconnects": 0,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 53573,
+        "nativeSentBytes": 57375,
+        "queuedBytes": 0,
+        "rejectedFrames": 1,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:45:13.582000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:42:51.341000+00:00"
+          },
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-10-03T04:41:30.360Z",
+      "B": {
+        "reconnects": 1,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 64597,
+        "nativeSentBytes": 68592,
+        "queuedBytes": 0,
+        "rejectedFrames": 0,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:45:34.900000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          },
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:26.341000+00:00"
+          }
+        ]
+      },
+      "C": {
+        "reconnects": 0,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 57105,
+        "nativeSentBytes": 60125,
+        "queuedBytes": 0,
+        "rejectedFrames": 1,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:45:13.582000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:26.341000+00:00"
+          },
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-10-03T04:41:40.636Z",
+      "B": {
+        "reconnects": 1,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 64597,
+        "nativeSentBytes": 68592,
+        "queuedBytes": 0,
+        "rejectedFrames": 0,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:45:34.900000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          },
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:26.341000+00:00"
+          }
+        ]
+      },
+      "C": {
+        "reconnects": 0,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 57105,
+        "nativeSentBytes": 60125,
+        "queuedBytes": 0,
+        "rejectedFrames": 1,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:45:13.582000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:26.341000+00:00"
+          },
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-10-03T04:41:50.706Z",
+      "B": {
+        "reconnects": 1,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 64597,
+        "nativeSentBytes": 68592,
+        "queuedBytes": 0,
+        "rejectedFrames": 0,
+        "sourceErrors": {
+          "common-b": "Gateway 401"
+        },
+        "sessionExpiresUTC": "2026-10-03T04:45:34.900000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          },
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:26.341000+00:00"
+          }
+        ]
+      },
+      "C": {
+        "reconnects": 0,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 57105,
+        "nativeSentBytes": 60125,
+        "queuedBytes": 0,
+        "rejectedFrames": 1,
+        "sourceErrors": {
+          "common-a": "Gateway 401"
+        },
+        "sessionExpiresUTC": "2026-10-03T04:45:13.582000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:26.341000+00:00"
+          },
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-10-03T04:42:00.765Z",
+      "B": {
+        "reconnects": 1,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 64597,
+        "nativeSentBytes": 68592,
+        "queuedBytes": 0,
+        "rejectedFrames": 0,
+        "sourceErrors": {
+          "common-b": "Gateway 401"
+        },
+        "sessionExpiresUTC": "2026-10-03T04:45:34.900000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          },
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:26.341000+00:00"
+          }
+        ]
+      },
+      "C": {
+        "reconnects": 0,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 57105,
+        "nativeSentBytes": 60125,
+        "queuedBytes": 0,
+        "rejectedFrames": 1,
+        "sourceErrors": {
+          "common-a": "Gateway 401"
+        },
+        "sessionExpiresUTC": "2026-10-03T04:45:13.582000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:26.341000+00:00"
+          },
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:11.306000+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-10-03T04:42:11.118Z",
+      "B": {
+        "reconnects": 2,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 70279,
+        "nativeSentBytes": 73521,
+        "queuedBytes": 164,
+        "rejectedFrames": 0,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:47:04.970000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:46.305000+00:00"
+          },
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:56.341000+00:00"
+          }
+        ]
+      },
+      "C": {
+        "reconnects": 1,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 62028,
+        "nativeSentBytes": 66675,
+        "queuedBytes": 0,
+        "rejectedFrames": 0,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:47:05.011000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:56.341000+00:00"
+          },
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:46.305000+00:00"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-10-03T04:42:21.199Z",
+      "B": {
+        "reconnects": 2,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 70279,
+        "nativeSentBytes": 73521,
+        "queuedBytes": 0,
+        "rejectedFrames": 0,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:47:04.970000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:46.305000+00:00"
+          },
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:56.341000+00:00"
+          }
+        ]
+      },
+      "C": {
+        "reconnects": 1,
+        "nativeConnected": true,
+        "nativeReceivedBytes": 62028,
+        "nativeSentBytes": 66675,
+        "queuedBytes": 0,
+        "rejectedFrames": 0,
+        "sourceErrors": {},
+        "sessionExpiresUTC": "2026-10-03T04:47:05.011000+00:00",
+        "sourceExpiries": [
+          {
+            "id": "common-a",
+            "expiresUTC": "2026-10-03T04:43:56.341000+00:00"
+          },
+          {
+            "id": "common-b",
+            "expiresUTC": "2026-10-03T04:43:46.305000+00:00"
+          }
+        ]
+      }
+    }
+  ],
+  "nativeOwnerSnapshots": [
+    {
+      "utc": "2026-10-03T04:41:00Z",
+      "nodes": {
+        "a": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 1,
+          "candidates": 1,
+          "receivedBytes": 344954,
+          "sentBytes": 2651450
+        },
+        "b": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 1,
+          "candidates": 1,
+          "receivedBytes": 2645667,
+          "sentBytes": 349848
+        }
+      }
+    },
+    {
+      "utc": "2026-10-03T04:41:30Z",
+      "nodes": {
+        "a": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 1,
+          "candidates": 1,
+          "receivedBytes": 351316,
+          "sentBytes": 2657732
+        },
+        "b": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 1,
+          "candidates": 1,
+          "receivedBytes": 2652029,
+          "sentBytes": 356130
+        }
+      }
+    },
+    {
+      "utc": "2026-10-03T04:42:00Z",
+      "nodes": {
+        "a": {
+          "running": true,
+          "sessions": 0,
+          "circuits": 0,
+          "candidates": 0,
+          "receivedBytes": 351316,
+          "sentBytes": 2658459
+        },
+        "b": {
+          "running": true,
+          "sessions": 0,
+          "circuits": 0,
+          "candidates": 0,
+          "receivedBytes": 2652029,
+          "sentBytes": 356857
+        }
+      }
+    },
+    {
+      "utc": "2026-10-03T04:42:31Z",
+      "nodes": {
+        "a": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 1,
+          "candidates": 1,
+          "receivedBytes": 361458,
+          "sentBytes": 2666894
+        },
+        "b": {
+          "running": true,
+          "sessions": 1,
+          "circuits": 1,
+          "candidates": 1,
+          "receivedBytes": 2660550,
+          "sentBytes": 366051
+        }
+      }
+    }
+  ],
+  "coreEdits": false,
+  "processActions": []
+}

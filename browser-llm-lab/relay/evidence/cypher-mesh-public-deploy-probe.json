@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-03T04:17:01.119Z",
+  "status": "PASS",
+  "transport": "Actual Chromium HTTPS/WSS through nginx via localhost TLS SNI; one quiet native attachment, no RTC path claim",
+  "configHTTP": 200,
+  "nodePins": 2,
+  "nativeHelloType": "hello",
+  "protocol": "cypher-browser-mesh/1",
+  "browserIdMatches": true,
+  "pinnedEnodeMatches": true,
+  "networkMatches": true,
+  "sourceId": "common-a",
+  "spoofedDirectCountry": null,
+  "turnCredentialsIssued": true,
+  "statusHTTP": 200,
+  "nativeRunning": true,
+  "nativeSessionsDuringProbe": 1,
+  "nativeCircuitsDuringProbe": 0,
+  "deleteHTTP": 204,
+  "staleRenewHTTP": 401,
+  "rtcPeersJoined": 0
+}

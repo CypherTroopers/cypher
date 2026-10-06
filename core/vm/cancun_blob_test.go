@@ -39,6 +39,24 @@ func TestBlobHashOpcodeOutOfRangeReturnsZero(t *testing.T) {
 	}
 }
 
+func TestBlobHashOpcodeDoesNotTruncateWideIndex(t *testing.T) {
+	want := common.HexToHash("0x0102030405060708091011121314151617181920212223242526272829303132")
+	interpreter := &EVMInterpreter{evm: &EVM{Context: Context{BlobHashes: []common.Hash{want}}}}
+	stack := newstack()
+	defer returnStack(stack)
+	wideIndex := new(uint256.Int)
+	wideIndex.SetBytes(common.FromHex("0x10000000000000000")) // 2^64; low 64 bits are zero.
+	stack.push(wideIndex)
+	ctx := &callCtx{stack: stack}
+
+	if _, err := opBlobHash(nil, interpreter, ctx); err != nil {
+		t.Fatalf("opBlobHash returned error: %v", err)
+	}
+	if !stack.peek().IsZero() {
+		t.Fatalf("expected zero for wide out-of-range index, got %s", stack.peek().Hex())
+	}
+}
+
 func TestBlobBaseFeeOpcodeUsesContextValue(t *testing.T) {
 	interpreter := &EVMInterpreter{evm: &EVM{Context: Context{BlobBaseFee: big.NewInt(12345)}}}
 	stack := newstack()

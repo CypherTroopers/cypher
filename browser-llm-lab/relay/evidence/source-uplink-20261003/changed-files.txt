@@ -1,0 +1,27 @@
+ M README.md
+ M browser-llm-lab/public/mesh-controller.js
+ M browser-llm-lab/relay/README.md
+ M browser-llm-lab/relay/common-endpoint-native-handoff.md
+ M browser-llm-lab/relay/config.json
+ M browser-llm-lab/relay/config.mjs
+ M browser-llm-lab/relay/discovery.mjs
+ M browser-llm-lab/relay/gateway-operations.md
+ M browser-llm-lab/relay/gateway.mjs
+ M browser-llm-lab/tests/mesh-discovery-client.test.mjs
+ M build/bin/cypher
+ M build/bin/cypher-linux-amd64
+ M build/build-cypher.sh
+ M cmd/cypher/browser_mesh.go
+ M cmd/cypher/browser_public_relay.go
+ M cmd/cypher/browser_public_relay_test.go
+ M config/browser-relay/common-mine.json
+ M docs/common-relay/browser-public-header-relay-spec.md
+ M node/browserrelay/mesh.go
+ M node/browserrelay/mesh_test.go
+?? browser-llm-lab/relay/evidence/source-uplink-20261003/
+?? browser-llm-lab/relay/source-uplink.mjs
+?? browser-llm-lab/tests/mesh-source-uplink-browser.mjs
+?? browser-llm-lab/tests/mesh-source-uplink-ui.mjs
+?? browser-llm-lab/tests/relay-source-uplink.test.mjs
+?? cmd/cypher/browser_source_uplink.go
+?? cmd/cypher/browser_source_uplink_test.go

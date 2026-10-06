@@ -1,0 +1,26 @@
+[
+  {
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "errors": [],
+    "requests": [],
+    "state": "OFF",
+    "overflow": false,
+    "title": "Cypher Browser — Your local AI workspace",
+    "onEnabled": true
+  },
+  {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "errors": [],
+    "requests": [],
+    "state": "OFF",
+    "overflow": false,
+    "title": "Cypher Browser — Your local AI workspace",
+    "onEnabled": true
+  }
+]

@@ -34,6 +34,7 @@ import (
 type Config struct {
 	ChainConfig *params.ChainConfig
 	Difficulty  *big.Int
+	Random      *common.Hash
 	Origin      common.Address
 	Coinbase    common.Address
 	BlockNumber *big.Int

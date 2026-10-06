@@ -1,0 +1,73 @@
+{
+  "recordedAt": "2026-10-03T05:39:05.248767+00:00",
+  "liveGatewayModified": false,
+  "newLeasesCreated": 0,
+  "inspectedOtherUserTokensOrIPs": false,
+  "historicalIPhoneCause": "UNKNOWN: historical country metadata not retained",
+  "trustedChain": {
+    "edge": "CF-IPCountry request header",
+    "nginx": "Only configured Cloudflare remote-address CIDRs allow CF-IPCountry through; all requests overwrite X-Relay-Country",
+    "gatewayConfiguredHeader": "x-relay-country",
+    "gatewayBinds": "127.0.0.1",
+    "session": "Country metadata computed once during POST admission; included in session response and signaling ready/peer list",
+    "controller": "selfGeo comes from session.geo; peers retain candidate.geo on RTCPeerConnection creation",
+    "browser": "Only known country anchors are plotted; unknowns remain in the textual peer list"
+  },
+  "configuredCloudflareCIDRs": 22,
+  "matchesCurrentOfficialCIDRs": true,
+  "nginxSiteMatchesWorkspace": true,
+  "liveGeoSha256": "80d640f0a58370585ccb635c6d43155a1e63c194f512f5b26b02434240e67ab0",
+  "candidateGeoSha256": "5d0ef4a321d415919de35fe455a5db7feeca07d69598e94ad84d37873acc4624",
+  "currentPublicProbe": {
+    "status": 200,
+    "server": "cloudflare",
+    "cacheControl": "no-store",
+    "configHasCountryMetadata": false,
+    "interpretation": "The public config has no per-request geo; absence of CF-IPCountry in response headers does not establish its presence or absence at origin."
+  },
+  "unknownCausesSupportedBySource": [
+    "No trusted CF-IPCountry request header",
+    "Direct/non-Cloudflare origin peer, whose country header is deliberately dropped",
+    "Unknown/Tor provider country XX/T1",
+    "Valid provider code not present in the original 16-country table"
+  ],
+  "noHistoricalAttribution": true,
+  "activeSessionMetadata": "No safe existing unauthenticated API exposes active session geo. No user session or process heap was inspected.",
+  "candidate": {
+    "sourceManifest": "../geo-data-sources.json",
+    "entries": 249,
+    "remainingUnplaced": "BQ and missing/malformed/unlisted codes; no synthetic positions",
+    "tests": {
+      "geo": 7,
+      "existingGateway": 18,
+      "pass": 25
+    }
+  },
+  "mapEventAuditBeforeChanges": {
+    "chunk_accepted": "Emitted after bounded forward enqueue. from peer means accepted peer-to-self data; from native should not yet be shown as a successful RTC send.",
+    "missingOutbound": "No dedicated successful DataChannel data-send event existed. Native-to-peer and intermediate peer-to-peer outbound beams were missing.",
+    "ackDirection": "acknowledged receipt is remote peer -> self (fromSessionId is peer session). Existing map drew self -> peer.",
+    "recommendedSendHook": "Worker sent(ok), after transfer charging, only data to a current peer; receipt counter semantics unchanged.",
+    "coordinateMeaning": "Static shared country anchor; never actual browser location.",
+    "reducedMotion": "Animation disabled by preference, while connections and counters should stay visible."
+  },
+  "sources": [
+    "https://developers.cloudflare.com/network/ip-geolocation/",
+    "https://developers.cloudflare.com/fundamentals/reference/http-headers/",
+    "https://www.cloudflare.com/ips-v4/",
+    "https://www.cloudflare.com/ips-v6/"
+  ],
+  "sourceLocations": [
+    "relay/nginx-site.conf:2",
+    "relay/nginx-site.conf:31",
+    "relay/nginx-site.conf:56",
+    "relay/gateway.mjs:89",
+    "relay/gateway.mjs:141",
+    "public/relay-controller.js:27",
+    "public/relay-controller.js:220",
+    "public/mesh-worker.js:251",
+    "public/mesh-worker.js:311",
+    "public/mesh-worker.js:328",
+    "public/relay-ui.js:124"
+  ]
+}

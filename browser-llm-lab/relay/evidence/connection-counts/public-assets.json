@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-03T10:48:37.372702+00:00",
+  "assets": {
+    "public/index.html": {
+      "sha256": "3513f7b07625b2aafffe085cf46689c7e06ca0b6e511e74ca26a119eba474843",
+      "matches": true
+    },
+    "public/relay-ui.js": {
+      "sha256": "c30018ec18743c315967e01f4e02ef89e6dd9c7056a6b824582c4b72d2086f29",
+      "matches": true
+    }
+  },
+  "fetchNote": "Python urllib returned HTTP403; curl with browser User-Agent returned matching public assets. Independent real browser acceptance also passed."
+}

@@ -1,0 +1,69 @@
+{
+  "utc": "2026-10-03T04:37:55Z",
+  "nodes": {
+    "a": {
+      "head": 3777,
+      "peers": [],
+      "meshStatus": {
+        "running": true,
+        "sessions": 0,
+        "circuits": 0,
+        "candidates": 0,
+        "receivedBytes": 286422,
+        "sentBytes": 2594989,
+        "routes": []
+      },
+      "mining": false,
+      "accountsCount": 0
+    },
+    "b": {
+      "head": 3777,
+      "peers": [],
+      "meshStatus": {
+        "running": true,
+        "sessions": 0,
+        "circuits": 0,
+        "candidates": 0,
+        "receivedBytes": 2583437,
+        "sentBytes": 291533,
+        "routes": []
+      },
+      "mining": false,
+      "accountsCount": 0
+    },
+    "reference": {
+      "head": 3780
+    }
+  },
+  "hashes": {
+    "0": {
+      "a": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "b": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "reference": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    },
+    "1": {
+      "a": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+      "b": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+      "reference": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca"
+    },
+    "1000": {
+      "a": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+      "b": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+      "reference": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e"
+    },
+    "3777": {
+      "a": "0x09c3392399b2502ec4b19b32dc5ee3295447d39d0c6aad95581d99c8dcc71388",
+      "b": "0x09c3392399b2502ec4b19b32dc5ee3295447d39d0c6aad95581d99c8dcc71388",
+      "reference": "0x09c3392399b2502ec4b19b32dc5ee3295447d39d0c6aad95581d99c8dcc71388"
+    }
+  },
+  "reference": {
+    "path": "/root/cypher/chaindb0/cypher.ipc",
+    "selection": "fallback",
+    "fallbackReason": "Default reference /root/cypher/chaindbmine/cypher.ipc unavailable (FileNotFoundError)"
+  },
+  "verification": "native-owner-rpc-canonical-hashes",
+  "bOnlyMeshPeers": true,
+  "bHasTransferredNativeStream": false,
+  "pass": true
+}

@@ -1,0 +1,30 @@
+{
+  "at": "2026-10-03T18:16:36.213Z",
+  "tests": [
+    {
+      "path": "discovery",
+      "bytes": 2048,
+      "status": 202,
+      "expected": 202
+    },
+    {
+      "path": "discovery",
+      "bytes": 16384,
+      "status": 202,
+      "expected": 202
+    },
+    {
+      "path": "discovery",
+      "bytes": 16385,
+      "status": 413,
+      "expected": 413
+    },
+    {
+      "path": "sessions",
+      "bytes": 2048,
+      "status": 413,
+      "expected": 413
+    }
+  ],
+  "status": "PASS"
+}

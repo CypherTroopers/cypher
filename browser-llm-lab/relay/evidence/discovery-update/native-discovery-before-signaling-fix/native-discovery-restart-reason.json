@@ -1,0 +1,18 @@
+{
+  "reason": "Controlled acceptance stop before client stale record signaling correction; new 30-minute run required",
+  "at": "2026-10-03T16:55:55.263Z",
+  "closed": [
+    {
+      "name": "A",
+      "pid": 3299171
+    },
+    {
+      "name": "B",
+      "pid": 3299342
+    },
+    {
+      "name": "C",
+      "pid": 3299592
+    }
+  ]
+}

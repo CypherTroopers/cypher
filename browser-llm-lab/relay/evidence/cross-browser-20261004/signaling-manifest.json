@@ -1,0 +1,26 @@
+[
+  {
+    "path": "public/mesh-discovery.js",
+    "beforeSha256": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "afterSha256": "f8fd07d5d0dfcbae3e333917d254e8c50a9f53b0bf8bd8d0e7473178971c43f7",
+    "stage": "/tmp/cypher-cross-browser-20261004/stage/public/mesh-discovery.js"
+  },
+  {
+    "path": "public/mesh-discovery-client.js",
+    "beforeSha256": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+    "afterSha256": "3c8cf915a483030a2742d15415a8d2cc9d6185f30dac2ad21c2c4fd7c5bbda1f",
+    "stage": "/tmp/cypher-cross-browser-20261004/stage/public/mesh-discovery-client.js"
+  },
+  {
+    "path": "tests/mesh-discovery.test.mjs",
+    "beforeSha256": "6d4be35204f97c8991678d21bfdde9218be40992f0fc69a7134930b964e4b2a3",
+    "afterSha256": "c9e1690efc4c5d5aa1241a7ff52a39f1389efed5e68e6a82816acc927ec77af4",
+    "stage": "/tmp/cypher-cross-browser-20261004/stage/tests/mesh-discovery.test.mjs"
+  },
+  {
+    "path": "tests/mesh-discovery-client.test.mjs",
+    "beforeSha256": "caab3713d5f94ac4825db64512ecc91503e69171d29c68f392ff1d1c63b418ac",
+    "afterSha256": "2ef7541f554d56deebf9ecb47dd16fcabdc5f6e4e78dd19cb98bd4b22161112b",
+    "stage": "/tmp/cypher-cross-browser-20261004/stage/tests/mesh-discovery-client.test.mjs"
+  }
+]

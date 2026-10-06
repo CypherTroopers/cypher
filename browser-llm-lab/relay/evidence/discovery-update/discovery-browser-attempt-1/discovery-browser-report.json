@@ -1,0 +1,513 @@
+{
+  "status": "FAIL",
+  "startedAt": "2026-10-03T16:24:01.815Z",
+  "sameHostOnly": true,
+  "nativeFixture": true,
+  "nativeRLPx": false,
+  "webRTC": true,
+  "physicalMobile": false,
+  "checkpoints": [],
+  "errors": [],
+  "participants": {
+    "A": {
+      "pid": 3284298,
+      "origin": "https://gateway-a.example.org:41889",
+      "maxCommonConnections": 1
+    },
+    "B": {
+      "pid": 3284481,
+      "origin": "https://gateway-b.example.org:41889",
+      "maxCommonConnections": 1
+    }
+  },
+  "sourceHashes": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "bb4f187a7da41a9cccaf91b03639e7b6854709dce90dacc6baa11d663455aa4c",
+    "public/mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "public/mesh-worker.js": "7ecf955c0ee99a20b7467b68fc036ce9b0004d1ef26ae11e388b7b7fefe5b27f",
+    "public/mesh-protocol.js": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+    "relay/gateway.mjs": "9d2df965c423266cf8bca2b54d86e7b1b0530063da3fc3ffd529d6442e186601",
+    "relay/discovery.mjs": "0edf76bc5f91e40a235bd5dadac708c152397aaf03f5534e9a023131edc1e5df"
+  },
+  "origins": [
+    "https://gateway-a.example.org:41889",
+    "https://gateway-b.example.org:41889"
+  ],
+  "failure": "Error: Timed out: cross-gateway RTC\n    at until (file:///tmp/cypher-mesh-discovery-20261003/tests/mesh-discovery-browser.mjs:29:190)\n    at async file:///tmp/cypher-mesh-discovery-20261003/tests/mesh-discovery-browser.mjs:121:3",
+  "last": [
+    {
+      "name": "A",
+      "value": {
+        "snapshot": {
+          "receivedBytes": 0,
+          "sentBytes": 0,
+          "nativeReceivedBytes": 856,
+          "nativeSentBytes": 0,
+          "streamReceivedBytes": 0,
+          "streamForwardedBytes": 0,
+          "acknowledgedBytes": 0,
+          "acknowledgedCount": 0,
+          "nativeCreditBytes": 0,
+          "gatewayBytes": 5152,
+          "signalingBytes": 13512,
+          "totalBytes": 32802,
+          "rejectedFrames": 0,
+          "circuitsOpened": 0,
+          "circuitsClosed": 0,
+          "connectedPeers": 0,
+          "nativeConnections": 0,
+          "connections": [
+            {
+              "sourceId": "common-a",
+              "nodeId": "c477302e97313080c316c3188ae9d1d1d4a4cd02397dcf0a26070b874c20e4d0",
+              "browserId": "f53656263d90754ff8b0f2a2214f5d10",
+              "endpointCircuits": 0,
+              "limits": {
+                "maxSessions": 80,
+                "nativePeers": 40,
+                "circuits": 40,
+                "circuitsPerSession": 40,
+                "pendingInbound": 4,
+                "pendingOutbound": 4
+              }
+            }
+          ],
+          "pendingAdvertisements": 0,
+          "circuits": 0,
+          "pendingHandshakes": 0,
+          "routes": 0,
+          "queuedBytes": 0,
+          "appBytes": 0,
+          "capacities": null,
+          "transitCircuits": 0,
+          "pendingInbound": 0,
+          "pendingOutbound": 0,
+          "pendingTransit": 0,
+          "sources": [
+            {
+              "nodeId": "c477302e97313080c316c3188ae9d1d1d4a4cd02397dcf0a26070b874c20e4d0",
+              "sourceId": "common-a",
+              "issuedAt": 1791044650513,
+              "expiresAt": 1791044770513
+            }
+          ],
+          "receipts": [],
+          "aiLoad": "idle",
+          "paused": false,
+          "endpointCircuits": 0,
+          "verification": "native-RLPx-endpoints; browser-schema-and-hop-receipts",
+          "channel": "cypher-common-mesh/1",
+          "cacheEntries": 0,
+          "cacheBytes": 0,
+          "inflight": 0,
+          "state": "ERROR",
+          "reason": "Mesh Worker stopped",
+          "requested": false,
+          "sourceErrors": {},
+          "signalConnected": false,
+          "selfGeo": null,
+          "peers": [],
+          "protocol": "cypher-browser-mesh/1",
+          "sourceId": null,
+          "nodeId": null,
+          "browserId": null,
+          "nativeConnected": false,
+          "nativeSession": null,
+          "commonConnections": [],
+          "discovery": {
+            "enabled": true,
+            "verifiedEndpoints": 0,
+            "knownBrowserCandidates": 0,
+            "connectedGateways": 0,
+            "knownGatewayOrigins": []
+          },
+          "connectionLimits": {
+            "peers": 20,
+            "commons": 1
+          },
+          "reconnects": 0,
+          "rtcStats": [],
+          "nativeStatus": null
+        },
+        "events": [
+          {
+            "name": "native-connected",
+            "nodeId": "c477302e97313080c316c3188ae9d1d1d4a4cd02397dcf0a26070b874c20e4d0",
+            "sourceId": "common-a",
+            "nativeSession": "a32feb8b887c2cf124c84829ec878d59"
+          },
+          {
+            "type": "event",
+            "name": "ai_policy",
+            "at": 1791044650616,
+            "state": "idle",
+            "txJSONBytesPerSecond": 49152,
+            "rxJSONBytesPerSecond": 65536,
+            "capacities": {
+              "circuits": 40,
+              "endpointCircuits": 40,
+              "pendingHandshakes": 8,
+              "pendingPerDirection": 4,
+              "hardCircuits": 40,
+              "hardEndpointCircuits": 40,
+              "peers": 20,
+              "nativeConnections": 20,
+              "commonConnections": 20,
+              "appBytes": 4194304,
+              "queueBytes": 524288,
+              "transferBytes": 104857600,
+              "sendBytesPerSecond": 49152,
+              "receiveBytesPerSecond": 65536,
+              "controlBytesPerSecond": 24576,
+              "common": {
+                "maxSessions": 80,
+                "nativePeers": 40,
+                "circuits": 40,
+                "circuitsPerSession": 40,
+                "pendingInbound": 4,
+                "pendingOutbound": 4
+              }
+            },
+            "reason": "bounded-throughput-with-native-RLPx-deadlines",
+            "generation": 1
+          },
+          {
+            "type": "event",
+            "name": "advertisement",
+            "at": 1791044650741,
+            "nodeId": "c477302e97313080c316c3188ae9d1d1d4a4cd02397dcf0a26070b874c20e4d0",
+            "sourceId": "common-a",
+            "route": [
+              "f53656263d90754ff8b0f2a2214f5d10"
+            ],
+            "expiresAt": 1791044770513,
+            "browserSignatureVerified": true,
+            "generation": 1
+          },
+          {
+            "type": "event",
+            "name": "native_ready",
+            "at": 1791044650741,
+            "sourceId": "common-a",
+            "nodeId": "c477302e97313080c316c3188ae9d1d1d4a4cd02397dcf0a26070b874c20e4d0",
+            "browserId": "f53656263d90754ff8b0f2a2214f5d10",
+            "verification": "browser_secp256k1_signature",
+            "browserSignatureVerified": true,
+            "endpointSignatureVerified": false,
+            "generation": 1
+          },
+          {
+            "type": "event",
+            "name": "advertisement",
+            "at": 1791044669197,
+            "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+            "sourceId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+            "route": [
+              "228ae687e52d23e387699d0b35abbdff",
+              "f53656263d90754ff8b0f2a2214f5d10"
+            ],
+            "expiresAt": 1791044772462,
+            "browserSignatureVerified": true,
+            "generation": 1
+          }
+        ],
+        "discovery": null
+      }
+    },
+    {
+      "name": "B",
+      "value": {
+        "snapshot": {
+          "receivedBytes": 1247,
+          "sentBytes": 1247,
+          "nativeReceivedBytes": 856,
+          "nativeSentBytes": 862,
+          "streamReceivedBytes": 0,
+          "streamForwardedBytes": 0,
+          "acknowledgedBytes": 0,
+          "acknowledgedCount": 0,
+          "nativeCreditBytes": 0,
+          "gatewayBytes": 13826,
+          "signalingBytes": 21750,
+          "totalBytes": 39788,
+          "rejectedFrames": 0,
+          "circuitsOpened": 0,
+          "circuitsClosed": 0,
+          "connectedPeers": 0,
+          "nativeConnections": 1,
+          "connections": [
+            {
+              "sourceId": "common-b",
+              "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+              "browserId": "228ae687e52d23e387699d0b35abbdff",
+              "endpointCircuits": 0,
+              "limits": {
+                "maxSessions": 80,
+                "nativePeers": 40,
+                "circuits": 40,
+                "circuitsPerSession": 40,
+                "pendingInbound": 4,
+                "pendingOutbound": 4
+              }
+            }
+          ],
+          "pendingAdvertisements": 0,
+          "circuits": 0,
+          "pendingHandshakes": 0,
+          "routes": 1,
+          "queuedBytes": 0,
+          "appBytes": 33974,
+          "capacities": {
+            "circuits": 40,
+            "endpointCircuits": 40,
+            "pendingHandshakes": 8,
+            "pendingPerDirection": 4,
+            "hardCircuits": 40,
+            "hardEndpointCircuits": 40,
+            "peers": 20,
+            "nativeConnections": 20,
+            "commonConnections": 20,
+            "appBytes": 4194304,
+            "queueBytes": 524288,
+            "transferBytes": 104857600,
+            "sendBytesPerSecond": 49152,
+            "receiveBytesPerSecond": 65536,
+            "controlBytesPerSecond": 24576,
+            "common": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          },
+          "transitCircuits": 0,
+          "pendingInbound": 0,
+          "pendingOutbound": 0,
+          "pendingTransit": 0,
+          "sources": [
+            {
+              "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+              "sourceId": "common-b",
+              "issuedAt": 1791044652462,
+              "expiresAt": 1791044772462
+            }
+          ],
+          "receipts": [],
+          "aiLoad": "idle",
+          "paused": false,
+          "endpointCircuits": 0,
+          "verification": "native-RLPx-endpoints; browser-schema-and-hop-receipts",
+          "channel": "cypher-common-mesh/1",
+          "state": "WAITING_PEER",
+          "reason": "Common connected. Waiting for a browser peer.",
+          "requested": true,
+          "sourceErrors": {},
+          "sessionId": "e9bec6a1ed61e5c45a086d99c90e09f8",
+          "sessionExpiresAt": 1791044952251,
+          "signalConnected": true,
+          "selfGeo": null,
+          "peers": [],
+          "protocol": "cypher-browser-mesh/1",
+          "sourceId": "common-b",
+          "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+          "browserId": "228ae687e52d23e387699d0b35abbdff",
+          "nativeConnected": true,
+          "nativeSession": "8a8b251617729ad0a9b882782301b6fe",
+          "commonConnections": [
+            {
+              "id": "e9bec6a1ed61e5c45a086d99c90e09f8",
+              "sourceId": "common-b",
+              "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+              "browserId": "228ae687e52d23e387699d0b35abbdff",
+              "connected": true,
+              "expiresAt": 1791044952251,
+              "remoteOrigin": null,
+              "endpointVerified": false,
+              "browserSignatureVerified": true
+            }
+          ],
+          "discovery": {
+            "enabled": true,
+            "verifiedEndpoints": 2,
+            "knownBrowserCandidates": 1,
+            "connectedGateways": 2,
+            "knownGatewayOrigins": [
+              "https://gateway-b.example.org:41889",
+              "https://gateway-a.example.org:41889"
+            ]
+          },
+          "connectionLimits": {
+            "peers": 20,
+            "commons": 1
+          },
+          "reconnects": 0,
+          "rtcStats": [],
+          "nativeStatus": {
+            "running": true,
+            "sessions": 1,
+            "circuits": 0,
+            "candidates": 1,
+            "receivedBytes": 0,
+            "sentBytes": 0,
+            "routes": [],
+            "sourceId": "common-b",
+            "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+            "participants": 0,
+            "leases": 1,
+            "nativeLimits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            },
+            "session": {
+              "transferredBytes": 4905,
+              "transferLimitBytes": 104857600,
+              "attachments": 1,
+              "maxAttachments": 20
+            },
+            "gateway": {
+              "dropReasons": {
+                "session_ended": 0,
+                "session_expired": 0,
+                "pong_timeout": 0,
+                "transfer_limit": 0,
+                "response_failed": 0,
+                "native_capacity": 0,
+                "invalid_native_frame": 0,
+                "invalid_native_hello": 0,
+                "invalid_native_advertisement": 0,
+                "native_pin_mismatch": 0,
+                "upstream_closed": 0,
+                "upstream_error": 0,
+                "native_auth_timeout": 0,
+                "invalid_control": 0,
+                "signal_capacity": 0,
+                "client_closed": 0,
+                "manual_off": 0,
+                "gateway_shutdown": 0
+              }
+            }
+          }
+        },
+        "events": [
+          {
+            "name": "native-connected",
+            "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+            "sourceId": "common-b",
+            "nativeSession": "8a8b251617729ad0a9b882782301b6fe"
+          },
+          {
+            "type": "event",
+            "name": "ai_policy",
+            "at": 1791044652822,
+            "state": "idle",
+            "txJSONBytesPerSecond": 49152,
+            "rxJSONBytesPerSecond": 65536,
+            "capacities": {
+              "circuits": 40,
+              "endpointCircuits": 40,
+              "pendingHandshakes": 8,
+              "pendingPerDirection": 4,
+              "hardCircuits": 40,
+              "hardEndpointCircuits": 40,
+              "peers": 20,
+              "nativeConnections": 20,
+              "commonConnections": 20,
+              "appBytes": 4194304,
+              "queueBytes": 524288,
+              "transferBytes": 104857600,
+              "sendBytesPerSecond": 49152,
+              "receiveBytesPerSecond": 65536,
+              "controlBytesPerSecond": 24576,
+              "common": {
+                "maxSessions": 80,
+                "nativePeers": 40,
+                "circuits": 40,
+                "circuitsPerSession": 40,
+                "pendingInbound": 4,
+                "pendingOutbound": 4
+              }
+            },
+            "reason": "bounded-throughput-with-native-RLPx-deadlines",
+            "generation": 1
+          },
+          {
+            "type": "event",
+            "name": "advertisement",
+            "at": 1791044653065,
+            "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+            "sourceId": "common-b",
+            "route": [
+              "228ae687e52d23e387699d0b35abbdff"
+            ],
+            "expiresAt": 1791044772462,
+            "browserSignatureVerified": true,
+            "generation": 1
+          },
+          {
+            "type": "event",
+            "name": "native_ready",
+            "at": 1791044653065,
+            "sourceId": "common-b",
+            "nodeId": "5f50338c8d36f9055554afd1a86a24be6357f6682e10f3c846be689e769cfa83",
+            "browserId": "228ae687e52d23e387699d0b35abbdff",
+            "verification": "browser_secp256k1_signature",
+            "browserSignatureVerified": true,
+            "endpointSignatureVerified": false,
+            "generation": 1
+          },
+          {
+            "type": "event",
+            "name": "advertisement",
+            "at": 1791044669221,
+            "nodeId": "c477302e97313080c316c3188ae9d1d1d4a4cd02397dcf0a26070b874c20e4d0",
+            "sourceId": "c477302e97313080c316c3188ae9d1d1d4a4cd02397dcf0a26070b874c20e4d0",
+            "route": [
+              "f53656263d90754ff8b0f2a2214f5d10",
+              "228ae687e52d23e387699d0b35abbdff"
+            ],
+            "expiresAt": 1791044770513,
+            "browserSignatureVerified": true,
+            "generation": 1
+          },
+          {
+            "type": "event",
+            "name": "peer_closed",
+            "at": 1791044669274,
+            "peerId": "926b5d2cdabccd0709ca1ec4311fd7fc",
+            "reason": "closed",
+            "nativeCandidateRemoval": "native-session-close-or-advertisement-expiry",
+            "generation": 1
+          }
+        ],
+        "discovery": {
+          "origins": [
+            "https://gateway-b.example.org:41889",
+            "https://gateway-a.example.org:41889"
+          ],
+          "records": [
+            "926b5d2cdabccd0709ca1ec4311fd7fc"
+          ],
+          "sockets": [
+            {
+              "origin": "https://gateway-b.example.org:41889",
+              "ready": true,
+              "state": 1
+            },
+            {
+              "origin": "https://gateway-a.example.org:41889",
+              "ready": true,
+              "state": 1
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "finishedAt": "2026-10-03T16:24:58.182Z"
+}

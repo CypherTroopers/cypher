@@ -1,0 +1,600 @@
+{
+  "head": "23c69a48e0d2ecbbef4e3d1fbde60017c990f0d6",
+  "status": "BROWSER_FIX_DEPLOYED_PUBLIC_CHROME_TURN_PASS_REAL_WINDOWS_BRAVE_NOT_RUN",
+  "userReported": "Windows Chrome and Brave: Common connection succeeds, browser peers remain zero; Safari peers connect.",
+  "confirmedDefects": [
+    "Browser challenge signing rejects a valid gateway nonce when browser clock is one second behind; gateway challenge verification must remain strict.",
+    "Delayed failed SDP/ICE operation can close a replacement peer with the same peerId."
+  ],
+  "deployed": "Existing public modules and regression tests updated in /root/cypher/browser-llm-lab; static served bytes checked in both independent browser processes.",
+  "webTests": {
+    "total": 356,
+    "passed": 353,
+    "failed": 0,
+    "skippedOptionalTURN": 3,
+    "log": "web-all-tests.log"
+  },
+  "focusedStagedTests": {
+    "passed": 37,
+    "failed": 0,
+    "log": "signaling-staged-tests.log"
+  },
+  "coturnProtocolTests": {
+    "command": "RELAY_TURN_TEST=1 node --test tests/relay-turn.test.mjs",
+    "passed": 3,
+    "failed": 0,
+    "scope": "Live TURN credentials/quota/denied-private-destination and public relay payload transfer. Result recorded from execution output; no dedicated log was saved."
+  },
+  "results": {
+    "forced-turn-before.json": {
+      "status": "PASS",
+      "clientClockOffsetMs": 0,
+      "transportFilter": "both",
+      "actualRTC": [
+        {
+          "browser": "A",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3740,
+            "bytesReceived": 3590,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        },
+        {
+          "browser": "B",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3590,
+            "bytesReceived": 3740,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        }
+      ],
+      "cleanup": [
+        {
+          "browser": "A",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        },
+        {
+          "browser": "B",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        }
+      ]
+    },
+    "clock-behind-before.json": {
+      "status": "FAIL",
+      "clientClockOffsetMs": -1000,
+      "transportFilter": "both",
+      "actualRTC": [],
+      "cleanup": [
+        {
+          "browser": "A",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        },
+        {
+          "browser": "B",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        }
+      ]
+    },
+    "clock-behind-after-first-cleanup-failure.json": {
+      "status": "FAIL",
+      "clientClockOffsetMs": -1000,
+      "transportFilter": "both",
+      "actualRTC": [
+        {
+          "browser": "A",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3740,
+            "bytesReceived": 3590,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        },
+        {
+          "browser": "B",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3590,
+            "bytesReceived": 3740,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        }
+      ],
+      "cleanup": [
+        {
+          "browser": "A",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        },
+        {
+          "browser": "B",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": false,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          },
+          "profileError": "ENOTEMPTY: directory not empty, rmdir '/tmp/cypher-forced-turn-L2wdN6/Default'"
+        }
+      ]
+    },
+    "clock-behind-after.json": {
+      "status": "PASS",
+      "clientClockOffsetMs": -1000,
+      "transportFilter": "both",
+      "actualRTC": [
+        {
+          "browser": "A",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3607,
+            "bytesReceived": 3724,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        },
+        {
+          "browser": "B",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3724,
+            "bytesReceived": 3607,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        }
+      ],
+      "cleanup": [
+        {
+          "browser": "A",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        },
+        {
+          "browser": "B",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        }
+      ]
+    },
+    "forced-turn-tcp.json": {
+      "status": "PASS",
+      "clientClockOffsetMs": 0,
+      "transportFilter": "tcp",
+      "actualRTC": [
+        {
+          "browser": "A",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3776,
+            "bytesReceived": 3605,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "tcp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        },
+        {
+          "browser": "B",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3605,
+            "bytesReceived": 3776,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "tcp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        }
+      ],
+      "cleanup": [
+        {
+          "browser": "A",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        },
+        {
+          "browser": "B",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        }
+      ]
+    },
+    "forced-turn-udp-clock-ahead.json": {
+      "status": "PASS",
+      "clientClockOffsetMs": 6000,
+      "transportFilter": "udp",
+      "actualRTC": [
+        {
+          "browser": "A",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3742,
+            "bytesReceived": 3606,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        },
+        {
+          "browser": "B",
+          "commonConnections": 1,
+          "browserPeers": 1,
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3606,
+            "bytesReceived": 3742,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        }
+      ],
+      "cleanup": [
+        {
+          "browser": "A",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        },
+        {
+          "browser": "B",
+          "leaseRevoked": true,
+          "chromeExited": true,
+          "profileRemoved": true,
+          "stopped": {
+            "leaseStatus": 401,
+            "requested": false,
+            "workerPresent": false,
+            "peers": 0,
+            "nativeConnections": 0,
+            "circuits": 0,
+            "queuedBytes": 0
+          }
+        }
+      ]
+    }
+  },
+  "servedAssetHashes": {
+    "A": {
+      "/mesh-discovery.js": "f8fd07d5d0dfcbae3e333917d254e8c50a9f53b0bf8bd8d0e7473178971c43f7",
+      "/mesh-discovery-client.js": "3c8cf915a483030a2742d15415a8d2cc9d6185f30dac2ad21c2c4fd7c5bbda1f"
+    },
+    "B": {
+      "/mesh-discovery.js": "f8fd07d5d0dfcbae3e333917d254e8c50a9f53b0bf8bd8d0e7473178971c43f7",
+      "/mesh-discovery-client.js": "3c8cf915a483030a2742d15415a8d2cc9d6185f30dac2ad21c2c4fd7c5bbda1f"
+    }
+  },
+  "scope": {
+    "actualPublicHTTPSAndWSS": true,
+    "twoIndependentChromeProcesses": true,
+    "actualReliableOrderedRTC": true,
+    "actualProductionWorkerMessages": true,
+    "relayCandidatePairStatsVerified": true,
+    "sameHost": true,
+    "distinctPhysicalDevices": false,
+    "distinctAccessNetworks": false,
+    "nativeCommonToCommonRLPxAcceptance": false,
+    "WindowsOS": false,
+    "Brave": false
+  },
+  "preservation": {
+    "originalNodesAndPageProcesses": "runtime-final.json",
+    "nativeDatabasesAndKeys": "untouched",
+    "preExistingModifiedNativeBinaries": "untouched",
+    "gatewayAndTURNRestartedThisTurn": false
+  },
+  "limits": [
+    "The user device clocks and actual failed ICE trace are unavailable; reproduced defects cannot identify the single cause on their Windows device.",
+    "TURN UDP/TCP 34790 is deployed; TURN TLS/443 is not deployed. User network reachability of those transports has not been measured.",
+    "No 30-minute, AI coexistence, real Windows/Brave, mobile or separate-network acceptance claim in this incident test.",
+    "Initial post-fix RTC test passed data checkpoints but cleanup was FAIL due to ENOTEMPTY on a test profile; bounded removal retries and a clean rerun are recorded."
+  ],
+  "cleanupRecovery": "first-cleanup-recovery.json"
+}

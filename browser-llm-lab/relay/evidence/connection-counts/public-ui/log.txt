@@ -1,0 +1,7 @@
+PASS Two independent public UI pages initially OFF with no admission and no horizontal overflow
+PASS Desktop/mobile primary counters show actual integers; connection details separately show applied limits and shared Common capacity
+PASS Actual UI Common connection count 1, browser peers and ACK counters increased from initial zero
+PASS Actual received/sent/ACK events animate map pixels; every connected browser is represented without invented country coordinates
+PASS Desktop1440 and mobile390 active UI screenshots saved with no horizontal overflow
+PASS Owned Node OFF shows zero actual Common connections, browser peers and open circuits; Home navigation and reload do not restart participation
+PASS /tmp/cypher-live-counts-20261003/evidence/public-ui/report.json

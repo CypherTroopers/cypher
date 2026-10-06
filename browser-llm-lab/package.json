@@ -1,0 +1,21 @@
+{
+  "name": "browser-llm-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node tests/workspace-smoke.mjs",
+    "build:mesh-crypto": "node scripts/build-mesh-crypto.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

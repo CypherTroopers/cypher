@@ -1,0 +1,88 @@
+{
+  "startedAt": "2026-10-03T05:16:32.491Z",
+  "status": "FAIL",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "normalPublicDNS": true,
+  "independentBrowserProcesses": true,
+  "controllerInjection": false,
+  "DOMInjection": false,
+  "requestInterception": false,
+  "forcedTransport": false,
+  "physicalPhone": false,
+  "viewportPhoneOnly": true,
+  "foreignPeersPossible": true,
+  "isolationClaim": false,
+  "exactEncryptedByteVerification": false,
+  "limits": "Displayed counters prove UI behavior and browser hop receipt activity; native authentication and byte verification belong to the separate mesh soak.",
+  "checkpoints": [],
+  "screenshots": [],
+  "pageErrors": [],
+  "participants": {
+    "desktop": {
+      "browserPID": 14,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "publicPage": {
+        "httpStatus": 200,
+        "server": "cloudflare",
+        "cloudflareColo": "FRA"
+      },
+      "latestUI": {
+        "state": "OFF",
+        "common": "0 / 1",
+        "commonHint": "This browser’s Common WSS link",
+        "peers": "0 / 3",
+        "circuits": "0 / 2",
+        "receipts": "0",
+        "acknowledged": "0 B acknowledged by peers",
+        "native": "Common WSS disconnected",
+        "signal": "Signaling disconnected",
+        "stream": "0 B",
+        "route": "None yet",
+        "mapCaption": "Your connection appears here when you turn Node ON.",
+        "reason": "Node is OFF. Join when you want to help relay public data.",
+        "error": "",
+        "visibility": "visible",
+        "onDisabled": false,
+        "offDisabled": true,
+        "width": 1440,
+        "documentWidth": 1440,
+        "bodyWidth": 1440,
+        "mapWidth": 763,
+        "peerCount": 0,
+        "receiptCount": 0,
+        "sourceId": null,
+        "location": null
+      },
+      "sessionPOSTs": 0
+    },
+    "mobile": {
+      "browserPID": 143,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "publicPage": {
+        "httpStatus": 200,
+        "server": "cloudflare",
+        "cloudflareColo": "FRA"
+      }
+    }
+  },
+  "cleanup": [
+    {
+      "browser": "desktop",
+      "ownedPageOFF": true
+    },
+    {
+      "browser": "mobile",
+      "ownedPageOFF": false,
+      "reason": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#navRelay')\u001b[22m\n\u001b[2m    - locator resolved to <button id=\"navRelay\" type=\"button\" class=\"nav-item\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if neede",
+      "browserCloseFallback": true
+    }
+  ],
+  "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#navRelay')\u001b[22m\n\u001b[2m    - locator resolved to <button id=\"navRelay\" type=\"button\" class=\"nav-item\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if neede",
+  "finishedAt": "2026-10-03T05:17:38.948Z"
+}

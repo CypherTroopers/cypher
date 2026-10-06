@@ -62,7 +62,27 @@ const (
 
 	// Maximum amount of time allowed for writing a complete message.
 	frameWriteTimeout = 20 * time.Second
+
+	// Large block messages are permitted up to maxRLPXFrameSize. Give their
+	// payload transfer a bounded service allowance while retaining the short
+	// idle/header deadlines above for ordinary control traffic.
+	frameTransferBytesPerSecond = 2 * 1024 * 1024
+	frameTransferTimeoutSlack   = 5 * time.Second
 )
+
+// frameTransferTimeout returns a size-aware frame deadline with the legacy
+// timeout as its floor. The input is clamped to the wire cap so an invalid
+// advertised size cannot create an unbounded deadline.
+func frameTransferTimeout(size uint32, floor time.Duration) time.Duration {
+	if size > maxRLPXFrameSize {
+		size = maxRLPXFrameSize
+	}
+	timeout := frameTransferTimeoutSlack + time.Duration(size)*time.Second/frameTransferBytesPerSecond
+	if timeout < floor {
+		return floor
+	}
+	return timeout
+}
 
 var errServerStopped = errors.New("server stopped")
 
@@ -74,6 +94,12 @@ type Config struct {
 	// MaxPeers is the maximum number of peers that can be
 	// connected. It must be greater than zero.
 	MaxPeers int
+
+	// ReservedPeerMode makes MaxPeers a hard cap, including static/trusted peers.
+	// Only possession of a pinned RLPx node key grants a reserved connection.
+	ReservedPeerMode bool
+	ReservedNodes    []*enode.Node
+	MaxPublicPeers   int
 
 	// MaxPendingPeers is the maximum number of peers that can be pending in the
 	// handshake phase, counted separately for inbound and outbound connections.
@@ -143,7 +169,8 @@ type Config struct {
 
 	// If Dialer is set to a non-nil value, the given Dialer
 	// is used to dial outbound peer connections.
-	Dialer NodeDialer `toml:"-"`
+	Dialer      NodeDialer         `toml:"-"`
+	BrowserMesh *BrowserMeshConfig `toml:"-"`
 
 	// If NoDial is true, the server will not dial any peers.
 	NoDial bool `toml:",omitempty"`
@@ -196,7 +223,9 @@ type Server struct {
 	checkpointAddPeer       chan *conn
 
 	// State of run loop and listenLoop.
-	inboundHistory expHeap
+	inboundHistory        expHeap
+	inboundHandshakeSlots chan struct{}
+	meshPending           chan struct{}
 }
 
 type peerOpFunc func(map[enode.ID]*Peer)
@@ -214,6 +243,7 @@ const (
 	staticDialedConn
 	inboundConn
 	trustedConn
+	reservedConn
 )
 
 // conn wraps a network connection with information gathered
@@ -439,6 +469,15 @@ func (srv *Server) Start() (err error) {
 	if srv.running {
 		return errors.New("server already running")
 	}
+	if err := srv.validateReservations(); err != nil {
+		return err
+	}
+	if srv.PrivateKey == nil {
+		return errors.New("Server.PrivateKey must be set to a non-nil key")
+	}
+	if err := srv.configureBrowserMesh(); err != nil {
+		return err
+	}
 	srv.running = true
 	srv.log = srv.Config.Logger
 	if srv.log == nil {
@@ -452,9 +491,6 @@ func (srv *Server) Start() (err error) {
 	}
 
 	// static fields
-	if srv.PrivateKey == nil {
-		return errors.New("Server.PrivateKey must be set to a non-nil key")
-	}
 	if srv.newTransport == nil {
 		srv.newTransport = newRLPX
 	}
@@ -621,7 +657,14 @@ func (srv *Server) setupDialScheduler() {
 		log:            srv.Logger,
 		netRestrict:    srv.NetRestrict,
 		dialer:         srv.Dialer,
+		mesh:           srv.BrowserMesh,
 		clock:          srv.clock,
+	}
+	if srv.ReservedPeerMode && !srv.NoDial {
+		config.reserved = make(map[enode.ID]*enode.Node)
+		for _, n := range srv.ReservedNodes {
+			config.reserved[n.ID()] = n
+		}
 	}
 	if srv.ntab != nil {
 		config.resolver = srv.ntab
@@ -643,10 +686,17 @@ func (srv *Server) maxDialedConns() (limit int) {
 	if srv.NoDial || srv.MaxPeers == 0 {
 		return 0
 	}
+	budget := srv.MaxPeers
+	if srv.ReservedPeerMode {
+		budget = srv.publicPeerLimit()
+		if budget == 0 {
+			return 0
+		}
+	}
 	if srv.DialRatio == 0 {
-		limit = srv.MaxPeers / defaultDialRatio
+		limit = budget / defaultDialRatio
 	} else {
-		limit = srv.MaxPeers / srv.DialRatio
+		limit = budget / srv.DialRatio
 	}
 	if limit == 0 {
 		limit = 1
@@ -751,6 +801,8 @@ running:
 		case c := <-srv.checkpointAddPeer:
 			// At this point the connection is past the protocol handshake.
 			// Its capabilities are known and the remote identity is verified.
+			// The encrypted hello has now authenticated the claimed node key.
+			c.set(reservedConn, srv.ReservedPeerMode && srv.isReserved(c.node.ID()))
 			err := srv.addPeerChecks(peers, inboundCount, c)
 			if err == nil {
 				// The handshakes are done and it passed all checks.
@@ -800,6 +852,12 @@ running:
 }
 
 func (srv *Server) postHandshakeChecks(peers map[enode.ID]*Peer, inboundCount int, c *conn) error {
+	if err := srv.checkBrowserMeshPeer(peers, inboundCount, c); err != nil {
+		return err
+	}
+	if srv.ReservedPeerMode {
+		return srv.reservedPeerChecks(peers, c)
+	}
 	switch {
 	case !c.is(trustedConn) && len(peers) >= srv.MaxPeers:
 		return DiscTooManyPeers
@@ -902,18 +960,57 @@ func (srv *Server) checkInboundConn(fd net.Conn, remoteIP net.IP) error {
 	// Reject Internet peers that try too often.
 	now := srv.clock.Now()
 	srv.inboundHistory.expire(now, nil)
-	if !netutil.IsLAN(remoteIP) && srv.inboundHistory.contains(remoteIP.String()) {
+	if !netutil.IsLAN(remoteIP) && srv.inboundHistory.count(remoteIP.String()) >= srv.inboundThrottleLimit(remoteIP) {
 		return fmt.Errorf("too many attempts")
 	}
 	srv.inboundHistory.add(remoteIP.String(), now.Add(inboundThrottleTime))
 	return nil
 }
 
+// inboundThrottleLimit returns a bounded connection-attempt burst for an IP.
+// The remote identity isn't available until after the RLPx handshake, so peers
+// explicitly configured behind one shared IP must be accounted for by address.
+// Unknown Internet addresses retain the legacy one-attempt limit.
+func (srv *Server) inboundThrottleLimit(remoteIP net.IP) int {
+	staticIDs := make(map[enode.ID]struct{})
+	for _, node := range srv.StaticNodes {
+		if node != nil && node.IP() != nil && node.IP().Equal(remoteIP) {
+			staticIDs[node.ID()] = struct{}{}
+		}
+	}
+	if len(staticIDs) > 1 {
+		return len(staticIDs)
+	}
+	return 1
+}
+
 // SetupConn runs the handshakes and attempts to add the connection
 // as a peer. It returns when the connection has been added as a peer
 // or the handshakes have failed.
 func (srv *Server) SetupConn(fd net.Conn, flags connFlag, dialDest *enode.Node) error {
+	if flags&inboundConn != 0 && srv.inboundHandshakeSlots != nil {
+		select {
+		case srv.inboundHandshakeSlots <- struct{}{}:
+			defer func() { <-srv.inboundHandshakeSlots }()
+		default:
+			fd.Close()
+			return errors.New("inbound handshake capacity")
+		}
+	}
+	mesh := browserMeshInfo(fd)
+	if mesh != nil && (srv.BrowserMesh == nil || srv.NetRestrict != nil || srv.isReserved(mesh.RemoteID) || dialDest != nil && dialDest.ID() != mesh.RemoteID) {
+		fd.Close()
+		return DiscUnexpectedIdentity
+	}
 	c := &conn{fd: fd, transport: srv.newTransport(fd), flags: flags, cont: make(chan error)}
+	if mesh != nil {
+		if t, ok := c.transport.(*rlpx); ok {
+			t.mesh = srv.BrowserMesh
+		} else {
+			fd.Close()
+			return errors.New("mesh requires authenticated RLPx transport")
+		}
+	}
 	err := srv.setupConn(c, flags, dialDest)
 	if err != nil {
 		c.close(err)
@@ -991,13 +1088,6 @@ func nodeFromConn(pubkey *ecdsa.PublicKey, conn net.Conn) *enode.Node {
 		port = tcp.Port
 	}
 	return enode.NewV4(pubkey, ip, port, port)
-}
-
-func truncateName(s string) string {
-	if len(s) > 20 {
-		return s[:20] + "..."
-	}
-	return s
 }
 
 // checkpoint sends the conn to run, which performs the

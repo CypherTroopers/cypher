@@ -14,12 +14,15 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-//go:build linux || netbsd || openbsd || solaris
-// +build linux netbsd openbsd solaris
+//go:build darwin || linux || netbsd || openbsd || solaris
+// +build darwin linux netbsd openbsd solaris
 
 package fdlimit
 
-import "syscall"
+import (
+	"runtime"
+	"syscall"
+)
 
 // Raise tries to maximize the file descriptor allowance of this process
 // to the maximum hard-limit allowed by the OS.
@@ -61,6 +64,10 @@ func Maximum() (int, error) {
 	var limit syscall.Rlimit
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limit); err != nil {
 		return 0, err
+	}
+	// Darwin caps the kernel limit at OPEN_MAX.
+	if (runtime.GOOS == "darwin" || runtime.GOOS == "ios") && limit.Max > 10240 {
+		limit.Max = 10240
 	}
 	return int(limit.Max), nil
 }

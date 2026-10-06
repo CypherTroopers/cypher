@@ -1,0 +1,34 @@
+{
+  "apps": [
+    {
+      "name": "cypher-browser-mesh-a",
+      "script": "/root/cypher/browser-llm-lab/.runtime/mesh-a/mesh-start.sh",
+      "interpreter": "none",
+      "cwd": "/root/cypher/browser-llm-lab/.runtime/mesh-a",
+      "autorestart": true,
+      "restart_delay": 5000,
+      "max_restarts": 3,
+      "min_uptime": 15000,
+      "kill_timeout": 15000,
+      "out_file": "/root/cypher/browser-llm-lab/.runtime/mesh-a/logs/out.log",
+      "error_file": "/root/cypher/browser-llm-lab/.runtime/mesh-a/logs/error.log",
+      "merge_logs": true,
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z"
+    },
+    {
+      "name": "cypher-browser-mesh-b",
+      "script": "/root/cypher/browser-llm-lab/.runtime/mesh-b/mesh-start.sh",
+      "interpreter": "none",
+      "cwd": "/root/cypher/browser-llm-lab/.runtime/mesh-b",
+      "autorestart": true,
+      "restart_delay": 5000,
+      "max_restarts": 3,
+      "min_uptime": 15000,
+      "kill_timeout": 15000,
+      "out_file": "/root/cypher/browser-llm-lab/.runtime/mesh-b/logs/out.log",
+      "error_file": "/root/cypher/browser-llm-lab/.runtime/mesh-b/logs/error.log",
+      "merge_logs": true,
+      "log_date_format": "YYYY-MM-DD HH:mm:ss Z"
+    }
+  ]
+}

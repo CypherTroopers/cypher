@@ -1,0 +1,192 @@
+{
+  "at": "2026-10-03T12:01:22.065788+00:00",
+  "status": "PASS_WITH_DOCUMENTED_SCOPE_LIMITS",
+  "origin": "https://ai-test.make-cph-great-again.community/",
+  "configuredLimits": {
+    "browserPeers": 20,
+    "commonAttachments": 20,
+    "sharedWorkerCircuits": 40,
+    "registeredCommonEndpoints": 2
+  },
+  "automated": {
+    "passed": 271,
+    "skipped": 3,
+    "failed": 0,
+    "skippedScope": "existing opt-in TURN tests",
+    "gatewayTests": 39,
+    "workerAndProtocolTests": 42,
+    "controllerAndLegacyTests": 35,
+    "mapFixtureCases": 29
+  },
+  "scale": {
+    "status": "PASS",
+    "independentBrowserProcesses": 21,
+    "hubActualRTCConnections": 20,
+    "sameHostOnly": true,
+    "privateLoopbackGateway": true,
+    "peakSampledApplicationReservation": 512970,
+    "peakSampledQueueBytes": 14604,
+    "hubHopACKCount": 76,
+    "ownedLeases401": 21,
+    "durationSecondsApprox": 89
+  },
+  "publicNative": {
+    "status": "PASS",
+    "checkpoints": 12,
+    "sameHostOnly": true,
+    "measuredIntervalMs": 180004,
+    "rawProofs": {
+      "initial": {
+        "sender": "A",
+        "receiver": "B",
+        "rawBytes": 525,
+        "sha256": "8dc4c577f021a3187ecc994c2ff34da6c3f405629409fbd9f94495dac86a127f"
+      },
+      "replacement": {
+        "sender": "C",
+        "receiver": "B",
+        "rawBytes": 497,
+        "sha256": "5753f62c4bb76b1dd69e2f24631c7f16e948df299cf19bbd482cdbd437662d33"
+      },
+      "afterAbrupt": {
+        "sender": "D",
+        "receiver": "B",
+        "rawBytes": 461,
+        "sha256": "f6c3584366e695add08873bafa28260d637eae03019fa0de79b8b39365cd133e"
+      }
+    },
+    "headProgress": {
+      "before": 3909,
+      "after": 3909,
+      "nearTip": true
+    },
+    "leaseRenewals": {
+      "B": {
+        "events": 1,
+        "sessionsWithAdvancedExpiry": [
+          {
+            "sessionId": "c99c19d8053c87daec8b0f980adc5367",
+            "first": 1791028239813,
+            "last": 1791028359887
+          }
+        ]
+      },
+      "C": {
+        "events": 1,
+        "sessionsWithAdvancedExpiry": [
+          {
+            "sessionId": "b4c991d51f741ae53ee96f150d42243b",
+            "first": 1791028216303,
+            "last": 1791028336390
+          }
+        ]
+      }
+    },
+    "continuity": {
+      "B": {
+        "samples": 18,
+        "finalState": "ACTIVE",
+        "finalTotalApplicationBytes": 610147,
+        "finalHopReceipts": 165,
+        "maxApplicationReservationBytes": 309706,
+        "maxSampledQueuedBytes": 0,
+        "maxSampleIntervalAverageApplicationBytesPerSecond": 3329.466809630568,
+        "sampleIntervalSecondsRange": [
+          10.032,
+          10.457
+        ],
+        "automaticReadmissionsDuringTimedInterval": 0,
+        "observedRTCPaths": [
+          "direct"
+        ],
+        "sessionRenewalEvents": 1
+      },
+      "C": {
+        "samples": 18,
+        "finalState": "ACTIVE",
+        "finalTotalApplicationBytes": 560592,
+        "finalHopReceipts": 156,
+        "maxApplicationReservationBytes": 316874,
+        "maxSampledQueuedBytes": 0,
+        "maxSampleIntervalAverageApplicationBytesPerSecond": 3329.564285018033,
+        "sampleIntervalSecondsRange": [
+          10.032,
+          10.457
+        ],
+        "automaticReadmissionsDuringTimedInterval": 0,
+        "observedRTCPaths": [
+          "direct"
+        ],
+        "sessionRenewalEvents": 1
+      },
+      "uninterrupted": true,
+      "unsolicitedPairedLosses": [],
+      "interpretation": "Manual participation continued through recovery; this is not an uninterrupted-circuit stability claim."
+    },
+    "ownedLeases401": 5,
+    "coreHashesUnchanged": true
+  },
+  "publicUI": {
+    "status": "PASS",
+    "checkpoints": 6,
+    "active": {
+      "desktop": {
+        "commonCount": 2,
+        "peerCount": 1,
+        "circuitCount": 1,
+        "receiptCount": 11
+      },
+      "mobile": {
+        "commonCount": 2,
+        "peerCount": 1,
+        "circuitCount": 1,
+        "receiptCount": 26
+      }
+    },
+    "errors": 0,
+    "initialConnectingAndOffCeiling": 20,
+    "actualPhone": false,
+    "cleanup": [
+      {
+        "browser": "desktop",
+        "ownedPageOFF": true
+      },
+      {
+        "browser": "mobile",
+        "ownedPageOFF": true
+      }
+    ]
+  },
+  "cleanup": {
+    "a": {
+      "sessions": 0,
+      "circuits": 0,
+      "candidates": 0
+    },
+    "b": {
+      "sessions": 0,
+      "circuits": 0,
+      "candidates": 0
+    }
+  },
+  "unchanged": [
+    "native source/binaries/datadirs/identities/processes",
+    "Nginx proxy and page server",
+    "TURN configuration and process"
+  ],
+  "limits": [
+    "20 distinct real Common endpoints NOT_RUN; gateway/Worker fixtures establish acceptance only",
+    "20 physical devices or different access networks NOT_RUN",
+    "20 connections all via TURN NOT_RUN; existing TURN quota remains6 allocations per credential identity,64 shared,finite port pool",
+    "new30-minute20-peer sustained test NOT_RUN",
+    "actual local LLM GPU inference during relay NOT_RUN; workload state signals tested",
+    "mesh public-WSS endpoint discovery/permissionless registration NOT_IMPLEMENTED; native signed enode advertising and candidate discovery already exist",
+    "primary Common transport loss still readmits the entire browser group"
+  ],
+  "preservedFailedAttempts": [
+    "scale-first-observer-failure/",
+    "public-ui-before-off-detail-fix/ (PASS with display advisory)",
+    "public-ui-connecting-display-failure/"
+  ],
+  "rollback": ".runtime/releases/mesh-20x20-v1/"
+}

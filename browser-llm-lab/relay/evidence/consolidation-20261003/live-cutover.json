@@ -1,0 +1,41 @@
+{
+  "config": {
+    "status": 200,
+    "body": {
+      "initialState": "OFF",
+      "maxFrameBytes": 16384,
+      "maxSessions": 80,
+      "nativeMaxFrameBytes": 4194304,
+      "nativePeers": 40,
+      "renewAfterSeconds": 120,
+      "sessionSeconds": 300,
+      "version": 1
+    }
+  },
+  "endpoint": {
+    "status": 200,
+    "body": {
+      "payloadBase64": "eyJ2ZXJzaW9uIjoxLCJuZXR3b3JrIjp7ImNoYWluSWQiOjEwMTAxOTE5LCJnZW5lc2lzSGFzaCI6IjB4MDAxYzgyMzlmMjVhNjk3OTMzZTJhNTQ1MTFhNTc2MjA1ZmIyMWNiYjgwZGM5NzRhZGIyOTg5NGRjODAyNTBhZCJ9LCJlbm9kZSI6ImVub2RlOi8vNWUwOWRjODg3YzVkYTQ3OTE0YWFhM2I5ZmVmOTdhZTFjMjViN2Q1YjM1MzcxM2FmMDE0MGJlZjQ5N2EzZWY4MjA4OWEwNzQwMjRlYzNmZWNhM2JiZmJhOWQwOWJkMzRlYjA1ZmRhODBjYzNjOTA2YzE1OGZhNjJmNTkyMThlNTdAMTMuMTQwLjE2OS4xNzA6NjA5OSIsInNvdXJjZUlkIjoiY29tbW9uLW1pbmUiLCJnYXRld2F5T3JpZ2luIjoiaHR0cHM6Ly9haS10ZXN0Lm1ha2UtY3BoLWdyZWF0LWFnYWluLmNvbW11bml0eSIsImJvb3RJZCI6ImJkMzQ5OTgxNDFlNDI3MzgzNDc1NzU5Yzk4ODQ0OWFlIiwic2VxdWVuY2UiOjIsImlzc3VlZEF0IjoxNzkxMDU1MTkzODk3LCJleHBpcmVzQXQiOjE3OTEwNTUzMTM4OTd9",
+      "signatureHex": "810a8a2b90dca7fe940984460dec42a0512ceb449a9172ba6f855d1bb776092b391d447a7ea00e9b5024e8f09f1aec13fc296e01fbe5a8e31bda899ba8a885c500"
+    }
+  },
+  "status": {
+    "status": 200,
+    "body": {
+      "running": true,
+      "sessions": 0,
+      "circuits": 0,
+      "candidates": 0,
+      "receivedBytes": 0,
+      "sentBytes": 0,
+      "routes": []
+    }
+  },
+  "commonProcess": {
+    "pid": 3352262,
+    "script": "/root/cypher/start-cyphermine.sh",
+    "cwd": "/root/cypher",
+    "binarySHA256": "5aeb4c61d95a862aa103d7352adf3540d480e5a363ea4198b550af707ca1b82b"
+  },
+  "sevenCommitteeProcessesUnchanged": true
+}

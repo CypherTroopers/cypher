@@ -1,0 +1,115 @@
+{
+  "utc": "2026-10-03T18:22:59Z",
+  "nodes": {
+    "a": {
+      "head": 4029,
+      "peers": [
+        {
+          "enode": "enode://e10a90e9c7d077002d4d56b88943b8dfbca1d6490bb92c8202e6acb68ef23b521bf187fb40c07eed2f453f3782e8c53ca5a4ec1d34a4454960143501df8c4b95@127.0.0.1:6000",
+          "id": "16d705509956e20c8ac91de61ba75b122228fd14287f1082ce8b9a6f9c122e53",
+          "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+          "caps": [
+            "eth/66"
+          ],
+          "network": {
+            "localAddress": "127.0.0.1:58406",
+            "remoteAddress": "127.0.0.1:6000",
+            "inbound": false,
+            "trusted": false,
+            "static": true
+          },
+          "protocols": {
+            "eth": {
+              "version": 66,
+              "difficulty": 4429700,
+              "head": "0x0551763a0351d786a6c8c0cbda25cebf84fc18b4cb34cde52d2bc60b17f4b171"
+            }
+          }
+        },
+        {
+          "enode": "enode://5e09dc887c5da47914aaa3b9fef97ae1c25b7d5b353713af0140bef497a3ef82089a074024ec3feca3bbfba9d09bd34eb05fda80cc3c906c158fa62f59218e57@127.0.0.1:6099",
+          "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+          "caps": [
+            "eth/66"
+          ],
+          "network": {
+            "localAddress": "127.0.0.1:52382",
+            "remoteAddress": "127.0.0.1:6099",
+            "inbound": false,
+            "trusted": false,
+            "static": true
+          },
+          "protocols": {
+            "eth": {
+              "version": 66,
+              "difficulty": 4430800,
+              "head": "0x459f65c5ca0cee3452e26c4258fda41e4fc3dcfe72b0622d14e111d0b4ec8670"
+            }
+          }
+        }
+      ],
+      "meshStatus": {
+        "running": true,
+        "sessions": 0,
+        "circuits": 0,
+        "candidates": 0,
+        "receivedBytes": 1195178,
+        "sentBytes": 1327856,
+        "routes": []
+      },
+      "mining": false,
+      "accountsCount": 0
+    },
+    "b": {
+      "head": 4026,
+      "peers": [],
+      "meshStatus": {
+        "running": true,
+        "sessions": 0,
+        "circuits": 0,
+        "candidates": 0,
+        "receivedBytes": 1354725,
+        "sentBytes": 1184407,
+        "routes": []
+      },
+      "mining": false,
+      "accountsCount": 0
+    },
+    "reference": {
+      "head": 4029
+    }
+  },
+  "hashes": {
+    "0": {
+      "a": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "b": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "reference": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    },
+    "1": {
+      "a": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+      "b": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+      "reference": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca"
+    },
+    "1000": {
+      "a": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+      "b": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+      "reference": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e"
+    },
+    "4026": {
+      "a": "0x0551763a0351d786a6c8c0cbda25cebf84fc18b4cb34cde52d2bc60b17f4b171",
+      "b": "0x0551763a0351d786a6c8c0cbda25cebf84fc18b4cb34cde52d2bc60b17f4b171",
+      "reference": "0x0551763a0351d786a6c8c0cbda25cebf84fc18b4cb34cde52d2bc60b17f4b171"
+    }
+  },
+  "reference": {
+    "path": "/root/cypher/chaindbmine/cypher.ipc",
+    "selection": "default",
+    "fallbackReason": null,
+    "role": "canonical-hash-reference-only"
+  },
+  "verification": "native-owner-rpc-canonical-hashes",
+  "bOnlyMeshPeers": true,
+  "bHasTransferredNativeStream": false,
+  "pass": true
+}

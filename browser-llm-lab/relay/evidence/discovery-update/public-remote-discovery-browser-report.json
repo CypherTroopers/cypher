@@ -1,0 +1,501 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T17:50:30.771Z",
+  "actualNative": true,
+  "sameHostOnly": true,
+  "nativeConfigChanged": false,
+  "nativeRestarted": false,
+  "webRTCClaim": false,
+  "directDescriptorInjection": false,
+  "requestInterception": false,
+  "checkpoints": [
+    {
+      "name": "Unlisted real Common B is discovered from public HTTPS, signature-verified in Worker and connected through its own public WSS lease",
+      "at": "2026-10-03T17:50:47.684Z",
+      "snapshot": {
+        "receivedBytes": 0,
+        "sentBytes": 0,
+        "nativeReceivedBytes": 856,
+        "nativeSentBytes": 0,
+        "streamReceivedBytes": 0,
+        "streamForwardedBytes": 0,
+        "acknowledgedBytes": 0,
+        "acknowledgedCount": 0,
+        "nativeCreditBytes": 0,
+        "gatewayBytes": 4331,
+        "signalingBytes": 3066,
+        "totalBytes": 12137,
+        "rejectedFrames": 0,
+        "circuitsOpened": 0,
+        "circuitsClosed": 0,
+        "connectedPeers": 0,
+        "nativeConnections": 2,
+        "connections": [
+          {
+            "sourceId": "common-a",
+            "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+            "browserId": "43a37d595dce7b948a23cbb2ad748fc3",
+            "endpointCircuits": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 1,
+        "queuedBytes": 0,
+        "appBytes": 31434,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+            "sourceId": "common-a",
+            "issuedAt": 1791049840628,
+            "expiresAt": 1791049960628,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "WAITING_PEER",
+        "reason": "Common connected. Waiting for a browser peer.",
+        "requested": true,
+        "sourceErrors": {},
+        "sessionId": "51da604f727cde8891aa627a4cca0201",
+        "sessionExpiresAt": 1791050145369,
+        "signalConnected": true,
+        "selfGeo": null,
+        "peers": [],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "common-a",
+        "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+        "browserId": "43a37d595dce7b948a23cbb2ad748fc3",
+        "nativeConnected": true,
+        "nativeSession": "fd008d2a541ee78c3194d051c6d9dd11",
+        "commonConnections": [
+          {
+            "id": "51da604f727cde8891aa627a4cca0201",
+            "sourceId": "common-a",
+            "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+            "browserId": "43a37d595dce7b948a23cbb2ad748fc3",
+            "connected": true,
+            "expiresAt": 1791050145369,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          },
+          {
+            "id": "0af19eb09184644cb1e413d5347cc7d8",
+            "sourceId": "common-b",
+            "nodeId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+            "browserId": "d0824ef8d3eb2d7bc174f871924daf0d",
+            "connected": true,
+            "expiresAt": 1791050147155,
+            "remoteOrigin": "https://ai-test.make-cph-great-again.community",
+            "endpointVerified": true,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 0,
+          "connectedGateways": 2,
+          "knownGatewayOrigins": [
+            "https://remote-native-home.example.org:37653",
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 20
+        },
+        "reconnects": 0,
+        "rtcStats": [],
+        "nativeStatus": null
+      },
+      "homeConfigNodes": [
+        "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df"
+      ],
+      "descriptors": [
+        {
+          "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+          "sourceId": "common-a",
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "bootId": "6c3252991dc274c4d2311381287bfd51",
+          "expiresAt": 1791049960628
+        },
+        {
+          "nodeId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+          "sourceId": "common-b",
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "bootId": "f6f2509a39d0b53a7efa019dbee51358",
+          "expiresAt": 1791049944020
+        }
+      ],
+      "foreignLease": [
+        {
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "ownRoot": true,
+          "distinctToken": true,
+          "distinctLease": true,
+          "nativeSession": "d548bcf29879517d066b30df1b5f66ba",
+          "browserId": "d0824ef8d3eb2d7bc174f871924daf0d"
+        }
+      ]
+    },
+    {
+      "name": "OFF removes both owned Common sessions and circuits",
+      "at": "2026-10-03T17:50:48.046Z",
+      "native": [
+        {
+          "running": true,
+          "sessions": 0,
+          "circuits": 0,
+          "candidates": 0,
+          "receivedBytes": 1023370,
+          "sentBytes": 1142041,
+          "routes": []
+        },
+        {
+          "running": true,
+          "sessions": 0,
+          "circuits": 0,
+          "candidates": 0,
+          "receivedBytes": 1164540,
+          "sentBytes": 1011862,
+          "routes": []
+        }
+      ],
+      "home": {
+        "discovery": {
+          "enabled": true,
+          "endpoints": 0,
+          "peers": 0,
+          "visitors": 0,
+          "replayEntries": 1,
+          "publishing": 0,
+          "publicationSlots": 0,
+          "queuedBytes": 0,
+          "acceptedEndpoints": 0,
+          "rejectedEndpoints": 0,
+          "authentications": 1,
+          "signals": 0,
+          "droppedUnavailableSignals": 0,
+          "expired": 0,
+          "invalid": 0,
+          "receivedBytes": 1237,
+          "sentBytes": 295,
+          "publications": 0,
+          "publicationFailures": 0,
+          "rejectionReasons": {
+            "signal_capacity": 0,
+            "authentication_required": 0,
+            "identity_in_use": 0,
+            "session_expired": 0,
+            "invalid_renewal": 0,
+            "invalid_signal": 0,
+            "signal_replay": 0,
+            "signal_history_capacity": 0,
+            "peer_capacity": 0,
+            "ice_capacity": 0,
+            "invalid_control": 0,
+            "invalid_signature_or_schema": 0
+          }
+        },
+        "sessions": 0,
+        "pendingAdmissions": 0,
+        "webSockets": 0,
+        "connections": 1,
+        "rateBuckets": 1,
+        "nodes": {
+          "common-a": {
+            "sessions": 0,
+            "pending": 0,
+            "releasing": 0,
+            "metadata": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        },
+        "dropReasons": {
+          "session_ended": 0,
+          "session_expired": 0,
+          "pong_timeout": 0,
+          "transfer_limit": 0,
+          "response_failed": 0,
+          "native_capacity": 0,
+          "invalid_native_frame": 0,
+          "invalid_native_hello": 0,
+          "invalid_native_advertisement": 0,
+          "native_pin_mismatch": 0,
+          "upstream_closed": 0,
+          "upstream_error": 0,
+          "native_auth_timeout": 0,
+          "invalid_control": 0,
+          "signal_capacity": 0,
+          "client_closed": 1,
+          "manual_off": 0,
+          "gateway_shutdown": 0
+        }
+      },
+      "http": [
+        {
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "path": "/relay/v1/mesh/discovery",
+          "method": "GET",
+          "status": 200,
+          "at": 1791049845787
+        },
+        {
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "path": "/relay/v1/mesh/config",
+          "method": "GET",
+          "status": 200,
+          "at": 1791049846837
+        },
+        {
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "path": "/relay/v1/mesh/sessions",
+          "method": "POST",
+          "status": 201,
+          "at": 1791049847294
+        },
+        {
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "path": "/relay/v1/mesh/sessions",
+          "method": "DELETE",
+          "status": 401,
+          "at": 1791049847913
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "http": [
+    {
+      "origin": "https://ai-test.make-cph-great-again.community",
+      "path": "/relay/v1/mesh/discovery",
+      "method": "GET",
+      "status": 200,
+      "at": 1791049845787
+    },
+    {
+      "origin": "https://ai-test.make-cph-great-again.community",
+      "path": "/relay/v1/mesh/config",
+      "method": "GET",
+      "status": 200,
+      "at": 1791049846837
+    },
+    {
+      "origin": "https://ai-test.make-cph-great-again.community",
+      "path": "/relay/v1/mesh/sessions",
+      "method": "POST",
+      "status": 201,
+      "at": 1791049847294
+    },
+    {
+      "origin": "https://ai-test.make-cph-great-again.community",
+      "path": "/relay/v1/mesh/sessions",
+      "method": "DELETE",
+      "status": 401,
+      "at": 1791049847913
+    }
+  ],
+  "restarts": [
+    {
+      "reason": "allow temporary exact frontend Origin",
+      "before": {
+        "id": 0,
+        "pid": 3315195,
+        "script": "/root/browser-llm-lab/relay/main.mjs",
+        "cwd": "/root/browser-llm-lab",
+        "args": [
+          "/root/browser-llm-lab/relay/config.json"
+        ]
+      },
+      "after": {
+        "id": 0,
+        "pid": 3320999,
+        "script": "/root/browser-llm-lab/relay/main.mjs",
+        "cwd": "/root/browser-llm-lab",
+        "args": [
+          "/root/browser-llm-lab/relay/config.json"
+        ]
+      },
+      "at": "2026-10-03T17:50:41.803Z"
+    },
+    {
+      "reason": "restore original exact configuration",
+      "before": {
+        "id": 0,
+        "pid": 3320999,
+        "script": "/root/browser-llm-lab/relay/main.mjs",
+        "cwd": "/root/browser-llm-lab",
+        "args": [
+          "/root/browser-llm-lab/relay/config.json"
+        ]
+      },
+      "after": {
+        "id": 0,
+        "pid": 3321174,
+        "script": "/root/browser-llm-lab/relay/main.mjs",
+        "cwd": "/root/browser-llm-lab",
+        "args": [
+          "/root/browser-llm-lab/relay/config.json"
+        ]
+      },
+      "at": "2026-10-03T17:50:50.940Z"
+    }
+  ],
+  "cleanup": {
+    "configRestored": true,
+    "backupRemoved": true,
+    "native": [
+      {
+        "sourceId": "common-a",
+        "status": {
+          "running": true,
+          "sessions": 0,
+          "circuits": 0,
+          "candidates": 0,
+          "receivedBytes": 1023370,
+          "sentBytes": 1142041,
+          "routes": []
+        }
+      },
+      {
+        "sourceId": "common-b",
+        "status": {
+          "running": true,
+          "sessions": 0,
+          "circuits": 0,
+          "candidates": 0,
+          "receivedBytes": 1164540,
+          "sentBytes": 1011862,
+          "routes": []
+        }
+      }
+    ],
+    "browserExited": true
+  },
+  "sourceHashes": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+    "public/mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "public/mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+    "public/mesh-protocol.js": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+    "relay/gateway.mjs": "45cb9edf9df7cc7b5e209cb7b73cb5608ae58b3982a5e45bac767869b84dc1c1",
+    "relay/discovery.mjs": "ada83d15070ee19a7076de2e2665234cf9706aa5dc6e4b0ead5521d6dddac178"
+  },
+  "publicOrigin": "https://ai-test.make-cph-great-again.community",
+  "originalConfigHash": "c49823ccfa68f5d8166c88d2e2a7bf3026a5df994443fd943b16e5c226c59d48",
+  "originalConfigMode": "644",
+  "originalGateway": {
+    "id": 0,
+    "pid": 3315195,
+    "script": "/root/browser-llm-lab/relay/main.mjs",
+    "cwd": "/root/browser-llm-lab",
+    "args": [
+      "/root/browser-llm-lab/relay/config.json"
+    ]
+  },
+  "nativeBaseline": [
+    {
+      "sourceId": "common-a",
+      "status": {
+        "running": true,
+        "sessions": 0,
+        "circuits": 0,
+        "candidates": 0,
+        "receivedBytes": 1023370,
+        "sentBytes": 1141185,
+        "routes": []
+      }
+    },
+    {
+      "sourceId": "common-b",
+      "status": {
+        "running": true,
+        "sessions": 0,
+        "circuits": 0,
+        "candidates": 0,
+        "receivedBytes": 1164540,
+        "sentBytes": 1011006,
+        "routes": []
+      }
+    }
+  ],
+  "publicEndpointPreflight": [
+    {
+      "nodeId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+      "sourceId": "common-b",
+      "origin": "https://ai-test.make-cph-great-again.community",
+      "expiresAt": 1791049944020
+    },
+    {
+      "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+      "sourceId": "common-a",
+      "origin": "https://ai-test.make-cph-great-again.community",
+      "expiresAt": 1791049930628
+    }
+  ],
+  "homeOrigin": "https://remote-native-home.example.org:37653",
+  "temporaryConfigHash": "3325afb205c05efc4a4e83e3b27515b848340a5c834128c6d86d91f74fc657f4",
+  "browserPid": 3321030,
+  "sourceHashesAfter": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+    "public/mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "public/mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+    "public/mesh-protocol.js": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+    "relay/gateway.mjs": "45cb9edf9df7cc7b5e209cb7b73cb5608ae58b3982a5e45bac767869b84dc1c1",
+    "relay/discovery.mjs": "ada83d15070ee19a7076de2e2665234cf9706aa5dc6e4b0ead5521d6dddac178"
+  },
+  "finishedAt": "2026-10-03T17:50:51.535Z"
+}

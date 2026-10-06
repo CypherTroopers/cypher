@@ -1,0 +1,83 @@
+{
+  "at": "2026-10-03T04:23:59.216Z",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "status": "PASS",
+  "readOnly": true,
+  "checks": [
+    {
+      "name": "config",
+      "path": "/relay/v1/mesh/config",
+      "status": 200
+    },
+    {
+      "name": "foreign-origin",
+      "path": "/relay/v1/mesh/config",
+      "status": 403
+    },
+    {
+      "name": "status-needs-session",
+      "path": "/relay/v1/mesh/status",
+      "status": 401
+    },
+    {
+      "name": "query-token-denied",
+      "path": "/relay/v1/mesh/status?token=fixture-invalid",
+      "status": 400
+    },
+    {
+      "name": "owner-source-config",
+      "path": "/relay/v1/source-config",
+      "status": 404
+    },
+    {
+      "name": "owner-source-status",
+      "path": "/relay/v1/source-status",
+      "status": 404
+    },
+    {
+      "name": "owner-head",
+      "path": "/relay/v1/head",
+      "status": 404
+    },
+    {
+      "name": "owner-headers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "path": "/relay/v1/headers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": 404
+    },
+    {
+      "name": "owner-sessions",
+      "path": "/relay/v1/sessions",
+      "status": 404
+    },
+    {
+      "name": "private-relay/config.json",
+      "path": "/relay/config.json",
+      "status": 404
+    },
+    {
+      "name": "private-.runtime/mesh-a/source.json",
+      "path": "/.runtime/mesh-a/source.json",
+      "status": 404
+    },
+    {
+      "name": "private-.runtime/mesh-a/data/cypher/nodekey",
+      "path": "/.runtime/mesh-a/data/cypher/nodekey",
+      "status": 404
+    },
+    {
+      "name": "private-node.ipc",
+      "path": "/node.ipc",
+      "status": 404
+    },
+    {
+      "name": "private-server.py",
+      "path": "/server.py",
+      "status": 404
+    },
+    {
+      "name": "private-package.json",
+      "path": "/package.json",
+      "status": 404
+    }
+  ]
+}

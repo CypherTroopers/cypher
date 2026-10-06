@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-03T18:15:58.922786+00:00",
+  "before": "812be7106a163c5227dfbbb93106651a5dd201796f0e638a3acdb13c8c459d5f",
+  "after": "08be9bd82cd6858f55048199ba6813aff5d3fdbcf0d8f0124fa01b7420545b01",
+  "path": "/etc/nginx/sites-available/ai-test.make-cph-great-again.community",
+  "change": "mesh proxy request body limit 1KiB to16KiB; gateway per-API validation unchanged",
+  "status": "PASS",
+  "nginxTest": {
+    "exitCode": 0,
+    "stdout": "",
+    "stderr": "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok\nnginx: configuration file /etc/nginx/nginx.conf test is successful\n"
+  }
+}

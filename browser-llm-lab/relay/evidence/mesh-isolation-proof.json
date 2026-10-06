@@ -1,0 +1,69 @@
+{
+  "recordedAt": 1790999472.5559037,
+  "hostNetworkNamespace": "net:[4026531833]",
+  "nodes": [
+    {
+      "name": "cypher-browser-mesh-a",
+      "pm2Id": 11,
+      "pid": 3088210,
+      "status": "online",
+      "restarts": 0,
+      "exe": "/root/browser-llm-lab/.runtime/mesh-a/cypher",
+      "starttime": "127751090",
+      "networkNamespace": "net:[4026531833]",
+      "userNamespace": "user:[4026531837]",
+      "directoryMode": "0o700",
+      "socketMode": "0o600",
+      "nodeKeyMode": "0o600",
+      "binarySha256": "3bafe0f18343f18533ef8528ab314ddaa7264953c2bc2ad9f33376ef5756bc6f"
+    },
+    {
+      "name": "cypher-browser-mesh-b",
+      "pm2Id": 12,
+      "pid": 3088211,
+      "status": "online",
+      "restarts": 0,
+      "exe": "/root/browser-llm-lab/.runtime/mesh-b/cypher",
+      "starttime": "127751091",
+      "networkNamespace": "net:[4026532462]",
+      "userNamespace": "user:[4026532459]",
+      "directoryMode": "0o700",
+      "socketMode": "0o600",
+      "nodeKeyMode": "0o600",
+      "binarySha256": "3bafe0f18343f18533ef8528ab314ddaa7264953c2bc2ad9f33376ef5756bc6f",
+      "interfaces": [
+        {
+          "ifindex": 1,
+          "ifname": "lo",
+          "flags": [
+            "LOOPBACK",
+            "UP",
+            "LOWER_UP"
+          ],
+          "mtu": 65536,
+          "qdisc": "noqueue",
+          "operstate": "UNKNOWN",
+          "linkmode": "DEFAULT",
+          "group": "default",
+          "txqlen": 1000,
+          "link_type": "loopback",
+          "address": "00:00:00:00:00:00",
+          "broadcast": "00:00:00:00:00:00"
+        }
+      ],
+      "routes4": [],
+      "routes6": []
+    }
+  ],
+  "originalNativePIDsAndStarttimesUnchanged": [
+    2979374,
+    2979375,
+    2979381,
+    2979382,
+    2979383,
+    2979384,
+    2979385,
+    2979412
+  ],
+  "noBrowserOrWSBridgeStartedByThisAgent": true
+}

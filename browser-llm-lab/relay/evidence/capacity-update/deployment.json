@@ -1,0 +1,39 @@
+{
+  "preparedAt": "2026-10-03T09:23:52.914348+00:00",
+  "files": {
+    "public/mesh-protocol.js": {
+      "before": "00173ee0c36b00237408223f084d0eb1eeee0f387c5d279c4ab06fc0607e3ee2",
+      "after": "4eca1f7f847e5aea27d75b84074fbf62bcb89ffc05cc24621d7b5e4b5189c20e"
+    },
+    "public/mesh-worker.js": {
+      "before": "7cfc7cfa0cb57ccdc0ef3681c8b5cf3100d44baf5affb9dcb6e9768a31dfe1a4",
+      "after": "1f105975e68e8b16ed2c94f49beac53331c5c4f73290e9578ceff7907fc679ba"
+    },
+    "public/mesh-controller.js": {
+      "before": "670aa4fa466ee3a778a5c08beeb9cefac8ab1fce0946d9085590d32eae62b651",
+      "after": "9e332ebeb251bb26c77befdb93baa03011649aa0b4ac5fd790fcb29a1df25236"
+    },
+    "public/relay-ui.js": {
+      "before": "732fd2722136dd5338e6210486881c6c9eb8ce1e5ca7d6730e7bdafe02a9a0ac",
+      "after": "1139fda461a9aad36c161f5213f41031e4fa308b0f96dc3fc23e1bcbc05becab"
+    },
+    "public/index.html": {
+      "before": "dde9758e9789d25c21f7f612124a89c76eec27012b8a044a49b9d1ec827ceb2d",
+      "after": "9e699b962e52c9cf1b9ef2b6fcde9b3bcaeac2c2b6c87a9a0f5b736dd5fb9723"
+    },
+    "relay/config.mjs": {
+      "before": "72c9183ff4f54fee3dff469d102c6f44ddc47781092ea4c27670b56fdb222f4c",
+      "after": "fc5548db0a0a94af971e7ab54f85f24756d31d028e501f48a28864d501a763fc"
+    },
+    "relay/gateway.mjs": {
+      "before": "03a45dd93f36acec1d4cff1e20789b9d47b273f975f3dd9145f871feeaf07100",
+      "after": "254aa1a14761a56a2815184ae7fb14eb8181fd1d14f2ed29c97247f17eda3236"
+    },
+    "relay/config.json": {
+      "before": "e747ffb7ad2403da3778434c0ae763cafc8606964a7cfd7786a0fb5320b2a34e",
+      "after": "e8debb1cc3d4b3603b9f971fffea80e0dfe38aa4e445ed115c3a7f694b586cc6"
+    }
+  },
+  "deployedAt": "2026-10-03T09:25:17.204557+00:00",
+  "publicExchange": true
+}

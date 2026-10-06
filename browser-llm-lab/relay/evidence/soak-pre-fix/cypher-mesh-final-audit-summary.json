@@ -1,0 +1,226 @@
+{
+  "auditedPath": "/tmp/cypher-mesh-final-report-audited.json",
+  "auditedAt": "2026-10-03T05:12:09.352Z",
+  "rawReport": "/tmp/cypher-mesh-final-report-runner.json",
+  "rawReportSha256": "eb32dbafb4275272cf5c0ef106564440f7a3609fdd56831d8a060f5049203396",
+  "eventsPath": "/tmp/cypher-mesh-final-report-events.json",
+  "eventsSha256": "58ea71dea34953ac048c128fe498e71278f501d2ea9ff2c0e69995f250be7479",
+  "runnerStatus": "FAIL",
+  "elapsedMs": 1860002,
+  "circuitLifecycle": {
+    "replacement": {
+      "from": "066fa29b8ca4ae104d796dd1e6c20145",
+      "to": "0aef11f90c5168bf3e7c019ad6b6ef10",
+      "firstObservedAt": "2026-10-03T04:42:31Z",
+      "bytesReceived": 993,
+      "bytesSent": 911,
+      "cause": "not-inferred-from-circuit-id"
+    },
+    "naturalTTL": {
+      "status": "NOT_OBSERVED",
+      "reason": "No exact circuit-expired event followed by a different authenticated native circuit carrying bytes in both directions."
+    }
+  },
+  "claimCorrection": "A replacement circuit ID alone is not proof of natural 30-minute expiry. Preserve raw observations and classify exact expiry separately.",
+  "continuity": {
+    "B": {
+      "samples": 183,
+      "finalState": "ACTIVE",
+      "finalTotalApplicationBytes": 4426505,
+      "finalHopReceipts": 1291,
+      "maxApplicationReservationBytes": 302774,
+      "maxSampledQueuedBytes": 2615,
+      "maxSampleIntervalAverageApplicationBytesPerSecond": 12548.236925515055,
+      "sampleIntervalSecondsRange": [
+        10.033,
+        10.891
+      ],
+      "automaticReadmissionsDuringTimedInterval": 2,
+      "observedRTCPaths": [
+        "TURN"
+      ],
+      "sessionRenewalEvents": 13
+    },
+    "C": {
+      "samples": 183,
+      "finalState": "ACTIVE",
+      "finalTotalApplicationBytes": 4382234,
+      "finalHopReceipts": 1287,
+      "maxApplicationReservationBytes": 302934,
+      "maxSampledQueuedBytes": 862,
+      "maxSampleIntervalAverageApplicationBytesPerSecond": 12714.441362916006,
+      "sampleIntervalSecondsRange": [
+        10.033,
+        10.891
+      ],
+      "automaticReadmissionsDuringTimedInterval": 4,
+      "observedRTCPaths": [
+        "TURN"
+      ],
+      "sessionRenewalEvents": 13
+    },
+    "uninterrupted": false,
+    "unsolicitedPairedLosses": [
+      {
+        "circuitId": "066fa29b8ca4ae104d796dd1e6c20145",
+        "firstObservedAt": "2026-10-03T04:42:03.804Z",
+        "browserReasons": {
+          "C": "peer-left",
+          "B": "peer-left"
+        },
+        "originatingCause": "UNDETERMINED"
+      },
+      {
+        "circuitId": "0aef11f90c5168bf3e7c019ad6b6ef10",
+        "firstObservedAt": "2026-10-03T04:57:20.155Z",
+        "browserReasons": {
+          "C": "peer-left",
+          "B": "peer-left"
+        },
+        "originatingCause": "UNDETERMINED"
+      }
+    ],
+    "interpretation": "Manual participation continued through recovery; this is not an uninterrupted-circuit stability claim."
+  },
+  "nonfatalPeerErrors": {
+    "C:invalid_receipt": 1
+  },
+  "gatewayDropReasons": {
+    "session_ended": 0,
+    "session_expired": 0,
+    "pong_timeout": 0,
+    "transfer_limit": 0,
+    "response_failed": 0,
+    "native_capacity": 0,
+    "invalid_native_frame": 0,
+    "invalid_native_hello": 0,
+    "invalid_native_advertisement": 0,
+    "native_pin_mismatch": 0,
+    "upstream_closed": 4,
+    "upstream_error": 0,
+    "native_auth_timeout": 0,
+    "invalid_control": 0,
+    "signal_capacity": 0,
+    "client_closed": 4,
+    "manual_off": 2,
+    "gateway_shutdown": 0
+  },
+  "leaseContinuity": {
+    "B": {
+      "activeSamples": 183,
+      "unexpiredReportedLeases": true,
+      "minimumSampledRemainingMs": 180833,
+      "observedSessionGenerations": 3,
+      "observedLeaseExpiries": 16,
+      "scope": "Reported expiry progression only; this does not establish authoritative native lease existence during a stale status or 401 gap."
+    },
+    "C": {
+      "activeSamples": 182,
+      "unexpiredReportedLeases": true,
+      "minimumSampledRemainingMs": 180907,
+      "observedSessionGenerations": 5,
+      "observedLeaseExpiries": 18,
+      "scope": "Reported expiry progression only; this does not establish authoritative native lease existence during a stale status or 401 gap."
+    }
+  },
+  "gatewayCounterScope": "Service-wide aggregate, not per-client attribution.",
+  "observerReference": {
+    "path": "/root/cypher/chaindb0/cypher.ipc",
+    "selection": "fallback",
+    "fallbackReason": "Default reference /root/cypher/chaindbmine/cypher.ipc unavailable (FileNotFoundError)",
+    "role": "canonical-hash-reference-only"
+  },
+  "headProgress": {
+    "before": 3777,
+    "after": 3789,
+    "nearTip": true
+  },
+  "limits": {
+    "sameHostOnly": true,
+    "actualLLM": false,
+    "actualPhoneHardware": false,
+    "differentAccessNetworks": "NOT_RUN",
+    "actualFourBrowserNativePath": "NOT_RUN",
+    "applicationBytesExcludeTransportFraming": true
+  },
+  "sourceAvailabilityChange": {
+    "artifact": "relay/evidence/mesh-upstream-addition.json",
+    "sha256": "dd445868e831f0cb03e340251e43801583ec2392b03d7934fa7b26d510bc812f",
+    "at": "2026-10-03T04:59:35.936146+00:00",
+    "scope": "only Common A StaticNodes plus owner-IPC admin_addPeer",
+    "accepted": true,
+    "beforeHeads": {
+      "a": 3777,
+      "b": 3777,
+      "reference": 3786
+    },
+    "bConfigChanges": false,
+    "browserGatewayPinChanges": false,
+    "processRestarts": [],
+    "meaning": "A received an ordinary TCP upstream during the timed run. B remained isolated and received chain data through its browser mesh route."
+  },
+  "finalImplementationVerification": {
+    "artifact": "/tmp/cypher-mesh-final-live-hashes.json",
+    "sha256": "1bd307e3344c6ff379d6e2a79216096453515e05351ca71efaaaab70a428e574",
+    "at": "2026-10-03T05:11:01.165Z",
+    "mode": "public DNS HTTPS GET plus live deployed gateway/config file hash",
+    "hashes": {
+      "public/mesh-protocol.js": "00173ee0c36b00237408223f084d0eb1eeee0f387c5d279c4ab06fc0607e3ee2",
+      "public/mesh-controller.js": "5a1ac06199a33df91d39ce948db93c3ac41d9f1fab3d71274d4e392519ee2f64",
+      "public/relay-protocol.js": "33ec669dc7b1d237cf6efc690cc2d127048c92d94e5b31a6e1d26c7610e90261",
+      "public/mesh-worker.js": "2cf47229ee018f3f1175355a238fa14b1db126af4ad6479bce1f6b66d1103698",
+      "public/relay-controller.js": "d8027373ee2bf40dff62d4eb076d56e01db196e2bd6542040ed0470b2452d286",
+      "relay/gateway.mjs": "03a45dd93f36acec1d4cff1e20789b9d47b273f975f3dd9145f871feeaf07100",
+      "relay/config.mjs": "72c9183ff4f54fee3dff469d102c6f44ddc47781092ea4c27670b56fdb222f4c"
+    },
+    "headers": {
+      "public/mesh-protocol.js": {
+        "server": "cloudflare",
+        "cfRay": "a4497199db0cd38a-FRA"
+      },
+      "public/mesh-controller.js": {
+        "server": "cloudflare",
+        "cfRay": "a4497199dc74f2c7-FRA"
+      },
+      "public/relay-protocol.js": {
+        "server": "cloudflare",
+        "cfRay": "a4497199effb37d7-FRA"
+      },
+      "public/mesh-worker.js": {
+        "server": "cloudflare",
+        "cfRay": "a4497199fee965e0-FRA"
+      },
+      "public/relay-controller.js": {
+        "server": "cloudflare",
+        "cfRay": "a4497199e850ccf7-FRA"
+      }
+    },
+    "matches": {
+      "public/mesh-protocol.js": true,
+      "public/mesh-controller.js": true,
+      "public/relay-protocol.js": true,
+      "public/mesh-worker.js": true,
+      "public/relay-controller.js": true,
+      "relay/gateway.mjs": true,
+      "relay/config.mjs": true
+    }
+  },
+  "separateCleanupObservation": {
+    "artifact": "/tmp/cypher-mesh-after-final-cleanup.json",
+    "sha256": "91090d770924db5c3f884f8eb92a1ec0c4da3e2ccd15c4ed2229fa655b4cad2a",
+    "at": "2026-10-03T05:10:09Z",
+    "nodes": {
+      "a": {
+        "sessions": 0,
+        "routes": [],
+        "meshPeers": []
+      },
+      "b": {
+        "sessions": 0,
+        "routes": [],
+        "meshPeers": []
+      }
+    },
+    "meaning": "Read-only observation after runner finally closed its own browser processes; no other participant lease was deleted."
+  }
+}

@@ -1,0 +1,154 @@
+TAP version 13
+# Subtest: OFF during delayed configuration makes no session, sockets or Worker and cannot resurrect
+ok 1 - OFF during delayed configuration makes no session, sockets or Worker and cannot resurrect
+  ---
+  duration_ms: 72.202504
+  type: 'test'
+  ...
+# Subtest: delayed native hello and old Worker events are ignored after OFF and a new ON generation
+ok 2 - delayed native hello and old Worker events are ignored after OFF and a new ON generation
+  ---
+  duration_ms: 10.615664
+  type: 'test'
+  ...
+# Subtest: native close readmits with a new session and carries ON traffic and counters exactly once
+ok 3 - native close readmits with a new session and carries ON traffic and counters exactly once
+  ---
+  duration_ms: 6.311174
+  type: 'test'
+  ...
+# Subtest: 100MiB budget persists across automatic rejoin and cannot be reset by stale stats
+ok 4 - 100MiB budget persists across automatic rejoin and cannot be reset by stale stats
+  ---
+  duration_ms: 5.728088
+  type: 'test'
+  ...
+# Subtest: repeated failed admissions stop after twelve retries and old callbacks cannot rejoin
+ok 5 - repeated failed admissions stop after twelve retries and old callbacks cannot rejoin
+  ---
+  duration_ms: 5.148471
+  type: 'test'
+  ...
+# Subtest: renewal failure closes old transports before admitting another native generation
+ok 6 - renewal failure closes old transports before admitting another native generation
+  ---
+  duration_ms: 3.661694
+  type: 'test'
+  ...
+# Subtest: HTTP prelude, signaling, native JSON and RTC sends/receives are charged once from observed bytes
+ok 7 - HTTP prelude, signaling, native JSON and RTC sends/receives are charged once from observed bytes
+  ---
+  duration_ms: 4.319317
+  type: 'test'
+  ...
+# Subtest: native/RTC high-water and maximum-frame checks report failed sends without charging successes
+ok 8 - native/RTC high-water and maximum-frame checks report failed sends without charging successes
+  ---
+  duration_ms: 10.583012
+  type: 'test'
+  ...
+# Subtest: oversized or stale native messages fail closed before reaching the Worker
+ok 9 - oversized or stale native messages fail closed before reaching the Worker
+  ---
+  duration_ms: 6.087587
+  type: 'test'
+  ...
+# Subtest: AI load states reach the Worker, pause circuit UI, and suppress additional RTC handshakes
+ok 10 - AI load states reach the Worker, pause circuit UI, and suppress additional RTC handshakes
+  ---
+  duration_ms: 3.29395
+  type: 'test'
+  ...
+# Subtest: signaling frame reaching the transfer cap preserves OFF_LIMIT without processing peer assignments
+ok 11 - signaling frame reaching the transfer cap preserves OFF_LIMIT without processing peer assignments
+  ---
+  duration_ms: 2.169307
+  type: 'test'
+  ...
+# Subtest: native status and RTC diagnostics keep at most one outstanding read of each kind
+ok 12 - native status and RTC diagnostics keep at most one outstanding read of each kind
+  ---
+  duration_ms: 3.860884
+  type: 'test'
+  ...
+# Subtest: current status 401 immediately withdraws native readiness and readmits without resetting the ON budget
+ok 13 - current status 401 immediately withdraws native readiness and readmits without resetting the ON budget
+  ---
+  duration_ms: 3.981088
+  type: 'test'
+  ...
+# Subtest: an old status 401 cannot retire a new ON session or clear its pending status read
+ok 14 - an old status 401 cannot retire a new ON session or clear its pending status read
+  ---
+  duration_ms: 4.281557
+  type: 'test'
+  ...
+# Subtest: temporary status failures report an error without replacing a healthy native session
+ok 15 - temporary status failures report an error without replacing a healthy native session
+  ---
+  duration_ms: 1.916667
+  type: 'test'
+  ...
+# Subtest: late offer rejection from an old ON generation does not close the replacement peer
+ok 16 - late offer rejection from an old ON generation does not close the replacement peer
+  ---
+  duration_ms: 91.478161
+  type: 'test'
+  ...
+# Subtest: late offer rejection in the same generation cannot close a different peer instance
+ok 17 - late offer rejection in the same generation cannot close a different peer instance
+  ---
+  duration_ms: 1.764123
+  type: 'test'
+  ...
+# Subtest: an offer resolved after OFF never sets local description or emits signaling
+ok 18 - an offer resolved after OFF never sets local description or emits signaling
+  ---
+  duration_ms: 1.935591
+  type: 'test'
+  ...
+# Subtest: configuration completion after OFF cannot resurrect a Worker or create a session
+ok 19 - configuration completion after OFF cannot resurrect a Worker or create a session
+  ---
+  duration_ms: 4.252293
+  type: 'test'
+  ...
+# Subtest: session renewal supplies fresh TURN configuration for the next peer connection
+ok 20 - session renewal supplies fresh TURN configuration for the next peer connection
+  ---
+  duration_ms: 2.105177
+  type: 'test'
+  ...
+# Subtest: rejected incoming negotiation cannot close a later peer instance with the same ID
+ok 21 - rejected incoming negotiation cannot close a later peer instance with the same ID
+  ---
+  duration_ms: 2.84844
+  type: 'test'
+  ...
+# Subtest: an answer resolved after OFF cannot continue ICE or set local description
+ok 22 - an answer resolved after OFF cannot continue ICE or set local description
+  ---
+  duration_ms: 10.354057
+  type: 'test'
+  ...
+# Subtest: signaling keepalive continues during AI load, respects 20 seconds and stops with the generation
+ok 23 - signaling keepalive continues during AI load, respects 20 seconds and stops with the generation
+  ---
+  duration_ms: 2.936314
+  type: 'test'
+  ...
+# Subtest: HTTP failures expose a numeric status while retaining safe messages and charging response bytes
+ok 24 - HTTP failures expose a numeric status while retaining safe messages and charging response bytes
+  ---
+  duration_ms: 13.306251
+  type: 'test'
+  ...
+1..24
+# tests 24
+# suites 0
+# pass 24
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 414.503192

@@ -35,9 +35,8 @@ func (tx *Transaction) BlobGasCost() *big.Int {
 // CostWithBlobGas returns the full upfront balance requirement including blob gas.
 // Legacy/non-blob transactions are equivalent to Cost().
 func (tx *Transaction) CostWithBlobGas() *big.Int {
-	cost := tx.Cost()
-	cost.Add(cost, tx.BlobGasCost())
-	return cost
+	// Transaction.Cost already includes the blob fee cap for BlobTx.
+	return tx.Cost()
 }
 
 // ValidateBlobTx performs EIP-4844 BlobTx surface validation without checking

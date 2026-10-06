@@ -1,0 +1,26 @@
+{
+  "status": "CLEAN",
+  "checkedAt": "2026-10-03T19:23:55.890582+00:00",
+  "sourceReport": "/tmp/cypher-post-migration-smoke.json",
+  "sourceReportSHA256": "b95bce584db1131a509d9be41144e31d4c599b79365ed0e26b6df531e9cb7429",
+  "hostPidNamespace": "pid:[4026531836]",
+  "ownedBrowsers": [
+    {
+      "browser": "A",
+      "pid": 3352717,
+      "pidAbsent": true,
+      "profile": "/tmp/cypher-migration-smoke-DwmBMd/A",
+      "profileAbsent": true
+    },
+    {
+      "browser": "B",
+      "pid": 3352919,
+      "pidAbsent": true,
+      "profile": "/tmp/cypher-migration-smoke-DwmBMd/B",
+      "profileAbsent": true
+    }
+  ],
+  "emptyOwnedParentRemoved": true,
+  "nativeCalls": 0,
+  "processSignals": 0
+}

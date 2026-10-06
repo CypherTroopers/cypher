@@ -1,0 +1,22 @@
+Natural Earth 1:110m land, archive version 4.1.0
+Public domain geographic data
+
+Made with Natural Earth.
+
+Dataset page:
+https://www.naturalearthdata.com/downloads/110m-physical-vectors/110m-land/
+Source archive:
+https://naciscdn.org/naturalearth/110m/physical/ne_110m_land.zip
+Official Terms of Use:
+https://www.naturalearthdata.com/about/terms-of-use/
+
+Natural Earth's official terms identify its raster and vector map data as public
+domain and permit modification, distribution, and personal, educational, and
+commercial use. Permission and attribution are not required.
+
+earth-land.json derives only physical land outlines from that source. Coordinates
+are simplified and rounded for a small offline globe, preserving every source
+ring and its winding. See reports/earth-land-provenance.json for checksums,
+coordinate schema, source version, and reproducible build details.
+
+This asset contains no peer locations, IP addresses, or IP geolocation data.

@@ -1,0 +1,9 @@
+{
+  "enabled": true,
+  "listenAddr": "127.0.0.1:18083",
+  "allowedPageOrigin": "https://ai-test.make-cph-great-again.community",
+  "network": {
+    "chainId": 10101919,
+    "genesisHash": "0xe69022ef43f6d238846015e0a4e7cdd190cf45e9fd98cfa0666acb482a05017e"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "description": "Non-production independent Node WebCrypto vector; private scalar is public test value 1. Header bytes test digest only, not header validity.",
+  "publicJwk": {
+    "kty": "EC",
+    "crv": "P-256",
+    "x": "axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY",
+    "y": "T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU",
+    "ext": true,
+    "key_ops": [
+      "verify"
+    ]
+  },
+  "header": {
+    "network": {
+      "chainId": 1,
+      "genesisHash": "0x2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "height": 1,
+    "rawHex": "c0",
+    "digest": "192a7ac674b698ad897c3707804a314d646d645744c2662103d88aa11a9c9b52"
+  },
+  "envelope": {
+    "keyId": "test_key",
+    "manifestBase64": "eyJ2ZXJzaW9uIjoxLCJuZXR3b3JrIjp7ImNoYWluSWQiOjEsImdlbmVzaXNIYXNoIjoiMHgyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyIn0sInNvdXJjZUlkIjoidGVzdF9zb3VyY2UiLCJzb3VyY2VCb290SWQiOiIzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMyIsInNlcXVlbmNlIjoiMSIsIm9ic2VydmVkQXQiOjE3MDAwMDAwMDAwMDAsImV4cGlyZXNBdCI6MTcwMDAwMDAzMDAwMCwiaGVhZEhlaWdodCI6MSwiaGVhZEhhc2giOiIweDExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiLCJlbnRyaWVzIjpbeyJoZWlnaHQiOjEsImJsb2NrSGFzaCI6IjB4MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSIsInBhcmVudEhhc2giOiIweDIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIiLCJkaWdlc3QiOiIxOTJhN2FjNjc0YjY5OGFkODk3YzM3MDc4MDRhMzE0ZDY0NmQ2NDU3NDRjMjY2MjEwM2Q4OGFhMTFhOWM5YjUyIiwicmF3Qnl0ZXMiOjF9XX0=",
+    "signatureBase64": "rc9HcY0iYzZZmj/+JT3GT8ZXiz00cZOCl2iRc+mUe0mzQ9YGCItgbkhL1ZWaEkWpFJunNF/RaEXlH7k/CmffOw=="
+  },
+  "manifestId": "35a5daef46ffa75954a5c28bc0802d90fc19f74cad8a8a8f11c1952b40b8ccda"
+}

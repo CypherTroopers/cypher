@@ -1,0 +1,58 @@
+{
+  "enabled": true,
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "listenHost": "127.0.0.1",
+  "listenPort": 8091,
+  "network": {
+    "chainId": 10101919,
+    "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+  },
+  "limits": {
+    "maxSessions": 80,
+    "maxConnections": 384,
+    "maxPeers": 20,
+    "maxCommonConnections": 20,
+    "httpRequestsPerSecond": 128,
+    "httpBytesPerSecond": 1048576,
+    "admissionsPerMinute": 32,
+    "maxSessionsPerClient": 80
+  },
+  "iceServers": [
+    {
+      "urls": "stun:stun.cloudflare.com:3478"
+    }
+  ],
+  "trustedCountryHeader": "x-relay-country",
+  "trustedClientIpHeader": "x-relay-client-ip",
+  "turn": {
+    "urls": [
+      "turn:13.140.169.170:34790?transport=udp",
+      "turn:13.140.169.170:34790?transport=tcp"
+    ],
+    "secretPath": "/root/cypher/browser-llm-lab/.runtime/relay-turn/rest-secret",
+    "ttlSeconds": 300
+  },
+  "nativeOrigin": "https://ai-test.make-cph-great-again.community",
+  "nodes": [
+    {
+      "id": "common-mine",
+      "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+      "enode": "enode://5e09dc887c5da47914aaa3b9fef97ae1c25b7d5b353713af0140bef497a3ef82089a074024ec3feca3bbfba9d09bd34eb05fda80cc3c906c158fa62f59218e57@13.140.169.170:6099",
+      "socketPath": "/root/cypher/config/browser-relay/common-mine.sock"
+    }
+  ],
+  "discovery": {
+    "enabled": true,
+    "bootstrapOrigins": [
+      "https://ai-test.make-cph-great-again.community"
+    ],
+    "allowedOrigins": [
+      "https://ai-test.make-cph-great-again.community"
+    ]
+  },
+  "sourceUplink": {
+    "enabled": true,
+    "maxSources": 32,
+    "maxSourcesPerClient": 4
+  }
+}

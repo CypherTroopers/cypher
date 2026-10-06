@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "checkedAt": "2026-10-03T21:15:11.007638+00:00",
+  "scope": "Independent Go encoding/json+native crypto.Sign versus Noble secp256k1/Keccak with separately constructed endpoint and challenge objects; no native process/IPC/network calls",
+  "matchedFields": [
+    "challengeBase64",
+    "challengeDomainHex",
+    "challengeRaw",
+    "digestHex",
+    "endpoint",
+    "endpointDigestHex",
+    "endpointRaw",
+    "nodeId",
+    "publicKeyHex",
+    "signatureHex",
+    "signatureVerified"
+  ],
+  "challengeDigestHex": "876d3a9c9a0c849736f842c6d077bbc1fb658002b4675df851d5906531cb8362",
+  "nodeId": "c0a6c424ac7157ae408398df7e5f4552091a69125d5dfcb7b8c2659029395bdf",
+  "testNow": 1700000000000,
+  "artifacts": {
+    "vector.go": "456dffcd5acd75b4b211ca8d800ee4d579b91c79cb9310b728d30935a4f6702d",
+    "vector.mjs": "3dc17b13dc2c65e7890eb02fdf3ded961b17054f775c2f61bb933355c77b569f",
+    "noble-vector.json": "76d2c6f5281e0b7c6fc06b79fb3d22bf6af9748ebf2faa99e6fdce83708d0ffb",
+    "go-vector.json": "648ca8bd4e04e052f1531fd37a3874bd6bf763ab1b6dd69701f99664fb48af1a"
+  },
+  "liveCalls": 0
+}

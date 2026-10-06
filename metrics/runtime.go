@@ -102,7 +102,7 @@ func CaptureRuntimeMemStatsOnce(r Registry) {
 	runtimeMetrics.MemStats.MSpanSys.Update(int64(memStats.MSpanSys))
 	runtimeMetrics.MemStats.NextGC.Update(int64(memStats.NextGC))
 	runtimeMetrics.MemStats.NumGC.Update(int64(memStats.NumGC - numGC))
-	runtimeMetrics.MemStats.GCCPUFraction.Update(gcCPUFraction(&memStats))
+	runtimeMetrics.MemStats.GCCPUFraction.Update(memStats.GCCPUFraction)
 
 	// <https://code.google.com/p/go/source/browse/src/pkg/runtime/mgc0.c>
 	i := numGC % uint32(len(memStats.PauseNs))

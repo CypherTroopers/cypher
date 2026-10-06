@@ -1,0 +1,273 @@
+{
+  "status": "PASS_WITH_RESOURCE_RECONNECT_CAVEAT",
+  "updatedAt": "2026-10-03T17:53:01.004106+00:00",
+  "fullUnitTests": {
+    "tests": 331,
+    "suites": 0,
+    "pass": 328,
+    "fail": 0,
+    "cancelled": 0,
+    "skipped": 3,
+    "todo": 0,
+    "duration_ms": 25514.561645
+  },
+  "focusedTests": 39,
+  "browserReport": "discovery-browser-scale-report.json",
+  "browserCheckpoints": 7,
+  "browserErrors": 0,
+  "sameHostOnly": true,
+  "nativeRLPx": false,
+  "nativeFixtures": true,
+  "directBrowserDataInjection": false,
+  "independentScaleBrowsers": 21,
+  "connectedPeersPerScaleBrowser": [
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20,
+    20
+  ],
+  "scaleConvergenceSecondsIncludingLaunches": 164.358,
+  "remoteCommonWorkerVerification": [
+    {
+      "id": "e17531e3ea6174f815855cfffec5389c",
+      "sourceId": "common-a",
+      "nodeId": "26119ff0800c4aa47325ede7495ccecc557842ab62352cf394ad636178210c0c",
+      "browserId": "665bbaae8065a920529ecb9e04a0b87e",
+      "connected": true,
+      "expiresAt": 1791047924940,
+      "remoteOrigin": null,
+      "endpointVerified": false,
+      "browserSignatureVerified": true
+    },
+    {
+      "id": "c69f5a6e58c979addfba4aa980d91d10",
+      "sourceId": "common-b",
+      "nodeId": "af06e4ec93c1de3799456746eea4bccb7f5123183899dee1733d853390f47cca",
+      "browserId": "5838cfb66b516ebb963a96c748e422ec",
+      "connected": true,
+      "expiresAt": 1791047926359,
+      "remoteOrigin": "https://gateway-b.example.org:37035",
+      "endpointVerified": true,
+      "browserSignatureVerified": true
+    }
+  ],
+  "rendezvousMetrics": [
+    {
+      "enabled": true,
+      "endpoints": 1,
+      "peers": 0,
+      "visitors": 0,
+      "replayEntries": 21,
+      "publishing": 0,
+      "publicationSlots": 1,
+      "queuedBytes": 0,
+      "acceptedEndpoints": 0,
+      "rejectedEndpoints": 0,
+      "authentications": 39,
+      "signals": 1630,
+      "droppedUnavailableSignals": 87,
+      "expired": 0,
+      "invalid": 8,
+      "receivedBytes": 1895397,
+      "sentBytes": 11911524,
+      "publications": 0,
+      "publicationFailures": 8,
+      "rejectionReasons": {
+        "signal_capacity": 1,
+        "authentication_required": 0,
+        "identity_in_use": 0,
+        "session_expired": 0,
+        "invalid_renewal": 0,
+        "invalid_signal": 0,
+        "signal_replay": 0,
+        "signal_history_capacity": 0,
+        "peer_capacity": 7,
+        "ice_capacity": 0,
+        "invalid_control": 0,
+        "invalid_signature_or_schema": 0
+      }
+    },
+    {
+      "enabled": true,
+      "endpoints": 1,
+      "peers": 0,
+      "visitors": 0,
+      "replayEntries": 21,
+      "publishing": 0,
+      "publicationSlots": 1,
+      "queuedBytes": 0,
+      "acceptedEndpoints": 0,
+      "rejectedEndpoints": 0,
+      "authentications": 43,
+      "signals": 961,
+      "droppedUnavailableSignals": 122,
+      "expired": 0,
+      "invalid": 9,
+      "receivedBytes": 1249467,
+      "sentBytes": 11989471,
+      "publications": 0,
+      "publicationFailures": 8,
+      "rejectionReasons": {
+        "signal_capacity": 0,
+        "authentication_required": 0,
+        "identity_in_use": 0,
+        "session_expired": 0,
+        "invalid_renewal": 0,
+        "invalid_signal": 0,
+        "signal_replay": 0,
+        "signal_history_capacity": 0,
+        "peer_capacity": 9,
+        "ice_capacity": 0,
+        "invalid_control": 0,
+        "invalid_signature_or_schema": 0
+      }
+    }
+  ],
+  "previousRendezvousMetrics": [
+    {
+      "enabled": true,
+      "endpoints": 1,
+      "peers": 0,
+      "visitors": 0,
+      "replayEntries": 21,
+      "publishing": 0,
+      "publicationSlots": 1,
+      "queuedBytes": 0,
+      "acceptedEndpoints": 0,
+      "rejectedEndpoints": 0,
+      "authentications": 72,
+      "signals": 1886,
+      "expired": 0,
+      "invalid": 42,
+      "receivedBytes": 2149614,
+      "sentBytes": 14327748,
+      "publications": 0,
+      "publicationFailures": 9
+    },
+    {
+      "enabled": true,
+      "endpoints": 1,
+      "peers": 0,
+      "visitors": 0,
+      "replayEntries": 21,
+      "publishing": 0,
+      "publicationSlots": 1,
+      "queuedBytes": 0,
+      "acceptedEndpoints": 0,
+      "rejectedEndpoints": 0,
+      "authentications": 71,
+      "signals": 1633,
+      "expired": 0,
+      "invalid": 44,
+      "receivedBytes": 1897251,
+      "sentBytes": 14969997,
+      "publications": 0,
+      "publicationFailures": 9
+    }
+  ],
+  "cleanupReport": "discovery-browser-scale-cleanup.json",
+  "limitations": [
+    "TLS uses temporary self-signed test certificates with browser ignoreHTTPSErrors for this fixture only.",
+    "The 21-browser scale test uses signed stream fixtures; separate real-native remote discovery is recorded below, while real WebRTC/RLPx transfer belongs to the parent native acceptance report.",
+    "Observed remaining resource rejections: peer_capacity 7/9 and signal_capacity 1/0. peer_capacity covers route-table admission OR destination enqueue failure, so counters alone cannot distinguish those branches. signal_capacity combines rate/byte/aggregate/transfer limits. This validates eventual bounded convergence, not uninterrupted stability or sustained 20-peer mobile performance.",
+    "All 21 browsers are on one Linux host. Physical mobile devices, independent regional networks and sustained twenty-peer performance are not established by this fixture.",
+    "The browser still requires an initial home gateway Common session; independent remote Common attachments are discovered afterward.",
+    "Fixture gateway endpoint publisher attempts fail because temporary browser-only TLS/DNS trust is not installed in Node. Browser directory fetches and local native endpoint polls are real. A separate gateway fixture tests automatic HTTPS publication."
+  ],
+  "fixedRegressions": [
+    "A valid older renewal from another rendezvous socket is accepted for the same immutable browser generation without rolling back the current cache lease or signal replay high-water mark.",
+    "Valid delayed signed SDP/ICE for a disappeared or obsolete destination preserves sender connection and replay high-water state; invalid signatures/replays/rates remain rejected. Independent three-WebSocket before/after reproductions are preserved."
+  ],
+  "gatewayDropProof": [
+    "discovery-churn-readonly-repro.json",
+    "discovery-churn-fixed-repro.json"
+  ],
+  "productHashes": {
+    "public/mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+    "public/mesh-discovery-client.js": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+    "public/mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+    "public/mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+    "public/mesh-protocol.js": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+    "relay/gateway.mjs": "45cb9edf9df7cc7b5e209cb7b73cb5608ae58b3982a5e45bac767869b84dc1c1",
+    "relay/discovery.mjs": "ada83d15070ee19a7076de2e2665234cf9706aa5dc6e4b0ead5521d6dddac178"
+  },
+  "realNativeRemoteDiscovery": {
+    "status": "PASS",
+    "report": "public-remote-discovery-browser-report.json",
+    "startedAt": "2026-10-03T17:50:30.771Z",
+    "finishedAt": "2026-10-03T17:50:51.535Z",
+    "sameHostOnly": true,
+    "actualPublicOrigin": "https://ai-test.make-cph-great-again.community",
+    "homeConfigCommonCount": 1,
+    "remoteCommonAbsentHomePins": true,
+    "commonConnections": 2,
+    "remoteEndpointSignatureVerified": true,
+    "remoteNativeHelloSignatureVerifiedByWorker": true,
+    "separateIssuerScopedRootLease": true,
+    "directDescriptorInjection": false,
+    "fetchInterception": false,
+    "nativeConfigChanges": false,
+    "nativeRestarts": false,
+    "webRTCClaim": false,
+    "nativeStreamTransferClaim": false,
+    "connectedRTCPeers": 0,
+    "streamReceivedBytes": 0,
+    "cleanup": {
+      "configRestored": true,
+      "backupRemoved": true,
+      "native": [
+        {
+          "sourceId": "common-a",
+          "status": {
+            "running": true,
+            "sessions": 0,
+            "circuits": 0,
+            "candidates": 0,
+            "receivedBytes": 1023370,
+            "sentBytes": 1142041,
+            "routes": []
+          }
+        },
+        {
+          "sourceId": "common-b",
+          "status": {
+            "running": true,
+            "sessions": 0,
+            "circuits": 0,
+            "candidates": 0,
+            "receivedBytes": 1164540,
+            "sentBytes": 1011862,
+            "routes": []
+          }
+        }
+      ],
+      "browserExited": true
+    },
+    "independentReadOnlyReview": {
+      "at": "2026-10-03T17:53:01.004106+00:00",
+      "configExactHashMatches": true,
+      "configModeMatches": true,
+      "temporaryOriginRemoved": true,
+      "ownedBrowserGone": true
+    },
+    "deleteResponseExplanation": "Public DELETE returned401 because closing WSS invalidated the session first; both actual native status checks confirmed sessions/circuits/candidates0 before and after restoration.",
+    "harnessSHA256": "26b21359ea3643311b34ecd41284394a6ad4c01a67973f7b3f8b0abf1de947bb"
+  }
+}

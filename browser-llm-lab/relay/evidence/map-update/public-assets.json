@@ -1,0 +1,37 @@
+{
+  "at": "2026-10-03T06:01:01.678205+00:00",
+  "client": "curl --noproxy *; actual public HTTPS and normal DNS",
+  "checks": [
+    {
+      "path": "/",
+      "status": 200,
+      "sha256": "dde9758e9789d25c21f7f612124a89c76eec27012b8a044a49b9d1ec827ceb2d",
+      "matchesLocal": true
+    },
+    {
+      "path": "/relay-map.js?v=mesh-map-v2",
+      "status": 200,
+      "sha256": "9a11d04588d5ab90f4787898c82613e5bebcd3912d9635fde5ce07f03de93c1b",
+      "matchesLocal": true
+    },
+    {
+      "path": "/relay-ui.js?v=mesh-map-v2",
+      "status": 200,
+      "sha256": "732fd2722136dd5338e6210486881c6c9eb8ce1e5ca7d6730e7bdafe02a9a0ac",
+      "matchesLocal": true
+    },
+    {
+      "path": "/relay.css?v=mesh-map-v2",
+      "status": 200,
+      "sha256": "0e82f9759abb0149b8a453a6be8f69f366d40c63eacce4dec7131402c5e7affa",
+      "matchesLocal": true
+    },
+    {
+      "path": "/mesh-worker.js?v=mesh-map-v2",
+      "status": 200,
+      "sha256": "7cfc7cfa0cb57ccdc0ef3681c8b5cf3100d44baf5affb9dcb6e9768a31dfe1a4",
+      "matchesLocal": true
+    }
+  ],
+  "probeNote": "Python urllib requests returned403, including with ProxyHandler({}); cause not established. Actual curl public requests succeeded; separate browser UI acceptance verifies delivery."
+}

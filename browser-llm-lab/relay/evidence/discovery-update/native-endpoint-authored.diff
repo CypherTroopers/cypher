@@ -1,0 +1,606 @@
+--- before/cmd/cypher/browser_mesh.go
++++ after/cmd/cypher/browser_mesh.go
+@@ -28,12 +28,18 @@
+ // The private socket is the only listener. An operator-owned HTTPS proxy may
+ // expose /relay/v1/mesh/*, never the node's RPC/IPC or unrestricted TCP dialing.
+ type browserMeshConfiguration struct {
+-	AllowedOrigins []string `json:"allowedOrigins"`
++	AllowedOrigins      []string `json:"allowedOrigins"`
++	PublicGatewayOrigin string   `json:"publicGatewayOrigin,omitempty"`
+ }
+ 
+ func validateBrowserMeshConfiguration(c *browserMeshConfiguration) error {
+ 	if c == nil || len(c.AllowedOrigins) == 0 || len(c.AllowedOrigins) > 8 {
+ 		return errors.New("mesh requires one to eight exact HTTPS origins")
++	}
++	if c.PublicGatewayOrigin != "" {
++		if err := browserrelay.ValidateMeshGatewayOrigin(c.PublicGatewayOrigin); err != nil {
++			return err
++		}
+ 	}
+ 	seen := make(map[string]bool)
+ 	for _, origin := range c.AllowedOrigins {
+@@ -98,6 +104,7 @@
+ 		srv := stack.Server()
+ 		mesh, err := browserrelay.NewMesh(browserrelay.MeshConfig{
+ 			Network: g.public.Network, LocalNode: srv.Self,
++			SourceID: g.public.SourceID, PublicGatewayOrigin: g.public.Mesh.PublicGatewayOrigin,
+ 			SignDigest: func(digest []byte) ([]byte, error) { return crypto.Sign(digest, srv.PrivateKey) },
+ 			OnInbound: func(conn net.Conn, remote *enode.Node) error {
+ 				wrapped, err := wrapBrowserMeshConnection(conn)
+@@ -303,6 +310,25 @@
+ 	switch {
+ 	case path == "config" && r.Method == http.MethodGet:
+ 		meshJSON(w, 200, map[string]any{"version": 1, "sessionSeconds": 300, "renewAfterSeconds": 120, "maxSessions": browserrelay.MeshMaxSessions, "maxFrameBytes": browserrelay.MeshMaxFrameBytes, "nativeMaxFrameBytes": 4 << 20, "nativePeers": p2p.BrowserMeshMaxPeers, "initialState": "OFF"})
++	case path == "endpoint" && r.Method == http.MethodGet:
++		if r.ContentLength > 0 || len(r.TransferEncoding) != 0 {
++			http.Error(w, "unexpected body", 400)
++			return
++		}
++		if h.mesh == nil {
++			http.Error(w, "unavailable", 503)
++			return
++		}
++		endpoint, err := h.mesh.Endpoint()
++		if errors.Is(err, browserrelay.ErrMeshEndpointDisabled) {
++			http.Error(w, "endpoint publication disabled", 404)
++			return
++		}
++		if err != nil {
++			http.Error(w, "endpoint unavailable", 503)
++			return
++		}
++		meshJSON(w, 200, endpoint)
+ 	case path == "status" && r.Method == http.MethodGet:
+ 		if h.mesh == nil {
+ 			http.Error(w, "unavailable", 503)
+--- before/cmd/cypher/browser_mesh_test.go
++++ after/cmd/cypher/browser_mesh_test.go
+@@ -180,3 +180,67 @@
+ 		t.Fatal(status)
+ 	}
+ }
++
++func TestBrowserMeshHTTPEndpoint(t *testing.T) {
++	key, _ := crypto.GenerateKey()
++	n := enode.NewV4(&key.PublicKey, net.IPv4(127, 0, 0, 1), 30445, 0)
++	for _, enabled := range []bool{false, true} {
++		origin := ""
++		if enabled {
++			origin = "https://gateway.example.org"
++		}
++		mesh, err := browserrelay.NewMesh(browserrelay.MeshConfig{Network: browserrelay.Network{ChainID: 10101919, GenesisHash: "0x" + strings.Repeat("2", 64)}, LocalNode: func() *enode.Node { return n }, SignDigest: func(d []byte) ([]byte, error) { return crypto.Sign(d, key) }, OnInbound: func(c net.Conn, _ *enode.Node) error { return c.Close() }, SourceID: "common-a", PublicGatewayOrigin: origin})
++		if err != nil {
++			t.Fatal(err)
++		}
++		defer mesh.Stop()
++		if err = mesh.Start(); err != nil {
++			t.Fatal(err)
++		}
++		h := newBrowserMeshHTTP(context.Background(), mesh, []string{"https://gateway.example.org"})
++		h.requests = rate.NewLimiter(rate.Inf, 1)
++		h.start()
++		defer h.stop()
++		request := func(method, origin, body string) *httptest.ResponseRecorder {
++			r := httptest.NewRequest(method, "/relay/v1/mesh/endpoint", strings.NewReader(body))
++			r.Header.Set("Origin", origin)
++			w := httptest.NewRecorder()
++			h.ServeHTTP(w, r)
++			return w
++		}
++		w := request("GET", "https://gateway.example.org", "")
++		want := 404
++		if enabled {
++			want = 200
++		}
++		if w.Code != want {
++			t.Fatalf("enabled=%v status=%d", enabled, w.Code)
++		}
++		if enabled {
++			var envelope browserrelay.MeshAdvertisement
++			if json.Unmarshal(w.Body.Bytes(), &envelope) != nil {
++				t.Fatal("endpoint JSON")
++			}
++			expected, _ := mesh.Endpoint()
++			if expected != envelope || w.Body.Len() > 8192 {
++				t.Fatal("endpoint envelope changed")
++			}
++		}
++		if request("GET", "https://evil.example.org", "").Code != 403 {
++			t.Fatal("Origin bypass")
++		}
++		if request("GET", "https://gateway.example.org", "{}").Code != 400 {
++			t.Fatal("endpoint body accepted")
++		}
++		if request("POST", "https://gateway.example.org", "").Code != 404 {
++			t.Fatal("endpoint write accepted")
++		}
++		if mesh.Status().Sessions != 0 || mesh.Status().Circuits != 0 {
++			t.Fatal("descriptor GET created session/circuit")
++		}
++		h.stop()
++		if request("GET", "https://gateway.example.org", "").Code != 503 {
++			t.Fatal("endpoint after stop")
++		}
++	}
++}
+--- before/cmd/cypher/browser_public_relay.go
++++ after/cmd/cypher/browser_public_relay.go
+@@ -295,7 +295,7 @@
+ 		return cfg, nil, err
+ 	}
+ 	if meshRaw, ok := fields["mesh"]; ok {
+-		if _, err := publicRelayObject(meshRaw, "allowedOrigins"); err != nil {
++		if _, err := publicRelayObject(meshRaw, "allowedOrigins", "publicGatewayOrigin?"); err != nil {
+ 			return cfg, nil, err
+ 		}
+ 		if err := validateBrowserMeshConfiguration(cfg.Mesh); err != nil {
+--- before/cmd/cypher/browser_public_relay_test.go
++++ after/cmd/cypher/browser_public_relay_test.go
+@@ -446,3 +446,26 @@
+ 		}
+ 	}
+ }
++
++func TestPublicRelayEndpointConfiguration(t *testing.T) {
++	path, cfg := publicRelayTestConfig(t)
++	cfg.Mesh = &browserMeshConfiguration{AllowedOrigins: []string{"https://gateway.example.org"}, PublicGatewayOrigin: "https://gateway.example.org"}
++	cfg.KeyID, cfg.SigningKeyPath = "", ""
++	raw, _ := json.Marshal(cfg)
++	if err := os.WriteFile(path, raw, 0600); err != nil {
++		t.Fatal(err)
++	}
++	loaded, key, err := loadBrowserPublicRelayConfiguration(path)
++	if err != nil || key != nil || loaded.Mesh.PublicGatewayOrigin != cfg.Mesh.PublicGatewayOrigin {
++		t.Fatal("valid native-key endpoint configuration", err)
++	}
++	for _, replacement := range []string{`null`, `"https://127.0.0.1"`, `"https://gateway.example.org/path"`, `"https://gateway.example.org","publicGatewayOrigin":"https://another.example.org"`} {
++		modified := strings.Replace(string(raw), `"publicGatewayOrigin":"https://gateway.example.org"`, `"publicGatewayOrigin":`+replacement, 1)
++		if err := os.WriteFile(path, []byte(modified), 0600); err != nil {
++			t.Fatal(err)
++		}
++		if _, _, err := loadBrowserPublicRelayConfiguration(path); err == nil {
++			t.Fatalf("invalid endpoint configuration accepted: %s", replacement)
++		}
++	}
++}
+--- before/node/browserrelay/mesh.go
++++ after/node/browserrelay/mesh.go
+@@ -18,11 +18,14 @@
+ )
+ 
+ var ErrMeshUnavailable = errors.New("browser mesh unavailable")
++var ErrMeshEndpointDisabled = errors.New("browser mesh public endpoint is not configured")
+ 
+ type MeshConfig struct {
+-	Network    Network
+-	LocalNode  func() *enode.Node
+-	SignDigest func([]byte) ([]byte, error)
++	Network             Network
++	LocalNode           func() *enode.Node
++	SignDigest          func([]byte) ([]byte, error)
++	SourceID            string
++	PublicGatewayOrigin string
+ 	// OnInbound may perform the native RLPx handshake. It runs in an owned,
+ 	// bounded goroutine; Stop closes its connection and joins the callback.
+ 	OnInbound func(net.Conn, *enode.Node) error
+@@ -85,6 +88,9 @@
+ 	bootID                                                       string
+ 	advertisement                                                MeshAdvertisement
+ 	advertisedAt                                                 time.Time
++	endpoint                                                     MeshAdvertisement
++	endpointSequence                                             uint64
++	endpointAdvertisedAt                                         time.Time
+ 	sessions                                                     map[string]*meshSession
+ 	routes                                                       map[enode.ID]map[string]*meshRoute
+ 	lastRoute                                                    map[enode.ID]string
+@@ -98,6 +104,9 @@
+ 	if ValidateNetwork(c.Network) != nil || c.LocalNode == nil || c.SignDigest == nil || c.OnInbound == nil {
+ 		return nil, errors.New("mesh requires a network, native identity and inbound handler")
+ 	}
++	if c.PublicGatewayOrigin != "" && (ValidateMeshGatewayOrigin(c.PublicGatewayOrigin) != nil || !meshLabel.MatchString(c.SourceID)) {
++		return nil, errors.New("invalid mesh public endpoint configuration")
++	}
+ 	boot, err := meshID()
+ 	if err != nil {
+ 		return nil, err
+@@ -125,6 +134,11 @@
+ 		return err
+ 	}
+ 	m.advertisement, m.advertisedAt = ad, time.Now()
++	if m.config.PublicGatewayOrigin != "" {
++		if err := m.refreshEndpointLocked(time.Now()); err != nil {
++			return err
++		}
++	}
+ 	m.started = true
+ 	m.wg.Add(1)
+ 	go m.maintain()
+@@ -158,6 +172,9 @@
+ 		case now := <-ticker.C:
+ 			m.mu.Lock()
+ 			m.pruneLocked(now)
++			if m.config.PublicGatewayOrigin != "" && now.Sub(m.endpointAdvertisedAt) >= 30*time.Second {
++				_ = m.refreshEndpointLocked(now)
++			}
+ 			var expired []*meshConn
+ 			for _, c := range m.circuits {
+ 				if now.After(c.expires) {
+@@ -678,3 +695,31 @@
+ 		}
+ 	})
+ }
++
++// Endpoint returns immutable signed bytes. HTTP reads never extend a lease or
++// generate signatures; failed refreshes cannot relabel stale data as fresh.
++func (m *Mesh) Endpoint() (MeshAdvertisement, error) {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	if !m.started || m.stopped {
++		return MeshAdvertisement{}, ErrMeshUnavailable
++	}
++	if m.config.PublicGatewayOrigin == "" {
++		return MeshAdvertisement{}, ErrMeshEndpointDisabled
++	}
++	if m.endpointSequence == 0 || time.Now().UnixMilli() >= m.endpointAdvertisedAt.UnixMilli()+MeshAdvertisementTTL.Milliseconds() {
++		return MeshAdvertisement{}, ErrMeshUnavailable
++	}
++	return m.endpoint, nil
++}
++func (m *Mesh) refreshEndpointLocked(now time.Time) error {
++	if m.endpointSequence >= MaxSafeInteger || (!m.endpointAdvertisedAt.IsZero() && now.UnixMilli() < m.endpointAdvertisedAt.UnixMilli()) {
++		return ErrMeshUnavailable
++	}
++	envelope, err := meshSignEndpoint(m.config.Network, m.config.LocalNode(), m.config.SourceID, m.config.PublicGatewayOrigin, m.bootID, m.endpointSequence+1, now, m.config.SignDigest)
++	if err != nil {
++		return err
++	}
++	m.endpoint, m.endpointSequence, m.endpointAdvertisedAt = envelope, m.endpointSequence+1, now
++	return nil
++}
+--- before/node/browserrelay/mesh_protocol.go
++++ after/node/browserrelay/mesh_protocol.go
+@@ -8,8 +8,11 @@
+ 	"encoding/json"
+ 	"errors"
+ 	"net"
++	"net/netip"
+ 	"net/url"
+ 	"regexp"
++	"strconv"
++	"strings"
+ 	"time"
+ 
+ 	"github.com/cypherium/cypher/crypto"
+@@ -19,6 +22,7 @@
+ const (
+ 	MeshProtocol              = "cypher-browser-mesh/1"
+ 	MeshAdvertisementDomain   = "cypher-browser-mesh-advertisement-v1\x00"
++	MeshEndpointDomain        = "cypher-browser-mesh-endpoint-v1\x00"
+ 	MeshMaxChunkBytes         = 8192
+ 	MeshMaxFrameBytes         = 16384
+ 	MeshMaxSessions           = 80
+@@ -209,3 +213,149 @@
+ 	}
+ 	return out
+ }
++
++// meshEndpointPayload is independent of mesh/1 wire advertisements. The origin
++// claim is signed by the existing Common key; no key leaves the native process.
++type meshEndpointPayload struct {
++	Version       int     `json:"version"`
++	Network       Network `json:"network"`
++	Enode         string  `json:"enode"`
++	SourceID      string  `json:"sourceId"`
++	GatewayOrigin string  `json:"gatewayOrigin"`
++	BootID        string  `json:"bootId"`
++	Sequence      uint64  `json:"sequence"`
++	IssuedAt      int64   `json:"issuedAt"`
++	ExpiresAt     int64   `json:"expiresAt"`
++}
++
++// ValidateMeshGatewayOrigin validates a public TLS transport claim. It does not
++// resolve DNS or dial the address. Native role/admission and RLPx remain separate.
++func ValidateMeshGatewayOrigin(origin string) error {
++	fail := errors.New("mesh public gateway must be a canonical public HTTPS origin")
++	if len(origin) > 255 || strings.ContainsAny(origin, "\\ \t\r\n") {
++		return fail
++	}
++	u, err := url.Parse(origin)
++	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.Opaque != "" || u.String() != origin || strings.ToLower(u.Host) != u.Host {
++		return fail
++	}
++	if port := u.Port(); port != "" {
++		n, e := strconv.Atoi(port)
++		if e != nil || n < 1 || n > 65535 || strconv.Itoa(n) != port || n == 443 {
++			return fail
++		}
++	}
++	host := u.Hostname()
++	canonicalHost := host
++	if strings.Contains(host, ":") {
++		canonicalHost = "[" + host + "]"
++	}
++	if u.Port() != "" {
++		canonicalHost += ":" + u.Port()
++	}
++	if canonicalHost != u.Host {
++		return fail
++	}
++	if ip, err := netip.ParseAddr(host); err == nil {
++		if ip.String() != host {
++			return fail
++		}
++		if ip.Is4() {
++			x := ip.As4()
++			a, b, c := x[0], x[1], x[2]
++			if a == 0 || a == 10 || a == 127 || a >= 224 || (a == 100 && b >= 64 && b <= 127) || (a == 169 && b == 254) || (a == 172 && b >= 16 && b <= 31) || (a == 192 && (b == 168 || b == 0 || b == 2 || b == 88 && c == 99)) || (a == 198 && (b == 18 || b == 19 || b == 51 && c == 100)) || (a == 203 && b == 0 && c == 113) {
++				return fail
++			}
++		} else {
++			if !netip.MustParsePrefix("2000::/3").Contains(ip) {
++				return fail
++			}
++			for _, prefix := range []string{"2001::/23", "2001:db8::/32", "2002::/16", "3fff::/16"} {
++				if netip.MustParsePrefix(prefix).Contains(ip) {
++					return fail
++				}
++			}
++		}
++	} else {
++		if !strings.Contains(host, ".") || strings.HasSuffix(host, ".") || strings.ContainsAny(host, "[]:") {
++			return fail
++		}
++		parts := strings.Split(host, ".")
++		for _, part := range parts {
++			if len(part) > 63 || !regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`).MatchString(part) {
++				return fail
++			}
++		}
++		switch parts[len(parts)-1] {
++		case "localhost", "local", "internal", "lan", "home", "invalid", "test":
++			return fail
++		}
++		// Numeric aliases such as 127.1 or 2130706433 must not become DNS hints.
++		if regexp.MustCompile(`^[0-9.]+$`).MatchString(host) || !regexp.MustCompile(`[a-z]`).MatchString(parts[len(parts)-1]) {
++			return fail
++		}
++	}
++	return nil
++}
++
++func meshSignEndpoint(network Network, node *enode.Node, source, origin, boot string, sequence uint64, now time.Time, sign func([]byte) ([]byte, error)) (MeshAdvertisement, error) {
++	if node == nil || node.Pubkey() == nil || !meshLabel.MatchString(source) || ValidateMeshGatewayOrigin(origin) != nil || sequence == 0 || sequence > MaxSafeInteger {
++		return MeshAdvertisement{}, errors.New("invalid local mesh endpoint identity")
++	}
++	payload := meshEndpointPayload{Version: 1, Network: network, Enode: node.URLv4(), SourceID: source, GatewayOrigin: origin, BootID: boot, Sequence: sequence, IssuedAt: now.UnixMilli(), ExpiresAt: now.Add(MeshAdvertisementTTL).UnixMilli()}
++	raw, err := json.Marshal(payload)
++	if err != nil {
++		return MeshAdvertisement{}, err
++	}
++	sig, err := sign(crypto.Keccak256([]byte(MeshEndpointDomain), raw))
++	if err != nil {
++		return MeshAdvertisement{}, errors.New("mesh endpoint signing failed")
++	}
++	envelope := MeshAdvertisement{PayloadBase64: base64.StdEncoding.EncodeToString(raw), SignatureHex: hex.EncodeToString(sig)}
++	verified, _, err := meshVerifyEndpoint(envelope, network, now)
++	if err != nil || verified.ID() != node.ID() {
++		return MeshAdvertisement{}, errors.New("mesh endpoint signer differs from local native identity")
++	}
++	return envelope, nil
++}
++
++func meshVerifyEndpoint(a MeshAdvertisement, network Network, now time.Time) (*enode.Node, time.Time, error) {
++	fail := func() (*enode.Node, time.Time, error) { return nil, time.Time{}, errors.New("invalid mesh endpoint") }
++	if len(a.PayloadBase64) > 5464 || len(a.SignatureHex) != 130 {
++		return fail()
++	}
++	raw, err := base64.StdEncoding.Strict().DecodeString(a.PayloadBase64)
++	if err != nil || len(raw) > 4096 || base64.StdEncoding.EncodeToString(raw) != a.PayloadBase64 || strictJSON(raw) != nil {
++		return fail()
++	}
++	if _, err = exactObject(raw, "version", "network", "enode", "sourceId", "gatewayOrigin", "bootId", "sequence", "issuedAt", "expiresAt"); err != nil {
++		return fail()
++	}
++	var p meshEndpointPayload
++	d := json.NewDecoder(bytes.NewReader(raw))
++	d.DisallowUnknownFields()
++	if d.Decode(&p) != nil || p.Version != 1 || p.Network != network || ValidateNetwork(p.Network) != nil || !meshLabel.MatchString(p.SourceID) || !meshRandomID.MatchString(p.BootID) || ValidateMeshGatewayOrigin(p.GatewayOrigin) != nil || p.Sequence == 0 || p.Sequence > MaxSafeInteger || len(p.Enode) > 512 {
++		return fail()
++	}
++	if p.IssuedAt < 0 || p.IssuedAt > now.Add(10*time.Second).UnixMilli() || p.ExpiresAt <= now.UnixMilli() || p.ExpiresAt <= p.IssuedAt || p.ExpiresAt-p.IssuedAt > MeshAdvertisementTTL.Milliseconds() {
++		return fail()
++	}
++	u, err := url.Parse(p.Enode)
++	if err != nil || (u.User != nil && net.ParseIP(u.Hostname()) == nil) {
++		return fail()
++	}
++	n, err := enode.ParseV4(p.Enode)
++	if err != nil || n.Pubkey() == nil || n.URLv4() != p.Enode {
++		return fail()
++	}
++	sig, err := hex.DecodeString(a.SignatureHex)
++	if err != nil || len(sig) != 65 || hex.EncodeToString(sig) != a.SignatureHex || sig[64] > 1 {
++		return fail()
++	}
++	digest := crypto.Keccak256([]byte(MeshEndpointDomain), raw)
++	key, err := crypto.SigToPub(digest, sig)
++	if err != nil || enode.PubkeyToIDV4(key) != n.ID() || !crypto.VerifySignature(crypto.FromECDSAPub(key), digest, sig[:64]) {
++		return fail()
++	}
++	return n, time.UnixMilli(p.ExpiresAt), nil
++}
+--- before/node/browserrelay/mesh_test.go
++++ after/node/browserrelay/mesh_test.go
+@@ -6,6 +6,8 @@
+ 	"context"
+ 	"crypto/ecdsa"
+ 	"encoding/base64"
++	"encoding/hex"
++	"encoding/json"
+ 	"errors"
+ 	"fmt"
+ 	"io"
+@@ -679,3 +681,148 @@
+ 	}
+ 	waitMesh(t, func() bool { return n.mesh.Status().Sessions < MeshMaxSessions })
+ }
++
++func TestMeshEndpointOriginAndSignature(t *testing.T) {
++	for _, origin := range []string{"https://gateway.example.org", "https://gateway.example.org:8443", "https://8.8.8.8", "https://[2606:4700:4700::1111]"} {
++		if err := ValidateMeshGatewayOrigin(origin); err != nil {
++			t.Fatalf("valid origin %s: %v", origin, err)
++		}
++	}
++	for _, origin := range []string{"http://gateway.example.org", "https://gateway.example.org/", "https://gateway.example.org:", "https://gateway.example.org:0", "https://gateway.example.org:443", "https://USER@gateway.example.org", "https://GATEWAY.example.org", "https://gateway.example.org?x=1", "https://127.0.0.1", "https://127.1", "https://0x7f.0.0.1", "https://10.1.1.1", "https://[::1]", "https://[::ffff:127.0.0.1]", "https://[2002:7f00:1::1]", "https://[2001::7f00:1]", "https://localhost", "https://a.local", "https://a.internal", "https://a.example.org."} {
++		if ValidateMeshGatewayOrigin(origin) == nil {
++			t.Fatalf("unsafe origin accepted: %s", origin)
++		}
++	}
++	key, _ := crypto.HexToECDSA(strings.Repeat("0", 63) + "1")
++	n := enode.NewV4(&key.PublicKey, net.IPv4(127, 0, 0, 1), 30445, 0)
++	network := Network{ChainID: 10101919, GenesisHash: "0x" + strings.Repeat("2", 64)}
++	now := time.UnixMilli(1700000000000)
++	sign := func(d []byte) ([]byte, error) { return crypto.Sign(d, key) }
++	envelope, err := meshSignEndpoint(network, n, "common-a", "https://gateway.example.org", strings.Repeat("66", 16), 1, now, sign)
++	if err != nil {
++		t.Fatal(err)
++	}
++	raw, _ := base64.StdEncoding.DecodeString(envelope.PayloadBase64)
++	var payload meshEndpointPayload
++	if err = json.Unmarshal(raw, &payload); err != nil {
++		t.Fatal(err)
++	}
++	if payload.Sequence != 1 || payload.ExpiresAt != now.Add(MeshAdvertisementTTL).UnixMilli() {
++		t.Fatalf("invalid endpoint payload %+v", payload)
++	}
++	if verified, _, err := meshVerifyEndpoint(envelope, network, now); err != nil || verified.ID() != n.ID() {
++		t.Fatal("signature verification", err)
++	}
++	wrongNetwork := network
++	wrongNetwork.ChainID++
++	if _, _, err = meshVerifyEndpoint(envelope, wrongNetwork, now); err == nil {
++		t.Fatal("other network accepted")
++	}
++	if _, _, err = meshVerifyEndpoint(envelope, network, now.Add(MeshAdvertisementTTL)); err == nil {
++		t.Fatal("expired endpoint accepted")
++	}
++	modified := envelope
++	modified.SignatureHex = strings.Repeat("00", 65)
++	if _, _, err = meshVerifyEndpoint(modified, network, now); err == nil {
++		t.Fatal("forged signature accepted")
++	}
++	modified = envelope
++	modified.PayloadBase64 = base64.StdEncoding.EncodeToString(bytes.Replace(raw, []byte("gateway.example.org"), []byte("another.example.org"), 1))
++	if _, _, err = meshVerifyEndpoint(modified, network, now); err == nil {
++		t.Fatal("changed gateway accepted")
++	}
++	raw = bytes.Replace(raw, []byte(`"version":1`), []byte(`"version":1,"\u0076ersion":1`), 1)
++	sig, _ := sign(crypto.Keccak256([]byte(MeshEndpointDomain), raw))
++	modified = MeshAdvertisement{PayloadBase64: base64.StdEncoding.EncodeToString(raw), SignatureHex: hex.EncodeToString(sig)}
++	if _, _, err = meshVerifyEndpoint(modified, network, now); err == nil {
++		t.Fatal("signed duplicate key accepted")
++	}
++	// Fixed Go/WebCrypto-independent vector checked by the browser test as well.
++	data, err := os.ReadFile("testdata/mesh-endpoint-vector.json")
++	if err != nil {
++		t.Fatal(err)
++	}
++	var vector struct {
++		Envelope MeshAdvertisement `json:"envelope"`
++		NodeID   string            `json:"nodeId"`
++	}
++	if json.Unmarshal(data, &vector) != nil || vector.Envelope != envelope || vector.NodeID != n.ID().String() {
++		t.Fatal("fixed endpoint interoperability vector differs")
++	}
++}
++
++func TestMeshEndpointLifecycle(t *testing.T) {
++	key, _ := crypto.GenerateKey()
++	n := enode.NewV4(&key.PublicKey, net.IPv4(127, 0, 0, 1), 30445, 0)
++	config := MeshConfig{Network: Network{ChainID: 10101919, GenesisHash: "0x" + strings.Repeat("2", 64)}, LocalNode: func() *enode.Node { return n }, SignDigest: func(d []byte) ([]byte, error) { return crypto.Sign(d, key) }, OnInbound: func(c net.Conn, _ *enode.Node) error { return c.Close() }, SourceID: "common-a", PublicGatewayOrigin: "https://gateway.example.org"}
++	m, err := NewMesh(config)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err = m.Endpoint(); !errors.Is(err, ErrMeshUnavailable) {
++		t.Fatal("descriptor before start")
++	}
++	if err = m.Start(); err != nil {
++		t.Fatal(err)
++	}
++	defer m.Stop()
++	first, err := m.Endpoint()
++	if err != nil {
++		t.Fatal(err)
++	}
++	repeat, err := m.Endpoint()
++	if err != nil || repeat != first || m.endpointSequence != 1 {
++		t.Fatal("GET must not resign/increment")
++	}
++	m.mu.Lock()
++	initial := m.endpointAdvertisedAt
++	err = m.refreshEndpointLocked(initial.Add(30 * time.Second))
++	sequence := m.endpointSequence
++	second := m.endpoint
++	m.mu.Unlock()
++	if err != nil || sequence != 2 || second == first {
++		t.Fatal("endpoint refresh did not advance", err)
++	}
++	m.mu.Lock()
++	if rollback := m.refreshEndpointLocked(initial.Add(-time.Second)); rollback == nil || m.endpointSequence != 2 {
++		m.mu.Unlock()
++		t.Fatal("wall clock rollback altered descriptor")
++	}
++	goodSigner := m.config.SignDigest
++	m.config.SignDigest = func([]byte) ([]byte, error) { return nil, errors.New("fixture signing failure") }
++	err = m.refreshEndpointLocked(initial.Add(60 * time.Second))
++	unchanged := m.endpoint == second && m.endpointSequence == 2
++	m.config.SignDigest = goodSigner
++	m.endpointAdvertisedAt = time.Now().Add(-MeshAdvertisementTTL - time.Second)
++	m.mu.Unlock()
++	if err == nil || !unchanged {
++		t.Fatal("failed refresh changed endpoint lease")
++	}
++	if _, err = m.Endpoint(); !errors.Is(err, ErrMeshUnavailable) {
++		t.Fatal("expired descriptor remains available")
++	}
++	m.Stop()
++	if _, err = m.Endpoint(); !errors.Is(err, ErrMeshUnavailable) {
++		t.Fatal("descriptor after stop")
++	}
++	other, err := NewMesh(config)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer other.Stop()
++	if other.bootID == m.bootID {
++		t.Fatal("restart reused boot")
++	}
++	config.PublicGatewayOrigin = ""
++	disabled, err := NewMesh(config)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer disabled.Stop()
++	if err = disabled.Start(); err != nil {
++		t.Fatal(err)
++	}
++	if _, err = disabled.Endpoint(); !errors.Is(err, ErrMeshEndpointDisabled) {
++		t.Fatal("legacy mesh should not publish an endpoint")
++	}
++}
+--- before/node/browserrelay/testdata/mesh-endpoint-vector.json
++++ after/node/browserrelay/testdata/mesh-endpoint-vector.json
+@@ -0,0 +1,11 @@
++{
++  "digest": "813a1a293c43e353a78e5663aecea9cddcd97fb037b8806a95cdd083502c2226",
++  "domain": "cypher-browser-mesh-endpoint-v1\u0000",
++  "envelope": {
++    "payloadBase64": "eyJ2ZXJzaW9uIjoxLCJuZXR3b3JrIjp7ImNoYWluSWQiOjEwMTAxOTE5LCJnZW5lc2lzSGFzaCI6IjB4MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiJ9LCJlbm9kZSI6ImVub2RlOi8vNzliZTY2N2VmOWRjYmJhYzU1YTA2Mjk1Y2U4NzBiMDcwMjliZmNkYjJkY2UyOGQ5NTlmMjgxNWIxNmY4MTc5ODQ4M2FkYTc3MjZhM2M0NjU1ZGE0ZmJmYzBlMTEwOGE4ZmQxN2I0NDhhNjg1NTQxOTljNDdkMDhmZmIxMGQ0YjhAMTI3LjAuMC4xOjMwNDQ1P2Rpc2Nwb3J0PTAiLCJzb3VyY2VJZCI6ImNvbW1vbi1hIiwiZ2F0ZXdheU9yaWdpbiI6Imh0dHBzOi8vZ2F0ZXdheS5leGFtcGxlLm9yZyIsImJvb3RJZCI6IjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2Iiwic2VxdWVuY2UiOjEsImlzc3VlZEF0IjoxNzAwMDAwMDAwMDAwLCJleHBpcmVzQXQiOjE3MDAwMDAxMjAwMDB9",
++    "signatureHex": "66f0bd687a5707851429158b2eb08d898e1075482ea54dd2f8fd8cbfa6295136268da3124b7d3856e0b394b82102f2f8f12ae668dea531eee8ee1c4c5f60710a01"
++  },
++  "nodeId": "c0a6c424ac7157ae408398df7e5f4552091a69125d5dfcb7b8c2659029395bdf",
++  "payloadUTF8": "{\"version\":1,\"network\":{\"chainId\":10101919,\"genesisHash\":\"0x2222222222222222222222222222222222222222222222222222222222222222\"},\"enode\":\"enode://79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798483ada7726a3c4655da4fbfc0e1108a8fd17b448a68554199c47d08ffb10d4b8@127.0.0.1:30445?discport=0\",\"sourceId\":\"common-a\",\"gatewayOrigin\":\"https://gateway.example.org\",\"bootId\":\"66666666666666666666666666666666\",\"sequence\":1,\"issuedAt\":1700000000000,\"expiresAt\":1700000120000}",
++  "testPrivateScalar": "0000000000000000000000000000000000000000000000000000000000000001"
++}

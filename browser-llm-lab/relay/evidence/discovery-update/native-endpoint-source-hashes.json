@@ -1,0 +1,13 @@
+{
+  "nativeHead": "f8ee241a2cb2e813589df5d0dbe3dba93e0734d7",
+  "files": {
+    "node/browserrelay/mesh_protocol.go": "0e758d46ac34e9e8a0cfd18d636e64d90ecdd445d2cb545b8b436a783b73105f",
+    "node/browserrelay/mesh.go": "6492b83e56c9708b02ca5d92242445c3f6304d466afc23c59ca255a434b7cecc",
+    "node/browserrelay/mesh_test.go": "c940b54cec160445ebb2d85e409c6511cdfa0dd368ed8e12be634774b5d2cc67",
+    "cmd/cypher/browser_mesh.go": "68528c369d5f9939cfe552c093a9950deb16b448f394e70b9738c2b0d009df59",
+    "cmd/cypher/browser_mesh_test.go": "0ee7a5137208f5e7663c696c1854f6da069846cdece7f766940d0be0bc4f6b4e",
+    "cmd/cypher/browser_public_relay.go": "b237c8e6e727405141758883138898d563fc5722ce6ac1dbf72d27dfc34ff930",
+    "cmd/cypher/browser_public_relay_test.go": "afbf7b98671c65a51fcc07b50cf1fb3f2169ff369dc90abfa2b59e32a7903268",
+    "node/browserrelay/testdata/mesh-endpoint-vector.json": "5dd7b445cc6a044ff3d501ec2c3e78c9e5305792c56c7ef6aaa48f36c8da6508"
+  }
+}

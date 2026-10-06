@@ -1,0 +1,7 @@
+PASS Two independent public UI pages initially OFF with no admission and no horizontal overflow
+PASS Actual desktop/mobile UI shows applied /40 Common circuit capacity, shared80 session explanation and unchanged /3 RTC peers
+PASS Actual UI Common1/1, browser peers and ACK counters increased from initial zero
+PASS Actual received/sent/ACK events animate map pixels; every connected browser is represented without invented country coordinates
+PASS Desktop1440 and mobile390 active UI screenshots saved with no horizontal overflow
+PASS Owned Node OFF shows Common0/1 and peers0; Home navigation and reload do not restart participation
+PASS /tmp/cypher-mesh-capacity-20261003/evidence/capacity-public-ui/report.json

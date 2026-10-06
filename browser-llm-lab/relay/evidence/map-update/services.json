@@ -1,0 +1,25 @@
+{
+  "at": "2026-10-03T06:04:58.602507+00:00",
+  "check": "relay/start-managed.sh check",
+  "checkResult": [
+    "cypher-browser-mesh-a: online, pid=3088210",
+    "cypher-browser-mesh-b: online, pid=3088211",
+    "cypher-header-turn: online, pid=3068233",
+    "cypher-browser-mesh-gateway: online, pid=3182546"
+  ],
+  "pidFiles": [
+    {
+      "name": "server",
+      "pid": 3182526
+    },
+    {
+      "name": "cypher-browser-mesh-a",
+      "pid": 3088210
+    },
+    {
+      "name": "cypher-browser-mesh-b",
+      "pid": 3088211
+    }
+  ],
+  "nativeAndTURNUnchanged": true
+}

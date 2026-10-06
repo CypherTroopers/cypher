@@ -1,0 +1,106 @@
+{
+  "status": "PASS_LOCAL_DEPLOYMENT_REMOTE_USER_SERVER_NOT_VERIFIED",
+  "date": "2026-10-03",
+  "network": {
+    "chainId": 10101919,
+    "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+  },
+  "publicOrigin": "https://ai-test.make-cph-great-again.community",
+  "sourceWss": "wss://ai-test.make-cph-great-again.community/relay/v1/mesh/source",
+  "uiAutomaticCommonCount": "1 to 2 without OFF/ON; dedicated source removed after test",
+  "rawProofA": {
+    "sender": "A",
+    "receiver": "B",
+    "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+    "seq": 19,
+    "bytes": 7734,
+    "digest": "437bfca6ac4b4fbd21356a88c4169d115fc712f51e42aa14beabee9d4341c27c",
+    "bytesEqual": true,
+    "acknowledgementMatched": true,
+    "path": "direct",
+    "samplePolicy": {
+      "minimumRawBytes": 1024,
+      "minimumSequence": 2
+    },
+    "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+  },
+  "rawProofC": {
+    "sender": "C",
+    "receiver": "B",
+    "circuitId": "e7d9f174ec6ae7c93af4aa7344d0700f",
+    "seq": 19,
+    "bytes": 7734,
+    "digest": "63677df12e705c6f3a54194234849c45b1ba85dbe06f8ade39e6f37a616f8557",
+    "bytesEqual": true,
+    "acknowledgementMatched": true,
+    "path": "direct",
+    "samplePolicy": {
+      "minimumRawBytes": 1024,
+      "minimumSequence": 2
+    },
+    "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+  },
+  "nativeReceivedBytes": {
+    "A": 114509,
+    "C": 9496
+  },
+  "chainHeights": {
+    "start": 384,
+    "first": 391,
+    "offDrain": 444,
+    "replacement": 576
+  },
+  "renewalSoak": {
+    "elapsedMs": 130043,
+    "status": "PASS",
+    "actualLlMHardwareLoad": false
+  },
+  "sameHostOnly": true,
+  "osNetworkNamespaceIsolation": false,
+  "webTests": {
+    "pass": 348,
+    "fail": 0,
+    "optionalTurnSkip": 3
+  },
+  "nativeRace": "PASS",
+  "normalMakeCypher": "PASS",
+  "notRun": [
+    "vmi3586715 remote server update/connection",
+    "different physical devices/access networks",
+    "actual phone lifecycle",
+    "TURN actual path for this revision",
+    "macOS/Windows build",
+    "new uplink 30 minute soak",
+    "20 physical Common/RTC sustained performance",
+    "actual LLM hardware concurrency"
+  ],
+  "cleanup": {
+    "status": "PASS",
+    "dedicatedCommonPid": 3394804,
+    "dedicatedSourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+    "dedicatedDirectoryRemoved": true,
+    "testKeyConfigDBSocketRemoved": true,
+    "testCommonExitMs": 210,
+    "gatewayConfigSourcesBefore": 2,
+    "gatewayConfigSourcesAfter": 1,
+    "remainingSources": [
+      "common-mine"
+    ],
+    "inspection": "Loopback8091 bounded publicconfig projection with permittedOrigin. Python HTTPS cleanup preflight had CDN403 before process changes; actual public Chrome acceptance PASS."
+  },
+  "existingProcessesUnchanged": true,
+  "binarySha256": "c1de58cd90029433be02658bb08a463bed78a3fadddddd12136046c1e067f059",
+  "patchSha256": "6acdf2303b986257fd84ee9772168bf3c20f5f54374574377dfbcaa692ecf8a0",
+  "distributionArchive": "/root/cypher/browser-llm-lab/.runtime/releases/source-uplink-20261003/common-source-uplink-linux-amd64-20261003.tar.gz",
+  "archiveSha256": "2eafdb8ee35530def380a4a76d30e42f977f702f3c362e8b213ce25b8f5456a9",
+  "limits": {
+    "gatewaySources": 32,
+    "sourcesPerIp": 4,
+    "sharedGatewayNativeLeases": 80,
+    "gatewayConnections": 384,
+    "browserCommons": 20,
+    "browserRtcPeers": 20,
+    "sharedWorkerCircuits": 40
+  },
+  "importantScope": "Hop ACK proves browser acceptance only. Initial and replacement native peer authentication/chain hashes are separately measured. AI pause after finalCanonical can import pre-received buffers; later final head is not new transfer proof."
+}

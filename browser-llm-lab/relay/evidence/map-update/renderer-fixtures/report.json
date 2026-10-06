@@ -1,0 +1,2003 @@
+{
+  "kind": "SYNTHETIC_RENDERER_FIXTURES",
+  "syntheticCoordinates": true,
+  "realMeshParticipation": false,
+  "startedAt": "2026-10-03T05:52:46.443Z",
+  "status": "PASS",
+  "cases": [
+    {
+      "name": "390: JP self and US peer",
+      "layout": {
+        "width": 364,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 310.8,
+            "y": 146.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 248,
+              "y": 164.4,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "us-peer",
+            "self": false,
+            "label": "Peer us-pee",
+            "geo": {
+              "countryCode": "US",
+              "label": "United States",
+              "lat": 38,
+              "lon": -97,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 91.46666666666667,
+              "y": 144.53333333333333
+            },
+            "x": 91.46666666666667,
+            "y": 144.53333333333333,
+            "pinSize": 30,
+            "countryLabel": "US · United States",
+            "labelBox": {
+              "x": 37.46666666666667,
+              "y": 162.53333333333333,
+              "width": 108,
+              "height": 34
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "us-peer",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 310.8,
+                "y": 146.4
+              },
+              "control": {
+                "x": 201.13333333333333,
+                "y": 89.6980142203545
+              },
+              "b": {
+                "x": 91.46666666666667,
+                "y": 144.53333333333333
+              }
+            }
+          }
+        ],
+        "dock": null,
+        "mapBounds": {
+          "x": 14,
+          "y": 96,
+          "width": 336,
+          "height": 168
+        }
+      },
+      "geometry": {
+        "width": 390,
+        "scrollWidth": 390,
+        "canvas": {
+          "width": 364,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "390: late burst animates during previous badge lifetime",
+      "drawDelta": 5
+    },
+    {
+      "name": "390: event advances actual canvas; idle scheduler stops",
+      "activityCount": 1,
+      "drawDelta": 6
+    },
+    {
+      "name": "390: self and two distinct peers in Japan",
+      "layout": {
+        "width": 364,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 310.8,
+            "y": 124.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 190.8,
+              "y": 150.4,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-a",
+            "self": false,
+            "label": "Peer jp-a",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 288.8,
+            "y": 162.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 190.8,
+              "y": 236.4,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-b",
+            "self": false,
+            "label": "Peer jp-b",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 332.8,
+            "y": 162.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 248,
+              "y": 64.4,
+              "width": 108,
+              "height": 34
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "jp-a",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 310.8,
+                "y": 124.4
+              },
+              "control": {
+                "x": 299.8,
+                "y": 92.4
+              },
+              "b": {
+                "x": 288.8,
+                "y": 162.4
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "jp-b",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 310.8,
+                "y": 124.4
+              },
+              "control": {
+                "x": 321.8,
+                "y": 92.4
+              },
+              "b": {
+                "x": 332.8,
+                "y": 162.4
+              }
+            }
+          }
+        ],
+        "dock": null,
+        "mapBounds": {
+          "x": 14,
+          "y": 96,
+          "width": 336,
+          "height": 168
+        }
+      },
+      "geometry": {
+        "width": 390,
+        "scrollWidth": 390,
+        "canvas": {
+          "width": 364,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "390: maximum four same-country browsers",
+      "layout": {
+        "width": 364,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 290.8,
+            "y": 128.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 8,
+              "y": 57,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-a",
+            "self": false,
+            "label": "Peer jp-a",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 330.8,
+            "y": 128.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 248,
+              "y": 57,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-b",
+            "self": false,
+            "label": "Peer jp-b",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 290.8,
+            "y": 166.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 8,
+              "y": 310,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-c",
+            "self": false,
+            "label": "Peer jp-c",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 330.8,
+            "y": 166.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 248,
+              "y": 310,
+              "width": 108,
+              "height": 34
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "jp-a",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 290.8,
+                "y": 128.4
+              },
+              "control": {
+                "x": 310.8,
+                "y": 96.4
+              },
+              "b": {
+                "x": 330.8,
+                "y": 128.4
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "jp-b",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 290.8,
+                "y": 128.4
+              },
+              "control": {
+                "x": 290.8,
+                "y": 96.4
+              },
+              "b": {
+                "x": 290.8,
+                "y": 166.4
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "jp-c",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 290.8,
+                "y": 128.4
+              },
+              "control": {
+                "x": 310.8,
+                "y": 96.4
+              },
+              "b": {
+                "x": 330.8,
+                "y": 166.4
+              }
+            }
+          }
+        ],
+        "dock": null,
+        "mapBounds": {
+          "x": 14,
+          "y": 96,
+          "width": 336,
+          "height": 168
+        }
+      },
+      "geometry": {
+        "width": 390,
+        "scrollWidth": 390,
+        "canvas": {
+          "width": 364,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "390: unknown peer remains visible",
+      "layout": {
+        "width": 364,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 100.4
+            },
+            "x": 310.8,
+            "y": 100.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 248,
+              "y": 118.4,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "us-peer",
+            "self": false,
+            "label": "Peer us-pee",
+            "geo": {
+              "countryCode": "US",
+              "label": "United States",
+              "lat": 38,
+              "lon": -97,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 91.46666666666667,
+              "y": 98.53333333333333
+            },
+            "x": 91.46666666666667,
+            "y": 98.53333333333333,
+            "pinSize": 30,
+            "countryLabel": "US · United States",
+            "labelBox": {
+              "x": 37.46666666666667,
+              "y": 116.53333333333333,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "unknown-peer",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 38,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 55,
+              "y": 299,
+              "width": 119,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 20,
+              "y": 296,
+              "width": 158,
+              "height": 44
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "us-peer",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 310.8,
+                "y": 100.4
+              },
+              "control": {
+                "x": 201.13333333333333,
+                "y": 43.698014220354494
+              },
+              "b": {
+                "x": 91.46666666666667,
+                "y": 98.53333333333333
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "unknown-peer",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 310.8,
+                "y": 100.4
+              },
+              "control": {
+                "x": 174.4,
+                "y": 13.781295322545944
+              },
+              "b": {
+                "x": 38,
+                "y": 314
+              }
+            }
+          }
+        ],
+        "dock": {
+          "x": 12,
+          "y": 268,
+          "width": 340,
+          "height": 84,
+          "label": "UNLOCATED · NOT PLACED ON THE MAP"
+        },
+        "mapBounds": {
+          "x": 14,
+          "y": 50,
+          "width": 336,
+          "height": 168
+        }
+      },
+      "geometry": {
+        "width": 390,
+        "scrollWidth": 390,
+        "canvas": {
+          "width": 364,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "390: unknown self and peer, one known peer",
+      "layout": {
+        "width": 364,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "us-peer",
+            "self": false,
+            "label": "Peer us-pee",
+            "geo": {
+              "countryCode": "US",
+              "label": "United States",
+              "lat": 38,
+              "lon": -97,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 91.46666666666667,
+              "y": 98.53333333333333
+            },
+            "x": 91.46666666666667,
+            "y": 98.53333333333333,
+            "pinSize": 30,
+            "countryLabel": "US · United States",
+            "labelBox": {
+              "x": 37.46666666666667,
+              "y": 116.53333333333333,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 38,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 55,
+              "y": 299,
+              "width": 119,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 20,
+              "y": 296,
+              "width": 158,
+              "height": 44
+            }
+          },
+          {
+            "id": "unknown-peer",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 204,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 221,
+              "y": 299,
+              "width": 119,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 186,
+              "y": 296,
+              "width": 158,
+              "height": 44
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "us-peer",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 314
+              },
+              "control": {
+                "x": 64.73333333333333,
+                "y": 43.03301301393737
+              },
+              "b": {
+                "x": 91.46666666666667,
+                "y": 98.53333333333333
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "unknown-peer",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 314
+              },
+              "control": {
+                "x": 121,
+                "y": 272.5
+              },
+              "b": {
+                "x": 204,
+                "y": 314
+              }
+            }
+          }
+        ],
+        "dock": {
+          "x": 12,
+          "y": 268,
+          "width": 340,
+          "height": 84,
+          "label": "UNLOCATED · NOT PLACED ON THE MAP"
+        },
+        "mapBounds": {
+          "x": 14,
+          "y": 50,
+          "width": 336,
+          "height": 168
+        }
+      },
+      "geometry": {
+        "width": 390,
+        "scrollWidth": 390,
+        "canvas": {
+          "width": 364,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "390: all four locations unknown",
+      "layout": {
+        "width": 364,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 38,
+            "y": 260,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 55,
+              "y": 245,
+              "width": 119,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 20,
+              "y": 242,
+              "width": 158,
+              "height": 44
+            }
+          },
+          {
+            "id": "unknown-a",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 204,
+            "y": 260,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 221,
+              "y": 245,
+              "width": 119,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 186,
+              "y": 242,
+              "width": 158,
+              "height": 44
+            }
+          },
+          {
+            "id": "unknown-b",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 38,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 55,
+              "y": 299,
+              "width": 119,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 20,
+              "y": 296,
+              "width": 158,
+              "height": 44
+            }
+          },
+          {
+            "id": "unknown-c",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 204,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 221,
+              "y": 299,
+              "width": 119,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 186,
+              "y": 296,
+              "width": 158,
+              "height": 44
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "unknown-a",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 260
+              },
+              "control": {
+                "x": 121,
+                "y": 218.5
+              },
+              "b": {
+                "x": 204,
+                "y": 260
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "unknown-b",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 260
+              },
+              "control": {
+                "x": 38,
+                "y": 228
+              },
+              "b": {
+                "x": 38,
+                "y": 314
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "unknown-c",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 260
+              },
+              "control": {
+                "x": 121,
+                "y": 216.3594225519414
+              },
+              "b": {
+                "x": 204,
+                "y": 314
+              }
+            }
+          }
+        ],
+        "dock": {
+          "x": 12,
+          "y": 214,
+          "width": 340,
+          "height": 138,
+          "label": "UNLOCATED · NOT PLACED ON THE MAP"
+        },
+        "mapBounds": {
+          "x": 14,
+          "y": 23,
+          "width": 336,
+          "height": 168
+        }
+      },
+      "geometry": {
+        "width": 390,
+        "scrollWidth": 390,
+        "canvas": {
+          "width": 364,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "390: 1000 transfer events remain bounded and coalesce draws",
+      "events": 1000,
+      "immediateDraws": 0,
+      "pulses": 24
+    },
+    {
+      "name": "390: OFF cancels and ignores subsequent transfer events",
+      "pendingFrame": false
+    },
+    {
+      "name": "1440: JP self and US peer",
+      "layout": {
+        "width": 1154,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 113.6
+            },
+            "x": 1008.6333333333333,
+            "y": 113.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 946.6333333333333,
+              "y": 131.6,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "us-peer",
+            "self": false,
+            "label": "Peer us-pee",
+            "geo": {
+              "countryCode": "US",
+              "label": "United States",
+              "lat": 38,
+              "lon": -97,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 273.60555555555555,
+              "y": 109.9111111111111
+            },
+            "x": 273.60555555555555,
+            "y": 109.9111111111111,
+            "pinSize": 30,
+            "countryLabel": "US · United States",
+            "labelBox": {
+              "x": 211.60555555555555,
+              "y": 127.9111111111111,
+              "width": 124,
+              "height": 34
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "us-peer",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 1008.6333333333333,
+                "y": 113.6
+              },
+              "control": {
+                "x": 641.1194444444444,
+                "y": 15.911111111111097
+              },
+              "b": {
+                "x": 273.60555555555555,
+                "y": 109.9111111111111
+              }
+            }
+          }
+        ],
+        "dock": null,
+        "mapBounds": {
+          "x": 14,
+          "y": 14,
+          "width": 1126,
+          "height": 332
+        }
+      },
+      "geometry": {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "canvas": {
+          "width": 1154,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "1440: late burst animates during previous badge lifetime",
+      "drawDelta": 5
+    },
+    {
+      "name": "1440: event advances actual canvas; idle scheduler stops",
+      "activityCount": 1,
+      "drawDelta": 6
+    },
+    {
+      "name": "1440: self and two distinct peers in Japan",
+      "layout": {
+        "width": 1154,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 113.6
+            },
+            "x": 1008.6333333333333,
+            "y": 91.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 872.6333333333333,
+              "y": 117.6,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-a",
+            "self": false,
+            "label": "Peer jp-a",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 113.6
+            },
+            "x": 986.6333333333333,
+            "y": 129.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 1020.6333333333332,
+              "y": 117.6,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-b",
+            "self": false,
+            "label": "Peer jp-b",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 113.6
+            },
+            "x": 1030.6333333333332,
+            "y": 129.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 872.6333333333333,
+              "y": 203.6,
+              "width": 124,
+              "height": 34
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "jp-a",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 1008.6333333333333,
+                "y": 91.6
+              },
+              "control": {
+                "x": 997.6333333333333,
+                "y": 59.599999999999994
+              },
+              "b": {
+                "x": 986.6333333333333,
+                "y": 129.6
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "jp-b",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 1008.6333333333333,
+                "y": 91.6
+              },
+              "control": {
+                "x": 1019.6333333333332,
+                "y": 59.599999999999994
+              },
+              "b": {
+                "x": 1030.6333333333332,
+                "y": 129.6
+              }
+            }
+          }
+        ],
+        "dock": null,
+        "mapBounds": {
+          "x": 14,
+          "y": 14,
+          "width": 1126,
+          "height": 332
+        }
+      },
+      "geometry": {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "canvas": {
+          "width": 1154,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "1440: maximum four same-country browsers",
+      "layout": {
+        "width": 1154,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 113.6
+            },
+            "x": 988.6333333333333,
+            "y": 95.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 872.6333333333333,
+              "y": 117.6,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-a",
+            "self": false,
+            "label": "Peer jp-a",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 113.6
+            },
+            "x": 1028.6333333333332,
+            "y": 95.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 1020.6333333333332,
+              "y": 117.6,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-b",
+            "self": false,
+            "label": "Peer jp-b",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 113.6
+            },
+            "x": 988.6333333333333,
+            "y": 133.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 872.6333333333333,
+              "y": 203.6,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "jp-c",
+            "self": false,
+            "label": "Peer jp-c",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 113.6
+            },
+            "x": 1028.6333333333332,
+            "y": 133.6,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 1020.6333333333332,
+              "y": 203.6,
+              "width": 124,
+              "height": 34
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "jp-a",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 988.6333333333333,
+                "y": 95.6
+              },
+              "control": {
+                "x": 1008.6333333333332,
+                "y": 63.599999999999994
+              },
+              "b": {
+                "x": 1028.6333333333332,
+                "y": 95.6
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "jp-b",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 988.6333333333333,
+                "y": 95.6
+              },
+              "control": {
+                "x": 988.6333333333333,
+                "y": 63.599999999999994
+              },
+              "b": {
+                "x": 988.6333333333333,
+                "y": 133.6
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "jp-c",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 988.6333333333333,
+                "y": 95.6
+              },
+              "control": {
+                "x": 1008.6333333333332,
+                "y": 63.599999999999994
+              },
+              "b": {
+                "x": 1028.6333333333332,
+                "y": 133.6
+              }
+            }
+          }
+        ],
+        "dock": null,
+        "mapBounds": {
+          "x": 14,
+          "y": 14,
+          "width": 1126,
+          "height": 332
+        }
+      },
+      "geometry": {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "canvas": {
+          "width": 1154,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "1440: unknown peer remains visible",
+      "layout": {
+        "width": 1154,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 1008.6333333333333,
+              "y": 86
+            },
+            "x": 1008.6333333333333,
+            "y": 86,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 946.6333333333333,
+              "y": 104,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "us-peer",
+            "self": false,
+            "label": "Peer us-pee",
+            "geo": {
+              "countryCode": "US",
+              "label": "United States",
+              "lat": 38,
+              "lon": -97,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 273.60555555555555,
+              "y": 83.33333333333333
+            },
+            "x": 273.60555555555555,
+            "y": 83.33333333333333,
+            "pinSize": 30,
+            "countryLabel": "US · United States",
+            "labelBox": {
+              "x": 211.60555555555555,
+              "y": 101.33333333333333,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "unknown-peer",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 38,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 55,
+              "y": 299,
+              "width": 233.5,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 20,
+              "y": 296,
+              "width": 272.5,
+              "height": 44
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "us-peer",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 1008.6333333333333,
+                "y": 86
+              },
+              "control": {
+                "x": 641.1194444444444,
+                "y": 10
+              },
+              "b": {
+                "x": 273.60555555555555,
+                "y": 83.33333333333333
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "unknown-peer",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 1008.6333333333333,
+                "y": 86
+              },
+              "control": {
+                "x": 523.3166666666666,
+                "y": 10
+              },
+              "b": {
+                "x": 38,
+                "y": 314
+              }
+            }
+          }
+        ],
+        "dock": {
+          "x": 12,
+          "y": 268,
+          "width": 1130,
+          "height": 84,
+          "label": "UNLOCATED · NOT PLACED ON THE MAP"
+        },
+        "mapBounds": {
+          "x": 14,
+          "y": 14,
+          "width": 1126,
+          "height": 240
+        }
+      },
+      "geometry": {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "canvas": {
+          "width": 1154,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "1440: unknown self and peer, one known peer",
+      "layout": {
+        "width": 1154,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "us-peer",
+            "self": false,
+            "label": "Peer us-pee",
+            "geo": {
+              "countryCode": "US",
+              "label": "United States",
+              "lat": 38,
+              "lon": -97,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 273.60555555555555,
+              "y": 83.33333333333333
+            },
+            "x": 273.60555555555555,
+            "y": 83.33333333333333,
+            "pinSize": 30,
+            "countryLabel": "US · United States",
+            "labelBox": {
+              "x": 211.60555555555555,
+              "y": 101.33333333333333,
+              "width": 124,
+              "height": 34
+            }
+          },
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 38,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 55,
+              "y": 299,
+              "width": 233.5,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 20,
+              "y": 296,
+              "width": 272.5,
+              "height": 44
+            }
+          },
+          {
+            "id": "unknown-peer",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 318.5,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 335.5,
+              "y": 299,
+              "width": 233.5,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 300.5,
+              "y": 296,
+              "width": 272.5,
+              "height": 44
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "us-peer",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 314
+              },
+              "control": {
+                "x": 155.80277777777778,
+                "y": 10
+              },
+              "b": {
+                "x": 273.60555555555555,
+                "y": 83.33333333333333
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "unknown-peer",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 314
+              },
+              "control": {
+                "x": 178.25,
+                "y": 243.875
+              },
+              "b": {
+                "x": 318.5,
+                "y": 314
+              }
+            }
+          }
+        ],
+        "dock": {
+          "x": 12,
+          "y": 268,
+          "width": 1130,
+          "height": 84,
+          "label": "UNLOCATED · NOT PLACED ON THE MAP"
+        },
+        "mapBounds": {
+          "x": 14,
+          "y": 14,
+          "width": 1126,
+          "height": 240
+        }
+      },
+      "geometry": {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "canvas": {
+          "width": 1154,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "1440: all four locations unknown",
+      "layout": {
+        "width": 1154,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 38,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 55,
+              "y": 299,
+              "width": 233.5,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 20,
+              "y": 296,
+              "width": 272.5,
+              "height": 44
+            }
+          },
+          {
+            "id": "unknown-a",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 318.5,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 335.5,
+              "y": 299,
+              "width": 233.5,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 300.5,
+              "y": 296,
+              "width": 272.5,
+              "height": 44
+            }
+          },
+          {
+            "id": "unknown-b",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 599,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 616,
+              "y": 299,
+              "width": 233.5,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 581,
+              "y": 296,
+              "width": 272.5,
+              "height": 44
+            }
+          },
+          {
+            "id": "unknown-c",
+            "self": false,
+            "label": "Peer unknow",
+            "geo": null,
+            "located": false,
+            "anchor": null,
+            "x": 879.5,
+            "y": 314,
+            "pinSize": 30,
+            "countryLabel": "Location unavailable",
+            "labelBox": {
+              "x": 896.5,
+              "y": 299,
+              "width": 233.5,
+              "height": 39
+            },
+            "dockBox": {
+              "x": 861.5,
+              "y": 296,
+              "width": 272.5,
+              "height": 44
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "unknown-a",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 314
+              },
+              "control": {
+                "x": 178.25,
+                "y": 243.875
+              },
+              "b": {
+                "x": 318.5,
+                "y": 314
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "unknown-b",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 314
+              },
+              "control": {
+                "x": 318.5,
+                "y": 220
+              },
+              "b": {
+                "x": 599,
+                "y": 314
+              }
+            }
+          },
+          {
+            "from": "self",
+            "to": "unknown-c",
+            "geographic": false,
+            "curve": {
+              "a": {
+                "x": 38,
+                "y": 314
+              },
+              "control": {
+                "x": 458.75,
+                "y": 220
+              },
+              "b": {
+                "x": 879.5,
+                "y": 314
+              }
+            }
+          }
+        ],
+        "dock": {
+          "x": 12,
+          "y": 268,
+          "width": 1130,
+          "height": 84,
+          "label": "UNLOCATED · NOT PLACED ON THE MAP"
+        },
+        "mapBounds": {
+          "x": 14,
+          "y": 14,
+          "width": 1126,
+          "height": 240
+        }
+      },
+      "geometry": {
+        "width": 1440,
+        "scrollWidth": 1440,
+        "canvas": {
+          "width": 1154,
+          "height": 360
+        }
+      }
+    },
+    {
+      "name": "1440: 1000 transfer events remain bounded and coalesce draws",
+      "events": 1000,
+      "immediateDraws": 0,
+      "pulses": 24
+    },
+    {
+      "name": "1440: OFF cancels and ignores subsequent transfer events",
+      "pendingFrame": false
+    },
+    {
+      "name": "390: reduced motion",
+      "layout": {
+        "width": 364,
+        "height": 360,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "label": "You",
+            "geo": {
+              "countryCode": "JP",
+              "label": "Japan",
+              "lat": 36,
+              "lon": 138,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 310.8,
+              "y": 146.4
+            },
+            "x": 310.8,
+            "y": 146.4,
+            "pinSize": 30,
+            "countryLabel": "JP · Japan",
+            "labelBox": {
+              "x": 248,
+              "y": 164.4,
+              "width": 108,
+              "height": 34
+            }
+          },
+          {
+            "id": "us-peer",
+            "self": false,
+            "label": "Peer us-pee",
+            "geo": {
+              "countryCode": "US",
+              "label": "United States",
+              "lat": 38,
+              "lon": -97,
+              "accuracy": "country"
+            },
+            "located": true,
+            "anchor": {
+              "x": 91.46666666666667,
+              "y": 144.53333333333333
+            },
+            "x": 91.46666666666667,
+            "y": 144.53333333333333,
+            "pinSize": 30,
+            "countryLabel": "US · United States",
+            "labelBox": {
+              "x": 37.46666666666667,
+              "y": 162.53333333333333,
+              "width": 108,
+              "height": 34
+            }
+          }
+        ],
+        "links": [
+          {
+            "from": "self",
+            "to": "us-peer",
+            "geographic": true,
+            "curve": {
+              "a": {
+                "x": 310.8,
+                "y": 146.4
+              },
+              "control": {
+                "x": 201.13333333333333,
+                "y": 89.6980142203545
+              },
+              "b": {
+                "x": 91.46666666666667,
+                "y": 144.53333333333333
+              }
+            }
+          }
+        ],
+        "dock": null,
+        "mapBounds": {
+          "x": 14,
+          "y": 96,
+          "width": 336,
+          "height": 168
+        }
+      },
+      "geometry": {
+        "width": 390,
+        "scrollWidth": 390,
+        "canvas": {
+          "width": 364,
+          "height": 360
+        }
+      }
+    }
+  ],
+  "screenshots": [
+    "/tmp/cypher-map-fixtures-regional/390-jp-us-idle.png",
+    "/tmp/cypher-map-fixtures-regional/390-jp-us-transfer.png",
+    "/tmp/cypher-map-fixtures-regional/390-same-country.png",
+    "/tmp/cypher-map-fixtures-regional/390-same-country-four.png",
+    "/tmp/cypher-map-fixtures-regional/390-unknown-peer.png",
+    "/tmp/cypher-map-fixtures-regional/390-unknown-self-and-peer.png",
+    "/tmp/cypher-map-fixtures-regional/390-all-unknown.png",
+    "/tmp/cypher-map-fixtures-regional/390-off.png",
+    "/tmp/cypher-map-fixtures-regional/1440-jp-us-idle.png",
+    "/tmp/cypher-map-fixtures-regional/1440-jp-us-transfer.png",
+    "/tmp/cypher-map-fixtures-regional/1440-same-country.png",
+    "/tmp/cypher-map-fixtures-regional/1440-same-country-four.png",
+    "/tmp/cypher-map-fixtures-regional/1440-unknown-peer.png",
+    "/tmp/cypher-map-fixtures-regional/1440-unknown-self-and-peer.png",
+    "/tmp/cypher-map-fixtures-regional/1440-all-unknown.png",
+    "/tmp/cypher-map-fixtures-regional/1440-off.png",
+    "/tmp/cypher-map-fixtures-regional/390-reduced-motion-activity.png"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "sessionAdmissions": 0,
+  "sourceHashes": {
+    "relay-map.js": "9a11d04588d5ab90f4787898c82613e5bebcd3912d9635fde5ce07f03de93c1b",
+    "relay.css": "0e82f9759abb0149b8a453a6be8f69f366d40c63eacce4dec7131402c5e7affa"
+  },
+  "finalHashes": {
+    "relay-map.js": "9a11d04588d5ab90f4787898c82613e5bebcd3912d9635fde5ce07f03de93c1b",
+    "relay.css": "0e82f9759abb0149b8a453a6be8f69f366d40c63eacce4dec7131402c5e7affa"
+  },
+  "finishedAt": "2026-10-03T05:53:16.324Z"
+}

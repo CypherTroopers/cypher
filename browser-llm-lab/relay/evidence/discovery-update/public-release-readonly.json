@@ -1,0 +1,136 @@
+{
+  "status": "PASS",
+  "at": "2026-10-03T17:04:13.563Z",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "assets": [
+    {
+      "path": "public/mesh-discovery-client.js",
+      "sha256": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+      "bytes": 20900,
+      "contentType": "text/javascript; charset=utf-8",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/mesh-discovery.js",
+      "sha256": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+      "bytes": 17541,
+      "contentType": "text/javascript; charset=utf-8",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/mesh-controller.js",
+      "sha256": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+      "bytes": 29489,
+      "contentType": "text/javascript; charset=utf-8",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/mesh-worker.js",
+      "sha256": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+      "bytes": 44386,
+      "contentType": "text/javascript; charset=utf-8",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/relay-protocol.js",
+      "sha256": "ac2aed7970a424d493cbe21629efbc99aacb0d961b9d6b520985c560768e9359",
+      "bytes": 16496,
+      "contentType": "text/javascript; charset=utf-8",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/mesh-protocol.js",
+      "sha256": "56c97a098827a6d85426b6a50442b17d52ddb3296614d75a53b68c306909e50b",
+      "bytes": 8519,
+      "contentType": "text/javascript; charset=utf-8",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/relay-ui.js",
+      "sha256": "da00b58c06d02a658a4d025a9eb41967ed44008fee759b3246099cb536c6f854",
+      "bytes": 10678,
+      "contentType": "text/javascript; charset=utf-8",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/vendor/mesh-crypto-provenance.json",
+      "sha256": "9102f2ab7416c1cc22db06824362759b05745d4c6c2e79f9e570af7f361494bd",
+      "bytes": 540,
+      "contentType": "application/json",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/vendor/mesh-crypto-LICENSE.txt",
+      "sha256": "27452c985616d501fb724988b2174f07955062425f8db1b5e461e9c0058b30b9",
+      "bytes": 2260,
+      "contentType": "text/plain; charset=utf-8",
+      "cacheControl": "no-store"
+    },
+    {
+      "path": "public/vendor/mesh-crypto.js",
+      "sha256": "736696fb9c856ab1dad7a639f49fbb456320d3341575d702285ca3fe407eabc6",
+      "bytes": 48291,
+      "contentType": "text/javascript; charset=utf-8",
+      "cacheControl": "no-store"
+    }
+  ],
+  "endpoints": [
+    {
+      "sourceId": "common-a",
+      "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+      "origin": "https://ai-test.make-cph-great-again.community",
+      "bootId": "6c3252991dc274c4d2311381287bfd51",
+      "sequence": 61,
+      "issuedAt": 1791047040628,
+      "expiresAt": 1791047160628,
+      "browserVerifierAccepted": true
+    },
+    {
+      "sourceId": "common-b",
+      "nodeId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+      "origin": "https://ai-test.make-cph-great-again.community",
+      "bootId": "f6f2509a39d0b53a7efa019dbee51358",
+      "sequence": 60,
+      "issuedAt": 1791047044020,
+      "expiresAt": 1791047164020,
+      "browserVerifierAccepted": true
+    }
+  ],
+  "limits": {
+    "maxSessions": 160,
+    "maxConnections": 384,
+    "maxPeers": 20,
+    "maxCommonConnections": 20,
+    "httpRequestsPerSecond": 128,
+    "httpBytesPerSecond": 1048576,
+    "sessionRequestsPerSecond": 8,
+    "sessionBytesPerSecond": 65536,
+    "admissionsPerMinute": 32,
+    "signalingBytesPerSecond": 4096,
+    "sessionLeaseMs": 300000,
+    "renewAfterMs": 120000,
+    "authTimeoutMs": 5000,
+    "maxSignalBytes": 32768,
+    "maxSignalBufferedBytes": 65536,
+    "maxIceCandidates": 64,
+    "maxNativeFrameBytes": 16384,
+    "maxNativeBufferedBytes": 65536,
+    "maxNativeResponseBytes": 16384,
+    "maxNativeStatusBytes": 65536,
+    "nativeAuthTimeoutMs": 3000,
+    "maxSessionsPerCommon": 80,
+    "nativeMetadataConcurrency": 8,
+    "nativeConfigCacheMs": 30000,
+    "nativeStatusCacheMs": 1000,
+    "nativeAdmissionsPerSecond": 1,
+    "nativeAdmissionBurst": 8,
+    "nativePingTimeoutMs": 15000,
+    "maxNativeControlBytes": 125,
+    "maxNativeControlPerSecond": 10,
+    "maxSessionsPerClient": 80,
+    "maxSignalConnectionsPerClient": 82,
+    "maxSessionTransferBytes": 104857600
+  },
+  "initialState": "OFF",
+  "sessionAdmissions": 0
+}

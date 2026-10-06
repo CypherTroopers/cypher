@@ -1,0 +1,211 @@
+{
+  "status": "PASS",
+  "at": "2026-10-03T17:01:57.785236+00:00",
+  "before": {
+    "root": [
+      {
+        "name": "cypher0",
+        "pid": 3232245,
+        "status": "online",
+        "started": 1791025748990,
+        "script": "/root/cypher/start-cypher0.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher1",
+        "pid": 3232241,
+        "status": "online",
+        "started": 1791025748887,
+        "script": "/root/cypher/start-cypher1.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher2",
+        "pid": 3232256,
+        "status": "online",
+        "started": 1791025749171,
+        "script": "/root/cypher/start-cypher2.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher3",
+        "pid": 3232273,
+        "status": "online",
+        "started": 1791025749274,
+        "script": "/root/cypher/start-cypher3.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher4",
+        "pid": 3232284,
+        "status": "online",
+        "started": 1791025749412,
+        "script": "/root/cypher/start-cypher4.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher5",
+        "pid": 3232314,
+        "status": "online",
+        "started": 1791025750047,
+        "script": "/root/cypher/start-cypher5.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher6",
+        "pid": 3232356,
+        "status": "online",
+        "started": 1791025751273,
+        "script": "/root/cypher/start-cypher6.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cyphermine",
+        "pid": 3232316,
+        "status": "online",
+        "started": 1791025750093,
+        "script": "/root/cypher/start-cyphermine.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "server",
+        "pid": 3232340,
+        "status": "online",
+        "started": 1791025750448,
+        "script": "/root/browser-llm-lab/server.py",
+        "cwd": "/root/browser-llm-lab"
+      },
+      {
+        "name": "cypher-browser-mesh-a",
+        "pid": 3298940,
+        "status": "online",
+        "started": 1791045065280,
+        "script": "/root/browser-llm-lab/.runtime/mesh-a/mesh-start.sh",
+        "cwd": "/root/browser-llm-lab/.runtime/mesh-a"
+      },
+      {
+        "name": "cypher-browser-mesh-b",
+        "pid": 3299041,
+        "status": "online",
+        "started": 1791045072962,
+        "script": "/root/browser-llm-lab/.runtime/mesh-b/mesh-start.sh",
+        "cwd": "/root/browser-llm-lab/.runtime/mesh-b"
+      }
+    ],
+    "gateway": [
+      {
+        "name": "cypher-browser-mesh-gateway",
+        "pid": 3246454,
+        "status": "online",
+        "started": 1791027758829,
+        "script": "/root/browser-llm-lab/relay/main.mjs",
+        "cwd": "/root/browser-llm-lab"
+      }
+    ]
+  },
+  "after": {
+    "root": [
+      {
+        "name": "cypher0",
+        "pid": 3232245,
+        "status": "online",
+        "started": 1791025748990,
+        "script": "/root/cypher/start-cypher0.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher1",
+        "pid": 3232241,
+        "status": "online",
+        "started": 1791025748887,
+        "script": "/root/cypher/start-cypher1.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher2",
+        "pid": 3232256,
+        "status": "online",
+        "started": 1791025749171,
+        "script": "/root/cypher/start-cypher2.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher3",
+        "pid": 3232273,
+        "status": "online",
+        "started": 1791025749274,
+        "script": "/root/cypher/start-cypher3.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher4",
+        "pid": 3232284,
+        "status": "online",
+        "started": 1791025749412,
+        "script": "/root/cypher/start-cypher4.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher5",
+        "pid": 3232314,
+        "status": "online",
+        "started": 1791025750047,
+        "script": "/root/cypher/start-cypher5.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cypher6",
+        "pid": 3232356,
+        "status": "online",
+        "started": 1791025751273,
+        "script": "/root/cypher/start-cypher6.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "cyphermine",
+        "pid": 3232316,
+        "status": "online",
+        "started": 1791025750093,
+        "script": "/root/cypher/start-cyphermine.sh",
+        "cwd": "/root/cypher"
+      },
+      {
+        "name": "server",
+        "pid": 3310792,
+        "status": "online",
+        "started": 1791046911405,
+        "script": "/root/browser-llm-lab/server.py",
+        "cwd": "/root/browser-llm-lab"
+      },
+      {
+        "name": "cypher-browser-mesh-a",
+        "pid": 3298940,
+        "status": "online",
+        "started": 1791045065280,
+        "script": "/root/browser-llm-lab/.runtime/mesh-a/mesh-start.sh",
+        "cwd": "/root/browser-llm-lab/.runtime/mesh-a"
+      },
+      {
+        "name": "cypher-browser-mesh-b",
+        "pid": 3299041,
+        "status": "online",
+        "started": 1791045072962,
+        "script": "/root/browser-llm-lab/.runtime/mesh-b/mesh-start.sh",
+        "cwd": "/root/browser-llm-lab/.runtime/mesh-b"
+      }
+    ],
+    "gateway": [
+      {
+        "name": "cypher-browser-mesh-gateway",
+        "pid": 3310826,
+        "status": "online",
+        "started": 1791046914894,
+        "script": "/root/browser-llm-lab/relay/main.mjs",
+        "cwd": "/root/browser-llm-lab"
+      }
+    ]
+  },
+  "originalEightUnchanged": true,
+  "dedicatedCommonsUnchanged": true,
+  "turnRestarted": false
+}

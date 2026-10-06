@@ -1,0 +1,102 @@
+{
+  "startedAt": 1791045063.3086832,
+  "binarySHA256": "be38686525295758caecfad9e76ddda4fc9579e3521b3651662fbf464e07052c",
+  "targets": {
+    "a": {
+      "beforePID": 3284373,
+      "beforeSHA256": "04d26386bb26ae8ca9201dc64fadcba6b2d4888886345d9628a530f5f621f438",
+      "beforeConfig": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 80,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 40,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      },
+      "backup": "/root/browser-llm-lab/.runtime/releases/mesh-discovery-v1-final/native-a",
+      "afterPID": 3298940,
+      "endpoint": {
+        "payloadBase64": "eyJ2ZXJzaW9uIjoxLCJuZXR3b3JrIjp7ImNoYWluSWQiOjEwMTAxOTE5LCJnZW5lc2lzSGFzaCI6IjB4MDAxYzgyMzlmMjVhNjk3OTMzZTJhNTQ1MTFhNTc2MjA1ZmIyMWNiYjgwZGM5NzRhZGIyOTg5NGRjODAyNTBhZCJ9LCJlbm9kZSI6ImVub2RlOi8vNTU4NGRhMGY5N2M5ZWQ5ZjI1ZDM0NjliNDFhY2JmYmMwMTA1ZjVjYzRiNTUxMjFjYzc3NWZmOGRlOGNjOTBmZTEwYmUzMTI0ZjZmMGE0ODJlODMyZDhhNGI0OGVkMDFmNzk0ZTdkYjdlZGY4YTVlNmY0MzNjYWQ2OGEyOTczYjFAMTI3LjAuMC4xOjMwNDQ1P2Rpc2Nwb3J0PTAiLCJzb3VyY2VJZCI6ImNvbW1vbi1hIiwiZ2F0ZXdheU9yaWdpbiI6Imh0dHBzOi8vYWktdGVzdC5tYWtlLWNwaC1ncmVhdC1hZ2Fpbi5jb21tdW5pdHkiLCJib290SWQiOiI2YzMyNTI5OTFkYzI3NGM0ZDIzMTEzODEyODdiZmQ1MSIsInNlcXVlbmNlIjoxLCJpc3N1ZWRBdCI6MTc5MTA0NTA3MDYyNiwiZXhwaXJlc0F0IjoxNzkxMDQ1MTkwNjI2fQ==",
+        "signatureHex": "292d9a5b664aa4f35fc9d6f2512d739b392e662b48fc8f01e91df3630cdbfc43514cdb4c2eebb120568d5fd3989f11298f4a65612edfc5e89b07e71936ea7c4000"
+      },
+      "profile": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 80,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 40,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      }
+    },
+    "b": {
+      "beforePID": 3284659,
+      "beforeSHA256": "04d26386bb26ae8ca9201dc64fadcba6b2d4888886345d9628a530f5f621f438",
+      "beforeConfig": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 80,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 40,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      },
+      "backup": "/root/browser-llm-lab/.runtime/releases/mesh-discovery-v1-final/native-b",
+      "afterPID": 3299041,
+      "endpoint": {
+        "payloadBase64": "eyJ2ZXJzaW9uIjoxLCJuZXR3b3JrIjp7ImNoYWluSWQiOjEwMTAxOTE5LCJnZW5lc2lzSGFzaCI6IjB4MDAxYzgyMzlmMjVhNjk3OTMzZTJhNTQ1MTFhNTc2MjA1ZmIyMWNiYjgwZGM5NzRhZGIyOTg5NGRjODAyNTBhZCJ9LCJlbm9kZSI6ImVub2RlOi8vNGE1NzE5MDRiMzRjNGRlZTcxNjEzODdmMjg2OTE0ZWU3OWI5NWVjZTAzMjIxZjQzMDRmMGExYjhjMGRmYjQ5ZmQ4ZmQzMThkZjgxODdiODg2YWQ0NzE2YWY0NWViZWQ4NTZlYWYzMjM1OWJmYzJlMjlmMmUwZjM4NjFhNDMyNGNAMTI3LjAuMC4xOjMwNDQ2P2Rpc2Nwb3J0PTAiLCJzb3VyY2VJZCI6ImNvbW1vbi1iIiwiZ2F0ZXdheU9yaWdpbiI6Imh0dHBzOi8vYWktdGVzdC5tYWtlLWNwaC1ncmVhdC1hZ2Fpbi5jb21tdW5pdHkiLCJib290SWQiOiJmNmYyNTA5YTM5ZDBiNTNhN2VmYTAxOWRiZWU1MTM1OCIsInNlcXVlbmNlIjoxLCJpc3N1ZWRBdCI6MTc5MTA0NTA3OTAxOCwiZXhwaXJlc0F0IjoxNzkxMDQ1MTk5MDE4fQ==",
+        "signatureHex": "647229e8d11899a0aa71e84ffc95291eb84519681a921d05a02ea8f214da61a002a5b5bf186ed9757a7471d6a5d8f8792defe02c7ad0b05c422b46a71c2d050801"
+      },
+      "profile": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 80,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 40,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      }
+    }
+  },
+  "originalProcesses": {
+    "cypher0": [
+      3232245,
+      1791025748990
+    ],
+    "cypher1": [
+      3232241,
+      1791025748887
+    ],
+    "cypher2": [
+      3232256,
+      1791025749171
+    ],
+    "cypher3": [
+      3232273,
+      1791025749274
+    ],
+    "cypher4": [
+      3232284,
+      1791025749412
+    ],
+    "cypher5": [
+      3232314,
+      1791025750047
+    ],
+    "cypher6": [
+      3232356,
+      1791025751273
+    ],
+    "cyphermine": [
+      3232316,
+      1791025750093
+    ]
+  },
+  "status": "PASS",
+  "finishedAt": 1791045079.7204165
+}

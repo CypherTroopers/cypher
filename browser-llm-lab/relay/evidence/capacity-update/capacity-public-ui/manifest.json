@@ -1,0 +1,14 @@
+{
+  "files": {
+    "screen-mobile-off.png": "ea7e163eb47b5e71d7ca0c21b6b3fdcafb3d33cf56a07be2eeba60f5673dd172",
+    "screen-desktop-off.png": "c6bc5494c4177d6529028c9a7aa9872640c4961aa7aa391081f3cc81f857fb57",
+    "screen-mobile-metrics.png": "dc5456610f6acd072d698d88197f61ae46794e6798f13fd928ec017426e9f35c",
+    "screen-mobile-active.png": "1faceb51cfa6d9f10ff393ea7a5365be115f31a6e7beb989b7c583ee6c530799",
+    "screen-desktop-metrics.png": "192c44d28d850fd886df0291c26a2cb8c6f6d4250eebfb6566a7c1058080bec3",
+    "screen-desktop-active.png": "192c44d28d850fd886df0291c26a2cb8c6f6d4250eebfb6566a7c1058080bec3",
+    "screen-mobile-map-actual-activity.png": "e026bd35c42d0768d71b1709d06f233269bb23395c4178d3231c042f3cac77c3",
+    "screen-desktop-map-actual-activity.png": "d861d073c8a5c831cdb230f1fdf71064a709d06e8051beaa988fda2dbf89fb9f",
+    "report.json": "e13c4476a062c2430ffbeccfa6b8132a60ecce385cf5a53df1720b57abfc7fdd",
+    "log.txt": "131dd39e288e3adbfd527e5789a67ff9ce8e15cb2717f5ebafbf45592642591d"
+  }
+}

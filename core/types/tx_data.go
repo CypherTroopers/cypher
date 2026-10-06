@@ -8,8 +8,8 @@ import (
 
 // TxData is the internal consensus/wire payload carried by Transaction.
 // Legacy transactions use txdata/LegacyTx. Typed transactions will add
-// AccessListTx/DynamicFeeTx/BlobTx/SetCodeTx implementations as the migration
-// progresses.
+// AccessListTx/DynamicFeeTx/BlobTx/SetCodeTx/NativeTxV1 implementations as the
+// migration progresses.
 type TxData interface {
 	txType() uint8
 	copy() TxData

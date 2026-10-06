@@ -1,0 +1,38 @@
+{
+  "cypher-mesh-final-report-runner.json": {
+    "path": "/root/browser-llm-lab/relay/evidence/soak-pre-fix/cypher-mesh-final-report-runner.json.gz",
+    "originalBytes": 5735347,
+    "originalSha256": "eb32dbafb4275272cf5c0ef106564440f7a3609fdd56831d8a060f5049203396",
+    "compressed": true
+  },
+  "cypher-mesh-final-report-events.json": {
+    "path": "/root/browser-llm-lab/relay/evidence/soak-pre-fix/cypher-mesh-final-report-events.json.gz",
+    "originalBytes": 3841801,
+    "originalSha256": "58ea71dea34953ac048c128fe498e71278f501d2ea9ff2c0e69995f250be7479",
+    "compressed": true
+  },
+  "cypher-mesh-final.log": {
+    "path": "/root/browser-llm-lab/relay/evidence/soak-pre-fix/cypher-mesh-final.log",
+    "originalBytes": 909,
+    "originalSha256": "83869d0072ab34547c084ed52f0cff425cf0e395e7bf153dd2db9a2c49f826fe",
+    "compressed": false
+  },
+  "cypher-mesh-final-audit-summary.json": {
+    "path": "/root/browser-llm-lab/relay/evidence/soak-pre-fix/cypher-mesh-final-audit-summary.json",
+    "originalBytes": 8002,
+    "originalSha256": "ffa7c57d8b7d8d605926469c3e2fe0a82ab1aa23bb25c23ce336a84791608ea6",
+    "compressed": false
+  },
+  "cypher-mesh-final-live-hashes.json": {
+    "path": "/root/browser-llm-lab/relay/evidence/soak-pre-fix/cypher-mesh-final-live-hashes.json",
+    "originalBytes": 1650,
+    "originalSha256": "1bd307e3344c6ff379d6e2a79216096453515e05351ca71efaaaab70a428e574",
+    "compressed": false
+  },
+  "cypher-mesh-after-final-cleanup.json": {
+    "path": "/root/browser-llm-lab/relay/evidence/soak-pre-fix/cypher-mesh-after-final-cleanup.json",
+    "originalBytes": 3091,
+    "originalSha256": "91090d770924db5c3f884f8eb92a1ec0c4da3e2ccd15c4ed2229fa655b4cad2a",
+    "compressed": false
+  }
+}

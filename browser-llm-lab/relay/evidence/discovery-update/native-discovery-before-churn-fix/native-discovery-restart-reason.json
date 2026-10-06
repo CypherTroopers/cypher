@@ -1,0 +1,18 @@
+{
+  "reason": "Controlled acceptance restart for reproduced late signaling to departed peer; final gateway must pass full 31-minute test",
+  "at": "2026-10-03T17:10:33.012Z",
+  "closed": [
+    {
+      "name": "A",
+      "pid": 3309096
+    },
+    {
+      "name": "B",
+      "pid": 3309265
+    },
+    {
+      "name": "C",
+      "pid": 3309559
+    }
+  ]
+}

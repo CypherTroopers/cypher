@@ -1,0 +1,160 @@
+TAP version 13
+# Subtest: mesh admission is disabled by default and operator pins are bounded
+ok 1 - mesh admission is disabled by default and operator pins are bounded
+  ---
+  duration_ms: 100.992184
+  type: 'test'
+  ...
+# Subtest: public config contains Common pins but no Unix path, token or TURN secret
+ok 2 - public config contains Common pins but no Unix path, token or TURN secret
+  ---
+  duration_ms: 46.284706
+  type: 'test'
+  ...
+# Subtest: Origin, bearer and allowlisted source enforce admission with no URL or old owner API
+ok 3 - Origin, bearer and allowlisted source enforce admission with no URL or old owner API
+  ---
+  duration_ms: 40.393544
+  type: 'test'
+  ...
+# Subtest: round-robin assigns fixed Commons and native secret is never returned
+ok 4 - round-robin assigns fixed Commons and native secret is never returned
+  ---
+  duration_ms: 58.27647
+  type: 'test'
+  ...
+# Subtest: actual Unix WebSocket preserves native hello and native frame bytes in both directions
+ok 5 - actual Unix WebSocket preserves native hello and native frame bytes in both directions
+  ---
+  duration_ms: 40.560835
+  type: 'test'
+  ...
+# Subtest: native identity mismatch revokes the browser session
+ok 6 - native identity mismatch revokes the browser session
+  ---
+  duration_ms: 19.961695
+  type: 'test'
+  ...
+# Subtest: native connect authenticates its first message, rejects query tokens and duplicate attachment
+ok 7 - native connect authenticates its first message, rejects query tokens and duplicate attachment
+  ---
+  duration_ms: 36.044792
+  type: 'test'
+  ...
+# Subtest: native close invalidates app lease and signaling; reconnect requires a new POST
+ok 8 - native close invalidates app lease and signaling; reconnect requires a new POST
+  ---
+  duration_ms: 50.37149
+  type: 'test'
+  ...
+# Subtest: native Ping waits for browser Pong, and withheld Pong is never masked by proxy autopong
+ok 9 - native Ping waits for browser Pong, and withheld Pong is never masked by proxy autopong
+  ---
+  duration_ms: 86.81273
+  type: 'test'
+  ...
+# Subtest: pending POST abandoned by browser deletes the newborn native lease
+ok 10 - pending POST abandoned by browser deletes the newborn native lease
+  ---
+  duration_ms: 120.820452
+  type: 'test'
+  ...
+# Subtest: renew and OFF propagate native bearer privately and refresh TURN credentials
+ok 11 - renew and OFF propagate native bearer privately and refresh TURN credentials
+  ---
+  duration_ms: 44.32507
+  type: 'test'
+  ...
+# Subtest: bounded native responses and frames stop abusive sources or clients
+ok 12 - bounded native responses and frames stop abusive sources or clients
+  ---
+  duration_ms: 53.900477
+  type: 'test'
+  ...
+# Subtest: peer signaling prefers another Common and enforces assigned pairs, ICE caps and no token forwarding
+ok 13 - peer signaling prefers another Common and enforces assigned pairs, ICE caps and no token forwarding
+  ---
+  duration_ms: 649.519809
+  type: 'test'
+  ...
+# Subtest: per-client concurrent admission reservations, aggregate quota and proxy metadata remain bounded
+ok 14 - per-client concurrent admission reservations, aggregate quota and proxy metadata remain bounded
+  ---
+  duration_ms: 30.04086
+  type: 'test'
+  ...
+# Subtest: duplicate JSON, extra fields, body limits and expired session revival are rejected
+ok 15 - duplicate JSON, extra fields, body limits and expired session revival are rejected
+  ---
+  duration_ms: 45.194397
+  type: 'test'
+  ...
+# Subtest: native payload counts both directions against the ON quota, and renewal does not reset it
+ok 16 - native payload counts both directions against the ON quota, and renewal does not reset it
+  ---
+  duration_ms: 518.650398
+  type: 'test'
+  ...
+# Subtest: a new native lease is released when the initial public session response has no bandwidth budget
+ok 17 - a new native lease is released when the initial public session response has no bandwidth budget
+  ---
+  duration_ms: 132.781057
+  type: 'test'
+  ...
+# Subtest: authenticated diagnostics distinguish upstream close from withheld browser Pong using fixed counters only
+ok 18 - authenticated diagnostics distinguish upstream close from withheld browser Pong using fixed counters only
+  ---
+  duration_ms: 82.475189
+  type: 'test'
+  ...
+# Subtest: country coverage includes previously omitted continents and regional neighbors
+ok 19 - country coverage includes previously omitted continents and regional neighbors
+  ---
+  duration_ms: 2.14401
+  type: 'test'
+  ...
+# Subtest: published country anchors preserve coordinate direction and country accuracy
+ok 20 - published country anchors preserve coordinate direction and country accuracy
+  ---
+  duration_ms: 9.093049
+  type: 'test'
+  ...
+# Subtest: sourced newer territory entries do not inherit a parent country position
+ok 21 - sourced newer territory entries do not inherit a parent country position
+  ---
+  duration_ms: 2.146444
+  type: 'test'
+  ...
+# Subtest: missing, Tor, retired, unsupported and malformed codes never fabricate coordinates
+ok 22 - missing, Tor, retired, unsupported and malformed codes never fabricate coordinates
+  ---
+  duration_ms: 0.804046
+  type: 'test'
+  ...
+# Subtest: all returned anchors are bounded and contain only shared country metadata
+ok 23 - all returned anchors are bounded and contain only shared country metadata
+  ---
+  duration_ms: 7.485138
+  type: 'test'
+  ...
+# Subtest: one caller cannot change the shared anchor returned for another participant
+ok 24 - one caller cannot change the shared anchor returned for another participant
+  ---
+  duration_ms: 0.406646
+  type: 'test'
+  ...
+# Subtest: country-data provenance records source licenses, byte hashes and deliberate unknowns
+ok 25 - country-data provenance records source licenses, byte hashes and deliberate unknowns
+  ---
+  duration_ms: 19.097937
+  type: 'test'
+  ...
+1..25
+# tests 25
+# suites 0
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2423.218331

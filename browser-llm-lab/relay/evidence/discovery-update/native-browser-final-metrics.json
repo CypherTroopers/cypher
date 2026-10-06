@@ -1,0 +1,255 @@
+{
+  "generatedAt": "2026-10-03T18:01:19.674805+00:00",
+  "status": "PASS",
+  "inputs": [
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/evidence/native-discovery-browser-report.json",
+      "sha256": "0ac3338ec476e23834c23718ead6a4a84717fe65f61c9b54de1866faa2caf449"
+    },
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/evidence/native-discovery-browser-report-events.json",
+      "sha256": "bfd297f002311cc13f449e7e4ae75f8c549e264efb9200d0ecae0459b442862a"
+    }
+  ],
+  "scope": {
+    "sameHostOnly": true,
+    "distinctTLSGatewayOrigins": 2,
+    "nativeBIsolated": true,
+    "realWebRTC": true,
+    "directDataInjection": false,
+    "forcedDirect": true,
+    "actualPhoneHardware": false,
+    "actualLLMRun": false,
+    "note": "Loopback TLS origins and independent Chromium processes on one host; does not establish separate geographic regions, physical mobile devices, TURN, or 20/40 simultaneous-load performance."
+  },
+  "startedAt": "2026-10-03T17:14:47.203Z",
+  "finishedAt": "2026-10-03T17:47:07.980Z",
+  "soakStartedAt": "2026-10-03T17:15:49.597Z",
+  "soakElapsedMs": 1860003,
+  "soakMinutes": 31.00005,
+  "renewalEvents": {
+    "B": 15,
+    "C": 15
+  },
+  "leaseContinuity": {
+    "B": {
+      "activeSamples": 182,
+      "unexpiredReportedLeases": true,
+      "minimumSampledRemainingMs": 181005,
+      "observedSessionGenerations": 1,
+      "observedLeaseExpiries": 16,
+      "scope": "Reported expiry progression only; this does not establish authoritative native lease existence during a stale status or 401 gap."
+    },
+    "C": {
+      "activeSamples": 182,
+      "unexpiredReportedLeases": true,
+      "minimumSampledRemainingMs": 180659,
+      "observedSessionGenerations": 1,
+      "observedLeaseExpiries": 16,
+      "scope": "Reported expiry progression only; this does not establish authoritative native lease existence during a stale status or 401 gap."
+    }
+  },
+  "blockProgress": {
+    "before": 4008,
+    "after": 4017,
+    "nearTip": true
+  },
+  "finalHeads": {
+    "a": 4017,
+    "b": 4017,
+    "reference": 4017
+  },
+  "matchingCanonicalBlockHashes": [
+    {
+      "height": 0,
+      "hash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "commonACommonBReferenceEqual": true
+    },
+    {
+      "height": 1,
+      "hash": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+      "commonACommonBReferenceEqual": true
+    },
+    {
+      "height": 1000,
+      "hash": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+      "commonACommonBReferenceEqual": true
+    },
+    {
+      "height": 4017,
+      "hash": "0x2318cf83fbaac646d54f444634ff7163756a2cef941c47ed5030f26cfb4a3089",
+      "commonACommonBReferenceEqual": true
+    }
+  ],
+  "independentRawProofs": [
+    {
+      "stage": "rawProof",
+      "sender": "A",
+      "receiver": "B",
+      "rawBytes": 529,
+      "sha256": "c0c9b7ec5efff0bb149b5f49f1157304d1604597ab5b1eae2dbf2e07b606f604",
+      "independentSentReceivedBytesEqual": true,
+      "hopReceiptDigestMatched": true,
+      "path": "direct",
+      "receiptMeaning": "bounded-hop-queue-acceptance"
+    },
+    {
+      "stage": "alternativeRawProof",
+      "sender": "C",
+      "receiver": "B",
+      "rawBytes": 570,
+      "sha256": "76da14a1ad75215771f2d495b25a8cddd1f54484f17357a3751178136316949b",
+      "independentSentReceivedBytesEqual": true,
+      "hopReceiptDigestMatched": true,
+      "path": "direct",
+      "receiptMeaning": "bounded-hop-queue-acceptance"
+    },
+    {
+      "stage": "abruptReplacementRawProof",
+      "sender": "D",
+      "receiver": "B",
+      "rawBytes": 564,
+      "sha256": "bfc8ffbf64b94d68bfcc75bf13fa07d585dfd8267ec80a7a8e250e7b18910eda",
+      "independentSentReceivedBytesEqual": true,
+      "hopReceiptDigestMatched": true,
+      "path": "direct",
+      "receiptMeaning": "bounded-hop-queue-acceptance"
+    }
+  ],
+  "naturalCircuitTTL": {
+    "status": "OBSERVED",
+    "reason": "circuit-expired",
+    "expiredCircuit": "1303f94540884a56150e020d6f643746",
+    "createdAt": 1791047744521,
+    "expiresAt": 1791049544521,
+    "eventAt": 1791049544612,
+    "successor": "ce30e73a66811cf9a99d060a588b3210",
+    "successorObservedAt": "2026-10-03T17:45:56Z",
+    "bytesReceived": 720,
+    "bytesSent": 778,
+    "configuredLifetimeMs": 1800000,
+    "observedExpiryAfterCreationMs": 1800091,
+    "expiryDetectionDelayMs": 91,
+    "successorObservationAfterExpiryMs": 11388
+  },
+  "abruptCDeathReclaimedMs": 4604,
+  "sampledResources": {
+    "sampleScope": "Observed snapshots, not continuously measured peak; appBytes is Worker application reservation accounting, not operating-system RAM.",
+    "allReportSnapshots": 377,
+    "maxObservedQueueBytes": 2520,
+    "maxObservedAppReservationBytes": 326696,
+    "browserSamples": {
+      "B": {
+        "samples": 182,
+        "maxQueueBytes": 2520,
+        "maxAppReservationBytes": 326696,
+        "maxObservedBrowserPeers": 1,
+        "maxObservedCommonAttachments": 1,
+        "maxObservedCircuits": 1,
+        "maxAccountedSessionBytes": 5431357,
+        "queueLimitBytes": 524288,
+        "appReservationLimitBytes": 4194304,
+        "configuredBrowserPeerCapacity": 20,
+        "configuredCommonAttachmentCapacity": 20,
+        "configuredCircuitCapacity": 40
+      },
+      "C": {
+        "samples": 182,
+        "maxQueueBytes": 1502,
+        "maxAppReservationBytes": 325778,
+        "maxObservedBrowserPeers": 1,
+        "maxObservedCommonAttachments": 1,
+        "maxObservedCircuits": 1,
+        "maxAccountedSessionBytes": 5354326,
+        "queueLimitBytes": 524288,
+        "appReservationLimitBytes": 4194304,
+        "configuredBrowserPeerCapacity": 20,
+        "configuredCommonAttachmentCapacity": 20,
+        "configuredCircuitCapacity": 40
+      }
+    }
+  },
+  "hopAcknowledgements": {
+    "meaning": "Peer browser bounded queue acceptance only; not Common consumption, native credit, consensus, or finality.",
+    "perBrowser": {
+      "A": {
+        "uniqueReceiptEvents": 11,
+        "rawBytesAcceptedByPeerHop": 881
+      },
+      "B": {
+        "uniqueReceiptEvents": 1361,
+        "rawBytesAcceptedByPeerHop": 24340
+      },
+      "C": {
+        "uniqueReceiptEvents": 1384,
+        "rawBytesAcceptedByPeerHop": 37152
+      },
+      "D": {
+        "uniqueReceiptEvents": 11,
+        "rawBytesAcceptedByPeerHop": 916
+      }
+    }
+  },
+  "events": {
+    "total": 11445,
+    "names": {
+      "native-connected": 5,
+      "ai_policy": 11,
+      "advertisement": 247,
+      "native_ready": 5,
+      "circuit_opening": 23,
+      "circuit_opened": 22,
+      "chunk_accepted": 5541,
+      "chunk_sent": 2767,
+      "acknowledged": 2767,
+      "circuit_closed": 19,
+      "error": 2,
+      "peer_closed": 6,
+      "session-renewed": 30
+    },
+    "nonfatalPeerErrors": [
+      {
+        "browser": "A",
+        "at": 1791047698689,
+        "code": "invalid_receipt",
+        "fatal": false
+      },
+      {
+        "browser": "C",
+        "at": 1791047731212,
+        "code": "invalid_receipt",
+        "fatal": false
+      }
+    ],
+    "runnerErrors": 0
+  },
+  "sourceHashesUnchanged": true,
+  "lifecycle": {
+    "events": [
+      {
+        "type": "visibilitychange",
+        "trusted": true,
+        "visibility": "hidden"
+      },
+      {
+        "type": "freeze",
+        "trusted": true,
+        "visibility": "hidden"
+      },
+      {
+        "type": "resume",
+        "trusted": true,
+        "visibility": "hidden"
+      },
+      {
+        "type": "visibilitychange",
+        "trusted": true,
+        "visibility": "visible"
+      }
+    ],
+    "autoRejoined": false,
+    "mobileViewport": true,
+    "actualPhoneHardware": false
+  },
+  "cleanupResolution": "/tmp/cypher-mesh-discovery-20261003/evidence/native-browser-owned-cleanup-resolution.json"
+}

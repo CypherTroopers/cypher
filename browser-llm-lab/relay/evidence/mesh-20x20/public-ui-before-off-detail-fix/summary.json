@@ -1,0 +1,245 @@
+{
+  "kind": "READ_ONLY_PUBLIC_UI_EVIDENCE_AUDIT",
+  "auditedAt": "2026-10-03T11:47:04.156Z",
+  "status": "PASS_WITH_DISPLAY_ADVISORY",
+  "sourceRun": {
+    "status": "PASS",
+    "startedAt": "2026-10-03T11:43:47.688Z",
+    "finishedAt": "2026-10-03T11:44:33.908Z",
+    "origin": "https://ai-test.make-cph-great-again.community",
+    "checkpoints": 6,
+    "report": {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/report.json",
+      "sha256": "36f7ebcc3935a50f2bed91fdb7b9cd4da231b225d6c1e3f8549124d356191c6e"
+    }
+  },
+  "scope": {
+    "normalPublicDNS": true,
+    "independentBrowserProcesses": true,
+    "controllerInjection": false,
+    "DOMInjection": false,
+    "requestInterception": false,
+    "forcedTransport": false,
+    "physicalPhone": false,
+    "viewportPhoneOnly": true,
+    "foreignPeersPossible": true,
+    "isolationClaim": false,
+    "exactEncryptedByteVerification": false,
+    "auditActions": "Read existing report and screenshot files; write this summary only. No browser admission, network request, core edit or test edit.",
+    "nativeAuthenticationAndByteProof": "Separate acceptance required; not established by this UI report",
+    "twentyRTCScale": "Separate scale report; this public UI run has one browser peer per participant",
+    "twentyCommonEndpoints": "NOT_RUN: this public UI run has two connected Commons per participant"
+  },
+  "views": {
+    "desktop": {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "httpStatus": 200,
+      "browserPID": 3246601,
+      "activeSnapshot": {
+        "browserPeers": 1,
+        "commonConnections": 2,
+        "connectedCommonSources": [
+          "common-a",
+          "common-b"
+        ],
+        "openCommonCircuits": 0,
+        "openingCommonCircuits": 0,
+        "hopReceipts": 15,
+        "acknowledged": "1.4 KiB acknowledged by peers",
+        "streamForwarded": "2.8 KiB",
+        "route": "WebRTC · direct",
+        "limits": {
+          "browserPeers": 20,
+          "commonAttachments": 20,
+          "sharedBrowserCircuits": 40,
+          "endpointCircuits": 40,
+          "perCommonCircuits": 40,
+          "perCommonSessions": 80
+        }
+      },
+      "map": {
+        "nodes": 2,
+        "countryLabels": [
+          "FR · France"
+        ],
+        "eventCountBefore": 45,
+        "eventCountAfter": 45,
+        "frameDelta": 6,
+        "pixelsChanged": true,
+        "pixelHashes": [
+          "6c7ef94d9dac4130193192a5d9ec2f532661f065595475476c2252fe71c19893",
+          "9d6abab87d32c4cd138ab00a395d61437d86ccccb8a038ab5d52182774bd2980"
+        ],
+        "syntheticCoordinates": false,
+        "syntheticEvents": false
+      },
+      "horizontalOverflow": false,
+      "ownedSessionPOSTs": 2,
+      "finalAfterReload": {
+        "state": "OFF",
+        "browserPeers": 0,
+        "commonConnections": 0,
+        "openCommonCircuits": 0,
+        "mapNodes": 0,
+        "mapPulses": 0,
+        "displayedCommonAttachmentLimit": 1
+      }
+    },
+    "mobile": {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "httpStatus": 200,
+      "browserPID": 3246758,
+      "activeSnapshot": {
+        "browserPeers": 1,
+        "commonConnections": 2,
+        "connectedCommonSources": [
+          "common-b",
+          "common-a"
+        ],
+        "openCommonCircuits": 0,
+        "openingCommonCircuits": 0,
+        "hopReceipts": 15,
+        "acknowledged": "1.4 KiB acknowledged by peers",
+        "streamForwarded": "2.8 KiB",
+        "route": "WebRTC · direct",
+        "limits": {
+          "browserPeers": 20,
+          "commonAttachments": 20,
+          "sharedBrowserCircuits": 40,
+          "endpointCircuits": 40,
+          "perCommonCircuits": 40,
+          "perCommonSessions": 80
+        }
+      },
+      "map": {
+        "nodes": 2,
+        "countryLabels": [
+          "FR · France"
+        ],
+        "eventCountBefore": 45,
+        "eventCountAfter": 74,
+        "frameDelta": 5,
+        "pixelsChanged": true,
+        "pixelHashes": [
+          "04f4a2814c008015aedea80578c7333e0f352da0d42e2a0f5a95b0b4b99fe090",
+          "be9d2f840050d7569069c16578edc1091cc24755ef069c880abc4ecf6a8ef53c"
+        ],
+        "syntheticCoordinates": false,
+        "syntheticEvents": false
+      },
+      "horizontalOverflow": false,
+      "ownedSessionPOSTs": 2,
+      "finalAfterReload": {
+        "state": "OFF",
+        "browserPeers": 0,
+        "commonConnections": 0,
+        "openCommonCircuits": 0,
+        "mapNodes": 0,
+        "mapPulses": 0,
+        "displayedCommonAttachmentLimit": 1
+      }
+    }
+  },
+  "visualInspection": {
+    "files": [
+      "screen-mobile-metrics.png",
+      "screen-mobile-active.png",
+      "screen-desktop-metrics.png"
+    ],
+    "mobileMetrics": {
+      "browserPeers": 1,
+      "commonConnections": 2,
+      "openCommonCircuits": 1,
+      "openingCommonCircuits": 0,
+      "hopReceipts": 27,
+      "acknowledged": "2.7 KiB",
+      "queue": "0 B / 512 KiB",
+      "commonWSSReceived": "14.1 KiB",
+      "peerReceived": "35.3 KiB",
+      "peerSendQueued": "36.6 KiB",
+      "connectedCommonLabels": [
+        "common-b",
+        "common-a"
+      ],
+      "primaryCountsAreIntegers": true,
+      "readableTwoColumnCards": true,
+      "noVisibleHorizontalClipping": true
+    },
+    "desktopMetrics": {
+      "browserPeers": 1,
+      "commonConnections": 2,
+      "openCommonCircuits": 1,
+      "openingCommonCircuits": 0,
+      "hopReceipts": 26
+    },
+    "mobileMap": "Distinct You and browser-peer markers with France country-estimate labels; actual activity badge visible. Common attachments are not added as browser-map pins.",
+    "timing": "The report active snapshots captured zero open circuits and 15 receipts on each participant; later metric screenshots show one open circuit and 26/27 receipts. These are separate observations during live traffic, not a single simultaneous state."
+  },
+  "advisory": {
+    "code": "OFF_PRECONFIG_COMMON_LIMIT_DISPLAY",
+    "finding": "After reload while OFF, secondary details show Common attachment limit: 1; active details correctly show 20. All primary OFF counters are zero.",
+    "source": "public/mesh-controller.js commonLimit() uses config?.limits?.maxCommonConnections || 1 before configuration is loaded.",
+    "severity": "Secondary display discrepancy; active connection counts and applied active limits pass.",
+    "actionTaken": "Recorded only; no implementation changes during ongoing parent acceptance."
+  },
+  "pageErrors": [],
+  "cleanup": [
+    {
+      "browser": "desktop",
+      "ownedPageOFF": true
+    },
+    {
+      "browser": "mobile",
+      "ownedPageOFF": true
+    }
+  ],
+  "navigationRetries": [],
+  "artifacts": [
+    {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/screen-desktop-map-actual-activity.png",
+      "sha256": "26eeae342bc9e4d22b04e842f8bf16fd0c5cf13aa9438b3375a771f69a79fcf6",
+      "sizeBytes": 563617
+    },
+    {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/screen-mobile-map-actual-activity.png",
+      "sha256": "4967b60bbf7df08581161b484edd518ffef6ba0e5f33da858e6d714e7aea72af",
+      "sizeBytes": 172066
+    },
+    {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/screen-desktop-active.png",
+      "sha256": "9e0d7954abacfd4fcf0bae2c0578c19d08553986ca703579e818e1191303daab",
+      "sizeBytes": 563736
+    },
+    {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/screen-desktop-metrics.png",
+      "sha256": "0dedd02bfeb12d57968ff6ed4f072d63caea2ba5ae37f1ec532410a4403dce70",
+      "sizeBytes": 563663
+    },
+    {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/screen-mobile-active.png",
+      "sha256": "6b08a165ae34b515b247a0a46139624d4a9e69c5fbbdf54617d7ab856fd925a5",
+      "sizeBytes": 171949
+    },
+    {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/screen-mobile-metrics.png",
+      "sha256": "2108615d14fd88302477aeb35c00f1189b01df1e5fa5b618ee8d2b7f0d416a89",
+      "sizeBytes": 121423
+    },
+    {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/screen-desktop-off.png",
+      "sha256": "206ae029d5cadf29c9171a1fea95bf98e1262124b6f887fc06d3da5cccda90d2",
+      "sizeBytes": 558377
+    },
+    {
+      "path": "/tmp/cypher-mesh-20x20-20261003/evidence/public-ui/screen-mobile-off.png",
+      "sha256": "acfddbc6b305087c2fe48f2721e4bc2594878a19d3261c228bb227a01d5cbf62",
+      "sizeBytes": 169955
+    }
+  ]
+}

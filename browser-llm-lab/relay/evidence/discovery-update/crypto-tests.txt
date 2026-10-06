@@ -1,0 +1,37 @@
+✔ vendored crypto artifact matches deterministic build provenance and exact pinned package versions (16.117922ms)
+✔ independent Cypher Go crypto vector verifies exact native signature, recovery ID, Keccak domain and node identity (28.487409ms)
+✔ native advertisements authenticate complete signed bytes and reject forged signatures and invalid curve points (60.78656ms)
+✔ fixed endpoint descriptor signed by Go matches the browser exact bytes and signature (8.448621ms)
+✔ signed payload whitespace stays exact and duplicate decoded keys, null or unknown fields are rejected (18.752484ms)
+✔ public HTTPS origins reject credentials, URL paths, queries, alias encodings, local and special networks (1.812312ms)
+✔ endpoint claims bind network, identity, source, exact origin, process boot and sequence (42.060676ms)
+✔ endpoint TTL, future-clock skew, raw/envelope bounds are finite (38.327299ms)
+✔ RAM endpoint cache rejects sequence rollback, same-sequence mutation and old-process replay (83.549166ms)
+✔ cache cap rejects new identities without evicting current routes and bounds restart tombstones (76.313612ms)
+✔ browser ephemeral identities are random RAM keys; signed records bind key, peer/session and rendezvous (37.700963ms)
+✔ browser signature does not claim native affiliation and native records cannot become browser records (14.065784ms)
+✔ signed SDP and ICE bind sender generation and recipient; tampered recovery/signature and future/stale records fail (82.045759ms)
+✔ signal schema rejects unknown fields, unbounded SDP/ICE, nonintegers and unsupported types (1.578237ms)
+✔ gateway challenge authenticates key possession, nonce, exact origin and signed record bytes (67.57956ms)
+✔ mesh uses distinct native protocol and DataChannel identifiers with bounded resources (2.879969ms)
+✔ endpoint configuration rejects duplicate labels, native identities and public keys (1.642255ms)
+✔ canonical enode parsing accepts literal addresses and never accepts DNS or credentials (0.622849ms)
+✔ advertisement cryptographic verification preserves exact signed payload bytes (23.943062ms)
+✔ advertisements reject other networks, forged native keys, duplicate/extra fields and bad signatures (44.442837ms)
+✔ advertisement expiry, future observation, TTL and 2KiB raw bounds are enforced (36.057094ms)
+✔ native hello and route-less local advertisement require explicit context flags (5.21268ms)
+✔ native routes bind a current generation and bounded non-looping browser labels (3.564171ms)
+✔ opaque stream chunks preserve bytes and enforce canonical base64, ordered sequence format and 8KiB cap (4.419454ms)
+✔ browser FRAME and hop receipt bind both sessions, circuit and sequence; native credit is distinct (2.014579ms)
+✔ peer HELLO/heartbeat schemas and total frame bounds reject legacy or ambiguous messages (0.805679ms)
+✔ hop chunk digest independently hashes complete opaque bytes without interpreting RLPx (27.984033ms)
+✔ negotiated Common capacities admit recognized profiles and fail closed on malformed or future limits (1.783509ms)
+✔ independently signed Common advertisements are discovered without fixed operator pins (35.955645ms)
+ℹ tests 29
+ℹ suites 0
+ℹ pass 29
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 947.764302

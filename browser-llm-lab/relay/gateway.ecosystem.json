@@ -1,0 +1,19 @@
+{
+  "apps": [
+    {
+      "name": "cypher-browser-mesh-gateway",
+      "script": "/root/cypher/browser-llm-lab/relay/main.mjs",
+      "args": [
+        "/root/cypher/browser-llm-lab/relay/config.json"
+      ],
+      "cwd": "/root/cypher/browser-llm-lab",
+      "exec_mode": "fork",
+      "instances": 1,
+      "autorestart": true,
+      "max_memory_restart": "128M",
+      "restart_delay": 3000,
+      "kill_timeout": 5000,
+      "watch": false
+    }
+  ]
+}

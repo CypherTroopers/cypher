@@ -1,0 +1,60 @@
+{
+  "scope": "pure signed challenge fixture; no browser traffic or native injection",
+  "results": [
+    {
+      "clientClockOffsetMs": -10000,
+      "before": {
+        "clientSign": false,
+        "code": "stale_challenge"
+      },
+      "after": {
+        "clientSign": true,
+        "strictGatewayVerify": true
+      }
+    },
+    {
+      "clientClockOffsetMs": -1000,
+      "before": {
+        "clientSign": false,
+        "code": "stale_challenge"
+      },
+      "after": {
+        "clientSign": true,
+        "strictGatewayVerify": true
+      }
+    },
+    {
+      "clientClockOffsetMs": 0,
+      "before": {
+        "clientSign": true,
+        "strictGatewayVerify": true
+      },
+      "after": {
+        "clientSign": true,
+        "strictGatewayVerify": true
+      }
+    },
+    {
+      "clientClockOffsetMs": 6000,
+      "before": {
+        "clientSign": false,
+        "code": "stale_challenge"
+      },
+      "after": {
+        "clientSign": true,
+        "strictGatewayVerify": true
+      }
+    },
+    {
+      "clientClockOffsetMs": 10000,
+      "before": {
+        "clientSign": false,
+        "code": "stale_challenge"
+      },
+      "after": {
+        "clientSign": true,
+        "strictGatewayVerify": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "socketPath": "auto",
+  "network": {
+    "chainId": 10101919,
+    "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+  },
+  "sourceId": "common-mine",
+  "mesh": {
+    "allowedOrigins": [
+      "https://ai-test.make-cph-great-again.community"
+    ],
+    "publicGatewayOrigin": "https://ai-test.make-cph-great-again.community",
+    "gatewayUplink": true
+  }
+}

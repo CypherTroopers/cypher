@@ -1,0 +1,12 @@
+{
+  "at": "2026-10-03T05:33:33.435028+00:00",
+  "head": "1e2839e95612d22b5fdc2aed5bf5b78e344f2e0b",
+  "files": {
+    "public/relay-ui.js": "f3e59a20da8a34b72e09f4e397dc01be99229ec923ae65241c42d26170093ff2",
+    "public/index.html": "cd829dd12d94704ed24fb3d741819dc5caa49c03dde6111ca6d63948e2b78304",
+    "public/mesh-worker.js": "2cf47229ee018f3f1175355a238fa14b1db126af4ad6479bce1f6b66d1103698",
+    "server.py": "1d09a414ffc2fd44137e607eeebc4f929ba8e6e585fe88832661a26170a1b014",
+    "tests/test_server.py": "3c7b80c8812cca32db49b6cfe57a240f088f5c6f7ecac03dcdce671df207dd80",
+    "tests/mesh-worker.test.mjs": "0d61f2ad5a92f952d16d3529d3143e93be2a477b2aa74af1811c3c621b8acf70"
+  }
+}

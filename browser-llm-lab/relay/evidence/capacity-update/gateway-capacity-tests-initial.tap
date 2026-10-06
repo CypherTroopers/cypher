@@ -1,0 +1,26 @@
+✔ mesh admission is disabled by default and operator pins are bounded (400.604219ms)
+✔ public config contains Common pins but no Unix path, token or TURN secret (107.397954ms)
+✔ Origin, bearer and allowlisted source enforce admission with no URL or old owner API (59.768496ms)
+✔ round-robin assigns fixed Commons and native secret is never returned (75.866161ms)
+✔ actual Unix WebSocket preserves native hello and native frame bytes in both directions (46.056561ms)
+✔ native identity mismatch revokes the browser session (26.500752ms)
+✔ native connect authenticates its first message, rejects query tokens and duplicate attachment (63.074108ms)
+✔ native close invalidates app lease and signaling; reconnect requires a new POST (88.923778ms)
+✔ native Ping waits for browser Pong, and withheld Pong is never masked by proxy autopong (117.155491ms)
+✔ pending POST abandoned by browser deletes the newborn native lease (139.805688ms)
+✔ renew and OFF propagate native bearer privately and refresh TURN credentials (344.122647ms)
+✔ bounded native responses and frames stop abusive sources or clients (221.807797ms)
+✔ peer signaling prefers another Common and enforces assigned pairs, ICE caps and no token forwarding (921.650473ms)
+✔ per-client concurrent admission reservations, aggregate quota and proxy metadata remain bounded (101.969564ms)
+✔ duplicate JSON, extra fields, body limits and expired session revival are rejected (38.477488ms)
+✔ native payload counts both directions against the ON quota, and renewal does not reset it (421.318763ms)
+✔ a new native lease is released when the initial public session response has no bandwidth budget (120.627973ms)
+✔ authenticated diagnostics distinguish upstream close from withheld browser Pong using fixed counters only (80.454188ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3960.199098

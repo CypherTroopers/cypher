@@ -55,6 +55,7 @@ func (*selfdestructStateDB) GetCommittedState(common.Address, common.Hash) commo
 	return common.Hash{}
 }
 func (*selfdestructStateDB) GetState(common.Address, common.Hash) common.Hash  { return common.Hash{} }
+func (*selfdestructStateDB) GetStorageRoot(common.Address) common.Hash         { return common.Hash{} }
 func (*selfdestructStateDB) SetState(common.Address, common.Hash, common.Hash) {}
 func (*selfdestructStateDB) HasSuicided(common.Address) bool                   { return false }
 func (*selfdestructStateDB) Exist(common.Address) bool                         { return true }

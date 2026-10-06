@@ -1,0 +1,20 @@
+{
+  "cypher-mesh-direct-report.json": {
+    "path": "/root/browser-llm-lab/relay/evidence/direct-post-fix/cypher-mesh-direct-report.json.gz",
+    "originalBytes": 734738,
+    "originalSha256": "9c09dd19e6d6d2e1a8e9f24738ef60880c34298a858d3474039af9243dbad7af",
+    "compressed": true
+  },
+  "cypher-mesh-direct-report-events.json": {
+    "path": "/root/browser-llm-lab/relay/evidence/direct-post-fix/cypher-mesh-direct-report-events.json.gz",
+    "originalBytes": 316509,
+    "originalSha256": "8a1583f4c61e8312e019db5f181f2e50200bb67e538e6c383b2493f3125d0fde",
+    "compressed": true
+  },
+  "cypher-mesh-direct.log": {
+    "path": "/root/browser-llm-lab/relay/evidence/direct-post-fix/cypher-mesh-direct.log",
+    "originalBytes": 834,
+    "originalSha256": "0b8d2ebaa1b86fe1092ee6bd4714f6116ccaba50c8c5c22c33f15a22a980a474",
+    "compressed": false
+  }
+}

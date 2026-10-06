@@ -1,0 +1,18 @@
+{
+  "changed": [
+    "tests/mesh-ui-browser.mjs",
+    "tests/mesh-protocol.test.mjs",
+    "tests/mesh-controller.test.mjs",
+    "tests/ui-state.test.mjs",
+    "tests/relay-gateway.test.mjs",
+    "tests/mesh-browser.mjs",
+    "tests/mesh-worker.test.mjs",
+    "tests/relay-map-browser.mjs",
+    "relay/verification.md",
+    "relay/gateway-operations.md",
+    "relay/capacity-update.md",
+    "relay/README.md",
+    "tests/mesh-scale-browser.mjs"
+  ],
+  "existingBaselinePreserved": true
+}

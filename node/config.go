@@ -20,6 +20,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -133,6 +134,11 @@ type Config struct {
 	// exposed.
 	HTTPModules []string
 
+	// HTTP3HandlerComposer is an opt-in, application-owned pure startup hook.
+	// Nil preserves the existing public JSON-RPC handler and shared stack.
+	// It is not a TOML/CLI field and starts no source job or listener.
+	HTTP3HandlerComposer HTTP3HandlerComposer `toml:"-"`
+
 	// HTTPTimeouts allows for customization of the timeout values used by the HTTP RPC
 	// interface.
 	HTTPTimeouts rpc.HTTPTimeouts
@@ -236,7 +242,7 @@ func (c *Config) HTTPEndpoint() string {
 	if c.HTTPHost == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s:%d", c.HTTPHost, c.HTTPPort)
+	return joinHostPort(c.HTTPHost, c.HTTPPort)
 }
 
 // DefaultHTTPEndpoint returns the HTTP endpoint used by default.
@@ -251,7 +257,15 @@ func (c *Config) WSEndpoint() string {
 	if c.WSHost == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s:%d", c.WSHost, c.WSPort)
+	return joinHostPort(c.WSHost, c.WSPort)
+}
+
+func joinHostPort(host string, port int) string {
+	host = strings.TrimSpace(host)
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = strings.TrimPrefix(strings.TrimSuffix(host, "]"), "[")
+	}
+	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
 }
 
 // DefaultWSEndpoint returns the websocket endpoint used by default.

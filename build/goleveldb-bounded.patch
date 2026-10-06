@@ -1,0 +1,1517 @@
+Additive bounded reads for the pinned github.com/syndtr/goleveldb module.
+
+Upstream: v1.0.1-0.20220721030215-126854af5e6d (revision 126854af5e6d)
+Upstream module sum: h1:vfofYNRScrDdvS342BElfbETmL1Aiz3i2t0zfRj16Hs=
+Source: browser-goleveldb-bounded-20261001 delivery, seven added Go files.
+Delivery manifest SHA256: 2f7521cbca2d61f3666d4473a1bcdd6eac7de883aec54c57ccf6af272ce971b5
+Delivery source archive SHA256: 2599e85f8a7433851c3ee215fac3c69e9ace6b778b0acde6cc8b5907ea801fae
+Existing upstream files are unchanged. Added files retain the upstream BSD license.
+
+diff --git a/leveldb/browser_bounded.go b/leveldb/browser_bounded.go
+new file mode 100644
+--- /dev/null
++++ b/leveldb/browser_bounded.go
+@@ -0,0 +1,194 @@
++// Copyright 2026 Cypher browser contributors.
++// Use of this source code is governed by the BSD-style LICENSE at the module root.
++
++package leveldb
++
++import (
++	"context"
++	"encoding/binary"
++	"errors"
++
++	"github.com/syndtr/goleveldb/leveldb/opt"
++	"github.com/syndtr/goleveldb/leveldb/readbudget"
++	"github.com/syndtr/goleveldb/leveldb/table"
++)
++
++var errBoundedInternalKey = errors.New("corrupt bounded internal key")
++
++// GetBounded is additive: ordinary Get, caches and compaction paths are unchanged.
++// Every call uses this snapshot's fixed sequence and a caller-owned aggregate
++// budget. Returned value bytes are owned. Release waits for an in-flight call;
++// synchronous file I/O is not forcibly interrupted when its context expires.
++func (snap *Snapshot) GetBounded(ctx context.Context, key []byte, ro *opt.ReadOptions, b *readbudget.Budget) ([]byte, error) {
++	if snap == nil {
++		return nil, readbudget.ErrInvalid
++	}
++	if err := b.Check(ctx); err != nil {
++		return nil, err
++	}
++	if err := b.CheckKey(uint64(len(key)), false); err != nil {
++		return nil, err
++	}
++	snap.mu.RLock()
++	defer snap.mu.RUnlock()
++	if err := b.Check(ctx); err != nil {
++		return nil, err
++	}
++	if snap.released {
++		return nil, ErrSnapshotReleased
++	}
++	if snap.db == nil || snap.elem == nil || snap.elem.seq > keyMaxSeq {
++		return nil, readbudget.ErrInvalid
++	}
++	if err := snap.db.ok(); err != nil {
++		return nil, err
++	}
++	if err := b.Alloc(ctx, uint64(len(key)+8)); err != nil {
++		return nil, err
++	}
++	ikey := make([]byte, len(key)+8)
++	copy(ikey, key)
++	binary.LittleEndian.PutUint64(ikey[len(key):], (snap.elem.seq<<8)|uint64(keyTypeSeek))
++	em, fm := snap.db.getMems()
++	if em != nil {
++		defer em.decref()
++	}
++	if fm != nil {
++		defer fm.decref()
++	}
++	for _, m := range [...]*memDB{em, fm} {
++		if m == nil {
++			continue
++		}
++		if err := b.Step(ctx); err != nil {
++			return nil, err
++		}
++		mk, mv, me := m.DB.FindBounded(ctx, ikey, b)
++		if me != nil && me != ErrNotFound {
++			return nil, me
++		}
++		if me == nil {
++			u, _, kt, err := boundedParseKey(mk)
++			if err != nil {
++				return nil, err
++			}
++			if snap.db.s.icmp.uCompare(u, key) == 0 {
++				if err := b.Check(ctx); err != nil {
++					return nil, err
++				}
++				if kt == keyTypeDel {
++					return nil, ErrNotFound
++				}
++				return b.CopyValue(ctx, mv)
++			}
++		}
++	}
++	v := snap.db.s.version()
++	defer v.release()
++	return v.getBounded(ctx, internalKey(ikey), ro, b)
++}
++
++func boundedParseKey(k []byte) ([]byte, uint64, keyType, error) {
++	if len(k) < 8 {
++		return nil, 0, 0, errBoundedInternalKey
++	}
++	n := binary.LittleEndian.Uint64(k[len(k)-8:])
++	kt := keyType(n & 255)
++	if kt > keyTypeVal {
++		return nil, 0, 0, errBoundedInternalKey
++	}
++	return k[:len(k)-8], n >> 8, kt, nil
++}
++
++// A finite scan preserves level/sequence selection while checking context on
++// non-overlapping table candidates too. It never samples seeks for compaction.
++func (v *version) getBounded(ctx context.Context, ikey internalKey, ro *opt.ReadOptions, b *readbudget.Budget) ([]byte, error) {
++	if v.closing {
++		return nil, ErrClosed
++	}
++	ukey := ikey.ukey()
++	for level, files := range v.levels {
++		if err := b.Step(ctx); err != nil {
++			return nil, err
++		}
++		found := false
++		var bestSeq uint64
++		var bestType keyType
++		var best []byte
++		for _, f := range files {
++			if err := b.Step(ctx); err != nil {
++				return nil, err
++			}
++			if len(f.imin) < 8 || len(f.imax) < 8 {
++				return nil, errBoundedInternalKey
++			}
++			if level == 0 {
++				if !f.overlaps(v.s.icmp, ukey, ukey) {
++					continue
++				}
++			} else {
++				if v.s.icmp.Compare(f.imax, ikey) < 0 {
++					continue
++				}
++				if v.s.icmp.uCompare(ukey, f.imin.ukey()) < 0 {
++					break
++				}
++			}
++			fk, fv, err := v.s.tops.findBounded(ctx, f, ikey, ro, b)
++			if err != nil && err != ErrNotFound {
++				return nil, err
++			}
++			if err == nil {
++				fu, seq, kt, err := boundedParseKey(fk)
++				if err != nil {
++					return nil, err
++				}
++				if v.s.icmp.uCompare(ukey, fu) == 0 && (!found || seq >= bestSeq) {
++					found = true
++					bestSeq = seq
++					bestType = kt
++					best = fv
++				}
++			}
++			if level > 0 {
++				break
++			}
++		}
++		if found {
++			if err := b.Check(ctx); err != nil {
++				return nil, err
++			}
++			if bestType == keyTypeDel {
++				return nil, ErrNotFound
++			}
++			return best, nil
++		}
++	}
++	if err := b.Check(ctx); err != nil {
++		return nil, err
++	}
++	return nil, ErrNotFound
++}
++
++func (t *tOps) findBounded(ctx context.Context, f *tFile, key []byte, ro *opt.ReadOptions, b *readbudget.Budget) (rk, rv []byte, err error) {
++	if err = b.Step(ctx); err != nil {
++		return nil, nil, err
++	}
++	r, err := t.s.stor.Open(f.fd)
++	if err != nil {
++		return nil, nil, err
++	}
++	defer func() {
++		closeErr := r.Close()
++		if err == nil && closeErr != nil {
++			err = closeErr
++			rk = nil
++			rv = nil
++		}
++	}()
++	if err = b.Check(ctx); err != nil {
++		return nil, nil, err
++	}
++	// All on-disk blocks are checksummed. ro does not weaken bounded admission.
++	return table.FindBounded(ctx, r, f.size, key, t.s.o.Options, b)
++}
+diff --git a/leveldb/browser_bounded_test.go b/leveldb/browser_bounded_test.go
+new file mode 100644
+--- /dev/null
++++ b/leveldb/browser_bounded_test.go
+@@ -0,0 +1,250 @@
++// Copyright 2026 Cypher browser contributors.
++// Use of this source code is governed by the BSD-style LICENSE at the module root.
++
++package leveldb
++
++import (
++	"bytes"
++	"context"
++	"errors"
++	"fmt"
++	"sync"
++	"testing"
++
++	"github.com/syndtr/goleveldb/leveldb/opt"
++	"github.com/syndtr/goleveldb/leveldb/readbudget"
++	"github.com/syndtr/goleveldb/leveldb/util"
++)
++
++func browserTestDB(t *testing.T) *DB {
++	t.Helper()
++	db, err := OpenFile(t.TempDir(), &opt.Options{WriteBuffer: 1 << 20, BlockSize: 64, Compression: opt.SnappyCompression})
++	if err != nil {
++		t.Fatal(err)
++	}
++	t.Cleanup(func() {
++		if err := db.Close(); err != nil {
++			t.Error(err)
++		}
++	})
++	return db
++}
++func TestBrowserBoundedMemtableValueBeforeCopy(t *testing.T) {
++	db := browserTestDB(t)
++	payload := bytes.Repeat([]byte("x"), 256)
++	if err := db.Put([]byte("a"), payload, nil); err != nil {
++		t.Fatal(err)
++	}
++	s, err := db.GetSnapshot()
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Release()
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	c, _ := b.WithValueLimit(32)
++	if _, err = s.GetBounded(context.Background(), []byte("a"), nil, c); !errors.Is(err, readbudget.ErrLimit) {
++		t.Fatal(err)
++	}
++	if b.Usage().AllocationBytes != 9 || b.Usage().StoredBytes != 0 {
++		t.Fatal("memtable value copied before limit", b.Usage())
++	}
++	v, err := s.Get([]byte("a"), nil)
++	if err != nil || !bytes.Equal(v, payload) {
++		t.Fatal("ordinary path changed", err)
++	}
++}
++func TestBrowserBoundedSnapshotSSTAndOwnership(t *testing.T) {
++	db := browserTestDB(t)
++	for n := 0; n < 8; n++ {
++		if err := db.Put([]byte(fmt.Sprintf("k%d", n)), bytes.Repeat([]byte{byte(n)}, 256), nil); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if err := db.CompactRange(util.Range{}); err != nil {
++		t.Fatal(err)
++	}
++	s, err := db.GetSnapshot()
++	if err != nil {
++		t.Fatal(err)
++	}
++	for n := 0; n < 8; n++ {
++		key := []byte(fmt.Sprintf("k%d", n))
++		b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++		v, err := s.GetBounded(context.Background(), key, nil, b)
++		want, we := s.Get(key, nil)
++		if err != nil || we != nil || !bytes.Equal(v, want) {
++			t.Fatal(n, err, we)
++		}
++		if b.Usage().StoredBytes == 0 {
++			t.Fatal("SST path not exercised")
++		}
++		v[0] ^= 255
++		again, err := s.Get(key, nil)
++		if err != nil || !bytes.Equal(again, want) {
++			t.Fatal("returned bytes share backing")
++		}
++	}
++	if err := db.Put([]byte("k0"), []byte("new"), nil); err != nil {
++		t.Fatal(err)
++	}
++	if err := db.Delete([]byte("k1"), nil); err != nil {
++		t.Fatal(err)
++	}
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	old, err := s.GetBounded(context.Background(), []byte("k0"), nil, b)
++	if err != nil || len(old) != 256 {
++		t.Fatal("snapshot sequence changed", err)
++	}
++	if _, err = s.GetBounded(context.Background(), []byte("missing"), nil, b); err != ErrNotFound {
++		t.Fatal(err)
++	}
++	s.Release()
++	if _, err = s.GetBounded(context.Background(), []byte("k0"), nil, b); err != ErrSnapshotReleased {
++		t.Fatal(err)
++	}
++}
++func TestBrowserBoundedConcurrentWritesAndIndependentValues(t *testing.T) {
++	db := browserTestDB(t)
++	if err := db.Put([]byte("key"), []byte("before"), nil); err != nil {
++		t.Fatal(err)
++	}
++	s, err := db.GetSnapshot()
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Release()
++	var wg sync.WaitGroup
++	for n := 0; n < 4; n++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for j := 0; j < 20; j++ {
++				b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++				v, err := s.GetBounded(context.Background(), []byte("key"), nil, b)
++				if err != nil || string(v) != "before" {
++					t.Error(err, string(v))
++					return
++				}
++				v[0] = 'X'
++			}
++		}()
++	}
++	for j := 0; j < 20; j++ {
++		if err := db.Put([]byte("key"), []byte(fmt.Sprintf("after%d", j)), nil); err != nil {
++			t.Fatal(err)
++		}
++	}
++	wg.Wait()
++}
++func TestBrowserBoundedCancelledInvalidAndRecordBudget(t *testing.T) {
++	db := browserTestDB(t)
++	s, err := db.GetSnapshot()
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Release()
++	ctx, cancel := context.WithCancel(context.Background())
++	cancel()
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	if _, err = s.GetBounded(ctx, []byte("x"), nil, b); !errors.Is(err, context.Canceled) {
++		t.Fatal(err)
++	}
++	if b.Usage() != (readbudget.Usage{}) {
++		t.Fatal(b.Usage())
++	}
++	if _, err = s.GetBounded(context.Background(), []byte("x"), nil, nil); !errors.Is(err, readbudget.ErrInvalid) {
++		t.Fatal(err)
++	}
++	l := readbudget.DefaultLimits()
++	l.MaxWork = 1
++	b, _ = readbudget.New(context.Background(), l)
++	if _, err = s.GetBounded(context.Background(), []byte("x"), nil, b); !errors.Is(err, readbudget.ErrLimit) {
++		t.Fatal(err)
++	}
++}
++
++func TestBrowserBoundedPrimitiveContextDoesNotOwnLease(t *testing.T) {
++	db := browserTestDB(t)
++	if err := db.Put([]byte("key"), []byte("value"), nil); err != nil {
++		t.Fatal(err)
++	}
++	s, err := db.GetSnapshot()
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer s.Release()
++	lease, cancelLease := context.WithCancel(context.Background())
++	defer cancelLease()
++	b, _ := readbudget.New(lease, readbudget.DefaultLimits())
++	primitive, cancel := context.WithCancel(context.Background())
++	if _, err = s.GetBounded(primitive, []byte("key"), nil, b); err != nil {
++		t.Fatal(err)
++	}
++	cancel()
++	if v, err := s.GetBounded(context.Background(), []byte("key"), nil, b); err != nil || string(v) != "value" {
++		t.Fatal("old primitive poisoned lease", err)
++	}
++	cancelLease()
++	if _, err = s.GetBounded(context.Background(), []byte("key"), nil, b); !errors.Is(err, context.Canceled) {
++		t.Fatal(err)
++	}
++}
++func TestBrowserBoundedRejectsSequenceOverflow(t *testing.T) {
++	db := browserTestDB(t)
++	fake := &Snapshot{db: db, elem: &snapshotElement{seq: keyMaxSeq + 1}}
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	if _, err := fake.GetBounded(context.Background(), []byte("key"), nil, b); !errors.Is(err, readbudget.ErrInvalid) {
++		t.Fatal(err)
++	}
++	if b.Usage() != (readbudget.Usage{}) {
++		t.Fatal(b.Usage())
++	}
++}
++
++func TestBrowserBoundedSSTNativeSeparatorsAndVersions(t *testing.T) {
++	db := browserTestDB(t)
++	keys := []string{"alpha/00000000", "charlie/00000000", "echo/00000000", "golf/00000000"}
++	for _, key := range keys {
++		if err := db.Put([]byte(key), bytes.Repeat([]byte(key), 32), nil); err != nil {
++			t.Fatal(err)
++		}
++	}
++	old, err := db.GetSnapshot()
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer old.Release()
++	a := makeInternalKey(nil, []byte(keys[0]), 1, keyTypeVal)
++	c := makeInternalKey(nil, []byte(keys[1]), 2, keyTypeVal)
++	sep := db.s.icmp.Separator(nil, a, c)
++	if len(sep) < 8 || len(sep) >= len(a) || db.s.icmp.Compare(a, sep) >= 0 || db.s.icmp.Compare(sep, c) >= 0 {
++		t.Fatal("fixture did not exercise a valid shortened native separator")
++	}
++	if err = db.Put([]byte(keys[0]), []byte("new version"), nil); err != nil {
++		t.Fatal(err)
++	}
++	if err = db.Delete([]byte(keys[1]), nil); err != nil {
++		t.Fatal(err)
++	}
++	if err = db.CompactRange(util.Range{}); err != nil {
++		t.Fatal(err)
++	}
++	current, err := db.GetSnapshot()
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer current.Release()
++	for _, snap := range []*Snapshot{old, current} {
++		for _, key := range keys {
++			b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++			want, we := snap.Get([]byte(key), nil) // warm the ordinary shared reader first
++			got, ge := snap.GetBounded(context.Background(), []byte(key), nil, b)
++			if (we == nil) != (ge == nil) || (we == ErrNotFound) != (ge == ErrNotFound) || !bytes.Equal(want, got) {
++				t.Fatal("native SST differential", key, we, ge)
++			}
++			if b.Usage().StoredBytes == 0 {
++				t.Fatal("native SST was not read")
++			}
++		}
++	}
++}
+diff --git a/leveldb/memdb/browser_bounded.go b/leveldb/memdb/browser_bounded.go
+new file mode 100644
+--- /dev/null
++++ b/leveldb/memdb/browser_bounded.go
+@@ -0,0 +1,61 @@
++// Copyright 2026 Cypher browser contributors.
++// Use of this source code is governed by the BSD-style LICENSE at the module root.
++
++package memdb
++
++import (
++	"context"
++	"github.com/syndtr/goleveldb/leveldb/readbudget"
++)
++
++// FindBounded follows the same skip list without changing it. Results borrow
++// append-only backing: the caller must retain its memtable reference until the
++// copy completes and must not Reset the memtable. The full-node Snapshot caller
++// holds that reference and applies the value-copy budget before allocation.
++func (p *DB) FindBounded(ctx context.Context, key []byte, b *readbudget.Budget) ([]byte, []byte, error) {
++	if p == nil {
++		return nil, nil, readbudget.ErrInvalid
++	}
++	if err := b.Check(ctx); err != nil {
++		return nil, nil, err
++	}
++	if err := b.CheckKey(uint64(len(key)), true); err != nil {
++		return nil, nil, err
++	}
++	p.mu.RLock()
++	defer p.mu.RUnlock()
++	node := 0
++	h := p.maxHeight - 1
++	for {
++		if err := b.Step(ctx); err != nil {
++			return nil, nil, err
++		}
++		next := p.nodeData[node+nNext+h]
++		cmp := 1
++		if next != 0 {
++			o := p.nodeData[next]
++			n := p.nodeData[next+nKey]
++			if err := b.CheckKey(uint64(n), true); err != nil {
++				return nil, nil, err
++			}
++			cmp = p.cmp.Compare(p.kvData[o:o+n], key)
++		}
++		if cmp < 0 {
++			node = next
++			continue
++		}
++		if cmp != 0 && h > 0 {
++			h--
++			continue
++		}
++		if next == 0 {
++			return nil, nil, ErrNotFound
++		}
++		o := p.nodeData[next]
++		end := o + p.nodeData[next+nKey]
++		if err := b.Check(ctx); err != nil {
++			return nil, nil, err
++		}
++		return p.kvData[o:end], p.kvData[end : end+p.nodeData[next+nVal]], nil
++	}
++}
+diff --git a/leveldb/readbudget/budget.go b/leveldb/readbudget/budget.go
+new file mode 100644
+--- /dev/null
++++ b/leveldb/readbudget/budget.go
+@@ -0,0 +1,171 @@
++// Copyright 2026 Cypher browser contributors.
++// Use of this source code is governed by the BSD-style LICENSE at the module root.
++
++// Package readbudget provides finite, monotonic budgets for the additive browser
++// read path. It does not bound pre-existing DB/cache memory, Go runtime overhead,
++// file descriptors, or the wall-clock duration of an in-flight synchronous I/O.
++package readbudget
++
++import (
++	"context"
++	"errors"
++	"sync"
++)
++
++var (
++	ErrLimit   = errors.New("bounded read budget exceeded")
++	ErrInvalid = errors.New("invalid bounded read budget")
++)
++
++type Limits struct {
++	MaxStoredBytes     uint64
++	MaxDecodedBytes    uint64
++	MaxValueBytes      uint64
++	MaxKeyBytes        uint64
++	MaxAllocationBytes uint64
++	MaxWork            uint64
++}
++
++// DefaultLimits are hard ceilings. Callers may only reduce them.
++func DefaultLimits() Limits { return Limits{128 << 20, 128 << 20, 32 << 20, 512, 256 << 20, 65536} }
++
++type Usage struct{ StoredBytes, DecodedBytes, AllocationBytes, Work uint64 }
++type ledger struct {
++	mu    sync.Mutex
++	usage Usage
++}
++type Budget struct {
++	ctx    context.Context
++	limits Limits
++	state  *ledger
++}
++
++func New(ctx context.Context, l Limits) (*Budget, error) {
++	if ctx == nil {
++		return nil, ErrInvalid
++	}
++	d := DefaultLimits()
++	for _, p := range [][2]uint64{{l.MaxStoredBytes, d.MaxStoredBytes}, {l.MaxDecodedBytes, d.MaxDecodedBytes}, {l.MaxValueBytes, d.MaxValueBytes}, {l.MaxKeyBytes, d.MaxKeyBytes}, {l.MaxAllocationBytes, d.MaxAllocationBytes}, {l.MaxWork, d.MaxWork}} {
++		if p[0] == 0 || p[0] > p[1] {
++			return nil, ErrInvalid
++		}
++	}
++	return &Budget{ctx: ctx, limits: l, state: &ledger{}}, nil
++}
++
++func (b *Budget) Check(ctx context.Context) error {
++	if b == nil || b.state == nil || b.ctx == nil || ctx == nil {
++		return ErrInvalid
++	}
++	if err := b.ctx.Err(); err != nil {
++		return err
++	}
++	return ctx.Err()
++}
++func (b *Budget) Limits() Limits {
++	if b == nil {
++		return Limits{}
++	}
++	return b.limits
++}
++func (b *Budget) Usage() Usage {
++	if b == nil || b.state == nil {
++		return Usage{}
++	}
++	b.state.mu.Lock()
++	defer b.state.mu.Unlock()
++	return b.state.usage
++}
++
++// WithValueLimit shares all aggregate counters and the lifetime context.
++func (b *Budget) WithValueLimit(n uint64) (*Budget, error) {
++	if b == nil || b.state == nil || n == 0 || n > b.limits.MaxValueBytes {
++		return nil, ErrInvalid
++	}
++	child := *b
++	child.limits.MaxValueBytes = n
++	return &child, nil
++}
++
++func add(v, n, max uint64) (uint64, bool) {
++	if n > max || v > max-n {
++		return v, false
++	}
++	return v + n, true
++}
++func (b *Budget) charge(ctx context.Context, stored, decoded, alloc, work uint64) error {
++	if err := b.Check(ctx); err != nil {
++		return err
++	}
++	b.state.mu.Lock()
++	defer b.state.mu.Unlock()
++	if err := b.Check(ctx); err != nil {
++		return err
++	}
++	u := b.state.usage
++	var ok bool
++	if u.StoredBytes, ok = add(u.StoredBytes, stored, b.limits.MaxStoredBytes); !ok {
++		return ErrLimit
++	}
++	if u.DecodedBytes, ok = add(u.DecodedBytes, decoded, b.limits.MaxDecodedBytes); !ok {
++		return ErrLimit
++	}
++	if u.AllocationBytes, ok = add(u.AllocationBytes, alloc, b.limits.MaxAllocationBytes); !ok {
++		return ErrLimit
++	}
++	if u.Work, ok = add(u.Work, work, b.limits.MaxWork); !ok {
++		return ErrLimit
++	}
++	b.state.usage = u
++	return nil
++}
++func (b *Budget) Step(ctx context.Context) error             { return b.charge(ctx, 0, 0, 0, 1) }
++func (b *Budget) Alloc(ctx context.Context, n uint64) error  { return b.charge(ctx, 0, 0, n, 0) }
++func (b *Budget) Stored(ctx context.Context, n uint64) error { return b.charge(ctx, n, 0, n, 0) }
++func (b *Budget) Decoded(ctx context.Context, n uint64, alloc bool) error {
++	a := uint64(0)
++	if alloc {
++		a = n
++	}
++	return b.charge(ctx, 0, n, a, 0)
++}
++func (b *Budget) CheckKey(n uint64, internal bool) error {
++	if b == nil || b.state == nil {
++		return ErrInvalid
++	}
++	max := b.limits.MaxKeyBytes
++	if internal {
++		max += 8
++	}
++	if n > max {
++		return ErrLimit
++	}
++	return nil
++}
++func (b *Budget) CopyValue(ctx context.Context, src []byte) ([]byte, error) {
++	if err := b.Check(ctx); err != nil {
++		return nil, err
++	}
++	if uint64(len(src)) > b.limits.MaxValueBytes {
++		return nil, ErrLimit
++	}
++	if err := b.Alloc(ctx, uint64(len(src))); err != nil {
++		return nil, err
++	}
++	dst := make([]byte, len(src))
++	for off := 0; off < len(src); {
++		if err := b.Step(ctx); err != nil {
++			return nil, err
++		}
++		n := len(src) - off
++		if n > 32<<10 {
++			n = 32 << 10
++		}
++		copy(dst[off:off+n], src[off:off+n])
++		off += n
++	}
++	if err := b.Check(ctx); err != nil {
++		return nil, err
++	}
++	return dst, nil
++}
+diff --git a/leveldb/readbudget/budget_test.go b/leveldb/readbudget/budget_test.go
+new file mode 100644
+--- /dev/null
++++ b/leveldb/readbudget/budget_test.go
+@@ -0,0 +1,79 @@
++package readbudget
++
++import (
++	"context"
++	"errors"
++	"sync"
++	"testing"
++)
++
++func TestBrowserBudgetLimitsScopeAndAggregate(t *testing.T) {
++	l := DefaultLimits()
++	l.MaxAllocationBytes = 64
++	b, err := New(context.Background(), l)
++	if err != nil {
++		t.Fatal(err)
++	}
++	c, err := b.WithValueLimit(32)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if _, err = c.CopyValue(context.Background(), make([]byte, 33)); !errors.Is(err, ErrLimit) {
++		t.Fatal(err)
++	}
++	if b.Usage().AllocationBytes != 0 {
++		t.Fatal("copy allocated before value admission")
++	}
++	if _, err = c.CopyValue(context.Background(), make([]byte, 32)); err != nil {
++		t.Fatal(err)
++	}
++	if err = b.Alloc(context.Background(), 33); !errors.Is(err, ErrLimit) {
++		t.Fatal(err)
++	}
++	if b.Usage().AllocationBytes != 32 {
++		t.Fatal(b.Usage())
++	}
++	if _, err = c.WithValueLimit(33); !errors.Is(err, ErrInvalid) {
++		t.Fatal(err)
++	}
++	l.MaxWork = 0
++	if _, err = New(context.Background(), l); !errors.Is(err, ErrInvalid) {
++		t.Fatal(err)
++	}
++}
++
++func TestBrowserBudgetConcurrentCharge(t *testing.T) {
++	b, _ := New(context.Background(), DefaultLimits())
++	var wg sync.WaitGroup
++	for n := 0; n < 8; n++ {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for i := 0; i < 100; i++ {
++				if err := b.Alloc(context.Background(), 1); err != nil {
++					t.Error(err)
++				}
++			}
++		}()
++	}
++	wg.Wait()
++	if b.Usage().AllocationBytes != 800 {
++		t.Fatal(b.Usage())
++	}
++}
++
++func TestBrowserBudgetCancelAndOverflow(t *testing.T) {
++	ctx, cancel := context.WithCancel(context.Background())
++	b, _ := New(ctx, DefaultLimits())
++	cancel()
++	if err := b.Alloc(context.Background(), 1); !errors.Is(err, context.Canceled) {
++		t.Fatal(err)
++	}
++	b, _ = New(context.Background(), DefaultLimits())
++	if err := b.Stored(context.Background(), ^uint64(0)); !errors.Is(err, ErrLimit) {
++		t.Fatal(err)
++	}
++	if b.Usage() != (Usage{}) {
++		t.Fatal(b.Usage())
++	}
++}
+diff --git a/leveldb/table/browser_bounded.go b/leveldb/table/browser_bounded.go
+new file mode 100644
+--- /dev/null
++++ b/leveldb/table/browser_bounded.go
+@@ -0,0 +1,401 @@
++// Copyright 2026 Cypher browser contributors.
++// Use of this source code is governed by the BSD-style LICENSE at the module root.
++
++package table
++
++import (
++	"bytes"
++	"context"
++	"encoding/binary"
++	"io"
++
++	"github.com/golang/snappy"
++	"github.com/syndtr/goleveldb/leveldb/comparer"
++	"github.com/syndtr/goleveldb/leveldb/errors"
++	"github.com/syndtr/goleveldb/leveldb/opt"
++	"github.com/syndtr/goleveldb/leveldb/readbudget"
++	"github.com/syndtr/goleveldb/leveldb/util"
++)
++
++// FindBounded performs a private point lookup. It never opens or mutates a shared
++// table/block cache or uses BufferPool. It validates and charges meta, filter,
++// index, data and returned byte buffers before allocation. Filtering is optional
++// acceleration in the ordinary path; this path validates but does not consult it.
++// This entry accepts native internal-key SSTs only; options must supply their
++// internal comparer. It is not a generic plain-key replacement for Reader.Find.
++func FindBounded(ctx context.Context, f io.ReaderAt, size int64, key []byte, o *opt.Options, b *readbudget.Budget) ([]byte, []byte, error) {
++	if f == nil {
++		return nil, nil, readbudget.ErrInvalid
++	}
++	if err := b.Check(ctx); err != nil {
++		return nil, nil, err
++	}
++	if err := b.CheckKey(uint64(len(key)), true); err != nil {
++		return nil, nil, err
++	}
++	if len(key) < 8 {
++		return nil, nil, boundedCorrupt("short query internal key")
++	}
++	if size < footerLen {
++		return nil, nil, boundedCorrupt("short footer")
++	}
++	var footer [footerLen]byte
++	if err := boundedReadAt(ctx, f, footer[:], size-footerLen, b); err != nil {
++		return nil, nil, err
++	}
++	if !bytes.Equal(footer[footerLen-len(magic):], []byte(magic)) {
++		return nil, nil, boundedCorrupt("bad magic")
++	}
++	meta, n := boundedDecodeHandle(footer[:footerLen-len(magic)])
++	if n == 0 {
++		return nil, nil, boundedCorrupt("bad meta handle")
++	}
++	index, n2 := boundedDecodeHandle(footer[n : footerLen-len(magic)])
++	if n2 == 0 {
++		return nil, nil, boundedCorrupt("bad index handle")
++	}
++	r := boundedTable{ctx: ctx, f: f, end: uint64(size - footerLen), budget: b, cmp: o.GetComparer()}
++	metaData, err := r.raw(meta)
++	if err != nil {
++		return nil, nil, err
++	}
++	if err = validateBoundedBlock(ctx, metaData, comparer.DefaultComparer, false, b); err != nil {
++		return nil, nil, err
++	}
++	mi, err := newBoundedIter(ctx, metaData, b)
++	if err != nil {
++		return nil, nil, err
++	}
++	for mi.next(ctx) {
++		if bytes.HasPrefix(mi.key, []byte("filter.")) {
++			fh, n := boundedDecodeHandle(mi.value)
++			if n == 0 || n != len(mi.value) {
++				return nil, nil, boundedCorrupt("bad filter handle")
++			}
++			fd, err := r.raw(fh)
++			if err != nil {
++				return nil, nil, err
++			}
++			if len(fd) < 5 {
++				return nil, nil, boundedCorrupt("short filter")
++			}
++			off := uint64(binary.LittleEndian.Uint32(fd[len(fd)-5:]))
++			if off > uint64(len(fd)-5) || (uint64(len(fd)-5)-off)%4 != 0 {
++				return nil, nil, boundedCorrupt("bad filter offsets")
++			}
++		}
++	}
++	if mi.err != nil {
++		return nil, nil, mi.err
++	}
++	indexData, err := r.raw(index)
++	if err != nil {
++		return nil, nil, err
++	}
++	if err = validateBoundedBlock(ctx, indexData, r.cmp, true, b); err != nil {
++		return nil, nil, err
++	}
++	ii, err := newBoundedIter(ctx, indexData, b)
++	if err != nil {
++		return nil, nil, err
++	}
++	selected := false
++	for ii.next(ctx) {
++		if len(ii.key) < 8 {
++			return nil, nil, boundedCorrupt("short internal index key")
++		}
++		if !selected && r.cmp.Compare(ii.key, key) < 0 {
++			continue
++		}
++		selected = true
++		h, n := boundedDecodeHandle(ii.value)
++		if n == 0 || n != len(ii.value) {
++			return nil, nil, boundedCorrupt("bad data handle")
++		}
++		data, err := r.raw(h)
++		if err != nil {
++			return nil, nil, err
++		}
++		if err = validateBoundedBlock(ctx, data, r.cmp, true, b); err != nil {
++			return nil, nil, err
++		}
++		di, err := newBoundedIter(ctx, data, b)
++		if err != nil {
++			return nil, nil, err
++		}
++		for di.next(ctx) {
++			if len(di.key) < 8 {
++				return nil, nil, boundedCorrupt("short internal data key")
++			}
++			if r.cmp.Compare(di.key, key) < 0 {
++				continue
++			}
++			v, err := b.CopyValue(ctx, di.value)
++			if err != nil {
++				return nil, nil, err
++			}
++			// di.key already owns exact, bounded backing; no shared buffer survives.
++			if err = b.Check(ctx); err != nil {
++				return nil, nil, err
++			}
++			return di.key, v, nil
++		}
++		if di.err != nil {
++			return nil, nil, di.err
++		}
++		// The next index entry may contain the nearest greater key, just as Find.
++	}
++	if ii.err != nil {
++		return nil, nil, ii.err
++	}
++	if err = b.Check(ctx); err != nil {
++		return nil, nil, err
++	}
++	return nil, nil, ErrNotFound
++}
++
++type boundedTable struct {
++	ctx    context.Context
++	f      io.ReaderAt
++	end    uint64
++	budget *readbudget.Budget
++	cmp    comparer.Comparer
++}
++
++func boundedDecodeHandle(src []byte) (blockHandle, int) {
++	o, n := binary.Uvarint(src)
++	if n <= 0 {
++		return blockHandle{}, 0
++	}
++	l, m := binary.Uvarint(src[n:])
++	if m <= 0 {
++		return blockHandle{}, 0
++	}
++	return blockHandle{o, l}, n + m
++}
++func boundedCorrupt(reason string) error {
++	return &errors.ErrCorrupted{Err: &ErrCorrupted{Reason: reason}}
++}
++func boundedReadAt(ctx context.Context, f io.ReaderAt, dst []byte, off int64, b *readbudget.Budget) error {
++	for len(dst) > 0 {
++		if err := b.Step(ctx); err != nil {
++			return err
++		}
++		n := len(dst)
++		if n > 32<<10 {
++			n = 32 << 10
++		}
++		got, err := f.ReadAt(dst[:n], off)
++		if got != n {
++			if err != nil {
++				return err
++			}
++			return io.ErrUnexpectedEOF
++		}
++		if err != nil && err != io.EOF {
++			return err
++		}
++		off += int64(n)
++		dst = dst[n:]
++	}
++	return b.Check(ctx)
++}
++func (r *boundedTable) raw(h blockHandle) ([]byte, error) {
++	if err := r.budget.Step(r.ctx); err != nil {
++		return nil, err
++	}
++	// Subtraction checks avoid uint64 wrap and int/int64 conversion overflow.
++	if h.offset > r.end || h.length > r.end-h.offset || uint64(blockTrailerLen) > r.end-h.offset-h.length {
++		return nil, boundedCorrupt("block outside file")
++	}
++	n := h.length + uint64(blockTrailerLen)
++	if err := r.budget.Stored(r.ctx, n); err != nil {
++		return nil, err
++	}
++	buf := make([]byte, int(n)) // hard budget ceilings are below all supported int limits
++	if err := boundedReadAt(r.ctx, r.f, buf, int64(h.offset), r.budget); err != nil {
++		return nil, err
++	}
++	crc := util.CRC(0)
++	for off := 0; off < len(buf)-4; {
++		if err := r.budget.Step(r.ctx); err != nil {
++			return nil, err
++		}
++		end := off + (32 << 10)
++		if end > len(buf)-4 {
++			end = len(buf) - 4
++		}
++		crc = crc.Update(buf[off:end])
++		off = end
++	}
++	if crc.Value() != binary.LittleEndian.Uint32(buf[len(buf)-4:]) {
++		return nil, boundedCorrupt("checksum mismatch")
++	}
++	src := buf[:int(h.length)]
++	switch buf[int(h.length)] {
++	case blockTypeNoCompression:
++		if err := r.budget.Decoded(r.ctx, uint64(len(src)), false); err != nil {
++			return nil, err
++		}
++		return src, nil
++	case blockTypeSnappyCompression:
++		n, err := snappy.DecodedLen(src)
++		if err != nil {
++			return nil, boundedCorrupt("bad snappy length")
++		}
++		if err = r.budget.Decoded(r.ctx, uint64(n), true); err != nil {
++			return nil, err
++		}
++		dst := make([]byte, n)
++		out, err := snappy.Decode(dst[:0], src)
++		if err != nil {
++			return nil, boundedCorrupt("bad snappy block")
++		}
++		if len(out) != n {
++			return nil, boundedCorrupt("snappy length mismatch")
++		}
++		if err = r.budget.Check(r.ctx); err != nil {
++			return nil, err
++		}
++		return out, nil
++	default:
++		return nil, boundedCorrupt("unknown compression")
++	}
++}
++
++// A forward-only parser avoids the legacy iterator's unchecked restart slices
++// and append growth. Byte buffers are exact size and charged before growth.
++func validateBoundedBlock(ctx context.Context, data []byte, cmp comparer.Comparer, internal bool, b *readbudget.Budget) error {
++	it, err := newBoundedIter(ctx, data, b)
++	if err != nil {
++		return err
++	}
++	var previous []byte
++	first := true
++	for it.next(ctx) {
++		if internal && len(it.key) < 8 {
++			return boundedCorrupt("short internal key")
++		}
++		if !first && cmp.Compare(previous, it.key) >= 0 {
++			return boundedCorrupt("unordered block")
++		}
++		if len(it.key) > cap(previous) {
++			if err = b.Alloc(ctx, uint64(len(it.key))); err != nil {
++				return err
++			}
++			previous = make([]byte, len(it.key))
++		} else {
++			previous = previous[:len(it.key)]
++		}
++		copy(previous, it.key)
++		first = false
++	}
++	return it.err
++}
++
++type boundedIter struct {
++	data, restarts       []byte
++	end, pos, restartPos int
++	key, value           []byte
++	budget               *readbudget.Budget
++	err                  error
++}
++
++func newBoundedIter(ctx context.Context, data []byte, b *readbudget.Budget) (*boundedIter, error) {
++	if len(data) < 4 {
++		return nil, boundedCorrupt("short restart table")
++	}
++	n := uint64(binary.LittleEndian.Uint32(data[len(data)-4:]))
++	if n == 0 || n > uint64((len(data)-4)/4) {
++		return nil, boundedCorrupt("bad restart count")
++	}
++	end := len(data) - 4 - int(n*4)
++	prev := uint32(0)
++	for i := uint64(0); i < n; i++ {
++		if err := b.Step(ctx); err != nil {
++			return nil, err
++		}
++		o := binary.LittleEndian.Uint32(data[end+int(i*4):])
++		if (i == 0 && o != 0) || (i > 0 && o <= prev) || uint64(o) > uint64(end) {
++			return nil, boundedCorrupt("bad restart offset")
++		}
++		prev = o
++	}
++	return &boundedIter{data: data, restarts: data[end : len(data)-4], end: end, budget: b}, nil
++}
++func (i *boundedIter) next(ctx context.Context) bool {
++	if i.err != nil {
++		return false
++	}
++	if i.pos == i.end {
++		if i.end != 0 && i.restartPos != len(i.restarts) {
++			i.err = boundedCorrupt("unused restart point")
++		}
++		return false
++	}
++	if i.err = i.budget.Step(ctx); i.err != nil {
++		return false
++	}
++	if i.pos > i.end {
++		i.err = boundedCorrupt("entry outside block")
++		return false
++	}
++	src := i.data[i.pos:i.end]
++	shared, n0 := binary.Uvarint(src)
++	if n0 <= 0 {
++		i.err = boundedCorrupt("bad shared prefix")
++		return false
++	}
++	if i.restartPos < len(i.restarts) {
++		r := int(binary.LittleEndian.Uint32(i.restarts[i.restartPos:]))
++		if r < i.pos {
++			i.err = boundedCorrupt("restart inside entry")
++			return false
++		}
++		if r == i.pos {
++			if shared != 0 {
++				i.err = boundedCorrupt("restart has shared prefix")
++				return false
++			}
++			i.restartPos += 4
++		}
++	}
++	nkey, n1 := binary.Uvarint(src[n0:])
++	if n1 <= 0 {
++		i.err = boundedCorrupt("bad key length")
++		return false
++	}
++	nval, n2 := binary.Uvarint(src[n0+n1:])
++	if n2 <= 0 {
++		i.err = boundedCorrupt("bad value length")
++		return false
++	}
++	start := uint64(n0 + n1 + n2)
++	remain := uint64(len(src)) - start
++	if shared > uint64(len(i.key)) || nkey > remain || nval > remain-nkey {
++		i.err = boundedCorrupt("entry bounds")
++		return false
++	}
++	length := shared + nkey
++	if i.err = i.budget.CheckKey(length, true); i.err != nil {
++		return false
++	}
++	if length > uint64(cap(i.key)) {
++		if i.err = i.budget.Alloc(ctx, length); i.err != nil {
++			return false
++		}
++		next := make([]byte, int(length))
++		copy(next, i.key[:int(shared)])
++		i.key = next
++	} else {
++		i.key = i.key[:int(length)]
++	}
++	copy(i.key[int(shared):], src[int(start):int(start+nkey)])
++	i.value = src[int(start+nkey):int(start+nkey+nval)]
++	i.pos += int(start + nkey + nval)
++	if i.restartPos < len(i.restarts) && int(binary.LittleEndian.Uint32(i.restarts[i.restartPos:])) < i.pos {
++		i.err = boundedCorrupt("restart inside entry")
++		return false
++	}
++	return true
++}
+diff --git a/leveldb/table/browser_bounded_test.go b/leveldb/table/browser_bounded_test.go
+new file mode 100644
+--- /dev/null
++++ b/leveldb/table/browser_bounded_test.go
+@@ -0,0 +1,317 @@
++// Copyright 2026 Cypher browser contributors.
++// Use of this source code is governed by the BSD-style LICENSE at the module root.
++
++package table
++
++import (
++	"bytes"
++	"context"
++	"encoding/binary"
++	stderrors "errors"
++	"testing"
++
++	"github.com/syndtr/goleveldb/leveldb/comparer"
++	"github.com/syndtr/goleveldb/leveldb/filter"
++	"github.com/syndtr/goleveldb/leveldb/opt"
++	"github.com/syndtr/goleveldb/leveldb/readbudget"
++	"github.com/syndtr/goleveldb/leveldb/storage"
++	"github.com/syndtr/goleveldb/leveldb/util"
++)
++
++// This fixture follows leveldb/iComparer: user keys ascend, sequence numbers
++// descend, and shortened separators retain the eight-byte internal suffix.
++type browserNativeTestComparer struct{}
++
++func (browserNativeTestComparer) Name() string { return "browser-native-test" }
++func (browserNativeTestComparer) Compare(a, b []byte) int {
++	x := comparer.DefaultComparer.Compare(a[:len(a)-8], b[:len(b)-8])
++	if x != 0 {
++		return x
++	}
++	m, n := binary.LittleEndian.Uint64(a[len(a)-8:]), binary.LittleEndian.Uint64(b[len(b)-8:])
++	if m > n {
++		return -1
++	}
++	if m < n {
++		return 1
++	}
++	return 0
++}
++func browserTestSeparator(dst, original, next []byte, successor bool) []byte {
++	u := original[:len(original)-8]
++	if successor {
++		dst = comparer.DefaultComparer.Successor(dst, u)
++	} else {
++		dst = comparer.DefaultComparer.Separator(dst, u, next[:len(next)-8])
++	}
++	if dst != nil && len(dst) < len(u) && comparer.DefaultComparer.Compare(u, dst) < 0 {
++		return append(dst, 1, 255, 255, 255, 255, 255, 255, 255)
++	}
++	return nil
++}
++func (browserNativeTestComparer) Separator(dst, a, b []byte) []byte {
++	return browserTestSeparator(dst, a, b, false)
++}
++func (browserNativeTestComparer) Successor(dst, b []byte) []byte {
++	return browserTestSeparator(dst, b, nil, true)
++}
++func browserNativeOptions() *opt.Options { return &opt.Options{Comparer: browserNativeTestComparer{}} }
++
++func browserTestKey(s string) []byte {
++	k := append([]byte(s), make([]byte, 8)...)
++	binary.LittleEndian.PutUint64(k[len(k)-8:], 257)
++	return k
++}
++func browserTestTable(t *testing.T) []byte {
++	t.Helper()
++	var buf bytes.Buffer
++	w := NewWriter(&buf, &opt.Options{Comparer: browserNativeTestComparer{}, BlockSize: 64, Compression: opt.SnappyCompression, Filter: filter.NewBloomFilter(10)}, nil, 0)
++	for _, k := range []string{"a", "b", "c", "d"} {
++		if err := w.Append(browserTestKey(k), bytes.Repeat([]byte(k), 100)); err != nil {
++			t.Fatal(err)
++		}
++	}
++	if err := w.Close(); err != nil {
++		t.Fatal(err)
++	}
++	return buf.Bytes()
++}
++func TestBrowserBoundedTableDifferential(t *testing.T) {
++	data := browserTestTable(t)
++	legacy, err := NewReader(bytes.NewReader(data), int64(len(data)), storage.FileDesc{}, nil, nil, browserNativeOptions())
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer legacy.Release()
++	for _, s := range []string{"a", "aa", "b", "c", "d", "z"} {
++		b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++		k, v, err := FindBounded(context.Background(), bytes.NewReader(data), int64(len(data)), browserTestKey(s), browserNativeOptions(), b)
++		lk, lv, le := legacy.Find(browserTestKey(s), true, nil)
++		if (err == nil) != (le == nil) || !bytes.Equal(k, lk) || !bytes.Equal(v, lv) {
++			t.Fatalf("%s: bounded %v legacy %v", s, err, le)
++		}
++	}
++}
++
++type browserSpyReader struct {
++	data          []byte
++	reads         int
++	allowedOffset int64
++	cancel        context.CancelFunc
++}
++
++func (r *browserSpyReader) ReadAt(dst []byte, off int64) (int, error) {
++	r.reads++
++	if r.cancel != nil {
++		r.cancel()
++	}
++	if off != r.allowedOffset && r.allowedOffset >= 0 {
++		return 0, stderrors.New("unexpected payload read")
++	}
++	return bytes.NewReader(r.data).ReadAt(dst, off)
++}
++func browserFooter(meta, index blockHandle) []byte {
++	f := make([]byte, footerLen)
++	n := encodeBlockHandle(f, meta)
++	encodeBlockHandle(f[n:], index)
++	copy(f[len(f)-len(magic):], magic)
++	return f
++}
++
++type browserFooterOnly struct {
++	footer []byte
++	off    int64
++	reads  int
++}
++
++func (r *browserFooterOnly) ReadAt(dst []byte, off int64) (int, error) {
++	r.reads++
++	if off != r.off {
++		return 0, stderrors.New("payload was read before limit")
++	}
++	return copy(dst, r.footer), nil
++}
++func TestBrowserBoundedStoredRejectsBeforePayloadAllocation(t *testing.T) {
++	r := &browserFooterOnly{footer: browserFooter(blockHandle{0, 1 << 20}, blockHandle{0, 1}), off: (1 << 20) + 5}
++	l := readbudget.DefaultLimits()
++	l.MaxStoredBytes = 64
++	b, _ := readbudget.New(context.Background(), l)
++	_, _, err := FindBounded(context.Background(), r, r.off+footerLen, browserTestKey("a"), browserNativeOptions(), b)
++	if !stderrors.Is(err, readbudget.ErrLimit) || r.reads != 1 || b.Usage().AllocationBytes != 0 {
++		t.Fatalf("err=%v reads=%d usage=%+v", err, r.reads, b.Usage())
++	}
++}
++func TestBrowserBoundedDecodedRejectsBeforeDecodedAllocation(t *testing.T) {
++	// A short Snappy block declares a huge decoded size. Length admission must
++	// precede both the decoded buffer and the decoder's payload validation.
++	var hdr [10]byte
++	n := binary.PutUvarint(hdr[:], 1<<30)
++	raw := append([]byte(nil), hdr[:n]...)
++	raw = append(raw, blockTypeSnappyCompression)
++	var crc [4]byte
++	binary.LittleEndian.PutUint32(crc[:], util.NewCRC(raw).Value())
++	raw = append(raw, crc[:]...)
++	bh := blockHandle{0, uint64(n)}
++	data := append(raw, browserFooter(bh, bh)...)
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	_, _, err := FindBounded(context.Background(), bytes.NewReader(data), int64(len(data)), browserTestKey("a"), browserNativeOptions(), b)
++	if !stderrors.Is(err, readbudget.ErrLimit) || b.Usage().DecodedBytes != 0 || b.Usage().AllocationBytes != uint64(len(raw)) {
++		t.Fatalf("%v %+v", err, b.Usage())
++	}
++}
++func TestBrowserBoundedBadHandleAndLateCancel(t *testing.T) {
++	f := browserFooter(blockHandle{0, 0}, blockHandle{0, 0})
++	for n := 0; n < 10; n++ {
++		f[n] = 255
++	}
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	if _, _, err := FindBounded(context.Background(), bytes.NewReader(f), int64(len(f)), browserTestKey("a"), browserNativeOptions(), b); err == nil {
++		t.Fatal("overflow handle accepted")
++	}
++	data := browserTestTable(t)
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	r := &browserSpyReader{data: data, allowedOffset: -1, cancel: cancel}
++	b, _ = readbudget.New(context.Background(), readbudget.DefaultLimits())
++	if _, _, err := FindBounded(ctx, r, int64(len(data)), browserTestKey("a"), browserNativeOptions(), b); !stderrors.Is(err, context.Canceled) {
++		t.Fatal(err)
++	}
++	if r.reads != 1 || b.Usage().AllocationBytes != 0 {
++		t.Fatal(r.reads, b.Usage())
++	}
++}
++func TestBrowserBoundedTableValueAndWorkCaps(t *testing.T) {
++	data := browserTestTable(t)
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	child, _ := b.WithValueLimit(32)
++	if _, _, err := FindBounded(context.Background(), bytes.NewReader(data), int64(len(data)), browserTestKey("a"), browserNativeOptions(), child); !stderrors.Is(err, readbudget.ErrLimit) {
++		t.Fatal(err)
++	}
++	l := readbudget.DefaultLimits()
++	l.MaxWork = 1
++	b, _ = readbudget.New(context.Background(), l)
++	if _, _, err := FindBounded(context.Background(), bytes.NewReader(data), int64(len(data)), browserTestKey("a"), browserNativeOptions(), b); !stderrors.Is(err, readbudget.ErrLimit) {
++		t.Fatal(err)
++	}
++}
++func TestBrowserBoundedMalformedParserFinite(t *testing.T) {
++	for _, data := range [][]byte{nil, {1, 2, 3}, {0, 0, 0, 0}, {0, 0, 0, 0, 255, 255, 255, 255}, {128, 128, 128, 0, 0, 0, 0, 1, 0, 0, 0}} {
++		b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++		it, err := newBoundedIter(context.Background(), data, b)
++		if err == nil {
++			for it.next(context.Background()) {
++			}
++			if it.err == nil {
++				t.Fatal("malformed parser accepted")
++			}
++		}
++	}
++}
++
++func browserRawPlain(data []byte) []byte {
++	r := append([]byte(nil), data...)
++	r = append(r, blockTypeNoCompression)
++	var c [4]byte
++	binary.LittleEndian.PutUint32(c[:], util.NewCRC(r).Value())
++	return append(r, c[:]...)
++}
++
++type browserVirtualReader struct {
++	footer    []byte
++	footerOff int64
++	meta      []byte
++	reads     []int64
++}
++
++func (r *browserVirtualReader) ReadAt(dst []byte, off int64) (int, error) {
++	r.reads = append(r.reads, off)
++	if off == r.footerOff {
++		return copy(dst, r.footer), nil
++	}
++	if off == 0 {
++		return copy(dst, r.meta), nil
++	}
++	return 0, stderrors.New("oversized index/filter payload was read")
++}
++func TestBrowserBoundedIndexAndFilterAdmission(t *testing.T) {
++	for _, kind := range []string{"index", "filter"} {
++		t.Run(kind, func(t *testing.T) {
++			meta := []byte{0, 0, 0, 0, 1, 0, 0, 0}
++			large := blockHandle{64, 1 << 20}
++			if kind == "filter" {
++				var handle [20]byte
++				n := encodeBlockHandle(handle[:], large)
++				key := []byte("filter.x")
++				meta = []byte{0, byte(len(key)), byte(n)}
++				meta = append(meta, key...)
++				meta = append(meta, handle[:n]...)
++				meta = append(meta, 0, 0, 0, 0, 1, 0, 0, 0)
++			}
++			raw := browserRawPlain(meta)
++			index := blockHandle{0, uint64(len(meta))}
++			if kind == "index" {
++				index = large
++			}
++			r := &browserVirtualReader{footerOff: 64 + (1 << 20) + 5, meta: raw, footer: browserFooter(blockHandle{0, uint64(len(meta))}, index)}
++			l := readbudget.DefaultLimits()
++			l.MaxStoredBytes = 64
++			b, _ := readbudget.New(context.Background(), l)
++			_, _, err := FindBounded(context.Background(), r, r.footerOff+footerLen, browserTestKey("a"), browserNativeOptions(), b)
++			if !stderrors.Is(err, readbudget.ErrLimit) || len(r.reads) != 2 || b.Usage().StoredBytes != uint64(len(raw)) || b.Usage().AllocationBytes > 128 {
++				t.Fatalf("%v reads=%v usage=%+v", err, r.reads, b.Usage())
++			}
++		})
++	}
++}
++func TestBrowserBoundedKeyBeforeFooterRead(t *testing.T) {
++	r := &browserFooterOnly{footer: browserFooter(blockHandle{}, blockHandle{}), off: 0}
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	if _, _, err := FindBounded(context.Background(), r, footerLen, make([]byte, 521), browserNativeOptions(), b); !stderrors.Is(err, readbudget.ErrLimit) {
++		t.Fatal(err)
++	}
++	if r.reads != 0 || b.Usage() != (readbudget.Usage{}) {
++		t.Fatal(r.reads, b.Usage())
++	}
++}
++
++func browserPlainEntry(key, value []byte) []byte {
++	var ints [30]byte
++	n := binary.PutUvarint(ints[:], 0)
++	n += binary.PutUvarint(ints[n:], uint64(len(key)))
++	n += binary.PutUvarint(ints[n:], uint64(len(value)))
++	r := append([]byte(nil), ints[:n]...)
++	r = append(r, key...)
++	return append(r, value...)
++}
++func browserSSTWithData(data []byte) []byte {
++	raw := browserRawPlain(data)
++	meta := []byte{0, 0, 0, 0, 1, 0, 0, 0}
++	metaBH := blockHandle{uint64(len(raw)), uint64(len(meta))}
++	raw = append(raw, browserRawPlain(meta)...)
++	var bh [20]byte
++	n := encodeBlockHandle(bh[:], blockHandle{0, uint64(len(data))})
++	index := browserPlainEntry(browserTestKey("z"), bh[:n])
++	index = append(index, 0, 0, 0, 0, 1, 0, 0, 0)
++	indexBH := blockHandle{uint64(len(raw)), uint64(len(index))}
++	raw = append(raw, browserRawPlain(index)...)
++	return append(raw, browserFooter(metaBH, indexBH)...)
++}
++func TestBrowserBoundedRejectsUnorderedChecksummedData(t *testing.T) {
++	data := browserPlainEntry(browserTestKey("b"), []byte("later"))
++	data = append(data, browserPlainEntry(browserTestKey("a"), []byte("earlier"))...)
++	data = append(data, 0, 0, 0, 0, 1, 0, 0, 0)
++	sst := browserSSTWithData(data)
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	if _, _, err := FindBounded(context.Background(), bytes.NewReader(sst), int64(len(sst)), browserTestKey("a"), browserNativeOptions(), b); err == nil || stderrors.Is(err, readbudget.ErrLimit) {
++		t.Fatal("unordered table accepted", err)
++	}
++}
++func TestBrowserBoundedRejectsRestartInsideEntry(t *testing.T) {
++	data := browserPlainEntry(browserTestKey("a"), []byte("value"))
++	data = append(data, 0, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0)
++	sst := browserSSTWithData(data)
++	b, _ := readbudget.New(context.Background(), readbudget.DefaultLimits())
++	if _, _, err := FindBounded(context.Background(), bytes.NewReader(sst), int64(len(sst)), browserTestKey("a"), browserNativeOptions(), b); err == nil || stderrors.Is(err, readbudget.ErrLimit) {
++		t.Fatal("restart inside entry accepted", err)
++	}
++}

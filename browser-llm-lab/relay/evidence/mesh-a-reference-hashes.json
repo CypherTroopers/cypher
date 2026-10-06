@@ -1,0 +1,22 @@
+{
+  "commonHeight": 3768,
+  "aMatchesReference": true,
+  "hashes": {
+    "0": {
+      "a": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "reference": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    },
+    "1": {
+      "a": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca",
+      "reference": "0x6086525fc9f84d4e000221d773b903df99e7fd627f64934cd8c497cdeac4c0ca"
+    },
+    "1000": {
+      "a": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e",
+      "reference": "0xbe233aa41dedf1975856d5474da873949b7309a3055d3e47a70f84c045e5250e"
+    },
+    "3768": {
+      "a": "0xd43ef22105b60f80a138a5b89e19d8a45e365c0210aa9474d64deb8906180140",
+      "reference": "0xd43ef22105b60f80a138a5b89e19d8a45e365c0210aa9474d64deb8906180140"
+    }
+  }
+}

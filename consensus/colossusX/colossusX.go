@@ -29,9 +29,6 @@ var (
 	// maxUint256 is a big integer representing 2^256-1
 	maxUint256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
 
-	// sharedCphash is a full instance that can be shared between multiple users.
-	sharedCphash = New(Config{"", 3, 0, "", 1, 0, ModeFullFake, false, false})
-
 	// algorithmRevision is the data structure version used for file naming.
 	algorithmRevision = 25
 
@@ -56,6 +53,11 @@ func memoryMap(path string) (*os.File, mmap.MMap, []uint32, error) {
 	if err != nil {
 		file.Close()
 		return nil, nil, nil, err
+	}
+	if len(buffer) < len(dumpMagic) {
+		mem.Unmap()
+		file.Close()
+		return nil, nil, nil, ErrInvalidDumpMagic
 	}
 	for i, magic := range dumpMagic {
 		if buffer[i] != magic {
@@ -350,6 +352,11 @@ func (d *dataset) prepareOnDisk(dir string, limit int, test bool) error {
 // generate ensures that the dataset content is generated before use.
 func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) error {
 	d.once.Do(func() {
+		defer func() {
+			if d.genErr != nil {
+				d.finalizer()
+			}
+		}()
 		csize := cacheSize(d.epoch*epochLength + 1)
 		dsize := datasetSize(d.epoch*epochLength + 1)
 		seed := seedHash(d.epoch*epochLength + 1)
@@ -386,6 +393,10 @@ func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) erro
 		var err error
 		d.dump, d.mmap, d.dataset, err = memoryMap(path)
 		if err == nil {
+			if uint64(len(d.mmap)) != dsize+uint64(len(dumpMagic))*4 {
+				d.genErr = fmt.Errorf("invalid colossusX dataset size for epoch %d: got %d bytes, want %d", d.epoch, len(d.mmap), dsize+uint64(len(dumpMagic))*4)
+				return
+			}
 			if d.mmap != nil && !d.locked && lockMmap {
 				if err := d.mmap.Lock(); err != nil {
 					d.genErr = fmt.Errorf("failed to lock mapped colossusX dataset for epoch %d: %w", d.epoch, err)
@@ -404,6 +415,10 @@ func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) erro
 
 		d.dump, d.mmap, d.dataset, err = memoryMapAndGenerate(path, dsize, func(buffer []uint32) { generateDataset(buffer, d.epoch, cache) })
 		if err != nil {
+			if lockMmap {
+				d.genErr = fmt.Errorf("failed to generate mapped colossusX dataset for epoch %d: %w", d.epoch, err)
+				return
+			}
 			logger.Error("Failed to generate mapped colossusX dataset", "err", err)
 
 			d.dataset = make([]uint32, dsize/4)
@@ -434,6 +449,7 @@ func (d *dataset) finalizer() {
 		d.dump.Close()
 		d.mmap, d.dump = nil, nil
 	}
+	d.dataset = nil
 }
 
 // MakeCache generates a new colossusX cache and optionally stores it to disk.
@@ -604,8 +620,10 @@ func (colossusX *colossusX) dataset(block uint64) (*dataset, error) {
 	currentI, futureI := colossusX.datasets.get(epoch)
 	current := currentI.(*dataset)
 
-	// Wait for generation finish.
-	if err := current.generate(colossusX.config.DatasetDir, colossusX.config.DatasetsOnDisk, colossusX.config.DatasetsLockMmap, colossusX.config.PowMode == ModeTest); err != nil {
+	// Real mining requires the entire DAG to be pinned, regardless of CLI flags.
+	// Keep the small in-memory dataset available to test engines.
+	lockMmap := colossusX.config.PowMode != ModeTest || colossusX.config.DatasetsLockMmap
+	if err := current.generate(colossusX.config.DatasetDir, colossusX.config.DatasetsOnDisk, lockMmap, colossusX.config.PowMode == ModeTest); err != nil {
 		return nil, err
 	}
 

@@ -1,0 +1,5 @@
+{
+  "status": "FAIL_PRESERVED",
+  "reason": "Six functional checkpoints passed; the one-shot native circuit assertion at soak start sampled a closed interval. A bounded authenticated-data poll will replace that assertion in the test harness only; product hashes stay frozen. This attempt is not a completed soak.",
+  "at": "2026-10-03T17:53:11.236143+00:00"
+}

@@ -1,0 +1,581 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T21:35:01.394Z",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "pid": 26,
+  "profile": "/tmp/cypher-uplink-ui-i3MNET",
+  "sameHostOnly": true,
+  "scope": "Normal public UI dynamic same-origin Common discovery without OFF/ON; no independent RTC transfer claim",
+  "nativeLifecycleMutations": 0,
+  "transportReplacements": 0,
+  "sourceByteInjection": false,
+  "checkpoints": [
+    {
+      "name": "Public page initially OFF",
+      "at": "2026-10-03T21:35:11.363Z",
+      "value": {
+        "state": "OFF",
+        "commons": "0",
+        "peers": "0"
+      }
+    },
+    {
+      "name": "Node ON has one verified Common; waiting for external source startup",
+      "at": "2026-10-03T21:35:13.308Z",
+      "value": {
+        "captured": true,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "generation": 1,
+        "startCalls": 1,
+        "sessionId": "ab1d722cd6ce917ce8d30e0479d8c2b7",
+        "configNodeIds": [
+          "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb"
+        ],
+        "workerPresent": true,
+        "commonConnections": [
+          {
+            "id": "ab1d722cd6ce917ce8d30e0479d8c2b7",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "52aaea4f401ba16a420c2fd10578393c",
+            "connected": true,
+            "expiresAt": 1791063612599,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "nativeConnections": 1,
+        "peers": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 3864,
+        "pendingSends": 0,
+        "signatures": [
+          {
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "origin": "https://ai-test.make-cph-great-again.community",
+            "sequence": 182,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3",
+            "expiresAt": 1791063389462,
+            "bothSignaturesVerified": true,
+            "identityMatches": true,
+            "bootMatches": true,
+            "nativeSessionMatches": true,
+            "parentMatchesHomeSession": true
+          }
+        ],
+        "events": [
+          {
+            "name": "native-connected",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "nativeSession": "e289b8dd565030037274732ee2724bbb"
+          },
+          {
+            "type": "event",
+            "name": "native_ready",
+            "at": 1791063313244,
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "52aaea4f401ba16a420c2fd10578393c",
+            "verification": "browser_secp256k1_signature",
+            "browserSignatureVerified": true,
+            "endpointSignatureVerified": false,
+            "generation": 1
+          }
+        ],
+        "sourceErrors": {},
+        "workerCommonSignatures": [],
+        "ui": {
+          "state": "WAITING_PEER",
+          "commons": "1",
+          "sources": [
+            "common-mine"
+          ]
+        }
+      }
+    },
+    {
+      "name": "New signed source appears as actual Common connection number 2",
+      "at": "2026-10-03T21:38:45.345Z",
+      "value": {
+        "captured": true,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "generation": 1,
+        "startCalls": 1,
+        "sessionId": "ab1d722cd6ce917ce8d30e0479d8c2b7",
+        "configNodeIds": [
+          "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb"
+        ],
+        "workerPresent": true,
+        "commonConnections": [
+          {
+            "id": "ab1d722cd6ce917ce8d30e0479d8c2b7",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "52aaea4f401ba16a420c2fd10578393c",
+            "connected": true,
+            "expiresAt": 1791063732752,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          },
+          {
+            "id": "db3eda4fabfb9f5bafbec28e7e57407d",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "1510fd154f7f19cb5e262592f7ebac7b",
+            "connected": true,
+            "expiresAt": 1791063825076,
+            "remoteOrigin": "https://ai-test.make-cph-great-again.community",
+            "endpointVerified": true,
+            "browserSignatureVerified": true
+          }
+        ],
+        "nativeConnections": 2,
+        "peers": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 40216,
+        "pendingSends": 0,
+        "signatures": [
+          {
+            "sourceId": "common-mine",
+            "error": "Discovery record expired or has invalid time bounds."
+          },
+          {
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "origin": "https://ai-test.make-cph-great-again.community",
+            "sequence": 2,
+            "bootId": "f90289232a83dd61de0f5254451aadfa",
+            "expiresAt": 1791063628285,
+            "bothSignaturesVerified": true,
+            "identityMatches": true,
+            "bootMatches": true,
+            "nativeSessionMatches": true,
+            "parentMatchesHomeSession": true
+          }
+        ],
+        "events": [
+          {
+            "name": "native-connected",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "nativeSession": "e289b8dd565030037274732ee2724bbb"
+          },
+          {
+            "type": "event",
+            "name": "native_ready",
+            "at": 1791063313244,
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "52aaea4f401ba16a420c2fd10578393c",
+            "verification": "browser_secp256k1_signature",
+            "browserSignatureVerified": true,
+            "endpointSignatureVerified": false,
+            "generation": 1
+          },
+          {
+            "name": "native-connected",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nativeSession": "be5bb9d49f5c61391d81f2e3e27ac753",
+            "attachmentId": "db3eda4fabfb9f5bafbec28e7e57407d"
+          },
+          {
+            "type": "event",
+            "name": "native_ready",
+            "at": 1791063525313,
+            "attachmentId": "db3eda4fabfb9f5bafbec28e7e57407d",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "1510fd154f7f19cb5e262592f7ebac7b",
+            "verification": "browser_secp256k1_signature",
+            "browserSignatureVerified": true,
+            "endpointSignatureVerified": true,
+            "generation": 1
+          }
+        ],
+        "sourceErrors": {},
+        "workerCommonSignatures": [
+          {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserSignatureVerified": true
+          }
+        ],
+        "ui": {
+          "state": "WAITING_PEER",
+          "commons": "2",
+          "sources": [
+            "common-mine",
+            "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666"
+          ]
+        }
+      }
+    },
+    {
+      "name": "OFF clears both Common links without stale reconnection",
+      "at": "2026-10-03T21:38:47.198Z",
+      "value": {
+        "captured": true,
+        "state": "OFF",
+        "requested": false,
+        "generation": 2,
+        "startCalls": 1,
+        "sessionId": null,
+        "configNodeIds": [
+          "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb"
+        ],
+        "workerPresent": false,
+        "commonConnections": [],
+        "nativeConnections": 0,
+        "peers": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 0,
+        "pendingSends": 0,
+        "signatures": [],
+        "events": [
+          {
+            "name": "native-connected",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "nativeSession": "e289b8dd565030037274732ee2724bbb"
+          },
+          {
+            "type": "event",
+            "name": "native_ready",
+            "at": 1791063313244,
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "52aaea4f401ba16a420c2fd10578393c",
+            "verification": "browser_secp256k1_signature",
+            "browserSignatureVerified": true,
+            "endpointSignatureVerified": false,
+            "generation": 1
+          },
+          {
+            "name": "native-connected",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nativeSession": "be5bb9d49f5c61391d81f2e3e27ac753",
+            "attachmentId": "db3eda4fabfb9f5bafbec28e7e57407d"
+          },
+          {
+            "type": "event",
+            "name": "native_ready",
+            "at": 1791063525313,
+            "attachmentId": "db3eda4fabfb9f5bafbec28e7e57407d",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "1510fd154f7f19cb5e262592f7ebac7b",
+            "verification": "browser_secp256k1_signature",
+            "browserSignatureVerified": true,
+            "endpointSignatureVerified": true,
+            "generation": 1
+          }
+        ],
+        "sourceErrors": {},
+        "workerCommonSignatures": [
+          {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserSignatureVerified": true
+          },
+          {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserSignatureVerified": true
+          }
+        ],
+        "ui": {
+          "state": "OFF",
+          "commons": "0",
+          "sources": []
+        }
+      }
+    }
+  ],
+  "pageErrors": [],
+  "initial": {
+    "state": "OFF",
+    "commons": "0",
+    "peers": "0"
+  },
+  "home": {
+    "captured": true,
+    "state": "WAITING_PEER",
+    "requested": true,
+    "generation": 1,
+    "startCalls": 1,
+    "sessionId": "ab1d722cd6ce917ce8d30e0479d8c2b7",
+    "configNodeIds": [
+      "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb"
+    ],
+    "workerPresent": true,
+    "commonConnections": [
+      {
+        "id": "ab1d722cd6ce917ce8d30e0479d8c2b7",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserId": "52aaea4f401ba16a420c2fd10578393c",
+        "connected": true,
+        "expiresAt": 1791063612599,
+        "remoteOrigin": null,
+        "endpointVerified": false,
+        "browserSignatureVerified": true
+      }
+    ],
+    "nativeConnections": 1,
+    "peers": 0,
+    "circuits": 0,
+    "queuedBytes": 0,
+    "appBytes": 3864,
+    "pendingSends": 0,
+    "signatures": [
+      {
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "origin": "https://ai-test.make-cph-great-again.community",
+        "sequence": 182,
+        "bootId": "4a49cf336c773b5d464fce71776d67e3",
+        "expiresAt": 1791063389462,
+        "bothSignaturesVerified": true,
+        "identityMatches": true,
+        "bootMatches": true,
+        "nativeSessionMatches": true,
+        "parentMatchesHomeSession": true
+      }
+    ],
+    "events": [
+      {
+        "name": "native-connected",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "sourceId": "common-mine",
+        "nativeSession": "e289b8dd565030037274732ee2724bbb"
+      },
+      {
+        "type": "event",
+        "name": "native_ready",
+        "at": 1791063313244,
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserId": "52aaea4f401ba16a420c2fd10578393c",
+        "verification": "browser_secp256k1_signature",
+        "browserSignatureVerified": true,
+        "endpointSignatureVerified": false,
+        "generation": 1
+      }
+    ],
+    "sourceErrors": {},
+    "workerCommonSignatures": [],
+    "ui": {
+      "state": "WAITING_PEER",
+      "commons": "1",
+      "sources": [
+        "common-mine"
+      ]
+    }
+  },
+  "dynamic": {
+    "captured": true,
+    "state": "WAITING_PEER",
+    "requested": true,
+    "generation": 1,
+    "startCalls": 1,
+    "sessionId": "ab1d722cd6ce917ce8d30e0479d8c2b7",
+    "configNodeIds": [
+      "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb"
+    ],
+    "workerPresent": true,
+    "commonConnections": [
+      {
+        "id": "ab1d722cd6ce917ce8d30e0479d8c2b7",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserId": "52aaea4f401ba16a420c2fd10578393c",
+        "connected": true,
+        "expiresAt": 1791063732752,
+        "remoteOrigin": null,
+        "endpointVerified": false,
+        "browserSignatureVerified": true
+      },
+      {
+        "id": "db3eda4fabfb9f5bafbec28e7e57407d",
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "browserId": "1510fd154f7f19cb5e262592f7ebac7b",
+        "connected": true,
+        "expiresAt": 1791063825076,
+        "remoteOrigin": "https://ai-test.make-cph-great-again.community",
+        "endpointVerified": true,
+        "browserSignatureVerified": true
+      }
+    ],
+    "nativeConnections": 2,
+    "peers": 0,
+    "circuits": 0,
+    "queuedBytes": 0,
+    "appBytes": 40216,
+    "pendingSends": 0,
+    "signatures": [
+      {
+        "sourceId": "common-mine",
+        "error": "Discovery record expired or has invalid time bounds."
+      },
+      {
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "origin": "https://ai-test.make-cph-great-again.community",
+        "sequence": 2,
+        "bootId": "f90289232a83dd61de0f5254451aadfa",
+        "expiresAt": 1791063628285,
+        "bothSignaturesVerified": true,
+        "identityMatches": true,
+        "bootMatches": true,
+        "nativeSessionMatches": true,
+        "parentMatchesHomeSession": true
+      }
+    ],
+    "events": [
+      {
+        "name": "native-connected",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "sourceId": "common-mine",
+        "nativeSession": "e289b8dd565030037274732ee2724bbb"
+      },
+      {
+        "type": "event",
+        "name": "native_ready",
+        "at": 1791063313244,
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserId": "52aaea4f401ba16a420c2fd10578393c",
+        "verification": "browser_secp256k1_signature",
+        "browserSignatureVerified": true,
+        "endpointSignatureVerified": false,
+        "generation": 1
+      },
+      {
+        "name": "native-connected",
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "nativeSession": "be5bb9d49f5c61391d81f2e3e27ac753",
+        "attachmentId": "db3eda4fabfb9f5bafbec28e7e57407d"
+      },
+      {
+        "type": "event",
+        "name": "native_ready",
+        "at": 1791063525313,
+        "attachmentId": "db3eda4fabfb9f5bafbec28e7e57407d",
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "browserId": "1510fd154f7f19cb5e262592f7ebac7b",
+        "verification": "browser_secp256k1_signature",
+        "browserSignatureVerified": true,
+        "endpointSignatureVerified": true,
+        "generation": 1
+      }
+    ],
+    "sourceErrors": {},
+    "workerCommonSignatures": [
+      {
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserSignatureVerified": true
+      }
+    ],
+    "ui": {
+      "state": "WAITING_PEER",
+      "commons": "2",
+      "sources": [
+        "common-mine",
+        "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666"
+      ]
+    }
+  },
+  "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+  "off": {
+    "captured": true,
+    "state": "OFF",
+    "requested": false,
+    "generation": 2,
+    "startCalls": 1,
+    "sessionId": null,
+    "configNodeIds": [
+      "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb"
+    ],
+    "workerPresent": false,
+    "commonConnections": [],
+    "nativeConnections": 0,
+    "peers": 0,
+    "circuits": 0,
+    "queuedBytes": 0,
+    "appBytes": 0,
+    "pendingSends": 0,
+    "signatures": [],
+    "events": [
+      {
+        "name": "native-connected",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "sourceId": "common-mine",
+        "nativeSession": "e289b8dd565030037274732ee2724bbb"
+      },
+      {
+        "type": "event",
+        "name": "native_ready",
+        "at": 1791063313244,
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserId": "52aaea4f401ba16a420c2fd10578393c",
+        "verification": "browser_secp256k1_signature",
+        "browserSignatureVerified": true,
+        "endpointSignatureVerified": false,
+        "generation": 1
+      },
+      {
+        "name": "native-connected",
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "nativeSession": "be5bb9d49f5c61391d81f2e3e27ac753",
+        "attachmentId": "db3eda4fabfb9f5bafbec28e7e57407d"
+      },
+      {
+        "type": "event",
+        "name": "native_ready",
+        "at": 1791063525313,
+        "attachmentId": "db3eda4fabfb9f5bafbec28e7e57407d",
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "browserId": "1510fd154f7f19cb5e262592f7ebac7b",
+        "verification": "browser_secp256k1_signature",
+        "browserSignatureVerified": true,
+        "endpointSignatureVerified": true,
+        "generation": 1
+      }
+    ],
+    "sourceErrors": {},
+    "workerCommonSignatures": [
+      {
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserSignatureVerified": true
+      },
+      {
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "browserSignatureVerified": true
+      }
+    ],
+    "ui": {
+      "state": "OFF",
+      "commons": "0",
+      "sources": []
+    }
+  },
+  "cleanup": {
+    "exited": true,
+    "profileRemoved": true
+  },
+  "finishedAt": "2026-10-03T21:38:47.411Z"
+}

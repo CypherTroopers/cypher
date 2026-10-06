@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "before": "2026-10-03T17:04:13.563Z",
+  "after": "2026-10-03T17:09:40.911Z",
+  "endpoints": [
+    {
+      "sourceId": "common-a",
+      "sequenceBefore": 61,
+      "sequenceAfter": 71,
+      "sameBoot": true
+    },
+    {
+      "sourceId": "common-b",
+      "sequenceBefore": 60,
+      "sequenceAfter": 69,
+      "sameBoot": true
+    }
+  ]
+}

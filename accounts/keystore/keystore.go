@@ -397,6 +397,24 @@ func (ks *KeyStore) getDecryptedKey(a accounts.Account, auth string) (accounts.A
 	return a, key, err
 }
 
+// VerifySigningPassword authenticates a local ECDSA signing account directly
+// against its encrypted key file, even when the account is already unlocked.
+// It does not sign anything or change the shared unlock state or expiry timer.
+func (ks *KeyStore) VerifySigningPassword(a accounts.Account, passphrase string) error {
+	_, key, err := ks.getDecryptedKey(a, passphrase)
+	if key != nil {
+		defer zeroKey(key.PrivateKey)
+		defer zeroKey25519(key.PrivateKey25519)
+	}
+	if err != nil {
+		return err
+	}
+	if key.PrivateKey == nil {
+		return errors.New("Common RPC signing account requires a local ECDSA key")
+	}
+	return nil
+}
+
 func (ks *KeyStore) expire(addr common.Address, u *unlocked, timeout time.Duration) {
 	t := time.NewTimer(timeout)
 	defer t.Stop()

@@ -1,0 +1,45 @@
+{
+  "at": "2026-10-03T18:22:55.146474+00:00",
+  "removed": [
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/bin",
+      "bytes": 106144912,
+      "absent": true
+    },
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/build-stage",
+      "bytes": 106145758,
+      "absent": true
+    },
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/race-build",
+      "bytes": 3051696,
+      "absent": true
+    },
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/before",
+      "bytes": 95324,
+      "absent": true
+    },
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/after",
+      "bytes": 116058,
+      "absent": true
+    },
+    {
+      "path": "/root/browser-llm-lab/.runtime/releases/mesh-discovery-v1-final",
+      "bytes": 106146010,
+      "absent": true
+    },
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/spec-before.md",
+      "absent": true
+    },
+    {
+      "path": "/tmp/cypher-mesh-discovery-20261003/native-endpoint/spec-after.md",
+      "absent": true
+    }
+  ],
+  "kept": "current runtime binaries/config/datadirs/keys; original pre-change rollback backups; existing unowned temporary files; reproducer tests/evidence",
+  "status": "PASS"
+}

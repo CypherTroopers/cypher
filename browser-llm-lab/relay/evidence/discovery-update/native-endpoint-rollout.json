@@ -1,0 +1,102 @@
+{
+  "startedAt": 1791044644.1914964,
+  "binarySHA256": "04d26386bb26ae8ca9201dc64fadcba6b2d4888886345d9628a530f5f621f438",
+  "targets": {
+    "a": {
+      "beforePID": 3232347,
+      "beforeSHA256": "3efc534447a00e0abb0926f04325d78f498e5077d75e31ffd5b4e48c29f9ee29",
+      "beforeConfig": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 80,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 40,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      },
+      "backup": "/root/browser-llm-lab/.runtime/releases/mesh-discovery-v1/native-a",
+      "afterPID": 3284373,
+      "endpoint": {
+        "payloadBase64": "eyJ2ZXJzaW9uIjoxLCJuZXR3b3JrIjp7ImNoYWluSWQiOjEwMTAxOTE5LCJnZW5lc2lzSGFzaCI6IjB4MDAxYzgyMzlmMjVhNjk3OTMzZTJhNTQ1MTFhNTc2MjA1ZmIyMWNiYjgwZGM5NzRhZGIyOTg5NGRjODAyNTBhZCJ9LCJlbm9kZSI6ImVub2RlOi8vNTU4NGRhMGY5N2M5ZWQ5ZjI1ZDM0NjliNDFhY2JmYmMwMTA1ZjVjYzRiNTUxMjFjYzc3NWZmOGRlOGNjOTBmZTEwYmUzMTI0ZjZmMGE0ODJlODMyZDhhNGI0OGVkMDFmNzk0ZTdkYjdlZGY4YTVlNmY0MzNjYWQ2OGEyOTczYjFAMTI3LjAuMC4xOjMwNDQ1P2Rpc2Nwb3J0PTAiLCJzb3VyY2VJZCI6ImNvbW1vbi1hIiwiZ2F0ZXdheU9yaWdpbiI6Imh0dHBzOi8vYWktdGVzdC5tYWtlLWNwaC1ncmVhdC1hZ2Fpbi5jb21tdW5pdHkiLCJib290SWQiOiI3MTc1YjI0YWFhYTg5MzMwODczMzE3N2RmMDIxYWU3OSIsInNlcXVlbmNlIjoxLCJpc3N1ZWRBdCI6MTc5MTA0NDY1NDQ0OSwiZXhwaXJlc0F0IjoxNzkxMDQ0Nzc0NDQ5fQ==",
+        "signatureHex": "0614e80803c7708e71749b970519cbed1bbe383236b99bb07493c516773143862beafeb67ff0ca2acd5ef82792c3f880a50ec8dd2a5c396d295d2a72c6d3836000"
+      },
+      "profile": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 80,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 40,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      }
+    },
+    "b": {
+      "beforePID": 3232354,
+      "beforeSHA256": "3efc534447a00e0abb0926f04325d78f498e5077d75e31ffd5b4e48c29f9ee29",
+      "beforeConfig": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 80,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 40,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      },
+      "backup": "/root/browser-llm-lab/.runtime/releases/mesh-discovery-v1/native-b",
+      "afterPID": 3284659,
+      "endpoint": {
+        "payloadBase64": "eyJ2ZXJzaW9uIjoxLCJuZXR3b3JrIjp7ImNoYWluSWQiOjEwMTAxOTE5LCJnZW5lc2lzSGFzaCI6IjB4MDAxYzgyMzlmMjVhNjk3OTMzZTJhNTQ1MTFhNTc2MjA1ZmIyMWNiYjgwZGM5NzRhZGIyOTg5NGRjODAyNTBhZCJ9LCJlbm9kZSI6ImVub2RlOi8vNGE1NzE5MDRiMzRjNGRlZTcxNjEzODdmMjg2OTE0ZWU3OWI5NWVjZTAzMjIxZjQzMDRmMGExYjhjMGRmYjQ5ZmQ4ZmQzMThkZjgxODdiODg2YWQ0NzE2YWY0NWViZWQ4NTZlYWYzMjM1OWJmYzJlMjlmMmUwZjM4NjFhNDMyNGNAMTI3LjAuMC4xOjMwNDQ2P2Rpc2Nwb3J0PTAiLCJzb3VyY2VJZCI6ImNvbW1vbi1iIiwiZ2F0ZXdheU9yaWdpbiI6Imh0dHBzOi8vYWktdGVzdC5tYWtlLWNwaC1ncmVhdC1hZ2Fpbi5jb21tdW5pdHkiLCJib290SWQiOiJhYWZmNDBlNzRmNTkwMDFmYjA0MGE4NWQyYjZhMTdlMyIsInNlcXVlbmNlIjoxLCJpc3N1ZWRBdCI6MTc5MTA0NDY2NTcwNiwiZXhwaXJlc0F0IjoxNzkxMDQ0Nzg1NzA2fQ==",
+        "signatureHex": "4313e05cb8d8b8b2f6fdbd411035ca001005aac10a87841d60e91f9b900f35b1032b8aa4a2416785b717f18887c0c4a32cb23a3ac077c09ad4747a9e5dd34aff00"
+      },
+      "profile": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 80,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 40,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      }
+    }
+  },
+  "originalProcesses": {
+    "cypher0": [
+      3232245,
+      1791025748990
+    ],
+    "cypher1": [
+      3232241,
+      1791025748887
+    ],
+    "cypher2": [
+      3232256,
+      1791025749171
+    ],
+    "cypher3": [
+      3232273,
+      1791025749274
+    ],
+    "cypher4": [
+      3232284,
+      1791025749412
+    ],
+    "cypher5": [
+      3232314,
+      1791025750047
+    ],
+    "cypher6": [
+      3232356,
+      1791025751273
+    ],
+    "cyphermine": [
+      3232316,
+      1791025750093
+    ]
+  },
+  "status": "PASS",
+  "finishedAt": 1791044666.7685778
+}

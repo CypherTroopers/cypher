@@ -1,0 +1,103 @@
+{
+  "startedAt": "2026-10-03T17:30:32.161317+00:00",
+  "status": "REMAINDERS_OR_UNVERIFIED",
+  "sourceReport": "/tmp/cypher-mesh-discovery-20261003/evidence/native-discovery-browser-report.json",
+  "scope": "Only browserPid values from this acceptance report; no other process scan, signals, native calls, or deletion",
+  "ownedBrowsers": {
+    "A:3314585": {
+      "name": "A",
+      "pid": 3314585,
+      "firstSeenAt": "2026-10-03T17:30:32.205271+00:00",
+      "origin": "https://native-gateway-a.example.org:45541",
+      "initialProcess": {
+        "present": true,
+        "state": "S",
+        "startTicks": "132582579",
+        "argv": [
+          "/tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome --no-sandbox --no-proxy-server --ignore-certificate-errors --host-resolver-rules=MAP native-gateway-a.example.org 127.0.0.1,MAP native-gateway-b.example.org 127.0.0.1 --headless=new --remote-debugging-port=0 --user-data-dir=/tmp/cypher-mesh-A-HXOzGC --noerrdialogs --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+        ]
+      },
+      "profileValidated": true,
+      "currentProcess": {
+        "present": false
+      },
+      "sameOwnedProcessAlive": false,
+      "lastCheckedAt": "2026-10-03T17:48:15.324891+00:00",
+      "profile": "/tmp/cypher-mesh-A-HXOzGC",
+      "profilePresent": false
+    },
+    "B:3314889": {
+      "name": "B",
+      "pid": 3314889,
+      "firstSeenAt": "2026-10-03T17:30:32.205516+00:00",
+      "origin": "https://native-gateway-b.example.org:45541",
+      "initialProcess": {
+        "present": true,
+        "state": "S",
+        "startTicks": "132583053",
+        "argv": [
+          "/tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome --no-sandbox --no-proxy-server --ignore-certificate-errors --host-resolver-rules=MAP native-gateway-a.example.org 127.0.0.1,MAP native-gateway-b.example.org 127.0.0.1 --headless=new --remote-debugging-port=0 --user-data-dir=/tmp/cypher-mesh-B-owrVNs --noerrdialogs --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+        ]
+      },
+      "profileValidated": true,
+      "currentProcess": {
+        "present": false
+      },
+      "sameOwnedProcessAlive": false,
+      "lastCheckedAt": "2026-10-03T17:48:15.325252+00:00",
+      "profile": "/tmp/cypher-mesh-B-owrVNs",
+      "profilePresent": true
+    },
+    "C:3315541": {
+      "name": "C",
+      "pid": 3315541,
+      "firstSeenAt": "2026-10-03T17:30:32.205760+00:00",
+      "origin": "https://native-gateway-a.example.org:45541",
+      "initialProcess": {
+        "present": true,
+        "state": "S",
+        "startTicks": "132584381",
+        "argv": [
+          "/tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome --no-sandbox --no-proxy-server --ignore-certificate-errors --host-resolver-rules=MAP native-gateway-a.example.org 127.0.0.1,MAP native-gateway-b.example.org 127.0.0.1 --headless=new --remote-debugging-port=0 --user-data-dir=/tmp/cypher-mesh-C-gRBeP4 --noerrdialogs --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+        ]
+      },
+      "profileValidated": true,
+      "currentProcess": {
+        "present": false
+      },
+      "sameOwnedProcessAlive": false,
+      "lastCheckedAt": "2026-10-03T17:48:15.325511+00:00",
+      "profile": "/tmp/cypher-mesh-C-gRBeP4",
+      "profilePresent": false
+    },
+    "D:3320303": {
+      "name": "D",
+      "pid": 3320303,
+      "firstSeenAt": "2026-10-03T17:47:04.755796+00:00",
+      "origin": "https://native-gateway-a.example.org:45541",
+      "initialProcess": {
+        "present": true,
+        "state": "S",
+        "startTicks": "132775524",
+        "argv": [
+          "/tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome --no-sandbox --no-proxy-server --ignore-certificate-errors --host-resolver-rules=MAP native-gateway-a.example.org 127.0.0.1,MAP native-gateway-b.example.org 127.0.0.1 --headless=new --remote-debugging-port=0 --user-data-dir=/tmp/cypher-mesh-D-iG4yFg --noerrdialogs --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank"
+        ]
+      },
+      "profile": "/tmp/cypher-mesh-D-iG4yFg",
+      "profileValidated": true,
+      "profilePresentWhenCaptured": true,
+      "profilePresent": true,
+      "currentProcess": {
+        "present": false
+      },
+      "sameOwnedProcessAlive": false,
+      "lastCheckedAt": "2026-10-03T17:48:15.325780+00:00"
+    }
+  },
+  "sourceStatus": "PASS",
+  "hostPidNamespace": "pid:[4026531836]",
+  "sourceFinishedAt": "2026-10-03T17:47:07.980Z",
+  "updatedAt": "2026-10-03T17:48:15.325799+00:00",
+  "finishedAt": "2026-10-03T17:48:15.325795+00:00",
+  "monitorInitialStatus": "REMAINDERS_OR_UNVERIFIED"
+}

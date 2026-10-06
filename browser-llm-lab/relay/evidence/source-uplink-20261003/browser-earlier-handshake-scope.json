@@ -1,0 +1,1098 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T21:40:41.070Z",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+  "project": "/root/cypher/browser-llm-lab",
+  "sameHostOnly": true,
+  "physicalDeviceNetworkTest": false,
+  "browserMode": "Independent processes, controller-driven path isolation; not a normal UI test",
+  "nativeLifecycleMutations": 0,
+  "directCommonByteInjection": false,
+  "processes": {
+    "A": {
+      "pid": 25,
+      "profile": "/tmp/cypher-uplink-browsers-0lLwjn/A",
+      "sourceId": "common-mine"
+    },
+    "B": {
+      "pid": 196,
+      "profile": "/tmp/cypher-uplink-browsers-0lLwjn/B",
+      "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666"
+    },
+    "C": {
+      "pid": 394,
+      "profile": "/tmp/cypher-uplink-browsers-0lLwjn/C",
+      "sourceId": "common-mine"
+    }
+  },
+  "checkpoints": [
+    {
+      "name": "Unregistered source obtains browser access through outgoing source WSS",
+      "at": "2026-10-03T21:40:50.033Z",
+      "A": {
+        "receivedBytes": 0,
+        "sentBytes": 0,
+        "nativeReceivedBytes": 848,
+        "nativeSentBytes": 0,
+        "streamReceivedBytes": 0,
+        "streamForwardedBytes": 0,
+        "acknowledgedBytes": 0,
+        "acknowledgedCount": 0,
+        "nativeCreditBytes": 0,
+        "gatewayBytes": 4971,
+        "signalingBytes": 6576,
+        "totalBytes": 18821,
+        "rejectedFrames": 0,
+        "circuitsOpened": 0,
+        "circuitsClosed": 0,
+        "connectedPeers": 0,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "43170bf4db20906635956c426ffa25c6",
+            "endpointCircuits": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 1,
+        "queuedBytes": 0,
+        "appBytes": 32160,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "issuedAt": 1791063644462,
+            "expiresAt": 1791063764462,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "requested": true,
+        "sourceErrors": {},
+        "sessionId": "66c6c0e4f724caae9417ec13284809ca",
+        "sessionExpiresAt": 1791063944307,
+        "signalConnected": true,
+        "selfGeo": {
+          "countryCode": "FR",
+          "label": "France",
+          "lat": 46.23,
+          "lon": 2.21,
+          "accuracy": "country",
+          "source": "cloudflare"
+        },
+        "peers": [
+          {
+            "peerId": "9b923a3e46f6e2fdaa7161b421dd384d",
+            "sessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "state": "connected",
+            "path": "direct",
+            "geo": {
+              "countryCode": "FR",
+              "label": "France",
+              "lat": 46.23,
+              "lon": 2.21,
+              "accuracy": "country",
+              "source": "gateway-country-estimate"
+            },
+            "connected": true
+          }
+        ],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserId": "43170bf4db20906635956c426ffa25c6",
+        "nativeConnected": true,
+        "nativeSession": "83b3b260cefa74daeab7479039727e3c",
+        "commonConnections": [
+          {
+            "id": "66c6c0e4f724caae9417ec13284809ca",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "43170bf4db20906635956c426ffa25c6",
+            "connected": true,
+            "expiresAt": 1791063944307,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 1
+        },
+        "reconnects": 0,
+        "rtcStats": [],
+        "nativeStatus": null
+      },
+      "B": {
+        "receivedBytes": 0,
+        "sentBytes": 0,
+        "nativeReceivedBytes": 0,
+        "nativeSentBytes": 0,
+        "streamReceivedBytes": 0,
+        "streamForwardedBytes": 0,
+        "acknowledgedBytes": 0,
+        "acknowledgedCount": 0,
+        "nativeCreditBytes": 0,
+        "gatewayBytes": 0,
+        "signalingBytes": 0,
+        "totalBytes": 21875,
+        "rejectedFrames": 0,
+        "circuitsOpened": 0,
+        "circuitsClosed": 0,
+        "connectedPeers": 0,
+        "nativeConnections": 1,
+        "connections": [],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 0,
+        "queuedBytes": 0,
+        "appBytes": 4512,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [],
+        "receipts": [],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "requested": true,
+        "sourceErrors": {},
+        "sessionId": "bdabab882e62131c3b7f50379a3ac631",
+        "sessionExpiresAt": 1791063949167,
+        "signalConnected": true,
+        "selfGeo": {
+          "countryCode": "FR",
+          "label": "France",
+          "lat": 46.23,
+          "lon": 2.21,
+          "accuracy": "country",
+          "source": "cloudflare"
+        },
+        "peers": [
+          {
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "sessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "state": "connected",
+            "path": "direct",
+            "geo": {
+              "countryCode": "FR",
+              "label": "France",
+              "lat": 46.23,
+              "lon": 2.21,
+              "accuracy": "country",
+              "source": "gateway-country-estimate"
+            },
+            "connected": true
+          }
+        ],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "browserId": "3884a665d3c544706e47fccf1bab460b",
+        "nativeConnected": true,
+        "nativeSession": "568fea7d4fab8f4ee4d11842d8c192c9",
+        "commonConnections": [
+          {
+            "id": "bdabab882e62131c3b7f50379a3ac631",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "3884a665d3c544706e47fccf1bab460b",
+            "connected": true,
+            "expiresAt": 1791063949167,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 1
+        },
+        "reconnects": 0,
+        "rtcStats": [],
+        "nativeStatus": null
+      }
+    },
+    {
+      "name": "Actual native stream, exact RTC bytes/digest/hop ACK, and matching chain data",
+      "at": "2026-10-03T21:40:56.763Z",
+      "native": {
+        "at": "2026-10-03T21:40:56.748Z",
+        "primaryHead": 3972,
+        "sourceHead": 194,
+        "sourcePeers": [
+          {
+            "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "transport": "browser-mesh",
+            "browserMesh": {
+              "circuitId": "88596811fb72be381083e684ffbd7478",
+              "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "relayIds": [
+                "3884a665d3c544706e47fccf1bab460b",
+                "43170bf4db20906635956c426ffa25c6"
+              ],
+              "bytesReceived": 116623,
+              "bytesSent": 1953
+            }
+          }
+        ],
+        "hashes": {
+          "0": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+          "1": "0xa8e421f30b6a9b920843044b63ca0bd0cca5590ce35194486c0fc81ef4ccb3b7",
+          "194": "0x4c2ef312fab9027057ad03fac28d1a54ac51b4df7d0044de72006f53a88ef4d0"
+        }
+      },
+      "raw": {
+        "sender": "A",
+        "receiver": "B",
+        "circuitId": "88596811fb72be381083e684ffbd7478",
+        "seq": 1,
+        "bytes": 510,
+        "digest": "a4fa09ad69eb31c9570e7e4e8bca4c22514f6f827831fbd653999186cbde2986",
+        "bytesEqual": true,
+        "acknowledgementMatched": true,
+        "path": "direct",
+        "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+      }
+    },
+    {
+      "name": "A OFF stops the only browser relay path after queues drain",
+      "at": "2026-10-03T21:40:59.459Z",
+      "before": {
+        "receivedBytes": 267340,
+        "sentBytes": 116386,
+        "nativeReceivedBytes": 30005,
+        "nativeSentBytes": 182067,
+        "streamReceivedBytes": 118576,
+        "streamForwardedBytes": 118576,
+        "acknowledgedBytes": 1953,
+        "acknowledgedCount": 96,
+        "nativeCreditBytes": 118576,
+        "gatewayBytes": 6081,
+        "signalingBytes": 28196,
+        "totalBytes": 630075,
+        "rejectedFrames": 0,
+        "circuitsOpened": 1,
+        "circuitsClosed": 1,
+        "connectedPeers": 0,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "3884a665d3c544706e47fccf1bab460b",
+            "endpointCircuits": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 1,
+        "queuedBytes": 0,
+        "appBytes": 258976,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "issuedAt": 1791063638285,
+            "expiresAt": 1791063758285,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 85,
+            "direction": "forward",
+            "digest": "cefbc27250ab138cd9639c388cccf9133d6badfe355c075044573997e5ce655f",
+            "rawBytes": 4,
+            "requestId": "b1bc9843d56b4693ac021d7562f9832f",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063653708,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 86,
+            "direction": "forward",
+            "digest": "1e62dcd59b40a1994e5ce4a8485a9057f2ada4273b173f47eb9c661a49c752f6",
+            "rawBytes": 16,
+            "requestId": "488d803aeea9e4d5d39b59ab2ce3ca8c",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063653710,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 87,
+            "direction": "forward",
+            "digest": "59f829fae6945efedeb6b0462660a6c5905a790f9be29ec01473cafb50692874",
+            "rawBytes": 32,
+            "requestId": "462653c68b15270bfdc4bd39f90396a8",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654247,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 88,
+            "direction": "forward",
+            "digest": "3cbdaf66b3dd2b174788a2f17f938b52dda93a2a97440cead19332cbfacba7c8",
+            "rawBytes": 1,
+            "requestId": "6bcf0943991cef09142980b3ecc48592",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654247,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 89,
+            "direction": "forward",
+            "digest": "0f4c23c018c3e578ecc39de8ad0c7a1f30c17804544e6f1daa7a077996995edb",
+            "rawBytes": 9,
+            "requestId": "8d1fc68d2c3a6b5a2a39abf9e53301f2",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654248,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 90,
+            "direction": "forward",
+            "digest": "6dc37ca99c1bbc1c71e4ac39a39a291b7c75b778c0e2f3e9627714916a51deb7",
+            "rawBytes": 6,
+            "requestId": "88ae4be5261956bcc7446f934b44a1e3",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654250,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 91,
+            "direction": "forward",
+            "digest": "bafb5f472b15cca825e0a814a214a5cacfed3f6d8f965d0b8edac0f3d95a7144",
+            "rawBytes": 16,
+            "requestId": "787d73f3401db09fdf895bea9a5a5cb5",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654252,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 92,
+            "direction": "forward",
+            "digest": "52fe620c3ab22b9c3ce57b39002802261547bb6abdb3dc5f287fce1e2fd730eb",
+            "rawBytes": 32,
+            "requestId": "54e7df3e5b2dd821d0283a990e2f4d76",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656671,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 93,
+            "direction": "forward",
+            "digest": "af193a8cdcd0e3fb39e71147e59efa5cad40763d2611f5beff34a274f514362f",
+            "rawBytes": 1,
+            "requestId": "eb33e9ab311dc7fb79475d2035da9a14",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656671,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 94,
+            "direction": "forward",
+            "digest": "ca3e24ac09d164057266be24c455f34ae370a6e354e3e26bc623f9d3c5ed7585",
+            "rawBytes": 10,
+            "requestId": "157cbafce6be497847f64d4aaf678cbf",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656671,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 95,
+            "direction": "forward",
+            "digest": "8b9d07fedcda32efb0c8da435d0737b68e01dc53a5e384db677e8e346b2b77a8",
+            "rawBytes": 5,
+            "requestId": "d16251fb5a528db4d71c297b3addb049",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656671,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 96,
+            "direction": "forward",
+            "digest": "d6328b09141f7ef0a258dc8b134b2ce3fd6b43f9c3a94f0d765bb45d6386fdda",
+            "rawBytes": 16,
+            "requestId": "531f8693bdd0db6b8860a5323460bbe0",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656672,
+            "meaning": "bounded-hop-queue-acceptance"
+          }
+        ],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1"
+      },
+      "after": {
+        "receivedBytes": 267340,
+        "sentBytes": 116386,
+        "nativeReceivedBytes": 30005,
+        "nativeSentBytes": 182067,
+        "streamReceivedBytes": 118576,
+        "streamForwardedBytes": 118576,
+        "acknowledgedBytes": 1953,
+        "acknowledgedCount": 96,
+        "nativeCreditBytes": 118576,
+        "gatewayBytes": 7012,
+        "signalingBytes": 28196,
+        "totalBytes": 631006,
+        "rejectedFrames": 0,
+        "circuitsOpened": 1,
+        "circuitsClosed": 1,
+        "connectedPeers": 0,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "3884a665d3c544706e47fccf1bab460b",
+            "endpointCircuits": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 1,
+        "queuedBytes": 0,
+        "appBytes": 258976,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "issuedAt": 1791063638285,
+            "expiresAt": 1791063758285,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 85,
+            "direction": "forward",
+            "digest": "cefbc27250ab138cd9639c388cccf9133d6badfe355c075044573997e5ce655f",
+            "rawBytes": 4,
+            "requestId": "b1bc9843d56b4693ac021d7562f9832f",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063653708,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 86,
+            "direction": "forward",
+            "digest": "1e62dcd59b40a1994e5ce4a8485a9057f2ada4273b173f47eb9c661a49c752f6",
+            "rawBytes": 16,
+            "requestId": "488d803aeea9e4d5d39b59ab2ce3ca8c",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063653710,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 87,
+            "direction": "forward",
+            "digest": "59f829fae6945efedeb6b0462660a6c5905a790f9be29ec01473cafb50692874",
+            "rawBytes": 32,
+            "requestId": "462653c68b15270bfdc4bd39f90396a8",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654247,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 88,
+            "direction": "forward",
+            "digest": "3cbdaf66b3dd2b174788a2f17f938b52dda93a2a97440cead19332cbfacba7c8",
+            "rawBytes": 1,
+            "requestId": "6bcf0943991cef09142980b3ecc48592",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654247,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 89,
+            "direction": "forward",
+            "digest": "0f4c23c018c3e578ecc39de8ad0c7a1f30c17804544e6f1daa7a077996995edb",
+            "rawBytes": 9,
+            "requestId": "8d1fc68d2c3a6b5a2a39abf9e53301f2",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654248,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 90,
+            "direction": "forward",
+            "digest": "6dc37ca99c1bbc1c71e4ac39a39a291b7c75b778c0e2f3e9627714916a51deb7",
+            "rawBytes": 6,
+            "requestId": "88ae4be5261956bcc7446f934b44a1e3",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654250,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 91,
+            "direction": "forward",
+            "digest": "bafb5f472b15cca825e0a814a214a5cacfed3f6d8f965d0b8edac0f3d95a7144",
+            "rawBytes": 16,
+            "requestId": "787d73f3401db09fdf895bea9a5a5cb5",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063654252,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 92,
+            "direction": "forward",
+            "digest": "52fe620c3ab22b9c3ce57b39002802261547bb6abdb3dc5f287fce1e2fd730eb",
+            "rawBytes": 32,
+            "requestId": "54e7df3e5b2dd821d0283a990e2f4d76",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656671,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 93,
+            "direction": "forward",
+            "digest": "af193a8cdcd0e3fb39e71147e59efa5cad40763d2611f5beff34a274f514362f",
+            "rawBytes": 1,
+            "requestId": "eb33e9ab311dc7fb79475d2035da9a14",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656671,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 94,
+            "direction": "forward",
+            "digest": "ca3e24ac09d164057266be24c455f34ae370a6e354e3e26bc623f9d3c5ed7585",
+            "rawBytes": 10,
+            "requestId": "157cbafce6be497847f64d4aaf678cbf",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656671,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 95,
+            "direction": "forward",
+            "digest": "8b9d07fedcda32efb0c8da435d0737b68e01dc53a5e384db677e8e346b2b77a8",
+            "rawBytes": 5,
+            "requestId": "d16251fb5a528db4d71c297b3addb049",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656671,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "88596811fb72be381083e684ffbd7478",
+            "seq": 96,
+            "direction": "forward",
+            "digest": "d6328b09141f7ef0a258dc8b134b2ce3fd6b43f9c3a94f0d765bb45d6386fdda",
+            "rawBytes": 16,
+            "requestId": "531f8693bdd0db6b8860a5323460bbe0",
+            "peerId": "e617ec7807dff310bd8d097cd80dcce7",
+            "fromSessionId": "66c6c0e4f724caae9417ec13284809ca",
+            "toSessionId": "bdabab882e62131c3b7f50379a3ac631",
+            "path": "direct",
+            "at": 1791063656672,
+            "meaning": "bounded-hop-queue-acceptance"
+          }
+        ],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1"
+      }
+    },
+    {
+      "name": "New C route carries newly observed encrypted bytes and matching hop ACK",
+      "at": "2026-10-03T21:41:16.747Z",
+      "native": {
+        "at": "2026-10-03T21:41:16.727Z",
+        "primaryHead": 3972,
+        "sourceHead": 384,
+        "sourcePeers": [
+          {
+            "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "transport": "browser-mesh",
+            "browserMesh": {
+              "circuitId": "017ffcb1e1918bd1d302d8ba0595fe4e",
+              "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "relayIds": [
+                "3884a665d3c544706e47fccf1bab460b",
+                "ef3f91da2de743fa6bc0daa4ec661878"
+              ],
+              "bytesReceived": 11279,
+              "bytesSent": 1148
+            }
+          }
+        ],
+        "hashes": {
+          "0": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+          "1": "0xa8e421f30b6a9b920843044b63ca0bd0cca5590ce35194486c0fc81ef4ccb3b7",
+          "384": "0x67d4f8f5e2c921fdfc3c5d151eed335b4099dce3e4e3c07c774ca4682f4e65e5"
+        }
+      },
+      "raw": {
+        "sender": "C",
+        "receiver": "B",
+        "circuitId": "7fa6ae9e5c9190b3a0b1fc94e5a757b2",
+        "seq": 1,
+        "bytes": 571,
+        "digest": "6d83bfc9fdcd04df98db657e52ed251596a85a5af7a232b318bf14c1265cf829",
+        "bytesEqual": true,
+        "acknowledgementMatched": true,
+        "path": "direct",
+        "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+      }
+    }
+  ],
+  "errors": [],
+  "cleanup": [
+    {
+      "browser": "A",
+      "pid": 25,
+      "profile": "/tmp/cypher-uplink-browsers-0lLwjn/A",
+      "exited": true,
+      "profileRemoved": true
+    },
+    {
+      "browser": "B",
+      "pid": 196,
+      "profile": "/tmp/cypher-uplink-browsers-0lLwjn/B",
+      "exited": true,
+      "profileRemoved": true
+    },
+    {
+      "browser": "C",
+      "pid": 394,
+      "profile": "/tmp/cypher-uplink-browsers-0lLwjn/C",
+      "exited": true,
+      "profileRemoved": true
+    }
+  ],
+  "primaryNodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+  "sourceNodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+  "before": {
+    "at": "2026-10-03T21:40:41.169Z",
+    "primaryHead": 3972,
+    "sourceHead": 192,
+    "sourcePeers": []
+  },
+  "firstNative": {
+    "at": "2026-10-03T21:40:51.288Z",
+    "primaryHead": 3972,
+    "sourceHead": 192,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "88596811fb72be381083e684ffbd7478",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "3884a665d3c544706e47fccf1bab460b",
+            "43170bf4db20906635956c426ffa25c6"
+          ],
+          "bytesReceived": 862,
+          "bytesSent": 929
+        }
+      }
+    ]
+  },
+  "firstRawProof": {
+    "sender": "A",
+    "receiver": "B",
+    "circuitId": "88596811fb72be381083e684ffbd7478",
+    "seq": 1,
+    "bytes": 510,
+    "digest": "a4fa09ad69eb31c9570e7e4e8bca4c22514f6f827831fbd653999186cbde2986",
+    "bytesEqual": true,
+    "acknowledgementMatched": true,
+    "path": "direct",
+    "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+  },
+  "firstCanonical": {
+    "at": "2026-10-03T21:40:56.748Z",
+    "primaryHead": 3972,
+    "sourceHead": 194,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "88596811fb72be381083e684ffbd7478",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "3884a665d3c544706e47fccf1bab460b",
+            "43170bf4db20906635956c426ffa25c6"
+          ],
+          "bytesReceived": 116623,
+          "bytesSent": 1953
+        }
+      }
+    ],
+    "hashes": {
+      "0": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "1": "0xa8e421f30b6a9b920843044b63ca0bd0cca5590ce35194486c0fc81ef4ccb3b7",
+      "194": "0x4c2ef312fab9027057ad03fac28d1a54ac51b4df7d0044de72006f53a88ef4d0"
+    }
+  },
+  "offNative": {
+    "at": "2026-10-03T21:40:59.458Z",
+    "primaryHead": 3972,
+    "sourceHead": 249,
+    "sourcePeers": []
+  },
+  "replacementNative": {
+    "at": "2026-10-03T21:41:04.310Z",
+    "primaryHead": 3972,
+    "sourceHead": 347,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "7fa6ae9e5c9190b3a0b1fc94e5a757b2",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "ef3f91da2de743fa6bc0daa4ec661878",
+            "3884a665d3c544706e47fccf1bab460b"
+          ],
+          "bytesReceived": 923,
+          "bytesSent": 712
+        }
+      }
+    ]
+  },
+  "replacementRawProof": {
+    "sender": "C",
+    "receiver": "B",
+    "circuitId": "7fa6ae9e5c9190b3a0b1fc94e5a757b2",
+    "seq": 1,
+    "bytes": 571,
+    "digest": "6d83bfc9fdcd04df98db657e52ed251596a85a5af7a232b318bf14c1265cf829",
+    "bytesEqual": true,
+    "acknowledgementMatched": true,
+    "path": "direct",
+    "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+  },
+  "replacementProgress": {
+    "at": "2026-10-03T21:41:16.724Z",
+    "primaryHead": 3972,
+    "sourceHead": 384,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "017ffcb1e1918bd1d302d8ba0595fe4e",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "3884a665d3c544706e47fccf1bab460b",
+            "ef3f91da2de743fa6bc0daa4ec661878"
+          ],
+          "bytesReceived": 11279,
+          "bytesSent": 1148
+        }
+      }
+    ]
+  },
+  "finalCanonical": {
+    "at": "2026-10-03T21:41:16.727Z",
+    "primaryHead": 3972,
+    "sourceHead": 384,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "017ffcb1e1918bd1d302d8ba0595fe4e",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "3884a665d3c544706e47fccf1bab460b",
+            "ef3f91da2de743fa6bc0daa4ec661878"
+          ],
+          "bytesReceived": 11279,
+          "bytesSent": 1148
+        }
+      }
+    ],
+    "hashes": {
+      "0": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "1": "0xa8e421f30b6a9b920843044b63ca0bd0cca5590ce35194486c0fc81ef4ccb3b7",
+      "384": "0x67d4f8f5e2c921fdfc3c5d151eed335b4099dce3e4e3c07c774ca4682f4e65e5"
+    }
+  },
+  "final": {
+    "at": "2026-10-03T21:41:16.806Z",
+    "primaryHead": 3972,
+    "sourceHead": 384,
+    "sourcePeers": []
+  },
+  "cleanupComplete": true,
+  "profileParentRemoved": true,
+  "finishedAt": "2026-10-03T21:41:17.285Z"
+}

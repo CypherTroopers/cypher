@@ -274,6 +274,8 @@ func TestRLPXFrameFake(t *testing.T) {
 		IngressMAC: hash,
 		EgressMAC:  hash,
 	})
+	var payloadDeadlineSize uint32
+	rw.setFrameReadDeadline = func(size uint32) { payloadDeadlineSize = size }
 
 	golden := unhex(`
 00828ddae471818bb0bfa6b551d1cb42
@@ -303,10 +305,29 @@ ba628a4ba590cb43f7848f41c4382885
 	if msg.Code != 8 {
 		t.Errorf("msg code mismatch: got %d, want %d", msg.Code, 8)
 	}
+	if payloadDeadlineSize != 6 { // one-byte message code plus five-byte RLP payload
+		t.Errorf("payload deadline size mismatch: got %d, want 6", payloadDeadlineSize)
+	}
 	payload, _ := ioutil.ReadAll(msg.Payload)
 	wantPayload := unhex("C401020304")
 	if !bytes.Equal(payload, wantPayload) {
 		t.Errorf("msg payload mismatch:\ngot  %x\nwant %x", payload, wantPayload)
+	}
+}
+
+func TestRLPXFrameTransferTimeoutScalesWithoutExtendingControlTraffic(t *testing.T) {
+	if got := frameTransferTimeout(1024, frameReadTimeout); got != frameReadTimeout {
+		t.Fatalf("small-frame read timeout = %v, want legacy %v", got, frameReadTimeout)
+	}
+	if got := frameTransferTimeout(1024, frameWriteTimeout); got != frameWriteTimeout {
+		t.Fatalf("small-frame write timeout = %v, want legacy %v", got, frameWriteTimeout)
+	}
+	want := frameTransferTimeoutSlack + time.Duration(maxRLPXFrameSize)*time.Second/frameTransferBytesPerSecond
+	if got := frameTransferTimeout(maxRLPXFrameSize, frameReadTimeout); got != want {
+		t.Fatalf("maximum-frame timeout = %v, want %v", got, want)
+	}
+	if got := frameTransferTimeout(^uint32(0), frameReadTimeout); got != want {
+		t.Fatalf("oversized-frame timeout = %v, want bounded %v", got, want)
 	}
 }
 
@@ -388,8 +409,8 @@ func TestRLPXFrameRWRejectsFrameSizeOverflow(t *testing.T) {
 		Size:    math.MaxUint32,
 		Payload: bytes.NewReader(nil),
 	}
-	if err := rw.WriteMsg(msg); err == nil || err.Error() != "message size overflows uint24" {
-		t.Fatalf("expected overflow error, got %v", err)
+	if err := rw.WriteMsg(msg); !errors.Is(err, errMessageFrameTooLarge) {
+		t.Fatalf("expected extended-frame cap error, got %v", err)
 	}
 }
 

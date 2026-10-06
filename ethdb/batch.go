@@ -38,6 +38,13 @@ type Batch interface {
 	Replay(w KeyValueWriter) error
 }
 
+// SyncBatch is implemented by batches that can durably flush a write-ahead
+// safety record before a consensus vote is released to the network.
+type SyncBatch interface {
+	Batch
+	WriteSync() error
+}
+
 // Batcher wraps the NewBatch method of a backing data store.
 type Batcher interface {
 	// NewBatch creates a write-only database that buffers changes to its host db

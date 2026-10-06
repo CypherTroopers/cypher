@@ -1,0 +1,21 @@
+[Unit]
+Description=Cypher browser mesh web gateway and TURN
+Wants=network-online.target
+After=network-online.target pm2-root.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+UMask=0077
+WorkingDirectory=/root/cypher/browser-llm-lab
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/root/cypher/browser-llm-lab/relay/start-managed.sh start
+ExecStop=/root/cypher/browser-llm-lab/relay/start-managed.sh stop
+TimeoutStartSec=180
+TimeoutStopSec=120
+# PM2's root daemon may also own unrelated apps. Stop only the selected names.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

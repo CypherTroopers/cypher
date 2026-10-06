@@ -1,0 +1,69 @@
+[
+  {
+    "id": "common-a",
+    "socketPath": "/root/browser-llm-lab/.runtime/mesh-a/source.sock",
+    "ipcPath": "/root/browser-llm-lab/.runtime/mesh-a/node.ipc",
+    "enode": "enode://5584da0f97c9ed9f25d3469b41acbfbc0105f5cc4b55121cc775ff8de8cc90fe10be3124f6f0a482e832d8a4b48ed01f794e7db7edf8a5e6f433cad68a2973b1@127.0.0.1:30445?discport=0",
+    "nodeId": "02258548fe14b0b26a2b7e8903f7f014993e62ff938617c74c875dbcf9b756df",
+    "network": {
+      "chainId": 10101919,
+      "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    },
+    "head": 305,
+    "peers": [
+      {
+        "enode": "enode://5e09dc887c5da47914aaa3b9fef97ae1c25b7d5b353713af0140bef497a3ef82089a074024ec3feca3bbfba9d09bd34eb05fda80cc3c906c158fa62f59218e57@127.0.0.1:6099",
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "name": "Geth/v1.9.20-stable-f8ee241a(cypherium-v2.0.0)/linux-amd64/go1.27.1",
+        "caps": [
+          "eth/66"
+        ],
+        "network": {
+          "localAddress": "127.0.0.1:50256",
+          "remoteAddress": "127.0.0.1:6099",
+          "inbound": false,
+          "trusted": false,
+          "static": true
+        },
+        "protocols": {
+          "eth": {
+            "version": 66,
+            "difficulty": 4142600,
+            "head": "0x283b2d70e7c63f6ac11676ad94721be73dc33da371746748c3bbe9abc5683f8f"
+          }
+        }
+      }
+    ],
+    "meshStatus": {
+      "running": true,
+      "sessions": 0,
+      "circuits": 0,
+      "candidates": 0,
+      "receivedBytes": 0,
+      "sentBytes": 0,
+      "routes": []
+    }
+  },
+  {
+    "id": "common-b",
+    "socketPath": "/root/browser-llm-lab/.runtime/mesh-b/source.sock",
+    "ipcPath": "/root/browser-llm-lab/.runtime/mesh-b/node.ipc",
+    "enode": "enode://4a571904b34c4dee7161387f286914ee79b95ece03221f4304f0a1b8c0dfb49fd8fd318df8187b886ad4716af45ebed856eaf32359bfc2e29f2e0f3861a4324c@127.0.0.1:30446?discport=0",
+    "nodeId": "bde8127ae3d3aed657401d11966ed13f2568777fe6e699936e6bea74667336a2",
+    "network": {
+      "chainId": 10101919,
+      "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    },
+    "head": 0,
+    "peers": [],
+    "meshStatus": {
+      "running": true,
+      "sessions": 0,
+      "circuits": 0,
+      "candidates": 0,
+      "receivedBytes": 0,
+      "sentBytes": 0,
+      "routes": []
+    }
+  }
+]

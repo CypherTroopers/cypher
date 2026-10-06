@@ -1,0 +1,15 @@
+{
+  "status": "PASS",
+  "scope": "Actual staged gateway verifier against independently generated native Go vector; no network or native node use",
+  "checks": [
+    "independent_go_vector",
+    "changed_raw_whitespace",
+    "changed_origin",
+    "invalid_recovery",
+    "uppercase_signature",
+    "truncated_signature",
+    "wrong_public_key",
+    "high_s_malleated"
+  ],
+  "checkedAt": "2026-10-03T21:22:37.409Z"
+}

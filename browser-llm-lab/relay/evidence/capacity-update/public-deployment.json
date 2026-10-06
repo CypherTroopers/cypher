@@ -1,0 +1,73 @@
+{
+  "at": "2026-10-03T09:25:17.204557+00:00",
+  "assets": [
+    {
+      "path": "/",
+      "sha256": "9e699b962e52c9cf1b9ef2b6fcde9b3bcaeac2c2b6c87a9a0f5b736dd5fb9723",
+      "status": 200,
+      "matchesDeployed": true
+    },
+    {
+      "path": "/mesh-protocol.js?capacity-check=1",
+      "sha256": "4eca1f7f847e5aea27d75b84074fbf62bcb89ffc05cc24621d7b5e4b5189c20e",
+      "status": 200,
+      "matchesDeployed": true
+    },
+    {
+      "path": "/mesh-worker.js?capacity-check=1",
+      "sha256": "1f105975e68e8b16ed2c94f49beac53331c5c4f73290e9578ceff7907fc679ba",
+      "status": 200,
+      "matchesDeployed": true
+    },
+    {
+      "path": "/mesh-controller.js?capacity-check=1",
+      "sha256": "9e332ebeb251bb26c77befdb93baa03011649aa0b4ac5fd790fcb29a1df25236",
+      "status": 200,
+      "matchesDeployed": true
+    },
+    {
+      "path": "/relay-ui.js?capacity-check=1",
+      "sha256": "1139fda461a9aad36c161f5213f41031e4fa308b0f96dc3fc23e1bcbc05becab",
+      "status": 200,
+      "matchesDeployed": true
+    }
+  ],
+  "publicLimits": {
+    "maxSessions": 160,
+    "maxConnections": 384,
+    "maxPeers": 3,
+    "httpRequestsPerSecond": 128,
+    "httpBytesPerSecond": 1048576,
+    "sessionRequestsPerSecond": 8,
+    "sessionBytesPerSecond": 65536,
+    "admissionsPerMinute": 32,
+    "signalingBytesPerSecond": 4096,
+    "sessionLeaseMs": 300000,
+    "renewAfterMs": 120000,
+    "authTimeoutMs": 5000,
+    "maxSignalBytes": 32768,
+    "maxSignalBufferedBytes": 65536,
+    "maxIceCandidates": 64,
+    "maxNativeFrameBytes": 16384,
+    "maxNativeBufferedBytes": 65536,
+    "maxNativeResponseBytes": 16384,
+    "maxNativeStatusBytes": 65536,
+    "nativeAuthTimeoutMs": 3000,
+    "maxSessionsPerCommon": 80,
+    "nativeMetadataConcurrency": 8,
+    "nativeConfigCacheMs": 30000,
+    "nativeStatusCacheMs": 1000,
+    "nativeAdmissionsPerSecond": 1,
+    "nativeAdmissionBurst": 8,
+    "nativePingTimeoutMs": 15000,
+    "maxNativeControlBytes": 125,
+    "maxNativeControlPerSecond": 10,
+    "maxSessionsPerClient": 4,
+    "maxSignalConnectionsPerClient": 6,
+    "maxSessionTransferBytes": 104857600
+  },
+  "registeredCommons": [
+    "common-a",
+    "common-b"
+  ]
+}

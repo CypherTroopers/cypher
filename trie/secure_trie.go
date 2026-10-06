@@ -18,8 +18,10 @@ package trie
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/log"
 )
 
@@ -106,6 +108,67 @@ func (t *SecureTrie) TryUpdate(key, value []byte) error {
 		return err
 	}
 	t.getSecKeyCache()[string(hk)] = common.CopyBytes(key)
+	return nil
+}
+
+// TryUpdateBatch hashes all keys, then atomically applies the mutations through
+// independent first-nibble subtries. Key hashing is also bounded by workers.
+func (t *SecureTrie) TryUpdateBatch(mutations []BatchMutation, workers int) error {
+	if len(mutations) == 0 {
+		return nil
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > 64 {
+		workers = 64
+	}
+	if workers > len(mutations) {
+		workers = len(mutations)
+	}
+	hashed := make([]hexBatchMutation, len(mutations))
+	prepare := func(index int) {
+		mutation := mutations[index]
+		hashed[index] = hexBatchMutation{
+			key:    keybytesToHex(crypto.Keccak256(mutation.Key)),
+			value:  mutation.Value,
+			delete: mutation.Delete || len(mutation.Value) == 0,
+		}
+	}
+	if workers <= 1 {
+		for index := range mutations {
+			prepare(index)
+		}
+	} else {
+		jobs := make(chan int, workers)
+		var group sync.WaitGroup
+		group.Add(workers)
+		for i := 0; i < workers; i++ {
+			go func() {
+				defer group.Done()
+				for index := range jobs {
+					prepare(index)
+				}
+			}()
+		}
+		for index := range mutations {
+			jobs <- index
+		}
+		close(jobs)
+		group.Wait()
+	}
+	if err := t.trie.tryUpdateHexBatch(hashed, workers); err != nil {
+		return err
+	}
+	cache := t.getSecKeyCache()
+	for index, mutation := range mutations {
+		hash := hexToKeybytes(hashed[index].key)
+		if hashed[index].delete {
+			delete(cache, string(hash))
+		} else {
+			cache[string(hash)] = common.CopyBytes(mutation.Key)
+		}
+	}
 	return nil
 }
 

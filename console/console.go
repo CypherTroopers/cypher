@@ -242,10 +242,12 @@ func (c *Console) initPersonal(vm *goja.Runtime, bridge *bridge) {
 	jeth.Set("unlockAccount", personal.Get("unlockAccount"))
 	jeth.Set("newAccount", personal.Get("newAccount"))
 	jeth.Set("sign", personal.Get("sign"))
+	jeth.Set("setCommonRPCRewardAddress", personal.Get("setCommonRPCRewardAddress"))
 	personal.Set("openWallet", jsre.MakeCallback(vm, bridge.OpenWallet))
 	personal.Set("unlockAccount", jsre.MakeCallback(vm, bridge.UnlockAccount))
 	personal.Set("newAccount", jsre.MakeCallback(vm, bridge.NewAccount))
 	personal.Set("sign", jsre.MakeCallback(vm, bridge.Sign))
+	personal.Set("setCommonRPCRewardAddress", jsre.MakeCallback(vm, bridge.SetCommonRPCRewardAddress))
 }
 
 func (c *Console) clearHistory() {

@@ -1,0 +1,132 @@
+{
+  "frozenAt": "2026-10-03T19:16:31.629661+00:00",
+  "root": "/tmp/cypher-consolidation-stage",
+  "files": [
+    {
+      "path": "relay/README.md",
+      "sha256": "781415d23657986c0700d96f2475bdb67bc0db5a174ad4a500a727ca2ae8e331",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/common-endpoint-native-handoff.md",
+      "sha256": "cc6acd3c96c59e2b6b72af61c9c32692de6dcdfdde07156289366e67463088a0",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/cypher-browser-mesh.service",
+      "sha256": "e8ca620cf1f355a92d6eafdb3e971fcc5c4f3ce336eff4df18e898bde367dfe3",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/gateway-operations.md",
+      "sha256": "96d668d011904a4b06e836ccab81062deced420304e9d4739dabe0976ee0d934",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/gateway.ecosystem.json",
+      "sha256": "f4991c8fe6d2978b2e5552c994e41f2a38d241c3786b0110b99bd9b94c20e25f",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/managed-apps.py",
+      "sha256": "2d5224407385d3dfb2619c279795b43cb103efe30df05a697031fda1e2f9e450",
+      "mode": "0o755"
+    },
+    {
+      "path": "relay/managed-operations.md",
+      "sha256": "9c76ec8a7113ddc2ec500d45618aec4e2899bb89293f27693887dfd2500ea3ca",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/mesh-native-inspect.py",
+      "sha256": "0169c07acaa661d00f466b769fa115726885f9e672276a6bfe3e786af704c491",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/mesh-native-operations.md",
+      "sha256": "4f6f448d61cebb1c45d80b886a99ddf8f59ecd0e00b636eb79e297eb97937b53",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/mesh.ecosystem.json",
+      "sha256": "d89abb209c55748f967f144ec545ff1ba88579e01f9a6c8732b648dc3b7711d3",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/native/a/mesh-exec.py",
+      "sha256": "a1b88e179fcdc7f9bcee72eaa91c6ade51f4ffe91b027179ff26e25b943db554",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/native/a/mesh-start.sh",
+      "sha256": "dce4f2b084856c71331846f70b81a4ba2bf8613ef971f6637a3798a343fd7dc5",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/native/a/source.json",
+      "sha256": "df7b573bebce003f85f4f7d8d6d7cfe922c8bd99d48934f984b8b56a7cbb614a",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/native/b/mesh-exec.py",
+      "sha256": "f782b4e8be54f8873cebd90f0fe861adcdcb5f740587cfc22cead7a79af84c2c",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/native/b/mesh-start.sh",
+      "sha256": "fe9d7c7c8e82d477b22ad28b17e91647cbdd2a537e4eb7ce6ad2bf73b2aba146",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/native/b/source.json",
+      "sha256": "0d59f82b48c423c8d0227c77d3c1dff8e4bc5677af33311cce3a9ca2e20d62f4",
+      "mode": "0o644"
+    },
+    {
+      "path": "relay/start-managed.sh",
+      "sha256": "c68def73f6bd5d0160a791d0b61d675fec1abc071709e1058fed8cad38970b30",
+      "mode": "0o755"
+    },
+    {
+      "path": "relay/turn.ecosystem.json",
+      "sha256": "01515072b738c2937dc3241057eacbaff9d2ee616c48ea69db658e7e33b84f03",
+      "mode": "0o644"
+    },
+    {
+      "path": "tests/mesh-public-discovery-browser.mjs",
+      "sha256": "60e2faed1fa9700b0c350c5a418c287f540848072312a1e7f1c78cb725572371",
+      "mode": "0o644"
+    },
+    {
+      "path": "tests/mesh-scale-browser.mjs",
+      "sha256": "9e349996451db32813153d52eb18120e7ac363a89617be8050eb5ba7b84632bb",
+      "mode": "0o644"
+    },
+    {
+      "path": "tests/relay-map-browser.mjs",
+      "sha256": "d927a91d6003090b59c18c3c8820a46e5004e39c58af48248b4e28ccc73b974c",
+      "mode": "0o644"
+    },
+    {
+      "path": "tests/relay-turn.test.mjs",
+      "sha256": "52abad323acffea1309197e3f0d724509110aad1eb599da3ee818fdb8e464e6d",
+      "mode": "0o644"
+    },
+    {
+      "path": "tests/test_managed_ops.py",
+      "sha256": "ba62529417924567706c9a3bbd7ae112f9791f838bf9f0fbba9d987add7857cd",
+      "mode": "0o644"
+    }
+  ],
+  "count": 23,
+  "checks": {
+    "managedOperations": "13/13 PASS; /tmp/cypher-consolidation-managed-tests.log",
+    "pythonSyntax": 5,
+    "shellSyntax": 3,
+    "javascriptSyntax": 4,
+    "jsonSyntax": 5,
+    "processOperations": false,
+    "liveRepositoryEdits": false,
+    "systemdRuntimeVerification": "NOT_RUN until target paths installed"
+  }
+}

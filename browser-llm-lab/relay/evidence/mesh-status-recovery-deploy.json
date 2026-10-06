@@ -1,0 +1,23 @@
+{
+  "at": "2026-10-03T05:13:56.146793+00:00",
+  "scope": "typed HTTP errors and immediate current-generation 401 readmission; no gateway/native process or Worker routing change",
+  "soakScope": "31-minute run completed on previous controller bytes; short direct/UI tests use these new bytes",
+  "files": {
+    "public/relay-controller.js": {
+      "before": "d8027373ee2bf40dff62d4eb076d56e01db196e2bd6542040ed0470b2452d286",
+      "after": "d854ec2f60ad71cfff3cd58f3a68d41c6b807b843dc3c3eee60b08691b05bbc5"
+    },
+    "public/mesh-controller.js": {
+      "before": "5a1ac06199a33df91d39ce948db93c3ac41d9f1fab3d71274d4e392519ee2f64",
+      "after": "670aa4fa466ee3a778a5c08beeb9cefac8ab1fce0946d9085590d32eae62b651"
+    },
+    "tests/relay-controller.test.mjs": {
+      "before": "27b9aabb9dffc4e092c398199366201779021f9dd06eafa3fe2dbbe741d40916",
+      "after": "61ae71b3e3fb03ae68454172e8c3690aaed096168a181d6348d1815b5d4e964f"
+    },
+    "tests/mesh-controller.test.mjs": {
+      "before": "771f06ca29d9744e86d2cbc5589c912496b920ca07ae781ee2b1af8165890319",
+      "after": "aef549bdb855c50b09ff8fe6b67f747826e4f387ca87ceb3c5f022af229f80ca"
+    }
+  }
+}

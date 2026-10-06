@@ -1,0 +1,49 @@
+{
+  "status": "IMPLEMENTED_STAGED_UNIT_PASS",
+  "liveOperations": false,
+  "root": "/tmp/cypher-source-uplink-stage/web",
+  "files": {
+    "relay/config.mjs": "6b26a10c30bf49d9fbaff086e34a5d2b8f7c19b79b96a6bebec6f6d897780b62",
+    "relay/gateway.mjs": "09493bc131929fddc52d78b6849307ac4af38b259e206ee24b481d8dac82a6b8",
+    "relay/discovery.mjs": "48ed124b6a8ba867b6a082a77b115e76a9e0faefe45bbb006eb04255353c403c",
+    "relay/source-uplink.mjs": "db058994343b940c83e5b84a677f27e89a3c3315b08af63baa96e64ee50c6364",
+    "tests/relay-source-uplink.test.mjs": "e2d1aeeb1d68a2974b346569a7b057a39612689cf829757b3bec217cdd113e03"
+  },
+  "finalSuite": {
+    "tests": 351,
+    "pass": 348,
+    "fail": 0,
+    "skipped": 3,
+    "skipReason": "optional TURN integration fixtures",
+    "durationMs": 25096.117185,
+    "log": "/tmp/cypher-source-uplink-all-tests-final-frozen.log"
+  },
+  "focusedSuite": {
+    "tests": 16,
+    "pass": 16,
+    "scope": "actual localhost WebSocket gateway with synthetic native source, no RLPx or live Common",
+    "log": "/tmp/cypher-source-uplink-tests-final.log"
+  },
+  "verified": [
+    "source native identity possession using independent Go/Noble vector",
+    "20 distinct source identities and 20 browser-group Common leases",
+    "exact inner native text bytes and native Ping/browser Pong",
+    "proof and endpoint binding failures, duplicate keys, replay, local identity collision",
+    "source expiry and sudden-close cleanup including primary group and secondary lease",
+    "delayed issuance and late closed-stream opened/message/close cannot revive state",
+    "outer98304/inner16384/control125 and metadata deadline/size limits",
+    "2 pending authentication attempts per client and exact Origin",
+    "4096 lifetime stream IDs then fresh source generation"
+  ],
+  "limitations": [
+    "No live native source or independent browser WebRTC verification executed by this subagent",
+    "20 Common acceptance is synthetic identity/lease testing, not sustained real-native performance",
+    "Shared existing browser/inner native resource budgets unchanged",
+    "Unsupported or stalled native metadata beyond3s terminates source and requires reconnect"
+  ],
+  "initialTestFailure": {
+    "reason": "stage omitted unchanged relay/geo-data-sources.json",
+    "fixedBy": "copy existing baseline data file without edits",
+    "log": "/tmp/cypher-source-uplink-all-tests.log"
+  }
+}

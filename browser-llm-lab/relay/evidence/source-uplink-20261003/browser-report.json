@@ -1,0 +1,2554 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T21:50:23.957Z",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+  "project": "/root/cypher/browser-llm-lab",
+  "sameHostOnly": true,
+  "physicalDeviceNetworkTest": false,
+  "browserMode": "Independent processes, controller-driven path isolation; not a normal UI test",
+  "networkNamespaceIsolation": false,
+  "nativePathIsolation": "NoDiscovery, empty static/trusted/bootstrap lists, loopback native listener; native peer transport inspected. No OS network exclusion claim.",
+  "nativeLifecycleMutations": 0,
+  "directCommonByteInjection": false,
+  "processes": {
+    "A": {
+      "pid": 25,
+      "profile": "/tmp/cypher-uplink-browsers-rqPRpS/A",
+      "sourceId": "common-mine"
+    },
+    "B": {
+      "pid": 190,
+      "profile": "/tmp/cypher-uplink-browsers-rqPRpS/B",
+      "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666"
+    },
+    "C": {
+      "pid": 389,
+      "profile": "/tmp/cypher-uplink-browsers-rqPRpS/C",
+      "sourceId": "common-mine"
+    }
+  },
+  "checkpoints": [
+    {
+      "name": "Unregistered source obtains browser access through outgoing source WSS",
+      "at": "2026-10-03T21:50:34.817Z",
+      "A": {
+        "receivedBytes": 0,
+        "sentBytes": 0,
+        "nativeReceivedBytes": 848,
+        "nativeSentBytes": 0,
+        "streamReceivedBytes": 0,
+        "streamForwardedBytes": 0,
+        "acknowledgedBytes": 0,
+        "acknowledgedCount": 0,
+        "nativeCreditBytes": 0,
+        "gatewayBytes": 4975,
+        "signalingBytes": 21436,
+        "totalBytes": 33685,
+        "rejectedFrames": 0,
+        "circuitsOpened": 0,
+        "circuitsClosed": 0,
+        "connectedPeers": 0,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "061165c13bc02b390445f88a4a6b7e20",
+            "endpointCircuits": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 1,
+        "queuedBytes": 0,
+        "appBytes": 32160,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "issuedAt": 1791064219462,
+            "expiresAt": 1791064339462,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "requested": true,
+        "sourceErrors": {},
+        "sessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+        "sessionExpiresAt": 1791064527995,
+        "signalConnected": true,
+        "selfGeo": {
+          "countryCode": "FR",
+          "label": "France",
+          "lat": 46.23,
+          "lon": 2.21,
+          "accuracy": "country",
+          "source": "cloudflare"
+        },
+        "peers": [
+          {
+            "peerId": "6f1974ee8a1e125f72346b2802543e98",
+            "sessionId": "a73f1943360d89b49003272745cb4fa3",
+            "state": "connected",
+            "path": "direct",
+            "geo": {
+              "countryCode": "FR",
+              "label": "France",
+              "lat": 46.23,
+              "lon": 2.21,
+              "accuracy": "country",
+              "source": "gateway-country-estimate"
+            },
+            "connected": true
+          }
+        ],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "browserId": "061165c13bc02b390445f88a4a6b7e20",
+        "nativeConnected": true,
+        "nativeSession": "717a496489b0978b856a58cb476f6c00",
+        "commonConnections": [
+          {
+            "id": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "061165c13bc02b390445f88a4a6b7e20",
+            "connected": true,
+            "expiresAt": 1791064527995,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 2,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 1
+        },
+        "reconnects": 0,
+        "rtcStats": [],
+        "nativeStatus": null
+      },
+      "B": {
+        "receivedBytes": 0,
+        "sentBytes": 0,
+        "nativeReceivedBytes": 0,
+        "nativeSentBytes": 0,
+        "streamReceivedBytes": 0,
+        "streamForwardedBytes": 0,
+        "acknowledgedBytes": 0,
+        "acknowledgedCount": 0,
+        "nativeCreditBytes": 0,
+        "gatewayBytes": 0,
+        "signalingBytes": 0,
+        "totalBytes": 30580,
+        "rejectedFrames": 0,
+        "circuitsOpened": 0,
+        "circuitsClosed": 0,
+        "connectedPeers": 0,
+        "nativeConnections": 1,
+        "connections": [],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 0,
+        "queuedBytes": 0,
+        "appBytes": 4512,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [],
+        "receipts": [],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1",
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "requested": true,
+        "sourceErrors": {},
+        "sessionId": "a73f1943360d89b49003272745cb4fa3",
+        "sessionExpiresAt": 1791064533316,
+        "signalConnected": true,
+        "selfGeo": {
+          "countryCode": "FR",
+          "label": "France",
+          "lat": 46.23,
+          "lon": 2.21,
+          "accuracy": "country",
+          "source": "cloudflare"
+        },
+        "peers": [
+          {
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "sessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "state": "connected",
+            "path": "direct",
+            "geo": {
+              "countryCode": "FR",
+              "label": "France",
+              "lat": 46.23,
+              "lon": 2.21,
+              "accuracy": "country",
+              "source": "gateway-country-estimate"
+            },
+            "connected": true
+          }
+        ],
+        "protocol": "cypher-browser-mesh/1",
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "browserId": "03e8e1cd4ce5f087f205348fbd280884",
+        "nativeConnected": true,
+        "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+        "commonConnections": [
+          {
+            "id": "a73f1943360d89b49003272745cb4fa3",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "03e8e1cd4ce5f087f205348fbd280884",
+            "connected": true,
+            "expiresAt": 1791064533316,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 2,
+          "knownBrowserCandidates": 2,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "connectionLimits": {
+          "peers": 20,
+          "commons": 1
+        },
+        "reconnects": 0,
+        "rtcStats": [],
+        "nativeStatus": null
+      }
+    },
+    {
+      "name": "Actual native stream, exact RTC bytes/digest/hop ACK, and matching chain data",
+      "at": "2026-10-03T21:50:42.006Z",
+      "native": {
+        "at": "2026-10-03T21:50:41.937Z",
+        "primaryHead": 3975,
+        "sourceHead": 391,
+        "sourcePeers": [
+          {
+            "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "transport": "browser-mesh",
+            "browserMesh": {
+              "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+              "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "relayIds": [
+                "03e8e1cd4ce5f087f205348fbd280884",
+                "061165c13bc02b390445f88a4a6b7e20"
+              ],
+              "bytesReceived": 114509,
+              "bytesSent": 1875
+            }
+          }
+        ],
+        "hashes": {
+          "0": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+          "1": "0xa8e421f30b6a9b920843044b63ca0bd0cca5590ce35194486c0fc81ef4ccb3b7",
+          "391": "0xfff58d06572468f8b5424ba37019d3fcb364906de34affeed540f588d5069638"
+        }
+      },
+      "raw": {
+        "sender": "A",
+        "receiver": "B",
+        "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+        "seq": 19,
+        "bytes": 7734,
+        "digest": "437bfca6ac4b4fbd21356a88c4169d115fc712f51e42aa14beabee9d4341c27c",
+        "bytesEqual": true,
+        "acknowledgementMatched": true,
+        "path": "direct",
+        "samplePolicy": {
+          "minimumRawBytes": 1024,
+          "minimumSequence": 2
+        },
+        "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+      }
+    },
+    {
+      "name": "A OFF stops the only browser relay path after queues drain",
+      "at": "2026-10-03T21:50:44.910Z",
+      "before": {
+        "receivedBytes": 274959,
+        "sentBytes": 115625,
+        "nativeReceivedBytes": 29742,
+        "nativeSentBytes": 190045,
+        "streamReceivedBytes": 124576,
+        "streamForwardedBytes": 124576,
+        "acknowledgedBytes": 1875,
+        "acknowledgedCount": 96,
+        "nativeCreditBytes": 124576,
+        "gatewayBytes": 7090,
+        "signalingBytes": 38052,
+        "totalBytes": 655513,
+        "rejectedFrames": 0,
+        "circuitsOpened": 1,
+        "circuitsClosed": 1,
+        "connectedPeers": 0,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "03e8e1cd4ce5f087f205348fbd280884",
+            "endpointCircuits": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 1,
+        "queuedBytes": 0,
+        "appBytes": 258976,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "issuedAt": 1791064233285,
+            "expiresAt": 1791064353285,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 85,
+            "direction": "forward",
+            "digest": "28ba973bc0b3e090e13a6aa45966259c837bff5d627a6837138091b3b644a687",
+            "rawBytes": 4,
+            "requestId": "7305acc89a96396782a0a8bb4b5a53c9",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064238876,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 86,
+            "direction": "forward",
+            "digest": "897c2040f21f991e4aaad376e1d72027b11be803e491837f5f713f6aa60c73e0",
+            "rawBytes": 16,
+            "requestId": "a39b4aeac7d1bbcab662a69e943a5baf",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064238877,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 87,
+            "direction": "forward",
+            "digest": "5311ebc1e43d6886cb1a17047e5f8ff9e5775803152859bf1a3d518ae2337439",
+            "rawBytes": 32,
+            "requestId": "78adb2f1ee0ebc462ee2ca25cf08c40e",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239194,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 88,
+            "direction": "forward",
+            "digest": "3f39d5c348e5b79d06e842c114e6cc571583bbf44e4b0ebfda1a01ec05745d43",
+            "rawBytes": 1,
+            "requestId": "a92ce8525e83f05615284efc4662a58b",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239203,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 89,
+            "direction": "forward",
+            "digest": "72e5df4df749c9c022ef12e8d12a2b9ad94573c17e54711df9362c7d2df4b036",
+            "rawBytes": 10,
+            "requestId": "d87feabb5768b1c840f0a5c340f65a63",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239206,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 90,
+            "direction": "forward",
+            "digest": "03683d988751e9fa07e6cbb9f636f3febd132652ddade76f01c04d3c52c3a34d",
+            "rawBytes": 5,
+            "requestId": "0f88d342489d460ef9a7958c4d2297f3",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239206,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 91,
+            "direction": "forward",
+            "digest": "a09ffdcf5d0e360664f5e83b6ebb6764e9541d1d54a85a78cec1753a338298f7",
+            "rawBytes": 16,
+            "requestId": "989bbde83504640e2c454450bfe4d55c",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239206,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 92,
+            "direction": "forward",
+            "digest": "c5eea7e02f43af167d18430f24bc17b6f7f0548a0418c35b1ae1fbe094a6ccd6",
+            "rawBytes": 32,
+            "requestId": "e2ccbb6f042c65b8ff3d96a7e6534d2b",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241620,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 93,
+            "direction": "forward",
+            "digest": "9652595f37edd08c51dfa26567e6cd76e6fa2709c3e578478ca398d316837a7a",
+            "rawBytes": 1,
+            "requestId": "53fcb621af22d593d7b4d8fd22362f95",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241628,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 94,
+            "direction": "forward",
+            "digest": "56f36ec83cec2e4832b3a85df87212b90bb2f1020ce3461c1b371b4f16386aa0",
+            "rawBytes": 10,
+            "requestId": "8abf30a8843062e2eeb1f219ba4b31f0",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241629,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 95,
+            "direction": "forward",
+            "digest": "745f5a1cc434d7a712fb102f28be9e38f70f574f2391f279db03359d30df90fe",
+            "rawBytes": 5,
+            "requestId": "37636989bd71cb85e4dfe2d657380d87",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241635,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 96,
+            "direction": "forward",
+            "digest": "8a95a4a95ff0f1a55a8e7ab536ede3523e4aca1a888cb051d667efeb223c4a5c",
+            "rawBytes": 16,
+            "requestId": "b5028a76afc629095182a7f35a92c098",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241635,
+            "meaning": "bounded-hop-queue-acceptance"
+          }
+        ],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1"
+      },
+      "after": {
+        "receivedBytes": 274959,
+        "sentBytes": 115625,
+        "nativeReceivedBytes": 30718,
+        "nativeSentBytes": 190182,
+        "streamReceivedBytes": 124576,
+        "streamForwardedBytes": 124576,
+        "acknowledgedBytes": 1875,
+        "acknowledgedCount": 96,
+        "nativeCreditBytes": 124576,
+        "gatewayBytes": 8022,
+        "signalingBytes": 38052,
+        "totalBytes": 657558,
+        "rejectedFrames": 0,
+        "circuitsOpened": 1,
+        "circuitsClosed": 1,
+        "connectedPeers": 0,
+        "nativeConnections": 1,
+        "connections": [
+          {
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "browserId": "03e8e1cd4ce5f087f205348fbd280884",
+            "endpointCircuits": 0,
+            "limits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            }
+          }
+        ],
+        "pendingAdvertisements": 0,
+        "circuits": 0,
+        "pendingHandshakes": 0,
+        "routes": 1,
+        "queuedBytes": 0,
+        "appBytes": 258976,
+        "capacities": {
+          "circuits": 40,
+          "endpointCircuits": 40,
+          "pendingHandshakes": 8,
+          "pendingPerDirection": 4,
+          "hardCircuits": 40,
+          "hardEndpointCircuits": 40,
+          "peers": 20,
+          "nativeConnections": 20,
+          "commonConnections": 20,
+          "appBytes": 4194304,
+          "queueBytes": 524288,
+          "transferBytes": 104857600,
+          "sendBytesPerSecond": 49152,
+          "receiveBytesPerSecond": 65536,
+          "controlBytesPerSecond": 24576,
+          "common": {
+            "maxSessions": 80,
+            "nativePeers": 40,
+            "circuits": 40,
+            "circuitsPerSession": 40,
+            "pendingInbound": 4,
+            "pendingOutbound": 4
+          }
+        },
+        "transitCircuits": 0,
+        "pendingInbound": 0,
+        "pendingOutbound": 0,
+        "pendingTransit": 0,
+        "sources": [
+          {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "issuedAt": 1791064233285,
+            "expiresAt": 1791064353285,
+            "browserSignatureVerified": true
+          }
+        ],
+        "receipts": [
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 85,
+            "direction": "forward",
+            "digest": "28ba973bc0b3e090e13a6aa45966259c837bff5d627a6837138091b3b644a687",
+            "rawBytes": 4,
+            "requestId": "7305acc89a96396782a0a8bb4b5a53c9",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064238876,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 86,
+            "direction": "forward",
+            "digest": "897c2040f21f991e4aaad376e1d72027b11be803e491837f5f713f6aa60c73e0",
+            "rawBytes": 16,
+            "requestId": "a39b4aeac7d1bbcab662a69e943a5baf",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064238877,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 87,
+            "direction": "forward",
+            "digest": "5311ebc1e43d6886cb1a17047e5f8ff9e5775803152859bf1a3d518ae2337439",
+            "rawBytes": 32,
+            "requestId": "78adb2f1ee0ebc462ee2ca25cf08c40e",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239194,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 88,
+            "direction": "forward",
+            "digest": "3f39d5c348e5b79d06e842c114e6cc571583bbf44e4b0ebfda1a01ec05745d43",
+            "rawBytes": 1,
+            "requestId": "a92ce8525e83f05615284efc4662a58b",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239203,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 89,
+            "direction": "forward",
+            "digest": "72e5df4df749c9c022ef12e8d12a2b9ad94573c17e54711df9362c7d2df4b036",
+            "rawBytes": 10,
+            "requestId": "d87feabb5768b1c840f0a5c340f65a63",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239206,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 90,
+            "direction": "forward",
+            "digest": "03683d988751e9fa07e6cbb9f636f3febd132652ddade76f01c04d3c52c3a34d",
+            "rawBytes": 5,
+            "requestId": "0f88d342489d460ef9a7958c4d2297f3",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239206,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 91,
+            "direction": "forward",
+            "digest": "a09ffdcf5d0e360664f5e83b6ebb6764e9541d1d54a85a78cec1753a338298f7",
+            "rawBytes": 16,
+            "requestId": "989bbde83504640e2c454450bfe4d55c",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064239206,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 92,
+            "direction": "forward",
+            "digest": "c5eea7e02f43af167d18430f24bc17b6f7f0548a0418c35b1ae1fbe094a6ccd6",
+            "rawBytes": 32,
+            "requestId": "e2ccbb6f042c65b8ff3d96a7e6534d2b",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241620,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 93,
+            "direction": "forward",
+            "digest": "9652595f37edd08c51dfa26567e6cd76e6fa2709c3e578478ca398d316837a7a",
+            "rawBytes": 1,
+            "requestId": "53fcb621af22d593d7b4d8fd22362f95",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241628,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 94,
+            "direction": "forward",
+            "digest": "56f36ec83cec2e4832b3a85df87212b90bb2f1020ce3461c1b371b4f16386aa0",
+            "rawBytes": 10,
+            "requestId": "8abf30a8843062e2eeb1f219ba4b31f0",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241629,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 95,
+            "direction": "forward",
+            "digest": "745f5a1cc434d7a712fb102f28be9e38f70f574f2391f279db03359d30df90fe",
+            "rawBytes": 5,
+            "requestId": "37636989bd71cb85e4dfe2d657380d87",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241635,
+            "meaning": "bounded-hop-queue-acceptance"
+          },
+          {
+            "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+            "seq": 96,
+            "direction": "forward",
+            "digest": "8a95a4a95ff0f1a55a8e7ab536ede3523e4aca1a888cb051d667efeb223c4a5c",
+            "rawBytes": 16,
+            "requestId": "b5028a76afc629095182a7f35a92c098",
+            "peerId": "ee3195091323a11d16a78ea2fc19cfbd",
+            "fromSessionId": "06d246f87985d84a6cd7ff64ad6dfbe7",
+            "toSessionId": "a73f1943360d89b49003272745cb4fa3",
+            "path": "direct",
+            "at": 1791064241635,
+            "meaning": "bounded-hop-queue-acceptance"
+          }
+        ],
+        "aiLoad": "idle",
+        "paused": false,
+        "endpointCircuits": 0,
+        "verification": "native-RLPx-endpoints; browser-secp256k1-signatures-and-hop-receipts",
+        "channel": "cypher-common-mesh/1"
+      }
+    },
+    {
+      "name": "New C route carries newly observed encrypted bytes and matching hop ACK",
+      "at": "2026-10-03T21:51:03.458Z",
+      "native": {
+        "at": "2026-10-03T21:51:03.435Z",
+        "primaryHead": 3975,
+        "sourceHead": 576,
+        "sourcePeers": [
+          {
+            "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "transport": "browser-mesh",
+            "browserMesh": {
+              "circuitId": "e7d9f174ec6ae7c93af4aa7344d0700f",
+              "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "relayIds": [
+                "03e8e1cd4ce5f087f205348fbd280884",
+                "0254f053ad1cf50621ffe728a317e387"
+              ],
+              "bytesReceived": 9496,
+              "bytesSent": 1144
+            }
+          }
+        ],
+        "hashes": {
+          "0": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+          "1": "0xa8e421f30b6a9b920843044b63ca0bd0cca5590ce35194486c0fc81ef4ccb3b7",
+          "576": "0x13647b6187a2564ebff3c4d31cc0aba12b89d285e6cda38972aba267481bf239"
+        }
+      },
+      "raw": {
+        "sender": "C",
+        "receiver": "B",
+        "circuitId": "e7d9f174ec6ae7c93af4aa7344d0700f",
+        "seq": 19,
+        "bytes": 7734,
+        "digest": "63677df12e705c6f3a54194234849c45b1ba85dbe06f8ade39e6f37a616f8557",
+        "bytesEqual": true,
+        "acknowledgementMatched": true,
+        "path": "direct",
+        "samplePolicy": {
+          "minimumRawBytes": 1024,
+          "minimumSequence": 2
+        },
+        "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+      }
+    },
+    {
+      "name": "Renewal soak begins with AI pause policy and live control channels",
+      "at": "2026-10-03T21:51:03.812Z"
+    },
+    {
+      "name": "Session renewal and signed source refresh preserve generation during AI pause",
+      "at": "2026-10-03T21:53:13.855Z",
+      "renewalSoak": {
+        "status": "PASS",
+        "requestedMs": 130000,
+        "startedAt": "2026-10-03T21:51:03.811Z",
+        "before": {
+          "B": {
+            "state": "ACTIVE",
+            "requested": true,
+            "generation": 1,
+            "sessionId": "a73f1943360d89b49003272745cb4fa3",
+            "expiresAt": 1791064533316,
+            "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+            "nativeConnected": true,
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "workerPresent": true,
+            "aiLoad": "idle",
+            "endpoint": {
+              "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "sequence": 45,
+              "expiresAt": 1791064328285,
+              "bootId": "f90289232a83dd61de0f5254451aadfa"
+            },
+            "renewals": []
+          },
+          "C": {
+            "state": "ACTIVE",
+            "requested": true,
+            "generation": 1,
+            "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+            "expiresAt": 1791064547869,
+            "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+            "nativeConnected": true,
+            "sourceId": "common-mine",
+            "workerPresent": true,
+            "aiLoad": "idle",
+            "endpoint": {
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "sourceId": "common-mine",
+              "sequence": 210,
+              "expiresAt": 1791064339462,
+              "bootId": "4a49cf336c773b5d464fce71776d67e3"
+            },
+            "renewals": []
+          }
+        },
+        "aiTest": "AI workload state signal only; no actual model load, WebGPU benchmark or physical-device performance claim",
+        "samples": [
+          {
+            "at": "2026-10-03T21:51:13.821Z",
+            "elapsedMs": 10010,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064533316,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 47,
+                "expiresAt": 1791064363285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": []
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 210,
+                "expiresAt": 1791064339462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:51:23.847Z",
+            "elapsedMs": 20036,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064533316,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 47,
+                "expiresAt": 1791064363285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": []
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 211,
+                "expiresAt": 1791064369462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:51:33.888Z",
+            "elapsedMs": 30077,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064533316,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 49,
+                "expiresAt": 1791064398285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": []
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 211,
+                "expiresAt": 1791064369462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:51:43.955Z",
+            "elapsedMs": 40144,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064533316,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 49,
+                "expiresAt": 1791064398285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": []
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 211,
+                "expiresAt": 1791064369462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:51:53.973Z",
+            "elapsedMs": 50162,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064533316,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 49,
+                "expiresAt": 1791064398285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": []
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 212,
+                "expiresAt": 1791064404462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:52:04.016Z",
+            "elapsedMs": 60205,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064533316,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 51,
+                "expiresAt": 1791064428285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": []
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 212,
+                "expiresAt": 1791064404462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:52:14.118Z",
+            "elapsedMs": 70307,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064533316,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 51,
+                "expiresAt": 1791064428285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": []
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 212,
+                "expiresAt": 1791064404462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:52:24.141Z",
+            "elapsedMs": 80330,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064533316,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 51,
+                "expiresAt": 1791064428285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": []
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 213,
+                "expiresAt": 1791064439462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:52:34.165Z",
+            "elapsedMs": 90354,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064653440,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 53,
+                "expiresAt": 1791064463285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": [
+                {
+                  "expiresAt": 1791064653440,
+                  "at": 1791064353471
+                }
+              ]
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 213,
+                "expiresAt": 1791064439462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:52:44.189Z",
+            "elapsedMs": 100378,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064653440,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 53,
+                "expiresAt": 1791064463285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": [
+                {
+                  "expiresAt": 1791064653440,
+                  "at": 1791064353471
+                }
+              ]
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064547869,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 213,
+                "expiresAt": 1791064439462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": []
+            }
+          },
+          {
+            "at": "2026-10-03T21:52:54.233Z",
+            "elapsedMs": 110422,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064653440,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 53,
+                "expiresAt": 1791064463285,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": [
+                {
+                  "expiresAt": 1791064653440,
+                  "at": 1791064353471
+                }
+              ]
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064667985,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 214,
+                "expiresAt": 1791064469462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": [
+                {
+                  "expiresAt": 1791064667985,
+                  "at": 1791064368014
+                }
+              ]
+            }
+          },
+          {
+            "at": "2026-10-03T21:53:04.253Z",
+            "elapsedMs": 120442,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064653440,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 55,
+                "expiresAt": 1791064493359,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": [
+                {
+                  "expiresAt": 1791064653440,
+                  "at": 1791064353471
+                }
+              ]
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064667985,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 214,
+                "expiresAt": 1791064469462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": [
+                {
+                  "expiresAt": 1791064667985,
+                  "at": 1791064368014
+                }
+              ]
+            }
+          },
+          {
+            "at": "2026-10-03T21:53:13.814Z",
+            "elapsedMs": 130003,
+            "B": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "a73f1943360d89b49003272745cb4fa3",
+              "expiresAt": 1791064653440,
+              "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+              "nativeConnected": true,
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+                "sequence": 55,
+                "expiresAt": 1791064493359,
+                "bootId": "f90289232a83dd61de0f5254451aadfa"
+              },
+              "renewals": [
+                {
+                  "expiresAt": 1791064653440,
+                  "at": 1791064353471
+                }
+              ]
+            },
+            "C": {
+              "state": "PAUSED_AI",
+              "requested": true,
+              "generation": 1,
+              "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+              "expiresAt": 1791064667985,
+              "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+              "nativeConnected": true,
+              "sourceId": "common-mine",
+              "workerPresent": true,
+              "aiLoad": "loading",
+              "endpoint": {
+                "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+                "sourceId": "common-mine",
+                "sequence": 214,
+                "expiresAt": 1791064469462,
+                "bootId": "4a49cf336c773b5d464fce71776d67e3"
+              },
+              "renewals": [
+                {
+                  "expiresAt": 1791064667985,
+                  "at": 1791064368014
+                }
+              ]
+            }
+          }
+        ],
+        "elapsedMs": 130043,
+        "after": {
+          "B": {
+            "state": "PAUSED_AI",
+            "requested": true,
+            "generation": 1,
+            "sessionId": "a73f1943360d89b49003272745cb4fa3",
+            "expiresAt": 1791064653440,
+            "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+            "nativeConnected": true,
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "workerPresent": true,
+            "aiLoad": "loading",
+            "endpoint": {
+              "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+              "sequence": 55,
+              "expiresAt": 1791064493359,
+              "bootId": "f90289232a83dd61de0f5254451aadfa"
+            },
+            "renewals": [
+              {
+                "expiresAt": 1791064653440,
+                "at": 1791064353471
+              }
+            ]
+          },
+          "C": {
+            "state": "PAUSED_AI",
+            "requested": true,
+            "generation": 1,
+            "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+            "expiresAt": 1791064667985,
+            "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+            "nativeConnected": true,
+            "sourceId": "common-mine",
+            "workerPresent": true,
+            "aiLoad": "loading",
+            "endpoint": {
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "sourceId": "common-mine",
+              "sequence": 214,
+              "expiresAt": 1791064469462,
+              "bootId": "4a49cf336c773b5d464fce71776d67e3"
+            },
+            "renewals": [
+              {
+                "expiresAt": 1791064667985,
+                "at": 1791064368014
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "errors": [],
+  "cleanup": [
+    {
+      "browser": "A",
+      "pid": 25,
+      "profile": "/tmp/cypher-uplink-browsers-rqPRpS/A",
+      "exited": true,
+      "profileRemoved": true
+    },
+    {
+      "browser": "B",
+      "pid": 190,
+      "profile": "/tmp/cypher-uplink-browsers-rqPRpS/B",
+      "exited": true,
+      "profileRemoved": true
+    },
+    {
+      "browser": "C",
+      "pid": 389,
+      "profile": "/tmp/cypher-uplink-browsers-rqPRpS/C",
+      "exited": true,
+      "profileRemoved": true
+    }
+  ],
+  "primaryNodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+  "sourceNodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+  "before": {
+    "at": "2026-10-03T21:50:24.062Z",
+    "primaryHead": 3975,
+    "sourceHead": 384,
+    "sourcePeers": []
+  },
+  "firstNative": {
+    "at": "2026-10-03T21:50:35.598Z",
+    "primaryHead": 3975,
+    "sourceHead": 384,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "03e8e1cd4ce5f087f205348fbd280884",
+            "061165c13bc02b390445f88a4a6b7e20"
+          ],
+          "bytesReceived": 540,
+          "bytesSent": 755
+        }
+      }
+    ]
+  },
+  "firstRawProof": {
+    "sender": "A",
+    "receiver": "B",
+    "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+    "seq": 19,
+    "bytes": 7734,
+    "digest": "437bfca6ac4b4fbd21356a88c4169d115fc712f51e42aa14beabee9d4341c27c",
+    "bytesEqual": true,
+    "acknowledgementMatched": true,
+    "path": "direct",
+    "samplePolicy": {
+      "minimumRawBytes": 1024,
+      "minimumSequence": 2
+    },
+    "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+  },
+  "firstCanonical": {
+    "at": "2026-10-03T21:50:41.937Z",
+    "primaryHead": 3975,
+    "sourceHead": 391,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "f7304346b1577dcedf5b13a67105c4a8",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "03e8e1cd4ce5f087f205348fbd280884",
+            "061165c13bc02b390445f88a4a6b7e20"
+          ],
+          "bytesReceived": 114509,
+          "bytesSent": 1875
+        }
+      }
+    ],
+    "hashes": {
+      "0": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "1": "0xa8e421f30b6a9b920843044b63ca0bd0cca5590ce35194486c0fc81ef4ccb3b7",
+      "391": "0xfff58d06572468f8b5424ba37019d3fcb364906de34affeed540f588d5069638"
+    }
+  },
+  "offNative": {
+    "at": "2026-10-03T21:50:44.910Z",
+    "primaryHead": 3975,
+    "sourceHead": 444,
+    "sourcePeers": []
+  },
+  "replacementNative": {
+    "at": "2026-10-03T21:50:49.307Z",
+    "primaryHead": 3975,
+    "sourceHead": 529,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "ab73aa75c4eb1e67f510ce27ee9972da",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "03e8e1cd4ce5f087f205348fbd280884",
+            "0254f053ad1cf50621ffe728a317e387"
+          ],
+          "bytesReceived": 534,
+          "bytesSent": 828
+        }
+      }
+    ]
+  },
+  "replacementRawProof": {
+    "sender": "C",
+    "receiver": "B",
+    "circuitId": "e7d9f174ec6ae7c93af4aa7344d0700f",
+    "seq": 19,
+    "bytes": 7734,
+    "digest": "63677df12e705c6f3a54194234849c45b1ba85dbe06f8ade39e6f37a616f8557",
+    "bytesEqual": true,
+    "acknowledgementMatched": true,
+    "path": "direct",
+    "samplePolicy": {
+      "minimumRawBytes": 1024,
+      "minimumSequence": 2
+    },
+    "meaning": "Real peer browser bounded-queue acceptance, not native consumption or chain finality"
+  },
+  "replacementProgress": {
+    "at": "2026-10-03T21:51:03.356Z",
+    "primaryHead": 3975,
+    "sourceHead": 576,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "e7d9f174ec6ae7c93af4aa7344d0700f",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "03e8e1cd4ce5f087f205348fbd280884",
+            "0254f053ad1cf50621ffe728a317e387"
+          ],
+          "bytesReceived": 9464,
+          "bytesSent": 1144
+        }
+      }
+    ]
+  },
+  "finalCanonical": {
+    "at": "2026-10-03T21:51:03.435Z",
+    "primaryHead": 3975,
+    "sourceHead": 576,
+    "sourcePeers": [
+      {
+        "id": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "transport": "browser-mesh",
+        "browserMesh": {
+          "circuitId": "e7d9f174ec6ae7c93af4aa7344d0700f",
+          "remoteId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "relayIds": [
+            "03e8e1cd4ce5f087f205348fbd280884",
+            "0254f053ad1cf50621ffe728a317e387"
+          ],
+          "bytesReceived": 9496,
+          "bytesSent": 1144
+        }
+      }
+    ],
+    "hashes": {
+      "0": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad",
+      "1": "0xa8e421f30b6a9b920843044b63ca0bd0cca5590ce35194486c0fc81ef4ccb3b7",
+      "576": "0x13647b6187a2564ebff3c4d31cc0aba12b89d285e6cda38972aba267481bf239"
+    }
+  },
+  "renewalSoak": {
+    "status": "PASS",
+    "requestedMs": 130000,
+    "startedAt": "2026-10-03T21:51:03.811Z",
+    "before": {
+      "B": {
+        "state": "ACTIVE",
+        "requested": true,
+        "generation": 1,
+        "sessionId": "a73f1943360d89b49003272745cb4fa3",
+        "expiresAt": 1791064533316,
+        "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+        "nativeConnected": true,
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "workerPresent": true,
+        "aiLoad": "idle",
+        "endpoint": {
+          "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "sequence": 45,
+          "expiresAt": 1791064328285,
+          "bootId": "f90289232a83dd61de0f5254451aadfa"
+        },
+        "renewals": []
+      },
+      "C": {
+        "state": "ACTIVE",
+        "requested": true,
+        "generation": 1,
+        "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+        "expiresAt": 1791064547869,
+        "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+        "nativeConnected": true,
+        "sourceId": "common-mine",
+        "workerPresent": true,
+        "aiLoad": "idle",
+        "endpoint": {
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "sourceId": "common-mine",
+          "sequence": 210,
+          "expiresAt": 1791064339462,
+          "bootId": "4a49cf336c773b5d464fce71776d67e3"
+        },
+        "renewals": []
+      }
+    },
+    "aiTest": "AI workload state signal only; no actual model load, WebGPU benchmark or physical-device performance claim",
+    "samples": [
+      {
+        "at": "2026-10-03T21:51:13.821Z",
+        "elapsedMs": 10010,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064533316,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 47,
+            "expiresAt": 1791064363285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": []
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 210,
+            "expiresAt": 1791064339462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:51:23.847Z",
+        "elapsedMs": 20036,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064533316,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 47,
+            "expiresAt": 1791064363285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": []
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 211,
+            "expiresAt": 1791064369462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:51:33.888Z",
+        "elapsedMs": 30077,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064533316,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 49,
+            "expiresAt": 1791064398285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": []
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 211,
+            "expiresAt": 1791064369462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:51:43.955Z",
+        "elapsedMs": 40144,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064533316,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 49,
+            "expiresAt": 1791064398285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": []
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 211,
+            "expiresAt": 1791064369462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:51:53.973Z",
+        "elapsedMs": 50162,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064533316,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 49,
+            "expiresAt": 1791064398285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": []
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 212,
+            "expiresAt": 1791064404462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:52:04.016Z",
+        "elapsedMs": 60205,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064533316,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 51,
+            "expiresAt": 1791064428285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": []
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 212,
+            "expiresAt": 1791064404462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:52:14.118Z",
+        "elapsedMs": 70307,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064533316,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 51,
+            "expiresAt": 1791064428285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": []
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 212,
+            "expiresAt": 1791064404462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:52:24.141Z",
+        "elapsedMs": 80330,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064533316,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 51,
+            "expiresAt": 1791064428285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": []
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 213,
+            "expiresAt": 1791064439462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:52:34.165Z",
+        "elapsedMs": 90354,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064653440,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 53,
+            "expiresAt": 1791064463285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": [
+            {
+              "expiresAt": 1791064653440,
+              "at": 1791064353471
+            }
+          ]
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 213,
+            "expiresAt": 1791064439462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:52:44.189Z",
+        "elapsedMs": 100378,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064653440,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 53,
+            "expiresAt": 1791064463285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": [
+            {
+              "expiresAt": 1791064653440,
+              "at": 1791064353471
+            }
+          ]
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064547869,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 213,
+            "expiresAt": 1791064439462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": []
+        }
+      },
+      {
+        "at": "2026-10-03T21:52:54.233Z",
+        "elapsedMs": 110422,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064653440,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 53,
+            "expiresAt": 1791064463285,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": [
+            {
+              "expiresAt": 1791064653440,
+              "at": 1791064353471
+            }
+          ]
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064667985,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 214,
+            "expiresAt": 1791064469462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": [
+            {
+              "expiresAt": 1791064667985,
+              "at": 1791064368014
+            }
+          ]
+        }
+      },
+      {
+        "at": "2026-10-03T21:53:04.253Z",
+        "elapsedMs": 120442,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064653440,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 55,
+            "expiresAt": 1791064493359,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": [
+            {
+              "expiresAt": 1791064653440,
+              "at": 1791064353471
+            }
+          ]
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064667985,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 214,
+            "expiresAt": 1791064469462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": [
+            {
+              "expiresAt": 1791064667985,
+              "at": 1791064368014
+            }
+          ]
+        }
+      },
+      {
+        "at": "2026-10-03T21:53:13.814Z",
+        "elapsedMs": 130003,
+        "B": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "a73f1943360d89b49003272745cb4fa3",
+          "expiresAt": 1791064653440,
+          "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+          "nativeConnected": true,
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+            "sequence": 55,
+            "expiresAt": 1791064493359,
+            "bootId": "f90289232a83dd61de0f5254451aadfa"
+          },
+          "renewals": [
+            {
+              "expiresAt": 1791064653440,
+              "at": 1791064353471
+            }
+          ]
+        },
+        "C": {
+          "state": "PAUSED_AI",
+          "requested": true,
+          "generation": 1,
+          "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+          "expiresAt": 1791064667985,
+          "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+          "nativeConnected": true,
+          "sourceId": "common-mine",
+          "workerPresent": true,
+          "aiLoad": "loading",
+          "endpoint": {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "sourceId": "common-mine",
+            "sequence": 214,
+            "expiresAt": 1791064469462,
+            "bootId": "4a49cf336c773b5d464fce71776d67e3"
+          },
+          "renewals": [
+            {
+              "expiresAt": 1791064667985,
+              "at": 1791064368014
+            }
+          ]
+        }
+      }
+    ],
+    "elapsedMs": 130043,
+    "after": {
+      "B": {
+        "state": "PAUSED_AI",
+        "requested": true,
+        "generation": 1,
+        "sessionId": "a73f1943360d89b49003272745cb4fa3",
+        "expiresAt": 1791064653440,
+        "nativeSession": "43ded7e5b9ba0acc10229d913ec5d05f",
+        "nativeConnected": true,
+        "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+        "workerPresent": true,
+        "aiLoad": "loading",
+        "endpoint": {
+          "nodeId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "sourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+          "sequence": 55,
+          "expiresAt": 1791064493359,
+          "bootId": "f90289232a83dd61de0f5254451aadfa"
+        },
+        "renewals": [
+          {
+            "expiresAt": 1791064653440,
+            "at": 1791064353471
+          }
+        ]
+      },
+      "C": {
+        "state": "PAUSED_AI",
+        "requested": true,
+        "generation": 1,
+        "sessionId": "b68d6eda8dd36ed69df71740d42335cb",
+        "expiresAt": 1791064667985,
+        "nativeSession": "fad3976cd8491a39997a0efe9fd43590",
+        "nativeConnected": true,
+        "sourceId": "common-mine",
+        "workerPresent": true,
+        "aiLoad": "loading",
+        "endpoint": {
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "sourceId": "common-mine",
+          "sequence": 214,
+          "expiresAt": 1791064469462,
+          "bootId": "4a49cf336c773b5d464fce71776d67e3"
+        },
+        "renewals": [
+          {
+            "expiresAt": 1791064667985,
+            "at": 1791064368014
+          }
+        ]
+      }
+    }
+  },
+  "final": {
+    "at": "2026-10-03T21:53:31.309Z",
+    "primaryHead": 3975,
+    "sourceHead": 642,
+    "sourcePeers": []
+  },
+  "cleanupComplete": true,
+  "profileParentRemoved": true,
+  "finishedAt": "2026-10-03T21:53:31.954Z"
+}

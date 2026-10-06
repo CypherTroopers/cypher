@@ -1,0 +1,8 @@
+/* Keep long model IDs from widening the page on mobile browsers. */
+.model-settings { align-items: start; }
+.model-settings label { min-width: 0; flex: 1 1 230px; max-width: 100%; }
+.model-settings select { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+#modelInfo { overflow-wrap: anywhere; }
+#modelCard { display: inline-block; color: #99d8ff; margin-bottom: 4px; }
+#modelCard[hidden] { display: none; }
+#modelPanel button { font-size: 13px; }

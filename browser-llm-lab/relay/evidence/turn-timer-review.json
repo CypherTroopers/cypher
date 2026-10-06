@@ -1,0 +1,29 @@
+{
+  "investigation": "READ_ONLY",
+  "newAllocations": 0,
+  "runtimeChanges": false,
+  "settings": {
+    "credentialSeconds": 300,
+    "maxAllocateLifetime": 300,
+    "staleNonce": 300,
+    "historicalTURNLogs": "disabled"
+  },
+  "codeFindings": [
+    "Established allocation retains ss->hmackey for same username",
+    "Stale nonce rotates/challenges with438 but does not clear same-username cached key",
+    "REST timestamp expiry is rejected when a fresh get_user_key lookup is required",
+    "REFRESH extends allocation lifetime subject to max-allocate-lifetime"
+  ],
+  "historicalCause": "UNKNOWN: no event-level TURN logs or STUN-refresh capture",
+  "hypothesesNotEstablished": [
+    "fresh TURN socket/5-tuple requiring authentication with an expired old credential",
+    "native protocol rejection or transport timeout"
+  ],
+  "sourceAnchors": {
+    "cachedAuth": "/tmp/coturn-4.18.0/src/server/ns_turn_server.c:3835",
+    "nonceRotation": "/tmp/coturn-4.18.0/src/server/ns_turn_server.c:3622",
+    "sameUsername": "/tmp/coturn-4.18.0/src/server/ns_turn_server.c:3753",
+    "expiryOnLookup": "/tmp/coturn-4.18.0/src/apps/relay/userdb.c:538"
+  },
+  "officialSource": "https://github.com/coturn/coturn/tree/4.18.0"
+}

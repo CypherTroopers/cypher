@@ -1,0 +1,44 @@
+{
+  "at": "2026-10-03T05:11:01.165Z",
+  "mode": "public DNS HTTPS GET plus live deployed gateway/config file hash",
+  "hashes": {
+    "public/mesh-protocol.js": "00173ee0c36b00237408223f084d0eb1eeee0f387c5d279c4ab06fc0607e3ee2",
+    "public/mesh-controller.js": "5a1ac06199a33df91d39ce948db93c3ac41d9f1fab3d71274d4e392519ee2f64",
+    "public/relay-protocol.js": "33ec669dc7b1d237cf6efc690cc2d127048c92d94e5b31a6e1d26c7610e90261",
+    "public/mesh-worker.js": "2cf47229ee018f3f1175355a238fa14b1db126af4ad6479bce1f6b66d1103698",
+    "public/relay-controller.js": "d8027373ee2bf40dff62d4eb076d56e01db196e2bd6542040ed0470b2452d286",
+    "relay/gateway.mjs": "03a45dd93f36acec1d4cff1e20789b9d47b273f975f3dd9145f871feeaf07100",
+    "relay/config.mjs": "72c9183ff4f54fee3dff469d102c6f44ddc47781092ea4c27670b56fdb222f4c"
+  },
+  "headers": {
+    "public/mesh-protocol.js": {
+      "server": "cloudflare",
+      "cfRay": "a4497199db0cd38a-FRA"
+    },
+    "public/mesh-controller.js": {
+      "server": "cloudflare",
+      "cfRay": "a4497199dc74f2c7-FRA"
+    },
+    "public/relay-protocol.js": {
+      "server": "cloudflare",
+      "cfRay": "a4497199effb37d7-FRA"
+    },
+    "public/mesh-worker.js": {
+      "server": "cloudflare",
+      "cfRay": "a4497199fee965e0-FRA"
+    },
+    "public/relay-controller.js": {
+      "server": "cloudflare",
+      "cfRay": "a4497199e850ccf7-FRA"
+    }
+  },
+  "matches": {
+    "public/mesh-protocol.js": true,
+    "public/mesh-controller.js": true,
+    "public/relay-protocol.js": true,
+    "public/mesh-worker.js": true,
+    "public/relay-controller.js": true,
+    "relay/gateway.mjs": true,
+    "relay/config.mjs": true
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "at": "2026-10-03T05:20:43.059772+00:00",
+  "selectedApps": [
+    {
+      "name": "cyphermine",
+      "id": 7,
+      "pid": 0,
+      "status": "errored",
+      "restartCount": 31
+    },
+    {
+      "name": "cypher-browser-mesh-a",
+      "id": 11,
+      "pid": 3088210,
+      "status": "online",
+      "restartCount": 0
+    },
+    {
+      "name": "cypher-browser-mesh-b",
+      "id": 12,
+      "pid": 3088211,
+      "status": "online",
+      "restartCount": 0
+    }
+  ],
+  "scope": "read-only final process observation; no restart or mutation"
+}

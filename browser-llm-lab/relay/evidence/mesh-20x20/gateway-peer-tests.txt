@@ -1,0 +1,11 @@
+✔ peer signaling prefers another Common and enforces assigned pairs, ICE caps and no token forwarding (1184.239203ms)
+✔ 160 global leases include pending reservations and support 320 simultaneous browser sockets (7793.570322ms)
+✔ actual signaling assigns 20 distinct browser peers and never admits a 21st neighbor (511.124897ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9978.54205

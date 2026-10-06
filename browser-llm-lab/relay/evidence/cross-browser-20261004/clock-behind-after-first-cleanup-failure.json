@@ -1,0 +1,1587 @@
+{
+  "status": "FAIL",
+  "startedAt": "2026-10-04T09:35:15.876Z",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "transportFilter": "both",
+  "icePolicy": "relay",
+  "simulatedClockOffsetA": -1000,
+  "sameHostOnly": true,
+  "realDevices": false,
+  "separatePhysicalNetworks": false,
+  "scope": "Independent Chrome processes; genuine public discovery/signaling/native hello; actual selected relay ICE pair and ordered reliable DataChannel. No separate Common RLPx transfer acceptance claim.",
+  "privateDataCaptured": false,
+  "injectedPeerOrSourceData": false,
+  "nodeOrDaemonChanges": false,
+  "processes": {
+    "A": {
+      "pid": 23
+    },
+    "B": {
+      "pid": 247
+    }
+  },
+  "checkpoints": [
+    {
+      "name": "Two independent Chrome processes admitted via genuine public mesh",
+      "at": "2026-10-04T09:35:34.334Z",
+      "value": [
+        {
+          "at": 1791106533319,
+          "state": "WAITING_PEER",
+          "requested": true,
+          "sourceId": "common-mine",
+          "nativeConnections": 1,
+          "nativeVerified": true,
+          "turnEnabled": true,
+          "signalReady": true,
+          "discovery": {
+            "knownCandidates": 1,
+            "readyGateways": 1
+          },
+          "adoptedOwnedCandidates": [],
+          "workerPresent": true,
+          "pendingSends": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "traces": [],
+          "peers": []
+        },
+        {
+          "at": 1791106534321,
+          "state": "CONNECTING",
+          "requested": true,
+          "sourceId": "common-mine",
+          "nativeConnections": 0,
+          "nativeVerified": true,
+          "turnEnabled": true,
+          "signalReady": false,
+          "discovery": {
+            "knownCandidates": 0,
+            "readyGateways": 0
+          },
+          "adoptedOwnedCandidates": [],
+          "workerPresent": true,
+          "pendingSends": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "traces": [],
+          "peers": []
+        }
+      ]
+    },
+    {
+      "name": "Actual selected TURN relay ICE pair and reliable ordered DataChannel",
+      "at": "2026-10-04T09:35:35.658Z",
+      "value": [
+        {
+          "at": 1791106534647,
+          "state": "ACTIVE",
+          "requested": true,
+          "sourceId": "common-mine",
+          "nativeConnections": 1,
+          "nativeVerified": true,
+          "turnEnabled": true,
+          "signalReady": true,
+          "discovery": {
+            "knownCandidates": 2,
+            "readyGateways": 1
+          },
+          "adoptedOwnedCandidates": [
+            {
+              "peerId": "084a75e32b304d11469f3bf2244c95df",
+              "initiator": false
+            }
+          ],
+          "workerPresent": true,
+          "pendingSends": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "traces": [
+            {
+              "at": 1791106533869,
+              "event": "peer-created",
+              "turnUrls": [
+                {
+                  "scheme": "turn",
+                  "transport": "udp"
+                },
+                {
+                  "scheme": "turn",
+                  "transport": "tcp"
+                }
+              ]
+            },
+            {
+              "at": 1791106533893,
+              "event": "icegatheringstatechange",
+              "connectionState": "new",
+              "iceState": "new",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106533971,
+              "event": "candidate",
+              "candidateType": "relay",
+              "protocol": "udp"
+            },
+            {
+              "at": 1791106533976,
+              "event": "candidate",
+              "candidateType": "relay",
+              "protocol": "udp"
+            },
+            {
+              "at": 1791106534280,
+              "event": "iceconnectionstatechange",
+              "connectionState": "new",
+              "iceState": "checking",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106534280,
+              "event": "connectionstatechange",
+              "connectionState": "connecting",
+              "iceState": "checking",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106534411,
+              "event": "iceconnectionstatechange",
+              "connectionState": "connecting",
+              "iceState": "connected",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106534411,
+              "event": "icegatheringstatechange",
+              "connectionState": "connecting",
+              "iceState": "connected",
+              "gathering": "complete"
+            },
+            {
+              "at": 1791106534414,
+              "event": "gather-complete"
+            },
+            {
+              "at": 1791106534420,
+              "event": "connectionstatechange",
+              "connectionState": "connected",
+              "iceState": "connected",
+              "gathering": "complete"
+            }
+          ],
+          "peers": [
+            {
+              "peerId": "084a75e32b304d11469f3bf2244c95df",
+              "owned": true,
+              "connectionState": "connected",
+              "iceState": "connected",
+              "gathering": "complete",
+              "path": "TURN",
+              "iceSent": 3,
+              "iceReceived": 3,
+              "policy": "relay",
+              "dc": {
+                "state": "open",
+                "ordered": true,
+                "maxRetransmits": null,
+                "maxPacketLifeTime": null
+              },
+              "selected": {
+                "state": "succeeded",
+                "nominated": true,
+                "bytesSent": 3690,
+                "bytesReceived": 3590,
+                "local": {
+                  "type": "relay",
+                  "protocol": "udp",
+                  "relayProtocol": "udp"
+                },
+                "remote": {
+                  "type": "relay",
+                  "protocol": "udp"
+                }
+              },
+              "channels": [
+                {
+                  "label": "cypher-common-mesh/1",
+                  "state": "open",
+                  "bytesSent": 1239,
+                  "bytesReceived": 1239,
+                  "messagesSent": 2,
+                  "messagesReceived": 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "at": 1791106535641,
+          "state": "ACTIVE",
+          "requested": true,
+          "sourceId": "common-mine",
+          "nativeConnections": 1,
+          "nativeVerified": true,
+          "turnEnabled": true,
+          "signalReady": true,
+          "discovery": {
+            "knownCandidates": 2,
+            "readyGateways": 1
+          },
+          "adoptedOwnedCandidates": [
+            {
+              "peerId": "1c7529bf5111fd0e47705adb478b7868",
+              "initiator": true
+            }
+          ],
+          "workerPresent": true,
+          "pendingSends": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "traces": [
+            {
+              "at": 1791106534776,
+              "event": "peer-created",
+              "turnUrls": [
+                {
+                  "scheme": "turn",
+                  "transport": "udp"
+                },
+                {
+                  "scheme": "turn",
+                  "transport": "tcp"
+                }
+              ]
+            },
+            {
+              "at": 1791106534807,
+              "event": "icegatheringstatechange",
+              "connectionState": "new",
+              "iceState": "new",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106534875,
+              "event": "candidate",
+              "candidateType": "relay",
+              "protocol": "udp"
+            },
+            {
+              "at": 1791106534879,
+              "event": "candidate",
+              "candidateType": "relay",
+              "protocol": "udp"
+            },
+            {
+              "at": 1791106535383,
+              "event": "iceconnectionstatechange",
+              "connectionState": "new",
+              "iceState": "checking",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106535384,
+              "event": "connectionstatechange",
+              "connectionState": "connecting",
+              "iceState": "checking",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106535389,
+              "event": "iceconnectionstatechange",
+              "connectionState": "connecting",
+              "iceState": "connected",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106535390,
+              "event": "icegatheringstatechange",
+              "connectionState": "connecting",
+              "iceState": "connected",
+              "gathering": "complete"
+            },
+            {
+              "at": 1791106535391,
+              "event": "gather-complete"
+            },
+            {
+              "at": 1791106535421,
+              "event": "connectionstatechange",
+              "connectionState": "connected",
+              "iceState": "connected",
+              "gathering": "complete"
+            }
+          ],
+          "peers": [
+            {
+              "peerId": "1c7529bf5111fd0e47705adb478b7868",
+              "owned": true,
+              "connectionState": "connected",
+              "iceState": "connected",
+              "gathering": "complete",
+              "path": "TURN",
+              "iceSent": 3,
+              "iceReceived": 2,
+              "policy": "relay",
+              "dc": {
+                "state": "open",
+                "ordered": true,
+                "maxRetransmits": null,
+                "maxPacketLifeTime": null
+              },
+              "selected": {
+                "state": "succeeded",
+                "nominated": true,
+                "bytesSent": 3590,
+                "bytesReceived": 3690,
+                "local": {
+                  "type": "relay",
+                  "protocol": "udp",
+                  "relayProtocol": "udp"
+                },
+                "remote": {
+                  "type": "relay",
+                  "protocol": "udp"
+                }
+              },
+              "channels": [
+                {
+                  "label": "cypher-common-mesh/1",
+                  "state": "open",
+                  "bytesSent": 1239,
+                  "bytesReceived": 1239,
+                  "messagesSent": 2,
+                  "messagesReceived": 2
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Actual controller/Worker protocol messages received across RTC",
+      "at": "2026-10-04T09:35:38.712Z",
+      "value": [
+        {
+          "at": 1791106537674,
+          "state": "ACTIVE",
+          "requested": true,
+          "sourceId": "common-mine",
+          "nativeConnections": 1,
+          "nativeVerified": true,
+          "turnEnabled": true,
+          "signalReady": true,
+          "discovery": {
+            "knownCandidates": 2,
+            "readyGateways": 1
+          },
+          "adoptedOwnedCandidates": [
+            {
+              "peerId": "084a75e32b304d11469f3bf2244c95df",
+              "initiator": false
+            }
+          ],
+          "workerPresent": true,
+          "pendingSends": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "traces": [
+            {
+              "at": 1791106533869,
+              "event": "peer-created",
+              "turnUrls": [
+                {
+                  "scheme": "turn",
+                  "transport": "udp"
+                },
+                {
+                  "scheme": "turn",
+                  "transport": "tcp"
+                }
+              ]
+            },
+            {
+              "at": 1791106533893,
+              "event": "icegatheringstatechange",
+              "connectionState": "new",
+              "iceState": "new",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106533971,
+              "event": "candidate",
+              "candidateType": "relay",
+              "protocol": "udp"
+            },
+            {
+              "at": 1791106533976,
+              "event": "candidate",
+              "candidateType": "relay",
+              "protocol": "udp"
+            },
+            {
+              "at": 1791106534280,
+              "event": "iceconnectionstatechange",
+              "connectionState": "new",
+              "iceState": "checking",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106534280,
+              "event": "connectionstatechange",
+              "connectionState": "connecting",
+              "iceState": "checking",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106534411,
+              "event": "iceconnectionstatechange",
+              "connectionState": "connecting",
+              "iceState": "connected",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106534411,
+              "event": "icegatheringstatechange",
+              "connectionState": "connecting",
+              "iceState": "connected",
+              "gathering": "complete"
+            },
+            {
+              "at": 1791106534414,
+              "event": "gather-complete"
+            },
+            {
+              "at": 1791106534420,
+              "event": "connectionstatechange",
+              "connectionState": "connected",
+              "iceState": "connected",
+              "gathering": "complete"
+            }
+          ],
+          "peers": [
+            {
+              "peerId": "084a75e32b304d11469f3bf2244c95df",
+              "owned": true,
+              "connectionState": "connected",
+              "iceState": "connected",
+              "gathering": "complete",
+              "path": "TURN",
+              "iceSent": 3,
+              "iceReceived": 3,
+              "policy": "relay",
+              "dc": {
+                "state": "open",
+                "ordered": true,
+                "maxRetransmits": null,
+                "maxPacketLifeTime": null
+              },
+              "selected": {
+                "state": "succeeded",
+                "nominated": true,
+                "bytesSent": 3740,
+                "bytesReceived": 3590,
+                "local": {
+                  "type": "relay",
+                  "protocol": "udp",
+                  "relayProtocol": "udp"
+                },
+                "remote": {
+                  "type": "relay",
+                  "protocol": "udp"
+                }
+              },
+              "channels": [
+                {
+                  "label": "cypher-common-mesh/1",
+                  "state": "open",
+                  "bytesSent": 1239,
+                  "bytesReceived": 1239,
+                  "messagesSent": 2,
+                  "messagesReceived": 2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "at": 1791106538691,
+          "state": "ACTIVE",
+          "requested": true,
+          "sourceId": "common-mine",
+          "nativeConnections": 1,
+          "nativeVerified": true,
+          "turnEnabled": true,
+          "signalReady": true,
+          "discovery": {
+            "knownCandidates": 2,
+            "readyGateways": 1
+          },
+          "adoptedOwnedCandidates": [
+            {
+              "peerId": "1c7529bf5111fd0e47705adb478b7868",
+              "initiator": true
+            }
+          ],
+          "workerPresent": true,
+          "pendingSends": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "traces": [
+            {
+              "at": 1791106534776,
+              "event": "peer-created",
+              "turnUrls": [
+                {
+                  "scheme": "turn",
+                  "transport": "udp"
+                },
+                {
+                  "scheme": "turn",
+                  "transport": "tcp"
+                }
+              ]
+            },
+            {
+              "at": 1791106534807,
+              "event": "icegatheringstatechange",
+              "connectionState": "new",
+              "iceState": "new",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106534875,
+              "event": "candidate",
+              "candidateType": "relay",
+              "protocol": "udp"
+            },
+            {
+              "at": 1791106534879,
+              "event": "candidate",
+              "candidateType": "relay",
+              "protocol": "udp"
+            },
+            {
+              "at": 1791106535383,
+              "event": "iceconnectionstatechange",
+              "connectionState": "new",
+              "iceState": "checking",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106535384,
+              "event": "connectionstatechange",
+              "connectionState": "connecting",
+              "iceState": "checking",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106535389,
+              "event": "iceconnectionstatechange",
+              "connectionState": "connecting",
+              "iceState": "connected",
+              "gathering": "gathering"
+            },
+            {
+              "at": 1791106535390,
+              "event": "icegatheringstatechange",
+              "connectionState": "connecting",
+              "iceState": "connected",
+              "gathering": "complete"
+            },
+            {
+              "at": 1791106535391,
+              "event": "gather-complete"
+            },
+            {
+              "at": 1791106535421,
+              "event": "connectionstatechange",
+              "connectionState": "connected",
+              "iceState": "connected",
+              "gathering": "complete"
+            }
+          ],
+          "peers": [
+            {
+              "peerId": "1c7529bf5111fd0e47705adb478b7868",
+              "owned": true,
+              "connectionState": "connected",
+              "iceState": "connected",
+              "gathering": "complete",
+              "path": "TURN",
+              "iceSent": 3,
+              "iceReceived": 3,
+              "policy": "relay",
+              "dc": {
+                "state": "open",
+                "ordered": true,
+                "maxRetransmits": null,
+                "maxPacketLifeTime": null
+              },
+              "selected": {
+                "state": "succeeded",
+                "nominated": true,
+                "bytesSent": 3590,
+                "bytesReceived": 3740,
+                "local": {
+                  "type": "relay",
+                  "protocol": "udp",
+                  "relayProtocol": "udp"
+                },
+                "remote": {
+                  "type": "relay",
+                  "protocol": "udp"
+                }
+              },
+              "channels": [
+                {
+                  "label": "cypher-common-mesh/1",
+                  "state": "open",
+                  "bytesSent": 1239,
+                  "bytesReceived": 1239,
+                  "messagesSent": 2,
+                  "messagesReceived": 2
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "samples": [
+    [
+      {
+        "at": 1791106533349,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 1,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106534351,
+        "state": "CONNECTING",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 0,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": false,
+        "discovery": {
+          "knownCandidates": 0,
+          "readyGateways": 0
+        },
+        "adoptedOwnedCandidates": [],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      }
+    ],
+    [
+      {
+        "at": 1791106533786,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [
+          {
+            "peerId": "084a75e32b304d11469f3bf2244c95df",
+            "initiator": false
+          }
+        ],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [],
+        "peers": []
+      },
+      {
+        "at": 1791106534800,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": false,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [
+          {
+            "peerId": "1c7529bf5111fd0e47705adb478b7868",
+            "initiator": true
+          }
+        ],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [
+          {
+            "at": 1791106534776,
+            "event": "peer-created",
+            "turnUrls": [
+              {
+                "scheme": "turn",
+                "transport": "udp"
+              },
+              {
+                "scheme": "turn",
+                "transport": "tcp"
+              }
+            ]
+          }
+        ],
+        "peers": [
+          {
+            "peerId": "1c7529bf5111fd0e47705adb478b7868",
+            "owned": true,
+            "connectionState": "new",
+            "iceState": "new",
+            "gathering": "new",
+            "path": "unknown",
+            "iceSent": 0,
+            "iceReceived": 0,
+            "policy": "relay",
+            "dc": {
+              "state": "connecting",
+              "ordered": true,
+              "maxRetransmits": null,
+              "maxPacketLifeTime": null
+            },
+            "selected": null,
+            "channels": [
+              {
+                "label": "cypher-common-mesh/1",
+                "state": "connecting",
+                "bytesSent": 0,
+                "bytesReceived": 0,
+                "messagesSent": 0,
+                "messagesReceived": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "at": 1791106534214,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [
+          {
+            "peerId": "084a75e32b304d11469f3bf2244c95df",
+            "initiator": false
+          }
+        ],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [
+          {
+            "at": 1791106533869,
+            "event": "peer-created",
+            "turnUrls": [
+              {
+                "scheme": "turn",
+                "transport": "udp"
+              },
+              {
+                "scheme": "turn",
+                "transport": "tcp"
+              }
+            ]
+          },
+          {
+            "at": 1791106533893,
+            "event": "icegatheringstatechange",
+            "connectionState": "new",
+            "iceState": "new",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106533971,
+            "event": "candidate",
+            "candidateType": "relay",
+            "protocol": "udp"
+          },
+          {
+            "at": 1791106533976,
+            "event": "candidate",
+            "candidateType": "relay",
+            "protocol": "udp"
+          }
+        ],
+        "peers": [
+          {
+            "peerId": "084a75e32b304d11469f3bf2244c95df",
+            "owned": true,
+            "connectionState": "new",
+            "iceState": "new",
+            "gathering": "gathering",
+            "path": "unknown",
+            "iceSent": 2,
+            "iceReceived": 0,
+            "policy": "relay",
+            "dc": null,
+            "selected": null,
+            "channels": []
+          }
+        ]
+      },
+      {
+        "at": 1791106535213,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [
+          {
+            "peerId": "1c7529bf5111fd0e47705adb478b7868",
+            "initiator": true
+          }
+        ],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [
+          {
+            "at": 1791106534776,
+            "event": "peer-created",
+            "turnUrls": [
+              {
+                "scheme": "turn",
+                "transport": "udp"
+              },
+              {
+                "scheme": "turn",
+                "transport": "tcp"
+              }
+            ]
+          },
+          {
+            "at": 1791106534807,
+            "event": "icegatheringstatechange",
+            "connectionState": "new",
+            "iceState": "new",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106534875,
+            "event": "candidate",
+            "candidateType": "relay",
+            "protocol": "udp"
+          },
+          {
+            "at": 1791106534879,
+            "event": "candidate",
+            "candidateType": "relay",
+            "protocol": "udp"
+          }
+        ],
+        "peers": [
+          {
+            "peerId": "1c7529bf5111fd0e47705adb478b7868",
+            "owned": true,
+            "connectionState": "new",
+            "iceState": "new",
+            "gathering": "gathering",
+            "path": "unknown",
+            "iceSent": 2,
+            "iceReceived": 0,
+            "policy": "relay",
+            "dc": {
+              "state": "connecting",
+              "ordered": true,
+              "maxRetransmits": null,
+              "maxPacketLifeTime": null
+            },
+            "selected": null,
+            "channels": [
+              {
+                "label": "cypher-common-mesh/1",
+                "state": "connecting",
+                "bytesSent": 0,
+                "bytesReceived": 0,
+                "messagesSent": 0,
+                "messagesReceived": 0
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    [
+      {
+        "at": 1791106534647,
+        "state": "ACTIVE",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [
+          {
+            "peerId": "084a75e32b304d11469f3bf2244c95df",
+            "initiator": false
+          }
+        ],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [
+          {
+            "at": 1791106533869,
+            "event": "peer-created",
+            "turnUrls": [
+              {
+                "scheme": "turn",
+                "transport": "udp"
+              },
+              {
+                "scheme": "turn",
+                "transport": "tcp"
+              }
+            ]
+          },
+          {
+            "at": 1791106533893,
+            "event": "icegatheringstatechange",
+            "connectionState": "new",
+            "iceState": "new",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106533971,
+            "event": "candidate",
+            "candidateType": "relay",
+            "protocol": "udp"
+          },
+          {
+            "at": 1791106533976,
+            "event": "candidate",
+            "candidateType": "relay",
+            "protocol": "udp"
+          },
+          {
+            "at": 1791106534280,
+            "event": "iceconnectionstatechange",
+            "connectionState": "new",
+            "iceState": "checking",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106534280,
+            "event": "connectionstatechange",
+            "connectionState": "connecting",
+            "iceState": "checking",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106534411,
+            "event": "iceconnectionstatechange",
+            "connectionState": "connecting",
+            "iceState": "connected",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106534411,
+            "event": "icegatheringstatechange",
+            "connectionState": "connecting",
+            "iceState": "connected",
+            "gathering": "complete"
+          },
+          {
+            "at": 1791106534414,
+            "event": "gather-complete"
+          },
+          {
+            "at": 1791106534420,
+            "event": "connectionstatechange",
+            "connectionState": "connected",
+            "iceState": "connected",
+            "gathering": "complete"
+          }
+        ],
+        "peers": [
+          {
+            "peerId": "084a75e32b304d11469f3bf2244c95df",
+            "owned": true,
+            "connectionState": "connected",
+            "iceState": "connected",
+            "gathering": "complete",
+            "path": "TURN",
+            "iceSent": 3,
+            "iceReceived": 3,
+            "policy": "relay",
+            "dc": {
+              "state": "open",
+              "ordered": true,
+              "maxRetransmits": null,
+              "maxPacketLifeTime": null
+            },
+            "selected": {
+              "state": "succeeded",
+              "nominated": true,
+              "bytesSent": 3690,
+              "bytesReceived": 3590,
+              "local": {
+                "type": "relay",
+                "protocol": "udp",
+                "relayProtocol": "udp"
+              },
+              "remote": {
+                "type": "relay",
+                "protocol": "udp"
+              }
+            },
+            "channels": [
+              {
+                "label": "cypher-common-mesh/1",
+                "state": "open",
+                "bytesSent": 1239,
+                "bytesReceived": 1239,
+                "messagesSent": 2,
+                "messagesReceived": 2
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "at": 1791106535641,
+        "state": "ACTIVE",
+        "requested": true,
+        "sourceId": "common-mine",
+        "nativeConnections": 1,
+        "nativeVerified": true,
+        "turnEnabled": true,
+        "signalReady": true,
+        "discovery": {
+          "knownCandidates": 2,
+          "readyGateways": 1
+        },
+        "adoptedOwnedCandidates": [
+          {
+            "peerId": "1c7529bf5111fd0e47705adb478b7868",
+            "initiator": true
+          }
+        ],
+        "workerPresent": true,
+        "pendingSends": 0,
+        "circuits": 0,
+        "queuedBytes": 0,
+        "traces": [
+          {
+            "at": 1791106534776,
+            "event": "peer-created",
+            "turnUrls": [
+              {
+                "scheme": "turn",
+                "transport": "udp"
+              },
+              {
+                "scheme": "turn",
+                "transport": "tcp"
+              }
+            ]
+          },
+          {
+            "at": 1791106534807,
+            "event": "icegatheringstatechange",
+            "connectionState": "new",
+            "iceState": "new",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106534875,
+            "event": "candidate",
+            "candidateType": "relay",
+            "protocol": "udp"
+          },
+          {
+            "at": 1791106534879,
+            "event": "candidate",
+            "candidateType": "relay",
+            "protocol": "udp"
+          },
+          {
+            "at": 1791106535383,
+            "event": "iceconnectionstatechange",
+            "connectionState": "new",
+            "iceState": "checking",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106535384,
+            "event": "connectionstatechange",
+            "connectionState": "connecting",
+            "iceState": "checking",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106535389,
+            "event": "iceconnectionstatechange",
+            "connectionState": "connecting",
+            "iceState": "connected",
+            "gathering": "gathering"
+          },
+          {
+            "at": 1791106535390,
+            "event": "icegatheringstatechange",
+            "connectionState": "connecting",
+            "iceState": "connected",
+            "gathering": "complete"
+          },
+          {
+            "at": 1791106535391,
+            "event": "gather-complete"
+          },
+          {
+            "at": 1791106535421,
+            "event": "connectionstatechange",
+            "connectionState": "connected",
+            "iceState": "connected",
+            "gathering": "complete"
+          }
+        ],
+        "peers": [
+          {
+            "peerId": "1c7529bf5111fd0e47705adb478b7868",
+            "owned": true,
+            "connectionState": "connected",
+            "iceState": "connected",
+            "gathering": "complete",
+            "path": "TURN",
+            "iceSent": 3,
+            "iceReceived": 2,
+            "policy": "relay",
+            "dc": {
+              "state": "open",
+              "ordered": true,
+              "maxRetransmits": null,
+              "maxPacketLifeTime": null
+            },
+            "selected": {
+              "state": "succeeded",
+              "nominated": true,
+              "bytesSent": 3590,
+              "bytesReceived": 3690,
+              "local": {
+                "type": "relay",
+                "protocol": "udp",
+                "relayProtocol": "udp"
+              },
+              "remote": {
+                "type": "relay",
+                "protocol": "udp"
+              }
+            },
+            "channels": [
+              {
+                "label": "cypher-common-mesh/1",
+                "state": "open",
+                "bytesSent": 1239,
+                "bytesReceived": 1239,
+                "messagesSent": 2,
+                "messagesReceived": 2
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  ],
+  "pageErrors": [],
+  "httpErrors": [
+    {
+      "browser": "A",
+      "path": "/relay/v1/mesh/sessions",
+      "status": 401
+    },
+    {
+      "browser": "A",
+      "path": "/relay/v1/mesh/status",
+      "status": 401
+    },
+    {
+      "browser": "B",
+      "path": "/relay/v1/mesh/status",
+      "status": 401
+    }
+  ],
+  "cleanup": [
+    {
+      "browser": "A",
+      "leaseRevoked": true,
+      "chromeExited": true,
+      "profileRemoved": true,
+      "stopped": {
+        "leaseStatus": 401,
+        "requested": false,
+        "workerPresent": false,
+        "peers": 0,
+        "nativeConnections": 0,
+        "circuits": 0,
+        "queuedBytes": 0
+      }
+    },
+    {
+      "browser": "B",
+      "leaseRevoked": true,
+      "chromeExited": true,
+      "profileRemoved": false,
+      "stopped": {
+        "leaseStatus": 401,
+        "requested": false,
+        "workerPresent": false,
+        "peers": 0,
+        "nativeConnections": 0,
+        "circuits": 0,
+        "queuedBytes": 0
+      },
+      "profileError": "ENOTEMPTY: directory not empty, rmdir '/tmp/cypher-forced-turn-L2wdN6/Default'"
+    }
+  ],
+  "finalObservation": [
+    {
+      "at": 1791106537674,
+      "state": "ACTIVE",
+      "requested": true,
+      "sourceId": "common-mine",
+      "nativeConnections": 1,
+      "nativeVerified": true,
+      "turnEnabled": true,
+      "signalReady": true,
+      "discovery": {
+        "knownCandidates": 2,
+        "readyGateways": 1
+      },
+      "adoptedOwnedCandidates": [
+        {
+          "peerId": "084a75e32b304d11469f3bf2244c95df",
+          "initiator": false
+        }
+      ],
+      "workerPresent": true,
+      "pendingSends": 0,
+      "circuits": 0,
+      "queuedBytes": 0,
+      "traces": [
+        {
+          "at": 1791106533869,
+          "event": "peer-created",
+          "turnUrls": [
+            {
+              "scheme": "turn",
+              "transport": "udp"
+            },
+            {
+              "scheme": "turn",
+              "transport": "tcp"
+            }
+          ]
+        },
+        {
+          "at": 1791106533893,
+          "event": "icegatheringstatechange",
+          "connectionState": "new",
+          "iceState": "new",
+          "gathering": "gathering"
+        },
+        {
+          "at": 1791106533971,
+          "event": "candidate",
+          "candidateType": "relay",
+          "protocol": "udp"
+        },
+        {
+          "at": 1791106533976,
+          "event": "candidate",
+          "candidateType": "relay",
+          "protocol": "udp"
+        },
+        {
+          "at": 1791106534280,
+          "event": "iceconnectionstatechange",
+          "connectionState": "new",
+          "iceState": "checking",
+          "gathering": "gathering"
+        },
+        {
+          "at": 1791106534280,
+          "event": "connectionstatechange",
+          "connectionState": "connecting",
+          "iceState": "checking",
+          "gathering": "gathering"
+        },
+        {
+          "at": 1791106534411,
+          "event": "iceconnectionstatechange",
+          "connectionState": "connecting",
+          "iceState": "connected",
+          "gathering": "gathering"
+        },
+        {
+          "at": 1791106534411,
+          "event": "icegatheringstatechange",
+          "connectionState": "connecting",
+          "iceState": "connected",
+          "gathering": "complete"
+        },
+        {
+          "at": 1791106534414,
+          "event": "gather-complete"
+        },
+        {
+          "at": 1791106534420,
+          "event": "connectionstatechange",
+          "connectionState": "connected",
+          "iceState": "connected",
+          "gathering": "complete"
+        }
+      ],
+      "peers": [
+        {
+          "peerId": "084a75e32b304d11469f3bf2244c95df",
+          "owned": true,
+          "connectionState": "connected",
+          "iceState": "connected",
+          "gathering": "complete",
+          "path": "TURN",
+          "iceSent": 3,
+          "iceReceived": 3,
+          "policy": "relay",
+          "dc": {
+            "state": "open",
+            "ordered": true,
+            "maxRetransmits": null,
+            "maxPacketLifeTime": null
+          },
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3740,
+            "bytesReceived": 3590,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "at": 1791106538691,
+      "state": "ACTIVE",
+      "requested": true,
+      "sourceId": "common-mine",
+      "nativeConnections": 1,
+      "nativeVerified": true,
+      "turnEnabled": true,
+      "signalReady": true,
+      "discovery": {
+        "knownCandidates": 2,
+        "readyGateways": 1
+      },
+      "adoptedOwnedCandidates": [
+        {
+          "peerId": "1c7529bf5111fd0e47705adb478b7868",
+          "initiator": true
+        }
+      ],
+      "workerPresent": true,
+      "pendingSends": 0,
+      "circuits": 0,
+      "queuedBytes": 0,
+      "traces": [
+        {
+          "at": 1791106534776,
+          "event": "peer-created",
+          "turnUrls": [
+            {
+              "scheme": "turn",
+              "transport": "udp"
+            },
+            {
+              "scheme": "turn",
+              "transport": "tcp"
+            }
+          ]
+        },
+        {
+          "at": 1791106534807,
+          "event": "icegatheringstatechange",
+          "connectionState": "new",
+          "iceState": "new",
+          "gathering": "gathering"
+        },
+        {
+          "at": 1791106534875,
+          "event": "candidate",
+          "candidateType": "relay",
+          "protocol": "udp"
+        },
+        {
+          "at": 1791106534879,
+          "event": "candidate",
+          "candidateType": "relay",
+          "protocol": "udp"
+        },
+        {
+          "at": 1791106535383,
+          "event": "iceconnectionstatechange",
+          "connectionState": "new",
+          "iceState": "checking",
+          "gathering": "gathering"
+        },
+        {
+          "at": 1791106535384,
+          "event": "connectionstatechange",
+          "connectionState": "connecting",
+          "iceState": "checking",
+          "gathering": "gathering"
+        },
+        {
+          "at": 1791106535389,
+          "event": "iceconnectionstatechange",
+          "connectionState": "connecting",
+          "iceState": "connected",
+          "gathering": "gathering"
+        },
+        {
+          "at": 1791106535390,
+          "event": "icegatheringstatechange",
+          "connectionState": "connecting",
+          "iceState": "connected",
+          "gathering": "complete"
+        },
+        {
+          "at": 1791106535391,
+          "event": "gather-complete"
+        },
+        {
+          "at": 1791106535421,
+          "event": "connectionstatechange",
+          "connectionState": "connected",
+          "iceState": "connected",
+          "gathering": "complete"
+        }
+      ],
+      "peers": [
+        {
+          "peerId": "1c7529bf5111fd0e47705adb478b7868",
+          "owned": true,
+          "connectionState": "connected",
+          "iceState": "connected",
+          "gathering": "complete",
+          "path": "TURN",
+          "iceSent": 3,
+          "iceReceived": 3,
+          "policy": "relay",
+          "dc": {
+            "state": "open",
+            "ordered": true,
+            "maxRetransmits": null,
+            "maxPacketLifeTime": null
+          },
+          "selected": {
+            "state": "succeeded",
+            "nominated": true,
+            "bytesSent": 3590,
+            "bytesReceived": 3740,
+            "local": {
+              "type": "relay",
+              "protocol": "udp",
+              "relayProtocol": "udp"
+            },
+            "remote": {
+              "type": "relay",
+              "protocol": "udp"
+            }
+          },
+          "channels": [
+            {
+              "label": "cypher-common-mesh/1",
+              "state": "open",
+              "bytesSent": 1239,
+              "bytesReceived": 1239,
+              "messagesSent": 2,
+              "messagesReceived": 2
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "finishedAt": "2026-10-04T09:35:44.025Z"
+}

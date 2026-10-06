@@ -1,0 +1,36 @@
+{
+  "status": "PASS",
+  "containerId": "377d97e9c9a806ef7a974004d1df50792e6bc90f867d0a9325fb038e5d975cb9",
+  "image": "sha256:5286edb35782454ab8a102c5eff6b54bff745853191b46aeead95f225aa6dfb6",
+  "mounts": [
+    {
+      "Type": "bind",
+      "Source": "/root/cypher/browser-llm-lab/searxng/config",
+      "Destination": "/etc/searxng",
+      "Mode": "",
+      "RW": true,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/root/cypher/browser-llm-lab/searxng/data",
+      "Destination": "/var/cache/searxng",
+      "Mode": "",
+      "RW": true,
+      "Propagation": "rprivate"
+    }
+  ],
+  "ports": {
+    "8080/tcp": [
+      {
+        "HostIp": "127.0.0.1",
+        "HostPort": "8888"
+      }
+    ]
+  },
+  "restartPolicy": {
+    "Name": "unless-stopped",
+    "MaximumRetryCount": 0
+  },
+  "searchResults": 5
+}

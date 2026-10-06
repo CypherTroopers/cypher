@@ -1,0 +1,42 @@
+{
+  "gatewayAndProxyModified": false,
+  "newLeasesCreated": 0,
+  "providerAccountChanged": false,
+  "historicalIPhoneCause": "UNKNOWN: request country metadata was not retained",
+  "confirmedLocalBehavior": {
+    "trustedCloudflareCIDRs": 22,
+    "nginxRealIPRewrite": false,
+    "supportedCountryCodes": [
+      "JP",
+      "US",
+      "DE",
+      "GB",
+      "FR",
+      "CA",
+      "AU",
+      "KR",
+      "IN",
+      "BR",
+      "SG",
+      "TW",
+      "NL",
+      "CH",
+      "ES",
+      "IT"
+    ],
+    "nullFor": [
+      "missing trusted CF-IPCountry",
+      "untrusted upstream peer",
+      "unsupported country code",
+      "XX/T1"
+    ],
+    "requestHeaderNotResponseHeader": true
+  },
+  "operatorCountryOnlySetting": "Cloudflare zone -> Network -> IP Geolocation -> On",
+  "officialSources": [
+    "https://developers.cloudflare.com/network/ip-geolocation/",
+    "https://developers.cloudflare.com/fundamentals/reference/http-headers/",
+    "https://developers.cloudflare.com/rules/transform/managed-transforms/reference/"
+  ],
+  "privacy": "No IP/secret or user session identity retained in this report; no coordinates inferred from CF-RAY"
+}

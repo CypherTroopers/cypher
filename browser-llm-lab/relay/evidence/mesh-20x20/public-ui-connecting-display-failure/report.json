@@ -1,0 +1,156 @@
+{
+  "startedAt": "2026-10-03T11:50:26.498Z",
+  "status": "FAIL",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "normalPublicDNS": true,
+  "independentBrowserProcesses": true,
+  "controllerInjection": false,
+  "DOMInjection": false,
+  "requestInterception": false,
+  "forcedTransport": false,
+  "physicalPhone": false,
+  "viewportPhoneOnly": true,
+  "foreignPeersPossible": true,
+  "isolationClaim": false,
+  "exactEncryptedByteVerification": false,
+  "limits": "Displayed counters prove UI behavior and browser hop receipt activity; native authentication and byte verification belong to the separate mesh soak.",
+  "checkpoints": [
+    {
+      "name": "Two independent public UI pages initially OFF with no admission and no horizontal overflow",
+      "at": "2026-10-03T11:50:35.026Z"
+    }
+  ],
+  "screenshots": [],
+  "pageErrors": [],
+  "participants": {
+    "desktop": {
+      "browserPID": 3249498,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "publicPage": {
+        "httpStatus": 200,
+        "server": "cloudflare",
+        "cloudflareColo": "FRA"
+      },
+      "latestUI": {
+        "state": "OFF",
+        "common": "0",
+        "commonHint": "This browser’s Common WSS connections",
+        "commonConnections": [],
+        "map": {
+          "known": 0,
+          "unknown": 0,
+          "events": 0,
+          "received": 0,
+          "sent": 0,
+          "acknowledged": 0,
+          "frames": 8,
+          "pulses": 0,
+          "nodes": [],
+          "ariaLabel": "Browser map. Node OFF; no participants or transfers."
+        },
+        "peers": "0",
+        "circuits": "0",
+        "circuitHint": "Open across Common links · 0 opening",
+        "connectionLimits": "Browser peer limit: 20 · Common attachment limit: 20 · Shared browser circuit policy: 40 total across all Common links and browser peers · Circuit capacity appears after connection",
+        "receipts": "0",
+        "acknowledged": "0 B acknowledged by peers",
+        "native": "Common WSS disconnected",
+        "signal": "Signaling disconnected",
+        "stream": "0 B",
+        "route": "None yet",
+        "mapCaption": "Your connection appears here when you turn Node ON.",
+        "mapTitle": "YOUR BROWSER CONNECTIONS · LIVE",
+        "reason": "Stopped by you",
+        "error": "",
+        "visibility": "visible",
+        "onDisabled": false,
+        "offDisabled": true,
+        "width": 1440,
+        "documentWidth": 1440,
+        "bodyWidth": 1440,
+        "mapWidth": 763,
+        "peerCount": 0,
+        "commonCount": 0,
+        "circuitCount": 0,
+        "receiptCount": 0,
+        "sourceIds": [],
+        "location": null
+      },
+      "sessionPOSTs": 1
+    },
+    "mobile": {
+      "browserPID": 3249850,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "publicPage": {
+        "httpStatus": 200,
+        "server": "cloudflare",
+        "cloudflareColo": "FRA"
+      },
+      "latestUI": {
+        "state": "OFF",
+        "common": "0",
+        "commonHint": "This browser’s Common WSS connections",
+        "commonConnections": [],
+        "map": {
+          "known": 0,
+          "unknown": 0,
+          "events": 0,
+          "received": 0,
+          "sent": 0,
+          "acknowledged": 0,
+          "frames": 4,
+          "pulses": 0,
+          "nodes": [],
+          "ariaLabel": "Browser map. Node OFF; no participants or transfers."
+        },
+        "peers": "0",
+        "circuits": "0",
+        "circuitHint": "Open across Common links · 0 opening",
+        "connectionLimits": "Browser peer limit: 20 · Common attachment limit: 20 · Shared browser circuit policy: 40 total across all Common links and browser peers · Circuit capacity appears after connection",
+        "receipts": "0",
+        "acknowledged": "0 B acknowledged by peers",
+        "native": "Common WSS disconnected",
+        "signal": "Signaling disconnected",
+        "stream": "0 B",
+        "route": "None yet",
+        "mapCaption": "Your connection appears here when you turn Node ON.",
+        "mapTitle": "YOUR BROWSER CONNECTIONS · LIVE",
+        "reason": "Node is OFF. Join when you want to help relay public data.",
+        "error": "",
+        "visibility": "visible",
+        "onDisabled": false,
+        "offDisabled": true,
+        "width": 390,
+        "documentWidth": 390,
+        "bodyWidth": 390,
+        "mapWidth": 296,
+        "peerCount": 0,
+        "commonCount": 0,
+        "circuitCount": 0,
+        "receiptCount": 0,
+        "sourceIds": [],
+        "location": null
+      },
+      "sessionPOSTs": 0
+    }
+  },
+  "cleanup": [
+    {
+      "browser": "desktop",
+      "ownedPageOFF": true
+    },
+    {
+      "browser": "mobile",
+      "ownedPageOFF": true
+    }
+  ],
+  "navigationRetries": [],
+  "error": "Public initial, active and OFF details retain the configured 20-Common ceiling",
+  "finishedAt": "2026-10-03T11:50:37.601Z"
+}

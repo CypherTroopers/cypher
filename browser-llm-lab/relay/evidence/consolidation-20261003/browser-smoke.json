@@ -1,0 +1,745 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T19:22:13.270Z",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "root": "/root/cypher/browser-llm-lab",
+  "expectedNodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+  "sameHostOnly": true,
+  "actualPhoneHardware": false,
+  "ordinaryCommons": 1,
+  "nativeCommonToCommonRelay": "NOT_TESTED_REQUIRES_TWO_COMMONS",
+  "loopbackHostOverride": false,
+  "runDirectory": "/tmp/cypher-migration-smoke-DwmBMd",
+  "processes": {
+    "A": {
+      "browserPid": 3352717,
+      "profile": "/tmp/cypher-migration-smoke-DwmBMd/A",
+      "executablePath": "/tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome",
+      "independentProcess": true,
+      "moduleHashes": {
+        "mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+        "mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+        "mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+        "mesh-discovery-client.js": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+        "vendor/mesh-crypto.js": "736696fb9c856ab1dad7a639f49fbb456320d3341575d702285ca3fe407eabc6",
+        "relay-ui.js": "da00b58c06d02a658a4d025a9eb41967ed44008fee759b3246099cb536c6f854"
+      }
+    },
+    "B": {
+      "browserPid": 3352919,
+      "profile": "/tmp/cypher-migration-smoke-DwmBMd/B",
+      "executablePath": "/tmp/browser-llm-browsers/chromium-1243/chrome-linux64/chrome",
+      "independentProcess": true,
+      "moduleHashes": {
+        "mesh-controller.js": "397ae36707dd636013784ff07a6358694988a8c942ad744244bae5d9d94f1c20",
+        "mesh-worker.js": "db2068bb65c07a69f059bcc17a97c191a900f7e03361f74788297f014304b495",
+        "mesh-discovery.js": "e11f9debb5158d29d84e2e24d2d24656929d5f04d625dd040c97097a9a9621a8",
+        "mesh-discovery-client.js": "ec435be2f4c5e44f886bf220b55684e6148aa7df43df6d3c791b26e5417a8951",
+        "vendor/mesh-crypto.js": "736696fb9c856ab1dad7a639f49fbb456320d3341575d702285ca3fe407eabc6",
+        "relay-ui.js": "da00b58c06d02a658a4d025a9eb41967ed44008fee759b3246099cb536c6f854"
+      }
+    }
+  },
+  "checkpoints": [
+    {
+      "name": "A: actual page starts OFF",
+      "at": "2026-10-03T19:22:17.009Z",
+      "browser": "A",
+      "initialUI": {
+        "state": "OFF",
+        "commonConnections": "0",
+        "peers": "0",
+        "nodeOnEnabled": true,
+        "nodeOffDisabled": true
+      }
+    },
+    {
+      "name": "B: actual page starts OFF",
+      "at": "2026-10-03T19:22:20.820Z",
+      "browser": "B",
+      "initialUI": {
+        "state": "OFF",
+        "commonConnections": "0",
+        "peers": "0",
+        "nodeOnEnabled": true,
+        "nodeOffDisabled": true
+      }
+    },
+    {
+      "name": "A: UI ON verifies signed endpoint and native HELLO",
+      "at": "2026-10-03T19:22:22.669Z",
+      "browser": "A",
+      "evidence": {
+        "captured": true,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "generation": 1,
+        "initialGeneration": 0,
+        "sessionId": "1a35ed1de82d8d383e7f40100c5687ca",
+        "nativeSession": "260ded08c027e9ee59fe5a09a488ef9f",
+        "peerId": "99b72ba59e5cb726bab50422b7c26f4b",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "workerPresent": true,
+        "nativeConnected": true,
+        "signalConnected": true,
+        "commonConnections": [
+          {
+            "id": "1a35ed1de82d8d383e7f40100c5687ca",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "b1eac0b3ad7850a341f8c3ffcfbae1a0",
+            "connected": true,
+            "expiresAt": 1791055641843,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "peers": [],
+        "rtcStats": [],
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 3864,
+        "nativeConnections": 1,
+        "pendingSends": 0,
+        "timerCount": 6,
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 1,
+          "knownBrowserCandidates": 0,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "signedEndpoint": {
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "expiresAt": 1791055448897,
+          "bootId": "bd34998141e427383475759c988449ae",
+          "sequence": 6,
+          "matchesNativeHelloIdentity": true,
+          "matchesNativeHelloBoot": true,
+          "matchesNativeSession": true,
+          "bothSignaturesVerified": true
+        },
+        "workerCommonSignatures": [],
+        "errors": [],
+        "lifecycle": [],
+        "ui": {
+          "state": "WAITING_PEER",
+          "peers": "0",
+          "commons": "1",
+          "sourceLabels": [
+            "common-mine"
+          ]
+        }
+      }
+    },
+    {
+      "name": "B: UI ON verifies signed endpoint and native HELLO",
+      "at": "2026-10-03T19:22:25.609Z",
+      "browser": "B",
+      "evidence": {
+        "captured": true,
+        "state": "WAITING_PEER",
+        "requested": true,
+        "generation": 1,
+        "initialGeneration": 0,
+        "sessionId": "6ebbf32791271fec3c30f1c52b5f5391",
+        "nativeSession": "78f93f3b0efe9ff4f1218f0f99c87c54",
+        "peerId": "d93dc52114038c13d1ddd7ced641f1af",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "workerPresent": true,
+        "nativeConnected": true,
+        "signalConnected": true,
+        "commonConnections": [
+          {
+            "id": "6ebbf32791271fec3c30f1c52b5f5391",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "83abc31bbb4926cf85c9b5a9005492e2",
+            "connected": true,
+            "expiresAt": 1791055645009,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "peers": [],
+        "rtcStats": [],
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 3864,
+        "nativeConnections": 1,
+        "pendingSends": 0,
+        "timerCount": 6,
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 1,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "signedEndpoint": {
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "expiresAt": 1791055448897,
+          "bootId": "bd34998141e427383475759c988449ae",
+          "sequence": 6,
+          "matchesNativeHelloIdentity": true,
+          "matchesNativeHelloBoot": true,
+          "matchesNativeSession": true,
+          "bothSignaturesVerified": true
+        },
+        "workerCommonSignatures": [],
+        "errors": [],
+        "lifecycle": [],
+        "ui": {
+          "state": "WAITING_PEER",
+          "peers": "0",
+          "commons": "1",
+          "sourceLabels": [
+            "common-mine"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Two independent browsers have a real RTC DataChannel; one shared native Common",
+      "at": "2026-10-03T19:22:25.950Z",
+      "A": {
+        "captured": true,
+        "state": "ACTIVE",
+        "requested": true,
+        "generation": 1,
+        "initialGeneration": 0,
+        "sessionId": "1a35ed1de82d8d383e7f40100c5687ca",
+        "nativeSession": "260ded08c027e9ee59fe5a09a488ef9f",
+        "peerId": "99b72ba59e5cb726bab50422b7c26f4b",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "workerPresent": true,
+        "nativeConnected": true,
+        "signalConnected": true,
+        "commonConnections": [
+          {
+            "id": "1a35ed1de82d8d383e7f40100c5687ca",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "b1eac0b3ad7850a341f8c3ffcfbae1a0",
+            "connected": true,
+            "expiresAt": 1791055641843,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "peers": [
+          {
+            "peerId": "d93dc52114038c13d1ddd7ced641f1af",
+            "sessionId": "6ebbf32791271fec3c30f1c52b5f5391",
+            "state": "connected",
+            "path": "direct",
+            "geo": {
+              "countryCode": "FR",
+              "label": "France",
+              "lat": 46.23,
+              "lon": 2.21,
+              "accuracy": "country",
+              "source": "gateway-country-estimate"
+            },
+            "connected": true
+          }
+        ],
+        "rtcStats": [],
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 31512,
+        "nativeConnections": 1,
+        "pendingSends": 0,
+        "timerCount": 7,
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 1,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "signedEndpoint": {
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "expiresAt": 1791055448897,
+          "bootId": "bd34998141e427383475759c988449ae",
+          "sequence": 6,
+          "matchesNativeHelloIdentity": true,
+          "matchesNativeHelloBoot": true,
+          "matchesNativeSession": true,
+          "bothSignaturesVerified": true
+        },
+        "workerCommonSignatures": [
+          {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserSignatureVerified": true
+          }
+        ],
+        "errors": [],
+        "lifecycle": [],
+        "ui": {
+          "state": "ACTIVE",
+          "peers": "1",
+          "commons": "1",
+          "sourceLabels": [
+            "common-mine"
+          ]
+        }
+      },
+      "B": {
+        "captured": true,
+        "state": "ACTIVE",
+        "requested": true,
+        "generation": 1,
+        "initialGeneration": 0,
+        "sessionId": "6ebbf32791271fec3c30f1c52b5f5391",
+        "nativeSession": "78f93f3b0efe9ff4f1218f0f99c87c54",
+        "peerId": "d93dc52114038c13d1ddd7ced641f1af",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "workerPresent": true,
+        "nativeConnected": true,
+        "signalConnected": true,
+        "commonConnections": [
+          {
+            "id": "6ebbf32791271fec3c30f1c52b5f5391",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "83abc31bbb4926cf85c9b5a9005492e2",
+            "connected": true,
+            "expiresAt": 1791055645009,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "peers": [
+          {
+            "peerId": "99b72ba59e5cb726bab50422b7c26f4b",
+            "sessionId": "1a35ed1de82d8d383e7f40100c5687ca",
+            "state": "connected",
+            "path": "direct",
+            "geo": {
+              "countryCode": "FR",
+              "label": "France",
+              "lat": 46.23,
+              "lon": 2.21,
+              "accuracy": "country",
+              "source": "gateway-country-estimate"
+            },
+            "connected": true
+          }
+        ],
+        "rtcStats": [],
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 3864,
+        "nativeConnections": 1,
+        "pendingSends": 0,
+        "timerCount": 8,
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 1,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "signedEndpoint": {
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "expiresAt": 1791055448897,
+          "bootId": "bd34998141e427383475759c988449ae",
+          "sequence": 6,
+          "matchesNativeHelloIdentity": true,
+          "matchesNativeHelloBoot": true,
+          "matchesNativeSession": true,
+          "bothSignaturesVerified": true
+        },
+        "workerCommonSignatures": [],
+        "errors": [],
+        "lifecycle": [],
+        "ui": {
+          "state": "ACTIVE",
+          "peers": "1",
+          "commons": "1",
+          "sourceLabels": [
+            "common-mine"
+          ]
+        }
+      }
+    },
+    {
+      "name": "A OFF clears its session and Worker and stays OFF",
+      "at": "2026-10-03T19:22:29.151Z",
+      "A": {
+        "captured": true,
+        "state": "OFF",
+        "requested": false,
+        "generation": 2,
+        "initialGeneration": 0,
+        "sessionId": null,
+        "nativeSession": null,
+        "peerId": null,
+        "sourceId": null,
+        "nodeId": null,
+        "workerPresent": false,
+        "nativeConnected": false,
+        "signalConnected": false,
+        "commonConnections": [],
+        "peers": [],
+        "rtcStats": [],
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 0,
+        "nativeConnections": 0,
+        "pendingSends": 0,
+        "timerCount": 0,
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 0,
+          "knownBrowserCandidates": 0,
+          "connectedGateways": 0,
+          "knownGatewayOrigins": []
+        },
+        "signedEndpoint": null,
+        "workerCommonSignatures": [
+          {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserSignatureVerified": true
+          }
+        ],
+        "errors": [],
+        "lifecycle": [],
+        "ui": {
+          "state": "OFF",
+          "peers": "0",
+          "commons": "0",
+          "sourceLabels": []
+        }
+      }
+    },
+    {
+      "name": "A: UI ON verifies signed endpoint and native HELLO",
+      "at": "2026-10-03T19:22:30.763Z",
+      "browser": "A",
+      "evidence": {
+        "captured": true,
+        "state": "ACTIVE",
+        "requested": true,
+        "generation": 3,
+        "initialGeneration": 0,
+        "sessionId": "bc2dd086ff1bf2ec6a7c65060ce8a481",
+        "nativeSession": "634b8f0d497b8fd103fbefa6a63ac028",
+        "peerId": "11f7a3c111c3e24c6ce46b74de14ce17",
+        "sourceId": "common-mine",
+        "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "workerPresent": true,
+        "nativeConnected": true,
+        "signalConnected": true,
+        "commonConnections": [
+          {
+            "id": "bc2dd086ff1bf2ec6a7c65060ce8a481",
+            "sourceId": "common-mine",
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserId": "13d28e2412a54c4b3b0c34afb991022a",
+            "connected": true,
+            "expiresAt": 1791055649711,
+            "remoteOrigin": null,
+            "endpointVerified": false,
+            "browserSignatureVerified": true
+          }
+        ],
+        "peers": [
+          {
+            "peerId": "d93dc52114038c13d1ddd7ced641f1af",
+            "sessionId": "6ebbf32791271fec3c30f1c52b5f5391",
+            "state": "connected",
+            "path": "direct",
+            "geo": {
+              "countryCode": "FR",
+              "label": "France",
+              "lat": 46.23,
+              "lon": 2.21,
+              "accuracy": "country",
+              "source": "gateway-country-estimate"
+            },
+            "connected": true
+          }
+        ],
+        "rtcStats": [],
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 3864,
+        "nativeConnections": 1,
+        "pendingSends": 0,
+        "timerCount": 8,
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 1,
+          "knownBrowserCandidates": 1,
+          "connectedGateways": 1,
+          "knownGatewayOrigins": [
+            "https://ai-test.make-cph-great-again.community"
+          ]
+        },
+        "signedEndpoint": {
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "origin": "https://ai-test.make-cph-great-again.community",
+          "expiresAt": 1791055448897,
+          "bootId": "bd34998141e427383475759c988449ae",
+          "sequence": 6,
+          "matchesNativeHelloIdentity": true,
+          "matchesNativeHelloBoot": true,
+          "matchesNativeSession": true,
+          "bothSignaturesVerified": true
+        },
+        "workerCommonSignatures": [],
+        "errors": [],
+        "lifecycle": [],
+        "ui": {
+          "state": "ACTIVE",
+          "peers": "1",
+          "commons": "1",
+          "sourceLabels": [
+            "common-mine"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Manual ON creates fresh browser/native sessions",
+      "at": "2026-10-03T19:22:30.794Z",
+      "oldSession": "1a35ed1de82d8d383e7f40100c5687ca",
+      "newSession": "bc2dd086ff1bf2ec6a7c65060ce8a481",
+      "oldNativeSession": "260ded08c027e9ee59fe5a09a488ef9f",
+      "newNativeSession": "634b8f0d497b8fd103fbefa6a63ac028"
+    },
+    {
+      "name": "Trusted hide/freeze stops B; foreground return stays OFF",
+      "at": "2026-10-03T19:22:34.942Z",
+      "B": {
+        "captured": true,
+        "state": "OFF",
+        "requested": false,
+        "generation": 3,
+        "initialGeneration": 0,
+        "sessionId": null,
+        "nativeSession": null,
+        "peerId": null,
+        "sourceId": null,
+        "nodeId": null,
+        "workerPresent": false,
+        "nativeConnected": false,
+        "signalConnected": false,
+        "commonConnections": [],
+        "peers": [],
+        "rtcStats": [],
+        "circuits": 0,
+        "queuedBytes": 0,
+        "appBytes": 0,
+        "nativeConnections": 0,
+        "pendingSends": 0,
+        "timerCount": 0,
+        "discovery": {
+          "enabled": true,
+          "verifiedEndpoints": 0,
+          "knownBrowserCandidates": 0,
+          "connectedGateways": 0,
+          "knownGatewayOrigins": []
+        },
+        "signedEndpoint": null,
+        "workerCommonSignatures": [
+          {
+            "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "browserSignatureVerified": true
+          }
+        ],
+        "errors": [],
+        "lifecycle": [
+          {
+            "type": "visibilitychange",
+            "trusted": true,
+            "visibility": "hidden"
+          },
+          {
+            "type": "freeze",
+            "trusted": true,
+            "visibility": "hidden"
+          },
+          {
+            "type": "resume",
+            "trusted": true,
+            "visibility": "hidden"
+          },
+          {
+            "type": "visibilitychange",
+            "trusted": true,
+            "visibility": "visible"
+          }
+        ],
+        "ui": {
+          "state": "OFF",
+          "peers": "0",
+          "commons": "0",
+          "sourceLabels": []
+        }
+      }
+    }
+  ],
+  "pageErrors": [],
+  "peerErrors": [],
+  "cleanup": [
+    {
+      "browser": "A",
+      "browserPid": 3352717,
+      "profile": "/tmp/cypher-migration-smoke-DwmBMd/A",
+      "childExited": true,
+      "profileRemoved": true
+    },
+    {
+      "browser": "B",
+      "browserPid": 3352919,
+      "profile": "/tmp/cypher-migration-smoke-DwmBMd/B",
+      "childExited": true,
+      "profileRemoved": true
+    }
+  ],
+  "final": {
+    "A": {
+      "captured": true,
+      "state": "OFF",
+      "requested": false,
+      "generation": 4,
+      "initialGeneration": 0,
+      "sessionId": null,
+      "nativeSession": null,
+      "peerId": null,
+      "sourceId": null,
+      "nodeId": null,
+      "workerPresent": false,
+      "nativeConnected": false,
+      "signalConnected": false,
+      "commonConnections": [],
+      "peers": [],
+      "rtcStats": [],
+      "circuits": 0,
+      "queuedBytes": 0,
+      "appBytes": 0,
+      "nativeConnections": 0,
+      "pendingSends": 0,
+      "timerCount": 0,
+      "discovery": {
+        "enabled": true,
+        "verifiedEndpoints": 0,
+        "knownBrowserCandidates": 0,
+        "connectedGateways": 0,
+        "knownGatewayOrigins": []
+      },
+      "signedEndpoint": null,
+      "workerCommonSignatures": [
+        {
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "browserSignatureVerified": true
+        }
+      ],
+      "errors": [],
+      "lifecycle": [],
+      "ui": {
+        "state": "OFF",
+        "peers": "0",
+        "commons": "0",
+        "sourceLabels": []
+      }
+    },
+    "B": {
+      "captured": true,
+      "state": "OFF",
+      "requested": false,
+      "generation": 3,
+      "initialGeneration": 0,
+      "sessionId": null,
+      "nativeSession": null,
+      "peerId": null,
+      "sourceId": null,
+      "nodeId": null,
+      "workerPresent": false,
+      "nativeConnected": false,
+      "signalConnected": false,
+      "commonConnections": [],
+      "peers": [],
+      "rtcStats": [],
+      "circuits": 0,
+      "queuedBytes": 0,
+      "appBytes": 0,
+      "nativeConnections": 0,
+      "pendingSends": 0,
+      "timerCount": 0,
+      "discovery": {
+        "enabled": true,
+        "verifiedEndpoints": 0,
+        "knownBrowserCandidates": 0,
+        "connectedGateways": 0,
+        "knownGatewayOrigins": []
+      },
+      "signedEndpoint": null,
+      "workerCommonSignatures": [
+        {
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "browserSignatureVerified": true
+        }
+      ],
+      "errors": [],
+      "lifecycle": [
+        {
+          "type": "visibilitychange",
+          "trusted": true,
+          "visibility": "hidden"
+        },
+        {
+          "type": "freeze",
+          "trusted": true,
+          "visibility": "hidden"
+        },
+        {
+          "type": "resume",
+          "trusted": true,
+          "visibility": "hidden"
+        },
+        {
+          "type": "visibilitychange",
+          "trusted": true,
+          "visibility": "visible"
+        }
+      ],
+      "ui": {
+        "state": "OFF",
+        "peers": "0",
+        "commons": "0",
+        "sourceLabels": []
+      }
+    }
+  },
+  "cleanupComplete": true,
+  "finishedAt": "2026-10-03T19:22:35.796Z"
+}

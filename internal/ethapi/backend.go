@@ -78,6 +78,7 @@ type Backend interface {
 
 	// Transaction pool API
 	SendTx(ctx context.Context, signedTx *types.Transaction, sync bool) error
+	SendTxBatch(ctx context.Context, signedTxs types.Transactions) []error
 	GetTransaction(ctx context.Context, txHash common.Hash) (*types.Transaction, common.Hash, uint64, uint64, error)
 	GetPoolTransactions() (types.Transactions, error)
 	GetPoolTransaction(txHash common.Hash) *types.Transaction
@@ -101,7 +102,16 @@ type Backend interface {
 }
 
 func GetAPIs(apiBackend Backend) []rpc.API {
+	apis, _ := GetAPIsWithTransactionPool(apiBackend)
+	return apis
+}
+
+// GetAPIsWithTransactionPool returns the RPC registrations together with the
+// stateful raw-transaction service that owns its ingress workers. Full nodes
+// retain this handle so graceful shutdown can drain it before TxQUIC/WAL.
+func GetAPIsWithTransactionPool(apiBackend Backend) ([]rpc.API, *PublicTransactionPoolAPI) {
 	nonceLock := new(AddrLocker)
+	transactionPoolAPI := NewPublicTransactionPoolAPI(apiBackend, nonceLock)
 	return []rpc.API{
 		{
 			Namespace: "eth",
@@ -116,7 +126,7 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 		}, {
 			Namespace: "eth",
 			Version:   "1.0",
-			Service:   NewPublicTransactionPoolAPI(apiBackend, nonceLock),
+			Service:   transactionPoolAPI,
 			Public:    true,
 		}, {
 			Namespace: "txpool",
@@ -143,5 +153,5 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 			Service:   NewPrivateAccountAPI(apiBackend, nonceLock),
 			Public:    false,
 		},
-	}
+	}, transactionPoolAPI
 }

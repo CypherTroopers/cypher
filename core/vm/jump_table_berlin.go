@@ -1,6 +1,8 @@
 package vm
 
 import (
+	"errors"
+
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/math"
 	"github.com/cypherium/cypher/params"
@@ -83,56 +85,93 @@ func gasSLoadEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 	return accessSlotGas(evm, contract.Address(), slot), nil
 }
 
-func gasSStoreEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	slot := common.Hash(stack.Back(0).Bytes32())
-	_, slotWarm := evm.StateDB.SlotInAccessList(contract.Address(), slot)
-	gas, err := gasSStoreEIP2200(evm, contract, stack, mem, memorySize)
-	if err != nil {
-		return 0, err
+func makeGasSStoreEIP2929(clearingRefund uint64) gasFunc {
+	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+		if contract.Gas <= params.SstoreSentryGasEIP2200 {
+			return 0, errors.New("not enough gas for reentrancy sentry")
+		}
+		var cost uint64
+		slot := common.Hash(stack.Back(0).Bytes32())
+		_, slotWarm := evm.StateDB.SlotInAccessList(contract.Address(), slot)
+		if !slotWarm {
+			evm.StateDB.AddSlotToAccessList(contract.Address(), slot)
+			cost = params.ColdSloadCostEIP2929
+		}
+		current := evm.StateDB.GetState(contract.Address(), slot)
+		value := common.Hash(stack.Back(1).Bytes32())
+		if current == value {
+			return addUint64(cost, params.WarmStorageReadCostEIP2929)
+		}
+		original := evm.StateDB.GetCommittedState(contract.Address(), slot)
+		if original == current {
+			if original == (common.Hash{}) {
+				return addUint64(cost, params.SstoreInitGasEIP2200)
+			}
+			if value == (common.Hash{}) {
+				evm.StateDB.AddRefund(clearingRefund)
+			}
+			return addUint64(cost, params.SstoreCleanGasEIP2200-params.ColdSloadCostEIP2929)
+		}
+		if original != (common.Hash{}) {
+			if current == (common.Hash{}) {
+				evm.StateDB.SubRefund(clearingRefund)
+			} else if value == (common.Hash{}) {
+				evm.StateDB.AddRefund(clearingRefund)
+			}
+		}
+		if original == value {
+			if original == (common.Hash{}) {
+				evm.StateDB.AddRefund(params.SstoreInitGasEIP2200 - params.WarmStorageReadCostEIP2929)
+			} else {
+				evm.StateDB.AddRefund(params.SstoreCleanGasEIP2200 - params.ColdSloadCostEIP2929 - params.WarmStorageReadCostEIP2929)
+			}
+		}
+		return addUint64(cost, params.WarmStorageReadCostEIP2929)
 	}
-	if !slotWarm {
-		evm.StateDB.AddSlotToAccessList(contract.Address(), slot)
-		return addUint64(gas, params.ColdSloadCostEIP2929)
-	}
-	return gas, nil
 }
 
-func gasCallEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := gasCall(evm, contract, stack, mem, memorySize)
-	if err != nil {
-		return 0, err
+var (
+	gasSStoreEIP2929 = makeGasSStoreEIP2929(params.SstoreClearRefundEIP2200)
+	gasSStoreEIP3529 = makeGasSStoreEIP2929(params.SstoreClearsScheduleRefundEIP3529)
+)
+
+// makeCallVariantGasEIP2929 charges the warm/cold account access before the
+// legacy CALL calculator applies EIP-150's 63/64 rule. The Berlin jump table in
+// this codebase has zero constant gas for CALL variants, so the entire access
+// cost is charged here, temporarily, and restored into the dynamic result.
+// Charging it after oldCalculator would give the callee too much gas on cold
+// calls and diverge from EIP-2929.
+func makeCallVariantGasEIP2929(oldCalculator gasFunc) gasFunc {
+	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+		accessGas := accessAddressGas(evm, stackAddress(stack, 1))
+		if !contract.UseGas(accessGas) {
+			return 0, ErrOutOfGas
+		}
+		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
+		if err != nil {
+			return gas, err
+		}
+		contract.Gas += accessGas
+		return addUint64(gas, accessGas)
 	}
-	return addUint64(gas, accessAddressGas(evm, stackAddress(stack, 1)))
 }
 
-func gasCallCodeEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := gasCallCode(evm, contract, stack, mem, memorySize)
-	if err != nil {
-		return 0, err
-	}
-	return addUint64(gas, accessAddressGas(evm, stackAddress(stack, 1)))
-}
-
-func gasDelegateCallEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := gasDelegateCall(evm, contract, stack, mem, memorySize)
-	if err != nil {
-		return 0, err
-	}
-	return addUint64(gas, accessAddressGas(evm, stackAddress(stack, 1)))
-}
-
-func gasStaticCallEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas, err := gasStaticCall(evm, contract, stack, mem, memorySize)
-	if err != nil {
-		return 0, err
-	}
-	return addUint64(gas, accessAddressGas(evm, stackAddress(stack, 1)))
-}
+var (
+	gasCallEIP2929         = makeCallVariantGasEIP2929(gasCall)
+	gasCallCodeEIP2929     = makeCallVariantGasEIP2929(gasCallCode)
+	gasDelegateCallEIP2929 = makeCallVariantGasEIP2929(gasDelegateCall)
+	gasStaticCallEIP2929   = makeCallVariantGasEIP2929(gasStaticCall)
+)
 
 func gasSelfdestructEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	gas, err := gasSelfdestruct(evm, contract, stack, mem, memorySize)
 	if err != nil {
 		return 0, err
 	}
-	return addUint64(gas, accessAddressGas(evm, stackAddress(stack, 0)))
+	address := stackAddress(stack, 0)
+	if evm.StateDB.AddressInAccessList(address) {
+		return gas, nil
+	}
+	evm.StateDB.AddAddressToAccessList(address)
+	return addUint64(gas, params.ColdAccountAccessCostEIP2929)
 }

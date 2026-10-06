@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "dedicatedCommonPid": 3394804,
+  "dedicatedSourceId": "23d2d1f307ee8a35fa59ae8ddd5eca223230a11d6e9c6856af08b0e1dde02666",
+  "dedicatedDirectoryRemoved": true,
+  "testKeyConfigDBSocketRemoved": true,
+  "testCommonExitMs": 210,
+  "gatewayConfigSourcesBefore": 2,
+  "gatewayConfigSourcesAfter": 1,
+  "remainingSources": [
+    "common-mine"
+  ],
+  "inspection": "Loopback8091 bounded publicconfig projection with permittedOrigin. Python HTTPS cleanup preflight had CDN403 before process changes; actual public Chrome acceptance PASS."
+}

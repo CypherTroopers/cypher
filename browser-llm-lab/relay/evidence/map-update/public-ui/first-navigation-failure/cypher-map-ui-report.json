@@ -1,0 +1,483 @@
+{
+  "startedAt": "2026-10-03T05:59:00.366Z",
+  "status": "FAIL",
+  "origin": "https://ai-test.make-cph-great-again.community",
+  "normalPublicDNS": true,
+  "independentBrowserProcesses": true,
+  "controllerInjection": false,
+  "DOMInjection": false,
+  "requestInterception": false,
+  "forcedTransport": false,
+  "physicalPhone": false,
+  "viewportPhoneOnly": true,
+  "foreignPeersPossible": true,
+  "isolationClaim": false,
+  "exactEncryptedByteVerification": false,
+  "limits": "Displayed counters prove UI behavior and browser hop receipt activity; native authentication and byte verification belong to the separate mesh soak.",
+  "checkpoints": [
+    {
+      "name": "Two independent public UI pages initially OFF with no admission and no horizontal overflow",
+      "at": "2026-10-03T05:59:07.601Z"
+    },
+    {
+      "name": "Actual UI Common1/1, browser peers and ACK counters increased from initial zero",
+      "at": "2026-10-03T05:59:10.980Z",
+      "desktopACK": 16,
+      "mobileACK": 21,
+      "assignments": [
+        "common-a",
+        "common-b"
+      ],
+      "locations": [
+        "France",
+        "France"
+      ],
+      "geoValidation": "Provider country labels visible"
+    },
+    {
+      "name": "Actual received/sent/ACK events animate map pixels; every connected browser is represented without invented country coordinates",
+      "at": "2026-10-03T05:59:13.486Z"
+    },
+    {
+      "name": "Desktop1440 and mobile390 active UI screenshots saved with no horizontal overflow",
+      "at": "2026-10-03T05:59:16.413Z"
+    }
+  ],
+  "screenshots": [
+    "/tmp/cypher-map-ui-desktop-map-actual-activity.png",
+    "/tmp/cypher-map-ui-mobile-map-actual-activity.png",
+    "/tmp/cypher-map-ui-desktop-active.png",
+    "/tmp/cypher-map-ui-desktop-metrics.png",
+    "/tmp/cypher-map-ui-mobile-active.png",
+    "/tmp/cypher-map-ui-mobile-metrics.png",
+    "/tmp/cypher-map-ui-desktop-off.png",
+    "/tmp/cypher-map-ui-mobile-off.png"
+  ],
+  "pageErrors": [],
+  "participants": {
+    "desktop": {
+      "browserPID": 24,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "publicPage": {
+        "httpStatus": 200,
+        "server": "cloudflare",
+        "cloudflareColo": "FRA"
+      },
+      "latestUI": {
+        "state": "OFF",
+        "common": "0 / 1",
+        "commonHint": "This browser’s Common WSS link",
+        "map": {
+          "known": 0,
+          "unknown": 0,
+          "events": 0,
+          "received": 0,
+          "sent": 0,
+          "acknowledged": 0,
+          "frames": 3,
+          "pulses": 0,
+          "nodes": [],
+          "ariaLabel": "Browser map. Node OFF; no participants or transfers."
+        },
+        "peers": "0 / 3",
+        "circuits": "0 / 2",
+        "receipts": "0",
+        "acknowledged": "0 B acknowledged by peers",
+        "native": "Common WSS disconnected",
+        "signal": "Signaling disconnected",
+        "stream": "0 B",
+        "route": "None yet",
+        "mapCaption": "Your connection appears here when you turn Node ON.",
+        "reason": "Node is OFF. Join when you want to help relay public data.",
+        "error": "",
+        "visibility": "visible",
+        "onDisabled": false,
+        "offDisabled": true,
+        "width": 1440,
+        "documentWidth": 1440,
+        "bodyWidth": 1440,
+        "mapWidth": 763,
+        "peerCount": 0,
+        "receiptCount": 0,
+        "sourceId": null,
+        "location": null
+      },
+      "sessionPOSTs": 1,
+      "mapActivity": {
+        "before": {
+          "known": 2,
+          "unknown": 0,
+          "events": 69,
+          "received": 27,
+          "sent": 21,
+          "acknowledged": 21,
+          "frames": 48,
+          "pulses": 24,
+          "nodes": [
+            {
+              "id": "self",
+              "self": true,
+              "located": true,
+              "countryLabel": "FR · France",
+              "x": 370.01208333333335,
+              "y": 86.73133333333334,
+              "pinSize": 30,
+              "anchor": {
+                "x": 386.01208333333335,
+                "y": 94.73133333333334
+              }
+            },
+            {
+              "id": "ce062c02b351879c90f44d7a89bee6e4",
+              "self": false,
+              "located": true,
+              "countryLabel": "FR · France",
+              "x": 402.01208333333335,
+              "y": 102.73133333333334,
+              "pinSize": 30,
+              "anchor": {
+                "x": 386.01208333333335,
+                "y": 94.73133333333334
+              }
+            }
+          ],
+          "ariaLabel": "Connected browser map. You: FR · France country estimate; Peer ce062c: FR · France country estimate. Thin lines show connections; moving particles show actual transfers."
+        },
+        "after": {
+          "known": 2,
+          "unknown": 0,
+          "events": 69,
+          "received": 27,
+          "sent": 21,
+          "acknowledged": 21,
+          "frames": 54,
+          "pulses": 24,
+          "nodes": [
+            {
+              "id": "self",
+              "self": true,
+              "located": true,
+              "countryLabel": "FR · France",
+              "x": 370.01208333333335,
+              "y": 86.73133333333334,
+              "pinSize": 30,
+              "anchor": {
+                "x": 386.01208333333335,
+                "y": 94.73133333333334
+              }
+            },
+            {
+              "id": "ce062c02b351879c90f44d7a89bee6e4",
+              "self": false,
+              "located": true,
+              "countryLabel": "FR · France",
+              "x": 402.01208333333335,
+              "y": 102.73133333333334,
+              "pinSize": 30,
+              "anchor": {
+                "x": 386.01208333333335,
+                "y": 94.73133333333334
+              }
+            }
+          ],
+          "ariaLabel": "Connected browser map. You: FR · France country estimate; Peer ce062c: FR · France country estimate. Thin lines show connections; moving particles show actual transfers."
+        },
+        "pixelHashes": [
+          "12c0e3ac9e507a2380367dca4d9cf72183c0e1501b7bb3649ddec555b20da009",
+          "bf11569f2f014ba63463594c74636b888d561aae56ec6637ffa9d3d7b532e5ba"
+        ],
+        "syntheticCoordinates": false,
+        "syntheticEvents": false
+      }
+    },
+    "mobile": {
+      "browserPID": 149,
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "publicPage": {
+        "httpStatus": 200,
+        "server": "cloudflare",
+        "cloudflareColo": "CDG"
+      },
+      "latestUI": {
+        "state": "OFF",
+        "common": "0 / 1",
+        "commonHint": "This browser’s Common WSS link",
+        "map": {
+          "known": 0,
+          "unknown": 0,
+          "events": 120,
+          "received": 36,
+          "sent": 42,
+          "acknowledged": 42,
+          "frames": 177,
+          "pulses": 0,
+          "nodes": [],
+          "ariaLabel": "Browser map. Node OFF; no participants or transfers."
+        },
+        "peers": "0 / 3",
+        "circuits": "0 / 2",
+        "receipts": "42",
+        "acknowledged": "1.8 KiB acknowledged by peers",
+        "native": "Common WSS disconnected",
+        "signal": "Signaling disconnected",
+        "stream": "14.9 KiB",
+        "route": "WebRTC · direct",
+        "mapCaption": "Your connection appears here when you turn Node ON.",
+        "reason": "Stopped by you",
+        "error": "",
+        "visibility": "visible",
+        "onDisabled": false,
+        "offDisabled": true,
+        "width": 390,
+        "documentWidth": 390,
+        "bodyWidth": 390,
+        "mapWidth": 296,
+        "peerCount": 0,
+        "receiptCount": 42,
+        "sourceId": null,
+        "location": null
+      },
+      "sessionPOSTs": 1,
+      "mapActivity": {
+        "before": {
+          "known": 2,
+          "unknown": 0,
+          "events": 90,
+          "received": 26,
+          "sent": 32,
+          "acknowledged": 32,
+          "frames": 75,
+          "pulses": 24,
+          "nodes": [
+            {
+              "id": "self",
+              "self": true,
+              "located": true,
+              "countryLabel": "FR · France",
+              "x": 133.64522222222223,
+              "y": 137.58433333333335,
+              "pinSize": 30,
+              "anchor": {
+                "x": 149.64522222222223,
+                "y": 145.58433333333335
+              }
+            },
+            {
+              "id": "b4cb72d4205f6ac5d8f512b649c8475b",
+              "self": false,
+              "located": true,
+              "countryLabel": "FR · France",
+              "x": 165.64522222222223,
+              "y": 153.58433333333335,
+              "pinSize": 30,
+              "anchor": {
+                "x": 149.64522222222223,
+                "y": 145.58433333333335
+              }
+            }
+          ],
+          "ariaLabel": "Connected browser map. You: FR · France country estimate; Peer b4cb72: FR · France country estimate. Thin lines show connections; moving particles show actual transfers."
+        },
+        "after": {
+          "known": 2,
+          "unknown": 0,
+          "events": 95,
+          "received": 31,
+          "sent": 32,
+          "acknowledged": 32,
+          "frames": 81,
+          "pulses": 24,
+          "nodes": [
+            {
+              "id": "self",
+              "self": true,
+              "located": true,
+              "countryLabel": "FR · France",
+              "x": 133.64522222222223,
+              "y": 137.58433333333335,
+              "pinSize": 30,
+              "anchor": {
+                "x": 149.64522222222223,
+                "y": 145.58433333333335
+              }
+            },
+            {
+              "id": "b4cb72d4205f6ac5d8f512b649c8475b",
+              "self": false,
+              "located": true,
+              "countryLabel": "FR · France",
+              "x": 165.64522222222223,
+              "y": 153.58433333333335,
+              "pinSize": 30,
+              "anchor": {
+                "x": 149.64522222222223,
+                "y": 145.58433333333335
+              }
+            }
+          ],
+          "ariaLabel": "Connected browser map. You: FR · France country estimate; Peer b4cb72: FR · France country estimate. Thin lines show connections; moving particles show actual transfers."
+        },
+        "pixelHashes": [
+          "7042e363ab59686184d126ddf119e1d1836b2dfcb0d9f4b60ca467e2c3d9c7a8",
+          "0a7865c607fa51de56dab51e5b198297094ee0f4a223055beb9fc4ba7ae0d1aa"
+        ],
+        "syntheticCoordinates": false,
+        "syntheticEvents": false
+      }
+    }
+  },
+  "cleanup": [
+    {
+      "browser": "desktop",
+      "ownedPageOFF": true
+    },
+    {
+      "browser": "mobile",
+      "ownedPageOFF": false,
+      "reason": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#navRelay')\u001b[22m\n\u001b[2m    - locator resolved to <button id=\"navRelay\" type=\"button\" class=\"nav-item\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if neede",
+      "browserCloseFallback": true
+    }
+  ],
+  "active": {
+    "desktop": {
+      "state": "Connected",
+      "common": "1 / 1",
+      "commonHint": "common-a · WSS connected",
+      "map": {
+        "known": 2,
+        "unknown": 0,
+        "events": 69,
+        "received": 27,
+        "sent": 21,
+        "acknowledged": 21,
+        "frames": 44,
+        "pulses": 24,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "located": true,
+            "countryLabel": "FR · France",
+            "x": 370.01208333333335,
+            "y": 86.73133333333334,
+            "pinSize": 30,
+            "anchor": {
+              "x": 386.01208333333335,
+              "y": 94.73133333333334
+            }
+          },
+          {
+            "id": "ce062c02b351879c90f44d7a89bee6e4",
+            "self": false,
+            "located": true,
+            "countryLabel": "FR · France",
+            "x": 402.01208333333335,
+            "y": 102.73133333333334,
+            "pinSize": 30,
+            "anchor": {
+              "x": 386.01208333333335,
+              "y": 94.73133333333334
+            }
+          }
+        ],
+        "ariaLabel": "Connected browser map. You: FR · France country estimate; Peer ce062c: FR · France country estimate. Thin lines show connections; moving particles show actual transfers."
+      },
+      "peers": "1 / 3",
+      "circuits": "1 / 2",
+      "receipts": "16",
+      "acknowledged": "1.7 KiB acknowledged by peers",
+      "native": "common-a · WSS connected",
+      "signal": "Signaling connected",
+      "stream": "3.2 KiB",
+      "route": "WebRTC · direct",
+      "mapCaption": "1 browser peer · 0 in the location-unavailable area · you: France. Pins show country estimates, not precise locations.",
+      "reason": "Encrypted Common traffic can pass through browser peers",
+      "error": "",
+      "visibility": "visible",
+      "onDisabled": true,
+      "offDisabled": false,
+      "width": 1440,
+      "documentWidth": 1440,
+      "bodyWidth": 1440,
+      "mapWidth": 763,
+      "peerCount": 1,
+      "receiptCount": 16,
+      "sourceId": "common-a",
+      "location": "France"
+    },
+    "mobile": {
+      "state": "Connected",
+      "common": "1 / 1",
+      "commonHint": "common-b · WSS connected",
+      "map": {
+        "known": 2,
+        "unknown": 0,
+        "events": 72,
+        "received": 21,
+        "sent": 27,
+        "acknowledged": 24,
+        "frames": 41,
+        "pulses": 24,
+        "nodes": [
+          {
+            "id": "self",
+            "self": true,
+            "located": true,
+            "countryLabel": "FR · France",
+            "x": 133.64522222222223,
+            "y": 137.58433333333335,
+            "pinSize": 30,
+            "anchor": {
+              "x": 149.64522222222223,
+              "y": 145.58433333333335
+            }
+          },
+          {
+            "id": "b4cb72d4205f6ac5d8f512b649c8475b",
+            "self": false,
+            "located": true,
+            "countryLabel": "FR · France",
+            "x": 165.64522222222223,
+            "y": 153.58433333333335,
+            "pinSize": 30,
+            "anchor": {
+              "x": 149.64522222222223,
+              "y": 145.58433333333335
+            }
+          }
+        ],
+        "ariaLabel": "Connected browser map. You: FR · France country estimate; Peer b4cb72: FR · France country estimate. Thin lines show connections; moving particles show actual transfers."
+      },
+      "peers": "1 / 3",
+      "circuits": "1 / 2",
+      "receipts": "21",
+      "acknowledged": "1.5 KiB acknowledged by peers",
+      "native": "common-b · WSS connected",
+      "signal": "Signaling connected",
+      "stream": "3.2 KiB",
+      "route": "WebRTC · direct",
+      "mapCaption": "1 browser peer · 0 in the location-unavailable area · you: France. Pins show country estimates, not precise locations.",
+      "reason": "Encrypted Common traffic can pass through browser peers",
+      "error": "",
+      "visibility": "visible",
+      "onDisabled": true,
+      "offDisabled": false,
+      "width": 390,
+      "documentWidth": 390,
+      "bodyWidth": 390,
+      "mapWidth": 296,
+      "peerCount": 1,
+      "receiptCount": 21,
+      "sourceId": "common-b",
+      "location": "France"
+    }
+  },
+  "error": "page.reload: net::ERR_CONNECTION_CLOSED\nCall log:\n\u001b[2m  - waiting for navigation until \"domcontentloaded\"\u001b[22m\n",
+  "finishedAt": "2026-10-03T06:00:08.742Z"
+}

@@ -156,6 +156,15 @@ var (
 		utils.EWASMInterpreterFlag,
 		utils.EVMInterpreterFlag,
 		configFileFlag,
+		browserGatewayEnabledFlag,
+		browserGatewayTLSFlag,
+		browserGatewayConfigFlag,
+		browserGatewayStateFlag,
+		browserGatewayRoleFlag,
+		browserLightnodeEnabledFlag,
+		browserLightnodeConfigFlag,
+		browserPublicRelayEnabledFlag,
+		browserPublicRelayConfigFlag,
 		//
 		utils.EmitCheckpointsFlag,
 		utils.EVMCallTimeOutFlag,
@@ -369,10 +378,9 @@ func cypher(ctx *cli.Context) error {
 // - Enrich eth/les service with ContractAuthorizationProvider for multitenancy support if prequisites are met
 func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend) {
 	log.DoEmitCheckpoints = ctx.GlobalBool(utils.EmitCheckpointsFlag.Name)
-	debug.Memsize.Add("node", stack)
 
 	// Start up the node itself
-	utils.StartNode(stack)
+	startNodeWithBrowserGateway(stack)
 
 	// Unlock any account specifically requested
 	unlockAccounts(ctx, stack)
@@ -384,6 +392,7 @@ func startNode(ctx *cli.Context, stack *node.Node, backend ethapi.Backend) {
 	// Create a client to interact with local cypher node.
 	rpcClient, err := stack.Attach()
 	if err != nil {
+		closeBrowserGatewayOwned(stack)
 		utils.Fatalf("Failed to attach to self: %v", err)
 	}
 	ethClient := ethclient.NewClient(rpcClient)
@@ -461,6 +470,7 @@ func unlockAccounts(ctx *cli.Context, stack *node.Node) {
 	// If insecure account unlocking is not allowed if node's APIs are exposed to external.
 	// Print warning log to user and skip unlocking.
 	if !stack.Config().InsecureUnlockAllowed && stack.Config().ExtRPCEnabled() {
+		closeBrowserGatewayOwned(stack)
 		utils.Fatalf("Account unlock with HTTP access is forbidden!")
 	}
 	ks := stack.AccountManager().Backends(keystore.KeyStoreType)[0].(*keystore.KeyStore)

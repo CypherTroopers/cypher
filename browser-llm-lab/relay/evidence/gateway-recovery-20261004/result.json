@@ -1,0 +1,1097 @@
+{
+  "observedAtUtc": "2026-10-04T09:00:30.913715+00:00",
+  "head": "23c69a48e0d2ecbbef4e3d1fbde60017c990f0d6",
+  "before": {
+    "gatewayPort8091": "CONNECTION_REFUSED",
+    "dedicatedGatewayPm2Home": "ABSENT",
+    "dedicatedTurnPm2Home": "ABSENT",
+    "ownerCommonMeshConfigHttp": 200,
+    "ownerCommonMaxSessions": 80,
+    "ownerCommonNativePeers": 40,
+    "systemdUnitState": "active/exited",
+    "systemdBootStartResult": "success",
+    "systemdLivenessMeaning": "oneshot startup completion only, does not prove child process still running"
+  },
+  "recovery": {
+    "command": "/root/cypher/browser-llm-lab/relay/start-managed.sh start",
+    "gatewayPid": 35512,
+    "turnPid": 35395,
+    "bothOnline": true,
+    "bothRestartCount": 0,
+    "gatewayConfigHttp": 200,
+    "commonCandidates": [
+      "common-mine",
+      "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+    ],
+    "runningProcessScope": "Only preconfiguredWeb gateway andTURN started; ownerCommon andnativecommittee/pagePIDs retained."
+  },
+  "scope": {
+    "nativeOrCommitteeRestarted": false,
+    "databaseChanged": false,
+    "productCodeChanged": false,
+    "stoppedCause": "Not established. Dedicated oldPM2 homes/logs absent."
+  },
+  "nativeAndPageBaseline": [
+    {
+      "name": "cypher0",
+      "pid": 18515
+    },
+    {
+      "name": "cypher1",
+      "pid": 18517
+    },
+    {
+      "name": "cypher2",
+      "pid": 18520
+    },
+    {
+      "name": "cypher3",
+      "pid": 18523
+    },
+    {
+      "name": "cypher4",
+      "pid": 18527
+    },
+    {
+      "name": "cypher5",
+      "pid": 18529
+    },
+    {
+      "name": "cypher6",
+      "pid": 18532
+    },
+    {
+      "name": "cyphermine",
+      "pid": 18536
+    },
+    {
+      "name": "server",
+      "pid": 18539
+    }
+  ],
+  "status": "RECOVERED_PUBLIC_UI_PASS",
+  "finishedAtUtc": "2026-10-04T09:06:46.621385+00:00",
+  "nativeAndPageUnchanged": true,
+  "finalGateway": [
+    {
+      "name": "cypher-browser-mesh-gateway",
+      "pid": 35512,
+      "status": "online",
+      "started": 1791104202568,
+      "restartCount": 0
+    }
+  ],
+  "finalTurn": [
+    {
+      "name": "cypher-header-turn",
+      "pid": 35395,
+      "status": "online",
+      "started": 1791104200951,
+      "restartCount": 0
+    }
+  ],
+  "publicUi": {
+    "status": "PASS",
+    "startedAt": "2026-10-04T09:04:17.872Z",
+    "origin": "https://ai-test.make-cph-great-again.community",
+    "chromePid": 23,
+    "sameHostOnly": true,
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "touch": true,
+      "emulated": true,
+      "realPhone": false
+    },
+    "scope": "Actual public UI Common WSS connections and signature validation, explicit OFF and reload lifecycle; no independent WebRTC transfer claim",
+    "nativeLifecycleMutations": 0,
+    "transportReplacements": 0,
+    "sourceByteInjection": false,
+    "checkpoints": [
+      {
+        "name": "Public mobile-width page starts OFF",
+        "at": "2026-10-04T09:04:28.259Z",
+        "value": {
+          "state": "OFF",
+          "commons": "0",
+          "peers": "0",
+          "width": 390,
+          "pageVisibility": "visible"
+        }
+      },
+      {
+        "name": "Real signed Common WSS connections restored on public mobile-width UI",
+        "at": "2026-10-04T09:04:34.185Z",
+        "value": {
+          "captured": true,
+          "state": "ACTIVE",
+          "reason": "Encrypted Common traffic can pass through browser peers",
+          "requested": true,
+          "generation": 1,
+          "startCalls": 1,
+          "sessionId": "2c6bd68ccad640fa279c3decc50a0a0d",
+          "sessionExpiresAt": 1791104969653,
+          "primarySourceId": "common-mine",
+          "network": {
+            "chainId": 10101919,
+            "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+          },
+          "configNodeIds": [
+            "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+          ],
+          "workerPresent": true,
+          "commonConnections": [
+            {
+              "id": "2c6bd68ccad640fa279c3decc50a0a0d",
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "browserId": "4e9742a789b798261d9658e818fb1eed",
+              "connected": true,
+              "expiresAt": 1791104969653,
+              "remoteOrigin": null,
+              "endpointVerified": false,
+              "browserSignatureVerified": true
+            },
+            {
+              "id": "f3ae74ef18237e5ed3d32e8cc6227f29",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "browserId": "285227fe8fced462176ceffdf742a271",
+              "connected": true,
+              "expiresAt": 1791104972413,
+              "remoteOrigin": null,
+              "endpointVerified": false,
+              "browserSignatureVerified": true
+            }
+          ],
+          "nativeConnections": 2,
+          "peers": 1,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "appBytes": 58766,
+          "pendingSends": 0,
+          "nativeReceivedBytes": 1692,
+          "nativeSentBytes": 0,
+          "sourceErrors": {},
+          "signatures": [
+            {
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "nativeSignatureVerified": true,
+              "nativeIdentityMatches": true,
+              "nativeSessionMatches": true,
+              "nativeBootId": "f37dab1bd372ea42dacda593809bc748",
+              "endpointSignatureVerified": true,
+              "endpointIdentityMatches": true,
+              "endpointBootMatches": true,
+              "endpointSequence": 316,
+              "endpointExpiresAt": 1791104749324,
+              "wsReadyState": 1,
+              "workerSignatureVerified": true
+            },
+            {
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nativeSignatureVerified": true,
+              "nativeIdentityMatches": true,
+              "nativeSessionMatches": true,
+              "nativeBootId": "02e566f703dba5b6666794b11de1ef97",
+              "endpointSignatureVerified": true,
+              "endpointIdentityMatches": true,
+              "endpointBootMatches": true,
+              "endpointSequence": 293,
+              "endpointExpiresAt": 1791104774662,
+              "wsReadyState": 1,
+              "workerSignatureVerified": true
+            }
+          ],
+          "workerValidatedCommons": [
+            {
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "sourceId": "common-mine",
+              "browserSignatureVerified": true
+            },
+            {
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "browserSignatureVerified": true
+            }
+          ],
+          "discovery": {
+            "enabled": true,
+            "verifiedEndpoints": 2,
+            "knownBrowserCandidates": 2,
+            "connectedGateways": 1,
+            "knownGatewayOrigins": [
+              "https://ai-test.make-cph-great-again.community"
+            ]
+          },
+          "events": [
+            {
+              "name": "native-connected",
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "nativeSession": "fe55ed9d2cb2c1cea4073ff6cd519f79"
+            },
+            {
+              "name": "native_ready",
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "browserId": "4e9742a789b798261d9658e818fb1eed",
+              "browserSignatureVerified": true,
+              "endpointSignatureVerified": false
+            },
+            {
+              "name": "native-connected",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nativeSession": "0970aac8a2f0fc1bd7ccd0b8eb736a0f"
+            },
+            {
+              "name": "native_ready",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "browserId": "285227fe8fced462176ceffdf742a271",
+              "browserSignatureVerified": true,
+              "endpointSignatureVerified": false
+            }
+          ],
+          "gatewayStatus": null,
+          "ui": {
+            "state": "ACTIVE",
+            "reason": "Encrypted Common traffic can pass through browser peers",
+            "commons": "2",
+            "peers": "1",
+            "wssReceived": "1.7 KiB",
+            "sources": [
+              "common-mine",
+              "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+            ],
+            "onDisabled": true,
+            "offDisabled": false
+          }
+        }
+      },
+      {
+        "name": "Normal session/status and receipt-free counters observed without credentials",
+        "at": "2026-10-04T09:04:41.415Z",
+        "value": {
+          "captured": true,
+          "state": "ACTIVE",
+          "reason": "Encrypted Common traffic can pass through browser peers",
+          "requested": true,
+          "generation": 1,
+          "startCalls": 1,
+          "sessionId": "2c6bd68ccad640fa279c3decc50a0a0d",
+          "sessionExpiresAt": 1791104969653,
+          "primarySourceId": "common-mine",
+          "network": {
+            "chainId": 10101919,
+            "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+          },
+          "configNodeIds": [
+            "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+          ],
+          "workerPresent": true,
+          "commonConnections": [
+            {
+              "id": "2c6bd68ccad640fa279c3decc50a0a0d",
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "browserId": "4e9742a789b798261d9658e818fb1eed",
+              "connected": true,
+              "expiresAt": 1791104969653,
+              "remoteOrigin": null,
+              "endpointVerified": false,
+              "browserSignatureVerified": true
+            },
+            {
+              "id": "f3ae74ef18237e5ed3d32e8cc6227f29",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "browserId": "285227fe8fced462176ceffdf742a271",
+              "connected": true,
+              "expiresAt": 1791104972413,
+              "remoteOrigin": null,
+              "endpointVerified": false,
+              "browserSignatureVerified": true
+            }
+          ],
+          "nativeConnections": 2,
+          "peers": 2,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "appBytes": 132494,
+          "pendingSends": 0,
+          "nativeReceivedBytes": 1692,
+          "nativeSentBytes": 1704,
+          "sourceErrors": {},
+          "signatures": [
+            {
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "nativeSignatureVerified": true,
+              "nativeIdentityMatches": true,
+              "nativeSessionMatches": true,
+              "nativeBootId": "f37dab1bd372ea42dacda593809bc748",
+              "endpointSignatureVerified": true,
+              "endpointIdentityMatches": true,
+              "endpointBootMatches": true,
+              "endpointSequence": 316,
+              "endpointExpiresAt": 1791104749324,
+              "wsReadyState": 1,
+              "workerSignatureVerified": true
+            },
+            {
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nativeSignatureVerified": true,
+              "nativeIdentityMatches": true,
+              "nativeSessionMatches": true,
+              "nativeBootId": "02e566f703dba5b6666794b11de1ef97",
+              "endpointSignatureVerified": true,
+              "endpointIdentityMatches": true,
+              "endpointBootMatches": true,
+              "endpointSequence": 293,
+              "endpointExpiresAt": 1791104774662,
+              "wsReadyState": 1,
+              "workerSignatureVerified": true
+            }
+          ],
+          "workerValidatedCommons": [
+            {
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "sourceId": "common-mine",
+              "browserSignatureVerified": true
+            },
+            {
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "browserSignatureVerified": true
+            }
+          ],
+          "discovery": {
+            "enabled": true,
+            "verifiedEndpoints": 2,
+            "knownBrowserCandidates": 2,
+            "connectedGateways": 1,
+            "knownGatewayOrigins": [
+              "https://ai-test.make-cph-great-again.community"
+            ]
+          },
+          "events": [
+            {
+              "name": "native-connected",
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "nativeSession": "fe55ed9d2cb2c1cea4073ff6cd519f79"
+            },
+            {
+              "name": "native_ready",
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "browserId": "4e9742a789b798261d9658e818fb1eed",
+              "browserSignatureVerified": true,
+              "endpointSignatureVerified": false
+            },
+            {
+              "name": "native-connected",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nativeSession": "0970aac8a2f0fc1bd7ccd0b8eb736a0f"
+            },
+            {
+              "name": "native_ready",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "browserId": "285227fe8fced462176ceffdf742a271",
+              "browserSignatureVerified": true,
+              "endpointSignatureVerified": false
+            }
+          ],
+          "gatewayStatus": {
+            "sourceId": "common-mine",
+            "running": true,
+            "sessions": 4,
+            "circuits": 0,
+            "candidates": 1,
+            "participants": 0,
+            "leases": 8,
+            "receivedBytes": 4250,
+            "sentBytes": 16772,
+            "nativeLimits": {
+              "maxSessions": 80,
+              "nativePeers": 40,
+              "circuits": 40,
+              "circuitsPerSession": 40,
+              "pendingInbound": 4,
+              "pendingOutbound": 4
+            },
+            "browserTransfer": {
+              "transferredBytes": 5432,
+              "transferLimitBytes": 104857600,
+              "attachments": 2,
+              "maxAttachments": 20
+            }
+          },
+          "ui": {
+            "state": "ACTIVE",
+            "reason": "Encrypted Common traffic can pass through browser peers",
+            "commons": "2",
+            "peers": "2",
+            "wssReceived": "1.7 KiB",
+            "sources": [
+              "common-mine",
+              "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+            ],
+            "onDisabled": true,
+            "offDisabled": false
+          }
+        }
+      },
+      {
+        "name": "Explicit OFF clears connections and does not revive",
+        "at": "2026-10-04T09:04:46.071Z",
+        "value": {
+          "captured": true,
+          "state": "OFF",
+          "reason": "Stopped by you",
+          "requested": false,
+          "generation": 2,
+          "startCalls": 1,
+          "sessionId": null,
+          "sessionExpiresAt": null,
+          "primarySourceId": null,
+          "network": {
+            "chainId": 10101919,
+            "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+          },
+          "configNodeIds": [
+            "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+            "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+          ],
+          "workerPresent": false,
+          "commonConnections": [],
+          "nativeConnections": 0,
+          "peers": 0,
+          "circuits": 0,
+          "queuedBytes": 0,
+          "appBytes": 0,
+          "pendingSends": 0,
+          "nativeReceivedBytes": 1692,
+          "nativeSentBytes": 1704,
+          "sourceErrors": {},
+          "signatures": [],
+          "workerValidatedCommons": [
+            {
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "sourceId": "common-mine",
+              "browserSignatureVerified": true
+            },
+            {
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "browserSignatureVerified": true
+            }
+          ],
+          "discovery": {
+            "enabled": true,
+            "verifiedEndpoints": 0,
+            "knownBrowserCandidates": 0,
+            "connectedGateways": 0,
+            "knownGatewayOrigins": []
+          },
+          "events": [
+            {
+              "name": "native-connected",
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "nativeSession": "fe55ed9d2cb2c1cea4073ff6cd519f79"
+            },
+            {
+              "name": "native_ready",
+              "sourceId": "common-mine",
+              "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+              "browserId": "4e9742a789b798261d9658e818fb1eed",
+              "browserSignatureVerified": true,
+              "endpointSignatureVerified": false
+            },
+            {
+              "name": "native-connected",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nativeSession": "0970aac8a2f0fc1bd7ccd0b8eb736a0f"
+            },
+            {
+              "name": "native_ready",
+              "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+              "browserId": "285227fe8fced462176ceffdf742a271",
+              "browserSignatureVerified": true,
+              "endpointSignatureVerified": false
+            }
+          ],
+          "gatewayStatus": null,
+          "ui": {
+            "state": "OFF",
+            "reason": "Stopped by you",
+            "commons": "0",
+            "peers": "0",
+            "wssReceived": "1.7 KiB",
+            "sources": [],
+            "onDisabled": false,
+            "offDisabled": true
+          }
+        }
+      },
+      {
+        "name": "Reload stays OFF until an explicit new ON",
+        "at": "2026-10-04T09:04:51.158Z",
+        "value": {
+          "state": "OFF",
+          "commons": "0",
+          "peers": "0",
+          "onDisabled": false,
+          "offDisabled": true
+        }
+      }
+    ],
+    "pageErrors": [],
+    "httpErrors": [
+      {
+        "path": "/relay/v1/mesh/sessions",
+        "status": 401,
+        "code": null
+      }
+    ],
+    "initial": {
+      "state": "OFF",
+      "commons": "0",
+      "peers": "0",
+      "width": 390,
+      "pageVisibility": "visible"
+    },
+    "on": {
+      "captured": true,
+      "state": "ACTIVE",
+      "reason": "Encrypted Common traffic can pass through browser peers",
+      "requested": true,
+      "generation": 1,
+      "startCalls": 1,
+      "sessionId": "2c6bd68ccad640fa279c3decc50a0a0d",
+      "sessionExpiresAt": 1791104969653,
+      "primarySourceId": "common-mine",
+      "network": {
+        "chainId": 10101919,
+        "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+      },
+      "configNodeIds": [
+        "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+      ],
+      "workerPresent": true,
+      "commonConnections": [
+        {
+          "id": "2c6bd68ccad640fa279c3decc50a0a0d",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "browserId": "4e9742a789b798261d9658e818fb1eed",
+          "connected": true,
+          "expiresAt": 1791104969653,
+          "remoteOrigin": null,
+          "endpointVerified": false,
+          "browserSignatureVerified": true
+        },
+        {
+          "id": "f3ae74ef18237e5ed3d32e8cc6227f29",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserId": "285227fe8fced462176ceffdf742a271",
+          "connected": true,
+          "expiresAt": 1791104972413,
+          "remoteOrigin": null,
+          "endpointVerified": false,
+          "browserSignatureVerified": true
+        }
+      ],
+      "nativeConnections": 2,
+      "peers": 1,
+      "circuits": 0,
+      "queuedBytes": 0,
+      "appBytes": 58766,
+      "pendingSends": 0,
+      "nativeReceivedBytes": 1692,
+      "nativeSentBytes": 0,
+      "sourceErrors": {},
+      "signatures": [
+        {
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "nativeSignatureVerified": true,
+          "nativeIdentityMatches": true,
+          "nativeSessionMatches": true,
+          "nativeBootId": "f37dab1bd372ea42dacda593809bc748",
+          "endpointSignatureVerified": true,
+          "endpointIdentityMatches": true,
+          "endpointBootMatches": true,
+          "endpointSequence": 316,
+          "endpointExpiresAt": 1791104749324,
+          "wsReadyState": 1,
+          "workerSignatureVerified": true
+        },
+        {
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nativeSignatureVerified": true,
+          "nativeIdentityMatches": true,
+          "nativeSessionMatches": true,
+          "nativeBootId": "02e566f703dba5b6666794b11de1ef97",
+          "endpointSignatureVerified": true,
+          "endpointIdentityMatches": true,
+          "endpointBootMatches": true,
+          "endpointSequence": 293,
+          "endpointExpiresAt": 1791104774662,
+          "wsReadyState": 1,
+          "workerSignatureVerified": true
+        }
+      ],
+      "workerValidatedCommons": [
+        {
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "sourceId": "common-mine",
+          "browserSignatureVerified": true
+        },
+        {
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserSignatureVerified": true
+        }
+      ],
+      "discovery": {
+        "enabled": true,
+        "verifiedEndpoints": 2,
+        "knownBrowserCandidates": 2,
+        "connectedGateways": 1,
+        "knownGatewayOrigins": [
+          "https://ai-test.make-cph-great-again.community"
+        ]
+      },
+      "events": [
+        {
+          "name": "native-connected",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "nativeSession": "fe55ed9d2cb2c1cea4073ff6cd519f79"
+        },
+        {
+          "name": "native_ready",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "browserId": "4e9742a789b798261d9658e818fb1eed",
+          "browserSignatureVerified": true,
+          "endpointSignatureVerified": false
+        },
+        {
+          "name": "native-connected",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nativeSession": "0970aac8a2f0fc1bd7ccd0b8eb736a0f"
+        },
+        {
+          "name": "native_ready",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserId": "285227fe8fced462176ceffdf742a271",
+          "browserSignatureVerified": true,
+          "endpointSignatureVerified": false
+        }
+      ],
+      "gatewayStatus": null,
+      "ui": {
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "commons": "2",
+        "peers": "1",
+        "wssReceived": "1.7 KiB",
+        "sources": [
+          "common-mine",
+          "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+        ],
+        "onDisabled": true,
+        "offDisabled": false
+      }
+    },
+    "statusObservation": {
+      "captured": true,
+      "state": "ACTIVE",
+      "reason": "Encrypted Common traffic can pass through browser peers",
+      "requested": true,
+      "generation": 1,
+      "startCalls": 1,
+      "sessionId": "2c6bd68ccad640fa279c3decc50a0a0d",
+      "sessionExpiresAt": 1791104969653,
+      "primarySourceId": "common-mine",
+      "network": {
+        "chainId": 10101919,
+        "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+      },
+      "configNodeIds": [
+        "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+      ],
+      "workerPresent": true,
+      "commonConnections": [
+        {
+          "id": "2c6bd68ccad640fa279c3decc50a0a0d",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "browserId": "4e9742a789b798261d9658e818fb1eed",
+          "connected": true,
+          "expiresAt": 1791104969653,
+          "remoteOrigin": null,
+          "endpointVerified": false,
+          "browserSignatureVerified": true
+        },
+        {
+          "id": "f3ae74ef18237e5ed3d32e8cc6227f29",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserId": "285227fe8fced462176ceffdf742a271",
+          "connected": true,
+          "expiresAt": 1791104972413,
+          "remoteOrigin": null,
+          "endpointVerified": false,
+          "browserSignatureVerified": true
+        }
+      ],
+      "nativeConnections": 2,
+      "peers": 2,
+      "circuits": 0,
+      "queuedBytes": 0,
+      "appBytes": 132494,
+      "pendingSends": 0,
+      "nativeReceivedBytes": 1692,
+      "nativeSentBytes": 1704,
+      "sourceErrors": {},
+      "signatures": [
+        {
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "nativeSignatureVerified": true,
+          "nativeIdentityMatches": true,
+          "nativeSessionMatches": true,
+          "nativeBootId": "f37dab1bd372ea42dacda593809bc748",
+          "endpointSignatureVerified": true,
+          "endpointIdentityMatches": true,
+          "endpointBootMatches": true,
+          "endpointSequence": 316,
+          "endpointExpiresAt": 1791104749324,
+          "wsReadyState": 1,
+          "workerSignatureVerified": true
+        },
+        {
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nativeSignatureVerified": true,
+          "nativeIdentityMatches": true,
+          "nativeSessionMatches": true,
+          "nativeBootId": "02e566f703dba5b6666794b11de1ef97",
+          "endpointSignatureVerified": true,
+          "endpointIdentityMatches": true,
+          "endpointBootMatches": true,
+          "endpointSequence": 293,
+          "endpointExpiresAt": 1791104774662,
+          "wsReadyState": 1,
+          "workerSignatureVerified": true
+        }
+      ],
+      "workerValidatedCommons": [
+        {
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "sourceId": "common-mine",
+          "browserSignatureVerified": true
+        },
+        {
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserSignatureVerified": true
+        }
+      ],
+      "discovery": {
+        "enabled": true,
+        "verifiedEndpoints": 2,
+        "knownBrowserCandidates": 2,
+        "connectedGateways": 1,
+        "knownGatewayOrigins": [
+          "https://ai-test.make-cph-great-again.community"
+        ]
+      },
+      "events": [
+        {
+          "name": "native-connected",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "nativeSession": "fe55ed9d2cb2c1cea4073ff6cd519f79"
+        },
+        {
+          "name": "native_ready",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "browserId": "4e9742a789b798261d9658e818fb1eed",
+          "browserSignatureVerified": true,
+          "endpointSignatureVerified": false
+        },
+        {
+          "name": "native-connected",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nativeSession": "0970aac8a2f0fc1bd7ccd0b8eb736a0f"
+        },
+        {
+          "name": "native_ready",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserId": "285227fe8fced462176ceffdf742a271",
+          "browserSignatureVerified": true,
+          "endpointSignatureVerified": false
+        }
+      ],
+      "gatewayStatus": {
+        "sourceId": "common-mine",
+        "running": true,
+        "sessions": 4,
+        "circuits": 0,
+        "candidates": 1,
+        "participants": 0,
+        "leases": 8,
+        "receivedBytes": 4250,
+        "sentBytes": 16772,
+        "nativeLimits": {
+          "maxSessions": 80,
+          "nativePeers": 40,
+          "circuits": 40,
+          "circuitsPerSession": 40,
+          "pendingInbound": 4,
+          "pendingOutbound": 4
+        },
+        "browserTransfer": {
+          "transferredBytes": 5432,
+          "transferLimitBytes": 104857600,
+          "attachments": 2,
+          "maxAttachments": 20
+        }
+      },
+      "ui": {
+        "state": "ACTIVE",
+        "reason": "Encrypted Common traffic can pass through browser peers",
+        "commons": "2",
+        "peers": "2",
+        "wssReceived": "1.7 KiB",
+        "sources": [
+          "common-mine",
+          "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+        ],
+        "onDisabled": true,
+        "offDisabled": false
+      }
+    },
+    "onScreenshot": "/tmp/cypher-zero-connections-20261004/public-mobile-on.png",
+    "off": {
+      "captured": true,
+      "state": "OFF",
+      "reason": "Stopped by you",
+      "requested": false,
+      "generation": 2,
+      "startCalls": 1,
+      "sessionId": null,
+      "sessionExpiresAt": null,
+      "primarySourceId": null,
+      "network": {
+        "chainId": 10101919,
+        "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+      },
+      "configNodeIds": [
+        "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+      ],
+      "workerPresent": false,
+      "commonConnections": [],
+      "nativeConnections": 0,
+      "peers": 0,
+      "circuits": 0,
+      "queuedBytes": 0,
+      "appBytes": 0,
+      "pendingSends": 0,
+      "nativeReceivedBytes": 1692,
+      "nativeSentBytes": 1704,
+      "sourceErrors": {},
+      "signatures": [],
+      "workerValidatedCommons": [
+        {
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "sourceId": "common-mine",
+          "browserSignatureVerified": true
+        },
+        {
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserSignatureVerified": true
+        }
+      ],
+      "discovery": {
+        "enabled": true,
+        "verifiedEndpoints": 0,
+        "knownBrowserCandidates": 0,
+        "connectedGateways": 0,
+        "knownGatewayOrigins": []
+      },
+      "events": [
+        {
+          "name": "native-connected",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "nativeSession": "fe55ed9d2cb2c1cea4073ff6cd519f79"
+        },
+        {
+          "name": "native_ready",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "browserId": "4e9742a789b798261d9658e818fb1eed",
+          "browserSignatureVerified": true,
+          "endpointSignatureVerified": false
+        },
+        {
+          "name": "native-connected",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nativeSession": "0970aac8a2f0fc1bd7ccd0b8eb736a0f"
+        },
+        {
+          "name": "native_ready",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserId": "285227fe8fced462176ceffdf742a271",
+          "browserSignatureVerified": true,
+          "endpointSignatureVerified": false
+        }
+      ],
+      "gatewayStatus": null,
+      "ui": {
+        "state": "OFF",
+        "reason": "Stopped by you",
+        "commons": "0",
+        "peers": "0",
+        "wssReceived": "1.7 KiB",
+        "sources": [],
+        "onDisabled": false,
+        "offDisabled": true
+      }
+    },
+    "offStable": {
+      "captured": true,
+      "state": "OFF",
+      "reason": "Stopped by you",
+      "requested": false,
+      "generation": 2,
+      "startCalls": 1,
+      "sessionId": null,
+      "sessionExpiresAt": null,
+      "primarySourceId": null,
+      "network": {
+        "chainId": 10101919,
+        "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+      },
+      "configNodeIds": [
+        "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+        "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370"
+      ],
+      "workerPresent": false,
+      "commonConnections": [],
+      "nativeConnections": 0,
+      "peers": 0,
+      "circuits": 0,
+      "queuedBytes": 0,
+      "appBytes": 0,
+      "pendingSends": 0,
+      "nativeReceivedBytes": 1692,
+      "nativeSentBytes": 1704,
+      "sourceErrors": {},
+      "signatures": [],
+      "workerValidatedCommons": [
+        {
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "sourceId": "common-mine",
+          "browserSignatureVerified": true
+        },
+        {
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserSignatureVerified": true
+        }
+      ],
+      "discovery": {
+        "enabled": true,
+        "verifiedEndpoints": 0,
+        "knownBrowserCandidates": 0,
+        "connectedGateways": 0,
+        "knownGatewayOrigins": []
+      },
+      "events": [
+        {
+          "name": "native-connected",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "nativeSession": "fe55ed9d2cb2c1cea4073ff6cd519f79"
+        },
+        {
+          "name": "native_ready",
+          "sourceId": "common-mine",
+          "nodeId": "ef4d1c50627c52801acc77a036826aa68b429d2c7d713e10c8b9a743d0492efb",
+          "browserId": "4e9742a789b798261d9658e818fb1eed",
+          "browserSignatureVerified": true,
+          "endpointSignatureVerified": false
+        },
+        {
+          "name": "native-connected",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nativeSession": "0970aac8a2f0fc1bd7ccd0b8eb736a0f"
+        },
+        {
+          "name": "native_ready",
+          "sourceId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "nodeId": "9a7170110fb720610dcc32d3d56b23493c33f9980e9398c1e5a772de14abd370",
+          "browserId": "285227fe8fced462176ceffdf742a271",
+          "browserSignatureVerified": true,
+          "endpointSignatureVerified": false
+        }
+      ],
+      "gatewayStatus": null,
+      "ui": {
+        "state": "OFF",
+        "reason": "Stopped by you",
+        "commons": "0",
+        "peers": "0",
+        "wssReceived": "1.7 KiB",
+        "sources": [],
+        "onDisabled": false,
+        "offDisabled": true
+      }
+    },
+    "offScreenshot": "/tmp/cypher-zero-connections-20261004/public-mobile-off.png",
+    "reload": {
+      "state": "OFF",
+      "commons": "0",
+      "peers": "0",
+      "onDisabled": false,
+      "offDisabled": true
+    },
+    "cleanup": {
+      "chromeExited": true,
+      "profileRemoved": true
+    },
+    "finishedAt": "2026-10-04T09:04:51.835Z"
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-10-03T05:14:35.190Z",
+  "finishedAt": "2026-10-03T05:15:21.743Z",
+  "publicOrigin": "https://ai-test.make-cph-great-again.community",
+  "hostOverride": false,
+  "forceDirect": true,
+  "sameHostOnly": true,
+  "actualLLM": false,
+  "actualPhoneHardware": false,
+  "checkpoints": [
+    "A/B are independent real browser processes with connected native WSS and RTC",
+    "B has only browser-mesh native peer with actual RLPx traffic and separate browser ACKs",
+    "A OFF stops the only RTC path after draining, without a gateway-only fallback",
+    "B reconnected through newly joined C and fresh native RLPx circuit",
+    "Native canonical hashes match A/B/reference while C is the only browser route",
+    "AI workload signals preserve control sessions and enforce close/pause/one-circuit policy",
+    "Native WSS loss creates fresh identities and preserves ON byte budget before re-authentication",
+    "Trusted tab hide/freeze stops participation; resume stays OFF and navigation terminates the last Worker"
+  ],
+  "opaqueChunkProof": {
+    "bytes": 448,
+    "sha256": "01c071baab3733a30c9c38eea06dc4e4689daedb04ab9697af84202ec1597f8a",
+    "path": "direct",
+    "independentHashAndBytesCompared": true
+  },
+  "nonfatalPeerErrors": {
+    "B:invalid_receipt": 1
+  },
+  "fatalErrors": [],
+  "lifecycle": {
+    "events": [
+      {
+        "type": "visibilitychange",
+        "trusted": true,
+        "visibility": "hidden"
+      },
+      {
+        "type": "freeze",
+        "trusted": true,
+        "visibility": "hidden"
+      },
+      {
+        "type": "resume",
+        "trusted": true,
+        "visibility": "hidden"
+      },
+      {
+        "type": "visibilitychange",
+        "trusted": true,
+        "visibility": "visible"
+      }
+    ],
+    "autoRejoined": false,
+    "mobileViewport": true,
+    "actualPhoneHardware": false
+  },
+  "cleanup": {
+    "ownedLeases": 4,
+    "allOwnedLeasesStatus401": true,
+    "unownedLeasesRevoked": 0,
+    "ownedRoutesAndNativePeersReclaimed": true
+  },
+  "coreHashes": {
+    "public/mesh-protocol.js": "00173ee0c36b00237408223f084d0eb1eeee0f387c5d279c4ab06fc0607e3ee2",
+    "public/mesh-worker.js": "2cf47229ee018f3f1175355a238fa14b1db126af4ad6479bce1f6b66d1103698",
+    "public/mesh-controller.js": "670aa4fa466ee3a778a5c08beeb9cefac8ab1fce0946d9085590d32eae62b651",
+    "public/relay-protocol.js": "33ec669dc7b1d237cf6efc690cc2d127048c92d94e5b31a6e1d26c7610e90261",
+    "public/relay-controller.js": "d854ec2f60ad71cfff3cd58f3a68d41c6b807b843dc3c3eee60b08691b05bbc5",
+    "relay/gateway.mjs": "03a45dd93f36acec1d4cff1e20789b9d47b273f975f3dd9145f871feeaf07100",
+    "relay/config.mjs": "72c9183ff4f54fee3dff469d102c6f44ddc47781092ea4c27670b56fdb222f4c"
+  },
+  "changedCoreFiles": [],
+  "workload": {
+    "name": "AI workload signals preserve control sessions and enforce close/pause/one-circuit policy",
+    "at": "2026-10-03T05:15:14.709Z",
+    "actualLLMRun": false,
+    "generatingMs": 8203,
+    "actualJSONSent": 1301,
+    "mainThreadTaskSeconds": 0.193242,
+    "heartbeat": {
+      "count": 325,
+      "maxLagMs": 55.299999952316284,
+      "totalLagMs": 540.2000017166138
+    },
+    "sameSessionAcrossPolicy": true
+  }
+}

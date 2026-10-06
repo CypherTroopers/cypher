@@ -258,15 +258,6 @@ func (s *serviceManager) registerProcessorFunc(msgType network.MessageTypeID, fn
 
 }
 
-// availableServices returns a list of all services available to the serviceManager.
-// If no services are instantiated, it returns an empty list.
-func (s *serviceManager) availableServices() (ret []string) {
-	for id := range s.services {
-		ret = append(ret, ServiceFactory.Name(id))
-	}
-	return
-}
-
 // service returns the service implementation being registered to this name or
 // nil if no service by this name is available.
 func (s *serviceManager) service(name string) Service {
@@ -275,13 +266,4 @@ func (s *serviceManager) service(name string) Service {
 		return nil
 	}
 	return s.services[id]
-}
-
-func (s *serviceManager) serviceByID(id ServiceID) (Service, bool) {
-	var serv Service
-	var ok bool
-	if serv, ok = s.services[id]; !ok {
-		return nil, false
-	}
-	return serv, true
 }

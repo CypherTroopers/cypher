@@ -1,0 +1,72 @@
+{
+  "at": "2026-10-03T09:11:20Z",
+  "mode": "read-only audit; no admissions or runtime changes",
+  "candidateSHA256": "3efc534447a00e0abb0926f04325d78f498e5077d75e31ffd5b4e48c29f9ee29",
+  "nodes": {
+    "a": {
+      "pid": 3088210,
+      "pmId": 11,
+      "status": "online",
+      "startedAt": 1790999372543,
+      "restarts": 0,
+      "script": "/root/browser-llm-lab/.runtime/mesh-a/mesh-start.sh",
+      "binarySHA256": "3bafe0f18343f18533ef8528ab314ddaa7264953c2bc2ad9f33376ef5756bc6f",
+      "maxPeers": 8,
+      "maxPendingPeers": 4,
+      "config": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 8,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 4,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      },
+      "launcherSHA256": "8bbb0c14257f995a26100e9ed2f9a743a5c8f24c72b2165ae4febe852dee468a",
+      "execSHA256": "4a340e8b0b11e109b61f59fa8eb722c53c3cd69ec1d038a68dc2c1f040f44470"
+    },
+    "b": {
+      "pid": 3088211,
+      "pmId": 12,
+      "status": "online",
+      "startedAt": 1790999372549,
+      "restarts": 0,
+      "script": "/root/browser-llm-lab/.runtime/mesh-b/mesh-start.sh",
+      "binarySHA256": "3bafe0f18343f18533ef8528ab314ddaa7264953c2bc2ad9f33376ef5756bc6f",
+      "maxPeers": 8,
+      "maxPendingPeers": 4,
+      "config": {
+        "initialState": "OFF",
+        "maxFrameBytes": 16384,
+        "maxSessions": 8,
+        "nativeMaxFrameBytes": 4194304,
+        "nativePeers": 4,
+        "renewAfterSeconds": 120,
+        "sessionSeconds": 300,
+        "version": 1
+      },
+      "launcherSHA256": "cb6ddd1f2c39f795facd259780b9d1fcc0d7bdace20486497d87b9bfc5e1710b",
+      "execSHA256": "8f9bdb9342cccc8e8842748c7ddbaffec4c59eb00b131ba7f82a20a9eec56b1b"
+    }
+  },
+  "switchPlan": [
+    "Verify scoped PM2 identities and namespace launcher before touching either app.",
+    "Stop only exact PM2 ids for dedicated A/B and wait for owner socket cleanup. Preserve databases, identities, source configs and pins.",
+    "Stage candidate copies in dedicated runtimes; verify SHA256 then atomic rename, preserving prior executable for rollback.",
+    "Set only dedicated Node.P2P.MaxPeers from8to40; preserve MaxPendingPeers4, B isolation/static-empty and A upstream peers.",
+    "Start exact existing A/B PM2 entries through original launchers; B must unshare -Urn with loopback only.",
+    "Verify new executable hashes, /config maxSessions80/nativePeers40, zero existing test sessions, IPC/canonical hashes, A upstream and B isolation before browser admission."
+  ],
+  "scopeNotes": {
+    "nativePeers": 40,
+    "normalNativeLimitStillApplies": true,
+    "sameNodeMeshUniquePeersPossible": 1,
+    "registeredCommons": 2,
+    "browserRTCNeighborsUnchanged": 3,
+    "nativePendingInboundOutbound": 4,
+    "sourceFormatUnchanged": true,
+    "nativeBuildNotRun": "already supplied binary",
+    "noDatabaseOpenOrCopy": true
+  }
+}

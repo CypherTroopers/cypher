@@ -17,10 +17,8 @@
 package reconfig
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,94 +32,20 @@ import (
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/reconfig/hotstuff"
-	"github.com/cypherium/cypher/rnet/network"
 )
 
-const failedProposalRetry = 20 * time.Millisecond
-const hotstuffIdleSleep = 1 * time.Millisecond
-const tryProposeDebounce = 1 * time.Millisecond
-const fastBlockInterval = 70 * time.Millisecond
-const slowBlockInterval = 1 * time.Second
-const slowFallbackMinPending = 1
-
-// Adaptive slow-block cadence.
-// Heavy/deploy/data/dex transactions live in the slow lane.
-// When slow pending grows, slow blocks must be emitted faster to drain backlog.
-const slowIntervalDrainPendingThreshold = 512
-const slowIntervalStrongPendingThreshold = 2048
-const slowIntervalEmergencyPendingThreshold = 8192
-
-const slowBlockDrainInterval = 250 * time.Millisecond
-const slowBlockStrongDrainInterval = 100 * time.Millisecond
-const slowBlockEmergencyDrainInterval = 70 * time.Millisecond
-
-// Phase 7A: lane pressure scheduler.
-// If slow lane backlog is much larger than fast lane, keep draining slow lane.
-// This avoids heavy/data/deploy transactions sitting behind fast native/small txs.
-const slowPressureRatio = 2
-const slowPressureMinPending = 512
-const slowEmergencyForcePending = 8192
-
-const startNewViewDedupWindow = 2 * time.Second
-const fixedModeTxProposalStaleTimeout = 500 * time.Millisecond
-const fixedModeKeyblockStaleTimeout = 3 * params.AckTimeout
-const fixedModeKeyblockWatchdogInterval = 10 * time.Second
-
-type committeeInfo struct {
-	Committee *bftview.Committee
-	KeyHash   common.Hash
-	KeyNumber uint64
-}
-type bestCandidateInfo struct {
-	Node      *common.Cnode
-	KeyHash   common.Hash
-	KeyNumber uint64
-}
-type cachedCommitteeInfo struct {
-	keyHash   common.Hash
-	keyNumber uint64
-	committee *bftview.Committee
-	node      *common.Cnode
-}
-type committeeMsg struct {
-	sid   *network.ServerIdentity
-	cinfo *committeeInfo
-	best  *bestCandidateInfo
-}
-type hotstuffMsg struct {
-	sid   *network.ServerIdentity
-	lastN uint64
-	hMsg  *hotstuff.HotstuffMessage
-}
-
-type networkMsg struct {
-	MsgFlag uint32
-	Hmsg    *hotstuff.HotstuffMessage
-	Cmsg    *committeeInfo
-	Bmsg    *bestCandidateInfo
-}
-
-func (msg *networkMsg) GetCommittee() *bftview.Committee {
-	var mb *bftview.Committee
-	if msg.Cmsg != nil {
-		mb = bftview.LoadMember(msg.Cmsg.KeyNumber, msg.Cmsg.KeyHash, true)
-	} else if msg.Bmsg != nil {
-		mb = bftview.LoadMember(msg.Bmsg.KeyNumber, msg.Bmsg.KeyHash, true)
-	} else if msg.Hmsg != nil {
-		mb = bftview.GetCurrentMember()
-	}
-	return mb
-}
-
-// Service work for protcol
+// Service coordinates consensus lifecycle, workers, and chain progress.
 type Service struct {
-	netService  *netService
-	bc          *core.BlockChain
-	txService   *txService
-	kbc         *core.KeyBlockChain
-	keyService  *keyService
-	txPool      *core.TxPool
-	chainConfig *params.ChainConfig
+	netService                  *netService
+	bc                          *core.BlockChain
+	txService                   *txService
+	kbc                         *core.KeyBlockChain
+	keyService                  *keyService
+	txPool                      *core.TxPool
+	removeFailedProposalTxs     func(types.Transactions)
+	resolveTxQUICTransaction    func(common.Hash) (*types.Transaction, error)
+	decodeProposalBodyForRepair func([]byte) *types.Block
+	chainConfig                 *params.ChainConfig
 
 	protocolMng *hotstuff.HotstuffProtocolManager
 
@@ -132,36 +56,114 @@ type Service struct {
 	lastReqCmNumber uint64
 	muCurrentView   sync.Mutex
 
-	replicaView               *bftview.View
-	runningState              int32
-	lastProposeTime           time.Time
-	lastSlowBlockTime         time.Time
-	lastFastBlockTime         time.Time
-	serviceStartTime          time.Time
-	lastCadenceWakeup         time.Time
-	lastFixedKeyNewViewWakeup time.Time
-	lastFixedTxNewViewWakeup  time.Time
-	lastFixedKeyWatchdogAt    time.Time
-	tryProposeQueuedAt        int64
-	muStartNewView            sync.Mutex
-	lastStartNewViewN         uint64
-	lastStartNewViewAt        time.Time
-	pacetMakerTimer           *paceMakerTimer
-	muHotstuffProgress        sync.Mutex
-	hotstuffProgressAt        time.Time
-	lastProgressN             uint64
-	lastProgressViewID        common.Hash
-	lastProgressRank          uint8
+	replicaView                  *bftview.View
+	runningState                 int32
+	muLifecycle                  sync.Mutex
+	lifecycleGeneration          uint64
+	proposalValidationGeneration uint64
+	muProposalCadence            sync.RWMutex
+	lastSlowBlockTime            time.Time
+	lastFastBlockTime            time.Time
+	lastCadenceWakeup            time.Time
+	lastFixedKeyNewViewWakeup    time.Time
+	fixedKeyViewStartedAt        time.Time
+	fixedKeyViewTxNumber         uint64
+	fixedKeyViewKeyNumber        uint64
+	fixedKeyViewTxHash           common.Hash
+	fixedKeyViewKeyHash          common.Hash
+	lastCandidateRewardCheck     time.Time
+	lastCandidateRewardReady     bool
+	tryProposeQueued             int32
+	muProposalNoWork             sync.Mutex
+	proposalNoWork               *proposalWorkStamp
+	muStartNewView               sync.Mutex
+	lastStartNewViewN            uint64
+	lastStartNewViewHash         common.Hash
+	lastStartNewViewAt           time.Time
+	pacetMakerTimer              *paceMakerTimer
+	muHotstuffProgress           sync.Mutex
+	hotstuffProgressAt           time.Time
+	lastProgressN                uint64
+	lastProgressViewID           common.Hash
+	lastProgressRank             uint8
 
-	hotstuffMsgQ *common.Queue
-	feed1        event.Feed
-	msgCh1       chan committeeMsg
-	msgSub1      event.Subscription // Subscription for msg event
+	muProposalBody             sync.RWMutex
+	proposalBodies             map[common.Hash]*proposalBodyMsg
+	proposalAssemblies         map[common.Hash]*proposalAssemblyState
+	proposalAssemblyBuilds     map[common.Hash]*proposalAssemblyBuild
+	proposalAssemblyBuildSlots chan struct{}
+	proposalBodyWake           chan struct{}
+	verifiedProposalByID       map[common.Hash]*core.VerifiedProposal
+	fhsCertifiedByHash         map[common.Hash]*fhsCertifiedProposal
+	fhsCertifiedByID           map[common.Hash]*fhsCertifiedProposal
+	fhsHighest                 *fhsCertifiedProposal
+	// fhsSelectedParent is the execution parent selected by a verified NewView
+	// quorum. It may differ from the monotonically observed fhsHighest.
+	fhsSelectedParent *fhsCertifiedProposal
+	fhsParentSelected bool
+	fhsStore          *fhsSafetyStore
+	fhsContentWriter  *fhsContentWriter
+	// These QC broadcast markers are deliberately memory-only. The active
+	// marker brackets every physical send. The completed marker suppresses only
+	// a matching durable-outbox replay for a short period after that send. A
+	// restart loses both markers but retains the durable outbox, so crash
+	// recovery still rebroadcasts immediately.
+	muFHSQCBroadcast               sync.Mutex
+	fhsActiveQCBroadcast           *hotstuff.SignedState
+	fhsActiveQCBroadcastGeneration uint64
+	fhsCompletedQCBroadcast        *hotstuff.SignedState
+	fhsCompletedQCBroadcastExpiry  time.Time
+	muConsensusIdentity            sync.RWMutex
+	consensusPublic                *bls.PublicKey
+	proposalBodySecret             *bls.SecretKey
+	proposalBodySignMu             sync.Mutex
+	txQUICReceiptSecret            *bls.SecretKey
+	txQUICReceiptPublic            *bls.PublicKey
+	txQUICReceiptSignMu            sync.Mutex
+
+	hotstuffMsgQ              *hotstuffMessageQueue
+	proposalValidationJobs    chan *proposalValidationJob
+	proposalValidationResults chan *hotstuff.FHSProposalValidationResult
+	highQCValidationResults   chan *hotstuff.FHSHighQCValidationResult
+	fhsRecoveryWake           chan struct{}
+	fhsRecoveryRetryQueued    int32
+	muFHSSyncResume           sync.Mutex
+	fhsSyncResume             *fhsSyncResumeRequest
+	fhsSyncResumePreparing    *fhsSyncResumeRequest
+	muProposalValidation      sync.Mutex
+	activeProposalValidation  *proposalValidationControl
+	activeHighQCValidation    *highQCValidationControl
+	proposalValidationSeq     uint64
+	// muFHSValidationPublication is transferred from a successful application
+	// Apply callback to its manager Finish callback. It linearizes proposal
+	// vote publication and HighQC installation against proof-aware key sync.
+	// Lock order: muFHSValidationPublication -> muProposalBuild ->
+	// muCurrentView -> txService.mu.
+	muFHSValidationPublication      sync.Mutex
+	fhsValidationPublicationOwner   int32
+	activeProposalValidationPublish *hotstuff.FHSProposalValidationResult
+	activeHighQCValidationPublish   *hotstuff.FHSHighQCValidationResult
+	proposalBuildJobs               chan *proposalBuildJob
+	proposalBuildResults            chan *hotstuff.FHSProposalBuildResult
+	muProposalBuild                 sync.Mutex
+	activeProposalBuild             *proposalBuildControl
+	fhsEpochTransition              int32
+	proposalBuildSeq                uint64
+	proposalManifestSlots           chan struct{}
+	proposalManifestJobs            chan *proposalManifestDispatch
+	proposalFailedTxSlots           chan struct{}
+	proposalFailedTxJobs            chan *proposalFailedTxCleanup
+	feed1                           event.Feed
+	msgCh1                          chan committeeMsg
+	msgSub1                         event.Subscription // Subscription for msg event
 }
+
+var _ hotstuff.FHSProposalValidationApplication = (*Service)(nil)
+var _ hotstuff.FHSHighQCValidationApplication = (*Service)(nil)
+var _ hotstuff.FHSProposalBuildApplication = (*Service)(nil)
 
 func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *ReconfigBackend) *Service {
 	s := new(Service)
-	s.serviceStartTime = time.Now()
 	s.netService = newNetService(sName, sIp, chainConfig, backend, s)
 	s.txService = newTxService(s, backend, chainConfig)
 	s.keyService = newKeyService(s, backend, chainConfig)
@@ -169,13 +171,45 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	s.bc = backend.BlockChain()
 	s.kbc = backend.KeyBlockChain()
 	s.txPool = backend.TxPool()
+	if s.txPool != nil {
+		s.removeFailedProposalTxs = s.txPool.RemoveBatch
+	}
+	s.resolveTxQUICTransaction = backend.resolveTxQUICTransaction
 	s.chainConfig = chainConfig
+	var chainID uint64
+	if chainConfig != nil && chainConfig.ChainID != nil {
+		chainID = chainConfig.ChainID.Uint64()
+	}
+	var genesisHash common.Hash
+	if s.bc != nil && s.bc.Genesis() != nil {
+		genesisHash = s.bc.Genesis().Hash()
+	}
+	s.fhsStore = newFHSSafetyStoreForConfig(backend.ChainDb(), chainID, genesisHash, chainConfig)
+	s.fhsContentWriter = newFHSContentWriterForConfig(chainConfig, s.persistFHSProposalData)
 
 	s.lastCmInfoMap = make(map[common.Hash]*cachedCommitteeInfo)
+	s.proposalBodies = make(map[common.Hash]*proposalBodyMsg)
+	s.proposalAssemblies = make(map[common.Hash]*proposalAssemblyState)
+	s.proposalAssemblyBuilds = make(map[common.Hash]*proposalAssemblyBuild)
+	s.proposalAssemblyBuildSlots = make(chan struct{}, 1)
+	s.proposalBodyWake = make(chan struct{})
+	s.verifiedProposalByID = make(map[common.Hash]*core.VerifiedProposal)
+	s.fhsCertifiedByHash = make(map[common.Hash]*fhsCertifiedProposal)
+	s.fhsCertifiedByID = make(map[common.Hash]*fhsCertifiedProposal)
 
 	s.msgCh1 = make(chan committeeMsg, 10)
 	s.msgSub1 = s.feed1.Subscribe(s.msgCh1)
-	s.hotstuffMsgQ = common.QueueNew()
+	s.hotstuffMsgQ = newHotstuffMessageQueue()
+	s.proposalValidationJobs = make(chan *proposalValidationJob, proposalValidationQueueCapacity)
+	s.proposalValidationResults = make(chan *hotstuff.FHSProposalValidationResult, proposalValidationWorkers+1)
+	s.highQCValidationResults = make(chan *hotstuff.FHSHighQCValidationResult, proposalValidationWorkers+1)
+	s.fhsRecoveryWake = make(chan struct{}, 1)
+	s.proposalBuildJobs = make(chan *proposalBuildJob, proposalBuildQueueCapacity)
+	s.proposalBuildResults = make(chan *hotstuff.FHSProposalBuildResult, proposalBuildWorkers+1)
+	s.proposalManifestSlots = make(chan struct{}, proposalManifestDispatchCapacity)
+	s.proposalManifestJobs = make(chan *proposalManifestDispatch, proposalManifestDispatchCapacity)
+	s.proposalFailedTxSlots = make(chan struct{}, proposalFailedTxCleanupCapacity)
+	s.proposalFailedTxJobs = make(chan *proposalFailedTxCleanup, proposalFailedTxCleanupCapacity)
 	s.hotstuffProgressAt = time.Now()
 
 	s.protocolMng = hotstuff.NewHotstuffProtocolManager(s, nil, nil)
@@ -184,40 +218,19 @@ func newService(sName, sIp string, chainConfig *params.ChainConfig, backend *Rec
 	bftview.SetCommitteeConfig(backend.ChainDb(), backend.KeyBlockChain(), s)
 
 	go s.handleHotStuffMsg()
+	for worker := 0; worker < proposalValidationWorkers; worker++ {
+		go s.proposalValidationWorker()
+	}
+	for worker := 0; worker < proposalBuildWorkers; worker++ {
+		go s.proposalBuildWorker()
+	}
+	for worker := 0; worker < proposalManifestDispatchWorkers; worker++ {
+		go s.proposalManifestDispatchWorker()
+	}
+	go s.proposalFailedTxCleanupWorker()
 	go s.handleCommitteeMsg()
+	go s.keyblockLivenessLoop()
 	return s
-}
-
-// OnNewView --------------------------------------------------------------------------
-func (s *Service) OnNewView(data []byte, extraes [][]byte) error { //buf is snapshot, //verify repla' block before newview
-	view := bftview.DecodeToView(data)
-	log.Info("OnNewView..", "txNumber", view.TxNumber, "keyNumber", view.KeyNumber)
-
-	s.muCurrentView.Lock()
-	s.replicaView = view
-	if view.EqualNoIndex(&s.currentView) {
-		s.currentView.LeaderIndex = view.LeaderIndex
-	}
-	s.muCurrentView.Unlock()
-
-	var bestCandidates []*types.Candidate
-	for _, extraD := range extraes {
-		if extraD == nil {
-			continue
-		}
-		cand := types.DecodeToCandidate(extraD)
-		if cand == nil {
-			continue
-		}
-		bestCandidates = append(bestCandidates, cand)
-	}
-	s.keyService.setBestCandidate(bestCandidates)
-	return nil
-}
-
-func (s *Service) CurrentN() uint64 {
-	curView := s.GetCurrentView()
-	return curView.TxNumber + 1
 }
 
 func (s *Service) ChainID() uint64 {
@@ -231,769 +244,220 @@ func (s *Service) UseContextSignatures() bool {
 	return true
 }
 
-// CurrentState call by hotstuff
-func (s *Service) CurrentState() ([]byte, string, uint64) { //recv by onnewview
-	curView := s.GetCurrentView()
-	leaderID := ""
-	mb := bftview.GetCurrentMember()
-	if mb != nil {
-		leader := mb.List[curView.LeaderIndex]
-		//leader := mb.List[0]
-		log.Info("CurrentState.NextLeader", "index", curView.LeaderIndex, "ip", leader.Address)
-		leaderID = bftview.GetNodeID(leader.Address, leader.Public)
-	} else {
-		log.Error("CurrentState.NextLeader: can't get current committee!, set dedault")
-		s.Committee_Request(curView.KeyNumber, curView.KeyHash)
-	}
-
-	log.Info("CurrentState", "TxNumber", curView.TxNumber, "KeyNumber", curView.KeyNumber, "LeaderIndex", curView.LeaderIndex, "NoDone", curView.NoDone)
-
-	return curView.EncodeToBytes(), leaderID, curView.TxNumber + 1
+func (s *Service) RequireMessageAuth() bool {
+	return true
 }
 
-// GetExtra call by hotstuff
-func (s *Service) GetExtra() []byte {
-	best := s.keyService.getBestCandidate(true)
-	if best == nil {
-		return nil
-	}
-	return best.EncodeToBytes()
+func (s *Service) UseFHS2Chain() bool {
+	return s.fairHotstuffEnabled()
 }
 
-// GetPublicKey call by hotstuff
-func (s *Service) GetPublicKey() []*bls.PublicKey {
-	keyblock := s.kbc.CurrentBlock()
-	keyNumber := keyblock.NumberU64()
-	c := bftview.LoadMember(keyNumber, keyblock.Hash(), false)
-	if c == nil {
-		return nil
-	}
-	return c.ToBlsPublicKeys(keyblock.Hash())
-}
+var _ hotstuff.FHSProposalReadinessApplication = (*Service)(nil)
 
 // Self call by hotstuff
 func (s *Service) Self() string {
 	return s.netService.serverID
 }
 
-// CheckView call by hotstuff
-func (s *Service) CheckView(data []byte) error {
-	if !s.isRunning() {
-		return types.ErrNotRunning
-	}
-	view := bftview.DecodeToView(data)
-	knumber := s.kbc.CurrentBlockN()
-	txnumber := s.bc.CurrentBlockN()
-	log.Debug("CheckView..", "txNumber", view.TxNumber, "keyNumber", view.KeyNumber, "local key number", knumber, "tx number", txnumber)
-	if view.KeyNumber < knumber {
-		return hotstuff.ErrOldState
-	} else if view.KeyNumber > knumber {
-		return hotstuff.ErrFutureState
-	}
-	if view.TxNumber < txnumber {
-		return hotstuff.ErrOldState
-	} else if view.TxNumber > txnumber {
-		return hotstuff.ErrFutureState
-	}
-
-	return nil
+// lifecycleGenerationLocked returns the currently active process-local service
+// generation. The caller must hold muLifecycle. Zero is reserved for tests and
+// direct marker helpers that do not participate in MinerStart/MinerStop.
+func (s *Service) lifecycleGenerationLocked() uint64 {
+	atomic.CompareAndSwapUint64(&s.lifecycleGeneration, 0, 1)
+	return atomic.LoadUint64(&s.lifecycleGeneration)
 }
 
-// OnPropose call by hotstuff
-func (s *Service) OnPropose(state []byte, extra []byte) error { //verify new block
-	log.Debug("OnPropose..")
-	if !s.isRunning() {
-		return types.ErrNotRunning
+// advanceLifecycleGenerationLocked invalidates every in-flight callback from a
+// previous MinerStart/MinerStop boundary. The caller must hold muLifecycle.
+func (s *Service) advanceLifecycleGenerationLocked() uint64 {
+	generation := atomic.AddUint64(&s.lifecycleGeneration, 1)
+	if generation == 0 {
+		generation = atomic.AddUint64(&s.lifecycleGeneration, 1)
 	}
-
-	var block *types.Block
-	if state != nil {
-		block = types.DecodeToBlock(state)
-		log.Info("OnPropose", "txNumber", block.NumberU64())
-	}
-	if block != nil {
-		err := s.txService.verifyTxBlock(block)
-		if err != nil {
-			log.Error("verify txblock", "number", block.NumberU64(), "err", err)
-			return err
-		}
-		if block.BlockType() == types.Key_Block {
-			kblock := types.DecodeToKeyBlock(block.KeyInfo())
-			if kblock == nil {
-				return fmt.Errorf("Block's extra (keyblock) is error format!")
-			}
-			err := s.keyService.verifyKeyBlock(kblock, types.DecodeToCandidate(extra))
-			if err != nil {
-				log.Error("verify keyblock", "number", kblock.NumberU64(), "err", err)
-				return err
-			}
-		}
-	} else {
-		err := fmt.Errorf("DecodeToBlock(state) error")
-		log.Error("Propose", "error", err)
-		return err
-	}
-	s.pacetMakerTimer.start()
-	return nil
+	return generation
 }
 
-// Propose call by hotstuff
-func (s *Service) Propose() (e error, kState []byte, tState []byte, extra []byte) { //buf recv by onpropose, onviewdown
-	log.Debug("Propose..", "number", s.currentView.TxNumber)
-
-	proposeOK := false
-	defer func() {
-		if !proposeOK {
-			go func() {
-				time.Sleep(failedProposalRetry)
-				if !s.shouldRetryFailedProposal(time.Now()) {
-					return
-				}
-				curView := s.GetCurrentView()
-				if bftview.IamLeader(curView.LeaderIndex) {
-					s.triggerTryPropose(s.bc.CurrentBlockN())
-				}
-			}()
-		} else {
-			s.lastProposeTime = time.Now()
-		}
-	}()
-
-	if !s.isRunning() {
-		err := fmt.Errorf("not running for propose")
-		return err, nil, nil, nil
-	}
-
-	s.muCurrentView.Lock()
-	leaderIndex := s.currentView.LeaderIndex
-	noDone := s.currentView.NoDone
-	if !s.replicaView.EqualAll(&s.currentView) {
-		log.Error("Propose", "replica view not equal to local current view txNumber", s.currentView.TxNumber, "keyNumber", s.currentView.KeyNumber, "LeaderIndex", leaderIndex, "NoDone",
-			s.currentView.NoDone, "replica txNumber", s.replicaView.TxNumber, "keyNumber", s.replicaView.KeyNumber, "LeaderIndex", s.replicaView.LeaderIndex, "NoDone", s.replicaView.NoDone)
-		s.muCurrentView.Unlock()
-		return fmt.Errorf("replica view not equal to local current view"), nil, nil, nil
-	}
-	if !bftview.IamLeader(leaderIndex) {
-		//proposeOK = true
-		err := fmt.Errorf("not leader for propose")
-		log.Error("Propose", "leaderIndex", leaderIndex, "error", err)
-		s.muCurrentView.Unlock()
-		return err, nil, nil, nil
-	}
-	s.muCurrentView.Unlock()
-
-	fixedMode := s.keyService.config != nil && (s.keyService.config.FixedLeader || s.keyService.config.FixedCommittee)
-	keyProposal := leaderIndex > 0
-	if fixedMode {
-		// In fixed mode, a fallback leader may be selected from local ack/progress
-		// observations. Do not let that alone force the service into the keyblock
-		// proposal path; otherwise a transient fallback view can starve tx block
-		// proposals. Fixed mode keyblocks should only be proposed after an explicit
-		// keyblock trigger has marked the current view as not done.
-		keyProposal = !noDone
-	}
-	keyBlockIntervalElapsed := true
-	if curKeyblock := s.kbc.CurrentBlock(); curKeyblock != nil {
-		lastKeyTime := time.Unix(int64(curKeyblock.Time()), 0)
-		keyBlockIntervalElapsed = time.Since(lastKeyTime) >= params.KeyBlockMinInterval
-		if keyProposal && !keyBlockIntervalElapsed {
-			log.Debug("Propose keyblock suppressed by minimum interval",
-				"elapsed", time.Since(lastKeyTime),
-				"minimum", params.KeyBlockMinInterval,
-				"lastKeyTime", lastKeyTime)
-		}
-	}
-
-	if fixedMode && !keyProposal && keyBlockIntervalElapsed && s.getBestCandidate(true) != nil {
-		keyProposal = true
-		log.Warn("fixed-mode candidate reward keyblock proposal forced",
-			"noDone", noDone,
-			"leaderIndex", leaderIndex,
-			"currentTx", s.bc.CurrentBlockN(),
-			"currentKey", s.kbc.CurrentBlockN())
-	}
-
-	if keyProposal && keyBlockIntervalElapsed {
-		keyblock, mb, bestCandi, err := s.keyService.tryProposalChangeCommittee(leaderIndex, !noDone)
-		if err == nil && keyblock != nil && mb != nil {
-			if bestCandi != nil {
-				extra = bestCandi.EncodeToBytes()
-			}
-			data, err := s.txService.tryProposalNewKeyBlock(keyblock)
-			if err != nil {
-				log.Warn("tryProposalNewKeyBlock", "error", err)
-				if fixedMode {
-					s.abortFixedModeKeyProposal("assemble failed", err)
-				}
-				return err, nil, nil, nil
-			}
-			proposeOK = true
-			return nil, nil, data, extra
-		} else {
-			log.Error("tryProposalChangeCommittee failed", "error", err)
-			if fixedMode {
-				s.abortFixedModeKeyProposal("change committee failed", err)
-			}
-			return fmt.Errorf("tryProposalChangeCommittee failed"), nil, nil, nil
-		}
-	}
-	blockType := s.chooseTxBlockType()
-	data, err := s.txService.tryProposalNewBlock(blockType)
-	if err != nil {
-		fallbackType := uint8(types.FastTx_Block)
-		if blockType == types.FastTx_Block {
-			fallbackType = types.SlowTx_Block
-		}
-		log.Warn("Primary tx block proposal failed, trying fallback lane",
-			"primary", readableTxBlockType(blockType),
-			"fallback", readableTxBlockType(fallbackType),
-			"err", err)
-		data, err = s.txService.tryProposalNewBlock(fallbackType)
-		if err == nil {
-			blockType = fallbackType
-		}
-	}
-	if err != nil {
-		log.Warn("tryProposalNewBlock", "error", err)
-		return err, nil, nil, nil
-	}
-	now := time.Now()
-	if blockType == types.SlowTx_Block {
-		s.lastSlowBlockTime = now
-	} else if blockType == types.FastTx_Block {
-		s.lastFastBlockTime = now
-	}
-	proposeOK = true
-	return nil, nil, data, nil
+func (s *Service) lifecycleGenerationActiveLocked(generation uint64) bool {
+	return generation != 0 && atomic.LoadUint64(&s.lifecycleGeneration) == generation && atomic.LoadInt32(&s.runningState) == 1
 }
 
-func (s *Service) shouldRetryFailedProposal(now time.Time) bool {
+func (s *Service) lifecycleGenerationActive(generation uint64) bool {
+	if s == nil {
+		return false
+	}
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+	return s.lifecycleGenerationActiveLocked(generation)
+}
+
+func (s *Service) fairHotstuffEnabled() bool {
+	return s.chainConfig != nil && s.chainConfig.FairHotstuff
+}
+
+func (s *Service) handleHotstuffPoolMaintenance(now time.Time) {
+	if s.proposalNoWorkUnchanged(now) {
+		return
+	}
+	fastPending, slowPending := s.lanePendingCounts()
 	pendingTotal := 0
 	if s.txPool != nil {
 		pendingTotal, _ = s.txPool.Stats()
 	}
-	if pendingTotal > 0 {
-		return true
-	}
-
-	return s.fixedModeCandidateRewardReady(now)
-}
-
-func (s *Service) abortFixedModeKeyProposal(reason string, err error) {
-	s.muCurrentView.Lock()
-	defer s.muCurrentView.Unlock()
-
-	if s.keyService == nil || !s.keyService.fixedModeEnabled() || s.currentView.NoDone {
+	candidateRewardReady := s.fixedModeCandidateRewardReady(now)
+	if s.fixedModeKeyblockIntervalElapsed(now) {
+		s.wakeFixedModeKeyblock(now, "hotstuff-maintenance", candidateRewardReady, pendingTotal, fastPending, slowPending)
 		return
 	}
-	log.Warn("fixed-mode keyblock proposal aborted; returning to tx proposal view",
-		"reason", reason,
-		"err", err,
-		"txNumber", s.currentView.TxNumber,
-		"keyNumber", s.currentView.KeyNumber,
-		"leaderIndex", s.currentView.LeaderIndex)
-	s.currentView.NoDone = true
-	// A failed fixed-mode keyblock proposal should not leave the service waiting
-	// for a keyblock that was never committed. Reset the waiting watermark so the
-	// next successful tx/key block can advance the view normally.
-	s.waittingView.TxNumber = s.currentView.TxNumber
-	s.waittingView.KeyNumber = s.currentView.KeyNumber
-}
-
-func (s *Service) fixedModeKeyblockIntervalElapsed(now time.Time) bool {
-	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
-		return false
-	}
-	curKeyBlock := s.kbc.CurrentBlock()
-	if curKeyBlock == nil {
-		return false
-	}
-	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
-	return now.Sub(lastKeyTime) >= params.KeyBlockMinInterval
-}
-
-func (s *Service) fixedModeCandidateRewardReady(now time.Time) bool {
-	if s.keyService == nil || !s.keyService.fixedModeEnabled() {
-		return false
-	}
-	curKeyBlock := s.kbc.CurrentBlock()
-	if curKeyBlock == nil {
-		return false
-	}
-
-	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
-	elapsed := now.Sub(lastKeyTime)
-	if elapsed < params.KeyBlockMinInterval {
-		return false
-	}
-
-	return s.getBestCandidate(true) != nil
-}
-
-func (s *Service) repairFixedModeKeyblockViewIfStale(now time.Time, pendingTotal, fastPending, slowPending int) bool {
-	if s.keyService == nil || !s.keyService.fixedModeEnabled() || bftview.IamMember() < 0 {
-		return false
-	}
-	curKeyBlock := s.kbc.CurrentBlock()
-	if curKeyBlock == nil {
-		return false
-	}
-
-	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
-	overdue := now.Sub(lastKeyTime) - params.KeyBlockMinInterval
-	if overdue < fixedModeKeyblockStaleTimeout {
-		return false
-	}
-	if !s.lastFixedKeyWatchdogAt.IsZero() && now.Sub(s.lastFixedKeyWatchdogAt) < fixedModeKeyblockWatchdogInterval {
-		return false
-	}
-
-	leaderSilentFor := now.Sub(s.LeaderAckTime())
-	progressSilentFor := now.Sub(s.HotstuffProgressTime())
-	if leaderSilentFor > params.AckTimeout {
-		s.lastFixedKeyWatchdogAt = now
-		log.Warn("fixed-mode keyblock stale but leader ack is silent; waiting for fallback",
-			"currentBlock", s.bc.CurrentBlockN(),
-			"currentKey", s.kbc.CurrentBlockN(),
-			"overdue", overdue,
-			"leaderSilentFor", leaderSilentFor,
-			"progressSilentFor", progressSilentFor)
-		return false
-	}
-	if progressSilentFor < fixedModeKeyblockStaleTimeout {
-		return false
-	}
-
-	s.lastFixedKeyWatchdogAt = now
-	oldView := s.GetCurrentView()
-	s.setNextLeader(true)
-	curView := s.GetCurrentView()
-	recovered := s.protocolMng.RecoverStaleViews(s.bc.CurrentBlockN(), fixedModeKeyblockStaleTimeout)
-
-	log.Warn("fixed-mode keyblock stale watchdog triggered",
-		"currentBlock", s.bc.CurrentBlockN(),
-		"currentKey", s.kbc.CurrentBlockN(),
-		"overdue", overdue,
-		"leaderSilentFor", leaderSilentFor,
-		"progressSilentFor", progressSilentFor,
-		"oldLeaderIndex", oldView.LeaderIndex,
-		"oldNoDone", oldView.NoDone,
-		"leaderIndex", curView.LeaderIndex,
-		"noDone", curView.NoDone,
-		"isLeader", bftview.IamLeader(curView.LeaderIndex),
-		"hotstuffRecovered", recovered,
-		"pendingTotal", pendingTotal,
-		"fastPending", fastPending,
-		"slowPending", slowPending)
-
-	s.sendNewViewMsg(s.bc.CurrentBlockN())
-	return recovered
-}
-
-func (s *Service) repairFixedModeTxProposalViewIfPending(pendingTotal int) bool {
-	if pendingTotal <= 0 || s.keyService == nil || !s.keyService.fixedModeEnabled() {
-		return false
-	}
-	curKeyBlock := s.kbc.CurrentBlock()
-	if curKeyBlock == nil {
-		return false
-	}
-
-	now := time.Now()
-	lastKeyTime := time.Unix(int64(curKeyBlock.Time()), 0)
-	elapsed := now.Sub(lastKeyTime)
-
-	// If keyblock interval has elapsed, do not interfere with normal keyblock proposal.
-	if elapsed >= params.KeyBlockMinInterval {
-		return false
-	}
-
-	// Do not repair immediately after a tx block proposal was generated.
-	// The proposal may still be in HotStuff consensus. Touching currentView /
-	// waittingView while a tx block is in-flight can make the next view wait
-	// for the wrong watermark.
-	lastTxProposal := s.lastFastBlockTime
-	if s.lastSlowBlockTime.After(lastTxProposal) {
-		lastTxProposal = s.lastSlowBlockTime
-	}
-	if !lastTxProposal.IsZero() && now.Sub(lastTxProposal) < 2*time.Second {
-		s.muCurrentView.Lock()
-		txNumber := s.currentView.TxNumber
-		keyNumber := s.currentView.KeyNumber
-		leaderIndex := s.currentView.LeaderIndex
-		noDone := s.currentView.NoDone
-		s.muCurrentView.Unlock()
-
-		log.Debug("skip fixed-mode tx proposal view repair; recent tx proposal in flight",
-			"pendingTotal", pendingTotal,
-			"sinceLastTxProposal", now.Sub(lastTxProposal),
-			"elapsed", elapsed,
-			"minimum", params.KeyBlockMinInterval,
-			"txNumber", txNumber,
-			"keyNumber", keyNumber,
-			"leaderIndex", leaderIndex,
-			"noDone", noDone)
-
-		return false
-	}
-
-	s.muCurrentView.Lock()
-	defer s.muCurrentView.Unlock()
-
-	if !s.currentView.NoDone {
-		leaderIndex := s.keyService.getPrimaryLeaderIndex()
-		if mb := bftview.GetCurrentMember(); mb != nil && len(mb.List) > 0 && leaderIndex >= uint(len(mb.List)) {
-			leaderIndex = 0
-		}
-
-		log.Warn("fixed-mode pending txs while keyblock interval not elapsed; forcing tx proposal view",
-			"pendingTotal", pendingTotal,
-			"elapsed", elapsed,
-			"minimum", params.KeyBlockMinInterval,
-			"txNumber", s.currentView.TxNumber,
-			"keyNumber", s.currentView.KeyNumber,
-			"oldLeaderIndex", s.currentView.LeaderIndex,
-			"newLeaderIndex", leaderIndex)
-
-		s.currentView.NoDone = true
-		s.currentView.LeaderIndex = leaderIndex
-		s.waittingView.TxNumber = s.currentView.TxNumber
-		s.waittingView.KeyNumber = s.currentView.KeyNumber
-	}
-	return s.currentView.NoDone
-}
-
-func (s *Service) triggerTryPropose(lastN uint64) {
-	if atomic.LoadInt32(&s.runningState) != 1 {
+	s.repairFixedModeTxProposalViewIfPending(pendingTotal)
+	if !bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
 		return
 	}
-	now := time.Now().UnixNano()
-	prev := atomic.LoadInt64(&s.tryProposeQueuedAt)
-	if prev != 0 && time.Duration(now-prev) < tryProposeDebounce {
+	cadenceReady := candidateRewardReady || pendingTotal > 0 ||
+		(fastPending > 0 && s.shouldEmitFastBlock(now)) ||
+		(slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending))
+	if !cadenceReady || (!s.lastCadenceWakeup.IsZero() && now.Sub(s.lastCadenceWakeup) < 50*time.Millisecond) {
 		return
 	}
-	atomic.StoreInt64(&s.tryProposeQueuedAt, now)
-	s.hotstuffMsgQ.PushBack(&hotstuffMsg{
-		sid:   nil,
-		lastN: lastN,
-		hMsg:  &hotstuff.HotstuffMessage{Code: hotstuff.MsgTryPropose},
-	})
-}
-
-func readableTxBlockType(blockType uint8) string {
-	switch blockType {
-	case types.FastTx_Block:
-		return "fast"
-	case types.SlowTx_Block:
-		return "slow"
-	case types.Key_Block:
-		return "key"
-	default:
-		return "unknown"
-	}
-}
-
-func (s *Service) shouldEmitFastBlock(now time.Time) bool {
-	if s.lastFastBlockTime.IsZero() {
-		return true
-	}
-	return now.Sub(s.lastFastBlockTime) >= fastBlockInterval
-}
-
-func adaptiveSlowBlockInterval(slowPending int) time.Duration {
-	switch {
-	case slowPending >= slowIntervalEmergencyPendingThreshold:
-		return slowBlockEmergencyDrainInterval
-	case slowPending >= slowIntervalStrongPendingThreshold:
-		return slowBlockStrongDrainInterval
-	case slowPending >= slowIntervalDrainPendingThreshold:
-		return slowBlockDrainInterval
-	default:
-		return slowBlockInterval
-	}
-}
-
-func (s *Service) shouldEmitSlowBlock(now time.Time, slowPending int) bool {
-	if s.lastSlowBlockTime.IsZero() {
-		return true
-	}
-	return now.Sub(s.lastSlowBlockTime) >= adaptiveSlowBlockInterval(slowPending)
-}
-
-func (s *Service) lanePendingCounts() (fastPending int, slowPending int) {
-	if s.txPool == nil {
-		return 0, 0
-	}
-	fastPending, slowPending, _ = s.txPool.PendingClassStats()
-	return fastPending, slowPending
-}
-
-func slowLanePressureHigh(fastPending int, slowPending int) bool {
-	if slowPending < slowPressureMinPending {
-		return false
-	}
-	if fastPending <= 0 {
-		return true
-	}
-	return slowPending >= fastPending*slowPressureRatio
-}
-
-func slowLaneEmergency(slowPending int) bool {
-	return slowPending >= slowEmergencyForcePending
-}
-
-func (s *Service) chooseTxBlockType() uint8 {
-	fastPending, slowPending := s.lanePendingCounts()
-	now := time.Now()
-
-	fastReady := fastPending > 0 && s.shouldEmitFastBlock(now)
-	slowReady := slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending)
-
-	// Emergency slow backlog:
-	// Do not allow fast lane to keep stealing proposal opportunities.
-	// This still creates normal SlowTx_Block, so block verification compatibility is kept.
-	if slowLaneEmergency(slowPending) {
-		return types.SlowTx_Block
-	}
-
-	// Strong slow pressure:
-	// Prefer slow if its adaptive interval is ready.
-	if slowLanePressureHigh(fastPending, slowPending) && slowReady {
-		return types.SlowTx_Block
-	}
-
-	// Normal cadence.
-	switch {
-	case fastReady:
-		return types.FastTx_Block
-	case slowReady:
-		return types.SlowTx_Block
-	case fastPending > 0 && !slowLanePressureHigh(fastPending, slowPending):
-		return types.FastTx_Block
-	case slowPending >= slowFallbackMinPending:
-		return types.SlowTx_Block
-	default:
-		return types.FastTx_Block
-	}
-}
-
-// OnViewDone call by hotstuff
-func (s *Service) OnViewDone(tSign *hotstuff.SignedState) error {
-	if !s.isRunning() {
-		return types.ErrNotRunning
-	}
-	if tSign == nil {
-		log.Warn("OnViewDone nil!")
-		return nil
-	}
-	block := types.DecodeToBlock(tSign.State)
-	err := s.txService.decideNewBlock(block, tSign.Sign, tSign.Mask, tSign.ViewID, tSign.LeaderID)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// Write call by hotstuff------------------------------------------------------------------------------------------------
-func (s *Service) Write(id string, data *hotstuff.HotstuffMessage) error {
-	log.Info("Write", "to id", id, "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
-
-	if id == s.Self() {
-		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, hMsg: data})
-		return nil
-	}
-
-	mb := bftview.GetCurrentMember()
-	if mb == nil {
-		return fmt.Errorf("can't find current committee,id %s", id)
-	}
-	node, _ := mb.Get(id, bftview.ID)
-	if node == nil || len(node.Address) < 7 { //1.1.1.1
-		err := fmt.Errorf("can't find id %s in current committee", id)
-		log.Error("Couldn't send", "err", err)
-		return err
-	}
-
-	s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data})
-	return nil
-}
-
-// Broadcast call by hotstuff
-func (s *Service) Broadcast(data *hotstuff.HotstuffMessage) []error {
-	log.Debug("Broadcast", "code", hotstuff.ReadableMsgType(data.Code), "ViewId", data.ViewId)
-	s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, hMsg: data})
-	/*
-		mb := bftview.GetCurrentMember()
-		if mb == nil {
-			return []error{fmt.Errorf("can't find current committee")}
-		}
-		for _, node := range mb.List {
-			if IsSelf(node.Address) {
-				continue
-			}
-			s.netService.SendRawData(node.Address, &networkMsg{Hmsg: data})
-		}
-	*/
-	s.netService.broadcast("", &networkMsg{Hmsg: data})
-	return nil //return arr
-}
-
-func (s *Service) networkMsgAck(si *network.ServerIdentity, msg *networkMsg) {
-	if msg.Hmsg != nil {
-		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: si, hMsg: msg.Hmsg})
+	s.lastCadenceWakeup = now
+	// FHS new-view activation schedules the first proposal directly. Run this
+	// side-effect-free canonical snapshot check only after cadence admits a
+	// retry, and account for the attempt above even when the view is stale.
+	if s.fairHotstuffEnabled() && (s.protocolMng == nil || !s.protocolMng.CanTryPropose()) {
 		return
 	}
-	s.feed1.Send(committeeMsg{sid: si, cinfo: msg.Cmsg, best: msg.Bmsg})
+	if pendingTotal > 0 && fastPending == 0 && slowPending == 0 {
+		log.Warn("tx proposal liveness fallback wakeup",
+			"pendingTotal", pendingTotal, "fastPending", fastPending, "slowPending", slowPending, "currentBlock", s.bc.CurrentBlockN())
+	}
+	if candidateRewardReady && pendingTotal == 0 {
+		log.Warn("fixed-mode candidate reward new-view wakeup",
+			"currentBlock", s.bc.CurrentBlockN(), "currentKey", s.kbc.CurrentBlockN(),
+			"pendingTotal", pendingTotal, "fastPending", fastPending, "slowPending", slowPending)
+	} else if candidateRewardReady {
+		log.Warn("fixed-mode candidate reward delayed because txpool has pending txs",
+			"currentBlock", s.bc.CurrentBlockN(), "currentKey", s.kbc.CurrentBlockN(),
+			"pendingTotal", pendingTotal, "fastPending", fastPending, "slowPending", slowPending)
+	}
+	s.triggerTryPropose(s.bc.CurrentBlockN())
 }
 
 func (s *Service) handleHotStuffMsg() {
+	poolTicker := time.NewTicker(25 * time.Millisecond)
+	defer poolTicker.Stop()
+	timerTicker := time.NewTicker(10 * time.Millisecond)
+	defer timerTicker.Stop()
+
 	for {
-		data := s.hotstuffMsgQ.PopFront()
-		if data == nil {
-			time.Sleep(hotstuffIdleSleep)
-			now := time.Now()
-
-			fastPending, slowPending := s.lanePendingCounts()
-			pendingTotal := 0
-			if s.txPool != nil {
-				pendingTotal, _ = s.txPool.Stats()
-			}
-			candidateRewardReady := s.fixedModeCandidateRewardReady(now)
-			keyblockIntervalElapsed := s.fixedModeKeyblockIntervalElapsed(now)
-
-			// Fixed-mode keyblock liveness:
-			// This must run on every committee member, not only the leader.
-			// Every member must first switch to the same keyblock view (NoDone=false)
-			// before sending MsgNewView. If only the leader flips NoDone, replicas vote
-			// for a different view hash and the leader never reaches the new-view quorum.
-			if keyblockIntervalElapsed {
-				s.repairFixedModeKeyblockViewIfStale(now, pendingTotal, fastPending, slowPending)
-
-				if s.lastFixedKeyNewViewWakeup.IsZero() || now.Sub(s.lastFixedKeyNewViewWakeup) >= 2*time.Second {
-					s.lastFixedKeyNewViewWakeup = now
-					oldView := s.GetCurrentView()
-					s.setNextLeader(true)
-					curView := s.GetCurrentView()
-					log.Warn("fixed-mode keyblock start-new-view wakeup",
-						"currentBlock", s.bc.CurrentBlockN(),
-						"currentKey", s.kbc.CurrentBlockN(),
-						"oldLeaderIndex", oldView.LeaderIndex,
-						"oldNoDone", oldView.NoDone,
-						"leaderIndex", curView.LeaderIndex,
-						"noDone", curView.NoDone,
-						"isLeader", bftview.IamLeader(curView.LeaderIndex),
-						"candidateReady", candidateRewardReady,
-						"pendingTotal", pendingTotal,
-						"fastPending", fastPending,
-						"slowPending", slowPending)
-					s.sendNewViewMsg(s.bc.CurrentBlockN())
-				}
-
-				// Keyblock interval has priority over tx/candidate liveness wakeups.
-				// Let MsgStartNewView drive HotStuff to PhaseTryPropose instead of
-				// enqueueing MsgTryPropose against a stale or nil leader view.
-				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+		// Only this loop owns the protocol manager. Sync callbacks merely record
+		// a request while chainmu is held; the 10 ms ticker also retries it when
+		// no other messages arrive.
+		s.processFHSSyncResume()
+		var data *hotstuffMsg
+		select {
+		case result := <-s.proposalBuildResults:
+			if atomic.LoadInt32(&s.runningState) != 1 || s.hasDeferredFHSRecovery() {
+				s.finishProposalBuild(result.Key)
 				continue
 			}
-
-			// Fixed-mode liveness repair must run before IamLeader check.
-			// If currentView is stuck in keyblock-wait state, IamLeader may be false
-			// or tx proposal may be suppressed until the next 10-minute keyblock.
-			if pendingTotal > 0 && s.keyService != nil && s.keyService.fixedModeEnabled() {
-				txProposalViewReady := s.repairFixedModeTxProposalViewIfPending(pendingTotal)
-				if txProposalViewReady && (s.lastFixedTxNewViewWakeup.IsZero() || now.Sub(s.lastFixedTxNewViewWakeup) >= startNewViewDedupWindow) {
-					s.lastFixedTxNewViewWakeup = now
-					curView := s.GetCurrentView()
-					recovered := s.protocolMng.RecoverStaleViews(s.bc.CurrentBlockN(), fixedModeTxProposalStaleTimeout)
-					log.Warn("fixed-mode tx start-new-view wakeup",
-						"currentBlock", s.bc.CurrentBlockN(),
-						"currentKey", s.kbc.CurrentBlockN(),
-						"pendingTotal", pendingTotal,
-						"fastPending", fastPending,
-						"slowPending", slowPending,
-						"leaderIndex", curView.LeaderIndex,
-						"noDone", curView.NoDone,
-						"isLeader", bftview.IamLeader(curView.LeaderIndex),
-						"hotstuffRecovered", recovered)
-					s.sendNewViewMsg(s.bc.CurrentBlockN())
-				}
-
-				// Let MsgStartNewView collect quorum and move the leader view to
-				// PhaseTryPropose. Direct MsgTryPropose can hit a PhasePrepare
-				// leader view and loop until pending transactions become stale.
-				s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+			err := s.protocolMng.HandleFHSProposalBuildResult(result)
+			output, _ := result.ApplicationData.(*proposalBuildOutput)
+			if errors.Is(err, errProposalNoWork) && output != nil {
+				s.rememberProposalNoWork(output.workStamp, output.workStampValid)
+			} else if !errors.Is(err, hotstuff.ErrOldState) {
+				// Success and real failures both remain immediately actionable. Only
+				// an accepted no-work result may quiesce this exact input generation.
+				s.clearProposalNoWork()
+			}
+			if err != hotstuff.ErrOldState && result.Err != nil && output != nil && output.fixedMode && output.keyProposalAttempt {
+				s.abortFixedModeKeyProposal("asynchronous proposal construction failed", result.Err)
+			}
+			s.finishProposalBuild(result.Key)
+			if shouldRetryFHSProposalBuild(err) {
+				log.Warn("FHS proposal construction completion rejected",
+					"view", result.Key.ViewNumber, "viewID", result.Key.ViewID, "err", err)
+				s.scheduleProposalBuildRetry(result.Key)
+			}
+			continue
+		case result := <-s.proposalValidationResults:
+			if atomic.LoadInt32(&s.runningState) != 1 || s.hasDeferredFHSRecovery() {
+				s.finishProposalValidation(result.Key)
 				continue
 			}
-
-			if bftview.IamLeader(s.GetCurrentView().LeaderIndex) {
-				cadenceReady := false
-
-				if candidateRewardReady {
-					// Candidate-only liveness:
-					// If txpool is empty but a common-miner PoW candidate is ready
-					// after KeyBlockMinInterval, wake keyblock proposal.
-					cadenceReady = true
-				} else if pendingTotal > 0 {
-					// Strong liveness fallback:
-					// If txpool has pending txs, always wake proposal periodically.
-					cadenceReady = true
-
-					if fastPending == 0 && slowPending == 0 {
-						log.Warn("tx proposal liveness fallback wakeup",
-							"pendingTotal", pendingTotal,
-							"fastPending", fastPending,
-							"slowPending", slowPending,
-							"currentBlock", s.bc.CurrentBlockN())
-					}
+			err := s.protocolMng.HandleFHSProposalValidationResult(result)
+			s.finishProposalValidation(result.Key)
+			s.cancelInactiveProposalValidations(s.GetCurrentView().ViewNumber + 1)
+			if err == nil {
+				s.observeHotstuffProgress(&hotstuff.HotstuffMessage{
+					Code: hotstuff.MsgPrepare, Number: result.Key.ViewNumber, ViewId: result.Key.ViewID, Id: result.Key.LeaderID,
+				})
+			} else if err != hotstuff.ErrOldState {
+				log.Warn("FHS proposal validation completion rejected",
+					"view", result.Key.ViewNumber, "viewID", result.Key.ViewID,
+					"proposalID", result.Key.ProposalID, "err", err)
+			}
+			continue
+		case result := <-s.highQCValidationResults:
+			recovering := s.hasDeferredFHSRecovery()
+			if atomic.LoadInt32(&s.runningState) != 1 {
+				s.finishHighQCValidation(result.Key)
+				continue
+			}
+			err := s.protocolMng.HandleFHSHighQCValidationResult(result)
+			s.finishHighQCValidation(result.Key)
+			s.cancelInactiveProposalValidations(s.GetCurrentView().ViewNumber + 1)
+			if err != nil && err != hotstuff.ErrOldState && err != hotstuff.ErrProposalValidationPending && err != hotstuff.ErrInsufficientQC {
+				log.Warn("FHS HighQC validation completion rejected",
+					"targetView", result.Key.TargetView, "qcID", result.Key.QCID, "err", err)
+			}
+			if recovering {
+				if s.hasDeferredFHSRecovery() {
+					s.retryDeferredFHSRecovery()
 				} else {
-					cadenceReady = (fastPending > 0 && s.shouldEmitFastBlock(now)) ||
-						(slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending))
-				}
-
-				if cadenceReady {
-					if s.lastCadenceWakeup.IsZero() || now.Sub(s.lastCadenceWakeup) >= 50*time.Millisecond {
-						s.lastCadenceWakeup = now
-						if candidateRewardReady && pendingTotal == 0 {
-							log.Warn("fixed-mode candidate reward new-view wakeup",
-								"currentBlock", s.bc.CurrentBlockN(),
-								"currentKey", s.kbc.CurrentBlockN(),
-								"pendingTotal", pendingTotal,
-								"fastPending", fastPending,
-								"slowPending", slowPending)
-							s.triggerTryPropose(s.bc.CurrentBlockN())
-						} else {
-							if candidateRewardReady && pendingTotal > 0 {
-								log.Warn("fixed-mode candidate reward delayed because txpool has pending txs",
-									"currentBlock", s.bc.CurrentBlockN(),
-									"currentKey", s.kbc.CurrentBlockN(),
-									"pendingTotal", pendingTotal,
-									"fastPending", fastPending,
-									"slowPending", slowPending)
-							}
-							s.triggerTryPropose(s.bc.CurrentBlockN())
-						}
-					}
+					s.resumeAfterDeferredFHSRecovery()
 				}
 			}
-			s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.bc.CurrentBlockN()})
+			continue
+		case <-s.fhsRecoveryWake:
+			s.attemptDeferredFHSRecovery()
+			continue
+		case data = <-s.hotstuffMsgQ.next:
+		case now := <-poolTicker.C:
+			if atomic.LoadInt32(&s.runningState) == 1 && !s.hasDeferredFHSRecovery() {
+				s.handleHotstuffPoolMaintenance(now)
+			}
+			continue
+		case <-timerTicker.C:
+			if atomic.LoadInt32(&s.runningState) == 1 && !s.hasDeferredFHSRecovery() {
+				if err := s.protocolMng.HandleMessage(&hotstuff.HotstuffMessage{Code: hotstuff.MsgTimer, Number: s.currentHotstuffBaseNumber()}); err != nil {
+					log.Warn("HotStuff recovery retry failed", "err", err)
+				}
+			}
 			continue
 		}
-		msg := data.(*hotstuffMsg)
+		msg := data
 		if msg == nil || msg.hMsg == nil {
 			log.Warn("handleHotStuffMsg received nil message")
 			continue
 		}
 		msgCode := msg.hMsg.Code
-		s.observeHotstuffProgress(msg.hMsg)
 		if msgCode == hotstuff.MsgTryPropose {
-			atomic.StoreInt64(&s.tryProposeQueuedAt, 0)
+			atomic.StoreInt32(&s.tryProposeQueued, 0)
+		}
+		if atomic.LoadInt32(&s.runningState) != 1 {
+			continue
+		}
+		if s.hasDeferredFHSRecovery() {
+			continue
+		}
+		if err := s.validateHotstuffTransportSender(msg.sid, msg.hMsg); err != nil {
+			log.Warn("drop hotstuff message after transport revalidation", "from", msg.hMsg.Id, "code", hotstuff.ReadableMsgType(msgCode), "err", err)
+			continue
 		}
 		log.Debug("handleHotStuffMsg", "id", msg.hMsg.Id, "code", hotstuff.ReadableMsgType(msgCode), "ViewId", msg.hMsg.ViewId)
 
 		var curN uint64
 		if msgCode == hotstuff.MsgTryPropose || msgCode == hotstuff.MsgStartNewView {
-			curN = s.bc.CurrentBlockN()
+			curN = s.currentHotstuffBaseNumber()
 			if msg.lastN < curN {
 				log.Debug("handleHotStuffMsg", "code", hotstuff.ReadableMsgType(msgCode), "lastN", msg.lastN, "curN", curN)
 				continue
@@ -1010,6 +474,21 @@ func (s *Service) handleHotStuffMsg() {
 		}
 
 		err := s.protocolMng.HandleMessage(msg.hMsg)
+		// Cleanup is deliberately based on the canonical view after full protocol
+		// verification. A transport-authenticated peer's raw Number is not proof
+		// that the view advanced and must never cancel a valid proposal worker.
+		s.cancelInactiveProposalValidations(s.GetCurrentView().ViewNumber + 1)
+		if err == nil || (err == hotstuff.ErrInsufficientQC && msgCode != hotstuff.MsgTimeout) {
+			s.observeHotstuffProgress(msg.hMsg)
+		}
+		if err != nil && err != hotstuff.ErrInsufficientQC && err != hotstuff.ErrUnhandledMsg && err != hotstuff.ErrOldState && err != hotstuff.ErrProposalValidationPending {
+			log.Warn("HotStuff message rejected",
+				"from", msg.hMsg.Id,
+				"code", hotstuff.ReadableMsgType(msgCode),
+				"number", msg.hMsg.Number,
+				"viewID", msg.hMsg.ViewId,
+				"err", err)
+		}
 		if err != nil && msgCode == hotstuff.MsgStartNewView {
 			go func(curN uint64) {
 				time.Sleep(failedProposalRetry)
@@ -1019,343 +498,19 @@ func (s *Service) handleHotStuffMsg() {
 	}
 }
 
-func (s *Service) observeHotstuffProgress(msg *hotstuff.HotstuffMessage) {
-	if msg == nil {
-		return
-	}
-	rank := uint8(0)
-	switch msg.Code {
-	case hotstuff.MsgPrepare:
-		rank = 1
-	case hotstuff.MsgDecide:
-		rank = 2
-	default:
-		return
-	}
-
-	s.muHotstuffProgress.Lock()
-	defer s.muHotstuffProgress.Unlock()
-	viewCompare := bytes.Compare(msg.ViewId[:], s.lastProgressViewID[:])
-	if msg.Number > s.lastProgressN ||
-		(msg.Number == s.lastProgressN && viewCompare > 0) ||
-		(msg.Number == s.lastProgressN && viewCompare == 0 && rank > s.lastProgressRank) {
-		s.lastProgressN = msg.Number
-		s.lastProgressViewID = msg.ViewId
-		s.lastProgressRank = rank
-		s.hotstuffProgressAt = time.Now()
-	}
-}
-
-func (s *Service) HotstuffProgressTime() time.Time {
-	s.muHotstuffProgress.Lock()
-	defer s.muHotstuffProgress.Unlock()
-	return s.hotstuffProgressAt
-}
-
-// -------------------------------------------------------------------------------------------------------------------------
-func (s *Service) syncCommittee(mb *bftview.Committee, keyblock *types.KeyBlock) {
-	if !keyblock.HasNewNode() {
-		return
-	}
-
-	in := mb.In()
-	s.netService.SendRawData(in.Address, &networkMsg{Cmsg: &committeeInfo{Committee: mb, KeyHash: keyblock.Hash(), KeyNumber: keyblock.NumberU64()}})
-
-	msg := &bestCandidateInfo{Node: in, KeyHash: keyblock.Hash(), KeyNumber: keyblock.NumberU64()}
-	//s.netService.broadcast("", &networkMsg{Bmsg: msg})
-	for i, r := range mb.List {
-		if i == 0 || IsSelf(r.Address) {
-			continue
-		}
-		log.Debug("syncBestCandidate", "send to", r.Address)
-		s.netService.SendRawData(r.Address, &networkMsg{Bmsg: msg})
-	}
-}
-
-func (s *Service) storeCommitteeInCache(cmInfo *committeeInfo, best *bestCandidateInfo) {
-	s.muCommitteeInfo.Lock()
-	defer s.muCommitteeInfo.Unlock()
-	var (
-		keyHash   common.Hash
-		keyNumber uint64
-		committee *bftview.Committee
-		node      *common.Cnode
-	)
-	if cmInfo != nil {
-		keyHash = cmInfo.KeyHash
-		keyNumber = cmInfo.KeyNumber
-		committee = cmInfo.Committee
-	} else if best != nil {
-		keyHash = best.KeyHash
-		keyNumber = best.KeyNumber
-		node = best.Node
-	}
-
-	ac, ok := s.lastCmInfoMap[keyHash]
-	if ok {
-		if cmInfo != nil {
-			ac.committee = cmInfo.Committee
-		}
-		if best != nil {
-			ac.node = best.Node
-		}
-		return
-	}
-	//clear prev map
-	maxNumber := s.kbc.CurrentBlockN()
-	for hash, ac := range s.lastCmInfoMap {
-		if ac.keyNumber < maxNumber-9 {
-			delete(s.lastCmInfoMap, hash)
-		}
-	}
-	log.Info("@@storeCommitteeInCache", "key number", keyNumber)
-
-	s.lastCmInfoMap[keyHash] = &cachedCommitteeInfo{keyHash: keyHash, keyNumber: keyNumber, committee: committee, node: node}
-}
-
-// handle committee sync message
-func (s *Service) handleCommitteeMsg() {
-	for {
-		select {
-		case msg := <-s.msgCh1:
-			if msg.best != nil {
-				if bftview.LoadMember(msg.best.KeyNumber, msg.best.KeyHash, true) != nil {
-					continue
-				}
-				log.Info("bestCandidate", "best KeyNumber", msg.best.KeyNumber)
-				s.storeCommitteeInCache(nil, msg.best)
-				continue
-			}
-			cInfo := msg.cinfo
-			if cInfo == nil {
-				continue
-			}
-			if cInfo.Committee == nil {
-				mb := bftview.LoadMember(cInfo.KeyNumber, cInfo.KeyHash, true)
-				if mb == nil {
-					continue
-				}
-				msgAddress := msg.sid.Address.String()
-				log.Debug("committeeInfo answer", "number", cInfo.KeyNumber, "adddress", msgAddress)
-				r, _ := mb.Get(msgAddress, bftview.Address)
-				if r != nil {
-					log.Debug("committeeInfo answer..ok", "number", cInfo.KeyNumber)
-					s.netService.SendRawData(msgAddress, &networkMsg{Cmsg: &committeeInfo{Committee: mb, KeyHash: cInfo.KeyHash, KeyNumber: cInfo.KeyNumber}})
-				}
-				continue
-			}
-
-			if bftview.LoadMember(cInfo.KeyNumber, cInfo.KeyHash, true) != nil {
-				continue
-			}
-			log.Debug("committeeInfo", "number", cInfo.KeyNumber, "adddress", msg.sid.Address)
-			keyblock := s.kbc.GetBlock(cInfo.KeyHash, cInfo.KeyNumber)
-			if keyblock != nil {
-				cInfo.Committee.Store(keyblock)
-			} else {
-				s.storeCommitteeInCache(cInfo, nil)
-			}
-
-		case <-s.msgSub1.Err():
-			log.Error("handleHotStuffMsg Feed error")
-			return
-		}
-	}
-}
-
-// Save committee by keyblock
-func (s *Service) saveCommittee(curKeyBlock *types.KeyBlock) {
-	mb := bftview.LoadMember(curKeyBlock.NumberU64(), curKeyBlock.Hash(), false)
-	if mb != nil {
-		return
-	}
-
-	var newNode *common.Cnode
-	if curKeyBlock.BlockType() == types.PowReconfig || curKeyBlock.BlockType() == types.PacePowReconfig {
-		newNode = &common.Cnode{
-			CoinBase: curKeyBlock.InAddress(),
-			Public:   curKeyBlock.InPubKey(),
-		}
-	}
-
-	mb, _ = bftview.GetCommittee(newNode, curKeyBlock, false)
-	mb.StoreWithoutCallback(curKeyBlock)
-}
-
-// Update committee by keyblock
-func (s *Service) updateCommittee(keyBlock *types.KeyBlock) bool {
-	bStore := false
-	curKeyBlock := keyBlock
-	if bftview.IamMember() < 0 {
-		return false
-	}
-	if curKeyBlock == nil {
-		curKeyBlock = s.kbc.CurrentBlock()
-	}
-	mb := bftview.LoadMember(curKeyBlock.NumberU64(), curKeyBlock.Hash(), true)
-	if mb != nil {
-		return bStore
-	}
-
-	s.muCommitteeInfo.Lock()
-	ac, ok := s.lastCmInfoMap[curKeyBlock.Hash()]
-	if ok {
-		if ac.committee != nil {
-			mb = ac.committee
-		} else if ac.node != nil {
-			mb, _ = bftview.GetCommittee(ac.node, curKeyBlock, true)
-		}
-	}
-	s.muCommitteeInfo.Unlock()
-
-	if mb == nil && !curKeyBlock.HasNewNode() {
-		mb, _ = bftview.GetCommittee(nil, curKeyBlock, true)
-	}
-
-	if mb != nil {
-		bStore = mb.Store(curKeyBlock)
-	} else {
-		log.Info("updateCommittee can't found committee", "txNumber", s.bc.CurrentBlockN(), "keyNumber", curKeyBlock.NumberU64())
-	}
-	return bStore
-}
-
-func (s *Service) Committee_OnStored(keyblock *types.KeyBlock, mb *bftview.Committee) {
-	log.Debug("store committee", "keyNumber", keyblock.NumberU64(), "ip0", mb.List[0].Address, "ipn", mb.List[len(mb.List)-1].Address)
-	if keyblock.HasNewNode() && keyblock.NumberU64() == s.kbc.CurrentBlockN() {
-		s.netService.AdjustConnect(keyblock.OutAddress(1))
-	}
-}
-
-// Request committee for keyblock
-func (s *Service) Committee_Request(kNumber uint64, hash common.Hash) {
-	if kNumber <= s.lastReqCmNumber || !bftview.IamMemberByNumber(kNumber, hash) {
-		return
-	}
-
-	log.Debug("Committee_Request", "keynumber", kNumber)
-
-	var parentMb *bftview.Committee
-	for i := 1; i < 10; i++ {
-		keyblock := s.kbc.GetBlockByNumber(kNumber - uint64(i))
-		if keyblock == nil {
-			return
-		}
-		mb := bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true)
-		if mb != nil {
-			parentMb = mb
-			break
-		}
-	}
-	if parentMb == nil {
-		return
-	}
-
-	for _, node := range parentMb.List {
-		if IsSelf(node.Address) {
-			continue
-		}
-		s.netService.SendRawData(node.Address, &networkMsg{Cmsg: &committeeInfo{Committee: nil, KeyHash: hash, KeyNumber: kNumber}})
-	}
-	s.lastReqCmNumber = kNumber
-}
-
-// Update current view data
-func (s *Service) updateCurrentView(curBlock *types.Block, curKeyBlock *types.KeyBlock, fromKeyBlock bool) { //call by keyblock done
-	s.muCurrentView.Lock()
-	defer s.muCurrentView.Unlock()
-
-	if curBlock == nil {
-		curBlock = s.bc.CurrentBlock()
-	}
-	if curKeyBlock == nil {
-		curKeyBlock = s.kbc.CurrentBlock()
-	}
-
-	s.currentView.TxNumber = curBlock.NumberU64()
-	s.currentView.TxHash = curBlock.Hash()
-	s.currentView.KeyNumber = curKeyBlock.NumberU64()
-	s.currentView.KeyHash = curKeyBlock.Hash()
-	s.currentView.CommitteeHash = curKeyBlock.CommitteeHash()
-
-	if fromKeyBlock || curBlock.NumberU64() > curKeyBlock.T_Number() {
-		s.currentView.LeaderIndex = 0
-		s.currentView.NoDone = true
-	}
-	log.Debug("updateCurrentView", "TxNumber", s.currentView.TxNumber, "KeyNumber", s.currentView.KeyNumber, "LeaderIndex", s.currentView.LeaderIndex, "NoDone", s.currentView.NoDone)
-	if fromKeyBlock || (s.currentView.TxNumber >= s.waittingView.TxNumber && s.currentView.KeyNumber >= s.waittingView.KeyNumber) || curBlock.BlockType() == types.Key_Block {
-		s.sendNewViewMsg(s.currentView.TxNumber)
-		s.waittingView.KeyNumber = s.currentView.KeyNumber
-		s.waittingView.TxNumber = s.currentView.TxNumber
-	}
-}
-
-func (s *Service) GetCurrentView() *bftview.View {
-	s.muCurrentView.Lock()
-	defer s.muCurrentView.Unlock()
-	v := &s.currentView
-	return v
-}
-
-func (s *Service) getBestCandidate(refresh bool) *types.Candidate {
-	return s.keyService.getBestCandidate(refresh)
-}
-
-// Send new view when new block done
-func (s *Service) sendNewViewMsg(curN uint64) {
-	now := time.Now()
-
-	s.muStartNewView.Lock()
-	if curN == s.lastStartNewViewN && !s.lastStartNewViewAt.IsZero() && now.Sub(s.lastStartNewViewAt) < startNewViewDedupWindow {
-		s.muStartNewView.Unlock()
-		log.Debug("suppress duplicate start-new-view",
-			"curN", curN,
-			"since", now.Sub(s.lastStartNewViewAt))
-		return
-	}
-	s.lastStartNewViewN = curN
-	s.lastStartNewViewAt = now
-	s.muStartNewView.Unlock()
-
-	if bftview.IamMember() >= 0 && curN >= s.bc.CurrentBlockN() {
-		s.hotstuffMsgQ.PushBack(&hotstuffMsg{sid: nil, lastN: curN, hMsg: &hotstuff.HotstuffMessage{Code: hotstuff.MsgStartNewView, Number: curN}})
-	}
-}
-
-// Set next leader by prescribed rules
-func (s *Service) setNextLeader(isDone bool) {
-	s.muCurrentView.Lock()
-	defer s.muCurrentView.Unlock()
-
-	if isDone {
-		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(0)
-	} else {
-		if s.keyService.fixedModeEnabled() {
-			s.keyService.promoteFallbackLeader(s.currentView.LeaderIndex)
-		}
-		s.currentView.LeaderIndex = s.keyService.getNextLeaderIndex(s.currentView.LeaderIndex)
-	}
-	s.currentView.NoDone = !isDone
-	log.Info("setNextLeader", "isDone", isDone, "index", s.currentView.LeaderIndex)
-
-	s.waittingView.TxNumber = s.currentView.TxNumber + 1
-	s.waittingView.KeyNumber = s.currentView.KeyNumber + 1
-}
-
-func (s *Service) shouldRestorePrimaryLeader() bool {
-	mb := bftview.GetCurrentMember()
-	if mb == nil || len(mb.List) == 0 {
-		return false
-	}
-	primary := s.keyService.getPrimaryLeaderIndex()
-	if primary >= uint(len(mb.List)) {
-		return false
-	}
-	ack := s.netService.GetAckTime(mb.List[primary].Address)
-	return time.Since(ack) <= params.AckTimeout
-}
-
 func (s *Service) procBlockDone(block *types.Block) {
+	s.clearProposalNoWork()
+	if s.fairHotstuffEnabled() {
+		if err := s.reconcileFHSCertifiedFrontier(block); err != nil {
+			log.Error("stop Fair HotStuff after certified frontier reconciliation failure",
+				"number", block.NumberU64(), "hash", block.Hash(), "err", err)
+			s.setRunState(0)
+			if s.pacetMakerTimer != nil {
+				s.pacetMakerTimer.stop()
+			}
+			return
+		}
+	}
 	var keyblock *types.KeyBlock
 	beKeyBlock := false
 	if block.BlockType() == types.Key_Block {
@@ -1367,13 +522,70 @@ func (s *Service) procBlockDone(block *types.Block) {
 		log.Info("@KeyBlockDone", "number", keyblock.NumberU64(), "T_number", keyblock.T_Number())
 		s.updateCommittee(keyblock)
 		s.saveCommittee(keyblock)
-		s.keyService.noteCommittedKeyBlockLeader(keyblock)
-		s.updateCurrentView(block, keyblock, true)
+		if s.fairHotstuffEnabled() {
+			nextCommittee := bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true)
+			if nextCommittee == nil || nextCommittee.RlpHash() != keyblock.CommitteeHash() {
+				log.Error("stop Fair HotStuff after missing next committee", "number", keyblock.NumberU64(), "hash", keyblock.Hash())
+				s.setRunState(0)
+				s.pacetMakerTimer.stop()
+				return
+			}
+			peers, err := s.fhsPeerAuthorizationWithCertifiedCarriers(nextCommittee)
+			if err != nil {
+				log.Error("stop Fair HotStuff after invalid committee authorization update", "err", err)
+				s.setRunState(0)
+				s.pacetMakerTimer.stop()
+				return
+			}
+			// A non-validator can import key blocks while its Fair HotStuff
+			// service is intentionally stopped. Keep its committee/view state
+			// current, but do not update an unconfigured consensus transport.
+			if s.isRunning() {
+				if err := s.netService.server.UpdatePeerAuthorization(peers); err != nil {
+					log.Error("stop Fair HotStuff after peer authorization update failure", "err", err)
+					s.setRunState(0)
+					s.pacetMakerTimer.stop()
+					return
+				}
+				s.netService.setAuthenticatedPeerKeys(peers)
+			}
+			s.muCurrentView.Lock()
+			s.currentView.KeyNumber = keyblock.NumberU64()
+			s.currentView.KeyHash = keyblock.Hash()
+			s.currentView.CommitteeHash = keyblock.CommitteeHash()
+			leaderIndex, leaderErr := fairHotstuffLeaderIndex(
+				s.chainConfig.FairHotstuffSeed,
+				s.ChainID(),
+				s.currentView.ViewNumber+1,
+				s.currentView.CommitteeHash,
+				len(nextCommittee.List),
+			)
+			if leaderErr == nil {
+				s.currentView.LeaderIndex = leaderIndex
+			}
+			s.muCurrentView.Unlock()
+			if leaderErr != nil {
+				log.Error("stop Fair HotStuff after next-committee leader election failure", "err", leaderErr)
+				s.setRunState(0)
+				s.pacetMakerTimer.stop()
+				return
+			}
+		} else {
+			s.updateCurrentView(block, keyblock, true)
+		}
+		s.muCurrentView.Lock()
+		s.resetFixedModeKeyblockViewLocked()
+		s.muCurrentView.Unlock()
+		if s.keyService != nil && s.keyService.fixedLeaderModeEnabled() {
+			s.keyService.setActiveLeader(0)
+		}
 		s.keyService.clearCandidate(keyblock)
 	} else {
 		log.Info("@TxBlockDone", "number", block.NumberU64(), "keyhash", block.KeyHash())
 		s.updateCommittee(nil)
-		s.updateCurrentView(block, keyblock, false)
+		if !s.fairHotstuffEnabled() {
+			s.updateCurrentView(block, keyblock, false)
+		}
 		keyblock = s.kbc.CurrentBlock()
 		//s.txPool.RemoveBatch(block.Transactions())
 	}
@@ -1385,173 +597,169 @@ func (s *Service) procBlockDone(block *types.Block) {
 	}
 }
 
+func (s *Service) configureConsensusIdentity(config *common.NodeConfig) error {
+	if config == nil || config.Private == "" || config.Public == "" {
+		return fmt.Errorf("missing consensus BLS identity")
+	}
+	secret := new(bls.SecretKey)
+	if err := secret.DeserializeHexStr(config.Private); err != nil {
+		return fmt.Errorf("invalid consensus BLS private key: %w", err)
+	}
+	public := secret.GetPublicKey()
+	expected := bftview.StrToBlsPubKey(config.Public)
+	if public == nil || expected == nil || !public.IsEqual(expected) {
+		return fmt.Errorf("consensus BLS private/public key mismatch")
+	}
+	receiptSecret := new(bls.SecretKey)
+	if err := receiptSecret.Deserialize(secret.Serialize()); err != nil {
+		return fmt.Errorf("clone TxQUIC receipt BLS private key: %w", err)
+	}
+	receiptPublic := receiptSecret.GetPublicKey()
+	if receiptPublic == nil || !receiptPublic.IsEqual(public) {
+		return fmt.Errorf("TxQUIC receipt BLS key clone mismatch")
+	}
+	proposalBodySecret := new(bls.SecretKey)
+	if err := proposalBodySecret.Deserialize(secret.Serialize()); err != nil {
+		return fmt.Errorf("clone proposal sidecar BLS private key: %w", err)
+	}
+	proposalBodyPublic := proposalBodySecret.GetPublicKey()
+	if proposalBodyPublic == nil || !proposalBodyPublic.IsEqual(public) {
+		return fmt.Errorf("proposal sidecar BLS key clone mismatch")
+	}
+	s.muConsensusIdentity.Lock()
+	s.consensusPublic = public
+	s.proposalBodySecret = proposalBodySecret
+	s.txQUICReceiptSecret = receiptSecret
+	s.txQUICReceiptPublic = receiptPublic
+	s.muConsensusIdentity.Unlock()
+	s.protocolMng.UpdateKeyPair(secret)
+	return nil
+}
+
 // call by miner.start
-func (s *Service) start(config *common.NodeConfig) {
+func (s *Service) start(config *common.NodeConfig) error {
+	s.muLifecycle.Lock()
+	lifecycleLocked := true
+	defer func() {
+		if lifecycleLocked {
+			s.muLifecycle.Unlock()
+		}
+	}()
 	if !s.isRunning() {
-		s.protocolMng.UpdateKeyPair(bftview.StrToBlsPrivKey(config.Private))
+		generation := s.advanceLifecycleGenerationLocked()
+		// MinerStop/MinerStart reuses this Service. Process-local replay suppression
+		// must never survive that restart boundary; the durable outbox is authoritative.
+		s.clearFHSQCBroadcastMarkers()
+		if err := s.configureConsensusIdentity(config); err != nil {
+			return err
+		}
 		bftview.SetServerInfo(s.netService.serverAddress, config.Public)
 		if config.Coinbase != "" {
 			bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
 		}
-		s.netService.StartStop(true)
 		if bftview.IamMember() >= 0 {
 			s.updateCommittee(nil)
-			s.pacetMakerTimer.start()
 		}
 		s.updateCurrentView(nil, nil, false)
+		if err := s.loadFHSWAL(); err != nil {
+			return fmt.Errorf("restore Fair HotStuff safety state: %w", err)
+		}
+		var deferredRecovery *fhsDeferredRecovery
+		if s.fairHotstuffEnabled() && s.fhsStore != nil {
+			deferredRecovery = s.fhsStore.deferredRecoverySnapshot()
+		}
+		if err := s.pruneFHSPersistenceAtCurrentHead(); err != nil {
+			// GC is maintenance, not safety state. A corrupt stale record must not
+			// prevent the validated WAL from bringing consensus back online.
+			log.Warn("Failed to prune durable FHS recovery cache at startup", "err", err)
+		}
+		if s.fairHotstuffEnabled() {
+			// WAL replay can complete a certified key-block parent and therefore
+			// change the active committee. Determine the local role and configure
+			// peer authentication only after that recovery is complete.
+			isCommitteeMember := bftview.IamMember() >= 0
+			if !isCommitteeMember {
+				if deferredRecovery != nil {
+					log.Warn("Fair HotStuff content recovery remains deferred for non-committee miner",
+						"view", deferredRecovery.HighestQC.Number,
+						"blockHash", deferredRecovery.HighestBlockHash)
+				}
+				log.Info("Fair HotStuff service remains stopped for non-committee miner",
+					"address", s.netService.serverAddress,
+					"coinbase", config.Coinbase)
+				return nil
+			}
+			s.updateCommittee(nil)
+			peers, err := s.fhsPeerAuthorizationWithCertifiedCarriers(bftview.GetCurrentMember())
+			if err != nil {
+				return err
+			}
+			if err := s.addDeferredFHSRecoveryPeers(peers, deferredRecovery); err != nil {
+				return err
+			}
+			if err := s.netService.server.ConfigurePeerAuthentication(s.ChainID(), s.netService.serverAddress, config.Private, config.Public, peers); err != nil {
+				return fmt.Errorf("configure authenticated QUIC transport: %w", err)
+			}
+			s.netService.setAuthenticatedPeerKeys(peers)
+		}
 		s.setRunState(1)
+		s.netService.StartStop(true)
+		if deferredRecovery != nil {
+			_ = s.pacetMakerTimer.stop()
+			s.wakeDeferredFHSRecovery()
+			return nil
+		}
+		if bftview.IamMember() >= 0 {
+			s.pacetMakerTimer.start()
+			if s.fairHotstuffEnabled() {
+				current := s.currentHotstuffBaseNumber()
+				pendingTimeout := s.hasPendingFHSTimeoutVote()
+				s.muLifecycle.Unlock()
+				lifecycleLocked = false
+				s.resumeFHSConsensusMessagingForGeneration(generation, current, pendingTimeout)
+			} else {
+				s.sendNewViewMsgAfterReplay(s.currentHotstuffBaseNumber())
+			}
+		}
 	}
+	return nil
 }
 
 func (s *Service) stop() {
-	if s.isRunning() {
-		s.netService.StartStop(false)
-		s.pacetMakerTimer.stop()
-		s.setRunState(0)
+	s.muLifecycle.Lock()
+	defer s.muLifecycle.Unlock()
+	s.advanceLifecycleGenerationLocked()
+	if !s.isRunning() {
+		s.clearFHSQCBroadcastMarkers()
+		return
 	}
+	s.setRunState(0)
+	s.clearFHSQCBroadcastMarkers()
+	s.netService.StartStop(false)
+	s.pacetMakerTimer.stop()
 }
 
 func (s *Service) isRunning() bool {
-	log.Info("service isRunning check")
 	return atomic.LoadInt32(&s.runningState) == 1
 }
 
-func (s *Service) printAllStatus() {
-	s.netService.GetNetBlocks(nil)
-	for addr, a := range s.netService.ackMap {
-		si := network.NewServerIdentity(addr)
-		log.Info("ackInfo", "addr", addr, "id", si.ID)
-		if a != nil {
-			log.Info("ackInfo", "ackTm", a.ackTm, "sendTm", a.sendTm, "isSending", *a.isSending)
-		}
-	}
-}
-
 func (s *Service) setRunState(state int32) {
-	atomic.StoreInt32(&s.runningState, state)
-}
-
-func (s *Service) LeaderAckTime() time.Time {
-	mb := bftview.GetCurrentMember()
-	if mb != nil {
-		curView := s.GetCurrentView()
-		if bftview.IamLeader(curView.LeaderIndex) {
-			return time.Now()
-		}
-		leader := mb.List[curView.LeaderIndex]
-		return s.netService.GetAckTime(leader.Address)
-	}
-	return time.Now()
-}
-
-func (s *Service) ResetLeaderAckTime() {
-	mb := bftview.GetCurrentMember()
-	if mb != nil {
-		curView := s.GetCurrentView()
-		leader := mb.List[curView.LeaderIndex]
-		s.netService.ResetAckTime(leader.Address)
-	}
-}
-
-func (s *Service) Exceptions(blockNumber int64) []string {
-	block := s.bc.GetBlockByNumber(uint64(blockNumber))
-	if block == nil {
-		return nil
-	}
-	cm := s.kbc.GetCommitteeByHash(block.KeyHash())
-	if cm == nil {
-		return nil
-	}
-	indexs := hotstuff.MaskToExceptionIndexs(block.SignInfo().Exceptions, len(cm))
-	if indexs == nil {
-		return nil
-	}
-	var exs []string
-	for _, i := range indexs {
-		exs = append(exs, cm[i].CoinBase)
-	}
-	return exs
-}
-
-func (s *Service) TakePartInBlocks(address common.Address, checkKeyNumber int64) []string {
-	coinbase := strings.ToLower(address.String())
-	coinbase = coinbase[2:] //del 0x
-	if checkKeyNumber < 0 || uint64(checkKeyNumber) > s.kbc.CurrentBlockN() {
-		return nil
-	}
-
-	keyNumber := uint64(checkKeyNumber)
-	keyblock := s.kbc.GetBlockByNumber(keyNumber)
-	if keyblock == nil {
-		return nil
-	}
-	c := bftview.LoadMember(keyNumber, keyblock.Hash(), false)
-	if c == nil {
-		return nil
-	}
-	isMember := false
-	memberI := 0
-	for i, r := range c.List {
-		ss := strings.ToLower(r.CoinBase)
-		if strings.HasPrefix(ss, "0x") {
-			ss = ss[2:]
-		}
-		if ss == coinbase {
-			isMember = true
-			memberI = i
-			break
+	s.muProposalBuild.Lock()
+	changed := atomic.SwapInt32(&s.runningState, state) != state
+	if changed {
+		atomic.AddUint64(&s.proposalValidationGeneration, 1)
+		if state != 1 {
+			s.cancelAllProposalBuildsLocked()
 		}
 	}
-	if !isMember {
-		return nil
+	s.muProposalBuild.Unlock()
+	if changed {
+		s.clearProposalNoWork()
 	}
-	var takePartInNumberList []string
-
-	fromN := keyblock.T_Number() + 1
-	toN := uint64(0)
-	if keyNumber == s.kbc.CurrentBlockN() {
-		toN = s.bc.CurrentBlockN()
-	} else {
-		nextkeyblock := s.kbc.GetBlockByNumber(keyNumber + 1)
-		toN = nextkeyblock.T_Number()
-	}
-	if toN < fromN {
-		return nil
-	}
-	n := len(c.List)
-	for i := fromN; i <= toN; i++ {
-		block := s.bc.GetBlockByNumber(i)
-		if block == nil {
-			return nil
-		}
-		indexs := hotstuff.MaskToExceptionIndexs(block.SignInfo().Exceptions, n)
-		if indexs == nil {
-			takePartInNumberList = append(takePartInNumberList, strconv.FormatInt(int64(i), 10))
-			continue
-		}
-		isException := false
-		for _, j := range indexs {
-			if j == memberI {
-				isException = true
-				break
-			}
-		}
-		if !isException {
-			takePartInNumberList = append(takePartInNumberList, strconv.FormatInt(int64(i), 10))
+	if changed && state != 1 {
+		s.cancelAllProposalValidations()
+		if s.protocolMng != nil {
+			s.protocolMng.ScheduleFHSEpochReset()
 		}
 	}
-
-	return takePartInNumberList
-}
-
-func (s *Service) SwitchOK() bool {
-	fromN := int(s.kbc.CurrentBlockN() - uint64(bftview.GetServerCommitteeLen()/3+1))
-	if fromN <= 0 {
-		return true
-	}
-	keyblock := s.kbc.GetBlockByNumber(uint64(fromN))
-	if s.bc.CurrentBlockN()-keyblock.T_Number() > 0 {
-		return true
-	}
-	return false
 }

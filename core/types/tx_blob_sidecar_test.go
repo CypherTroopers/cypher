@@ -41,7 +41,7 @@ func TestValidateBlobSidecar(t *testing.T) {
 	hash := KZGToVersionedHash(commitment)
 	tx := testBlobTxWithHash(hash)
 	sidecar := &BlobTxSidecar{
-		Blobs:       []Blob{Blob{1, 2, 3}},
+		Blobs:       []Blob{{1, 2, 3}},
 		Commitments: []KZGCommitment{commitment},
 		Proofs:      []KZGProof{{}},
 	}
@@ -54,7 +54,7 @@ func TestValidateBlobSidecar(t *testing.T) {
 		t.Fatalf("expected versioned hash mismatch, got %v", err)
 	}
 
-	badSidecar := &BlobTxSidecar{Blobs: []Blob{Blob{1}}, Commitments: nil, Proofs: []KZGProof{{}}}
+	badSidecar := &BlobTxSidecar{Blobs: []Blob{{1}}, Commitments: nil, Proofs: []KZGProof{{}}}
 	if err := tx.ValidateBlobSidecar(badSidecar); !errors.Is(err, ErrBlobSidecarLengthMismatch) {
 		t.Fatalf("expected sidecar length mismatch, got %v", err)
 	}

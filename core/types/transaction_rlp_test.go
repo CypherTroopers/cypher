@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
 )
 
@@ -89,5 +91,87 @@ func TestRouteHintJSONRoundTrip(t *testing.T) {
 	}
 	if dec.Hash() != tx.Hash() {
 		t.Fatalf("json roundtrip changed tx hash")
+	}
+}
+
+func TestTransactionsByPriceAndNonceRecomputesSignerForCurrentHead(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	chainID := big.NewInt(1337)
+	config := *params.TestChainConfig
+	config.ChainID = new(big.Int).Set(chainID)
+	config.EIP155Block = big.NewInt(10)
+
+	to := common.HexToAddress("0x4444444444444444444444444444444444444444")
+	sign := func(tx *Transaction, signer Signer) *Transaction {
+		signed, signErr := SignTx(tx, signer, key)
+		if signErr != nil {
+			t.Fatal(signErr)
+		}
+		return signed
+	}
+	transactions := Transactions{
+		sign(NewTransaction(0, to, big.NewInt(1), 21_000, big.NewInt(3), nil), HomesteadSigner{}),
+		sign(NewTransaction(1, to, big.NewInt(1), 21_000, big.NewInt(3), nil), NewEIP155Signer(chainID)),
+		sign(NewTransaction(2, to, big.NewInt(1), 21_000, big.NewInt(3), nil), NewEIP155Signer(chainID)),
+	}
+	from := crypto.PubkeyToAddress(key.PublicKey)
+	ordered := NewTransactionsByPriceAndNonce(&config, big.NewInt(9), map[common.Address]Transactions{
+		from: transactions,
+	})
+
+	for wantNonce := uint64(0); wantNonce < uint64(len(transactions)); wantNonce++ {
+		tx := ordered.Peek()
+		if tx == nil {
+			t.Fatalf("head is nil, want nonce %d", wantNonce)
+		}
+		if tx.Nonce() != wantNonce {
+			t.Fatalf("head nonce = %d, want %d", tx.Nonce(), wantNonce)
+		}
+		ordered.Shift()
+	}
+	if tx := ordered.Peek(); tx != nil {
+		t.Fatalf("unexpected transaction after account tail: nonce %d", tx.Nonce())
+	}
+}
+
+func TestTransactionsByPriceAndNonceCopyHasIndependentCursor(t *testing.T) {
+	chainID := big.NewInt(1337)
+	config := *params.TestChainConfig
+	config.ChainID = new(big.Int).Set(chainID)
+	config.EIP155Block = big.NewInt(0)
+	to := common.HexToAddress("0x5555555555555555555555555555555555555555")
+	accounts := make(map[common.Address]Transactions)
+	for account := 0; account < 2; account++ {
+		key, err := crypto.GenerateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		transactions := make(Transactions, 2)
+		for nonce := range transactions {
+			unsigned := NewTransaction(uint64(nonce), to, new(big.Int), params.TxGas, big.NewInt(int64(10-account)), nil)
+			transactions[nonce], err = SignTx(unsigned, NewEIP155Signer(chainID), key)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		accounts[crypto.PubkeyToAddress(key.PublicKey)] = transactions
+	}
+	original := NewTransactionsByPriceAndNonce(&config, big.NewInt(1), accounts)
+	clone := original.Copy()
+	first := original.Peek()
+	if first == nil || clone.Peek() != first {
+		t.Fatal("copied cursor did not preserve the original head")
+	}
+	clone.Shift()
+	clone.Pop()
+	if original.Peek() != first {
+		t.Fatal("mutating copied cursor consumed the original head")
+	}
+	original.Shift()
+	if clone.Peek() == original.Peek() {
+		t.Fatal("cursor mutations unexpectedly shared heap state")
 	}
 }

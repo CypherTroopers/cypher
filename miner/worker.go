@@ -1,6 +1,7 @@
 package miner
 
 import (
+	"context"
 	"math/big"
 	"net"
 	"strconv"
@@ -89,6 +90,8 @@ type worker struct {
 
 	shouldStart int32 // should start indicates whether we should start after sync
 
+	powResultCtx    context.Context
+	powResultCancel context.CancelFunc
 }
 
 func newWorker(config *params.ChainConfig, engine consensus.Engine, eth Backend, mux *event.TypeMux, candidatePool *core.CandidatePool, extIP net.IP) *worker {
@@ -137,9 +140,15 @@ func (self *worker) start() {
 	}
 
 	atomic.StoreInt32(&self.running, 1)
+	if self.powResultCancel != nil {
+		self.powResultCancel()
+	}
+	self.powResultCtx, self.powResultCancel = context.WithCancel(context.Background())
 	self.keyHeadSub = self.eth.KeyBlockChain().SubscribeChainEvent(self.keyHeadCh)
 
-	go self.autoCommit()
+	// Each loop must observe its own subscription. A later miner.start can
+	// replace keyHeadSub before the previous loop observes its unsubscribe.
+	go self.autoCommit(self.keyHeadSub)
 
 	for agent := range self.agents {
 		agent.Start()
@@ -149,6 +158,11 @@ func (self *worker) start() {
 func (self *worker) stop() {
 	self.mu.Lock()
 	defer self.mu.Unlock()
+	if self.powResultCancel != nil {
+		self.powResultCancel()
+		self.powResultCancel = nil
+		self.powResultCtx = nil
+	}
 	if atomic.LoadInt32(&self.running) == 0 {
 		return
 	}
@@ -183,7 +197,7 @@ func (self *worker) unregister(agent Agent) {
 	agent.Stop()
 }
 
-func (self *worker) autoCommit() {
+func (self *worker) autoCommit(subscription event.Subscription) {
 	log.Info("Miner worker start auto-committing")
 	if bftview.IamMember() < 0 {
 		self.commitNewWork()
@@ -204,10 +218,12 @@ func (self *worker) autoCommit() {
 				} else {
 					log.Info("User has not permitted  to start")
 				}
+				// stop unsubscribed this generation; start owns a new loop.
+				return
 			}
 
 		// Err() channel will be closed when unsubscribing.
-		case <-self.keyHeadSub.Err():
+		case <-subscription.Err():
 			log.Info("Miner worker stop auto-committing")
 			return
 		}
@@ -232,10 +248,34 @@ func (self *worker) wait() {
 			}
 
 			if self.config != nil && (self.config.FixedLeader || self.config.FixedCommittee) {
-				validators := self.eth.KeyBlockChain().CurrentCommittee()
-				if err := core.BroadcastPoWResultUDP(self.config.RnetPort, validators, types.NewPoWResultFromCandidate(candidate)); err != nil {
-					log.Error("Fail to broadcast fixed-mode PoW result", "err", err)
+				committee := self.eth.KeyBlockChain().CurrentCommittee()
+				validators := make([]*common.Cnode, len(committee))
+				for index, validator := range committee {
+					if validator != nil {
+						copy := *validator
+						validators[index] = &copy
+					}
 				}
+				result := types.NewPoWResultFromCandidate(candidate)
+				rnetPort := self.config.RnetPort
+				self.mu.Lock()
+				deliveryCtx := self.powResultCtx
+				self.mu.Unlock()
+				if deliveryCtx == nil {
+					log.Debug("Discarding fixed-mode PoW result after miner stopped", "parent", result.ParentHash)
+					continue
+				}
+				go func() {
+					err := self.eth.BroadcastPoWResult(deliveryCtx, rnetPort, validators, result)
+					if err == nil {
+						return
+					}
+					if deliveryCtx.Err() != nil {
+						log.Debug("Stopped fixed-mode PoW result retry after keyblock or miner change", "err", err)
+						return
+					}
+					log.Error("Fail to broadcast fixed-mode PoW result", "err", err)
+				}()
 				continue
 			}
 
@@ -296,18 +336,11 @@ func (self *worker) commitNewWork() {
 			return
 		}
 	}
-	tstamp := tstart.Unix()
-	minKeyBlockTime := int64(keyBlock.Time()) + int64(params.KeyBlockMinInterval/time.Second)
-	if minKeyBlockTime > tstamp {
-		// Keep the candidate/keyblock timestamp valid, but do not delay PoW work.
-		// Common miners must start mining immediately after a new keyblock so their
-		// UDP PoWResult can reach validators before the next keyblock proposal.
-		tstamp = minKeyBlockTime
+	candidate, err := self.newCandidate(keyBlock, txBlock.NumberU64(), tstart)
+	if err != nil {
+		log.Error("Failed to select PoW reward recipient", "err", err)
+		return
 	}
-
-	port, _ := strconv.Atoi(self.config.RnetPort)
-	candidate := types.NewCandidate(keyBlock.Hash(), nil, keyBlock.Number().Uint64()+uint64(1), txBlock.NumberU64(), nil, self.IP, common.HexString(self.pubKey), self.coinBase.String(), port)
-	candidate.KeyCandidate.Time = uint64(tstamp)
 	committeeSize := len(self.eth.KeyBlockChain().CurrentCommittee())
 
 	if err := self.engine.PrepareCandidate(self.chain, candidate, committeeSize); err != nil {
@@ -324,11 +357,48 @@ func (self *worker) commitNewWork() {
 	}
 }
 
+// newCandidate captures the recipient before sealing. The caller holds mu so
+// the account used for the registry lookup belongs to this work template.
+// Keep the worker's identity at A: non-fixed candidates also use Coinbase for
+// committee membership, whereas fixed-mode candidates use it only for rewards.
+func (self *worker) newCandidate(keyBlock *types.KeyBlock, txNumber uint64, startedAt time.Time) (*types.Candidate, error) {
+	fixedMode := self.config != nil && (self.config.FixedLeader || self.config.FixedCommittee)
+	recipient := self.coinBase
+	if fixedMode {
+		var err error
+		recipient, err = self.eth.PoWRewardRecipient(self.coinBase)
+		if err != nil {
+			return nil, err
+		}
+	}
+	port, _ := strconv.Atoi(self.config.RnetPort)
+	candidate := types.NewCandidate(keyBlock.Hash(), nil, keyBlock.NumberU64()+1, txNumber, nil, self.IP, common.HexString(self.pubKey), recipient.String(), port)
+	// Every fixed-mode attempt uses the same slot, including late starts.
+	// Non-fixed mining keeps the legacy minimum-timestamp behavior.
+	candidate.KeyCandidate.Time = keyBlockCandidateTimestamp(keyBlock, startedAt, fixedMode)
+	return candidate, nil
+}
+
+func keyBlockCandidateTimestamp(parent *types.KeyBlock, startedAt time.Time, fixedMode bool) uint64 {
+	if parent == nil || fixedMode && parent.IsZeroTimeGenesis() {
+		return uint64(startedAt.Unix())
+	}
+	slot := parent.Time() + uint64(params.KeyBlockMinInterval/time.Second)
+	if fixedMode || startedAt.Unix() <= int64(slot) {
+		return slot
+	}
+	return uint64(startedAt.Unix())
+}
+
 func (self *worker) SetPubKey(pubKey ed25519.PublicKey) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
 	self.pubKey = pubKey
 }
 
 func (self *worker) SetCoinbase(eb common.Address) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
 	self.coinBase = eb
 }
 func (self *worker) LocalMockAutoTrigNextTermPow(cand *types.Candidate) { //for debug

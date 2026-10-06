@@ -1,0 +1,5 @@
+{
+  "status": "FAIL_PRESERVED",
+  "reason": "Functional actual byte/digest/ACK and AOFF/C failover checkpoints passed. During130second observation B/C native primary leases were replaced and automaticallyrecovered, so no same-session renewal occurred within that window. Origin/root cause not yet established. Product unchanged; cleanup complete.",
+  "at": "2026-10-03T18:09:56.153798+00:00"
+}

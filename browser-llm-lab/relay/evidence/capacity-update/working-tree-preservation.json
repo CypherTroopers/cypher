@@ -1,0 +1,31 @@
+{
+  "at": "2026-10-03T09:38:41.362296+00:00",
+  "baselineFiles": 87,
+  "changed": [
+    "relay/gateway.mjs",
+    "relay/README.md",
+    "relay/config.json",
+    "relay/gateway-operations.md",
+    "relay/verification.md",
+    "relay/mesh-native-operations.md",
+    "relay/config.mjs",
+    "tests/mesh-worker.test.mjs",
+    "tests/mesh-browser.mjs",
+    "tests/relay-gateway.test.mjs",
+    "tests/mesh-audit.mjs",
+    "tests/ui-state.test.mjs",
+    "tests/mesh-controller.test.mjs",
+    "tests/mesh-protocol.test.mjs",
+    "tests/mesh-ui-browser.mjs",
+    "public/index.html",
+    "public/mesh-controller.js",
+    "public/mesh-worker.js",
+    "public/mesh-protocol.js",
+    "public/relay-ui.js",
+    "relay/native/b/node.toml",
+    "relay/native/a/node.toml"
+  ],
+  "missing": [],
+  "nativeSourceCheck": "native-source-preservation.json",
+  "historicalEvidencePreserved": true
+}
