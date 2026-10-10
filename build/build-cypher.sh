@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+
 set -Eeuo pipefail
 
 die() {
@@ -423,6 +424,12 @@ prepare_bounded_leveldb
 "${GO_BIN}" test "${NATIVE_GO_FLAGS[@]}" ./ethdb/leveldb \
   -run '^(TestLevelDB|TestBrowser)' -count=1 -timeout 2m
 
+# The local query must retain IPC transport identity and the core's dedicated
+# FHS finality boundary on every native target distributing this API.
+"${GO_BIN}" test "${NATIVE_GO_FLAGS[@]}" ./eth ./core \
+  -run '^(TestTransactionFinalityRegisteredIPC|TestIsFinalizedTransactionRejectsReceiptSyncLookupAheadOfStateHead)$' \
+  -count=1 -timeout=2m
+
 # Validate the relay in the same native build. Platform transport fixtures use
 # build tags; HTTP sessions, mesh streams and P2P tests run on every native OS.
 "${GO_BIN}" test "${NATIVE_GO_FLAGS[@]}" ./cmd/cypher ./node/browserrelay ./p2p \
@@ -465,10 +472,25 @@ NEW_OUTPUT="${BUNDLE_DIR}/${ARTIFACT_NAME}"
 
 [[ -s "${NEW_OUTPUT}" ]] || die "Go build did not produce ${NEW_OUTPUT}"
 BINARY_DESCRIPTION="$(file -b "${NEW_OUTPUT}")"
+COMPILER_OUTPUT="$("${CC}" --version)"
+COMPILER_IDENTITY="${COMPILER_OUTPUT%%$'\n'*}"
+REQUIRED_GLIBC="none"
+REQUIRED_GLIBCXX="none"
+MACOS_MIN_OS_VERSION=""
 case "${TARGET_OS}/${TARGET_ARCH}" in
   linux/amd64)
     [[ "${BINARY_DESCRIPTION}" == *"ELF 64-bit"* && "${BINARY_DESCRIPTION}" == *"x86-64"* ]] ||
       die "Unexpected Linux binary: ${BINARY_DESCRIPTION}"
+    for command in readelf grep sort tail; do
+      require_command "${command}"
+    done
+    VERSION_INFO="$(readelf --version-info "${NEW_OUTPUT}")"
+    GLIBC_VERSIONS="$(grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' <<< "${VERSION_INFO}" || true)"
+    GLIBCXX_VERSIONS="$(grep -oE 'GLIBCXX_[0-9]+(\.[0-9]+)+' <<< "${VERSION_INFO}" || true)"
+    REQUIRED_GLIBC="$(printf '%s\n' "${GLIBC_VERSIONS}" | sort -Vu | tail -n 1)"
+    REQUIRED_GLIBCXX="$(printf '%s\n' "${GLIBCXX_VERSIONS}" | sort -Vu | tail -n 1)"
+    REQUIRED_GLIBC="${REQUIRED_GLIBC#GLIBC_}"
+    REQUIRED_GLIBCXX="${REQUIRED_GLIBCXX#GLIBCXX_}"
     ;;
   darwin/arm64)
     [[ "${BINARY_DESCRIPTION}" == *"Mach-O 64-bit"* &&
@@ -478,6 +500,22 @@ case "${TARGET_OS}/${TARGET_ARCH}" in
     MACOS_DEPENDENCIES="$(otool -L "${NEW_OUTPUT}")"
     [[ "${MACOS_DEPENDENCIES}" != *"${HOMEBREW_PREFIX}/"* ]] ||
       die "macOS binary still depends on a Homebrew dynamic library"
+    MACOS_MIN_OS_VERSION="$(python3 - "${NEW_OUTPUT}" <<'PY'
+import re, subprocess, sys
+commands = subprocess.check_output(["otool", "-l", sys.argv[1]], text=True)
+minimums = []
+for block in commands.split("Load command"):
+    kind = re.search(r"^\s*cmd (LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX)\s*$", block, re.MULTILINE)
+    if kind:
+        field = "minos" if kind.group(1) == "LC_BUILD_VERSION" else "version"
+        value = re.search(rf"^\s*{field}\s+(\S+)\s*$", block, re.MULTILINE)
+        if value:
+            minimums.append(value.group(1))
+if len(minimums) != 1:
+    raise SystemExit("Unable to identify the macOS binary's minimum OS version")
+print(minimums[0])
+PY
+)"
     ;;
   windows/amd64)
     [[ "${BINARY_DESCRIPTION}" == *"PE32+"* && "${BINARY_DESCRIPTION}" == *"x86-64"* ]] ||
@@ -491,7 +529,7 @@ case "${TARGET_OS}/${TARGET_ARCH}" in
     ;;
 esac
 
-"${GO_BIN}" version -m "${NEW_OUTPUT}" >/dev/null
+"${GO_BIN}" version -m "${NEW_OUTPUT}" > "${BUNDLE_DIR}/go-build-info.txt"
 RUNTIME_DLLS=(
   libcrypto-3-x64.dll
   libgmp-10.dll
@@ -548,12 +586,7 @@ case "${TARGET_OS}/${TARGET_ARCH}" in
     LOCAL_FILES=(cypher.exe "${RUNTIME_DLLS[@]}")
     ;;
 esac
-
-for staged_file in "${STAGED_FILES[@]}"; do
-  printf '%s  %s\n' \
-    "$(sha256_file "${STAGE_NEW}/${staged_file}")" \
-    "${staged_file}"
-done > "${STAGE_NEW}/SHA256SUMS"
+cp -p "${BUNDLE_DIR}/go-build-info.txt" "${STAGE_NEW}/go-build-info.txt"
 
 GO_VERSION="$("${GO_BIN}" version | awk '{print $3}')"
 BINARY_SHA256="$(sha256_file "${NEW_OUTPUT}")"
@@ -564,6 +597,9 @@ MCL_SHA256="$(sha256_file "${NATIVE_LIB_DIR}/libmcl.a")"
   printf 'goos=%s\n' "${TARGET_OS}"
   printf 'goarch=%s\n' "${TARGET_ARCH}"
   printf 'go_version=%s\n' "${GO_VERSION}"
+  printf 'compiler_identity=%s\n' "${COMPILER_IDENTITY}"
+  printf 'ipc_transaction_finality_method=eth_getTransactionFinality\n'
+  printf 'ipc_transaction_finality_transport=ipc\n'
   printf 'herumi_ref=%s\n' "${HERUMI_MANIFEST_VALUE}"
   printf 'build_tags=%s\n' "${NATIVE_BUILD_TAGS}"
   printf 'leveldb_module=%s\n' "${LEVELDB_MODULE}"
@@ -574,7 +610,35 @@ MCL_SHA256="$(sha256_file "${NATIVE_LIB_DIR}/libmcl.a")"
   printf 'binary_sha256=%s\n' "${BINARY_SHA256}"
   printf 'bls_sha256=%s\n' "${BLS_SHA256}"
   printf 'mcl_sha256=%s\n' "${MCL_SHA256}"
+  if [[ "${TARGET_OS}" == linux ]]; then
+    printf 'required_glibc=%s\n' "${REQUIRED_GLIBC:-none}"
+    printf 'required_glibcxx=%s\n' "${REQUIRED_GLIBCXX:-none}"
+  elif [[ "${TARGET_OS}" == darwin ]]; then
+    printf 'macos_deployment_target=%s\n' "${MACOSX_DEPLOYMENT_TARGET:-compiler-default}"
+    printf 'macos_min_os_version=%s\n' "${MACOS_MIN_OS_VERSION}"
+  elif [[ "${TARGET_OS}" == windows ]]; then
+    require_command pacman
+    compiler_path="$(command -v "${CC}")"
+    if [[ "${compiler_path}" != *.exe && -f "${compiler_path}.exe" ]]; then
+      compiler_path="${compiler_path}.exe"
+    fi
+    compiler_package="$(pacman -Qoq "${compiler_path}")"
+    compiler_package_info="$(pacman -Q "${compiler_package}")"
+    printf 'msys2_compiler_package=%s\n' "${compiler_package_info}"
+    for dll in "${RUNTIME_DLLS[@]}"; do
+      package="$(pacman -Qoq "/mingw64/bin/${dll}")"
+      package_info="$(pacman -Q "${package}")"
+      printf 'runtime_dll_%s_package=%s\n' "${dll//[-.]/_}" "${package_info}"
+    done
+  fi
 } > "${STAGE_NEW}/manifest.txt"
+
+STAGED_FILES+=(manifest.txt go-build-info.txt)
+for staged_file in "${STAGED_FILES[@]}"; do
+  printf '%s  %s\n' \
+    "$(sha256_file "${STAGE_NEW}/${staged_file}")" \
+    "${staged_file}"
+done > "${STAGE_NEW}/SHA256SUMS"
 
 rm -rf -- "${STAGE_BACKUP}"
 if [[ -e "${STAGE_DIR}" ]]; then

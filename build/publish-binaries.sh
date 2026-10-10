@@ -30,27 +30,55 @@ verify_manifest() {
   local expected_arch="$3"
   local expected_binary="$4"
   shift 4
-  local expected_files=("$@")
+  local expected_files=("$@" manifest.txt go-build-info.txt)
   local manifest="${directory}/manifest.txt"
   local declared_sha
   local actual_sha
-  local declared_files
-  local required_files
 
   require_file "${manifest}"
   require_file "${directory}/SHA256SUMS"
+  require_file "${directory}/go-build-info.txt"
   require_file "${directory}/${expected_binary}"
+  python3 - "${directory}" "${GO_VERSION}" "${expected_os}" "${expected_arch}" \
+    "${expected_files[@]}" <<'PY'
+import pathlib, re, sys
+
+directory = pathlib.Path(sys.argv[1])
+version, goos, goarch = sys.argv[2:5]
+expected = set(sys.argv[5:])
+entries = list(directory.iterdir())
+if {entry.name for entry in entries} != expected | {"SHA256SUMS"}:
+    raise SystemExit(f"Unexpected artifact file set in {directory}")
+if any(entry.is_symlink() or not entry.is_file() for entry in entries):
+    raise SystemExit(f"Artifact must contain only regular files: {directory}")
+declared = set()
+for line in (directory / "SHA256SUMS").read_text().splitlines():
+    match = re.fullmatch(r"[0-9a-f]{64}  ([A-Za-z0-9._+-]+)", line)
+    if not match or match.group(1) in declared:
+        raise SystemExit(f"Invalid or duplicate checksum entry in {directory}")
+    declared.add(match.group(1))
+if declared != expected:
+    raise SystemExit(f"Unexpected checksum coverage in {directory}")
+
+info = (directory / "go-build-info.txt").read_text().splitlines()
+if not info or not info[0].endswith(f": go{version}"):
+    raise SystemExit(f"Go build information has the wrong version: {directory}")
+settings = {}
+for line in info[1:]:
+    fields = line.strip().split("\t")
+    if len(fields) == 2 and fields[0] == "build":
+        key, separator, value = fields[1].partition("=")
+        if not separator or key in settings:
+            raise SystemExit(f"Invalid Go build setting: {directory}")
+        settings[key] = value
+for key, value in {"GOOS": goos, "GOARCH": goarch, "CGO_ENABLED": "1", "-compiler": "gc", "-tags": "cypher_bounded_storage"}.items():
+    if settings.get(key) != value:
+        raise SystemExit(f"Go build setting {key} mismatch: {directory}")
+PY
   (
     cd "${directory}"
     sha256sum --check --strict SHA256SUMS
   ) || die "Artifact checksum validation failed in ${directory}"
-  declared_files="$(
-    sed -E -n 's/^[[:xdigit:]]{64}  (.+)$/\1/p' "${directory}/SHA256SUMS" |
-      LC_ALL=C sort
-  )"
-  required_files="$(printf '%s\n' "${expected_files[@]}" | LC_ALL=C sort)"
-  [[ "${declared_files}" == "${required_files}" ]] ||
-    die "Unexpected checksum file set in ${directory}"
   [[ "$(manifest_value "${manifest}" source_sha)" == "${SOURCE_SHA}" ]] ||
     die "Source SHA mismatch in ${manifest}"
   [[ "$(manifest_value "${manifest}" goos)" == "${expected_os}" ]] ||
@@ -61,6 +89,13 @@ verify_manifest() {
     die "Binary name mismatch in ${manifest}"
   [[ "$(manifest_value "${manifest}" go_version)" == "go${GO_VERSION}" ]] ||
     die "Go version mismatch in ${manifest}"
+  [[ "$(manifest_value "${manifest}" build_tags)" == "cypher_bounded_storage" ]] ||
+    die "Native build tags mismatch in ${manifest}"
+  [[ -n "$(manifest_value "${manifest}" compiler_identity)" ]] ||
+    die "Missing compiler identity in ${manifest}"
+  [[ "$(manifest_value "${manifest}" ipc_transaction_finality_method)" == "eth_getTransactionFinality" &&
+     "$(manifest_value "${manifest}" ipc_transaction_finality_transport)" == "ipc" ]] ||
+    die "Missing IPC transaction finality capability in ${manifest}"
   declared_sha="$(manifest_value "${manifest}" binary_sha256)"
   actual_sha="$(sha256_file "${directory}/${expected_binary}")"
   [[ "${declared_sha}" == "${actual_sha}" ]] ||
@@ -93,6 +128,7 @@ require_command install
 require_command sha256sum
 require_command cmp
 require_command sort
+require_command python3
 
 [[ "$(git rev-parse HEAD)" == "${SOURCE_SHA}" ]] ||
   die "Checkout does not match ${SOURCE_SHA}"
@@ -155,6 +191,21 @@ install -m 0755 "${WINDOWS_DIR}/libstdc++-6.dll" build/bin/libstdc++-6.dll
 install -m 0755 "${WINDOWS_DIR}/libgcc_s_seh-1.dll" build/bin/libgcc_s_seh-1.dll
 install -m 0755 "${WINDOWS_DIR}/libwinpthread-1.dll" build/bin/libwinpthread-1.dll
 
+PROVENANCE_FILES=()
+for platform in linux-amd64 darwin-arm64 windows-amd64; do
+  case "${platform}" in
+    linux-amd64) directory="${LINUX_DIR}" ;;
+    darwin-arm64) directory="${MACOS_DIR}" ;;
+    windows-amd64) directory="${WINDOWS_DIR}" ;;
+  esac
+  mkdir -p "build/provenance/${platform}"
+  for filename in manifest.txt SHA256SUMS go-build-info.txt; do
+    path="build/provenance/${platform}/${filename}"
+    install -m 0644 "${directory}/${filename}" "${path}"
+    PROVENANCE_FILES+=("${path}")
+  done
+done
+
 git config user.name "github-actions[bot]"
 git config user.email "github-actions[bot]@users.noreply.github.com"
 git add --chmod=+x -- \
@@ -167,13 +218,14 @@ git add --chmod=+x -- \
   build/bin/libstdc++-6.dll \
   build/bin/libgcc_s_seh-1.dll \
   build/bin/libwinpthread-1.dll
+git add --chmod=-x -- "${PROVENANCE_FILES[@]}"
 
 if git diff --cached --quiet; then
-  printf 'Built binaries are unchanged.\n'
+  printf 'Built binaries and provenance are unchanged.\n'
   exit 0
 fi
 
-git commit -m "Update macOS Linux and Windows binaries"
+git commit -m "Update macOS Linux and Windows binaries and provenance"
 
 refresh_remote_branch_sha
 if [[ "${REMOTE_BRANCH_SHA}" != "${SOURCE_SHA}" ]]; then

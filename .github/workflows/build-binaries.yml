@@ -12,6 +12,7 @@ on:
       - 'build/bin/cypher-darwin-*'
       - 'build/bin/cypher.exe'
       - 'build/bin/*.dll'
+      - 'build/provenance/**'
 
 permissions:
   contents: read

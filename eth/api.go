@@ -274,6 +274,22 @@ func (api *PublicEthereumAPI) GetTransactionByHash(ctx context.Context, hash com
 	return nil, nil
 }
 
+type ipcFinalityMethodError struct{}
+
+func (ipcFinalityMethodError) Error() string {
+	return "Transaction finality is available only through IPC"
+}
+func (ipcFinalityMethodError) ErrorCode() int { return -32601 }
+
+// GetTransactionFinality exposes the canonical FHS finality index to local
+// clients. A receipt or an ordinary transaction lookup does not prove finality.
+func (api *PublicEthereumAPI) GetTransactionFinality(ctx context.Context, hash common.Hash) (bool, error) {
+	if !rpc.IsIPC(ctx) {
+		return false, ipcFinalityMethodError{}
+	}
+	return api.e.blockchain.IsFinalizedTransaction(hash), nil
+}
+
 // GetTransactionReceipt is used by eth_getTransactionReceipt / eth.getTransactionReceipt.
 // It keeps the normal receipt fields and appends Cypherium common RPC fields.
 func (api *PublicEthereumAPI) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
