@@ -1,4 +1,4 @@
-source_sha=54c954aa3e84ad01990809c2719f18ac8d39a181
+source_sha=5441bdd9f4f8d922891ab219471236508acb00fe
 goos=linux
 goarch=amd64
 go_version=go1.26.2
@@ -12,7 +12,7 @@ leveldb_version=v1.0.1-0.20220721030215-126854af5e6d
 leveldb_module_sum=h1:vfofYNRScrDdvS342BElfbETmL1Aiz3i2t0zfRj16Hs=
 leveldb_patch_sha256=38349bc371c7cdda2fa7f0f59c047c368959778bda2327a0f7625434833aa6f1
 binary=cypher-linux-amd64
-binary_sha256=56c07065124e9fdf70c0253e5a3781725481fe24bbf6fd2d7e1def265aa5e30b
+binary_sha256=217c5718801a5c13f4f80cfd86b3c144970e386bc9c25da4182f5163194894ab
 bls_sha256=782d66777837eaceb4012dece5a1c74bc13bfd81a522b5534ce0b220ce1949cd
 mcl_sha256=6276f9aff669bc0d79de152d0b7f9af619182ec25fda6f85f3a9e587bb888132
 required_glibc=2.38
