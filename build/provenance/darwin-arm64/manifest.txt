@@ -1,0 +1,19 @@
+source_sha=54c954aa3e84ad01990809c2719f18ac8d39a181
+goos=darwin
+goarch=arm64
+go_version=go1.26.2
+compiler_identity=Apple clang version 17.0.0 (clang-1700.0.13.5)
+ipc_transaction_finality_method=eth_getTransactionFinality
+ipc_transaction_finality_transport=ipc
+herumi_ref=2026abe5e97e9a10fa7d7c66279ee728630d6219
+build_tags=cypher_bounded_storage
+leveldb_module=github.com/syndtr/goleveldb
+leveldb_version=v1.0.1-0.20220721030215-126854af5e6d
+leveldb_module_sum=h1:vfofYNRScrDdvS342BElfbETmL1Aiz3i2t0zfRj16Hs=
+leveldb_patch_sha256=38349bc371c7cdda2fa7f0f59c047c368959778bda2327a0f7625434833aa6f1
+binary=cypher-darwin-arm64
+binary_sha256=77babc1d81c8a9e187fbe1ae59c37e743067904ac4a34cc478284ce29d9b92f6
+bls_sha256=ec7c984c6bc5d5d79e0082ba38eedd0fbbad32973be8bffe31129b9ac9366f8c
+mcl_sha256=75f401baca2ce2a866118ab4d6694421cf65cacc494f12bf8ee5f081ec7f4012
+macos_deployment_target=compiler-default
+macos_min_os_version=15.0

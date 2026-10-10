@@ -1,0 +1,23 @@
+source_sha=54c954aa3e84ad01990809c2719f18ac8d39a181
+goos=windows
+goarch=amd64
+go_version=go1.26.2
+compiler_identity=gcc.exe (Rev4, Built by MSYS2 project) 16.2.0
+ipc_transaction_finality_method=eth_getTransactionFinality
+ipc_transaction_finality_transport=ipc
+herumi_ref=2026abe5e97e9a10fa7d7c66279ee728630d6219
+build_tags=cypher_bounded_storage
+leveldb_module=github.com/syndtr/goleveldb
+leveldb_version=v1.0.1-0.20220721030215-126854af5e6d
+leveldb_module_sum=h1:vfofYNRScrDdvS342BElfbETmL1Aiz3i2t0zfRj16Hs=
+leveldb_patch_sha256=38349bc371c7cdda2fa7f0f59c047c368959778bda2327a0f7625434833aa6f1
+binary=cypher.exe
+binary_sha256=3a033822c75c85278439895a8d69970283f51cba63723bd26db6d839a70dd23d
+bls_sha256=17d7b9bf04fda7fc234bc20bc66ab584431abc2d7b1485b36f89d30059587bc9
+mcl_sha256=9967ee61b2ebf3bef9b2dd5630675fce565fe7d8c72a0976d1708a2780b2c15a
+msys2_compiler_package=mingw-w64-x86_64-gcc 16.2.0-4
+runtime_dll_libcrypto_3_x64_dll_package=mingw-w64-x86_64-openssl 3.6.4-1
+runtime_dll_libgmp_10_dll_package=mingw-w64-x86_64-gmp 6.3.0-2
+runtime_dll_libstdc++_6_dll_package=mingw-w64-x86_64-libstdc++ 16.2.0-4
+runtime_dll_libgcc_s_seh_1_dll_package=mingw-w64-x86_64-libgcc 16.2.0-4
+runtime_dll_libwinpthread_1_dll_package=mingw-w64-x86_64-libwinpthread 14.0.0.r426.g4564ee4b5-1
