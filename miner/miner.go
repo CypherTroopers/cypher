@@ -2,7 +2,9 @@ package miner
 
 import (
 	"context"
+	"errors"
 	"math/big"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ed25519"
@@ -49,6 +51,7 @@ type Config struct {
 
 // Miner creates candidate from current head keyblock and searches for proof-of-work values.
 type Miner struct {
+	lifecycleMu sync.Mutex // Serializes worker generations and engine DAG ownership.
 	mux         *event.TypeMux
 	worker      *worker
 	pubKey      ed25519.PublicKey
@@ -73,29 +76,48 @@ func New(eth Backend, config *params.ChainConfig, mux *event.TypeMux, engine con
 	return miner
 }
 
-func (self *Miner) Start(pubKey ed25519.PublicKey, eb common.Address) {
-
+func (self *Miner) Start(pubKey ed25519.PublicKey, eb common.Address) error {
+	self.lifecycleMu.Lock()
+	defer self.lifecycleMu.Unlock()
 	self.SetPubKey(pubKey)
 	self.SetCoinbase(eb)
 	log.Info("Miner) Start", "coinBase", eb, "pubKey", pubKey)
 	self.worker.setShouldStart(true)
 	log.Info("Ready to start pow work")
-	self.worker.start()
+	if err := self.worker.start(); err != nil {
+		self.worker.setShouldStart(false)
+		return errors.Join(err, self.worker.stopAndRelease())
+	}
+	if !self.worker.isRunning() {
+		self.worker.setShouldStart(false)
+		return errors.Join(errors.New("miner worker failed to start"), self.worker.stopAndRelease())
+	}
+	return nil
 }
 
 func (self *Miner) SuspendMiner() {
+	self.lifecycleMu.Lock()
+	defer self.lifecycleMu.Unlock()
 	if self.Mining() {
-		self.worker.stop() //now action
+		if err := self.worker.stopAndRelease(); err != nil {
+			log.Warn("Failed to release suspended miner DAG", "err", err)
+		}
 	}
 }
 
-func (self *Miner) Stop() {
-	self.worker.stop()
+func (self *Miner) Stop() error {
+	self.lifecycleMu.Lock()
+	defer self.lifecycleMu.Unlock()
 	self.worker.setShouldStart(false)
+	// Agent.Stop joins readers before the engine unmaps their DAG. The engine
+	// also closes its own admission gate and drains direct sealing calls.
+	return self.worker.stopAndRelease()
 }
 
 func (self *Miner) Quit() {
-	self.worker.stop()
+	if err := self.Stop(); err != nil {
+		log.Warn("Failed to release miner DAG", "err", err)
+	}
 }
 
 func (self *Miner) Register(agent Agent) {

@@ -19,7 +19,6 @@ package miner
 
 import (
 	"sync"
-	"sync/atomic"
 
 	"github.com/cypherium/cypher/consensus"
 	"github.com/cypherium/cypher/core/types"
@@ -27,90 +26,127 @@ import (
 )
 
 type CpuAgent struct {
-	mu sync.Mutex
+	// Start and Stop serialize complete generations. The update and mining
+	// goroutines never acquire mu, so Stop can join them while holding it.
+	mu      sync.Mutex
+	running *cpuAgentGeneration
 
-	workCh        chan *Work
-	stop          chan struct{}
-	quitCurrentOp chan struct{}
-	returnCh      chan<- *Result
+	workCh   chan *Work
+	returnMu sync.RWMutex
+	returnCh chan<- *Result
 
 	chain  types.ChainReader
 	engine consensus.Engine
+}
 
-	started int32 // started indicates whether the agent is currently started
+type cpuAgentGeneration struct {
+	stop chan struct{}
+	done chan struct{}
 }
 
 func NewCpuAgent(chain types.ChainReader, engine consensus.Engine) *CpuAgent {
 	agent := &CpuAgent{
 		chain:  chain,
 		engine: engine,
-		stop:   make(chan struct{}, 1),
 		workCh: make(chan *Work, 1),
 	}
 	return agent
 }
 
-func (self *CpuAgent) Work() chan<- *Work            { return self.workCh }
-func (self *CpuAgent) SetReturnCh(ch chan<- *Result) { self.returnCh = ch }
+func (self *CpuAgent) Work() chan<- *Work { return self.workCh }
+
+func (self *CpuAgent) SetReturnCh(ch chan<- *Result) {
+	self.returnMu.Lock()
+	defer self.returnMu.Unlock()
+	self.returnCh = ch
+}
 
 func (self *CpuAgent) Start() {
-	if !atomic.CompareAndSwapInt32(&self.started, 0, 1) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	if self.running != nil {
 		return // agent already started
 	}
-	go self.update()
+	generation := &cpuAgentGeneration{stop: make(chan struct{}), done: make(chan struct{})}
+	self.running = generation
+	go self.update(generation)
 }
 
 func (self *CpuAgent) Stop() {
-	if !atomic.CompareAndSwapInt32(&self.started, 1, 0) {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	if self.running == nil {
 		return // agent already stopped
 	}
-	self.stop <- struct{}{}
-done:
+	close(self.running.stop)
+	<-self.running.done
+	self.running = nil
 	// Empty work channel
 	for {
 		select {
 		case <-self.workCh:
 		default:
-			break done
+			return
 		}
 	}
 }
 
-func (self *CpuAgent) update() {
-out:
+func (self *CpuAgent) update(generation *cpuAgentGeneration) {
+	var (
+		quitCurrentOp chan struct{}
+		mining        sync.WaitGroup
+	)
+	defer func() {
+		if quitCurrentOp != nil {
+			close(quitCurrentOp)
+		}
+		mining.Wait()
+		close(generation.done)
+	}()
 	for {
 		select {
 		case work := <-self.workCh:
-			self.mu.Lock()
-			if self.quitCurrentOp != nil {
-				close(self.quitCurrentOp)
+			// A ready work channel must not delay cancellation of this generation.
+			select {
+			case <-generation.stop:
+				return
+			default:
 			}
-			self.quitCurrentOp = make(chan struct{})
+			if quitCurrentOp != nil {
+				close(quitCurrentOp)
+			}
+			quitCurrentOp = make(chan struct{})
+			operationStop := quitCurrentOp
 			log.Info("CpuAgent.update")
-			go self.mine(work, self.quitCurrentOp)
-			self.mu.Unlock()
-		case <-self.stop:
-			self.mu.Lock()
-			if self.quitCurrentOp != nil {
-				close(self.quitCurrentOp)
-				self.quitCurrentOp = nil
-			}
-			self.mu.Unlock()
-			break out
+			mining.Add(1)
+			go func() {
+				defer mining.Done()
+				self.mine(work, operationStop, generation.stop)
+			}()
+		case <-generation.stop:
+			return
 		}
 	}
 }
 
-func (self *CpuAgent) mine(work *Work, stop <-chan struct{}) {
+func (self *CpuAgent) mine(work *Work, stop, generationStop <-chan struct{}) {
 	log.Info("CpuAgent.mine")
+	var completed *Result
 	if result, err := self.engine.SealCandidate(work.candidate, stop); result != nil {
 		log.Info("Successfully sealed new candidate", "nonce", work.candidate.KeyCandidate.Nonce.Uint64(), "mixdigest", work.candidate.KeyCandidate.MixDigest.Hex())
-
-		self.returnCh <- &Result{work, result}
+		completed = &Result{work, result}
 	} else {
 		if err != nil {
 			log.Warn("Candidate sealing failed", "err", err)
 		}
-		self.returnCh <- nil
+	}
+	self.returnMu.RLock()
+	returnCh := self.returnCh
+	self.returnMu.RUnlock()
+	// A worker may hold its own mutex while stopping us, or its result queue
+	// may already be full. Neither can prevent canceled sealing from draining.
+	select {
+	case returnCh <- completed:
+	case <-generationStop:
 	}
 }

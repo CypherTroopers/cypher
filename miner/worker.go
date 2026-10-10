@@ -126,17 +126,27 @@ func (self *worker) setShouldStart(isStart bool) {
 	}
 }
 
-func (self *worker) start() {
+func (self *worker) start() error {
 	self.mu.Lock()
 	defer self.mu.Unlock()
+	// An older head-event loop may have observed permission before miner.stop.
+	// Recheck it while serialized with stop and DAG release.
+	if atomic.LoadInt32(&self.shouldStart) == 0 {
+		return nil
+	}
 	if atomic.LoadInt32(&self.running) == 1 {
-		return
+		return nil
 	}
 	port, _ := strconv.Atoi(self.config.RnetPort)
 	err := netutil.VerifyConnectivity("udp", net.ParseIP("127.0.0.1"), port)
 	if err != nil {
 		log.Error("Your node haven't opened UDP consensus port.So POW work is not to permit", "The port is", port)
-		return
+		return err
+	}
+	if engine, ok := self.engine.(interface{ StartMining() error }); ok {
+		if err := engine.StartMining(); err != nil {
+			return err
+		}
 	}
 
 	atomic.StoreInt32(&self.running, 1)
@@ -153,11 +163,29 @@ func (self *worker) start() {
 	for agent := range self.agents {
 		agent.Start()
 	}
+	return nil
 }
 
 func (self *worker) stop() {
 	self.mu.Lock()
 	defer self.mu.Unlock()
+	self.stopLocked()
+}
+
+// stopAndRelease drains mining before releasing the DAG, and excludes any
+// worker restart until release completes. Head changes use stop instead so
+// ordinary work rotation can keep the current epoch's DAG mapped.
+func (self *worker) stopAndRelease() error {
+	self.mu.Lock()
+	defer self.mu.Unlock()
+	self.stopLocked()
+	if engine, ok := self.engine.(interface{ StopMining() error }); ok {
+		return engine.StopMining()
+	}
+	return nil
+}
+
+func (self *worker) stopLocked() {
 	if self.powResultCancel != nil {
 		self.powResultCancel()
 		self.powResultCancel = nil
@@ -213,7 +241,9 @@ func (self *worker) autoCommit(subscription event.Subscription) {
 				if shouldStart {
 					if !self.isRunning() {
 						log.Info("Restore,Ready to start pow work")
-						self.start() //now action
+						if err := self.start(); err != nil {
+							log.Warn("Failed to restore mining worker", "err", err)
+						}
 					}
 				} else {
 					log.Info("User has not permitted  to start")

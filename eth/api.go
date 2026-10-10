@@ -436,6 +436,9 @@ func (api *PrivateMinerAPI) Start(threads *int) error {
 func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password string) (string, error) {
 	api.e.miningLifecycleMu.Lock()
 	defer api.e.miningLifecycleMu.Unlock()
+	if api.e.miningClosed.Load() {
+		return "", errors.New("mining is unavailable after node shutdown")
+	}
 	miningThreads := runtime.NumCPU()
 	if threads != nil {
 		miningThreads = *threads
@@ -532,7 +535,7 @@ func (api *PrivateMinerAPI) Start(threads *int, addr common.Address, password st
 
 // Stop terminates the miner, both at the consensus engine level as well as at
 // the block creation level.
-func (api *PrivateMinerAPI) Stop() {
+func (api *PrivateMinerAPI) Stop() error {
 	api.e.miningLifecycleMu.Lock()
 	defer api.e.miningLifecycleMu.Unlock()
 	type threaded interface {
@@ -543,8 +546,9 @@ func (api *PrivateMinerAPI) Stop() {
 	}
 	api.e.stopTxQUICReceiver()
 	api.e.stopPoWResultTransport()
-	api.e.StopMining()
-	api.e.reconfig.MinerStop()
+	miningErr := api.e.StopMining()
+	reconfigErr := api.e.reconfig.MinerStop()
+	return errors.Join(miningErr, reconfigErr)
 }
 
 func (api *PrivateMinerAPI) Status() string {

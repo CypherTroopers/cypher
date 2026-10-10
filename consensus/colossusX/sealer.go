@@ -30,6 +30,14 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 	if _, err := candidate.SealHash(); err != nil {
 		return nil, err
 	}
+	cancel, done, err := colossusX.beginMining()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	if miningCancelled(cancel, stop) {
+		return nil, nil
+	}
 	log.Info("pow work,finding...", "PowMode", colossusX.config.PowMode)
 	// If we're running a fake PoW, simply return a 0 nonce immediately
 	if colossusX.config.PowMode == ModeFake || colossusX.config.PowMode == ModeFullFake {
@@ -38,10 +46,30 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 	}
 	// Initialize and pin the DAG before starting any nonce-search workers, so
 	// allocation or locking failures reach the caller instead of leaving it waiting.
-	dataset, err := colossusX.dataset(candidate.KeyCandidate.Number.Uint64())
+	dataset, release, err := colossusX.acquireDataset(candidate.KeyCandidate.Number.Uint64(), cancel, stop)
+	if release != nil {
+		defer release()
+	}
 	if err != nil {
 		return nil, fmt.Errorf("colossusX mining aborted: dataset initialization failed: %w", err)
 	}
+	if dataset == nil {
+		return nil, nil
+	}
+	// A thread-count update restarts nonce workers under the same mining lease.
+	// Recursive SealCandidate calls could reopen work while Stop is waiting.
+	for {
+		if miningCancelled(cancel, stop) {
+			return nil, nil
+		}
+		result, restart, err := colossusX.sealCandidateWorkers(candidate, dataset, stop, cancel)
+		if err != nil || !restart {
+			return result, err
+		}
+	}
+}
+
+func (colossusX *colossusX) sealCandidateWorkers(candidate *types.Candidate, dataset *dataset, stop, cancel <-chan struct{}) (*types.Candidate, bool, error) {
 	// Create a runner and the multiple search threads it directs
 	abort := make(chan struct{})
 	found := make(chan *sealedCandidate)
@@ -52,31 +80,37 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 		seed, err := crand.Int(crand.Reader, big.NewInt(math.MaxInt64))
 		if err != nil {
 			colossusX.lock.Unlock()
-			return nil, err
+			return nil, false, err
 		}
 		colossusX.rand = rand.New(rand.NewSource(seed.Int64()))
 	}
 
-	colossusX.lock.Unlock()
 	if threads == 0 {
 		threads = runtime.NumCPU()
 	}
 	if threads < 0 {
 		threads = 1
 	}
+	seeds := make([]uint64, threads)
+	for i := range seeds {
+		seeds[i] = uint64(colossusX.rand.Int63())
+	}
+	colossusX.lock.Unlock()
 	var pend sync.WaitGroup
 	for i := 0; i < threads; i++ {
 		pend.Add(1)
 		go func(id int, nonce uint64) {
 			defer pend.Done()
 			colossusX.mineCandidate(candidate, dataset, id, nonce, abort, found)
-		}(i, uint64(colossusX.rand.Int63()))
+		}(i, seeds[i])
 	}
 	// Wait until sealing is terminated or a nonce is found
 	var result *types.Candidate
 	select {
 	case <-stop:
 		// Outside abort, stop all miner threads
+		close(abort)
+	case <-cancel:
 		close(abort)
 	case sealed := <-found:
 		candidate.KeyCandidate.Nonce = sealed.nonce
@@ -90,11 +124,11 @@ func (colossusX *colossusX) SealCandidate(candidate *types.Candidate, stop <-cha
 		close(abort)
 		pend.Wait()
 		log.Info("SealCandidate.update")
-		return colossusX.SealCandidate(candidate, stop)
+		return nil, true, nil
 	}
 	// Wait for all miners to terminate and return the block
 	pend.Wait()
-	return result, nil
+	return result, false, nil
 }
 
 // mineCandidate is the actual proof-of-work miner that searches for a nonce starting from

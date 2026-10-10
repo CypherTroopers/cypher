@@ -26,6 +26,11 @@ import (
 var ErrInvalidDumpMagic = errors.New("invalid dump magic")
 
 var (
+	ErrMiningStopped = errors.New("colossusX mining is stopped")
+	ErrEngineClosed  = errors.New("colossusX engine is closed")
+)
+
+var (
 	// maxUint256 is a big integer representing 2^256-1
 	maxUint256 = new(big.Int).Exp(big.NewInt(2), big.NewInt(256), big.NewInt(0))
 
@@ -103,6 +108,18 @@ func memoryMapAndGenerate(path string, size uint64, generator func(buffer []uint
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	var mem mmap.MMap
+	// Failed generation must not leave a temporary mapping, fd or disk file
+	// behind. Retry cleanup here if an explicit unmap/close below fails.
+	defer func() {
+		if mem != nil {
+			mem.Unmap()
+		}
+		if dump != nil {
+			dump.Close()
+		}
+		os.Remove(temp)
+	}()
 	if err = dump.Truncate(int64(len(dumpMagic))*4 + int64(size)); err != nil {
 		return nil, nil, nil, err
 	}
@@ -117,12 +134,15 @@ func memoryMapAndGenerate(path string, size uint64, generator func(buffer []uint
 	data := buffer[len(dumpMagic):]
 	generator(data)
 
-	if err := mem.Unmap(); err != nil {
+	mapping := mem
+	if err := mapping.Unmap(); err != nil {
 		return nil, nil, nil, err
 	}
+	mem = nil
 	if err := dump.Close(); err != nil {
 		return nil, nil, nil, err
 	}
+	dump = nil
 	if err := os.Rename(temp, path); err != nil {
 		return nil, nil, nil, err
 	}
@@ -179,6 +199,22 @@ func (lru *lru) get(epoch uint64) (item, future interface{}) {
 		lru.futureItem = future
 	}
 	return item, future
+}
+
+// items returns the references retained by this LRU, including its future item.
+func (lru *lru) items() []interface{} {
+	lru.mu.Lock()
+	defer lru.mu.Unlock()
+	items := make([]interface{}, 0, lru.cache.Len()+1)
+	for _, key := range lru.cache.Keys() {
+		if item, ok := lru.cache.Peek(key); ok {
+			items = append(items, item)
+		}
+	}
+	if lru.futureItem != nil {
+		items = append(items, lru.futureItem)
+	}
+	return items
 }
 
 // cache wraps an colossusX cache with some metadata to allow easier concurrent use.
@@ -279,13 +315,17 @@ func (c *cache) finalizer() {
 
 // dataset wraps an colossusX dataset with some metadata to allow easier concurrent use.
 type dataset struct {
-	epoch   uint64    // Epoch for which this cache is relevant
-	dump    *os.File  // File descriptor of the memory mapped cache
-	mmap    mmap.MMap // Memory map itself to unmap before releasing
-	locked  bool      // Whether the memory map has been pinned in RAM
-	dataset []uint32  // The actual cache data content
-	genErr  error     // Initialization error remembered across callers
-	once    sync.Once // Ensures the cache is generated only once
+	epoch        uint64     // Epoch for which this cache is relevant
+	dump         *os.File   // File descriptor of the memory mapped cache
+	mmap         mmap.MMap  // Memory map itself to unmap before releasing
+	locked       bool       // Whether the memory map has been pinned in RAM
+	dataset      []uint32   // The actual cache data content
+	genErr       error      // Initialization error remembered across callers
+	once         sync.Once  // Ensures the cache is generated only once
+	fileMu       sync.Mutex // Serializes future preparation with active generation
+	releaseMu    sync.Mutex // Serializes explicit release and the finalizer
+	prepareHook  func()     // Tests can pause preparation after it owns fileMu
+	generateHook func()     // Tests can pause active initialization before generation
 }
 
 // newDataset creates a new colossusX mining dataset and returns it as a plain Go
@@ -299,6 +339,9 @@ func datasetPath(dir string, seed []byte, endian string) string {
 }
 
 func pruneOldDatasets(dir, endian string, epoch uint64, limit int) {
+	if limit < 1 {
+		limit = 1
+	}
 	for ep := int(epoch) - limit; ep >= 0; ep-- {
 		seed := seedHash(uint64(ep)*epochLength + 1)
 		path := datasetPath(dir, seed, endian)
@@ -310,6 +353,23 @@ func pruneOldDatasets(dir, endian string, epoch uint64, limit int) {
 // keeping an active mmap in memory. This is used for pre-generating the next
 // epoch while the current epoch's dataset remains RAM locked.
 func (d *dataset) prepareOnDisk(dir string, limit int, test bool) error {
+	return d.prepareOnDiskWithCancel(dir, limit, test, nil)
+}
+
+func (d *dataset) prepareOnDiskWithCancel(dir string, limit int, test bool, cancel <-chan struct{}) error {
+	d.fileMu.Lock()
+	defer d.fileMu.Unlock()
+	if d.prepareHook != nil {
+		d.prepareHook()
+	}
+	if miningCancelled(cancel, nil) {
+		return nil
+	}
+	// The future epoch is an additional disk artifact. Its preparation must not
+	// prune the current epoch that a stopped miner will remap when restarted.
+	if limit < 2 {
+		limit = 2
+	}
 	csize := cacheSize(d.epoch*epochLength + 1)
 	dsize := datasetSize(d.epoch*epochLength + 1)
 	seed := seedHash(d.epoch*epochLength + 1)
@@ -338,11 +398,28 @@ func (d *dataset) prepareOnDisk(dir string, limit int, test bool) error {
 		logger.Warn("Failed to pre-generate colossusX dataset on disk", "err", err)
 		return err
 	}
+	defer func() {
+		if data != nil {
+			data.Unmap()
+		}
+		if dump != nil {
+			dump.Close()
+		}
+	}()
+	var releaseErr error
 	if data != nil {
-		data.Unmap()
+		mapping := data
+		releaseErr = mapping.Unmap()
+		if releaseErr == nil {
+			data = nil
+		}
 	}
 	if dump != nil {
-		dump.Close()
+		releaseErr = errors.Join(releaseErr, dump.Close())
+		dump = nil
+	}
+	if releaseErr != nil {
+		return fmt.Errorf("release future colossusX dataset: %w", releaseErr)
 	}
 	pruneOldDatasets(dir, endian, d.epoch, limit)
 	logger.Debug("Pre-generated future colossusX dataset on disk")
@@ -352,6 +429,11 @@ func (d *dataset) prepareOnDisk(dir string, limit int, test bool) error {
 // generate ensures that the dataset content is generated before use.
 func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) error {
 	d.once.Do(func() {
+		d.fileMu.Lock()
+		defer d.fileMu.Unlock()
+		if d.generateHook != nil {
+			d.generateHook()
+		}
 		defer func() {
 			if d.genErr != nil {
 				d.finalizer()
@@ -438,18 +520,39 @@ func (d *dataset) generate(dir string, limit int, lockMmap bool, test bool) erro
 
 // finalizer closes any file handlers and memory maps open.
 func (d *dataset) finalizer() {
+	if err := d.release(); err != nil {
+		log.Warn("Failed to release colossusX dataset", "epoch", d.epoch, "err", err)
+	}
+}
+
+// release runs only after all mining leases using this dataset have finished.
+// Disk files remain available for a later mapping; only RAM and the fd are freed.
+func (d *dataset) release() error {
+	d.releaseMu.Lock()
+	defer d.releaseMu.Unlock()
+	runtime.SetFinalizer(d, nil)
+	var releaseErr error
 	if d.mmap != nil {
 		if d.locked {
 			if err := d.mmap.Unlock(); err != nil {
-				log.Warn("Failed to unlock mapped colossusX dataset", "epoch", d.epoch, "err", err)
+				releaseErr = errors.Join(releaseErr, err)
+			} else {
+				d.locked = false
 			}
-			d.locked = false
 		}
-		d.mmap.Unmap()
-		d.dump.Close()
-		d.mmap, d.dump = nil, nil
+		mapping := d.mmap
+		if err := mapping.Unmap(); err != nil {
+			return errors.Join(releaseErr, err)
+		}
+		d.mmap = nil
+		d.locked = false
+	}
+	if d.dump != nil {
+		releaseErr = errors.Join(releaseErr, d.dump.Close())
+		d.dump = nil
 	}
 	d.dataset = nil
+	return releaseErr
 }
 
 // MakeCache generates a new colossusX cache and optionally stores it to disk.
@@ -510,6 +613,16 @@ type colossusX struct {
 	fakeDelay time.Duration // Time delay to sleep for before returning from verify
 
 	lock sync.Mutex // Ensures thread safety for the in-memory caches and mining fields
+
+	// Start/Stop/Close serialize transitions. miningMu gates every WaitGroup Add
+	// before Stop closes cancellation and waits, preventing new work after stop.
+	lifecycleMu    sync.Mutex
+	miningMu       sync.Mutex
+	miningWG       sync.WaitGroup
+	miningCancel   chan struct{}
+	miningStopped  bool
+	closed         bool
+	miningDatasets map[*dataset]int // Active leases plus retained mapped DAGs
 }
 
 // New creates a full sized colossusX PoW scheme.
@@ -616,31 +729,127 @@ func (colossusX *colossusX) cache(block uint64) *cache {
 // by first checking against a list of in-memory datasets, then against DAGs
 // stored on disk, and finally generating one if none can be found.
 func (colossusX *colossusX) dataset(block uint64) (*dataset, error) {
+	cancel, done, err := colossusX.beginMining()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	d, release, err := colossusX.acquireDataset(block, cancel, nil)
+	if release != nil {
+		defer release()
+	}
+	return d, err
+}
+
+func miningCancelled(cancel, stop <-chan struct{}) bool {
+	select {
+	case <-cancel:
+		return true
+	case <-stop:
+		return true
+	default:
+		return false
+	}
+}
+
+// beginMining must Add while holding the same gate Stop uses before Wait.
+func (colossusX *colossusX) beginMining() (<-chan struct{}, func(), error) {
+	colossusX.miningMu.Lock()
+	defer colossusX.miningMu.Unlock()
+	if colossusX.closed {
+		return nil, nil, ErrEngineClosed
+	}
+	if colossusX.miningStopped {
+		return nil, nil, ErrMiningStopped
+	}
+	if colossusX.miningCancel == nil {
+		colossusX.miningCancel = make(chan struct{})
+	}
+	colossusX.miningWG.Add(1)
+	return colossusX.miningCancel, colossusX.miningWG.Done, nil
+}
+
+// acquireDataset holds a use reference until the caller has joined its nonce
+// workers. Eviction can then release idle mappings without waiting for GC.
+func (colossusX *colossusX) acquireDataset(block uint64, cancel, stop <-chan struct{}) (*dataset, func(), error) {
+	if miningCancelled(cancel, stop) {
+		return nil, nil, nil
+	}
 	epoch := block / epochLength
+	colossusX.miningMu.Lock()
+	if colossusX.datasets == nil {
+		colossusX.datasets = newlru("dataset", colossusX.config.DatasetsInMem, newDataset)
+	}
 	currentI, futureI := colossusX.datasets.get(epoch)
 	current := currentI.(*dataset)
+	if colossusX.miningDatasets == nil {
+		colossusX.miningDatasets = make(map[*dataset]int)
+	}
+	colossusX.miningDatasets[current]++
+	colossusX.releaseEvictedDatasetsLocked()
+	colossusX.miningMu.Unlock()
+	release := func() {
+		colossusX.miningMu.Lock()
+		defer colossusX.miningMu.Unlock()
+		colossusX.miningDatasets[current]--
+		colossusX.releaseEvictedDatasetsLocked()
+	}
+	if miningCancelled(cancel, stop) {
+		return nil, release, nil
+	}
 
 	// Real mining requires the entire DAG to be pinned, regardless of CLI flags.
 	// Keep the small in-memory dataset available to test engines.
 	lockMmap := colossusX.config.PowMode != ModeTest || colossusX.config.DatasetsLockMmap
 	if err := current.generate(colossusX.config.DatasetDir, colossusX.config.DatasetsOnDisk, lockMmap, colossusX.config.PowMode == ModeTest); err != nil {
-		return nil, err
+		return nil, release, err
+	}
+	if miningCancelled(cancel, stop) {
+		return nil, release, nil
 	}
 
 	// If we need a new future dataset, now's a good time to regenerate it.
-	if futureI != nil {
+	if futureI != nil && colossusX.config.DatasetDir != "" {
 		future := futureI.(*dataset)
-		go func() {
-			if colossusX.config.DatasetDir == "" {
-				return
-			}
-			if err := future.prepareOnDisk(colossusX.config.DatasetDir, colossusX.config.DatasetsOnDisk, colossusX.config.PowMode == ModeTest); err != nil {
-				log.Warn("Failed to pre-generate future colossusX dataset on disk", "epoch", future.epoch, "err", err)
-			}
-		}()
+		// Register before launching, under Stop's gate. In-flight generation is
+		// allowed to finish, and Stop joins it before releasing any mappings.
+		colossusX.miningMu.Lock()
+		if !colossusX.miningStopped && !colossusX.closed && !miningCancelled(cancel, stop) {
+			colossusX.miningWG.Add(1)
+			go func() {
+				defer colossusX.miningWG.Done()
+				if miningCancelled(cancel, stop) {
+					return
+				}
+				if err := future.prepareOnDiskWithCancel(colossusX.config.DatasetDir, colossusX.config.DatasetsOnDisk, colossusX.config.PowMode == ModeTest, cancel); err != nil {
+					log.Warn("Failed to pre-generate future colossusX dataset on disk", "epoch", future.epoch, "err", err)
+				}
+			}()
+		}
+		colossusX.miningMu.Unlock()
 	}
 
-	return current, nil
+	return current, release, nil
+}
+
+func (colossusX *colossusX) releaseEvictedDatasetsLocked() {
+	retained := make(map[*dataset]struct{})
+	for _, item := range colossusX.datasets.items() {
+		retained[item.(*dataset)] = struct{}{}
+	}
+	for d, users := range colossusX.miningDatasets {
+		if users != 0 {
+			continue
+		}
+		if _, cached := retained[d]; cached {
+			continue
+		}
+		if err := d.release(); err != nil {
+			log.Warn("Failed to release evicted colossusX dataset", "epoch", d.epoch, "err", err)
+			continue
+		}
+		delete(colossusX.miningDatasets, d)
+	}
 }
 
 // Threads returns the number of mining threads currently enabled. This doesn't
@@ -686,9 +895,67 @@ func (colossusX *colossusX) APIs(chain consensus.ChainHeaderReader) []rpc.API {
 	return nil
 }
 
-func (colossusX *colossusX) Close() error {
-	//??
+// StartMining reopens admission after StopMining. Mapping stays lazy until work.
+func (colossusX *colossusX) StartMining() error {
+	colossusX.lifecycleMu.Lock()
+	defer colossusX.lifecycleMu.Unlock()
+	colossusX.miningMu.Lock()
+	defer colossusX.miningMu.Unlock()
+	if colossusX.closed {
+		return ErrEngineClosed
+	}
+	if !colossusX.miningStopped {
+		return nil
+	}
+	if err := colossusX.releaseMiningDatasetsLocked(); err != nil {
+		return err
+	}
+	colossusX.datasets = newlru("dataset", colossusX.config.DatasetsInMem, newDataset)
+	colossusX.miningCancel = make(chan struct{})
+	colossusX.miningStopped = false
 	return nil
+}
+
+// StopMining cancels and joins all sealing and future DAG preparation before
+// freeing their mappings. Verification caches and on-disk DAGs remain intact.
+func (colossusX *colossusX) StopMining() error {
+	return colossusX.stopMining(false)
+}
+
+func (colossusX *colossusX) Close() error {
+	return colossusX.stopMining(true)
+}
+
+func (colossusX *colossusX) stopMining(closeEngine bool) error {
+	colossusX.lifecycleMu.Lock()
+	defer colossusX.lifecycleMu.Unlock()
+	colossusX.miningMu.Lock()
+	colossusX.closed = colossusX.closed || closeEngine
+	if !colossusX.miningStopped {
+		colossusX.miningStopped = true
+		if colossusX.miningCancel != nil {
+			close(colossusX.miningCancel)
+		}
+	}
+	colossusX.miningMu.Unlock()
+	colossusX.miningWG.Wait()
+	colossusX.miningMu.Lock()
+	defer colossusX.miningMu.Unlock()
+	err := colossusX.releaseMiningDatasetsLocked()
+	colossusX.datasets = newlru("dataset", colossusX.config.DatasetsInMem, newDataset)
+	return err
+}
+
+func (colossusX *colossusX) releaseMiningDatasetsLocked() error {
+	var releaseErr error
+	for d := range colossusX.miningDatasets {
+		if err := d.release(); err != nil {
+			releaseErr = errors.Join(releaseErr, fmt.Errorf("release colossusX dataset epoch %d: %w", d.epoch, err))
+			continue
+		}
+		delete(colossusX.miningDatasets, d)
+	}
+	return releaseErr
 }
 
 // SeedHash is the seed to use for generating a verification cache and the mining

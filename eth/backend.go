@@ -105,6 +105,7 @@ type Ethereum struct {
 	lock      sync.RWMutex // Protects the variadic fields (e.g. gas price and etherbase)
 	// Serializes the RPC-visible reconfig/TxQUIC/PoW-listener/miner transition.
 	miningLifecycleMu sync.Mutex
+	miningClosed      atomic.Bool
 
 	consensusServicePendingLogsFeed *event.Feed
 }
@@ -649,6 +650,9 @@ func (s *Ethereum) setMiningThreads(threads int) {
 }
 
 func (s *Ethereum) StartMining(threads int, local bool, eb common.Address, pubKey ed25519.PublicKey) error {
+	if s.miningClosed.Load() {
+		return errors.New("mining is unavailable after node shutdown")
+	}
 	s.setMiningThreads(threads)
 	if !s.IsMining() {
 		s.lock.RLock()
@@ -660,7 +664,9 @@ func (s *Ethereum) StartMining(threads int, local bool, eb common.Address, pubKe
 		// goroutines. Run it synchronously so a concurrent miner.start cannot
 		// observe IsMining=false after the surrounding lifecycle transition has
 		// already installed the PoW listener.
-		s.miner.Start(pubKey, eb)
+		if err := s.miner.Start(pubKey, eb); err != nil {
+			return err
+		}
 		if !s.miner.Mining() {
 			return errors.New("miner worker failed to start")
 		}
@@ -668,7 +674,7 @@ func (s *Ethereum) StartMining(threads int, local bool, eb common.Address, pubKe
 	return nil
 }
 
-func (s *Ethereum) StopMining()                                      { s.miner.Stop() }
+func (s *Ethereum) StopMining() error                                { return s.miner.Stop() }
 func (s *Ethereum) IsMining() bool                                   { return s.miner.Mining() }
 func (s *Ethereum) Miner() *miner.Miner                              { return s.miner }
 func (s *Ethereum) AccountManager() *accounts.Manager                { return s.accountManager }
@@ -828,6 +834,9 @@ func (s *Ethereum) Start() error {
 
 // Stop implements node.Lifecycle, terminating all internal goroutines used by the Ethereum protocol.
 func (s *Ethereum) Stop() error {
+	s.miningLifecycleMu.Lock()
+	defer s.miningLifecycleMu.Unlock()
+	s.miningClosed.Store(true)
 	if s.commonRelay != nil {
 		s.commonRelay.Stop()
 	}
@@ -864,15 +873,15 @@ func (s *Ethereum) Stop() error {
 	s.bloomIndexer.Close()
 	close(s.closeBloomHandler)
 	s.txPool.Stop()
-	s.miner.Stop()
+	miningErr := s.miner.Stop()
 	s.blockchain.Stop()
 	s.keyBlockChain.Stop()
-	s.engine.Close()
+	engineErr := s.engine.Close()
 	core.SetCommonRPCAdmissionFinalizedLookup(nil)
 	core.SetCommonRPCAdmissionDatabase(nil)
 	s.chainDb.Close()
 	s.eventMux.Stop()
-	return nil
+	return errors.Join(miningErr, engineErr)
 }
 
 func (s *Ethereum) CalcGasLimit(block *types.Block) uint64 {

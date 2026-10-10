@@ -157,7 +157,11 @@ func TestMinerStartActivatesTxQUICFromVerifiedIdentity(t *testing.T) {
 		t.Fatalf("startup must not require an available receiver port or identity hint: %v", err)
 	}
 	api := NewPrivateMinerAPI(service)
-	t.Cleanup(api.Stop)
+	t.Cleanup(func() {
+		if err := api.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
 	q := service.txQUICIngress
 	if q == nil || q.outbox == nil || q.ingress == nil || q.wal == nil {
 		t.Fatal("automatic role startup did not prepare both durable ingress paths")
