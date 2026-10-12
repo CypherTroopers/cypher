@@ -4,21 +4,24 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
 
-// Socket cleanup uses its held directory and recorded inode. Never remove an
-// existing path or a replacement made after our listener was created.
+// Socket cleanup uses its held directory and recorded inode. The path lock
+// remains held until cleanup finishes; replacements are never removed.
 type publicRelaySocket struct {
 	*net.UnixListener
 	dir      *os.File
+	lock     *os.File
 	leaf     string
 	stat     unix.Stat_t
 	owned    bool
@@ -47,18 +50,24 @@ func listenPublicRelaySocket(path string) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	var existing unix.Stat_t
-	if err := unix.Fstatat(int(dir.Fd()), leaf, &existing, unix.AT_SYMLINK_NOFOLLOW); err != unix.ENOENT {
+	lock, err := lockPublicRelaySocket(dir, leaf)
+	if err != nil {
 		dir.Close()
-		return nil, errors.New("public-header socket path already exists or is inaccessible")
+		return nil, err
+	}
+	if err := preparePublicRelaySocketPath(dir, leaf, path, net.DialTimeout); err != nil {
+		dir.Close()
+		lock.Close()
+		return nil, err
 	}
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	if err != nil {
 		dir.Close()
-		return nil, errors.New("cannot bind public-header Unix socket")
+		lock.Close()
+		return nil, fmt.Errorf("cannot bind public-header Unix socket: %w", err)
 	}
 	listener.SetUnlinkOnClose(false)
-	owned := &publicRelaySocket{UnixListener: listener, dir: dir, leaf: leaf}
+	owned := &publicRelaySocket{UnixListener: listener, dir: dir, lock: lock, leaf: leaf}
 	if err := unix.Fstatat(int(dir.Fd()), leaf, &owned.stat, unix.AT_SYMLINK_NOFOLLOW); err != nil || owned.stat.Mode&unix.S_IFMT != unix.S_IFSOCK {
 		return nil, errors.Join(errors.New("cannot identify owned public-header socket"), owned.Close())
 	}
@@ -67,6 +76,73 @@ func listenPublicRelaySocket(path string) (net.Listener, error) {
 		return nil, errors.Join(errors.New("cannot restrict public-header socket permissions"), owned.Close())
 	}
 	return owned, nil
+}
+
+// A persistent lock beside the socket serializes users of the same socketPath,
+// regardless of datadir, including the bind/listen window and Close cleanup.
+// Never unlink the lock file: another opener could otherwise lock a different
+// inode while the current owner still holds its lock. A crash releases flock.
+func lockPublicRelaySocket(dir *os.File, leaf string) (*os.File, error) {
+	name := leaf + ".lock"
+	fd, err := unix.Openat(int(dir.Fd()), name, unix.O_RDWR|unix.O_CREAT|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("cannot open public-header socket lock: %w", err)
+	}
+	lock := os.NewFile(uintptr(fd), name)
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG ||
+		stat.Uid != uint32(os.Geteuid()) || stat.Mode&0077 != 0 || stat.Nlink != 1 {
+		lock.Close()
+		return nil, errors.New("public-header socket lock must be an owner-only regular file without hard links")
+	}
+	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		lock.Close()
+		return nil, fmt.Errorf("cannot acquire public-header socket path lock: %w", err)
+	}
+	var now unix.Stat_t
+	if err := unix.Fstatat(int(dir.Fd()), name, &now, unix.AT_SYMLINK_NOFOLLOW); err != nil ||
+		now.Dev != stat.Dev || now.Ino != stat.Ino || now.Mode&unix.S_IFMT != unix.S_IFREG ||
+		now.Uid != uint32(os.Geteuid()) || now.Mode&0077 != 0 || now.Nlink != 1 {
+		lock.Close()
+		return nil, errors.New("public-header socket lock changed; replacement was preserved")
+	}
+	return lock, nil
+}
+
+// The caller holds the path lock. Only a refused connection to an unchanged,
+// same-user socket permits reclamation; every ambiguous failure preserves it.
+// dial is passed explicitly so tests can replace the path during the probe.
+func preparePublicRelaySocketPath(dir *os.File, leaf, path string, dial func(string, string, time.Duration) (net.Conn, error)) error {
+	var existing unix.Stat_t
+	err := unix.Fstatat(int(dir.Fd()), leaf, &existing, unix.AT_SYMLINK_NOFOLLOW)
+	if err == unix.ENOENT {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("cannot inspect public-header socket path: %w", err)
+	}
+	if existing.Mode&unix.S_IFMT != unix.S_IFSOCK || existing.Uid != uint32(os.Geteuid()) {
+		return errors.New("public-header socket path must be a Unix socket owned by the current user; existing path was preserved")
+	}
+	conn, err := dial("unix", path, time.Second)
+	if err == nil {
+		conn.Close()
+		return errors.New("public-header socket is in use; existing listener was preserved")
+	}
+	var probeErr net.Error
+	if (errors.As(err, &probeErr) && probeErr.Timeout()) || !errors.Is(err, unix.ECONNREFUSED) {
+		return fmt.Errorf("cannot establish that public-header socket is stale; existing path was preserved: %w", err)
+	}
+	var now unix.Stat_t
+	if err := unix.Fstatat(int(dir.Fd()), leaf, &now, unix.AT_SYMLINK_NOFOLLOW); err != nil ||
+		now.Dev != existing.Dev || now.Ino != existing.Ino || now.Mode&unix.S_IFMT != unix.S_IFSOCK ||
+		now.Uid != uint32(os.Geteuid()) {
+		return errors.New("public-header socket changed during stale check; replacement was preserved")
+	}
+	if err := unix.Unlinkat(int(dir.Fd()), leaf, 0); err != nil {
+		return fmt.Errorf("cannot reclaim stale public-header socket: %w", err)
+	}
+	return nil
 }
 
 func (s *publicRelaySocket) Close() error {
@@ -85,6 +161,8 @@ func (s *publicRelaySocket) Close() error {
 			}
 		}
 		s.closeErr = errors.Join(s.closeErr, s.dir.Close())
+		// Closing the descriptor releases flock after all socket cleanup is done.
+		s.closeErr = errors.Join(s.closeErr, s.lock.Close())
 	})
 	return s.closeErr
 }
