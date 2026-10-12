@@ -1,4 +1,4 @@
-source_sha=5441bdd9f4f8d922891ab219471236508acb00fe
+source_sha=31bc310a35b38ee715519a60228f18f4f3e23e5a
 goos=windows
 goarch=amd64
 go_version=go1.26.2
@@ -12,7 +12,7 @@ leveldb_version=v1.0.1-0.20220721030215-126854af5e6d
 leveldb_module_sum=h1:vfofYNRScrDdvS342BElfbETmL1Aiz3i2t0zfRj16Hs=
 leveldb_patch_sha256=38349bc371c7cdda2fa7f0f59c047c368959778bda2327a0f7625434833aa6f1
 binary=cypher.exe
-binary_sha256=3580d0500d177e1fd9f1ae6b9a5c552dd47334a923eb0786fb412ded660f34ce
+binary_sha256=131974258c2876721bb87392a8b6ea2c2d9453d7adf655966d712dd8a0a4a770
 bls_sha256=17d7b9bf04fda7fc234bc20bc66ab584431abc2d7b1485b36f89d30059587bc9
 mcl_sha256=9967ee61b2ebf3bef9b2dd5630675fce565fe7d8c72a0976d1708a2780b2c15a
 msys2_compiler_package=mingw-w64-x86_64-gcc 16.2.0-4
