@@ -278,6 +278,68 @@ func VerifyFHSBlockTimestamp(timestamp uint64, now time.Time) error {
 	return nil
 }
 
+// FHSBlockSlotAtTime returns the absolute quarter-second slot containing now.
+// Computing from seconds avoids the limited range of time.Time.UnixNano.
+func FHSBlockSlotAtTime(now time.Time) (uint64, error) {
+	seconds := now.Unix()
+	if seconds < 0 || uint64(seconds) > ^uint64(0)/params.FairHotstuffSlotsPerSecond {
+		return 0, consensus.ErrFutureBlock
+	}
+	return uint64(seconds)*params.FairHotstuffSlotsPerSecond + uint64(now.Nanosecond())/(params.FairHotstuffSlotDurationMillis*uint64(time.Millisecond)), nil
+}
+
+// VerifyFHSBlockSlot uses the same future allowance as legacy FHS timestamps,
+// with the exact quarter-second boundary retained throughout the comparison.
+func VerifyFHSBlockSlot(slot uint64, now time.Time) error {
+	current, err := FHSBlockSlotAtTime(now)
+	if err != nil {
+		return err
+	}
+	allowance := uint64(allowedFutureBlockTime/time.Second) * params.FairHotstuffSlotsPerSecond
+	if slot > current && slot-current > allowance {
+		return consensus.ErrFutureBlock
+	}
+	return nil
+}
+
+// VerifyFHSHeaderTime is shared by proposal construction and header admission.
+// Slot timing is enabled only by the genesis-committed FHS configuration;
+// legacy profiles retain their existing timestamp and extra-data behavior.
+func VerifyFHSHeaderTime(config *params.ChainConfig, header *types.Header, now time.Time) error {
+	if config == nil || !config.FairHotstuff {
+		return nil
+	}
+	if config.FairHotstuffSlotEnabled() {
+		slot, err := header.FHSSlot()
+		if err != nil {
+			return err
+		}
+		return VerifyFHSBlockSlot(slot, now)
+	}
+	return VerifyFHSBlockTimestamp(header.Time, now)
+}
+
+func verifyHeaderParentTime(config *params.ChainConfig, header, parent *types.Header) error {
+	if config != nil && config.FairHotstuffSlotEnabled() {
+		childSlot, err := header.FHSSlot()
+		if err != nil {
+			return err
+		}
+		parentSlot, err := parent.FHSSlot()
+		if err != nil {
+			return fmt.Errorf("invalid parent FHS slot: %w", err)
+		}
+		if childSlot <= parentSlot {
+			return errOlderBlockTime
+		}
+		return nil
+	}
+	if header.Time <= parent.Time {
+		return errOlderBlockTime
+	}
+	return nil
+}
+
 // VerifyHeader checks whether a header conforms to the consensus rules of the
 // stock Ethereum colossusX engine.
 func (colossusX *colossusX) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Header, seal bool) error {
@@ -285,15 +347,20 @@ func (colossusX *colossusX) VerifyHeader(chain consensus.ChainHeaderReader, head
 	if colossusX.config.PowMode == ModeFullFake {
 		return nil
 	}
-	if config := chain.Config(); config != nil && config.FairHotstuff {
-		// A hash-known header must not bypass the gate used before FHS voting.
-		if err := VerifyFHSBlockTimestamp(header.Time, time.Now()); err != nil {
-			return err
-		}
+	// A hash-known header must not bypass the gate used before FHS voting.
+	if err := VerifyFHSHeaderTime(chain.Config(), header, time.Now()); err != nil {
+		return err
 	}
 	// Short circuit if the header is known, or its parent not
 	number := header.Number.Uint64()
 	if chain.GetHeader(header.Hash(), number) != nil {
+		if config := chain.Config(); config != nil && config.FairHotstuffSlotEnabled() && number > 0 {
+			parent := chain.GetHeader(header.ParentHash, number-1)
+			if parent == nil {
+				return consensus.ErrUnknownAncestor
+			}
+			return verifyHeaderParentTime(config, header, parent)
+		}
 		return nil
 	}
 	parent := chain.GetHeader(header.ParentHash, number-1)
@@ -370,10 +437,8 @@ func (colossusX *colossusX) VerifyHeaders(chain consensus.ChainHeaderReader, hea
 }
 
 func (colossusX *colossusX) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, index int) error {
-	if config := chain.Config(); config != nil && config.FairHotstuff {
-		if err := VerifyFHSBlockTimestamp(headers[index].Time, time.Now()); err != nil {
-			return err
-		}
+	if err := VerifyFHSHeaderTime(chain.Config(), headers[index], time.Now()); err != nil {
+		return err
 	}
 	var parent *types.Header
 	if index == 0 {
@@ -385,6 +450,9 @@ func (colossusX *colossusX) verifyHeaderWorker(chain consensus.ChainHeaderReader
 		return consensus.ErrUnknownAncestor
 	}
 	if chain.GetHeader(headers[index].Hash(), headers[index].Number.Uint64()) != nil {
+		if config := chain.Config(); config != nil && config.FairHotstuffSlotEnabled() {
+			return verifyHeaderParentTime(config, headers[index], parent)
+		}
 		return nil // known block
 	}
 	return colossusX.verifyHeader(chain, headers[index], parent, false, seals[index])
@@ -400,8 +468,8 @@ func (colossusX *colossusX) verifyHeader(chain consensus.ChainHeaderReader, head
 	}
 	// The FHS future-time bound is checked before the public entry points'
 	// known-header shortcuts. Every new header must also advance its parent.
-	if header.Time <= parent.Time {
-		return errOlderBlockTime
+	if err := verifyHeaderParentTime(chain.Config(), header, parent); err != nil {
+		return err
 	}
 	/*?? should verify the refer's keyblock difficulty
 	// Verify the block's difficulty based on its timestamp and parent's difficulty

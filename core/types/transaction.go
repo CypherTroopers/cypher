@@ -471,6 +471,28 @@ func (tx *Transaction) Nonce() uint64                     { return tx.data.nonce
 func (tx *Transaction) CheckNonce() bool    { return tx.Type() != NativeTxType }
 func (tx *Transaction) To() *common.Address { return tx.data.to() }
 
+// IsContractCreation reports whether the transaction has no destination without
+// allocating the defensive address copy returned by To. Fixed-destination
+// envelopes cannot create contracts.
+func (tx *Transaction) IsContractCreation() bool {
+	if tx == nil || tx.data == nil {
+		return false
+	}
+	switch inner := tx.data.(type) {
+	case *txdata:
+		return inner.Recipient == nil
+	case *AccessListTx:
+		return inner.To == nil
+	case *DynamicFeeTx:
+		return inner.To == nil
+	case *BlobTx, *SetCodeTx, *NativeTxV1:
+		return false
+	default:
+		// Preserve To's semantics if another envelope is added later.
+		return tx.data.to() == nil
+	}
+}
+
 func (tx *Transaction) Hash() common.Hash {
 	if err := tx.ValidateIntegerBounds(); err != nil {
 		return common.Hash{}

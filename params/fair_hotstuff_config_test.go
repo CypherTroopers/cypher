@@ -216,3 +216,57 @@ func TestFairHotstuffGenesisCommitmentBindsConsensusConfiguration(t *testing.T) 
 		t.Fatal("Osaka blob schedule did not change the genesis config commitment")
 	}
 }
+
+func TestFairHotstuffSlotConfig(t *testing.T) {
+	legacy := testFairHotstuffConfig()
+	legacyCommitment, err := FairHotstuffGenesisCommitment(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, millis := range []uint64{0, 1, 100, 250, 500, 1000, ^uint64(0)} {
+		t.Run(fmt.Sprint(millis), func(t *testing.T) {
+			config := testFairHotstuffConfig()
+			config.FairHotstuffSlotMillis = millis
+			valid := millis == 0 || millis == FairHotstuffSlotDurationMillis
+			if err := config.CheckConfigForkOrder(); (err == nil) != valid {
+				t.Fatalf("slot interval %d: valid=%t, error=%v", millis, valid, err)
+			}
+			if !valid {
+				return
+			}
+			encoded, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(encoded, &fields); err != nil {
+				t.Fatal(err)
+			}
+			_, present := fields["fairHotstuffSlotMillis"]
+			if present != (millis != 0) {
+				t.Fatal("legacy configuration encoding changed or active slot interval was omitted")
+			}
+			var decoded ChainConfig
+			if err := json.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { decoded.SetModernForkConfig(nil) })
+			if decoded.FairHotstuffSlotMillis != millis || decoded.FairHotstuffSlotEnabled() != (millis != 0) {
+				t.Fatal("slot configuration did not survive JSON round trip")
+			}
+			commitment, err := FairHotstuffGenesisCommitment(&decoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (commitment == legacyCommitment) != (millis == 0) {
+				t.Fatal("genesis commitment did not distinguish legacy and slot clocks")
+			}
+		})
+	}
+	config := testFairHotstuffConfig()
+	config.FairHotstuff = false
+	config.FairHotstuffSlotMillis = FairHotstuffSlotDurationMillis
+	if config.FairHotstuffSlotEnabled() || config.CheckConfigForkOrder() == nil {
+		t.Fatal("non-FHS consensus accepted the slot clock")
+	}
+}

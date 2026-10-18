@@ -10,12 +10,15 @@ import (
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus/colossusX"
+	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/hotstuff"
 	"github.com/cypherium/cypher/rlp"
+	"github.com/cypherium/cypher/trie"
 	lru "github.com/hashicorp/golang-lru"
 )
 
@@ -136,6 +139,261 @@ func TestCommonRPCV2DirectPayoutSerialParallelAndImportedBlock(t *testing.T) {
 	}
 	if synced.IntermediateRoot(true) != serial.IntermediateRoot(true) || !reflect.DeepEqual(syncedReceipts, serialReceipts) {
 		t.Fatal("import/cache execution disagrees with proposal execution")
+	}
+}
+
+type fhsSlotExecutionHeaders struct {
+	config *params.ChainConfig
+	parent *types.Header
+}
+
+func (c *fhsSlotExecutionHeaders) Config() *params.ChainConfig  { return c.config }
+func (c *fhsSlotExecutionHeaders) CurrentHeader() *types.Header { return c.parent }
+func (c *fhsSlotExecutionHeaders) GetHeader(hash common.Hash, number uint64) *types.Header {
+	if c.parent.Hash() == hash && c.parent.Number.Uint64() == number {
+		return c.parent
+	}
+	return nil
+}
+func (c *fhsSlotExecutionHeaders) GetHeaderByNumber(number uint64) *types.Header {
+	if c.parent.Number.Uint64() == number {
+		return c.parent
+	}
+	return nil
+}
+func (c *fhsSlotExecutionHeaders) GetHeaderByHash(hash common.Hash) *types.Header {
+	return c.GetHeader(hash, c.parent.Number.Uint64())
+}
+
+func TestFHSSlotTimestampSerialParallelAndValidatedReplay(t *testing.T) {
+	processor, template, base, operatorKey, recipient := v2ExecutionFixture(t)
+	config := processor.config
+	config.FairHotstuffSlotMillis = params.FairHotstuffSlotDurationMillis
+	config.NativeParallel = params.SolanaScaleNativeParallelConfig()
+	config.NativeParallel.RequireNativeTransactions = false
+	forkTime := uint64(101)
+	config.ModernForkConfig().ShanghaiTime = &forkTime
+	t.Cleanup(func() { config.SetModernForkConfig(nil) })
+	if !evmOptimisticParallelEnabled(config, vm.Config{}) || evmOptimisticParallelEnabled(config, vm.Config{EnablePreimageRecording: true}) {
+		t.Fatal("fixture does not select distinct parallel and serial execution paths")
+	}
+	contract := common.HexToAddress("0x8000000000000000000000000000000000000080")
+	// Store TIMESTAMP at the calldata-selected key and emit its 32-byte value.
+	// Two senders use separate keys, allowing both detached EVM results to merge.
+	base.SetCode(contract, []byte{byte(vm.TIMESTAMP), byte(vm.DUP1), byte(vm.PUSH1), 0, byte(vm.MSTORE), byte(vm.PUSH1), 0, byte(vm.CALLDATALOAD), byte(vm.SSTORE), byte(vm.PUSH1), 32, byte(vm.PUSH1), 0, byte(vm.LOG0), byte(vm.STOP)})
+	base.SetNonce(contract, 1)
+	keys := make([]*ecdsa.PrivateKey, 2)
+	for i := range keys {
+		var err error
+		keys[i], err = crypto.GenerateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		base.SetBalance(crypto.PubkeyToAddress(keys[i].PublicKey), new(big.Int).Exp(big.NewInt(10), big.NewInt(20), nil))
+	}
+	parent := template.Header()
+	parent.Number, parent.ParentHash, parent.GasLimit = new(big.Int), common.Hash{}, params.OriginalMinGasLimit
+	parent.SetFHSSlot(400)
+	processor.bc.genesisBlock = types.NewBlockWithHeader(parent)
+	genesisHash := processor.bc.genesisBlock.Hash()
+	validator := NewBlockValidator(config, processor.bc, processor.engine)
+	headers := &fhsSlotExecutionHeaders{config: config, parent: parent}
+	for slot := uint64(401); slot <= 404; slot++ {
+		header := types.CopyHeader(parent)
+		header.ParentHash, header.Number = parent.Hash(), new(big.Int).Add(parent.Number, big.NewInt(1))
+		header.SetFHSSlot(slot)
+		if config.IsShanghai(header.Number, header.Time) {
+			header.WithdrawalsHash = types.EmptyWithdrawalsHash
+		}
+		if got := config.CypheriumRules(header.Number, header.Time).IsShanghai; got != (slot == 404) {
+			t.Fatalf("slot %d Shanghai activation = %t", slot, got)
+		}
+		txs := make(types.Transactions, len(keys))
+		hashes := make([]common.Hash, len(keys))
+		for i, key := range keys {
+			data := common.BigToHash(big.NewInt(int64(i + 1))).Bytes()
+			var err error
+			txs[i], err = types.SignTx(types.NewTransaction(slot-401, contract, new(big.Int), 100_000, big.NewInt(params.FixedTransferGasPricePerGas), data), types.LatestSignerForChainID(config.ChainID), key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hashes[i] = txs[i].Hash()
+		}
+		prepareEVMOnlyHistory(base, header)
+		base.Finalise(true)
+		proposal := base.Copy()
+		proposalReceipts, _, proposalGas, err := ExecuteEVMProposalTransactions(config, processor.bc, header, txs, proposal, vm.Config{EnablePreimageRecording: true})
+		if err != nil {
+			t.Fatalf("slot %d proposal: %v", slot, err)
+		}
+		batch := stateProcessorTestAdmissionBatch(t, operatorKey, config.ChainID, genesisHash, 0, header.Time, hashes)
+		batch.Version, batch.RewardRecipient = types.CommonRPCVersionV2, recipient
+		resealStateProcessorTestAdmissionBatch(t, batch, operatorKey)
+		refs := make([]types.CommonTxAdmissionRef, len(txs))
+		rewards := make([]*types.CommonTxReward, len(txs))
+		for i, tx := range txs {
+			refs[i].Item = uint16(i)
+			fee := new(big.Int).Mul(new(big.Int).SetUint64(proposalReceipts[i].GasUsed), big.NewInt(params.FixedTransferGasPricePerGas))
+			reward := new(big.Int).Div(new(big.Int).Set(fee), big.NewInt(5))
+			rewards[i] = &types.CommonTxReward{Version: types.CommonRPCVersionV2, TxHash: tx.Hash(), Approver: batch.Miner, RewardRecipient: recipient, ApproverReward: reward, Burn: new(big.Int).Sub(fee, reward)}
+		}
+		applyCommonRPCRewards(proposal, rewards)
+		header.GasUsed = proposalGas
+		processor.engine.Finalize(processor.bc, header, proposal, txs, nil, proposalGas)
+		block := types.NewBlock(header, txs, nil, proposalReceipts, new(trie.Trie))
+		block.AttachCommonTxData([]*types.CommonTxAdmissionBatch{batch}, refs, rewards)
+		if err := processor.engine.VerifyHeader(headers, block.Header(), false); err != nil {
+			t.Fatalf("slot %d engine header validation: %v", slot, err)
+		}
+		abort, results := processor.engine.VerifyHeaders(headers, []*types.Header{block.Header()}, []bool{false})
+		err = <-results
+		close(abort)
+		if err != nil {
+			t.Fatalf("slot %d batch header validation: %v", slot, err)
+		}
+		// The certified-parent body handoff exercises production validation while
+		// keeping this fixture independent of committee finality and full sync.
+		if err := validator.ValidateBodyRevalidatingKnown(block, true); err != nil {
+			t.Fatalf("slot %d body validation: %v", slot, err)
+		}
+		serial := base.Copy()
+		serialReceipts, serialLogs, serialGas, err := processor.Process(block, serial, vm.Config{EnablePreimageRecording: true})
+		if err != nil {
+			t.Fatalf("slot %d serial: %v", slot, err)
+		}
+		parallel := base.Copy()
+		parallelReceipts, parallelLogs, parallelGas, err := processor.Process(block, parallel, vm.Config{})
+		if err != nil {
+			t.Fatalf("slot %d parallel: %v", slot, err)
+		}
+		wire, err := rlp.EncodeToBytes(block)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var transported types.Block
+		if err := rlp.DecodeBytes(wire, &transported); err != nil {
+			t.Fatal(err)
+		}
+		if err := processor.engine.VerifyHeader(headers, transported.Header(), false); err != nil {
+			t.Fatalf("slot %d replay header: %v", slot, err)
+		}
+		if err := validator.ValidateBodyRevalidatingKnown(&transported, true); err != nil {
+			t.Fatalf("slot %d replay body: %v", slot, err)
+		}
+		replayed := base.Copy()
+		replayReceipts, replayLogs, replayGas, err := processor.Process(&transported, replayed, vm.Config{})
+		if err != nil {
+			t.Fatalf("slot %d replay: %v", slot, err)
+		}
+		if serialGas != parallelGas || serialGas != replayGas || serialGas != proposalGas ||
+			!reflect.DeepEqual(serialReceipts, parallelReceipts) || !reflect.DeepEqual(serialReceipts, replayReceipts) ||
+			!reflect.DeepEqual(serialLogs, parallelLogs) || !reflect.DeepEqual(serialLogs, replayLogs) {
+			t.Fatalf("slot %d serial, parallel and validated replay gas, receipts or logs differ", slot)
+		}
+		for name, executed := range map[string]*state.StateDB{"serial": serial, "parallel": parallel, "replay": replayed} {
+			if err := validator.ValidateState(block, executed, serialReceipts, serialGas); err != nil {
+				t.Fatalf("slot %d %s output validation: %v", slot, name, err)
+			}
+			for i := range keys {
+				if got := executed.GetState(contract, common.BigToHash(big.NewInt(int64(i+1)))); got != common.BigToHash(new(big.Int).SetUint64(slot/params.FairHotstuffSlotsPerSecond)) {
+					t.Fatalf("slot %d %s TIMESTAMP = %s, want seconds %d", slot, name, got, header.Time)
+				}
+			}
+		}
+		if len(serialLogs) != len(keys) {
+			t.Fatalf("slot %d log count = %d", slot, len(serialLogs))
+		}
+		for _, log := range serialLogs {
+			if new(big.Int).SetBytes(log.Data).Uint64() != header.Time {
+				t.Fatalf("slot %d log TIMESTAMP = %x, want %d", slot, log.Data, header.Time)
+			}
+		}
+		base, parent = replayed, block.Header()
+		headers.parent = parent
+	}
+}
+
+type fhsSlotQCTrapValidator struct {
+	*BlockValidator
+	reconstructions int
+}
+
+func (v *fhsSlotQCTrapValidator) ReconstructFHSQC(*types.Block) (*types.HotstuffProposalRef, *hotstuff.SignedState, error) {
+	v.reconstructions++
+	return nil, nil, types.ErrInvalidSignature
+}
+
+func TestFHSSlotFinalizedImportRejectsInvalidCachedHeaderBeforeQC(t *testing.T) {
+	for _, path := range []string{"canonical", "pending"} {
+		for _, test := range []struct {
+			name      string
+			legacy    bool
+			mutate    func(*types.Header)
+			wantEarly bool
+		}{
+			{"malformed-extra", false, func(h *types.Header) { h.Extra = h.Extra[:len(h.Extra)-1] }, true},
+			{"timestamp-mismatch", false, func(h *types.Header) { h.Time++ }, true},
+			{"same-parent-slot", false, func(h *types.Header) { h.SetFHSSlot(400) }, true},
+			{"valid-slot-reaches-qc", false, func(*types.Header) {}, false},
+			{"legacy-extra-reaches-qc", true, func(h *types.Header) { h.Extra = []byte("legacy") }, false},
+		} {
+			t.Run(path+"/"+test.name, func(t *testing.T) {
+				db := rawdb.NewMemoryDatabase()
+				t.Cleanup(func() { _ = db.Close() })
+				config := &params.ChainConfig{ChainID: big.NewInt(1), FairHotstuff: true, FairHotstuffSlotMillis: params.FairHotstuffSlotDurationMillis}
+				if test.legacy {
+					config.FairHotstuffSlotMillis = 0
+				}
+				parentHeader := &types.Header{Number: new(big.Int), Difficulty: big.NewInt(1), GasLimit: params.OriginalMinGasLimit}
+				parentHeader.SetFHSSlot(400)
+				parent := types.NewBlockWithHeader(parentHeader)
+				header := types.CopyHeader(parentHeader)
+				header.Number, header.ParentHash = big.NewInt(1), parent.Hash()
+				header.SetFHSSlot(401)
+				test.mutate(header)
+				block := types.NewBlockWithHeader(header)
+				blockCache, _ := lru.New(2)
+				headerCache, _ := lru.New(2)
+				for _, stored := range []*types.Block{parent, block} {
+					rawdb.WriteBlock(db, stored)
+					blockCache.Add(stored.Hash(), stored)
+					headerCache.Add(stored.Hash(), stored.Header())
+				}
+				rawdb.WriteCanonicalHash(db, parent.Hash(), 0)
+				engine := colossusX.NewFaker()
+				t.Cleanup(func() { _ = engine.Close() })
+				bc := &BlockChain{chainConfig: config, db: db, engine: engine, blockCache: blockCache, hc: &HeaderChain{chainDb: db, headerCache: headerCache}}
+				qcTrap := &fhsSlotQCTrapValidator{BlockValidator: NewBlockValidator(config, bc, engine)}
+				bc.validator = qcTrap
+				current := parent
+				if path == "canonical" {
+					rawdb.WriteCanonicalHash(db, block.Hash(), 1)
+					current = block
+				} else {
+					bc.fhsSyncPending = &VerifiedProposal{Block: block, StateDB: newModernTestState(t)}
+				}
+				bc.currentBlock.Store(current)
+				pending := bc.fhsSyncPending
+				// The QC trap isolates the trusted import shortcuts: malformed slot
+				// headers must fail before certificate reconstruction is attempted.
+				bc.chainmu.Lock()
+				count, err := bc.insertFHSFinalizedChain(types.Blocks{block}, true, true)
+				bc.chainmu.Unlock()
+				if count != 0 || err == nil {
+					t.Fatalf("unexpected shortcut result: count=%d error=%v", count, err)
+				}
+				if test.wantEarly {
+					if qcTrap.reconstructions != 0 || !strings.Contains(err.Error(), "invalid "+path+" Fair HotStuff slot header") {
+						t.Fatalf("invalid cached slot header reached QC reconstruction: calls=%d error=%v", qcTrap.reconstructions, err)
+					}
+				} else if qcTrap.reconstructions != 1 || !strings.Contains(err.Error(), "invalid "+path+" Fair HotStuff QC") {
+					t.Fatalf("control did not reach the trusted QC shortcut: calls=%d error=%v", qcTrap.reconstructions, err)
+				}
+				if bc.CurrentBlock() != current || bc.fhsSyncPending != pending {
+					t.Fatal("rejected import mutated canonical head or pending proposal")
+				}
+			})
+		}
 	}
 }
 

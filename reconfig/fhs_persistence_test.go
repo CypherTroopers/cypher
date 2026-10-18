@@ -5,19 +5,26 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math/big"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
+	"github.com/cypherium/cypher/consensus/colossusX"
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/types"
+	"github.com/cypherium/cypher/core/vm"
 	"github.com/cypherium/cypher/crypto/bls"
 	"github.com/cypherium/cypher/ethdb"
+	"github.com/cypherium/cypher/ethdb/leveldb"
 	"github.com/cypherium/cypher/ethdb/memorydb"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/params"
@@ -1261,6 +1268,474 @@ func TestFHSRestartValidatesLastVoteProposalRecord(t *testing.T) {
 	}
 	if err := service.validateRestoredFHSVote(vote); err == nil {
 		t.Fatal("altered durable vote proposal was accepted after restart")
+	}
+}
+
+func newFHSSlotReplayChain(t *testing.T, genesis *core.Genesis, key *types.KeyBlock, committee *bftview.Committee) (*core.BlockChain, *core.KeyBlockChain, ethdb.Database) {
+	t.Helper()
+	db := rawdb.NewMemoryDatabase()
+	initializeFHSSlotReplayDatabase(t, db, genesis, key, committee)
+	bc, kbc, _ := openFHSSlotReplayChain(t, db, genesis.Config)
+	return bc, kbc, db
+}
+
+func initializeFHSSlotReplayDatabase(t *testing.T, db ethdb.Database, genesis *core.Genesis, key *types.KeyBlock, committee *bftview.Committee) {
+	t.Helper()
+	rawdb.WriteKeyBlock(db, key)
+	rawdb.WriteKeyBlockHash(db, key.Hash(), 0)
+	rawdb.WriteHeadKeyBlockHash(db, key.Hash())
+	rawdb.WriteHeadKeyHeaderHash(db, key.Hash())
+	rawdb.WriteTd(db, key.Hash(), 0, key.Difficulty())
+	rawdb.WriteChainConfig(db, key.Hash(), genesis.Config)
+	bftview.SetCommitteeConfig(db, nil, nil)
+	if !bftview.WriteCommittee(0, key.Hash(), committee) {
+		t.Fatal("write slot replay committee")
+	}
+	genesis.MustCommit(db)
+}
+
+// openFHSSlotReplayChain does not initialize or replay either chain. Its close
+// operation releases every old runtime before a physical database is reopened.
+func openFHSSlotReplayChain(t *testing.T, db ethdb.Database, config *params.ChainConfig) (*core.BlockChain, *core.KeyBlockChain, func()) {
+	t.Helper()
+	bftview.SetCommitteeConfig(db, nil, nil)
+	mux := new(event.TypeMux)
+	kbc, err := core.NewKeyBlockChain(&fhsEpochTestBackend{}, db, nil, config, nil, mux)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := colossusX.NewFaker() // Retains header validation, including the slot clock.
+	bc, err := core.NewBlockChain(db, nil, config, engine, vm.Config{}, nil, nil, kbc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	closeChain := func() {
+		once.Do(func() { bc.Stop(); kbc.Stop(); engine.Close(); mux.Stop(); db.Close() })
+	}
+	t.Cleanup(closeChain)
+	return bc, kbc, closeChain
+}
+
+func newFHSSlotReplayFixture(t *testing.T) (*fhsEpochTestFixture, *core.Genesis, string) {
+	t.Helper()
+	fixture, genesis, directory, _ := newFHSSlotReplayFixtureWithDatabase(t, nil, nil, false)
+	return fixture, genesis, directory
+}
+
+func newFHSSlotReplayFixtureWithDatabase(t *testing.T, shared ethdb.Database, alloc core.GenesisAlloc, fixedCommittee bool) (*fhsEpochTestFixture, *core.Genesis, string, func()) {
+	t.Helper()
+	fixture := &fhsEpochTestFixture{keys: make([]bls.SecretKey, 4), public: make([]*bls.PublicKey, 4)}
+	committee := &bftview.Committee{List: make([]*common.Cnode, len(fixture.keys))}
+	config := *params.TestChainConfig
+	config.FixedCommittee = fixedCommittee
+	config.ChainID = big.NewInt(73042)
+	config.FairHotstuff, config.FairHotstuffSlotMillis = true, params.FairHotstuffSlotDurationMillis
+	config.FairHotstuffSeed = common.HexToHash("0x5107")
+	config.GenCommittee = make(params.GenesisCommittee, len(fixture.keys))
+	config.SetModernForkConfig(&params.ModernForkConfig{BerlinBlock: big.NewInt(0), LondonBlock: big.NewInt(0)})
+	t.Cleanup(func() { config.SetModernForkConfig(nil); bftview.SetCommitteeConfig(nil, nil, nil) })
+	for i := range fixture.keys {
+		fixture.keys[i].SetByCSPRNG()
+		fixture.public[i] = fixture.keys[i].GetPublicKey()
+		committee.List[i] = &common.Cnode{Address: fmt.Sprintf("slot-validator-%d", i), CoinBase: fmt.Sprintf("%040x", i+1), Public: fixture.public[i].SerializeToHexStr()}
+		config.GenCommittee[i] = *committee.List[i]
+	}
+	key := (&core.GenesisKey{Config: &config, Difficulty: big.NewInt(1), Time: 100}).ToBlock()
+	key.SetCommitteeHash(committee.RlpHash())
+	anchor := new(types.Header)
+	anchor.SetFHSSlot(400)
+	commitment, err := params.FairHotstuffGenesisCommitment(&config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	genesis := &core.Genesis{Config: &config, Difficulty: big.NewInt(1), GasLimit: params.GenesisGasLimit, Timestamp: anchor.Time, ExtraData: string(anchor.Extra), Mixhash: commitment, Alloc: alloc}
+	db := shared
+	if db == nil {
+		db = rawdb.NewMemoryDatabase()
+	}
+	initializeFHSSlotReplayDatabase(t, db, genesis, key, committee)
+	bc, kbc, closeChain := openFHSSlotReplayChain(t, db, &config)
+	var wal ethdb.KeyValueStore = shared
+	var waldir string
+	if wal == nil {
+		waldir = filepath.Join(t.TempDir(), "slot-safety")
+		wal, err = leveldb.New(waldir, 1, 8, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Service{
+		chainConfig: &config, bc: bc, kbc: kbc, netService: &netService{},
+		fhsStore:       newFHSSafetyStoreForConfig(wal, config.ChainID.Uint64(), bc.Genesis().Hash(), &config),
+		proposalBodies: make(map[common.Hash]*proposalBodyMsg), verifiedProposalByID: make(map[common.Hash]*core.VerifiedProposal),
+		fhsCertifiedByHash: make(map[common.Hash]*fhsCertifiedProposal), fhsCertifiedByID: make(map[common.Hash]*fhsCertifiedProposal),
+		currentView: bftview.View{TxHash: bc.Genesis().Hash(), KeyHash: key.Hash(), CommitteeHash: committee.RlpHash()},
+	}
+	s.txService = &txService{bc: bc, kbc: kbc, config: &config, proposedChain: newProposedChain(), mux: new(event.TypeMux)}
+	s.txService.proposedChain.clear(bc.Genesis())
+	t.Cleanup(func() {
+		s.txService.mux.Stop()
+		if shared == nil {
+			s.fhsStore.db.Close()
+		}
+	})
+	fixture.service, fixture.db, fixture.current, fixture.historical, fixture.committee = s, db, key, key, committee
+	fixture.genesisHash = bc.Genesis().Hash()
+	return fixture, genesis, waldir, func() { s.txService.mux.Stop(); closeChain() }
+}
+
+func newFHSSlotReplayProposal(t *testing.T, fixture *fhsEpochTestFixture, parent *fhsCertifiedProposal, view, slot uint64, sameBlock *types.Block) *fhsCertifiedProposal {
+	s := fixture.service
+	t.Helper()
+	base := s.bc.Genesis()
+	var parentQC *hotstuff.SignedState
+	var parentID common.Hash
+	if parent != nil {
+		base, parentQC = parent.verified.Block, parent.qc
+		id, err := hotstuff.SignedStateID(parentQC)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parentID = id.Hash()
+	}
+	block := sameBlock
+	if block == nil {
+		header := &types.Header{ParentHash: base.Hash(), Number: new(big.Int).SetUint64(base.NumberU64() + 1), Root: base.Root(), Difficulty: big.NewInt(1),
+			GasLimit: base.GasLimit(), BaseFee: big.NewInt(params.FixedBaseFeePerGas), KeyHash: fixture.current.Hash(), BlockType: types.FastTx_Block}
+		header.SetFHSSlot(slot)
+		block = types.NewBlock(header, nil, nil, nil, nil)
+	}
+	encoded := block.EncodeToBytes()
+	leader, err := fairHotstuffLeaderIndex(s.chainConfig.FairHotstuffSeed, s.ChainID(), view, fixture.committee.RlpHash(), len(fixture.keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, err := types.NewHotstuffProposalRefWithProof(s.ChainID(), view, common.BigToHash(new(big.Int).SetUint64(view)), fixture.committee.List[leader].Address, block, encoded, nil, parentID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parentBytes, err := hotstuff.EncodeSignedState(parentQC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := &proposalBodyMsg{Type: proposalBodyMsgManifest, ProposalID: ref.ProposalID(), BodyHash: ref.BodyHash, BodySize: ref.BodySize, Number: ref.Number,
+		ViewNumber: view, ViewID: ref.ViewID, LeaderID: ref.LeaderID, ProposalKeyHash: ref.KeyHash, EncodedBlock: encoded, ParentQC: parentBytes}
+	if err := s.storeProposalBody(body); err != nil {
+		t.Fatal(err)
+	}
+	var parentVerified *core.VerifiedProposal
+	if parent != nil {
+		parentVerified = parent.verified
+	}
+	verified, err := s.bc.ValidateBlockForHotstuffWithParent(ref.ProposalID(), view, ref.ViewID, ref.LeaderID, types.DecodeToBlock(encoded), parentVerified)
+	if err != nil {
+		t.Fatalf("execute slot %d at view %d: %v", slot, view, err)
+	}
+	s.verifiedProposalByID[ref.ProposalID()] = verified
+	return &fhsCertifiedProposal{ref: ref, qc: signFHSEpochProposalQC(t, fixture, ref), verified: verified}
+}
+
+func TestFHSSlotDurableReplayRecertificationAndFinalizedImport(t *testing.T) {
+	fixture, genesis, waldir := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	proposal := func(parent *fhsCertifiedProposal, view, slot uint64, sameBlock *types.Block) *fhsCertifiedProposal {
+		return newFHSSlotReplayProposal(t, fixture, parent, view, slot, sameBlock)
+	}
+	a := proposal(nil, 10, 401, nil)
+	b := proposal(a, 13, 403, nil) // Skip a slot while retaining Unix second 100.
+	recertified := proposal(a, 17, 403, b.verified.Block)
+	c := proposal(recertified, 19, 404, nil)
+	d := proposal(c, 20, 409, nil) // Skip four slots before the terminal pair.
+	if a.verified.Block.Time() != b.verified.Block.Time() || c.verified.Block.Time() != 101 || d.verified.Block.Time() != 102 {
+		t.Fatal("slot fixture does not cover same-second blocks and skipped slots")
+	}
+	if recertified.ref.ProposalID() == b.ref.ProposalID() || recertified.ref.BlockHash != b.ref.BlockHash || recertified.ref.BodyHash != b.ref.BodyHash {
+		t.Fatal("higher-view recertification changed the block or body identity")
+	}
+	persistBranchSafetyBodies(t, s, a, b, recertified, c, d)
+	for _, record := range []*fhsCertifiedProposal{b, recertified} {
+		if err := s.adoptFHSHighQC(record.qc, false, false); err != nil {
+			t.Fatalf("adopt same-second certificate at view %d: %v", record.qc.Number, err)
+		}
+	}
+	vote := &hotstuff.PersistedVote{ViewNumber: d.ref.ViewNumber, ViewID: d.ref.ViewID, LeaderID: d.ref.LeaderID,
+		ProposalID: d.ref.ProposalID(), ProposalRef: d.ref.EncodeToBytes(), ProposalRefHash: hotstuff.StateDigest(d.ref.EncodeToBytes())}
+	if err := s.PersistFHSVote(vote); err != nil {
+		t.Fatal(err)
+	}
+	s.netService.serverID = d.ref.LeaderID
+	if err := s.adoptFHSHighQC(d.qc, false, true); err != nil {
+		t.Fatalf("persist skipped-slot terminal QC: %v", err)
+	}
+	if s.bc.CurrentBlockN() != 0 {
+		t.Fatal("fixture committed before recovery replay")
+	}
+	if err := s.fhsStore.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := leveldb.New(waldir, 1, 8, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.fhsStore = newFHSSafetyStoreForConfig(reopened, s.ChainID(), fixture.genesisHash, s.chainConfig)
+	resetBranchSafetyRuntime(s)
+	if err := s.loadFHSWAL(); err != nil {
+		t.Fatalf("replay slotted WAL after durable reopen: %v", err)
+	}
+	if s.bc.CurrentBlock().Hash() != c.ref.BlockHash || !hotstuff.SignedStateSemanticEqual(s.HighestCertified(), d.qc) {
+		t.Fatal("recovery did not complete the terminal decision and retain the highest certificate")
+	}
+	pending, err := s.fhsStore.pendingBroadcastSnapshot()
+	if err != nil || !hotstuff.SignedStateSemanticEqual(pending, d.qc) {
+		t.Fatalf("restart lost the exact highest-QC replay outbox: pending=%+v err=%v", pending, err)
+	}
+	if s.fhsQCBroadcastReplaySuppressed(pending, time.Now()) {
+		t.Fatal("restart inherited volatile QC replay suppression")
+	}
+	if err := s.PersistFHSVote(hotstuff.ClonePersistedVote(vote)); err != nil {
+		t.Fatalf("restart rejected its identical durable vote: %v", err)
+	}
+	conflict := hotstuff.ClonePersistedVote(vote)
+	conflict.ProposalID[0] ^= 1
+	if err := s.PersistFHSVote(conflict); err == nil {
+		t.Fatal("restart accepted a conflicting vote at the persisted view")
+	}
+	for _, record := range []*fhsCertifiedProposal{b, recertified} {
+		body, found, err := s.readFHSProposalBody(record.ref)
+		if err != nil || !found || body == nil || types.DecodeToBlock(body.EncodedBlock).Hash() != b.ref.BlockHash {
+			t.Fatalf("durable same-block certification at view %d was not recoverable: found=%t err=%v", record.qc.Number, found, err)
+		}
+	}
+	// Exercise the ordinary finalized importer with the recovered signed proof.
+	// This is a second canonical database, not an RLP-only transport check.
+	importer, _, _ := newFHSSlotReplayChain(t, genesis, fixture.current, fixture.committee)
+	blocks := make(types.Blocks, c.ref.Number)
+	for i := range blocks {
+		blocks[i] = s.bc.GetBlockByNumber(uint64(i + 1))
+	}
+	if count, err := importer.InsertChain(blocks); err != nil || count != len(blocks) {
+		t.Fatalf("import recovered slotted finality prefix: count=%d err=%v", count, err)
+	}
+	if importer.CurrentBlock().Hash() != c.ref.BlockHash || importer.CurrentBlock().Root() != s.bc.CurrentBlock().Root() {
+		t.Fatal("finalized import diverged from recovered canonical state")
+	}
+	if count, err := importer.InsertChain(blocks); err != nil || count != len(blocks) {
+		t.Fatalf("reimport known canonical slot prefix: count=%d err=%v", count, err)
+	}
+}
+
+func TestFHSSlotCertifiedBoundaryDurableReplay(t *testing.T) {
+	for _, depth := range []int{128, 129} {
+		t.Run(fmt.Sprintf("uncommitted-%d", depth), func(t *testing.T) {
+			fixture, _, waldir := newFHSSlotReplayFixture(t)
+			s := fixture.service
+			var tip *fhsCertifiedProposal
+			var bodyBytes int
+			for number := 1; number <= depth; number++ {
+				// Every edge skips a view, so even a fully validated prefix has
+				// no consecutive-view pair that can advance the canonical head.
+				tip = newFHSSlotReplayProposal(t, fixture, tip, uint64(10+2*number), uint64(400+number), nil)
+				bodyBytes += len(tip.verified.Block.EncodeToBytes())
+				persistBranchSafetyBodies(t, s, tip)
+				if number == 64 || number == 128 || number == depth {
+					// Exercise normal adoption, including cryptographic validation,
+					// WAL publication and execution-parent selection. Do not insert
+					// records directly into the certified runtime indexes.
+					if err := s.adoptFHSHighQC(tip.qc, false, false); err != nil {
+						t.Fatalf("adopt authenticated gap-view QC at height %d: %v", number, err)
+					}
+					if err := s.commitFHS2ChainForCertified(tip.qc); err != nil {
+						t.Fatalf("process gap-view finality at height %d: %v", number, err)
+					}
+				}
+			}
+			if s.bc.CurrentBlockN() != 0 || len(s.fhsCertifiedByID) != depth ||
+				!hotstuff.SignedStateSemanticEqual(s.HighestCertified(), tip.qc) || s.GetCurrentView().TxHash != tip.ref.BlockHash {
+				t.Fatalf("normal adoption did not publish %d uncommitted certificates", depth)
+			}
+			t.Logf("normal HighQC adoption retained %d authenticated empty blocks (%d total body bytes); canonical height=%d", depth, bodyBytes, s.bc.CurrentBlockN())
+			if depth == 129 {
+				// A first terminal pair after 129 gapped blocks needs a 130th
+				// record. Its signatures and commitments are valid, but the live
+				// ancestry traversal rejects it before installing its certificate.
+				terminal := newFHSSlotReplayProposal(t, fixture, tip, tip.qc.Number+1, uint64(401+depth), nil)
+				persistBranchSafetyBodies(t, s, terminal)
+				if _, err := s.verifyFHSQCCryptographic(terminal.qc); err != nil {
+					t.Fatalf("invalid terminal QC fixture: %v", err)
+				}
+				if err := s.adoptFHSHighQC(terminal.qc, false, false); err == nil || !strings.Contains(err.Error(), "unreasonably deep") {
+					t.Fatalf("terminal height 130 adoption error = %v, want current traversal boundary", err)
+				} else {
+					t.Logf("authenticated terminal height 130 cannot enter finality: %v", err)
+				}
+				if s.bc.CurrentBlockN() != 0 || len(s.fhsCertifiedByID) != depth ||
+					!hotstuff.SignedStateSemanticEqual(s.HighestCertified(), tip.qc) {
+					t.Fatal("failed terminal adoption changed canonical state or the certified watermark")
+				}
+				state, hash := reloadBranchSafetyState(t, s)
+				if state == nil || hash != tip.ref.BlockHash || !hotstuff.SignedStateSemanticEqual(state.HighestQC, tip.qc) {
+					t.Fatal("failed terminal adoption changed the durable highest-QC watermark")
+				}
+				certificate, err := rawdb.ReadFHSCertificate(s.fhsStore.db, terminal.ref.ProposalID())
+				if err != nil || len(certificate) != 0 {
+					t.Fatalf("failed terminal adoption published a certificate: bytes=%d err=%v", len(certificate), err)
+				}
+			}
+			if err := s.fhsStore.db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := leveldb.New(waldir, 1, 8, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.fhsStore = newFHSSafetyStoreForConfig(reopened, s.ChainID(), fixture.genesisHash, s.chainConfig)
+			resetBranchSafetyRuntime(s)
+			if err := s.loadFHSWAL(); err != nil {
+				t.Fatalf("restart rejected normally adopted depth %d: %v", depth, err)
+			}
+			if s.bc.CurrentBlockN() != 0 || len(s.fhsCertifiedByID) != depth ||
+				!hotstuff.SignedStateSemanticEqual(s.HighestCertified(), tip.qc) || s.GetCurrentView().TxHash != tip.ref.BlockHash {
+				t.Fatalf("restart did not restore the exact depth-%d certified frontier", depth)
+			}
+		})
+	}
+}
+
+func TestFHSSlotCertifiedBoundaryTerminalPairFinalizes(t *testing.T) {
+	fixture, genesis, waldir := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	var first, tip *fhsCertifiedProposal
+	for number := 1; number <= 129; number++ {
+		view := uint64(10 + 2*number)
+		if number == 129 {
+			// The reserved child closes the first consecutive-view edge at
+			// the live boundary. Block 1 then needs exactly 128 descendants.
+			view = tip.qc.Number + 1
+		}
+		tip = newFHSSlotReplayProposal(t, fixture, tip, view, uint64(400+number), nil)
+		if first == nil {
+			first = tip
+		}
+		persistBranchSafetyBodies(t, s, tip)
+		if number == 64 || number == 128 || number == 129 {
+			var err error
+			if number == 129 {
+				// Model the crash after certificate durability and publication,
+				// before the ordinary finality continuation commits its parent.
+				err = s.adoptFHSHighQC(tip.qc, false, false)
+			} else {
+				err = s.AdoptFHSHighQC(tip.qc)
+			}
+			if err != nil {
+				t.Fatalf("adopt authenticated height %d with terminal height 129: %v", number, err)
+			}
+			if number < 129 && s.bc.CurrentBlockN() != 0 {
+				t.Fatal("view gaps finalized before the terminal consecutive pair")
+			}
+		}
+	}
+	if s.bc.CurrentBlockN() != 0 || len(s.fhsCertifiedByID) != 129 ||
+		!hotstuff.SignedStateSemanticEqual(s.HighestCertified(), tip.qc) || s.GetCurrentView().TxHash != tip.ref.BlockHash {
+		t.Fatal("terminal height 129 did not reach the durable pre-commit crash window")
+	}
+	if err := s.fhsStore.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := leveldb.New(waldir, 1, 8, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.fhsStore = newFHSSafetyStoreForConfig(reopened, s.ChainID(), fixture.genesisHash, s.chainConfig)
+	resetBranchSafetyRuntime(s)
+	if err := s.loadFHSWAL(); err != nil {
+		t.Fatalf("restart from 129-record terminal-pair crash window: %v", err)
+	}
+	if s.bc.CurrentBlockN() != 128 || !hotstuff.SignedStateSemanticEqual(s.HighestCertified(), tip.qc) || s.GetCurrentView().TxHash != tip.ref.BlockHash {
+		t.Fatal("restart did not finalize the full 128-block prefix and restore the terminal frontier")
+	}
+	firstBlock := s.bc.GetBlockByNumber(1)
+	proof, present, err := core.DecodeFHSCommitProof(firstBlock)
+	if err != nil || !present || proof == nil || len(proof.QCs) != 128 || firstBlock.Hash() != first.ref.BlockHash {
+		t.Fatalf("first finalized block proof: present=%t proof=%+v err=%v", present, proof, err)
+	}
+	t.Logf("restart with terminal height 129 finalized height 128; first ancestor carries %d QCs (%d proof bytes)", len(proof.QCs), len(firstBlock.FHSFinalityProof()))
+	// The ordinary importer must accept the largest supported proof at the
+	// oldest finalized ancestor, without importing an artificial QC-only chain.
+	importer, _, _ := newFHSSlotReplayChain(t, genesis, fixture.current, fixture.committee)
+	if count, err := importer.InsertChain(types.Blocks{firstBlock}); err != nil || count != 1 {
+		t.Fatalf("import first finalized block with 128-QC proof: count=%d err=%v", count, err)
+	}
+	if importer.CurrentBlock().Hash() != first.ref.BlockHash {
+		t.Fatal("finalized importer did not retain the certified boundary proof")
+	}
+}
+
+func TestFHSSlotRestartRejectsInvalidPersistedHeader(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		mutate     func(*types.Header)
+		invalidOwn bool
+	}{
+		{"missing-envelope", func(h *types.Header) { h.Extra = nil }, true},
+		{"wrong-version", func(h *types.Header) { h.Extra[3]++ }, true},
+		{"trailing-envelope-data", func(h *types.Header) { h.Extra = append(h.Extra, 0) }, true},
+		{"seconds-mismatch", func(h *types.Header) { h.Time++ }, true},
+		{"parent-slot-equal", func(h *types.Header) { h.SetFHSSlot(400) }, false},
+		{"parent-slot-regression", func(h *types.Header) { h.SetFHSSlot(399) }, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fixture, _, _ := newFHSSlotReplayFixture(t)
+			s := fixture.service
+			base := s.bc.Genesis()
+			header := &types.Header{ParentHash: base.Hash(), Number: big.NewInt(1), Root: base.Root(), Difficulty: big.NewInt(1),
+				GasLimit: base.GasLimit(), BaseFee: big.NewInt(params.FixedBaseFeePerGas), KeyHash: fixture.current.Hash(), BlockType: types.FastTx_Block}
+			header.SetFHSSlot(401)
+			test.mutate(header)
+			block := types.NewBlock(header, nil, nil, nil, nil)
+			// Recompute all proposal commitments and sign the actual bad header.
+			// Recovery must reject its slot, rather than only detecting a body hash mismatch.
+			ref, _ := writeFHSPersistenceProposal(t, s.fhsStore.db, s.ChainID(), 1, 10, 1, block)
+			qc := signFHSEpochProposalQC(t, fixture, ref)
+			if _, err := s.verifyFHSQCCryptographic(qc); err != nil {
+				t.Fatalf("invalid QC fixture: %v", err)
+			}
+			encodedQC, err := rlp.EncodeToBytes(&fhsDiskCertificate{ProposalID: ref.ProposalID(), QC: qc})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := rawdb.WriteFHSCertificate(s.fhsStore.db, ref.ProposalID(), encodedQC); err != nil {
+				t.Fatal(err)
+			}
+			state := hotstuff.NewFHSSafetyState()
+			state.HighestQC = qc
+			encoded, err := s.fhsStore.encodeSafety(state, ref.BlockHash)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := rawdb.WriteFHSSafetyState(s.fhsStore.db, encoded); err != nil {
+				t.Fatal(err)
+			}
+			resetBranchSafetyRuntime(s)
+			body, found, err := s.readFHSProposalBody(ref)
+			if test.invalidOwn {
+				if err == nil || !found || body != nil {
+					t.Fatalf("invalid persisted slot envelope was exposed to recovery/repair: found=%t hasBody=%t err=%v", found, body != nil, err)
+				}
+			} else if err != nil || !found || body == nil {
+				t.Fatalf("canonical envelope failed before parent-aware replay: found=%t err=%v", found, err)
+			}
+			wantReason := "timestamp older than parent"
+			if test.invalidOwn {
+				wantReason = "slot"
+			}
+			if err := s.loadFHSWAL(); err == nil || !strings.Contains(err.Error(), wantReason) {
+				t.Fatalf("restart error = %v, want invalid slot reason %q", err, wantReason)
+			}
+			if s.bc.CurrentBlockN() != 0 || s.fhsHighest != nil || len(s.proposalBodies) != 0 || len(s.verifiedProposalByID) != 0 {
+				t.Fatal("failed slot recovery published a canonical or volatile prefix")
+			}
+		})
 	}
 }
 
@@ -2723,5 +3198,502 @@ func TestReconcileFHSTimeoutEpochRejectsInactiveNonHistoricalMetadata(t *testing
 				t.Fatal("inactive non-historical timeout metadata was accepted")
 			}
 		})
+	}
+}
+
+// Promotion has its own fault lane: ordinary content writes and safety-WAL
+// writes remain independently testable through their existing wrappers.
+type fhsPromotionStore struct {
+	ethdb.KeyValueStore
+	puts, syncs, reads atomic.Int64
+	failPutAt          int64
+	failGet, failSync  bool
+	applyThenFail      bool
+	partialSync        bool
+	entered, release   chan struct{}
+}
+
+func (store *fhsPromotionStore) Get(key []byte) ([]byte, error) {
+	store.reads.Add(1)
+	if store.failGet {
+		return nil, errors.New("injected promotion read failure")
+	}
+	return store.KeyValueStore.Get(key)
+}
+
+func (store *fhsPromotionStore) NewBatch() ethdb.Batch {
+	return &fhsPromotionBatch{Batch: store.KeyValueStore.NewBatch(), store: store}
+}
+
+type fhsPromotionBatch struct {
+	ethdb.Batch
+	store *fhsPromotionStore
+}
+
+func (batch *fhsPromotionBatch) Put(key, value []byte) error {
+	if count := batch.store.puts.Add(1); count == batch.store.failPutAt {
+		return errors.New("injected promotion disk full")
+	}
+	return batch.Batch.Put(key, value)
+}
+
+func (batch *fhsPromotionBatch) WriteSync() error {
+	syncCount := batch.store.syncs.Add(1)
+	if batch.store.entered != nil && syncCount == 1 {
+		select {
+		case batch.store.entered <- struct{}{}:
+		default:
+		}
+		<-batch.store.release
+	}
+	if batch.store.partialSync {
+		writer := &fhsPromotionPartialWriter{db: batch.store.KeyValueStore}
+		if err := batch.Batch.Replay(writer); err != nil {
+			return err
+		}
+		return errors.New("injected partial promotion write")
+	}
+	if batch.store.failSync {
+		return errors.New("injected promotion sync failure")
+	}
+	if err := batch.Batch.(ethdb.SyncBatch).WriteSync(); err != nil {
+		return err
+	}
+	if batch.store.applyThenFail {
+		return errors.New("injected uncertain promotion sync")
+	}
+	return nil
+}
+
+type fhsPromotionPartialWriter struct {
+	db   ethdb.KeyValueWriter
+	done bool
+}
+
+func (writer *fhsPromotionPartialWriter) Put(key, value []byte) error {
+	if writer.done {
+		return nil
+	}
+	writer.done = true
+	return writer.db.Put(key, value)
+}
+
+func (*fhsPromotionPartialWriter) Delete([]byte) error { return nil }
+
+func installFHSPromotionStore(t *testing.T, s *Service, db ethdb.KeyValueStore) {
+	t.Helper()
+	if err := s.fhsStore.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s.fhsStore = newFHSSafetyStoreForConfig(db, s.ChainID(), s.bc.Genesis().Hash(), s.chainConfig)
+}
+
+func TestFHSContentPromotionRewritesAndPinsExistingRecords(t *testing.T) {
+	fixture, _, _ := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	record := newFHSSlotReplayProposal(t, fixture, nil, 10, 401, nil)
+	body := cloneProposalBodyMsg(s.proposalBodies[record.ref.ProposalID()])
+	db := &fhsPromotionStore{KeyValueStore: memorydb.New()}
+	installFHSPromotionStore(t, s, db)
+	if err := s.persistFHSProposalData(record.ref, body); err != nil {
+		t.Fatal(err)
+	}
+	if err := rawdb.WriteFHSCertificate(db, record.ref.ProposalID(), mustFHSPromotionCertificate(t, record)); err != nil {
+		t.Fatal(err)
+	}
+	db.puts.Store(0)
+	db.reads.Store(0)
+	receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if db.puts.Load() != 3 || db.syncs.Load() != 1 || db.reads.Load() != 2 { // exact envelope and certificate guards; no body Get
+		t.Fatalf("promotion puts/syncs/reads = %d/%d/%d", db.puts.Load(), db.syncs.Load(), db.reads.Load())
+	}
+	if !receipt.matches(s.fhsStore, record.ref, body, record.qc) {
+		t.Fatal("successful receipt does not match exact content")
+	}
+	second, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []*fhsContentReceipt{receipt, receipt} {
+		if err := candidate.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if receipt.matches(s.fhsStore, record.ref, body, record.qc) || !second.matches(s.fhsStore, record.ref, body, record.qc) {
+		t.Fatal("receipt ownership was not independent/idempotent")
+	}
+	if err := s.pruneFHSPersistence(100, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if proposals, bodies, certificates := countFHSPersistenceRecords(t, db); proposals != 1 || bodies != 1 || certificates != 1 {
+		t.Fatalf("pinned records were collected: %d/%d/%d", proposals, bodies, certificates)
+	}
+	if err := second.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pruneFHSPersistence(100, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if proposals, bodies, certificates := countFHSPersistenceRecords(t, db); proposals != 0 || bodies != 0 || certificates != 0 {
+		t.Fatalf("closed records remain pinned: %d/%d/%d", proposals, bodies, certificates)
+	}
+}
+
+func mustFHSPromotionCertificate(t *testing.T, record *fhsCertifiedProposal) []byte {
+	t.Helper()
+	encoded, err := rlp.EncodeToBytes(&fhsDiskCertificate{ProposalID: record.ref.ProposalID(), QC: record.qc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func TestFHSContentPromotionFailureRetainsExecutionOwnership(t *testing.T) {
+	fixture, _, _ := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	record := newFHSSlotReplayProposal(t, fixture, nil, 10, 401, nil)
+	body := cloneProposalBodyMsg(s.proposalBodies[record.ref.ProposalID()])
+	for _, test := range []struct {
+		name string
+		db   *fhsPromotionStore
+	}{
+		{"put-disk-full", &fhsPromotionStore{KeyValueStore: memorydb.New(), failPutAt: 2}},
+		{"read", &fhsPromotionStore{KeyValueStore: memorydb.New(), failGet: true}},
+		{"sync", &fhsPromotionStore{KeyValueStore: memorydb.New(), failSync: true}},
+		{"partial-write", &fhsPromotionStore{KeyValueStore: memorydb.New(), partialSync: true}},
+		{"uncertain-sync", &fhsPromotionStore{KeyValueStore: memorydb.New(), applyThenFail: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			installFHSPromotionStore(t, s, test.db)
+			if err := rawdb.WriteFHSCertificate(test.db.KeyValueStore, record.ref.ProposalID(), mustFHSPromotionCertificate(t, record)); err != nil {
+				t.Fatal(err)
+			}
+			if receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20); err == nil || receipt != nil {
+				t.Fatalf("failed promotion returned receipt=%v err=%v", receipt, err)
+			}
+			if len(s.fhsStore.contentPins) != 0 || s.verifiedProposalByID[record.ref.ProposalID()] != record.verified || s.proposalBodies[record.ref.ProposalID()] == nil {
+				t.Fatal("failed promotion changed existing ownership or leaked pins")
+			}
+			if state, err := rawdb.ReadFHSSafetyState(test.db.KeyValueStore); err != nil || len(state) != 0 {
+				t.Fatalf("content promotion changed safety WAL: %x, %v", state, err)
+			}
+			test.db.failPutAt, test.db.failGet, test.db.failSync, test.db.partialSync, test.db.applyThenFail = 0, false, false, false, false
+			receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20)
+			if err != nil {
+				t.Fatalf("bounded retry failed: %v", err)
+			}
+			receipt.Close()
+		})
+	}
+}
+
+func TestFHSContentPromotionBudgetCancellationAndSingleWorker(t *testing.T) {
+	fixture, _, _ := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	record := newFHSSlotReplayProposal(t, fixture, nil, 10, 401, nil)
+	body := cloneProposalBodyMsg(s.proposalBodies[record.ref.ProposalID()])
+	db := &fhsPromotionStore{KeyValueStore: memorydb.New(), entered: make(chan struct{}, 1), release: make(chan struct{})}
+	defer func() {
+		select {
+		case <-db.release:
+		default:
+			close(db.release)
+		}
+	}()
+	installFHSPromotionStore(t, s, db)
+	var resource *fhsContentResourceError
+	if receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 1); receipt != nil || !errors.As(err, &resource) {
+		t.Fatalf("local work refusal = %v, %v", receipt, err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if receipt, err := s.promoteFHSProposalContent(cancelled, record.ref, body, record.qc, 16<<20); receipt != nil || !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled promotion = %v, %v", receipt, err)
+	}
+	if db.reads.Load() != 0 || db.puts.Load() != 0 || len(s.fhsStore.contentPins) != 0 {
+		t.Fatal("preflight refusal performed content I/O")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		receipt, err := s.promoteFHSProposalContent(ctx, record.ref, body, record.qc, 16<<20)
+		if receipt != nil {
+			receipt.Close()
+			result <- errors.New("cancelled sync returned a receipt")
+			return
+		}
+		result <- err
+	}()
+	select {
+	case <-db.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("promotion did not enter sync")
+	}
+	if receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20); receipt != nil || !errors.Is(err, errFHSContentPromotionBusy) {
+		t.Fatalf("second active promotion = %v, %v", receipt, err)
+	}
+	// A prune pass must not convoy the safety lock onto blocked content I/O.
+	pruned := make(chan error, 1)
+	go func() { pruned <- s.pruneFHSPersistence(100, 1000) }()
+	select {
+	case err := <-pruned:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("prune blocked the safety lane behind content sync")
+	}
+	vote := testPersistedVote(t, s.ChainID(), record.ref.ViewNumber+1, common.HexToHash("0x111"), record.ref.LeaderID, 1)
+	voted := make(chan error, 1)
+	go func() { voted <- s.PersistFHSVote(vote) }()
+	select {
+	case err := <-voted:
+		if err != nil {
+			t.Fatalf("independent safety WAL write failed: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("content promotion blocked independent safety WAL write")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		t.Fatalf("promotion returned before joining sync: %v", err)
+	default:
+	}
+	close(db.release)
+	if err := <-result; !errors.Is(err, context.Canceled) {
+		t.Fatalf("joined cancellation error = %v", err)
+	}
+	if len(s.fhsStore.contentPins) != 0 {
+		t.Fatal("cancelled sync leaked a pin")
+	}
+	receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20)
+	if err != nil {
+		t.Fatalf("retry after joined cancellation failed: %v", err)
+	}
+	receipt.Close()
+}
+
+func TestFHSContentPromotionLevelDBReopenExactEnvelope(t *testing.T) {
+	fixture, _, waldir := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	parent := newFHSSlotReplayProposal(t, fixture, nil, 10, 401, nil)
+	record := newFHSSlotReplayProposal(t, fixture, parent, 12, 402, nil)
+	body := cloneProposalBodyMsg(s.proposalBodies[record.ref.ProposalID()])
+	// The content API accepts already owned execution data. Exercise the exact
+	// admission representation independently of execution or admission lookup.
+	block := types.DecodeToBlock(body.EncodedBlock)
+	admission := &types.CommonTxAdmissionBatch{Version: 2, ChainID: new(big.Int).Set(s.chainConfig.ChainID), GenesisHash: s.bc.Genesis().Hash(), Miner: common.Address{1}, RewardRecipient: common.Address{2}, Timestamp: 1, Signature: []byte("owned-admission-evidence")}
+	admission.TxRoot = types.DeriveCommonTxAdmissionTxRoot(nil)
+	admission.AdmissionID = types.CommonTxAdmissionID(admission)
+	block.AttachCommonTxData([]*types.CommonTxAdmissionBatch{admission}, nil, nil)
+	body.EncodedBlock = block.EncodeToBytes()
+	ref, err := types.NewHotstuffProposalRefWithProof(s.ChainID(), record.ref.ViewNumber, record.ref.ViewID, record.ref.LeaderID, block, body.EncodedBlock, nil, record.ref.ParentQCID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.ref, record.qc = ref, signFHSEpochProposalQC(t, fixture, ref)
+	body.ProposalID, body.BodyHash, body.BodySize = ref.ProposalID(), ref.BodyHash, ref.BodySize
+	body.KeyActivationProof, err = core.EncodeFHSCommitProof(&core.FHSCommitProof{QCs: []*hotstuff.SignedState{parent.qc}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := proposalDataManifestForBlock(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body.Manifest, err = rlp.EncodeToBytes(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leader, err := fairHotstuffLeaderIndex(s.chainConfig.FairHotstuffSeed, s.ChainID(), ref.ViewNumber, fixture.committee.RlpHash(), len(fixture.keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := signProposalManifest(s.ChainID(), body, &fixture.keys[leader]); err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := s.promoteFHSProposalContent(context.Background(), ref, body, record.qc, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pruneFHSPersistence(100, 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.fhsStore.db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := leveldb.New(waldir, 1, 8, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.fhsStore = newFHSSafetyStoreForConfig(reopened, s.ChainID(), s.bc.Genesis().Hash(), s.chainConfig)
+	if receipt.matches(s.fhsStore, ref, body, record.qc) {
+		t.Fatal("receipt crossed store generation")
+	}
+	receipt.Close()
+	restoredRef, restored, found, err := s.readFHSDurableProposalBody(ref.ProposalID())
+	if err != nil || !found || restoredRef.ProposalID() != ref.ProposalID() {
+		t.Fatalf("reopened exact proposal = %v, %v", found, err)
+	}
+	if !bytes.Equal(restored.EncodedBlock, body.EncodedBlock) || !bytes.Equal(restored.ParentQC, body.ParentQC) || !bytes.Equal(restored.KeyActivationProof, body.KeyActivationProof) || !bytes.Equal(restored.ManifestAuthSig, body.ManifestAuthSig) {
+		t.Fatal("reopened proposal lost exact body or authenticated envelope")
+	}
+	decoded := types.DecodeToBlock(restored.EncodedBlock)
+	if len(decoded.CommonTxAdmissionBatches()) != 1 || decoded.CommonTxAdmissionBatches()[0].AdmissionID != admission.AdmissionID {
+		t.Fatal("reopened exact body lost admission evidence")
+	}
+	encodedCertificate, err := rawdb.ReadFHSCertificate(reopened, ref.ProposalID())
+	if err != nil || !bytes.Equal(encodedCertificate, mustFHSPromotionCertificate(t, record)) {
+		t.Fatalf("reopened certificate mismatch: %v", err)
+	}
+}
+
+func TestFHSContentPromotionPreservesAlternativeExactEnvelope(t *testing.T) {
+	fixture, _, _ := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	parent := newFHSSlotReplayProposal(t, fixture, nil, 10, 401, nil)
+	record := newFHSSlotReplayProposal(t, fixture, parent, 12, 402, nil)
+	body := cloneProposalBodyMsg(s.proposalBodies[record.ref.ProposalID()])
+	db := &fhsPromotionStore{KeyValueStore: memorydb.New()}
+	installFHSPromotionStore(t, s, db)
+	receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := rawdb.ReadFHSProposal(db, record.ref.ProposalID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A different valid quorum signature has the same semantic ParentQCID,
+	// hence the same child ProposalID, but different exact envelope bytes.
+	alternativeQC := hotstuff.CloneSignedState(parent.qc)
+	var aggregate *bls.Sign
+	alternativeQC.Mask = []byte{0x0e}
+	for index := 1; index < 4; index++ {
+		signature, err := hotstuff.SignFHSSignatureWithContext(&fixture.keys[index], fixture.public[index], parent.qc.State, s.ChainID(), hotstuff.MsgVotePrepare, parent.qc.ViewID, parent.qc.LeaderID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if aggregate == nil {
+			aggregate = signature
+		} else {
+			aggregate.Add(signature)
+		}
+	}
+	alternativeQC.Sign = aggregate.Serialize()
+	alternative := cloneProposalBodyMsg(body)
+	alternative.ParentQC, err = hotstuff.EncodeSignedState(alternativeQC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.verifyFHSQCCryptographic(alternativeQC); err != nil {
+		t.Fatalf("alternative parent QC invalid: %v", err)
+	}
+	for _, closeFirst := range []bool{false, true} {
+		if closeFirst {
+			receipt.Close()
+		}
+		puts, syncs := db.puts.Load(), db.syncs.Load()
+		if rejected, err := s.promoteFHSProposalContent(context.Background(), record.ref, alternative, record.qc, 16<<20); rejected != nil || err == nil {
+			t.Fatalf("alternate envelope replaced exact ownership: %v, %v", rejected, err)
+		}
+		stored, err := rawdb.ReadFHSProposal(db, record.ref.ProposalID())
+		if err != nil || !bytes.Equal(existing, stored) || puts != db.puts.Load() || syncs != db.syncs.Load() {
+			t.Fatal("alternate envelope refusal changed persisted content")
+		}
+	}
+	if len(s.fhsStore.contentPins) != 0 {
+		t.Fatal("alternate envelope refusal leaked a pin")
+	}
+}
+
+func TestFHSContentPromotionPinCapacityAndInvalidIdentity(t *testing.T) {
+	fixture, _, _ := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	record := newFHSSlotReplayProposal(t, fixture, nil, 10, 401, nil)
+	body := cloneProposalBodyMsg(s.proposalBodies[record.ref.ProposalID()])
+	db := &fhsPromotionStore{KeyValueStore: memorydb.New()}
+	installFHSPromotionStore(t, s, db)
+	for _, mutate := range []func(*proposalBodyMsg, *hotstuff.SignedState){
+		func(body *proposalBodyMsg, _ *hotstuff.SignedState) { body.Number++ },
+		func(body *proposalBodyMsg, _ *hotstuff.SignedState) { body.Extra = []byte("changed-proof") },
+		func(body *proposalBodyMsg, _ *hotstuff.SignedState) { body.EncodedBlock[0] ^= 1 },
+		func(_ *proposalBodyMsg, qc *hotstuff.SignedState) { qc.Sign[0] ^= 1 },
+	} {
+		candidate, qc := cloneProposalBodyMsg(body), hotstuff.CloneSignedState(record.qc)
+		mutate(candidate, qc)
+		if receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, candidate, qc, 16<<20); receipt != nil || err == nil {
+			t.Fatalf("invalid content promoted: %v, %v", receipt, err)
+		}
+	}
+	if db.puts.Load() != 0 || db.reads.Load() != 0 || len(s.fhsStore.contentPins) != 0 {
+		t.Fatal("invalid identity performed persistence I/O")
+	}
+	// The backing Get must load this value, but the bounded guard refuses it
+	// before rawdb makes another defensive copy or any record is rewritten.
+	if err := rawdb.WriteFHSProposal(db.KeyValueStore, record.ref.ProposalID(), make([]byte, 128<<10)); err != nil {
+		t.Fatal(err)
+	}
+	var oversized *fhsContentResourceError
+	if receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20); receipt != nil || !errors.As(err, &oversized) || oversized.Resource != "existing record read" {
+		t.Fatalf("oversized existing envelope = %v, %v", receipt, err)
+	}
+	if db.puts.Load() != 0 || len(s.fhsStore.contentPins) != 0 {
+		t.Fatal("oversized envelope refusal rewrote content or retained a pin")
+	}
+	if err := rawdb.DeleteFHSProposal(db.KeyValueStore, record.ref.ProposalID()); err != nil {
+		t.Fatal(err)
+	}
+	receipts := make([]*fhsContentReceipt, 0, proposalBodyCacheMaxEntries)
+	for len(receipts) < proposalBodyCacheMaxEntries {
+		receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		receipts = append(receipts, receipt)
+	}
+	reads, puts := db.reads.Load(), db.puts.Load()
+	var resource *fhsContentResourceError
+	if receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20); receipt != nil || !errors.As(err, &resource) || resource.Resource != "pins" {
+		t.Fatalf("pin capacity refusal = %v, %v", receipt, err)
+	}
+	if reads != db.reads.Load() || puts != db.puts.Load() {
+		t.Fatal("pin capacity refusal performed I/O")
+	}
+	for _, receipt := range receipts {
+		copy := *receipt
+		done := make(chan struct{}, 2)
+		go func() { receipt.Close(); done <- struct{}{} }()
+		go func() { copy.Close(); done <- struct{}{} }()
+		<-done
+		<-done
+	}
+	if len(s.fhsStore.contentPins) != 0 {
+		t.Fatal("concurrent copied-handle Close leaked pins")
+	}
+}
+
+type fhsPromotionNoSyncStore struct{ ethdb.KeyValueStore }
+
+func (store *fhsPromotionNoSyncStore) NewBatch() ethdb.Batch {
+	return struct{ ethdb.Batch }{store.KeyValueStore.NewBatch()}
+}
+
+func TestFHSContentPromotionRequiresSyncBatch(t *testing.T) {
+	fixture, _, _ := newFHSSlotReplayFixture(t)
+	s := fixture.service
+	record := newFHSSlotReplayProposal(t, fixture, nil, 10, 401, nil)
+	body := cloneProposalBodyMsg(s.proposalBodies[record.ref.ProposalID()])
+	installFHSPromotionStore(t, s, &fhsPromotionNoSyncStore{memorydb.New()})
+	if receipt, err := s.promoteFHSProposalContent(context.Background(), record.ref, body, record.qc, 16<<20); receipt != nil || err == nil {
+		t.Fatalf("unsupported sync promoted: %v, %v", receipt, err)
+	}
+	if len(s.fhsStore.contentPins) != 0 || s.verifiedProposalByID[record.ref.ProposalID()] != record.verified {
+		t.Fatal("unsupported sync changed ownership")
 	}
 }

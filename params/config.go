@@ -462,6 +462,9 @@ type ChainConfig struct {
 	FixedLeader           bool             `json:"fixedLeader,omitempty"`
 	FairHotstuff          bool             `json:"fairHotstuff,omitempty"`
 	FairHotstuffSeed      common.Hash      `json:"fairHotstuffSeed,omitempty"`
+	// FairHotstuffSlotMillis opts a new genesis into the canonical slot envelope
+	// in Header.Extra. Zero preserves legacy strictly increasing seconds.
+	FairHotstuffSlotMillis uint64 `json:"fairHotstuffSlotMillis,omitempty"`
 	// NativeParallel retains its internal name while the public genesis schema
 	// calls this EVM execution-capacity profile "evmParallel".
 	NativeParallel *NativeParallelConfig `json:"evmParallel,omitempty"`
@@ -470,6 +473,17 @@ type ChainConfig struct {
 type GenesisCommittee map[int]common.Cnode
 
 const fairHotstuffGenesisConfigDomain = "cypher-fhs-genesis-config-v4-bound-pow"
+
+const (
+	FairHotstuffSlotDurationMillis uint64 = 250
+	FairHotstuffSlotsPerSecond            = 1000 / FairHotstuffSlotDurationMillis
+)
+
+// FairHotstuffSlotEnabled selects the genesis-committed 250ms consensus clock.
+// EVM timestamp forks and Header.Time continue to use Unix seconds.
+func (c *ChainConfig) FairHotstuffSlotEnabled() bool {
+	return c != nil && c.FairHotstuff && c.FairHotstuffSlotMillis == FairHotstuffSlotDurationMillis
+}
 
 // MaxFairHotstuffCommitteeSize keeps the n-f NewView proof below the bounded
 // HotStuff control-message limit, even when every report carries the maximum
@@ -792,6 +806,9 @@ func (c *ChainConfig) CheckMaxCodeConfigData() error {
 // CheckConfigForkOrder checks that we don't "skip" any forks, cypher isn't pluggable enough
 // to guarantee that forks
 func (c *ChainConfig) CheckConfigForkOrder() error {
+	if c.FairHotstuffSlotMillis != 0 && (!c.FairHotstuff || c.FairHotstuffSlotMillis != FairHotstuffSlotDurationMillis) {
+		return errors.New("fairHotstuffSlotMillis requires Fair HotStuff and must be 0 or 250")
+	}
 	if c.NativeParallel != nil && c.NativeParallel.RequireNativeTransactions {
 		return errors.New("evmParallel supports only Ethereum transaction types 0 through 4")
 	}

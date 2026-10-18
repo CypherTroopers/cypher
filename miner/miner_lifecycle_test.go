@@ -1,14 +1,22 @@
 package miner
 
 import (
+	"context"
 	"errors"
+	"math/big"
+	"os"
+	"os/exec"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/consensus"
+	"github.com/cypherium/cypher/core"
+	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/event"
+	"github.com/cypherium/cypher/reconfig/bftview"
 )
 
 type dagLifecycleTestEngine struct {
@@ -135,5 +143,106 @@ func TestMinerStopRejectsStaleHeadEventRestart(t *testing.T) {
 	}
 	if starts.Load() != 0 || w.isRunning() {
 		t.Fatal("stale head event restarted the stopped miner")
+	}
+}
+
+type committeeAutoCommitTestChain struct {
+	head      *types.KeyBlock
+	committee []*common.Cnode
+}
+
+func (c *committeeAutoCommitTestChain) CurrentBlock() *types.KeyBlock { return c.head }
+func (c *committeeAutoCommitTestChain) CurrentBlockN() uint64         { return c.head.NumberU64() }
+func (c *committeeAutoCommitTestChain) CurrentCommittee() []*common.Cnode {
+	return c.committee
+}
+func (c *committeeAutoCommitTestChain) GetBlockByHash(hash common.Hash) *types.KeyBlock {
+	if c.head.Hash() == hash {
+		return c.head
+	}
+	return nil
+}
+
+func TestCommitteeAutoCommitDoesNotRequestPoW(t *testing.T) {
+	const isolated = "CYPHER_TEST_COMMITTEE_AUTOCOMMIT"
+	if os.Getenv(isolated) != "1" {
+		// bftview has no public snapshot/restore API for its committee globals.
+		// Isolate the fixture so every other test retains its exact prior role.
+		binary, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, binary, "-test.run=^TestCommitteeAutoCommitDoesNotRequestPoW$", "-test.count=1", "-test.timeout=10s")
+		cmd.Env = append(os.Environ(), isolated+"=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("isolated committee worker: %v\n%s", err, output)
+		}
+		return
+	}
+	previousAddress, previousPublic := bftview.GetServerAddress(), bftview.GetServerInfo(bftview.PublicKey)
+	previousCoinbase := bftview.GetServerCoinBase()
+	t.Cleanup(func() {
+		bftview.SetServerInfo(previousAddress, previousPublic)
+		bftview.SetServerCoinBase(previousCoinbase)
+	})
+	const public = "synthetic-committee-public-key"
+	chain := &committeeAutoCommitTestChain{
+		head:      types.NewKeyBlock(&types.KeyBlockHeader{Number: big.NewInt(1), Difficulty: big.NewInt(1)}),
+		committee: []*common.Cnode{{Public: public}},
+	}
+	bftview.SetCommitteeConfig(nil, chain, nil)
+	bftview.SetServerInfo("127.0.0.1:0", public)
+	if got := bftview.IamMember(); got != 0 {
+		t.Fatalf("synthetic committee index = %d, want 0", got)
+	}
+	var starts, stops atomic.Int32
+	engine := &dagLifecycleTestEngine{start: func() error { starts.Add(1); return nil }}
+	agent := &dagStopTestAgent{stop: func() { stops.Add(1) }}
+	subscription := event.NewSubscription(func(quit <-chan struct{}) error { <-quit; return nil })
+	current := new(Work)
+	w := &worker{
+		engine: engine, running: 1, shouldStart: 1, atWork: 7, current: current,
+		keyHeadCh: make(chan core.KeyChainHeadEvent), keyHeadSub: subscription,
+		agents: map[Agent]struct{}{agent: {}},
+		// A wrong initial-work branch hits the nil chain before sealing; a wrong
+		// restart hits the nil config before connectivity checks. Neither can
+		// allocate a DAG or open a socket, even when this regression fails.
+	}
+	done := make(chan struct{})
+	var loopPanic interface{}
+	go func() {
+		defer func() { loopPanic = recover(); close(done) }()
+		w.autoCommit(subscription)
+	}()
+	t.Cleanup(func() {
+		subscription.Unsubscribe()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("committee worker did not exit")
+		}
+	})
+	// Receiving this unbuffered event proves the initial role gate completed.
+	// Joining after unsubscribe also waits for the head-event role gate.
+	select {
+	case w.keyHeadCh <- core.KeyChainHeadEvent{}:
+	case <-done:
+		t.Fatalf("committee worker exited before head event: %v", loopPanic)
+	case <-time.After(time.Second):
+		t.Fatal("committee worker did not receive head event")
+	}
+	subscription.Unsubscribe()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("committee worker did not finish after head event")
+	}
+	if loopPanic != nil {
+		t.Fatalf("committee worker entered work or restart branch: %v", loopPanic)
+	}
+	if starts.Load() != 0 || stops.Load() != 0 || !w.isRunning() || atomic.LoadInt32(&w.shouldStart) != 1 || atomic.LoadInt32(&w.atWork) != 7 || w.current != current {
+		t.Fatalf("committee head event changed mining work: starts=%d stops=%d running=%t permitted=%d atWork=%d", starts.Load(), stops.Load(), w.isRunning(), w.shouldStart, w.atWork)
 	}
 }

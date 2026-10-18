@@ -3,6 +3,7 @@ package reconfig
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sort"
@@ -24,10 +25,18 @@ import (
 
 var errFHSRecoveryPending = errors.New("Fair HotStuff durable recovery is waiting for proposal content")
 
+var errFHSContentPromotionBusy = errors.New("FHS content promotion is already active")
+
+var fhsContentStoreGeneration atomic.Uint64
+
 var _ hotstuff.FHSTimeoutVoteRecoveryApplication = (*Service)(nil)
 
 const (
-	fhsMaxCertifiedChainDepth = 128
+	// Live ancestry includes the candidate as well as its ancestors. The
+	// release-enabling child of 128 gapped blocks needs 129 records, but only
+	// 128 descendant QCs to finalize the oldest block. This is a traversal
+	// bound, not a certified-state byte budget or an arbitrary-depth guarantee.
+	fhsMaxCertifiedChainRecords = core.MaxFHSCommitProofQCs + 1
 
 	// Fair HotStuff finalizes with a certified direct child. Keeping a small
 	// canonical suffix is deliberately more conservative than that two-chain
@@ -272,6 +281,329 @@ type fhsSafetyStore struct {
 	// holding contentMu.
 	contentMu                sync.Mutex
 	proposalWritesSincePrune uint64
+	contentPromotionMu       sync.Mutex
+	contentGeneration        uint64
+	contentPins              map[*fhsContentOwnership]struct{}
+}
+
+// fhsContentResourceError is a local maintenance refusal. It never changes the
+// configured consensus body limit or permits releasing execution ownership.
+type fhsContentResourceError struct {
+	Resource    string
+	Need, Limit uint64
+}
+
+func (err *fhsContentResourceError) Error() string {
+	return fmt.Sprintf("FHS content %s requires %d bytes/entries, budget %d", err.Resource, err.Need, err.Limit)
+}
+
+type fhsContentOwnership struct {
+	store                                    *fhsSafetyStore
+	generation                               uint64
+	proposalID, bodyHash, proposalHash, qcID common.Hash
+	released                                 atomic.Bool
+}
+
+// fhsContentReceipt owns only exact persisted content, never execution state or
+// a canonical checkpoint. It is process-local and cannot authorize eviction.
+// Copies share the same idempotent Close operation and the same GC pin.
+type fhsContentReceipt struct{ ownership *fhsContentOwnership }
+
+// Apply the operation bound before rawdb takes its defensive copy. The backing
+// Get still allocates the complete value; that first allocation is outside the
+// guarantees possible with today's KeyValueReader interface.
+type fhsContentGuardReader struct {
+	ethdb.KeyValueReader
+	remaining uint64
+}
+
+func (reader *fhsContentGuardReader) Get(key []byte) ([]byte, error) {
+	value, err := reader.KeyValueReader.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	if uint64(len(value)) > reader.remaining {
+		return nil, &fhsContentResourceError{"existing record read", uint64(len(value)), reader.remaining}
+	}
+	reader.remaining -= uint64(len(value))
+	return value, nil
+}
+
+func (receipt *fhsContentReceipt) Close() error {
+	if receipt == nil || receipt.ownership == nil {
+		return nil
+	}
+	owner := receipt.ownership
+	if !owner.released.CompareAndSwap(false, true) {
+		return nil
+	}
+	owner.store.contentMu.Lock()
+	delete(owner.store.contentPins, owner)
+	owner.store.contentMu.Unlock()
+	return nil
+}
+
+func (receipt *fhsContentReceipt) matches(store *fhsSafetyStore, ref *types.HotstuffProposalRef, body *proposalBodyMsg, qc *hotstuff.SignedState) bool {
+	if receipt == nil || receipt.ownership == nil || store == nil || ref == nil || body == nil {
+		return false
+	}
+	if body.ProposalID != ref.ProposalID() || body.BodyHash != ref.BodyHash || body.BodySize != ref.BodySize ||
+		uint64(len(body.EncodedBlock)) != ref.BodySize || types.HotstuffProposalBodyHash(body.EncodedBlock) != ref.BodyHash {
+		return false
+	}
+	owner := receipt.ownership
+	qcID, err := fhsQCIdentityHash(qc)
+	digest := sha256.New()
+	if encodeErr := rlp.Encode(digest, &fhsDiskProposal{ProposalID: ref.ProposalID(), ProposalRef: ref.EncodeToBytes(), Extra: body.Extra, ParentQC: body.ParentQC, KeyActivationProof: body.KeyActivationProof, ManifestAuthSig: body.ManifestAuthSig}); encodeErr != nil {
+		return false
+	}
+	store.contentMu.Lock()
+	defer store.contentMu.Unlock()
+	_, pinned := store.contentPins[owner]
+	return err == nil && pinned && !owner.released.Load() && owner.store == store &&
+		owner.generation == store.contentGeneration && owner.proposalID == ref.ProposalID() &&
+		owner.bodyHash == ref.BodyHash && owner.qcID == qcID && bytes.Equal(owner.proposalHash[:], digest.Sum(nil))
+}
+
+// promoteFHSProposalContent is an explicit optional maintenance operation. Its
+// caller owns immutable encoded content for the whole call. It performs no
+// execution, cache eviction, safety-WAL publication, queueing or automatic GC.
+// The budget charges sixteen encoded representations for bounded valid-record
+// copying/encoding/hashing work; it is not an absolute heap or corrupt-Get cap.
+// Existing proposal-envelope and certificate conflict guards use Get, which
+// loads each entire value before its post-read bound can be checked. Bodies
+// have a cryptographic content key and are safely rewritten from owned bytes.
+func (s *Service) promoteFHSProposalContent(ctx context.Context, ref *types.HotstuffProposalRef, body *proposalBodyMsg, qc *hotstuff.SignedState, operationMaxBytes uint64) (*fhsContentReceipt, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s == nil || s.fhsStore == nil || s.fhsStore.db == nil || ref == nil || body == nil || qc == nil {
+		return nil, fmt.Errorf("incomplete FHS content promotion input")
+	}
+	store := s.fhsStore
+	if !store.contentPromotionMu.TryLock() {
+		return nil, errFHSContentPromotionBusy
+	}
+	defer store.contentPromotionMu.Unlock()
+	if ref.BodySize == 0 || ref.BodySize > uint64(proposalBodyLimitForConfig(s.chainConfig)) || ref.BodySize != uint64(len(body.EncodedBlock)) {
+		return nil, fmt.Errorf("invalid FHS content promotion body size")
+	}
+	if len(ref.LeaderID) > 512 || len(qc.State) > proposalBodyControlMaxBytes || len(qc.LeaderID) > 512 ||
+		len(qc.Sign) > proposalBodyControlMaxBytes || len(qc.Mask) > proposalBodyControlMaxBytes ||
+		len(body.Extra) > proposalBodyControlMaxBytes || len(body.ParentQC) > proposalBodyControlMaxBytes-len(body.Extra) ||
+		len(body.KeyActivationProof) > types.MaxFHSFinalityProofSize || len(body.ManifestAuthSig) > 256 ||
+		len(body.Manifest) > proposalBodyLimitForConfig(s.chainConfig) {
+		return nil, fmt.Errorf("FHS content promotion envelope exceeds configured limits")
+	}
+	workBytes := uint64(4096)
+	for _, length := range []int{len(body.EncodedBlock), len(body.Extra), len(body.ParentQC), len(body.KeyActivationProof), len(body.ManifestAuthSig), len(body.Manifest), len(qc.State), len(qc.Sign), len(qc.Mask)} {
+		if uint64(length) > ^uint64(0)-workBytes {
+			return nil, &fhsContentResourceError{"work", ^uint64(0), operationMaxBytes}
+		}
+		workBytes += uint64(length)
+	}
+	if workBytes > ^uint64(0)/16 || workBytes*16 > operationMaxBytes {
+		need := ^uint64(0)
+		if workBytes <= ^uint64(0)/16 {
+			need = workBytes * 16
+		}
+		return nil, &fhsContentResourceError{"work", need, operationMaxBytes}
+	}
+	proposalID := ref.ProposalID()
+	if ref.ChainID != store.chainID || ref.ChainID != s.ChainID() || proposalID != body.ProposalID ||
+		ref.BodyHash != body.BodyHash || ref.BodySize != body.BodySize || ref.Number != body.Number ||
+		ref.ViewNumber != body.ViewNumber || ref.ViewID != body.ViewID || ref.LeaderID != body.LeaderID || ref.KeyHash != body.ProposalKeyHash ||
+		!bytes.Equal(qc.State, ref.EncodeToBytes()) {
+		return nil, fmt.Errorf("FHS content promotion identity mismatch")
+	}
+	store.safetyMu.Lock()
+	persistenceErr := store.lastPersistenceErr
+	store.safetyMu.Unlock()
+	if persistenceErr != nil {
+		return nil, persistenceErr
+	}
+	if !store.contentMu.TryLock() {
+		return nil, errFHSContentPromotionBusy
+	}
+	pinCount := len(store.contentPins)
+	store.contentMu.Unlock()
+	if pinCount >= proposalBodyCacheMaxEntries {
+		return nil, &fhsContentResourceError{"pins", uint64(pinCount + 1), proposalBodyCacheMaxEntries}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	block, err := validateFHSProposalCommitmentsForConfig(s.chainConfig, ref, body.EncodedBlock, body.Extra, body.ParentQC)
+	if err != nil {
+		return nil, fmt.Errorf("invalid FHS promotion commitments: %w", err)
+	}
+	qcRef, err := s.verifyFHSQCCryptographic(qc)
+	if err != nil || qcRef.ProposalID() != proposalID {
+		return nil, fmt.Errorf("invalid FHS promotion QC: %v", err)
+	}
+	parentQC, err := hotstuff.DecodeSignedState(body.ParentQC)
+	if err != nil {
+		return nil, fmt.Errorf("invalid FHS promotion parent QC: %w", err)
+	}
+	if parentQC != nil {
+		parentRef, err := s.verifyFHSQCCryptographic(parentQC)
+		if err != nil || parentRef.BlockHash != ref.ParentHash || parentRef.Number == ^uint64(0) || parentRef.Number+1 != ref.Number || parentRef.ViewNumber >= ref.ViewNumber {
+			return nil, fmt.Errorf("invalid FHS promotion parent context: %v", err)
+		}
+	} else if s.bc == nil || ref.Number != 1 || ref.ParentHash != s.bc.Genesis().Hash() {
+		return nil, fmt.Errorf("FHS content promotion is missing its parent QC")
+	}
+	if len(body.KeyActivationProof) != 0 {
+		// This content-only receipt preserves an already owned activation
+		// envelope; it does not install a committee or authorize activation.
+		if len(body.ManifestAuthSig) == 0 {
+			return nil, fmt.Errorf("FHS promotion activation envelope lacks leader authentication")
+		}
+		proof, err := core.DecodeFHSCommitProofBytes(body.KeyActivationProof)
+		if err != nil || parentQC == nil || !hotstuff.SignedStateSemanticEqual(proof.QCs[len(proof.QCs)-1], parentQC) {
+			return nil, fmt.Errorf("invalid FHS promotion key activation proof")
+		}
+		var previous *types.HotstuffProposalRef
+		var previousQC *hotstuff.SignedState
+		for _, proofQC := range proof.QCs {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			proofRef, err := s.verifyFHSQCCryptographic(proofQC)
+			if err != nil {
+				return nil, fmt.Errorf("invalid FHS promotion activation QC: %w", err)
+			}
+			if previous != nil {
+				previousID, _ := fhsQCIdentityHash(previousQC)
+				if proofRef.ParentHash != previous.BlockHash || proofRef.ParentQCID != previousID || previous.Number == ^uint64(0) || proofRef.Number != previous.Number+1 || proofRef.ViewNumber <= previous.ViewNumber {
+					return nil, fmt.Errorf("noncontiguous FHS promotion activation proof")
+				}
+			}
+			previous, previousQC = proofRef, proofQC
+		}
+	}
+	if len(body.ManifestAuthSig) != 0 {
+		manifest, err := proposalDataManifestForBlock(block)
+		if err != nil {
+			return nil, err
+		}
+		encodedManifest, err := rlp.EncodeToBytes(manifest)
+		if err != nil {
+			return nil, err
+		}
+		authBody := *body
+		authBody.Type, authBody.Manifest = proposalBodyMsgManifest, encodedManifest
+		if err := s.verifyProposalManifestSignature(&authBody); err != nil {
+			return nil, fmt.Errorf("invalid FHS promotion manifest authentication: %w", err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	proposalBytes, err := rlp.EncodeToBytes(&fhsDiskProposal{ProposalID: proposalID, ProposalRef: ref.EncodeToBytes(), Extra: body.Extra, ParentQC: body.ParentQC, KeyActivationProof: body.KeyActivationProof, ManifestAuthSig: body.ManifestAuthSig})
+	if err != nil {
+		return nil, err
+	}
+	bodyBytes, err := rlp.EncodeToBytes(&fhsDiskBody{BodyHash: ref.BodyHash, EncodedBlock: body.EncodedBlock})
+	if err != nil {
+		return nil, err
+	}
+	certificateBytes, err := rlp.EncodeToBytes(&fhsDiskCertificate{ProposalID: proposalID, QC: qc})
+	if err != nil {
+		return nil, err
+	}
+	qcID, _ := fhsQCIdentityHash(qc)
+	owner := &fhsContentOwnership{store: store, proposalID: proposalID, bodyHash: ref.BodyHash, proposalHash: common.Hash(sha256.Sum256(proposalBytes)), qcID: qcID}
+	if !store.contentMu.TryLock() {
+		return nil, errFHSContentPromotionBusy
+	}
+	defer store.contentMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(store.contentPins) >= proposalBodyCacheMaxEntries {
+		return nil, &fhsContentResourceError{"pins", uint64(len(store.contentPins) + 1), proposalBodyCacheMaxEntries}
+	}
+	for pinned := range store.contentPins {
+		if pinned.proposalID == proposalID && pinned.proposalHash != owner.proposalHash {
+			return nil, fmt.Errorf("FHS promotion conflicts with an owned exact proposal envelope")
+		}
+	}
+	if store.contentGeneration == 0 {
+		store.contentGeneration = fhsContentStoreGeneration.Add(1)
+	}
+	owner.generation = store.contentGeneration
+	if store.contentPins == nil {
+		store.contentPins = make(map[*fhsContentOwnership]struct{})
+	}
+	store.contentPins[owner] = struct{}{}
+	ready := false
+	defer func() {
+		if !ready {
+			delete(store.contentPins, owner)
+		}
+	}()
+	// ProposalID does not commit the activation proof or manifest signature.
+	// Preserve an existing exact envelope even when another envelope could be
+	// valid for the same proposal. Content-addressed body bytes need no Get.
+	guardReader := &fhsContentGuardReader{KeyValueReader: store.db, remaining: workBytes}
+	existingProposal, err := rawdb.ReadFHSProposal(guardReader, proposalID)
+	if err != nil {
+		return nil, err
+	}
+	if len(existingProposal) > saturatingAddInt(proposalBodyControlMaxBytes, types.MaxFHSFinalityProofSize+4096) {
+		return nil, fmt.Errorf("persisted FHS promotion proposal exceeds size limit")
+	}
+	if len(existingProposal) != 0 && !bytes.Equal(existingProposal, proposalBytes) {
+		return nil, fmt.Errorf("conflicting persisted exact FHS promotion envelope")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	existing, err := rawdb.ReadFHSCertificate(guardReader, proposalID)
+	if err != nil {
+		return nil, err
+	}
+	if len(existing) > proposalBodyControlMaxBytes {
+		return nil, fmt.Errorf("persisted FHS promotion certificate exceeds size limit")
+	}
+	if len(existing) != 0 {
+		var certificate fhsDiskCertificate
+		if err := rlp.DecodeBytes(existing, &certificate); err != nil || certificate.ProposalID != proposalID || !hotstuff.SignedStateSemanticEqual(certificate.QC, qc) {
+			return nil, fmt.Errorf("conflicting persisted FHS promotion certificate")
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	batch := store.db.NewBatch()
+	if err := rawdb.WriteFHSProposal(batch, proposalID, proposalBytes); err != nil {
+		return nil, err
+	}
+	if err := rawdb.WriteFHSBody(batch, ref.BodyHash, bodyBytes); err != nil {
+		return nil, err
+	}
+	if err := rawdb.WriteFHSCertificate(batch, proposalID, certificateBytes); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Re-Put every dependency even if it existed. Empty or marker-only syncs
+	// cannot fence older asynchronous bytes across LevelDB journal rotation.
+	if err := writeFHSBatchSync(batch); err != nil {
+		return nil, err
+	}
+	// Get/WriteSync are not cancellable. They are joined before returning;
+	// cancellation during I/O conservatively yields no ownership receipt.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ready = true
+	return &fhsContentReceipt{ownership: owner}, nil
 }
 
 func (store *fhsSafetyStore) effectiveBodyMaxBytes() int {
@@ -726,7 +1058,11 @@ func (s *Service) pruneFHSPersistence(canonicalNumber, currentView uint64) error
 	// safetyMu, so a large content write cannot invert this order.
 	store.safetyMu.Lock()
 	defer store.safetyMu.Unlock()
-	store.contentMu.Lock()
+	// Never hold the safety lane while waiting for a large explicit content
+	// promotion. This optional maintenance can retry on a later pass.
+	if !store.contentMu.TryLock() {
+		return nil
+	}
 	defer store.contentMu.Unlock()
 	if err := store.loadLocked(); err != nil {
 		return err
@@ -734,6 +1070,10 @@ func (s *Service) pruneFHSPersistence(canonicalNumber, currentView uint64) error
 
 	protectedProposalIDs := activeRepairProposalIDs
 	protectedCertificateIDs := make(map[common.Hash]struct{})
+	for owner := range store.contentPins {
+		protectedProposalIDs[owner.proposalID] = struct{}{}
+		protectedCertificateIDs[owner.proposalID] = struct{}{}
+	}
 	if (store.state.HighestQC == nil) != (store.highestBlockHash == (common.Hash{})) {
 		return fmt.Errorf("incomplete highest FHS persistence watermark")
 	}
@@ -805,6 +1145,9 @@ func (s *Service) pruneFHSPersistence(canonicalNumber, currentView uint64) error
 	}
 
 	retainedBodyHashes := make(map[common.Hash]struct{})
+	for owner := range store.contentPins {
+		retainedBodyHashes[owner.bodyHash] = struct{}{}
+	}
 	for bodyHash := range certificateBodyHashes {
 		// Certified proposal content may still be queued for asynchronous write or
 		// awaiting DA repair. If the body is already present, never collect it merely
@@ -1053,6 +1396,11 @@ func validateFHSProposalCommitmentsForConfig(config *params.ChainConfig, ref *ty
 	}
 	if err := ref.VerifyAgainstBlock(block, encodedBlock); err != nil {
 		return nil, err
+	}
+	if config.FairHotstuffSlotEnabled() {
+		if _, err := block.Header0().FHSSlot(); err != nil {
+			return nil, fmt.Errorf("invalid FHS proposal slot: %w", err)
+		}
 	}
 	return block, nil
 }
@@ -2173,7 +2521,7 @@ func (s *Service) stageFHSHighQC(ctx context.Context, key hotstuff.FHSHighQCVali
 			return nil, fmt.Errorf("certified FHS proposal parent proof mismatch at %s", cursorRef.BlockHash)
 		}
 		cursorQC = parentQC
-		if len(chain) > fhsMaxCertifiedChainDepth {
+		if len(chain) >= fhsMaxCertifiedChainRecords {
 			return nil, fmt.Errorf("FHS HighQC catch-up chain is unreasonably deep")
 		}
 	}
@@ -2506,10 +2854,9 @@ func (s *Service) loadFHSWAL() error {
 	recoveryKeyHash := s.GetCurrentView().KeyHash
 
 	type restoreRecord struct {
-		ref   *types.HotstuffProposalRef
-		body  *proposalBodyMsg
-		extra []byte
-		qc    *hotstuff.SignedState
+		ref  *types.HotstuffProposalRef
+		body *proposalBodyMsg
+		qc   *hotstuff.SignedState
 	}
 	chain := make([]restoreRecord, 0, 3)
 	cursorQC := state.HighestQC
@@ -2588,7 +2935,7 @@ func (s *Service) loadFHSWAL() error {
 			ManifestAuthSig:    append([]byte(nil), proposal.ManifestAuthSig...),
 			CreatedAtUnixNano:  1,
 		}
-		chain = append(chain, restoreRecord{ref: ref, body: body, extra: append([]byte(nil), proposal.Extra...), qc: hotstuff.CloneSignedState(certificate.QC)})
+		chain = append(chain, restoreRecord{ref: ref, body: body, qc: hotstuff.CloneSignedState(certificate.QC)})
 		cursor = ref.ParentHash
 		if cursor != current.Hash() {
 			cursorQC, err = hotstuff.DecodeSignedState(proposal.ParentQC)
@@ -2596,7 +2943,10 @@ func (s *Service) loadFHSWAL() error {
 				return fmt.Errorf("missing FHS recovery parent certificate identity")
 			}
 		}
-		if len(chain) > fhsMaxCertifiedChainDepth {
+		// Match the live candidate-plus-ancestors bound, including a final
+		// record whose parent is canonical. Replay still validates every
+		// certificate, exact body and state transition before publication.
+		if len(chain) > fhsMaxCertifiedChainRecords {
 			return fmt.Errorf("FHS uncommitted recovery chain is unreasonably deep")
 		}
 	}
@@ -2610,52 +2960,19 @@ func (s *Service) loadFHSWAL() error {
 		originalHeader *types.Header
 	}
 	staged := make([]stagedRestore, 0, len(chain))
+	// Existing startup uses a runtime anchor. Durable checkpoint mode is an
+	// explicit maintenance API and does not change legacy WAL eligibility.
+	anchor, err := s.newFHSReplayAnchor(nil, state.HighestQC)
+	if err != nil {
+		return fmt.Errorf("anchor FHS WAL replay: %w", err)
+	}
 	var parentVerified *core.VerifiedProposal
-	for index, record := range chain {
-		block, err := validateFHSProposalCommitmentsForConfig(s.chainConfig, record.ref, record.body.EncodedBlock, record.extra, record.body.ParentQC)
-		if err != nil {
-			return fmt.Errorf("invalid restored FHS proposal %s: %w", record.ref.BlockHash, err)
-		}
-		qcRef, err := s.verifyFHSQCCryptographic(record.qc)
-		if err != nil {
-			return fmt.Errorf("invalid persisted FHS QC for %s: %w", record.ref.BlockHash, err)
-		}
-		if qcRef.BlockHash != record.ref.BlockHash {
-			return fmt.Errorf("persisted FHS QC/block mismatch for %s", record.ref.BlockHash)
-		}
-		parentQC, err := hotstuff.DecodeSignedState(record.body.ParentQC)
-		if err != nil {
-			return fmt.Errorf("decode restored parent QC for %s: %w", record.ref.BlockHash, err)
-		}
-		if parentQC == nil {
-			if index > 0 || record.ref.ParentHash != current.Hash() || record.ref.Number != current.NumberU64()+1 {
-				return fmt.Errorf("restored FHS proposal %s is missing parent QC", record.ref.BlockHash)
-			}
-		} else {
-			parentRef, err := s.verifyFHSQCCryptographic(parentQC)
-			if err != nil || parentRef.BlockHash != record.ref.ParentHash {
-				return fmt.Errorf("restored FHS parent QC mismatch for %s", record.ref.BlockHash)
-			}
-			if index > 0 && !hotstuff.SignedStateSemanticEqual(parentQC, chain[index-1].qc) {
-				return fmt.Errorf("restored FHS chain has non-contiguous parent proof at %s", record.ref.BlockHash)
-			}
-		}
-		verified, err := s.txService.verifyHistoricalCertifiedProposalWithParent(record.ref, block, record.extra, parentVerified)
+	for _, record := range chain {
+		verified, _, err := s.replayFHSCertifiedRecord(context.Background(), anchor, record.ref, record.qc, record.body, parentVerified, s.fhsReplayLimits())
 		if err != nil {
 			return fmt.Errorf("replay restored FHS proposal %s: %w", record.ref.BlockHash, err)
 		}
-		if block.BlockType() == types.Key_Block {
-			keyblock := types.DecodeToKeyBlock(block.KeyInfo())
-			if keyblock == nil {
-				return fmt.Errorf("invalid restored FHS keyblock %s", record.ref.BlockHash)
-			}
-			if block.NumberU64() == 0 {
-				return fmt.Errorf("restored FHS keyblock %s cannot be transaction genesis", record.ref.BlockHash)
-			}
-			if err := s.keyService.verifyCertifiedFHSKeyBlock(record.ref, keyblock, types.DecodeToCandidate(record.extra)); err != nil {
-				return fmt.Errorf("verify restored FHS keyblock %s: %w", record.ref.BlockHash, err)
-			}
-		}
+		block := verified.Block
 		staged = append(staged, stagedRestore{record: record, block: block, verified: verified, originalHeader: block.Header()})
 		parentVerified = verified
 	}

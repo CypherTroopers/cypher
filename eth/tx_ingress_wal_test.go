@@ -3,9 +3,12 @@ package eth
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -208,7 +211,7 @@ func TestTxIngressWALRepairsOnlyTornTerminalRecord(t *testing.T) {
 		}
 	}
 	wal.Stop()
-	if err := db.Put(txIngressWALRecordKey(2), []byte{0xc4, 0x01}); err != nil {
+	if err := db.Put(txIngressWALRecordKey(3), []byte{0xc4, 0x01}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -224,11 +227,16 @@ func TestTxIngressWALRepairsOnlyTornTerminalRecord(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(sequences) != "[1]" {
-		t.Fatalf("replayed sequences %v, want [1]", sequences)
+	if fmt.Sprint(sequences) != "[1 2]" {
+		t.Fatalf("replayed sequences %v, want [1 2]", sequences)
 	}
-	if has, err := db.Has(txIngressWALRecordKey(2)); err != nil || has {
+	if has, err := db.Has(txIngressWALRecordKey(3)); err != nil || has {
 		t.Fatalf("torn terminal record remains: has=%t err=%v", has, err)
+	}
+	batchID, eventID, payload := testIngressWALEvent(2)
+	sequence, err := restarted.Append(context.Background(), txIngressWALInboundReceived, batchID, eventID, payload)
+	if err != nil || sequence != 2 {
+		t.Fatalf("retained record retry: sequence=%d err=%v", sequence, err)
 	}
 }
 
@@ -2504,5 +2512,920 @@ func TestTxIngressWALCompletedLocalDeliveryRestoresPendingPoolOnly(t *testing.T)
 	}
 	if pool.Get(tx.Hash()) == nil {
 		t.Fatal("completed but unfinalized local transaction was not restored to the pool")
+	}
+}
+
+// These test-only oracles preserve the pre-streaming reader, commitment and
+// canonical projection to detect changes in the durable format and ordering.
+func referenceTxIngressWALFrameDigest(frame *txIngressWALFrame) (common.Hash, error) {
+	if frame == nil {
+		return common.Hash{}, errors.New("nil ingress WAL frame")
+	}
+	encoded, err := rlp.EncodeToBytes(&txIngressWALFrameCommitment{
+		Version: frame.Version, Sequence: frame.Sequence, Previous: frame.Previous,
+		Kind: frame.Kind, BatchID: frame.BatchID, EventID: frame.EventID, Payload: frame.Payload,
+	})
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return crypto.Keccak256Hash(encoded), nil
+}
+
+func referenceDecodeTxIngressWALFrame(generation uint64, key, encoded []byte, expectedSequence uint64, previous common.Hash) (*txIngressWALFrame, error) {
+	prefix := txIngressWALRecordPrefixForGeneration(generation)
+	if len(key) != len(prefix)+8 || !bytes.HasPrefix(key, prefix) {
+		return nil, fmt.Errorf("invalid ingress WAL record key")
+	}
+	keySequence := binary.BigEndian.Uint64(key[len(prefix):])
+	var frame txIngressWALFrame
+	if err := rlp.DecodeBytes(encoded, &frame); err != nil {
+		return nil, fmt.Errorf("decode ingress WAL record %d: %w", keySequence, err)
+	}
+	if frame.Version != txIngressWALVersion || frame.Sequence != keySequence || frame.Sequence != expectedSequence ||
+		frame.Previous != previous || frame.Kind < txIngressWALInboundReceived || frame.Kind > txIngressWALOutboxApplied ||
+		frame.BatchID == (common.Hash{}) || frame.EventID == (common.Hash{}) || len(frame.Payload) == 0 {
+		return nil, fmt.Errorf("invalid ingress WAL record %d", keySequence)
+	}
+	digest, err := referenceTxIngressWALFrameDigest(&frame)
+	if err != nil {
+		return nil, err
+	}
+	if digest != frame.Checksum {
+		return nil, fmt.Errorf("ingress WAL checksum mismatch at record %d", keySequence)
+	}
+	return &frame, nil
+}
+func (w *txIngressWAL) referenceReadFramesRange(generation, first, last uint64, previous common.Hash) ([]*txIngressWALFrame, common.Hash, error) {
+	if last < first {
+		return nil, previous, nil
+	}
+	frames := make([]*txIngressWALFrame, 0, int(last-first+1))
+	for sequence := first; sequence <= last; sequence++ {
+		key := txIngressWALRecordKeyForGeneration(generation, sequence)
+		raw, err := w.db.Get(key)
+		if err != nil {
+			return nil, previous, fmt.Errorf("read ingress WAL replay record %d: %w", sequence, err)
+		}
+		frame, err := referenceDecodeTxIngressWALFrame(generation, key, raw, sequence, previous)
+		if err != nil {
+			return nil, previous, err
+		}
+		frames = append(frames, frame)
+		previous = frame.Checksum
+	}
+	return frames, previous, nil
+}
+func (w *txIngressWAL) referenceCanonicalEvents(frames []*txIngressWALFrame) ([]txIngressWALCanonicalEvent, error) {
+	localIntents := make(map[common.Hash]*txQUICBatch)
+	localIntentEvents := make(map[common.Hash]txIngressWALCanonicalEvent)
+	localOutcomeEvents := make(map[common.Hash]txIngressWALCanonicalEvent)
+	localAcceptedBatches := make(map[common.Hash]*txQUICBatch)
+	outbox := make(map[common.Hash]txIngressWALOutboxProjection)
+	outboxDeletions := make(map[common.Hash]txIngressWALCanonicalOutboxMutation)
+	pendingOutboxMutations := make(map[common.Hash]txIngressWALCanonicalOutboxMutation)
+	pendingOutboxMutationGroups := make(map[common.Hash]map[common.Hash]struct{})
+	nonces := make(map[string]txOutboxNonceState)
+	inbound := make(map[string]txIngressWALInboundProjection)
+	for _, frame := range frames {
+		switch frame.Kind {
+		case txIngressWALLocalIntent:
+			intent, _, err := decodeTxQUICBatch(frame.Payload)
+			if err != nil || intent.BatchID != frame.BatchID {
+				return nil, errors.New("invalid local intent while compacting ingress WAL")
+			}
+			localIntents[frame.EventID] = intent
+			localIntentEvents[frame.EventID] = txIngressWALCanonicalEvent{
+				kind: frame.Kind, batchID: frame.BatchID, eventID: frame.EventID,
+				payload: append([]byte(nil), frame.Payload...),
+			}
+		case txIngressWALLocalOutcome:
+			var outcome txIngressWALLocalOutcomePayload
+			if err := rlp.DecodeBytes(frame.Payload, &outcome); err != nil {
+				return nil, err
+			}
+			intent := localIntents[outcome.IntentID]
+			if intent == nil || intent.BatchID != frame.BatchID || int(outcome.ItemCount) != len(intent.Items) {
+				return nil, errors.New("local outcome mismatches intent while compacting ingress WAL")
+			}
+			batch, payload, err := txIngressWALAcceptedBatch(intent, outcome.AcceptedBitmap)
+			if err != nil {
+				return nil, err
+			}
+			if batch != nil {
+				record := TxOutboxRecord{BatchID: batch.BatchID, Payload: payload, CreatedAt: txOutboxStableCreatedAt(batch.Certificate)}
+				if err := mergeLocalOutcomeProjection(outbox, record); err != nil {
+					return nil, err
+				}
+				delete(outboxDeletions, batch.BatchID)
+			}
+			localAcceptedBatches[outcome.IntentID] = batch
+			localOutcomeEvents[outcome.IntentID] = txIngressWALCanonicalEvent{
+				kind: frame.Kind, batchID: frame.BatchID, eventID: frame.EventID,
+				payload: append([]byte(nil), frame.Payload...),
+			}
+		case txIngressWALOutboxNonce:
+			var payload txIngressWALOutboxNoncePayload
+			if err := rlp.DecodeBytes(frame.Payload, &payload); err != nil {
+				return nil, err
+			}
+			state := payload.State
+			if state.Sender == (common.Address{}) || state.Epoch != frame.BatchID || state.ReservedThrough == 0 ||
+				state.Epoch != txQUICSenderEpoch(w.identity.ChainID, w.identity.GenesisHash, state.Sender) {
+				return nil, errors.New("invalid outbox nonce while compacting ingress WAL")
+			}
+			nonces[string(txOutboxNonceKey(state.Sender, state.Epoch))] = state
+		case txIngressWALOutboxEnqueued, txIngressWALOutboxState, txIngressWALOutboxDeleted:
+			var payload txIngressWALOutboxPayload
+			if err := rlp.DecodeBytes(frame.Payload, &payload); err != nil {
+				return nil, err
+			}
+			if payload.Record.BatchID != frame.BatchID || payload.Record.BatchID == (common.Hash{}) {
+				return nil, errors.New("invalid outbox identity while compacting ingress WAL")
+			}
+			ownsPayload := frame.Kind == txIngressWALOutboxEnqueued || payload.Supersedes != (common.Hash{})
+			if ownsPayload && (len(payload.Record.Payload) == 0 || txOutboxBatchID(payload.Record.Payload) != payload.Record.BatchID || payload.Record.CreatedAt == 0) {
+				return nil, errors.New("invalid outbox payload while compacting ingress WAL")
+			}
+			var destructive *txIngressWALCanonicalOutboxMutation
+			if frame.Kind == txIngressWALOutboxDeleted || (payload.Supersedes != (common.Hash{}) && payload.Supersedes != frame.BatchID) {
+				semantic := txIngressWALOutboxMutationSemanticID(frame.Kind, frame.BatchID, frame.Payload)
+				mutation := txIngressWALCanonicalOutboxMutation{
+					event: txIngressWALCanonicalEvent{
+						kind: frame.Kind, batchID: frame.BatchID, eventID: frame.EventID,
+						payload: append([]byte(nil), frame.Payload...),
+					},
+					sequence: frame.Sequence,
+					semantic: semantic,
+				}
+				destructive = &mutation
+				pendingOutboxMutations[frame.EventID] = mutation
+				group := pendingOutboxMutationGroups[semantic]
+				if group == nil {
+					group = make(map[common.Hash]struct{})
+					pendingOutboxMutationGroups[semantic] = group
+				}
+				group[frame.EventID] = struct{}{}
+			}
+			if payload.Supersedes != (common.Hash{}) && payload.Supersedes != payload.Record.BatchID {
+				outbox[payload.Supersedes] = txIngressWALOutboxProjection{deleted: true}
+				outboxDeletions[payload.Supersedes] = *destructive
+			}
+			if frame.Kind == txIngressWALOutboxDeleted {
+				outbox[frame.BatchID] = txIngressWALOutboxProjection{deleted: true}
+				outboxDeletions[frame.BatchID] = *destructive
+			} else if frame.Kind == txIngressWALOutboxState && !ownsPayload {
+				current, ok := outbox[frame.BatchID]
+				if !ok || current.deleted || len(current.record.Payload) == 0 {
+					return nil, errors.New("outbox state precedes enqueue while compacting ingress WAL")
+				}
+				current.record.Placement = cloneTxOutboxPlacementState(payload.Record.Placement)
+				current.retry = payload.Retry
+				outbox[frame.BatchID] = current
+				delete(outboxDeletions, frame.BatchID)
+			} else {
+				outbox[frame.BatchID] = txIngressWALOutboxProjection{record: payload.Record, retry: payload.Retry}
+				delete(outboxDeletions, frame.BatchID)
+			}
+		case txIngressWALOutboxApplied:
+			var payload txIngressWALOutboxAppliedPayload
+			if err := rlp.DecodeBytes(frame.Payload, &payload); err != nil {
+				return nil, err
+			}
+			mutation, ok := pendingOutboxMutations[payload.MutationID]
+			if !ok || mutation.event.batchID != frame.BatchID {
+				return nil, errors.New("outbox applied marker precedes or mismatches its mutation while compacting ingress WAL")
+			}
+			for eventID := range pendingOutboxMutationGroups[mutation.semantic] {
+				delete(pendingOutboxMutations, eventID)
+			}
+			delete(pendingOutboxMutationGroups, mutation.semantic)
+		case txIngressWALInboundReceived:
+			var payload txIngressWALInboundReceivedPayload
+			if err := rlp.DecodeBytes(frame.Payload, &payload); err != nil {
+				return nil, err
+			}
+			if payload.Packet.BatchID != frame.BatchID {
+				return nil, errors.New("invalid inbound receive while compacting ingress WAL")
+			}
+			if _, err := newTxQUICAckExpectation(&payload.Packet); err != nil {
+				return nil, err
+			}
+			key := txIngressWALPacketProjectionKey(&payload.Packet)
+			current := inbound[key]
+			current.packet = payload.Packet
+			inbound[key] = current
+		case txIngressWALInboundOutcome:
+			var payload txIngressWALInboundOutcomePayload
+			if err := rlp.DecodeBytes(frame.Payload, &payload); err != nil {
+				return nil, err
+			}
+			identity := txQUICPacket{BatchID: payload.BatchID, Sender: payload.Sender, SenderEpoch: payload.SenderEpoch, Nonce: payload.Nonce}
+			key := txIngressWALPacketProjectionKey(&identity)
+			current, ok := inbound[key]
+			if !ok || payload.BatchID != frame.BatchID {
+				return nil, errors.New("inbound outcome precedes receive while compacting ingress WAL")
+			}
+			expectation, err := newTxQUICAckExpectation(&current.packet)
+			if err != nil || validateTxQUICAckOutcome(&payload.Ack, expectation) != nil {
+				return nil, errors.New("invalid inbound outcome while compacting ingress WAL")
+			}
+			ack := payload.Ack
+			current.outcome = &ack
+			inbound[key] = current
+		case txIngressWALInboundApplied:
+			var payload txIngressWALInboundAppliedPayload
+			if err := rlp.DecodeBytes(frame.Payload, &payload); err != nil {
+				return nil, err
+			}
+			identity := txQUICPacket{BatchID: payload.BatchID, Sender: payload.Sender, SenderEpoch: payload.SenderEpoch, Nonce: payload.Nonce}
+			key := txIngressWALPacketProjectionKey(&identity)
+			current, ok := inbound[key]
+			if !ok || current.outcome == nil || payload.BatchID != frame.BatchID {
+				return nil, errors.New("inbound applied precedes outcome while compacting ingress WAL")
+			}
+			current.applied = true
+			inbound[key] = current
+		}
+	}
+
+	events := make([]txIngressWALCanonicalEvent, 0, len(localIntents)*2+len(inbound)*2+len(pendingOutboxMutations)+len(outbox)+len(nonces))
+	localIDs := make([]common.Hash, 0, len(localIntents))
+	recoverableOutboxIDs := make(map[common.Hash]struct{})
+	for id := range localIntents {
+		_, completed := localOutcomeEvents[id]
+		if !completed {
+			localIDs = append(localIDs, id)
+			continue
+		}
+		batch := localAcceptedBatches[id]
+		if batch == nil {
+			continue
+		}
+		for _, keep := range w.recoverableLocalItems(batch.Items) {
+			if keep {
+				localIDs = append(localIDs, id)
+				recoverableOutboxIDs[batch.BatchID] = struct{}{}
+				break
+			}
+		}
+	}
+	sort.Slice(localIDs, func(i, j int) bool { return bytes.Compare(localIDs[i][:], localIDs[j][:]) < 0 })
+	for _, id := range localIDs {
+		events = append(events, localIntentEvents[id])
+		if outcome, completed := localOutcomeEvents[id]; completed {
+			events = append(events, outcome)
+		}
+	}
+	inboundKeys := make([]string, 0, len(inbound))
+	for key, state := range inbound {
+		if !state.applied {
+			inboundKeys = append(inboundKeys, key)
+		}
+	}
+	sort.Strings(inboundKeys)
+	for _, key := range inboundKeys {
+		state := inbound[key]
+		receivedPayload, err := rlp.EncodeToBytes(&txIngressWALInboundReceivedPayload{Packet: state.packet})
+		if err != nil {
+			return nil, err
+		}
+		receivedID, err := txQUICRLPHash([]interface{}{"CPH_INGRESS_WAL_RECEIVED_V1", state.packet.BatchID, state.packet.Sender, state.packet.SenderEpoch, state.packet.Nonce})
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, txIngressWALCanonicalEvent{kind: txIngressWALInboundReceived, batchID: state.packet.BatchID, eventID: receivedID, payload: receivedPayload})
+		if state.outcome != nil {
+			outcomePayload, err := rlp.EncodeToBytes(&txIngressWALInboundOutcomePayload{
+				BatchID: state.packet.BatchID, Sender: state.packet.Sender, SenderEpoch: state.packet.SenderEpoch, Nonce: state.packet.Nonce, Ack: *state.outcome,
+			})
+			if err != nil {
+				return nil, err
+			}
+			events = append(events, txIngressWALCanonicalEvent{
+				kind: txIngressWALInboundOutcome, batchID: state.packet.BatchID,
+				eventID: txIngressWALEventID(txIngressWALInboundOutcome, state.packet.BatchID, outcomePayload), payload: outcomePayload,
+			})
+		}
+	}
+	// Destructive outbox mutations are retained byte-for-byte until a durable
+	// OutboxApplied marker proves that the mutable projection was synchronously
+	// updated. Emit them before the final active-set snapshot: if an old delete
+	// was later superseded by a re-enqueue of the same identity, the canonical
+	// active record must win during replay.
+	canonicalMutations := make(map[common.Hash]txIngressWALCanonicalOutboxMutation, len(pendingOutboxMutations)+len(recoverableOutboxIDs))
+	for _, mutation := range pendingOutboxMutations {
+		canonicalMutations[mutation.event.eventID] = mutation
+	}
+	// A completed local delivery still owns the only durable copy of a pending
+	// transaction after the mutable outbox entry is ACKed and removed. Retain
+	// its deletion evidence alongside the intent, otherwise replaying the
+	// compacted WAL would synthesize a fresh outbox enqueue from LocalOutcome.
+	for id := range recoverableOutboxIDs {
+		if state, ok := outbox[id]; ok && state.deleted {
+			mutation, ok := outboxDeletions[id]
+			if !ok {
+				return nil, errors.New("recoverable local transaction is missing outbox deletion evidence")
+			}
+			canonicalMutations[mutation.event.eventID] = mutation
+		}
+	}
+	pendingMutations := make([]txIngressWALCanonicalOutboxMutation, 0, len(canonicalMutations))
+	for _, mutation := range canonicalMutations {
+		pendingMutations = append(pendingMutations, mutation)
+	}
+	sort.Slice(pendingMutations, func(i, j int) bool { return pendingMutations[i].sequence < pendingMutations[j].sequence })
+	for _, mutation := range pendingMutations {
+		events = append(events, mutation.event)
+	}
+	outboxIDs := make([]common.Hash, 0, len(outbox))
+	for id, state := range outbox {
+		if !state.deleted {
+			outboxIDs = append(outboxIDs, id)
+		}
+	}
+	sort.Slice(outboxIDs, func(i, j int) bool { return bytes.Compare(outboxIDs[i][:], outboxIDs[j][:]) < 0 })
+	for _, id := range outboxIDs {
+		state := outbox[id]
+		// A checkpoint owns the current active projection in one full record.
+		// Live exact-duplicate stores consult the striped projection first and do
+		// not append a zero-state enqueue, so placement/retry cannot be rewound.
+		payload, err := rlp.EncodeToBytes(&txIngressWALOutboxPayload{Record: state.record, Retry: state.retry})
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, txIngressWALCanonicalEvent{
+			kind: txIngressWALOutboxEnqueued, batchID: id,
+			eventID: txIngressWALEventID(txIngressWALOutboxEnqueued, id, payload), payload: payload,
+		})
+	}
+	nonceKeys := make([]string, 0, len(nonces))
+	for key := range nonces {
+		nonceKeys = append(nonceKeys, key)
+	}
+	sort.Strings(nonceKeys)
+	for _, key := range nonceKeys {
+		state := nonces[key]
+		payload, err := rlp.EncodeToBytes(&txIngressWALOutboxNoncePayload{State: state})
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, txIngressWALCanonicalEvent{
+			kind: txIngressWALOutboxNonce, batchID: state.Epoch,
+			eventID: txIngressWALEventID(txIngressWALOutboxNonce, state.Epoch, payload), payload: payload,
+		})
+	}
+	return events, nil
+}
+
+func TestTxIngressWALFrameCodecMatchesReference(t *testing.T) {
+	for _, size := range []int{1, 2, 54, 55, 56, 127, 128, 255, 256, 65535, 65536} {
+		for _, sequence := range []uint64{1, 127, 128, ^uint64(0)} {
+			frame := &txIngressWALFrame{Version: 1, Sequence: sequence, Previous: common.Hash{9}, Kind: txIngressWALOutboxEnqueued, BatchID: common.Hash{1}, EventID: common.Hash{2}, Payload: bytes.Repeat([]byte{0x79}, size)}
+			digest, err := referenceTxIngressWALFrameDigest(frame)
+			if err != nil {
+				t.Fatal(err)
+			}
+			frame.Checksum = digest
+			reference, err := rlp.EncodeToBytes(frame)
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := encodeTxIngressWALFrame(frame)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(encoded, reference) {
+				t.Fatalf("encoding differs: size=%d sequence=%d", size, sequence)
+			}
+			key := txIngressWALRecordKeyForGeneration(3, sequence)
+			want, wantErr := referenceDecodeTxIngressWALFrame(3, key, encoded, sequence, frame.Previous)
+			got, gotErr := decodeTxIngressWALFrame(3, key, encoded, sequence, frame.Previous)
+			if wantErr != nil || gotErr != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("decoding differs: size=%d sequence=%d got=%v want=%v", size, sequence, gotErr, wantErr)
+			}
+			offset := bytes.Index(encoded, frame.Payload)
+			if offset < 0 || &got.Payload[0] != &encoded[offset] || cap(got.Payload) != len(got.Payload) {
+				t.Fatal("decoder copied the immutable payload")
+			}
+		}
+	}
+	// The single-byte string boundary also depends on the byte's value.
+	for _, value := range []byte{0, 0x7f, 0x80, 0xff} {
+		frame := &txIngressWALFrame{Version: 1, Sequence: 1, Kind: txIngressWALOutboxEnqueued, BatchID: common.Hash{1}, EventID: common.Hash{2}, Payload: []byte{value}}
+		got, _ := txIngressWALFrameDigest(frame)
+		want, _ := referenceTxIngressWALFrameDigest(frame)
+		if got != want {
+			t.Fatalf("single-byte digest differs for %x", value)
+		}
+	}
+}
+
+func TestTxIngressWALFrameRejectsMalformedReferenceInputs(t *testing.T) {
+	frame := &txIngressWALFrame{Version: 1, Sequence: 1, Kind: txIngressWALOutboxEnqueued, BatchID: common.Hash{1}, EventID: common.Hash{2}, Payload: bytes.Repeat([]byte{0x81}, 256)}
+	raw, err := encodeTxIngressWALFrame(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := txIngressWALRecordKey(1)
+	check := func(name string, encoded []byte) {
+		t.Helper()
+		_, oldErr := referenceDecodeTxIngressWALFrame(0, key, encoded, 1, common.Hash{})
+		_, err := decodeTxIngressWALFrame(0, key, encoded, 1, common.Hash{})
+		if oldErr == nil || err == nil {
+			t.Fatalf("%s malformed input accepted: reference=%v current=%v", name, oldErr, err)
+		}
+	}
+	for end := 0; end < len(raw); end++ {
+		check(fmt.Sprint("truncated-", end), raw[:end])
+	}
+	corrupted := append([]byte(nil), raw...)
+	corrupted[len(corrupted)-1] ^= 1
+	check("checksum", corrupted)
+	check("trailing value", append(append([]byte(nil), raw...), 0x80))
+	check("outer length overflow", []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+	fields, _, _ := rlp.SplitList(raw)
+	// Replace the payload header with an impossible uint64 length. The list
+	// itself is complete, so this is corruption rather than a terminal tear.
+	payloadOffset := len(raw) - len(fields)
+	rest := fields
+	for n := 0; n < 6; n++ {
+		_, _, rest, _ = rlp.Split(rest)
+	}
+	payloadOffset += len(fields) - len(rest)
+	overflow := append([]byte(nil), raw...)
+	copy(overflow[payloadOffset:], []byte{0xbf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff})
+	check("payload length overflow", overflow)
+	for _, mutate := range []func(*txIngressWALFrame){
+		func(f *txIngressWALFrame) { f.Version++ },
+		func(f *txIngressWALFrame) { f.Sequence++ },
+		func(f *txIngressWALFrame) { f.Previous[0]++ },
+		func(f *txIngressWALFrame) { f.Kind = 0 },
+		func(f *txIngressWALFrame) { f.BatchID = common.Hash{} },
+		func(f *txIngressWALFrame) { f.EventID = common.Hash{} },
+		func(f *txIngressWALFrame) { f.Payload = nil },
+	} {
+		copy := *frame
+		mutate(&copy)
+		encoded, err := encodeTxIngressWALFrame(&copy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		check("semantic field", encoded)
+	}
+}
+
+type ingressWALReadProbeDB struct {
+	ethdb.KeyValueStore
+	reads atomic.Int64
+}
+
+func (db *ingressWALReadProbeDB) Get(key []byte) ([]byte, error) {
+	if bytes.HasPrefix(key, txIngressWALRecordPrefix) || (bytes.HasPrefix(key, txIngressWALGenerationPrefix) && bytes.Contains(key, []byte("/record/"))) {
+		db.reads.Add(1)
+	}
+	return db.KeyValueStore.Get(key)
+}
+
+func TestTxIngressWALReplayStreamsAfterCompleteValidation(t *testing.T) {
+	db := &ingressWALReadProbeDB{KeyValueStore: memorydb.New()}
+	wal := newTxIngressWAL(db, testTxQUICConfig())
+	if err := wal.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer wal.Stop()
+	for index := byte(1); index <= 4; index++ {
+		batch, event, payload := testIngressWALEvent(index)
+		if _, err := wal.Append(context.Background(), txIngressWALOutboxEnqueued, batch, event, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db.reads.Store(0)
+	stop := errors.New("visitor stopped")
+	calls := 0
+	if err := wal.Replay(func(frame *txIngressWALFrame) error {
+		calls++
+		if got := db.reads.Load(); got != int64(4+calls) {
+			t.Fatalf("callback %d after %d reads; want validation plus one current record", calls, got)
+		}
+		if calls == 2 {
+			return stop
+		}
+		return nil
+	}); !errors.Is(err, stop) || !strings.Contains(err.Error(), "record 2") {
+		t.Fatalf("callback error lost: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("callback count=%d", calls)
+	}
+	key := txIngressWALRecordKey(4)
+	raw, _ := db.Get(key)
+	raw[len(raw)-1] ^= 1
+	if err := db.Put(key, raw); err != nil {
+		t.Fatal(err)
+	}
+	calls = 0
+	if err := wal.Replay(func(*txIngressWALFrame) error { calls++; return nil }); err == nil || calls != 0 {
+		t.Fatalf("corrupt snapshot produced callbacks: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestTxIngressWALReplayPinsGenerationAcrossCallbackCompaction(t *testing.T) {
+	config := testTxQUICConfig()
+	db := memorydb.New()
+	wal := newTxIngressWAL(db, config)
+	if err := wal.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer wal.Stop()
+	first := appendCheckpointTestOutbox(t, wal, config, 8801)
+	second := appendCheckpointTestOutbox(t, wal, config, 8802)
+	oldGeneration := wal.generation
+	done := make(chan error, 1)
+	var seen []common.Hash
+	go func() {
+		done <- wal.Replay(func(frame *txIngressWALFrame) error {
+			seen = append(seen, frame.BatchID)
+			if len(seen) != 1 {
+				return nil
+			}
+			if err := wal.Compact(); err != nil {
+				return err
+			}
+			if present, err := db.Has(txIngressWALRecordKeyForGeneration(oldGeneration, 2)); err != nil || !present {
+				return fmt.Errorf("pinned source removed: present=%t err=%v", present, err)
+			}
+			batchID, eventID, payload := testIngressWALEvent(93)
+			_, err := wal.Append(context.Background(), txIngressWALOutboxNonce, batchID, eventID, payload)
+			return err
+		})
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("replay callback deadlocked with append/compaction")
+	}
+	if len(seen) != 2 || seen[0] != first.BatchID || seen[1] != second.BatchID {
+		t.Fatalf("snapshot order=%v", seen)
+	}
+	if present, err := db.Has(txIngressWALRecordKeyForGeneration(oldGeneration, 2)); err != nil || present {
+		t.Fatalf("retired source not cleaned: present=%t err=%v", present, err)
+	}
+}
+
+func TestTxIngressWALTerminalCorruptionFailsWithoutDeletion(t *testing.T) {
+	for _, kind := range []string{"checksum", "version", "predecessor", "kind", "payload length", "truncated", "empty", "outer list length"} {
+		t.Run(kind, func(t *testing.T) {
+			config := testTxQUICConfig()
+			db := memorydb.New()
+			wal := newTxIngressWAL(db, config)
+			if err := wal.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			for index := byte(1); index <= 2; index++ {
+				batch, event, payload := testIngressWALEvent(index)
+				if _, err := wal.Append(context.Background(), txIngressWALOutboxEnqueued, batch, event, payload); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wal.Stop()
+			raw, _ := db.Get(txIngressWALRecordKey(2))
+			var frame txIngressWALFrame
+			if err := rlp.DecodeBytes(raw, &frame); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "checksum":
+				frame.Checksum[0] ^= 1
+				raw, _ = rlp.EncodeToBytes(&frame)
+			case "version":
+				frame.Version++
+				raw, _ = encodeTxIngressWALFrame(&frame)
+			case "predecessor":
+				frame.Previous[0] ^= 1
+				raw, _ = encodeTxIngressWALFrame(&frame)
+			case "kind":
+				frame.Kind = 0
+				raw, _ = encodeTxIngressWALFrame(&frame)
+			case "truncated":
+				raw = raw[:len(raw)-1]
+			case "empty":
+				raw = nil
+			case "outer list length":
+				if raw[0] < 0xf8 {
+					t.Fatal("fixture requires a long list header")
+				}
+				raw[int(raw[0]-0xf7)]++
+			case "payload length":
+				fields, _, _ := rlp.SplitList(raw)
+				rest := fields
+				for n := 0; n < 6; n++ {
+					_, _, rest, _ = rlp.Split(rest)
+				}
+				raw[len(raw)-len(rest)] = 0xbf
+			}
+			if err := db.Put(txIngressWALRecordKey(2), raw); err != nil {
+				t.Fatal(err)
+			}
+			tailBefore, _ := db.Get(txIngressWALTailKey)
+			restarted := newTxIngressWAL(db, config)
+			if err := restarted.Start(context.Background()); err == nil {
+				restarted.Stop()
+				t.Fatal("terminal corruption accepted")
+			}
+			after, err := db.Get(txIngressWALRecordKey(2))
+			tailAfter, _ := db.Get(txIngressWALTailKey)
+			if err != nil || !bytes.Equal(after, raw) || !bytes.Equal(tailBefore, tailAfter) {
+				t.Fatal("terminal corruption changed durable evidence")
+			}
+		})
+	}
+}
+
+func TestTxIngressWALCheckpointMatchesReferenceProjection(t *testing.T) {
+	config := testTxQUICConfig()
+	wal := newTxIngressWAL(memorydb.New(), config)
+	if err := wal.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer wal.Stop()
+	record := appendCheckpointTestOutbox(t, wal, config, 9201)
+	retry := txOutboxRetryState{Attempts: 3, NextRetry: 17, LastError: "retry"}
+	if err := wal.appendOutbox(context.Background(), txIngressWALOutboxState, record, retry); err != nil {
+		t.Fatal(err)
+	}
+	intent, _, err := decodeTxQUICBatch(record.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentID, err := wal.appendLocalIntent(context.Background(), intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := make([]byte, txQUICBitmapBytes(len(intent.Items)))
+	for index := range intent.Items {
+		txQUICBitmapSet(accepted, index)
+	}
+	if err := wal.appendLocalOutcome(context.Background(), record.BatchID, intentID, len(intent.Items), accepted); err != nil {
+		t.Fatal(err)
+	}
+	deleteID, err := wal.appendOutboxProjectionTracked(context.Background(), txIngressWALOutboxDeleted, record, retry, common.Hash{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wal.appendOutboxApplied(context.Background(), record.BatchID, deleteID); err != nil {
+		t.Fatal(err)
+	}
+	requeued := appendCheckpointTestOutbox(t, wal, config, 9202)
+	mutation, err := wal.appendOutboxProjectionTracked(context.Background(), txIngressWALOutboxDeleted, requeued, txOutboxRetryState{}, common.Hash{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = mutation // Deliberately pending deletion before a new active incarnation.
+	if err := wal.appendOutbox(context.Background(), txIngressWALOutboxEnqueued, requeued, retry); err != nil {
+		t.Fatal(err)
+	}
+	sender := common.Address{7}
+	packet := testTxQUICPacket(t, config, sender, 77, testTxQUICTransaction(9203, 8))
+	if err := wal.appendInboundReceived(context.Background(), packet); err != nil {
+		t.Fatal(err)
+	}
+	if err := wal.appendInboundOutcome(context.Background(), packet, testTxQUICAck(t, packet, []int{0}, nil, nil)); err != nil {
+		t.Fatal(err)
+	}
+	frames, digest, err := wal.referenceReadFramesRange(wal.generation, 1, wal.sequence, common.Hash{})
+	if err != nil || digest != wal.digest {
+		t.Fatalf("reference scan: digest=%s err=%v", digest, err)
+	}
+	want, err := wal.referenceCanonicalEvents(frames)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wal.Compact(); err != nil {
+		t.Fatal(err)
+	}
+	var got []txIngressWALCanonicalEvent
+	if err := wal.Replay(func(frame *txIngressWALFrame) error {
+		got = append(got, txIngressWALCanonicalEvent{kind: frame.Kind, batchID: frame.BatchID, eventID: frame.EventID, payload: frame.Payload})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("canonical events differ: got=%+v want=%+v", got, want)
+	}
+}
+
+// Run explicitly with -run '^$' -bench '^BenchmarkTxIngressWALMaximumFrameCodec$'
+// -benchtime=1x. The fixture has one maximum-sized backing buffer, no database,
+// no payload copy, and no maximum-sized legacy comparison allocation.
+func BenchmarkTxIngressWALMaximumFrameCodec(b *testing.B) {
+	payloadSize := int(txQUICMaxCommitBytes - 256)
+	frame := &txIngressWALFrame{Version: 1, Sequence: 1, Kind: txIngressWALOutboxEnqueued, BatchID: common.Hash{1}, EventID: common.Hash{2}}
+	scalar, err := rlp.EncodeToBytes(&txIngressWALFrameCommitment{Version: frame.Version, Sequence: frame.Sequence, Kind: frame.Kind, BatchID: frame.BatchID, EventID: frame.EventID})
+	if err != nil {
+		b.Fatal(err)
+	}
+	fields, _, _ := rlp.SplitList(scalar)
+	fields = fields[:len(fields)-1]
+	payloadHeader := txIngressWALRLPHeader(uint64(payloadSize), false, 0)
+	listHeader := txIngressWALRLPHeader(uint64(len(fields)+len(payloadHeader)+payloadSize+33), true, 0)
+	encoded := make([]byte, len(listHeader)+len(fields)+len(payloadHeader)+payloadSize+33)
+	offset := copy(encoded, listHeader)
+	offset += copy(encoded[offset:], fields)
+	offset += copy(encoded[offset:], payloadHeader)
+	frame.Payload = encoded[offset : offset+payloadSize]
+	for index := range frame.Payload {
+		frame.Payload[index] = 0x5a
+	}
+	digest, err := txIngressWALFrameDigest(frame)
+	if err != nil {
+		b.Fatal(err)
+	}
+	encoded[offset+payloadSize] = 0xa0
+	copy(encoded[offset+payloadSize+1:], digest[:])
+	key := txIngressWALRecordKey(1)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(encoded)))
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		decoded, err := decodeTxIngressWALFrame(0, key, encoded, 1, common.Hash{})
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(decoded.Payload) != payloadSize || &decoded.Payload[0] != &encoded[offset] || decoded.Checksum != digest {
+			b.Fatal("maximum frame was copied or changed")
+		}
+	}
+}
+
+func TestTxIngressWALAppendReservationsFollowOwnedLifetime(t *testing.T) {
+	config := testTxQUICConfig()
+	config.IngressCommitMaxRequests = 1
+	intent := testTxQUICBatch(t, config, testTxQUICTransaction(9501, 64))
+	payload, err := rlp.EncodeToBytes(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.IngressCommitMaxBytes = int64(len(payload)) + 256
+	db := &blockingSyncTxQUICDB{KeyValueStore: memorydb.New(), started: make(chan struct{}), release: make(chan struct{})}
+	wal := newTxIngressWAL(db, config)
+	if err := wal.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer wal.Stop()
+	db.block.Store(true)
+	released := false
+	defer func() {
+		if !released {
+			close(db.release)
+		}
+	}()
+	first := make(chan error, 1)
+	go func() {
+		_, err := wal.Append(context.Background(), txIngressWALOutboxEnqueued, common.Hash{1}, common.Hash{2}, payload)
+		first <- err
+	}()
+	select {
+	case <-db.started:
+	case <-time.After(time.Second):
+		t.Fatal("append did not reach fsync")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	local := make(chan error, 1)
+	go func() { _, err := wal.appendLocalIntent(ctx, intent); local <- err }()
+	deadline := time.Now().Add(time.Second)
+	for len(wal.appendCh) != 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("second owned payload was not queued")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	select {
+	case err := <-local:
+		t.Fatalf("local intent returned before definitive commit: %v", err)
+	default:
+	}
+	blocked, cancelBlocked := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	_, err = wal.Append(blocked, txIngressWALOutboxEnqueued, common.Hash{3}, common.Hash{4}, payload)
+	cancelBlocked()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("byte-budget wait: %v", err)
+	}
+	wal.admissionMu.Lock()
+	reserved, bytes := wal.reservedAppends, wal.reservedBytes
+	wal.admissionMu.Unlock()
+	if reserved != 2 || bytes != 2*config.IngressCommitMaxBytes || len(wal.appendCh) != 1 {
+		t.Fatalf("owned reservation count=%d bytes=%d queue=%d", reserved, bytes, len(wal.appendCh))
+	}
+	close(db.release)
+	released = true
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-local; err != nil {
+		t.Fatal(err)
+	}
+	wal.Stop()
+	wal.admissionMu.Lock()
+	defer wal.admissionMu.Unlock()
+	if wal.reservedAppends != 0 || wal.reservedBytes != 0 {
+		t.Fatalf("reservation leaked after completion: count=%d bytes=%d", wal.reservedAppends, wal.reservedBytes)
+	}
+}
+
+func TestTxIngressWALReferencedLocalOutboxKeepsCreatedAt(t *testing.T) {
+	config := testTxQUICConfig()
+	wal := newTxIngressWAL(memorydb.New(), config)
+	if err := wal.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer wal.Stop()
+	intent := testTxQUICBatch(t, config, testTxQUICTransaction(9502, 32))
+	intentID, err := wal.appendLocalIntent(context.Background(), intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wal.appendLocalOutcome(context.Background(), intent.BatchID, intentID, 1, []byte{1}); err != nil {
+		t.Fatal(err)
+	}
+	// A local owner's creation time is captured when its incarnation enters
+	// the projection; reloading its accepted bytes must not derive a new time.
+	reference := txIngressWALOutboxReferences{intent: 1, outcome: 2, createdAt: 123456789}
+	state, err := wal.referencedOutbox(wal.generation, reference)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.record.CreatedAt != reference.createdAt {
+		t.Fatalf("local owner creation time changed: got=%d want=%d", state.record.CreatedAt, reference.createdAt)
+	}
+}
+
+func TestTxIngressWALIncompleteSuffixRequiresVerifiedDurableTail(t *testing.T) {
+	for _, tailKind := range []string{"missing", "malformed", "wrong sequence", "wrong digest"} {
+		t.Run(tailKind, func(t *testing.T) {
+			config := testTxQUICConfig()
+			db := memorydb.New()
+			wal := newTxIngressWAL(db, config)
+			if err := wal.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			for index := byte(1); index <= 2; index++ {
+				batchID, eventID, payload := testIngressWALEvent(index)
+				if _, err := wal.Append(context.Background(), txIngressWALInboundReceived, batchID, eventID, payload); err != nil {
+					t.Fatal(err)
+				}
+			}
+			wal.Stop()
+			const orphanSequence = 3
+			partial := []byte{0xc4, 0x01}
+			if err := db.Put(txIngressWALRecordKey(orphanSequence), partial); err != nil {
+				t.Fatal(err)
+			}
+			tailRaw, err := db.Get(txIngressWALTailKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var tail txIngressWALTail
+			if err := rlp.DecodeBytes(tailRaw, &tail); err != nil {
+				t.Fatal(err)
+			}
+			switch tailKind {
+			case "missing":
+				if err := db.Delete(txIngressWALTailKey); err != nil {
+					t.Fatal(err)
+				}
+			case "malformed":
+				if err := db.Put(txIngressWALTailKey, []byte{0xc4, 0x01}); err != nil {
+					t.Fatal(err)
+				}
+			case "wrong sequence":
+				tail.Sequence--
+				raw, _ := rlp.EncodeToBytes(&tail)
+				if err := db.Put(txIngressWALTailKey, raw); err != nil {
+					t.Fatal(err)
+				}
+			case "wrong digest":
+				tail.Digest[0] ^= 1
+				raw, _ := rlp.EncodeToBytes(&tail)
+				if err := db.Put(txIngressWALTailKey, raw); err != nil {
+					t.Fatal(err)
+				}
+			}
+			tailBefore, tailErrBefore := db.Get(txIngressWALTailKey)
+			restarted := newTxIngressWAL(db, config)
+			if err := restarted.Start(context.Background()); err == nil {
+				restarted.Stop()
+				t.Fatal("incomplete suffix repaired without verified durable tail")
+			}
+			after, err := db.Get(txIngressWALRecordKey(orphanSequence))
+			tailAfter, tailErrAfter := db.Get(txIngressWALTailKey)
+			if err != nil || !bytes.Equal(after, partial) || !bytes.Equal(tailBefore, tailAfter) || (tailErrBefore == nil) != (tailErrAfter == nil) {
+				t.Fatal("uncertain terminal evidence or tail changed")
+			}
+		})
 	}
 }

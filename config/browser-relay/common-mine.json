@@ -3,7 +3,7 @@
   "socketPath": "auto",
   "network": {
     "chainId": 10101919,
-    "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    "genesisHash": "0xbef1d519ceeba0d303fe63d13bb5fb70cda8947f9ee5c60436135cdb77e4db52"
   },
   "sourceId": "common-mine",
   "mesh": {

@@ -64,6 +64,7 @@ type Service struct {
 	muProposalCadence            sync.RWMutex
 	lastSlowBlockTime            time.Time
 	lastFastBlockTime            time.Time
+	txLaneService                txLaneService
 	lastCadenceWakeup            time.Time
 	lastFixedKeyNewViewWakeup    time.Time
 	fixedKeyViewStartedAt        time.Time

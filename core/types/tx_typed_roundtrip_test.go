@@ -16,6 +16,49 @@ func testAddress(n byte) common.Address {
 	return addr
 }
 
+func TestTransactionIsContractCreationAvoidsDestinationCopies(t *testing.T) {
+	to := testAddress(1)
+	for _, test := range []struct {
+		name string
+		tx   *Transaction
+		want bool
+	}{
+		{"legacy_call", NewTransaction(0, to, new(big.Int), 21_000, big.NewInt(1), nil), false},
+		{"legacy_create", NewContractCreation(0, new(big.Int), 53_000, big.NewInt(1), nil), true},
+		{"access_call", NewTx(&AccessListTx{To: &to}), false},
+		{"access_create", NewTx(&AccessListTx{}), true},
+		{"dynamic_call", NewTx(&DynamicFeeTx{To: &to}), false},
+		{"dynamic_create", NewTx(&DynamicFeeTx{}), true},
+		{"blob", NewTx(&BlobTx{To: to}), false},
+		{"set_code", NewTx(&SetCodeTx{To: to}), false},
+		{"native", NewTx(&NativeTxV1{To: to}), false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.tx.IsContractCreation(); got != test.want || got != (test.tx.To() == nil) {
+				t.Fatalf("creation=%t, want=%t and To()==nil", got, test.want)
+			}
+			if allocations := testing.AllocsPerRun(100, func() {
+				if test.tx.IsContractCreation() != test.want {
+					panic("creation metadata changed")
+				}
+			}); allocations != 0 {
+				t.Fatalf("creation metadata allocated %g objects", allocations)
+			}
+			// The new metadata accessor must not weaken To's ownership boundary.
+			if destination := test.tx.To(); destination != nil {
+				*destination = testAddress(9)
+				if *test.tx.To() != to {
+					t.Fatal("destination accessor exposed transaction backing storage")
+				}
+			}
+		})
+	}
+	var missing *Transaction
+	if missing.IsContractCreation() || new(Transaction).IsContractCreation() {
+		t.Fatal("missing transaction reported contract creation")
+	}
+}
+
 func TestTypedTransactionRejectsOversizedIntegerFields(t *testing.T) {
 	overflow := new(big.Int).Lsh(big.NewInt(1), 256)
 	to := testAddress(1)

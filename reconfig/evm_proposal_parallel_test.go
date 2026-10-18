@@ -194,7 +194,7 @@ func TestEVMProposalMVCCRetryRetainsIndependentSenders(t *testing.T) {
 	}
 }
 
-func TestEVMProposalRuntimeDepthOverflowUsesBoundedValidPrefix(t *testing.T) {
+func TestEVMProposalRuntimeDepthOverflowRetainsIndependentSuffix(t *testing.T) {
 	config := evmProposalParallelTestConfig(t)
 	config.NativeParallel.MaxDependencyDepth = 1
 	parentHash := common.HexToHash("0x9393")
@@ -224,9 +224,8 @@ func TestEVMProposalRuntimeDepthOverflowUsesBoundedValidPrefix(t *testing.T) {
 		t.Fatalf("runtime depth error = %v, want transaction 1 dependency depth", executeErr)
 	}
 
-	// The higher-priced invalid sender consumes attempt one. Attempt two reaches
-	// the dependency overflow, and the fixed final attempt executes only the
-	// already-validated prefix. The independent suffix is postponed, not rescanned.
+	// A higher-priced invalid sender and the later dependency overflow must
+	// not suppress independent work after either rejected transaction.
 	cursor := types.NewTransactionsByPriceAndNonce(config, work.header.Number, map[common.Address]types.Transactions{
 		invalidSender:     {invalid},
 		sender:            {first, dependent},
@@ -236,19 +235,19 @@ func TestEVMProposalRuntimeDepthOverflowUsesBoundedValidPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("depth-limited proposal: %v", err)
 	}
-	if len(committed) != 1 || committed[0].Hash() != first.Hash() {
-		t.Fatalf("depth retry selected %v, want the canonical valid prefix", committed)
+	if len(committed) != 2 || committed[0].Hash() != first.Hash() || committed[1].Hash() != independent.Hash() {
+		t.Fatalf("depth filtering selected %v, want the valid prefix and independent suffix", committed)
 	}
-	if len(receipts) != 1 || len(failed) != 0 {
-		t.Fatalf("depth retry receipts=%d failed=%d, want 1/0", len(receipts), len(failed))
+	if len(receipts) != 2 || len(failed) != 0 {
+		t.Fatalf("depth filtering receipts=%d failed=%d, want 2/0", len(receipts), len(failed))
 	}
-	if work.publicState.GetNonce(invalidSender) != 0 || work.publicState.GetNonce(sender) != 1 || work.publicState.GetNonce(independentSender) != 0 {
+	if work.publicState.GetNonce(invalidSender) != 0 || work.publicState.GetNonce(sender) != 1 || work.publicState.GetNonce(independentSender) != 1 {
 		t.Fatalf("depth retry nonce state = invalid:%d dependent sender:%d independent:%d",
 			work.publicState.GetNonce(invalidSender), work.publicState.GetNonce(sender), work.publicState.GetNonce(independentSender))
 	}
 }
 
-func TestEVMProposalOutputLimitRetryRevertsPartialStateAndKeepsSmallOutput(t *testing.T) {
+func TestEVMProposalTwoLeadingOutputFailuresKeepIndependentSuffix(t *testing.T) {
 	config := evmProposalParallelTestConfig(t)
 	// An empty log list costs one RLP byte. A transaction which emits any log
 	// crosses this block bound, while the independent plain transfer still fits.
@@ -281,17 +280,19 @@ func TestEVMProposalOutputLimitRetryRevertsPartialStateAndKeepsSmallOutput(t *te
 		return tx, crypto.PubkeyToAddress(key.PublicKey)
 	}
 	overflow, overflowSender := sign("8888888888888888888888888888888888888888888888888888888888888888", 30, 100_000, logContract, 0)
+	secondOverflow, secondOverflowSender := sign("9999999999999999999999999999999999999999999999999999999999999999", 20, 100_000, logContract, 0)
 	small, smallSender := sign("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 10, params.TxGas, transferTarget, 1)
-	for _, account := range []common.Address{overflowSender, smallSender} {
+	for _, account := range []common.Address{overflowSender, secondOverflowSender, smallSender} {
 		base.SetBalance(account, new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
 	}
 	base.Finalise(true)
-	headerGas := overflow.Gas() + small.Gas()
+	headerGas := overflow.Gas() + secondOverflow.Gas() + small.Gas()
 	work := evmProposalParallelWork(config, base, parentHash, headerGas)
 
 	cursor := types.NewTransactionsByPriceAndNonce(config, work.header.Number, map[common.Address]types.Transactions{
-		overflowSender: {overflow},
-		smallSender:    {small},
+		overflowSender:       {overflow},
+		secondOverflowSender: {secondOverflow},
+		smallSender:          {small},
 	})
 	committed, receipts, _, failed, err := work.commitTransactions(cursor, chain)
 	if err != nil {
@@ -303,7 +304,7 @@ func TestEVMProposalOutputLimitRetryRevertsPartialStateAndKeepsSmallOutput(t *te
 	if len(receipts) != 1 || len(failed) != 0 {
 		t.Fatalf("output retry receipts=%d failed=%d, want 1/0", len(receipts), len(failed))
 	}
-	if work.publicState.GetNonce(overflowSender) != 0 || work.publicState.GetNonce(smallSender) != 1 {
+	if work.publicState.GetNonce(overflowSender) != 0 || work.publicState.GetNonce(secondOverflowSender) != 0 || work.publicState.GetNonce(smallSender) != 1 {
 		t.Fatalf("output retry did not discard failed speculative state: overflow=%d small=%d",
 			work.publicState.GetNonce(overflowSender), work.publicState.GetNonce(smallSender))
 	}

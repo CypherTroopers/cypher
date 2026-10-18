@@ -1,19 +1,109 @@
 package reconfig
 
 import (
+	"bytes"
 	"errors"
 	"math"
 	"math/big"
 	"testing"
 
 	"github.com/cypherium/cypher/common"
+	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/rawdb"
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/params"
+	"github.com/cypherium/cypher/reconfig/hotstuff"
 	"github.com/cypherium/cypher/rlp"
 )
+
+func TestOsakaProposalFinalizationCanonicalizesPaddedTargetQC(t *testing.T) {
+	f := newConvergenceFixture(t)
+	target := f.proposal(t, nil, 10, 'a')
+	first := f.proposal(t, target, 12, 'b')
+	second := f.proposal(t, first, 14, 'c')
+	tip := f.proposal(t, second, 15, 'd')
+	s := f.replicas[0]
+	canonicalSignature := append([]byte(nil), target.qc.Sign...)
+	targetID, err := hotstuff.SignedStateID(target.qc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target.qc.Sign = append(target.qc.Sign, make([]byte, 1024)...)
+	paddedSignature := append([]byte(nil), target.qc.Sign...)
+	if !hotstuff.VerifyFHSSignatureWithContext(target.qc.Sign, target.qc.Mask, target.qc.State, f.public,
+		hotstuff.CalcThreshold(len(f.public)), s.ChainID(), hotstuff.MsgVotePrepare, target.qc.ViewID, target.qc.LeaderID) {
+		t.Fatal("valid target QC with trailing signature bytes was rejected")
+	}
+	// Accepted descendant QC representations can fill the separately bounded
+	// proof envelope. The target signature is outside that envelope, so storing
+	// its padding would exceed the finalized header reserved during selection.
+	proof := &core.FHSCommitProof{QCs: []*hotstuff.SignedState{first.qc, second.qc, tip.qc}}
+	for _, qc := range proof.QCs {
+		qc.Sign = append(qc.Sign, make([]byte, 333333)...)
+	}
+	encodedProof, err := core.EncodeFHSCommitProof(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	padding := types.MaxFHSFinalityProofSize - len(encodedProof) - 16
+	if padding < 0 {
+		t.Fatal("fixture already exceeds the finality proof envelope")
+	}
+	tip.qc.Sign = append(tip.qc.Sign, make([]byte, padding)...)
+	encodedProof, err = core.EncodeFHSCommitProof(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encodedProof) != types.MaxFHSFinalityProofSize-16 {
+		t.Fatalf("proof bytes = %d, want %d", len(encodedProof), types.MaxFHSFinalityProofSize-16)
+	}
+	size, err := newProposalBodySize(target.verified.Block.Header(), s.chainConfig, nil, len(target.qc.LeaderID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	limit := size.encodedSize(true)
+	zero := uint64(0)
+	s.chainConfig.SetModernForkConfig(&params.ModernForkConfig{BerlinBlock: big.NewInt(0), LondonBlock: big.NewInt(0), OsakaTime: &zero})
+	s.chainConfig.NativeParallel = params.SolanaScaleNativeParallelConfig()
+	s.chainConfig.NativeParallel.MaxBlockBytes = limit
+	for _, invalidSignature := range [][]byte{nil, {1}} {
+		invalidQC := hotstuff.CloneSignedState(target.qc)
+		invalidQC.Sign = invalidSignature
+		if err := s.txService.decideFHSVerifiedProposal(target.ref, target.verified, invalidQC, proof); err == nil {
+			t.Fatal("invalid target signature reached canonical commit")
+		}
+	}
+	if err := s.txService.decideFHSVerifiedProposal(target.ref, target.verified, target.qc, proof); err != nil {
+		t.Fatalf("finalize proposal within its reserved size %d: %v", limit, err)
+	}
+	committed := s.bc.CurrentBlock()
+	if committed.Hash() != target.ref.BlockHash || !bytes.Equal(committed.SignInfo().Signature, canonicalSignature) {
+		t.Fatal("committed header did not preserve the proposal with a canonical target signature")
+	}
+	if uint64(len(committed.EncodeToBytes())) > limit {
+		t.Fatal("canonical target signature exceeded the finalized proposal boundary")
+	}
+	if !bytes.Equal(target.qc.Sign, paddedSignature) || !bytes.Equal(committed.FHSFinalityProof(), encodedProof) {
+		t.Fatal("header normalization changed the accepted QC or descendant proof")
+	}
+	if err := s.bc.VerifyFHSCommitProof(committed, proof); err != nil {
+		t.Fatalf("normalized target signature invalidated the finality proof: %v", err)
+	}
+	_, reconstructed, err := s.bc.ReconstructFHSQC(committed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reconstructedID, err := hotstuff.SignedStateID(reconstructed)
+	if err != nil || reconstructedID != targetID {
+		t.Fatal("header normalization changed the semantic QC identity")
+	}
+	stored := s.bc.GetBlock(committed.Hash(), committed.NumberU64())
+	if stored == nil || !bytes.Equal(stored.SignInfo().Signature, canonicalSignature) {
+		t.Fatal("canonical target signature was not persisted")
+	}
+}
 
 func cancunProposalTestConfig() *params.ChainConfig {
 	cancunTime, shanghaiTime := uint64(0), uint64(0)
@@ -109,17 +199,25 @@ func TestProposalPrecheckRejectsBlobTxWithoutSidecar(t *testing.T) {
 
 func TestOsakaProposalReservesBlockEncodingHeadroom(t *testing.T) {
 	zero := uint64(0)
-	cfg := &params.ChainConfig{}
+	cfg := &params.ChainConfig{FairHotstuff: true, NativeParallel: params.SolanaScaleNativeParallelConfig()}
 	cfg.SetModernForkConfig(&params.ModernForkConfig{BerlinBlock: big.NewInt(0), LondonBlock: big.NewInt(0), OsakaTime: &zero})
 	header := &types.Header{Number: big.NewInt(1), Time: 0}
 	tx := types.NewTransaction(0, common.Address{}, big.NewInt(0), params.TxGas, big.NewInt(1), nil)
-	env := &work{config: cfg, header: header, size: common.StorageSize(params.MaxBlockSize - uint64(osakaBlockSizeBuffer) - uint64(osakaPerTxBodySizeBuffer) - uint64(tx.Size()))}
-	if env.txFitsBlockSize(tx) {
-		t.Fatal("transaction at the reserved Osaka size boundary was accepted")
+	env := &work{config: cfg, header: header}
+	if err := env.ensureProposalBodySize(); err != nil {
+		t.Fatal(err)
 	}
-	env.size--
+	addition, ok := env.bodySize.nextTransaction(tx, tx.Gas())
+	if !ok {
+		t.Fatal("failed to measure candidate")
+	}
+	cfg.NativeParallel.MaxBlockBytes = addition.next.encodedSize(true)
 	if !env.txFitsBlockSize(tx) {
-		t.Fatal("transaction below the reserved Osaka size boundary was rejected")
+		t.Fatal("transaction exactly at the finalized Osaka size boundary was rejected")
+	}
+	cfg.NativeParallel.MaxBlockBytes--
+	if env.txFitsBlockSize(tx) {
+		t.Fatal("transaction above the finalized Osaka size boundary was accepted")
 	}
 }
 
@@ -143,13 +241,15 @@ func TestOsakaProposalSizeBudgetAllowsConsensusMaximumNativeTransfers(t *testing
 	env := &work{config: cfg, header: header, size: header.Size()}
 	for index := 0; index < params.MaxTxCountPerBlock; index++ {
 		if !env.txFitsBlockSize(tx) {
-			t.Fatalf("signed native transfer %d/%d rejected by proposer size budget (selected=%d tx=%d perTxBuffer=%d blockBuffer=%d)", index+1, params.MaxTxCountPerBlock, uint64(env.size), uint64(tx.Size()), uint64(osakaPerTxBodySizeBuffer), uint64(osakaBlockSizeBuffer))
+			t.Fatalf("signed native transfer %d/%d rejected by proposer size budget (selected=%d tx=%d)", index+1, params.MaxTxCountPerBlock, uint64(env.size), uint64(tx.Size()))
 		}
-		env.size += tx.Size() + osakaPerTxBodySizeBuffer
+		addition, _ := env.bodySize.nextTransaction(tx, tx.Gas())
+		env.bodySize.install(addition)
+		env.size = common.StorageSize(env.bodySize.encodedSize(false))
 	}
 }
 
-func TestOsakaPerTransactionBufferCoversCanonicalCommonSidecars(t *testing.T) {
+func TestOsakaProposalCountsCanonicalCommonSidecarLists(t *testing.T) {
 	approver := common.Address{1}
 	txHashes := make([]common.Hash, types.MaxCommonTxAdmissionBatchItems)
 	refs := make([]types.CommonTxAdmissionRef, len(txHashes))
@@ -193,8 +293,23 @@ func TestOsakaPerTransactionBufferCoversCanonicalCommonSidecars(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encodedPerTx := (len(encodedAdmission) + len(encodedReward) + len(txHashes) - 1) / len(txHashes)
-	if encodedPerTx > int(osakaPerTxBodySizeBuffer) {
-		t.Fatalf("canonical admission/reward batch sidecars use %d amortized bytes per tx, exceed proposal buffer %d", encodedPerTx, uint64(osakaPerTxBodySizeBuffer))
+	batchBytes, err := proposalRLPSize(admission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refBytes, rewardBytes uint64
+	for index := range refs {
+		refBytes += proposalListSize(proposalUintSize(uint64(refs[index].Batch)) + proposalUintSize(uint64(refs[index].Item)))
+		encoded, err := proposalRLPSize(rewards[index])
+		if err != nil {
+			t.Fatal(err)
+		}
+		rewardBytes += encoded
+	}
+	if got := proposalListSize(proposalListSize(batchBytes) + proposalListSize(refBytes)); got != uint64(len(encodedAdmission)) {
+		t.Fatalf("admission list bytes = %d, canonical bytes = %d", got, len(encodedAdmission))
+	}
+	if got := proposalListSize(rewardBytes); got != uint64(len(encodedReward)) {
+		t.Fatalf("reward list bytes = %d, canonical bytes = %d", got, len(encodedReward))
 	}
 }

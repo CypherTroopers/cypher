@@ -42,6 +42,43 @@ func TestDatasetGrowthSchedule(t *testing.T) {
 	}
 }
 
+func TestNormalEngineLifecycleDoesNotAllocateDataset(t *testing.T) {
+	// An unset dataset directory makes accidental normal-mode sealing fail before
+	// allocating the full DAG. This test never supplies work to the engine.
+	engine := New(Config{PowMode: ModeNormal, CachesInMem: 2, DatasetsInMem: 1})
+	t.Cleanup(func() {
+		if err := engine.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	assertNoResources := func(step string) {
+		t.Helper()
+		if caches, datasets, leases := len(engine.caches.items()), len(engine.datasets.items()), len(engine.miningDatasets); caches != 0 || datasets != 0 || leases != 0 {
+			t.Fatalf("%s initialized PoW resources: caches=%d datasets=%d leases=%d", step, caches, datasets, leases)
+		}
+		if engine.rand != nil {
+			t.Fatalf("%s initialized nonce workers", step)
+		}
+	}
+	assertNoResources("construction")
+	engine.SetThreads(-1)
+	assertNoResources("idle thread configuration")
+	for _, step := range []struct {
+		name string
+		run  func() error
+	}{
+		{"start", engine.StartMining},
+		{"stop", engine.StopMining},
+		{"restart", engine.StartMining},
+		{"close", engine.Close},
+	} {
+		if err := step.run(); err != nil {
+			t.Fatalf("%s: %v", step.name, err)
+		}
+		assertNoResources(step.name)
+	}
+}
+
 func TestSealCandidateRequiresLockedDataset(t *testing.T) {
 	for _, test := range []struct {
 		name string

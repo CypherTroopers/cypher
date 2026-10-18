@@ -41,6 +41,7 @@ func (h Header) MarshalJSON() ([]byte, error) {
 		CommonTxRewardRoot    common.Hash    `json:"commonTxRewardRoot"`
 		BlockType             uint8          `json:"blockType"      gencodec:"required"`
 		KeyHash               common.Hash    `json:"keyHash"       gencodec:"required"`
+		KeyInfo               hexutil.Bytes  `json:"keyInfo,omitempty"`
 		Hash                  common.Hash    `json:"hash"`
 	}
 	var enc Header
@@ -69,6 +70,7 @@ func (h Header) MarshalJSON() ([]byte, error) {
 	enc.CommonTxRewardRoot = h.CommonTxRewardRoot
 	enc.BlockType = h.BlockType
 	enc.KeyHash = h.KeyHash
+	enc.KeyInfo = h.KeyInfo
 	enc.Hash = h.Hash()
 	return json.Marshal(&enc)
 }
@@ -101,6 +103,7 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 		CommonTxRewardRoot    *common.Hash    `json:"commonTxRewardRoot"`
 		BlockType             uint8           `json:"blockType"      gencodec:"required"`
 		KeyHash               *common.Hash    `json:"keyHash"       gencodec:"required"`
+		KeyInfo               *hexutil.Bytes  `json:"keyInfo,omitempty"`
 	}
 	var dec Header
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -191,6 +194,10 @@ func (h *Header) UnmarshalJSON(input []byte) error {
 	h.BlockType = dec.BlockType
 	if dec.KeyHash != nil {
 		h.KeyHash = *dec.KeyHash
+	}
+	h.KeyInfo = nil
+	if dec.KeyInfo != nil {
+		h.KeyInfo = *dec.KeyInfo
 	}
 
 	return nil

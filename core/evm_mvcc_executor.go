@@ -130,9 +130,8 @@ func nativeParallelVMConfigSupported(cfg vm.Config) bool {
 const evmOptimisticMicroBatch = 64
 
 const (
-	// Every code-loading operation after the transaction destination consumes at
-	// least the warm-account opcode charge. A few implicit/EIP-7702 reads are
-	// reserved separately below.
+	// Reserve implicit sender/destination/delegation code reads separately from
+	// opcode charges. Authorization reads are covered by their retained gas below.
 	evmRuntimeCodeLoadBase = uint64(4)
 )
 
@@ -147,9 +146,10 @@ func saturatedMemoryProduct(count, amount uint64) uint64 {
 }
 
 // evmMaximumLiveMemoryFrames bounds simultaneously live interpreter memories.
-// Each nested EVM call pays at least CallGasEIP150 and can forward at most
-// 63/64 of the remainder. Using the transaction gas (including intrinsic gas)
-// and ignoring every other opcode cost deliberately overestimates depth.
+// Each nested EVM call pays at least the Berlin warm-account charge and can
+// forward at most 63/64 of the remainder. Earlier EIP-150 calls and CREATE cost
+// more. A value call's 2300 stipend is covered by its 9000 value-transfer charge.
+// Ignoring every other opcode cost deliberately overestimates depth.
 func evmMaximumLiveMemoryFrames(gas uint64, eip150 bool) uint64 {
 	if !eip150 {
 		// Before EIP-150, children could receive all remaining gas. The call-depth
@@ -158,37 +158,26 @@ func evmMaximumLiveMemoryFrames(gas uint64, eip150 bool) uint64 {
 	}
 	frames := uint64(1)
 	available := gas
-	for frames < params.CallCreateDepth+1 && available > params.CallGasEIP150 {
-		available -= params.CallGasEIP150
+	for frames < params.CallCreateDepth+1 && available > params.WarmStorageReadCostEIP2929 {
+		available -= params.WarmStorageReadCostEIP2929
 		available -= available / 64
 		frames++
 	}
 	return frames
 }
 
-func evmMemoryExpansionGas(words uint64) uint64 {
-	// The configured protocol hard maximum is 256 MiB (2^23 words), so these
-	// operations cannot overflow. Treat an out-of-contract caller
-	// conservatively if that invariant is ever relaxed without this helper.
-	if words != 0 && words > ^uint64(0)/words {
-		return ^uint64(0)
-	}
-	square := words * words
-	linear := saturatedMemoryProduct(words, params.MemoryGas)
-	quadratic := square / params.QuadCoeffDiv
-	if linear > ^uint64(0)-quadratic {
-		return ^uint64(0)
-	}
-	return linear + quadratic
-}
-
-// evmMinimumAggregateMemoryGas is the least expansion gas capable of keeping
-// totalWords live across at most frames call frames. The expansion schedule is
-// discrete-convex, so balancing words across frames minimizes cost. This is
-// the safe multi-frame counterpart to the familiar single-frame ~3 MiB bound
-// at Osaka's MaxTxGas.
+// evmMinimumAggregateMemoryGas lower-bounds expansion gas for totalWords live
+// across at most frames memories. Balancing integer words minimizes the sum of
+// squares, but rounding each frame's quadratic fee down breaks discrete
+// convexity. The sum of those rounded fees is at least the rounded minimum
+// sum of squares minus frames-1. This bound accounts for that rounding loss.
 func evmMinimumAggregateMemoryGas(totalWords, frames uint64) uint64 {
 	if totalWords == 0 {
+		return 0
+	}
+	if totalWords > params.NativeParallelHardMaxMemory/32 {
+		// Outside the interpreter's hard limit, fail conservatively: a zero
+		// lower bound makes the scheduling caller reserve more memory.
 		return 0
 	}
 	if frames == 0 {
@@ -198,15 +187,15 @@ func evmMinimumAggregateMemoryGas(totalWords, frames uint64) uint64 {
 		frames = totalWords
 	}
 	base, remainder := totalWords/frames, totalWords%frames
-	baseCost := evmMemoryExpansionGas(base)
-	highCost := evmMemoryExpansionGas(base + 1)
-	lowFrames := frames - remainder
-	low := saturatedMemoryProduct(lowFrames, baseCost)
-	high := saturatedMemoryProduct(remainder, highCost)
-	if low >= nativeExecutionMemoryBudget || high >= nativeExecutionMemoryBudget || low > ^uint64(0)-high {
-		return ^uint64(0)
+	// totalWords <= 2^23, so the sum of squares is at most 2^46.
+	squares := (frames-remainder)*base*base + remainder*(base+1)*(base+1)
+	quadratic := squares / params.QuadCoeffDiv
+	if roundingLoss := frames - 1; quadratic > roundingLoss {
+		quadratic -= roundingLoss
+	} else {
+		quadratic = 0
 	}
-	return low + high
+	return totalWords*params.MemoryGas + quadratic
 }
 
 // evmGasBoundedLogicalMemory returns a rigorous aggregate live-memory upper
@@ -235,6 +224,26 @@ func evmGasBoundedLogicalMemory(gas, configuredLimit uint64, eip150Active bool) 
 	return low * 32
 }
 
+// evmRuntimeExecutionGasUpperBound removes only the fixed intrinsic debit used
+// by StateTransition. Calldata, access-list, initcode-word and authorization
+// charges remain in this upper bound, avoiding payload copies during planning.
+// Authorization charges also cover authority code reads before EVM execution.
+// Refunds and Prague's calldata floor are applied after execution and therefore
+// cannot reduce the gas available to interpreter memories or code-loading work.
+func evmRuntimeExecutionGasUpperBound(tx *types.Transaction) uint64 {
+	if tx == nil {
+		return 0
+	}
+	intrinsic := params.TxGas
+	if tx.IsContractCreation() {
+		intrinsic = params.TxGasContractCreation
+	}
+	if tx.Gas() <= intrinsic {
+		return 0
+	}
+	return tx.Gas() - intrinsic
+}
+
 // evmRuntimeTransactionMemoryWeight is node-local scheduling policy. It uses
 // only deterministic transaction/config values, but changing the estimate can
 // affect concurrency only, never block validity or canonical results.
@@ -245,7 +254,8 @@ func evmRuntimeTransactionMemoryWeight(config *params.ChainConfig, header *types
 	limits := config.NativeParallel
 	weight := nativeBranchBaseMemoryReserve
 	eip150Active := header != nil && header.Number != nil && config.IsEIP150(header.Number)
-	logicalMemory := evmGasBoundedLogicalMemory(tx.Gas(), limits.MaxMemoryBytesPerTransaction, eip150Active)
+	executionGas := evmRuntimeExecutionGasUpperBound(tx)
+	logicalMemory := evmGasBoundedLogicalMemory(executionGas, limits.MaxMemoryBytesPerTransaction, eip150Active)
 	// Memory.Resize doubles capacity. An active backing is below twice logical
 	// size, and every uncollected prior geometric backing sums to less than the
 	// active capacity, making the shared four-times factor a strict heap bound.
@@ -264,11 +274,19 @@ func evmRuntimeTransactionMemoryWeight(config *params.ChainConfig, header *types
 	// Already-loaded snapshot code is shared immutably. Previously unseen code
 	// comes from the database cache into the branch, so reserve the maximum code
 	// image for every code-bearing account that gas could possibly observe.
+	// Before Berlin, EXTCODESIZE/COPY cost at least 20; afterward each code
+	// account pays at least 100, including both sides of a delegated CALL.
+	// Every authorization retains its 25000 intrinsic gas in executionGas, which
+	// more than covers its one authority code read even when the tuple is invalid.
+	codeLoadGas := params.ExtcodeSizeGasFrontier
+	if header != nil && header.Number != nil && config.IsBerlin(header.Number) {
+		codeLoadGas = params.WarmStorageReadCostEIP2929
+	}
 	codeLoads := evmRuntimeCodeLoadBase
-	if tx.Gas() > (^uint64(0)-codeLoads)/params.WarmStorageReadCostEIP2929 {
+	if executionGas > (^uint64(0)-codeLoads)/codeLoadGas {
 		codeLoads = accesses
 	} else {
-		codeLoads += tx.Gas() / params.WarmStorageReadCostEIP2929
+		codeLoads += executionGas / codeLoadGas
 		if codeLoads > accesses {
 			codeLoads = accesses
 		}
@@ -331,6 +349,29 @@ func evmRuntimeRetainedMemoryWeight(config *params.ChainConfig, transactionCount
 		logBytes = limits.MaxLogBytesPerBlock
 	}
 	return addNativeMemoryWeight(weight, logBytes)
+}
+
+// acquireEVMSerialMemoryLease covers the retained results and largest active
+// transaction of a standard-EVM serial pass. Callers acquire only at their
+// serial entry point: speculative replay already owns the parallel pass's
+// lease, so acquiring inside the serial transaction oracle would deadlock.
+//
+// Saturating estimates take the whole scheduling budget exclusively. They do
+// not introduce a local-estimate validity gate or prove actual heap/RSS fits
+// that budget. Capture the limiter so release uses the same owner as acquire.
+func acquireEVMSerialMemoryLease(config *params.ChainConfig, header *types.Header, txs types.Transactions) (*nativeWeightedMemoryLimiter, uint64) {
+	limiter := nativeDAGMemoryLimiter
+	if config == nil || !config.NativeParallelEnabled() || config.NativeParallel.RequireNativeTransactions || len(txs) == 0 {
+		return limiter, 0
+	}
+	var maximumTransactionWeight uint64
+	for _, tx := range txs {
+		if weight := evmRuntimeTransactionMemoryWeight(config, header, tx); weight > maximumTransactionWeight {
+			maximumTransactionWeight = weight
+		}
+	}
+	weight := addNativeMemoryWeight(evmRuntimeRetainedMemoryWeight(config, len(txs)), maximumTransactionWeight)
+	return limiter, limiter.acquire(weight)
 }
 
 type evmMVCCResourceKind uint8
@@ -1123,6 +1164,12 @@ func (index *evmMVCCWriteIndex) hasStorage(address common.Address) bool {
 }
 
 func (index *evmMVCCWriteIndex) conflictsRead(resource evmMVCCResource) bool {
+	// Transient storage belongs to one transaction, including its nested calls.
+	// Retain it in the access set for work accounting, but never require replay
+	// against another transaction's persistent account or storage writes.
+	if resource.kind == evmMVCCTemporaryStorageResource {
+		return false
+	}
 	if _, changed := index.accounts[resource.address]; changed {
 		return true
 	}
@@ -1145,6 +1192,9 @@ func (index *evmMVCCWriteIndex) conflictsRead(resource evmMVCCResource) bool {
 }
 
 func (index *evmMVCCWriteIndex) conflictsWrite(resource evmMVCCResource) bool {
+	if resource.kind == evmMVCCTemporaryStorageResource {
+		return false
+	}
 	if _, changed := index.accounts[resource.address]; changed {
 		return true
 	}
@@ -1351,7 +1401,11 @@ func mergeEVMMVCCResult(statedb *state.StateDB, gp *GasPool, usedGas *uint64, bl
 	}
 	for _, entry := range result.delta.logs {
 		copyEntry := *entry
-		copyEntry.Topics = append([]common.Hash(nil), entry.Topics...)
+		if entry.Topics != nil {
+			// LOG0 produces a non-nil empty slice in the serial executor.
+			copyEntry.Topics = make([]common.Hash, len(entry.Topics))
+			copy(copyEntry.Topics, entry.Topics)
+		}
 		copyEntry.Data = common.CopyBytes(entry.Data)
 		statedb.AddLog(&copyEntry)
 	}
@@ -1396,9 +1450,12 @@ func (p *StateProcessor) processEVMOptimistic(block *types.Block, statedb *state
 		return fmt.Errorf("standard EVM optimistic executor has incomplete context")
 	}
 	txs := block.Transactions()
+	// Header returns a defensive copy, including finality metadata. Planning
+	// and runtime work metering only read it, so one copy covers the whole pass.
+	planningHeader := block.Header()
 	transactionWeights := make([]uint64, len(txs))
 	for index, tx := range txs {
-		transactionWeights[index] = evmRuntimeTransactionMemoryWeight(p.config, block.Header(), tx)
+		transactionWeights[index] = evmRuntimeTransactionMemoryWeight(p.config, planningHeader, tx)
 	}
 	retainedWeight := evmRuntimeRetainedMemoryWeight(p.config, len(txs))
 	if retainedWeight >= nativeExecutionMemoryBudget {
@@ -1472,7 +1529,7 @@ func (p *StateProcessor) processEVMOptimistic(block *types.Block, statedb *state
 				if serialErr != nil {
 					return evmTransactionExecutionError(index, fmt.Errorf("serial re-execution: %w", serialErr))
 				}
-				if err := workMeter.Add(p.config, block.Header(), index, tx, serialReceipt, serialAccess); err != nil {
+				if err := workMeter.Add(p.config, planningHeader, index, tx, serialReceipt, serialAccess); err != nil {
 					return evmTransactionExecutionError(index, err)
 				}
 				receipt = serialReceipt
@@ -1481,7 +1538,7 @@ func (p *StateProcessor) processEVMOptimistic(block *types.Block, statedb *state
 				if speculative.err != nil {
 					return evmTransactionExecutionError(index, fmt.Errorf("speculative execution: %w", speculative.err))
 				}
-				if err := workMeter.Add(p.config, block.Header(), index, tx, speculative.receipt, speculative.access); err != nil {
+				if err := workMeter.Add(p.config, planningHeader, index, tx, speculative.receipt, speculative.access); err != nil {
 					return evmTransactionExecutionError(index, err)
 				}
 				merged, mergeErr := mergeEVMMVCCResult(statedb, gp, usedGas, block, index, tx, speculative)

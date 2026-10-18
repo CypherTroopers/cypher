@@ -383,6 +383,26 @@ func (db *Database) node(hash common.Hash) node {
 	return mustDecodeNode(hash[:], enc)
 }
 
+// CachedNode retrieves encoded content already retained by the trie database.
+// It never reads disk, changes references, or initiates recursive cleanup. A
+// caller requiring disk error propagation can use its own strict disk lookup.
+func (db *Database) CachedNode(hash common.Hash) ([]byte, bool) {
+	if hash == (common.Hash{}) {
+		return nil, false
+	}
+	if db.cleans != nil {
+		if enc := db.cleans.Get(nil, hash[:]); enc != nil {
+			return enc, true
+		}
+	}
+	db.lock.RLock()
+	defer db.lock.RUnlock()
+	if dirty := db.dirties[hash]; dirty != nil {
+		return dirty.rlp(), true
+	}
+	return nil, false
+}
+
 // Node retrieves an encoded cached trie node from memory. If it cannot be found
 // cached, the method queries the persistent database for the content.
 func (db *Database) Node(hash common.Hash) ([]byte, error) {

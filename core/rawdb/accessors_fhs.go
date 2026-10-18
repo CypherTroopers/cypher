@@ -1,6 +1,8 @@
 package rawdb
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/cypherium/cypher/common"
@@ -141,4 +143,122 @@ func iterateFHSHashRecords(db ethdb.Iteratee, prefix []byte, visit func(common.H
 		}
 	}
 	return iterator.Error()
+}
+
+// FHSCheckpointRecord preserves an existing database record byte for byte.
+type FHSCheckpointRecord struct{ Key, Value []byte }
+
+var fhsCheckpointReadyKey = []byte("cypher-fhs-checkpoint-ready")
+
+// ReadFHSCheckpointReady reads the opaque completed-checkpoint descriptor.
+func ReadFHSCheckpointReady(db ethdb.KeyValueReader) ([]byte, error) {
+	has, err := db.Has(fhsCheckpointReadyKey)
+	if err != nil || !has {
+		return nil, err
+	}
+	return db.Get(fhsCheckpointReadyKey)
+}
+
+func FHSCheckpointReadyRecord(data []byte) FHSCheckpointRecord {
+	return FHSCheckpointRecord{common.CopyBytes(fhsCheckpointReadyKey), common.CopyBytes(data)}
+}
+
+// FHSCheckpointGenesisRecords contains immutable transaction-genesis metadata.
+// Mutable head markers are intentionally excluded.
+// Get reads whole values; maxBytes bounds accepted records, not pre-read allocation.
+func FHSCheckpointGenesisRecords(db ethdb.KeyValueReader, hash common.Hash, maxBytes uint64) ([]FHSCheckpointRecord, error) {
+	keys := [][]byte{headerHashKey(0), headerNumberKey(hash), headerKey(0, hash), blockBodyKey(0, hash), headerTDKey(0, hash), blockReceiptsKey(0, hash), configKey(hash)}
+	records := make([]FHSCheckpointRecord, 0, len(keys))
+	for _, key := range keys {
+		value, err := db.Get(key)
+		if err != nil {
+			return nil, fmt.Errorf("checkpoint metadata %x: %w", key, err)
+		}
+		size := uint64(len(key)) + uint64(len(value))
+		if len(value) == 0 || size > maxBytes {
+			return nil, fmt.Errorf("checkpoint metadata missing or exceeds accepted byte limit")
+		}
+		maxBytes -= size
+		records = append(records, FHSCheckpointRecord{common.CopyBytes(key), common.CopyBytes(value)})
+	}
+	if !bytes.Equal(records[0].Value, hash[:]) {
+		return nil, fmt.Errorf("checkpoint genesis is not canonical")
+	}
+	return records, nil
+}
+
+// FHSCheckpointBlockKeys provides the fixed transaction record order for a
+// checkpoint cursor which admits and reads only one record per Step.
+func FHSCheckpointBlockKeys(number uint64, hash common.Hash) [][]byte {
+	return [][]byte{headerHashKey(number), headerNumberKey(hash), headerKey(number, hash), blockBodyKey(number, hash), headerTDKey(number, hash), blockReceiptsKey(number, hash)}
+}
+
+// FHSCheckpointKeyKeys provides canonical mapping, number, header, body,
+// difficulty and committee keys. A key header does not commit its body; callers
+// authenticate non-genesis bodies against canonical transaction carriers and
+// check the committee commitment before acknowledging these records.
+func FHSCheckpointKeyKeys(number uint64, hash common.Hash) [][]byte {
+	return [][]byte{keyBlockHashKey(number), keyBlockHeaderNumberKey(hash), keyBlockHeaderKey(number, hash), keyBlockBodyKey(number, hash), headerTDKey(number, hash), CommitteeKey(number, hash)}
+}
+
+// FHSCheckpointConfigKey identifies the existing genesis configuration record.
+func FHSCheckpointConfigKey(hash common.Hash) []byte {
+	return configKey(hash)
+}
+
+// FHSCheckpointHeadKeys provides the mutable marker order: transaction full
+// head, transaction header head, fast head, key full head and key header head.
+// The caller must hold the chain lock and check that these still identify the
+// selected checkpoint heads before synchronously rewriting any marker.
+func FHSCheckpointHeadKeys() [][]byte {
+	return [][]byte{common.CopyBytes(headBlockKey), common.CopyBytes(headHeaderKey), common.CopyBytes(headFastBlockKey), common.CopyBytes(headKeyBlockKey), common.CopyBytes(headKeyHeaderKey)}
+}
+
+// ReadFHSCheckpointCode preserves legacy and prefixed code lookup and read errors.
+func ReadFHSCheckpointCode(db ethdb.KeyValueReader, hash common.Hash) (FHSCheckpointRecord, error) {
+	for _, key := range [][]byte{hash.Bytes(), codeKey(hash)} {
+		has, err := db.Has(key)
+		if err != nil {
+			return FHSCheckpointRecord{}, err
+		}
+		if !has {
+			continue
+		}
+		value, err := db.Get(key)
+		if err != nil {
+			return FHSCheckpointRecord{}, err
+		}
+		if len(value) > 0 {
+			return FHSCheckpointRecord{key, value}, nil
+		}
+	}
+	return FHSCheckpointRecord{}, fmt.Errorf("checkpoint code %s missing", hash)
+}
+
+func ReadFHSCheckpointCanonical(db ethdb.KeyValueReader) (common.Hash, error) {
+	return ReadFHSCheckpointCanonicalAt(db, 0)
+}
+
+// ReadFHSCheckpointCanonicalAt preserves read errors and requires an exact hash.
+func ReadFHSCheckpointCanonicalAt(db ethdb.KeyValueReader, number uint64) (common.Hash, error) {
+	value, err := db.Get(headerHashKey(number))
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if len(value) != common.HashLength {
+		return common.Hash{}, fmt.Errorf("invalid checkpoint canonical mapping at %d", number)
+	}
+	return common.BytesToHash(value), nil
+}
+
+// ReadFHSCheckpointNumber preserves read errors and requires an exact uint64.
+func ReadFHSCheckpointNumber(db ethdb.KeyValueReader, hash common.Hash) (uint64, error) {
+	value, err := db.Get(headerNumberKey(hash))
+	if err != nil {
+		return 0, err
+	}
+	if len(value) != 8 {
+		return 0, fmt.Errorf("invalid checkpoint block number for %s", hash)
+	}
+	return binary.BigEndian.Uint64(value), nil
 }

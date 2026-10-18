@@ -378,7 +378,96 @@ const (
 	slowPressureMinPending    = 512
 	slowEmergencyForcePending = 8192
 	startNewViewDedupWindow   = 2 * time.Second
+	// After this many local publications of one lane, the other pending lane
+	// receives the next primary attempt. Builders retain fallback, so successful
+	// service bounds require both lanes to be buildable. Age may bring a lane
+	// forward; this is not an elapsed-slot or global committee service promise.
+	txLaneMaxConsecutive = 3
+	txLaneServiceAge     = time.Second
 )
+
+// txLaneService is node-local scheduling state, protected by muProposalCadence.
+// Choosing or constructing a proposal never spends a service opportunity.
+type txLaneService struct {
+	lastBlockType uint8
+	consecutive   uint8
+}
+
+func (s *Service) recordTxProposalPublication(blockType uint8, now time.Time) {
+	if blockType != types.FastTx_Block && blockType != types.SlowTx_Block {
+		return
+	}
+	s.muProposalCadence.Lock()
+	defer s.muProposalCadence.Unlock()
+	if blockType == types.FastTx_Block {
+		s.lastFastBlockTime = now
+	} else {
+		s.lastSlowBlockTime = now
+	}
+	if s.txLaneService.lastBlockType != blockType || s.txLaneService.consecutive == 0 {
+		s.txLaneService = txLaneService{lastBlockType: blockType, consecutive: 1}
+	} else if s.txLaneService.consecutive < txLaneMaxConsecutive {
+		s.txLaneService.consecutive++
+	}
+}
+
+// boundedTxLanePreference uses pending transaction counts only as a local
+// preference signal. Count ratios do not establish a gas, log, byte or target
+// throughput ratio for selector-classified EVM workloads.
+func boundedTxLanePreference(fastPending, slowPending int) (uint8, uint8) {
+	preferred, larger, smaller := uint8(types.FastTx_Block), fastPending, slowPending
+	if slowPending > fastPending {
+		preferred, larger, smaller = types.SlowTx_Block, slowPending, fastPending
+	}
+	weight := larger / smaller
+	if larger%smaller != 0 {
+		weight++
+	}
+	if weight > txLaneMaxConsecutive {
+		weight = txLaneMaxConsecutive
+	}
+	return preferred, uint8(weight)
+}
+
+// chooseBoundedTxBlockType gives each continuously pending, buildable lane at
+// least one of four successful local publications. The choice itself consumes
+// no credit, and an unbuildable preferred lane retains the existing fallback.
+func (s *Service) chooseBoundedTxBlockType(now time.Time, fastPending, slowPending int) uint8 {
+	if slowPending <= 0 {
+		return types.FastTx_Block
+	}
+	if fastPending <= 0 {
+		return types.SlowTx_Block
+	}
+	s.muProposalCadence.RLock()
+	defer s.muProposalCadence.RUnlock()
+	service := s.txLaneService
+	other := uint8(types.FastTx_Block)
+	if service.lastBlockType == types.FastTx_Block {
+		other = types.SlowTx_Block
+	}
+	if service.consecutive >= txLaneMaxConsecutive {
+		return other
+	}
+	preferred, weight := boundedTxLanePreference(fastPending, slowPending)
+	// A never-served lane is older than an already-served lane. If neither has
+	// been served, retain the backlog preference to make the first choice stable.
+	fastAge := s.lastFastBlockTime.IsZero() || now.Sub(s.lastFastBlockTime) >= txLaneServiceAge
+	slowAge := s.lastSlowBlockTime.IsZero() || now.Sub(s.lastSlowBlockTime) >= txLaneServiceAge
+	if fastAge && (!slowAge || s.lastFastBlockTime.Before(s.lastSlowBlockTime)) {
+		return types.FastTx_Block
+	}
+	if slowAge && (!fastAge || s.lastSlowBlockTime.Before(s.lastFastBlockTime)) {
+		return types.SlowTx_Block
+	}
+	if service.lastBlockType == preferred && service.consecutive >= weight {
+		if preferred == types.FastTx_Block {
+			return types.SlowTx_Block
+		}
+		return types.FastTx_Block
+	}
+	return preferred
+}
 
 // proposalWorkStamp identifies every cheap input that can turn a no-work
 // proposal result into useful work. A Service retains at most one stamp. The
@@ -687,7 +776,13 @@ func slowLaneEmergency(slowPending int) bool {
 
 func (s *Service) chooseTxBlockType() uint8 {
 	fastPending, slowPending := s.lanePendingCounts()
-	now := time.Now()
+	return s.chooseTxBlockTypeForPending(time.Now(), fastPending, slowPending)
+}
+
+func (s *Service) chooseTxBlockTypeForPending(now time.Time, fastPending, slowPending int) uint8 {
+	if s.chainConfig.FairHotstuffSlotEnabled() {
+		return s.chooseBoundedTxBlockType(now, fastPending, slowPending)
+	}
 
 	fastReady := fastPending > 0 && s.shouldEmitFastBlock(now)
 	slowReady := slowPending > 0 && s.shouldEmitSlowBlock(now, slowPending)

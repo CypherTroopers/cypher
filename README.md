@@ -6,6 +6,239 @@
 
 New to operating a Common RPC node? Start with the [beginner setup walkthrough](#beginner-setup-common-rpc-node-and-rewards) after building the executable.
 
+### Experimental Fair HotStuff slot clock
+
+The distributed root `genesis.json` enables `fairHotstuffSlotMillis: 250` and the
+Stage 11 research capacity profile for fresh initialization. Omission or zero keeps
+the existing strictly increasing Unix-second block timestamps. The slot mode is
+part of the genesis configuration commitment and cannot be changed in an existing
+database. The existing Go default profiles remain unchanged.
+
+In slot mode, `Header.Extra` is exactly `FHS`, byte `0x01`, and an eight-byte
+big-endian unsigned Unix slot number. One slot is 250ms; `Header.Time` and the
+standard RPC `timestamp` equal `slot / 4` in Unix seconds. Genesis supplies this
+canonical envelope at an exact second (`slot % 4 == 0`). In a slot-enabled genesis
+JSON, `extraData` is a `0x`-prefixed hex string of these 12 bytes; legacy genesis
+JSON retains its existing plain-string convention. A child advances its
+parent's slot, may share its second, and may skip slots. Block height still
+advances by one. HotStuff views and recertification do not change this clock.
+The proposer selects the later of the current wall-clock slot and the parent's
+next slot, within the existing 300-second future allowance checked at slot
+precision. This allowance permits a bounded burst; it is not a wall-clock rate
+guarantee. EVM `TIMESTAMP` and timestamp-based fork activation keep second units.
+
+The existing header hash and proposal body hash commit the slot envelope. RLP,
+manifests, raw database headers and RPC `extraData` must preserve its exact bytes;
+recovery must validate the same genesis-bound mode. Descendant-only finality
+proofs retain their existing QC trust contract: voters validate the committed
+full header and execution before signing. Certified state must not be discarded
+without its exact durable body, QC, canonical base and a bounded reconstruction
+contract. Live and restart traversal both admit up to 129 records: a candidate
+and 128 ancestors. A consecutive-view child at record 129 can finalize the
+oldest block with the unchanged maximum of 128 descendant QCs. If all 129
+records instead skip views, a later terminal child exceeds the current traversal
+and proof contracts. This remaining progress limitation requires a separate
+consensus/recovery design; it is not repaired by eviction or a larger RAM limit.
+The traversal count is not a certified-state byte budget. WAL reopen tests also
+do not prove that the canonical trie and all recovery content survived power loss.
+
+Four slots per second imply a representative target of 125,000 transactions per
+block for 500,000 transactions per second. They also multiply block, QC, storage
+and execution overhead per second; a proposal uses one fast or slow selector.
+Selection stops before an opposite-lane nonce prerequisite. The slot envelope
+contributes 12 payload bytes per header, with additional
+RLP list growth possible. The clock alone changes no per-block limits, the 2GiB
+execution lease, or blob budgets. Synthetic capacity arithmetic does not establish
+sustained throughput, real-contract behavior or committee RSS on 8/16/32GB hosts.
+
+### Distributed 250ms research capacity profile
+
+The root `genesis.json` explicitly selects the experimental profile returned by
+`params.FHS250msResearchEVMParallelConfig()`. The helper itself changes neither
+defaults nor an initialized database. Its exact block ceilings are:
+
+| Limit | Value |
+|---|---:|
+| Transactions | 175,000 |
+| Observed accesses | 5,242,880 |
+| Encoded block body | 167,772,160 bytes (160 MiB) |
+| Retained logs | 167,772,160 bytes (160 MiB) |
+| Encoded receipts | 201,326,592 bytes (192 MiB) |
+| Compute | 17,592,186,044,416 |
+| Critical-path compute | 268,435,456 |
+| Dependency depth | 12,782 |
+| Execution lease | 2,147,483,648 bytes (2 GiB), unchanged |
+
+Per-transaction limits remain 1 MiB signed size, 1,024 accesses, compute 2^32,
+64 MiB logical EVM memory, 256 KiB logs and 1 MiB output. The Osaka transaction
+gas ceiling and blob limit of six per transaction remain independent. The
+configured replay window remains 512 blocks. No worker-count change supplies
+capacity or proves performance.
+
+The Linux, macOS and Windows launchers initialize from this root file when their
+datadir has no chain database. Existing datadirs are not migrated or overwritten.
+For another new research genesis, use the existing Go API before calculating its
+configuration commitment:
+
+```go
+config.FairHotstuff = true
+config.FixedCommittee = true
+config.FairHotstuffSlotMillis = params.FairHotstuffSlotDurationMillis
+config.NativeParallel = params.FHS250msResearchEVMParallelConfig()
+if err := config.CheckConfigForkOrder(); err != nil {
+    return err
+}
+```
+
+Supply the agreed chain ID, nonzero seed and committee, genesis-active EVM forks,
+and a valid blob schedule before that check. Generate the genesis `mixHash` using
+`params.FairHotstuffGenesisCommitment(config)` and the canonical slot `extraData`
+shown above. Keep the key-genesis configuration consistent. The genesis header
+`gasLimit` is a separate bound and must permit the planned blocks; this API does
+not raise it. The existing `evmParallel` JSON schema represents these same values;
+there is no runtime profile flag. Use that agreed file only when initializing a
+fresh research datadir with the existing initialization procedure. This work does
+not start a node or authorize adopting the profile on a running network.
+
+The distributed genesis retains chain ID `10101919`, all allocations, committee
+keys, seed, forks, blob schedule, gas limit and timestamp `1789873200` seconds.
+Its slot is `7159492800`, encoded as `extraData: 0x4648530100000001aabd30c0`.
+The profile and slot change the configuration commitment to
+`0x127e2e49e5b03b0f370d7963f826ef88bb36ced657515dcdbb1df33c811fc6b4`,
+transaction genesis hash to
+`0xbef1d519ceeba0d303fe63d13bb5fb70cda8947f9ee5c60436135cdb77e4db52`
+and key genesis hash to
+`0xaeafda6d7ab1d2e6ff24a97a8b17aa9fae42b9558e8763a4bda999c00d333d23`.
+The allocation state root is unchanged. Both genesis identities differ from the
+earlier network, so use a fresh datadir and matching source relay/lightnode pins.
+Historical A/B fixture descriptors retain their earlier network hash. No running
+gateway or external browser proof/trust assets are changed by these source edits.
+
+The tested synthetic workload assigns accesses/gas/signed bytes/retained log bytes
+of `3/21000/114/0`, `20/150000/300/1715`, and `40/250000/400/956` to assumed
+ordinary/DEX/perp shapes, at 100k/150k/250k transactions per second. Small actual
+selector samples determine their lanes. A generic 250k-gas call is a fast small
+call; a recognized multicall selector is slow. These are resource shapes, not real
+DEX/perp contracts. Canonical receipt sizes are calculated from small actual RLP
+samples; retained log charges also include object reserves and must not be added
+to receipt framing as if they were disjoint bytes.
+
+For independently eligible senders with no cross-lane nonce prefixes, the starting
+150k transaction ceiling needs at least three fast opportunities for
+350k ordinary/generic-perp transactions and two slow opportunities for 150k DEX
+transactions at the assumed log sizes: five opportunities exceed four slots.
+Raising only the count ceiling to 175k is the minimum for that lane-disjoint
+two-fast-proposal construction. It permits two fast proposals of 50k ordinary
+plus 125k perp each, and two slow proposals of 75k DEX each. A recognized slow-perp
+case instead fits one fast plus three slow proposals. Both total 500k transactions
+and average 125k per slot, conditional on independent/buildable sender chains,
+favorable admission-certificate co-selection and every other resource limit.
+These scalar schedules are existence tests, not scheduler or throughput promises.
+Cross-lane nonce prerequisites can reduce useful service further; a later slow
+transaction waits for its earlier fast nonce to complete, and conversely.
+Fragmented admission certificates, wider rewards, more ERC20 work or a hot shared
+state chain can independently exceed the finite budgets.
+
+For the tested Osaka/128 KiB code envelope, maximum retained reservation H is
+1,286,405,120 bytes and maximum single-transaction W is 361,147,520 bytes.
+H+W is 1,647,552,640; two maximum W reservations total 2,008,700,160 with H, while
+three exceed the 2 GiB lease. Production bounds each microbatch by available lease
+capacity. These are scheduler accounting weights; body, sidecar, certified-state,
+DB, transport and runtime copies do not establish a whole-process RSS bound.
+
+At four evenly spaced slots per second, the aggregate compute ceiling is
+70,368,744,177,664 per second; the synthetic demand above is 87,100,000,000.
+The existing target/max blob schedule of 192/288, when explicitly retained, gives
+768/1,152 blobs per second and max blob gas 150,994,944 per second, versus 288
+blobs and 37,748,736 blob gas at one block per second. Its Osaka raw sidecar at
+288 blobs is 39,532,032 bytes per block. The independent 40 MiB sidecar allowance
+accepts at most 305 Osaka blobs under these body limits; that allowance is not a
+promise that all simultaneous body/sidecar copies fit the execution lease or RAM.
+A 512-block window spans nominally 128 seconds at four blocks per second instead
+of 512 seconds at one; skipped slots extend that span. These are cadence arithmetic,
+not sustained execution, transaction-expiry, network or retention guarantees.
+
+The 250ms scheduler bounds local primary-lane opportunities. With both lanes
+pending and buildable, no lane receives more than three consecutive successful
+local proposals; each receives at least one opportunity within four. Pending-count
+ratios choose a preference capped at three, and one-second aging can bring the
+older lane forward. Only successful publication records service, using the actual
+published block type; failed, cancelled or stale work spends no service. Existing
+fallback remains: if the preferred lane cannot build, the other may publish, so
+actual service has no unconditional bound for an unbuildable lane. A proposal uses
+one lane selector and preserves each sender's contiguous nonce prefix. These local
+rules do not guarantee a 2:2 or 1:3 global allocation, finality, or four successful blocks
+per wall-clock second.
+
+This profile is not a production recommendation. Eviction remains OFF, the durable
+reconstruction restrictions below remain, and 500k sustained TPS and 8/16/32GB
+whole-node RSS fit have not been demonstrated. The tests execute only small real
+fixtures; no 500k-transaction execution measurement is claimed.
+
+### Experimental durable reconstruction APIs
+
+The reconstruction prototype is explicit and keeps certified-state eviction OFF.
+Content promotion validates proposal/body commitments and the certificate, keeps
+the exact admission and envelope bytes, then re-writes the existing proposal/body/QC
+records in one nonempty synchronous batch. A process-local receipt pins these
+records against optional pruning until it is closed. This receipt establishes
+content durability, not execution-state durability or authority to discard a
+certified state. Existing vote, adoption and canonical-commit paths do not acquire
+new synchronous writes automatically.
+
+The same explicit checkpoint job supports genesis and a selected current canonical
+finalized head. Non-genesis jobs require finite history/key-block limits. They
+walk the complete reachable account/storage/code closure from existing trie cache
+or disk, without changing execution ownership or adding a recursive trie GC pin.
+They also validate and synchronously re-write canonical transaction metadata from
+genesis to the selected head, the required genesis-key history and committee, both genesis
+configurations, and the exact current head markers. This is a metadata walk, not
+EVM execution from genesis. Each job walks the selected state once, re-writes the
+metadata prefix, then verifies that prefix again. It synchronizes one record at a
+time; READY reads also revalidate the bounded metadata prefix. The I/O, hashing,
+signature verification and fsync cost grows with state and history. This is an
+explicit API, not an automatic per-block policy. Smaller storage amplification
+requires a later design.
+
+Non-genesis checkpoint creation currently supports `fixedCommittee: true` with
+the original canonical key genesis. It verifies and preserves that key header,
+body, committee and configuration, bound to the transaction genesis configuration.
+A later key epoch or a variable-committee profile is locally unsupported by this
+API. Supporting authenticated activation history requires a separate stage;
+existing block validity and finality/import rules remain unchanged. Transaction
+and key history must share the same database.
+
+Content chunks use the existing formats. A separate final synchronous batch
+publishes READY only after state and metadata succeed. Jobs fail closed on missing
+content, I/O errors or head changes. Head markers are never rewound to an older
+checkpoint. READY publication is serialized, and the last acknowledged descriptor
+remains available during a pending or failed replacement. Existing disk content
+is retained; a future disk pruner must honor all outstanding checkpoint users.
+No certified-state eviction or persistent delta/frontier format is introduced.
+
+Replay validates one certified record per call against an exact target and parent
+cursor, using a fresh execution result while preserving the supplied parent's
+ownership. The WAL recovery loop still validates its entire suffix before
+publishing it. Runtime-anchor mode preserves the existing startup path; explicit
+durable mode additionally validates the acknowledged checkpoint and key history.
+The current replay consumer requires the checkpoint to equal the canonical head.
+Replaying a later canonical interval from an older checkpoint remains unsupported;
+retaining an older checkpoint does not automatically rewind or repair startup.
+Current WAL discovery and staging still retain multiple bodies and certified
+states. Physical database reopen tests do not establish power-loss behavior.
+
+Operation, byte and record budgets limit accepted data and completed work. They
+do not establish a hard heap/RSS or wall-clock bound: the generic database `Get`
+allocates a whole value before its size can be checked, state copies include
+previously accumulated dirty data, and an in-flight database call or EVM/lease
+wait is not preempted by these APIs. Synchronous persistence also adds journal
+I/O and fsync latency; it is not invoked automatically by the consensus control
+loop and can delay other content writers sharing its lock. Checkpoint metadata
+and READY writes hold the chain read lock during fsync to exclude concurrent
+head changes or genesis reset; this can delay canonical writers. Strict allocation precharge,
+cancellable execution and durable parent/commit consumers remain prerequisites
+for safely releasing the sole certified execution state.
+
 
 ## Preparations
 

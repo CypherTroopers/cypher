@@ -39,7 +39,6 @@ import (
 	"github.com/cypherium/cypher/trie"
 )
 
-//go:generate gencodec -type Genesis -field-override genesisSpecMarshaling -out gen_genesis.go
 //go:generate gencodec -type GenesisAccount -field-override genesisAccountMarshaling -out gen_genesis_account.go
 
 var errGenesisNoConfig = errors.New("genesis has no chain configuration")
@@ -144,12 +143,31 @@ func validateFairHotstuffGenesisCommitment(header *types.Header, config *params.
 	if header == nil {
 		return fmt.Errorf("missing stored genesis header for Fair HotStuff")
 	}
+	if err := validateFairHotstuffGenesisSlot(header, config); err != nil {
+		return err
+	}
 	commitment, err := params.FairHotstuffGenesisCommitment(config)
 	if err != nil {
 		return err
 	}
 	if header.MixDigest != commitment {
 		return fmt.Errorf("stored genesis mixHash does not commit the complete Fair HotStuff configuration")
+	}
+	return nil
+}
+
+// A slot-enabled genesis anchors an exact Unix second. Its canonical Extra is
+// supplied by the genesis specification and retained verbatim on every replay.
+func validateFairHotstuffGenesisSlot(header *types.Header, config *params.ChainConfig) error {
+	if !config.FairHotstuffSlotEnabled() {
+		return nil
+	}
+	slot, err := header.FHSSlot()
+	if err != nil {
+		return fmt.Errorf("invalid Fair HotStuff genesis slot: %w", err)
+	}
+	if slot%params.FairHotstuffSlotsPerSecond != 0 {
+		return fmt.Errorf("Fair HotStuff genesis slot must start at an exact Unix second")
 	}
 	return nil
 }
@@ -417,6 +435,9 @@ func (g *Genesis) Commit(db ethdb.Database) (*types.Block, error) {
 		if g.Mixhash != commitment {
 			return nil, fmt.Errorf("genesis mixHash must commit the complete Fair HotStuff configuration: have %s want %s", g.Mixhash, commitment)
 		}
+	}
+	if err := validateFairHotstuffGenesisSlot(&types.Header{Time: g.Timestamp, Extra: []byte(g.ExtraData)}, config); err != nil {
+		return nil, err
 	}
 	// Validate the FHS security configuration before ToBlock commits trie state.
 	block := g.ToBlock(db)

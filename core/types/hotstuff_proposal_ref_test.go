@@ -2,13 +2,16 @@ package types
 
 import (
 	"bytes"
+	"context"
 	"math/big"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/rlp"
 )
 
@@ -362,5 +365,137 @@ func TestFHSSignInfoReconstructsExactSignedProposalRef(t *testing.T) {
 	}
 	if string(reconstructed.EncodeToBytes()) != string(ref.EncodeToBytes()) {
 		t.Fatal("sync reconstruction did not reproduce the QC-signed proposal reference")
+	}
+}
+
+func fhsSlotProposalBlockForTest(slot uint64) *Block {
+	header := &Header{
+		ParentHash:  common.HexToHash("0x31"),
+		UncleHash:   EmptyUncleHash,
+		TxHash:      EmptyRootHash,
+		ReceiptHash: EmptyRootHash,
+		Number:      big.NewInt(4),
+		Difficulty:  big.NewInt(1),
+		GasLimit:    21_000,
+	}
+	header.SetFHSSlot(slot)
+	return NewBlockWithHeader(header)
+}
+
+func TestHotstuffProposalRefBindsFHSSameSecondSlots(t *testing.T) {
+	const timestamp = uint64(1_700_000_000)
+	blockHashes := make(map[common.Hash]bool)
+	bodyHashes := make(map[common.Hash]bool)
+	proposalIDs := make(map[common.Hash]bool)
+	for offset := uint64(0); offset < params.FairHotstuffSlotsPerSecond; offset++ {
+		slot := timestamp*params.FairHotstuffSlotsPerSecond + offset
+		block := fhsSlotProposalBlockForTest(slot)
+		if got, err := block.Header().FHSSlot(); err != nil || got != slot {
+			t.Fatalf("slot = %d, error = %v, want %d", got, err, slot)
+		}
+		ref, err := NewHotstuffProposalRef(1, 13, common.HexToHash("0x32"), "leader", block, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if block.Time() != timestamp || ref.Time != timestamp {
+			t.Fatalf("slot %d changed Unix seconds: block %d ref %d", slot, block.Time(), ref.Time)
+		}
+		if err := ref.VerifyAgainstBlock(block, nil); err != nil {
+			t.Fatalf("valid slot %d rejected: %v", slot, err)
+		}
+		if blockHashes[ref.BlockHash] || bodyHashes[ref.BodyHash] || proposalIDs[ref.ProposalID()] {
+			t.Fatalf("slot %d reused a same-second block, body, or proposal commitment", slot)
+		}
+		blockHashes[ref.BlockHash], bodyHashes[ref.BodyHash], proposalIDs[ref.ProposalID()] = true, true, true
+		streamed, err := NewHotstuffProposalRefFromUnsignedBlock(1, ref.ViewNumber, ref.ViewID, ref.LeaderID, block)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(streamed.EncodeToBytes(), ref.EncodeToBytes()) {
+			t.Fatalf("slot %d changed between buffered and streaming proposal commitments", slot)
+		}
+	}
+}
+
+func TestFHSSlotSignedBlockRoundTripAndMutation(t *testing.T) {
+	const slot = uint64(1_700_000_000)*params.FairHotstuffSlotsPerSecond + 1
+	block := fhsSlotProposalBlockForTest(slot)
+	unsigned := block.EncodeToBytes()
+	ref, err := NewHotstuffProposalRefWithProof(1, 15, common.HexToHash("0x33"), "leader", block, unsigned, []byte("candidate-proof"), common.HexToHash("0x34"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// These bytes stand in for QC metadata. This package tests its signed
+	// commitments; BLS signature verification belongs to the consensus package.
+	block.SetFHSSignature([]byte{1, 2, 3}, []byte{0x1f}, ref.ViewID, ref.LeaderID, ref.ViewNumber, ref.ExtraHash, ref.ParentQCID)
+	if err := block.SetFHSFinalityProof([]byte{4, 5, 6}); err != nil {
+		t.Fatal(err)
+	}
+	encoded := block.EncodeToBytes()
+	var decoded Block
+	if err := rlp.DecodeBytes(encoded, &decoded); err != nil {
+		t.Fatalf("decode signed slot block: %v", err)
+	}
+	if got, err := decoded.Header().FHSSlot(); err != nil || got != slot {
+		t.Fatalf("decoded slot = %d, error = %v, want %d", got, err, slot)
+	}
+	if !bytes.Equal(decoded.EncodeToBytes(), encoded) || !reflect.DeepEqual(decoded.SignInfo(), block.SignInfo()) {
+		t.Fatal("signed slot block did not round-trip canonically")
+	}
+	copyOrg := decoded.CopyOrg()
+	if got, err := copyOrg.Header().FHSSlot(); err != nil || got != slot {
+		t.Fatalf("CopyOrg slot = %d, error = %v, want %d", got, err, slot)
+	}
+	if !reflect.DeepEqual(*copyOrg.SignInfo(), SignInfo{}) {
+		t.Fatal("CopyOrg retained signature or finality metadata")
+	}
+	if !bytes.Equal(copyOrg.EncodeToBytes(), unsigned) || copyOrg.Hash() != ref.BlockHash {
+		t.Fatal("CopyOrg changed the signed slot proposal commitment")
+	}
+	if !bytes.Equal(decoded.EncodeToBytes(), encoded) {
+		t.Fatal("CopyOrg mutated the signed source block")
+	}
+	si := decoded.SignInfo()
+	reconstructed, err := NewHotstuffProposalRefFromUnsignedBlockWithCommitments(1, si.ViewNumber, si.ViewID, si.LeaderID, &decoded, si.ExtraHash, si.ParentQCID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(reconstructed.EncodeToBytes(), ref.EncodeToBytes()) {
+		t.Fatal("sync reconstruction changed the signed slot proposal reference")
+	}
+	if err := ref.VerifyAgainstBlock(copyOrg, unsigned); err != nil {
+		t.Fatalf("original signed proposal rejected: %v", err)
+	}
+	mutatedHeader := decoded.Header()
+	mutatedHeader.SetFHSSlot(slot + 1)
+	mutated := decoded.WithSeal(mutatedHeader).CopyOrg()
+	if mutated.Time() != decoded.Time() {
+		t.Fatal("mutation crossed the Unix second")
+	}
+	if err := ref.VerifyAgainstBlock(mutated, nil); err == nil || !strings.Contains(err.Error(), "body hash mismatch") {
+		t.Fatalf("mutated slot sidecar error = %v, want body hash rejection", err)
+	}
+	if err := ref.VerifyAgainstBlock(mutated, unsigned); err == nil || !strings.Contains(err.Error(), "block hash mismatch") {
+		t.Fatalf("mutated slot header with original sidecar error = %v, want block hash rejection", err)
+	}
+}
+
+func TestFHSSlotBrowserRLPMatchesGenericEncoding(t *testing.T) {
+	block := fhsSlotProposalBlockForTest(uint64(1_700_000_000)*params.FairHotstuffSlotsPerSecond + 3)
+	block.SetFHSSignature([]byte{1}, []byte{0x1f}, common.HexToHash("0x35"), "leader", 17, HotstuffProposalExtraHash(nil), common.HexToHash("0x36"))
+	want := block.EncodeToBytes()
+	if len(want) == 0 {
+		t.Fatal("generic slot block encoding is empty")
+	}
+	limits := BrowserBlockEncodingLimits{MaxEncodedBytes: uint64(len(want)), MaxFieldBytes: 512, MaxElements: 256}
+	var got bytes.Buffer
+	if err := block.EncodeBrowserRLP(context.Background(), &got, limits); err != nil {
+		t.Fatalf("bounded slot block encoding: %v", err)
+	}
+	if !bytes.Equal(got.Bytes(), want) {
+		t.Fatal("slot envelope changed between bounded and generic block RLP")
+	}
+	if size, err := block.BrowserBlockRLPSize(context.Background(), limits); err != nil || size != uint64(len(want)) {
+		t.Fatalf("bounded slot block size = %d, error = %v, want %d", size, err, len(want))
 	}
 }

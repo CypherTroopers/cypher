@@ -1,6 +1,9 @@
 package reconfig
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 
@@ -8,8 +11,326 @@ import (
 	"github.com/cypherium/cypher/core"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/log"
+	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/hotstuff"
 )
+
+var (
+	errFHSReplayMissingData = errors.New("FHS replay needs exact proposal or parent data")
+	errFHSReplayBudget      = errors.New("FHS replay call budget exhausted")
+	errFHSReplayStale       = errors.New("FHS replay anchor is stale")
+	errFHSReplayIO          = errors.New("FHS replay state or checkpoint unavailable")
+	errFHSReplayInvalid     = errors.New("invalid FHS replay record")
+	// An execution failure is not automatically a permanent-invalid result:
+	// storage errors can surface through older untyped execution paths.
+	errFHSReplayExecution = errors.New("FHS replay execution failed")
+)
+
+// fhsReplayAnchor is a single job's caller-owned, target-bound continuation.
+// Only the successful one-record operation advances it. The nil-checkpoint
+// mode anchors existing WAL startup to the current runtime canonical state;
+// it makes no new power-loss durability or certified-state release promise.
+// Checkpoint mode starts at the current canonical head. A retained historical
+// checkpoint behind that head needs canonical-delta replay, which this cursor
+// does not implement; it fails closed as stale rather than replaying history.
+type fhsReplayAnchor struct {
+	owner                            *Service
+	canonicalHash, canonicalRoot     common.Hash
+	genesisHash, configHash, keyHash common.Hash
+	canonicalNumber, keyNumber       uint64
+	checkpoint                       *core.FHSCheckpointAnchor
+	targetQCID, targetProposalID     common.Hash
+	targetNumber                     uint64
+	parentHash, parentRoot           common.Hash
+	parentQCID, parentProposalID     common.Hash
+	parentNumber, parentView         uint64
+	completed                        uint64
+}
+
+type fhsReplayLimits struct {
+	MaxBlocks, MaxBodyBytes, MaxProofBytes uint64
+}
+
+// These charges describe accepted encoded input and the one fresh parent-state
+// copy. They do not bound decoded Go object amplification, existing StateDB
+// bytes, trie/database caches, executor scratch, allocator retention or RSS.
+type fhsReplayUsage struct {
+	Blocks, BodyBytes, ProofBytes, ParentStateCopies uint64
+}
+
+func (s *Service) fhsReplayLimits() fhsReplayLimits {
+	return fhsReplayLimits{MaxBlocks: 1, MaxBodyBytes: uint64(proposalBodyLimitForConfig(s.chainConfig)),
+		MaxProofBytes: uint64(proposalBodyControlMaxBytes) + uint64(types.MaxFHSFinalityProofSize) + 4096}
+}
+
+func (s *Service) newFHSReplayAnchor(checkpoint *core.FHSCheckpointAnchor, targetQC *hotstuff.SignedState) (*fhsReplayAnchor, error) {
+	if s == nil || s.bc == nil || s.kbc == nil || s.txService == nil || s.chainConfig == nil || s.bc.Genesis() == nil {
+		return nil, errFHSReplayMissingData
+	}
+	canonical, key := s.bc.CurrentBlock(), s.kbc.CurrentBlock()
+	if canonical == nil || key == nil || targetQC == nil {
+		return nil, errFHSReplayMissingData
+	}
+	// Bound QC parsing before decoding its proposal reference.
+	proofBytes := uint64(0)
+	for _, size := range []int{len(targetQC.State), len(targetQC.Sign), len(targetQC.Mask), len(targetQC.LeaderID)} {
+		if uint64(size) > s.fhsReplayLimits().MaxProofBytes-proofBytes {
+			return nil, errFHSReplayBudget
+		}
+		proofBytes += uint64(size)
+	}
+	if len(targetQC.State) > proposalBodyControlMaxBytes {
+		return nil, errFHSReplayBudget
+	}
+	targetRef, err := types.DecodeHotstuffProposalRef(targetQC.State)
+	if err != nil {
+		return nil, fmt.Errorf("%w: target reference: %w", errFHSReplayInvalid, err)
+	}
+	if err := s.fhsReplayKeyAvailable(targetRef.KeyHash); err != nil {
+		return nil, err
+	}
+	targetRef, err = s.verifyFHSQCCryptographic(targetQC)
+	if err != nil {
+		return nil, fmt.Errorf("%w: target QC: %w", errFHSReplayInvalid, err)
+	}
+	if targetRef.Number <= canonical.NumberU64() || targetRef.Number-canonical.NumberU64() > fhsMaxCertifiedChainRecords {
+		return nil, fmt.Errorf("%w: target exceeds the supported replay suffix", errFHSReplayBudget)
+	}
+	configHash, err := params.FairHotstuffGenesisCommitment(s.chainConfig)
+	if err != nil {
+		return nil, fmt.Errorf("%w: config: %w", errFHSReplayStale, err)
+	}
+	targetID, err := fhsQCIdentityHash(targetQC)
+	if err != nil {
+		return nil, fmt.Errorf("%w: target identity: %w", errFHSReplayInvalid, err)
+	}
+	anchor := &fhsReplayAnchor{owner: s, canonicalHash: canonical.Hash(), canonicalRoot: canonical.Root(), canonicalNumber: canonical.NumberU64(),
+		genesisHash: s.bc.Genesis().Hash(), configHash: configHash, keyHash: key.Hash(), keyNumber: key.NumberU64(),
+		targetQCID: targetID, targetProposalID: targetRef.ProposalID(), targetNumber: targetRef.Number,
+		parentHash: canonical.Hash(), parentRoot: canonical.Root(), parentNumber: canonical.NumberU64()}
+	if canonical.NumberU64() > 0 {
+		ref, qc, err := s.bc.ReconstructFHSQC(canonical)
+		if err != nil {
+			return nil, fmt.Errorf("%w: canonical QC: %w", errFHSReplayIO, err)
+		}
+		anchor.parentProposalID, anchor.parentView = ref.ProposalID(), qc.Number
+		anchor.parentQCID, err = fhsQCIdentityHash(qc)
+		if err != nil {
+			return nil, fmt.Errorf("%w: canonical QC identity: %w", errFHSReplayIO, err)
+		}
+	}
+	if checkpoint != nil {
+		copy := *checkpoint
+		anchor.checkpoint = &copy
+	}
+	if err := s.validateFHSReplayAnchor(anchor); err != nil {
+		return nil, err
+	}
+	return anchor, nil
+}
+
+func (s *Service) validateFHSReplayAnchor(anchor *fhsReplayAnchor) error {
+	if s == nil || anchor == nil || anchor.owner != s || s.bc == nil || s.kbc == nil || s.bc.Genesis() == nil {
+		return errFHSReplayStale
+	}
+	canonical, key := s.bc.CurrentBlock(), s.kbc.CurrentBlock()
+	configHash, err := params.FairHotstuffGenesisCommitment(s.chainConfig)
+	if err != nil || canonical == nil || key == nil || canonical.Hash() != anchor.canonicalHash || canonical.Root() != anchor.canonicalRoot ||
+		canonical.NumberU64() != anchor.canonicalNumber || s.bc.Genesis().Hash() != anchor.genesisHash || configHash != anchor.configHash ||
+		key.Hash() != anchor.keyHash || key.NumberU64() != anchor.keyNumber {
+		return errFHSReplayStale
+	}
+	if anchor.checkpoint != nil {
+		ready, err := s.bc.FHSCheckpointAnchor()
+		if err != nil {
+			if errors.Is(err, core.ErrFHSCheckpointStale) {
+				return fmt.Errorf("%w: %w", errFHSReplayStale, err)
+			}
+			return fmt.Errorf("%w: %w", errFHSReplayIO, err)
+		}
+		if ready != *anchor.checkpoint || ready.BlockHash != anchor.canonicalHash || ready.Number != anchor.canonicalNumber ||
+			ready.StateRoot != anchor.canonicalRoot || ready.GenesisHash != anchor.genesisHash {
+			return fmt.Errorf("%w: replay checkpoint must match the current canonical head", errFHSReplayStale)
+		}
+	}
+	return nil
+}
+
+func (s *Service) fhsReplayKeyAvailable(hash common.Hash) error {
+	key := s.kbc.GetBlockByHash(hash)
+	if key == nil || len(s.kbc.GetCommitteeByHash(hash)) < 2 {
+		return errFHSReplayMissingData
+	}
+	canonical := s.kbc.GetBlockByNumber(key.NumberU64())
+	if canonical == nil {
+		return errFHSReplayMissingData
+	}
+	if canonical.Hash() != hash {
+		return errFHSReplayStale
+	}
+	return nil
+}
+
+// replayFHSCertifiedRecord replays one exact existing-format WAL record without
+// publishing or consuming its supplied parent. The caller keeps every existing
+// committable state while eviction is disabled. A call either advances this
+// job's cursor by one record or returns an explicit reason without advancing it.
+// Cancellation is checked before and after execution; the current executor and
+// its memory-lease wait remain cooperative, not a hard wall-clock deadline.
+func (s *Service) replayFHSCertifiedRecord(ctx context.Context, anchor *fhsReplayAnchor, ref *types.HotstuffProposalRef, qc *hotstuff.SignedState,
+	body *proposalBodyMsg, parent *core.VerifiedProposal, limits fhsReplayLimits) (*core.VerifiedProposal, fhsReplayUsage, error) {
+	var usage fhsReplayUsage
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, usage, err
+	}
+	if err := s.validateFHSReplayAnchor(anchor); err != nil {
+		return nil, usage, err
+	}
+	if ref == nil || qc == nil || body == nil || len(body.EncodedBlock) == 0 {
+		return nil, usage, errFHSReplayMissingData
+	}
+	if limits.MaxBlocks < 1 || anchor.completed >= fhsMaxCertifiedChainRecords || anchor.parentNumber >= anchor.targetNumber {
+		return nil, usage, errFHSReplayBudget
+	}
+	if ref.BodySize > limits.MaxBodyBytes || uint64(len(body.EncodedBlock)) > limits.MaxBodyBytes {
+		return nil, usage, errFHSReplayBudget
+	}
+	if ref.BodySize == 0 || ref.BodySize != uint64(len(body.EncodedBlock)) || ref.BodySize > uint64(proposalBodyLimitForConfig(s.chainConfig)) ||
+		len(body.Extra) > proposalBodyControlMaxBytes || len(body.ParentQC) > proposalBodyControlMaxBytes-len(body.Extra) ||
+		len(body.KeyActivationProof) > types.MaxFHSFinalityProofSize || len(body.ManifestAuthSig) > 256 {
+		return nil, usage, errFHSReplayInvalid
+	}
+	if len(qc.State) > proposalBodyControlMaxBytes {
+		return nil, usage, errFHSReplayBudget
+	}
+	// Bound every copied/decoded proof field before block/QC decoding. The
+	// caller still owns its already loaded input; this is not a bounded db.Get.
+	for _, size := range []int{len(body.Extra), len(body.ParentQC), len(body.KeyActivationProof), len(body.ManifestAuthSig), len(qc.State), len(qc.Sign), len(qc.Mask), len(qc.LeaderID), len(ref.LeaderID)} {
+		if uint64(size) > limits.MaxProofBytes-usage.ProofBytes {
+			return nil, usage, errFHSReplayBudget
+		}
+		usage.ProofBytes += uint64(size)
+	}
+	if usage.ProofBytes > s.fhsReplayLimits().MaxProofBytes {
+		return nil, usage, errFHSReplayBudget
+	}
+	if body.ProposalID != ref.ProposalID() || body.BodyHash != ref.BodyHash || body.BodySize != ref.BodySize || body.Number != ref.Number ||
+		body.ViewNumber != ref.ViewNumber || body.ViewID != ref.ViewID || body.LeaderID != ref.LeaderID || body.ProposalKeyHash != ref.KeyHash ||
+		!bytes.Equal(qc.State, ref.EncodeToBytes()) || qc.Number != ref.ViewNumber || qc.ViewID != ref.ViewID || qc.LeaderID != ref.LeaderID ||
+		ref.ParentHash != anchor.parentHash || ref.Number <= anchor.parentNumber || ref.Number-anchor.parentNumber != 1 ||
+		(anchor.completed > 0 && ref.ViewNumber <= anchor.parentView) {
+		return nil, usage, errFHSReplayInvalid
+	}
+	id, err := fhsQCIdentityHash(qc)
+	if err != nil || (ref.Number == anchor.targetNumber && (id != anchor.targetQCID || ref.ProposalID() != anchor.targetProposalID)) {
+		return nil, usage, errFHSReplayInvalid
+	}
+	parentQC, err := hotstuff.DecodeSignedState(body.ParentQC)
+	if err != nil {
+		return nil, usage, fmt.Errorf("%w: parent QC: %w", errFHSReplayInvalid, err)
+	}
+	parentID, err := fhsQCIdentityHash(parentQC)
+	if err != nil || parentID != ref.ParentQCID || (anchor.completed > 0 && parentID != anchor.parentQCID) ||
+		(parentQC == nil && anchor.parentNumber != 0) {
+		return nil, usage, errFHSReplayInvalid
+	}
+	if parentQC != nil {
+		parentRef, err := types.DecodeHotstuffProposalRef(parentQC.State)
+		if err != nil {
+			return nil, usage, fmt.Errorf("%w: parent reference: %w", errFHSReplayInvalid, err)
+		}
+		if err := s.fhsReplayKeyAvailable(parentRef.KeyHash); err != nil {
+			return nil, usage, err
+		}
+		parentRef, err = s.verifyFHSQCCryptographic(parentQC)
+		if err != nil || parentRef.BlockHash != anchor.parentHash || parentRef.StateRoot != anchor.parentRoot || parentRef.Number != anchor.parentNumber ||
+			parentQC.Number >= ref.ViewNumber {
+			return nil, usage, errFHSReplayInvalid
+		}
+	}
+	if anchor.completed > 0 && parent == nil {
+		return nil, usage, errFHSReplayMissingData
+	}
+	if parent != nil {
+		if parent.Block == nil {
+			return nil, usage, errFHSReplayMissingData
+		}
+		if parent.BlockHash() != anchor.parentHash || parent.Block.Root() != anchor.parentRoot || parent.Block.NumberU64() != anchor.parentNumber ||
+			(anchor.completed > 0 && (parent.ProposalID != anchor.parentProposalID || parent.ViewNumber != anchor.parentView)) {
+			return nil, usage, errFHSReplayInvalid
+		}
+		if parent.StateDB == nil && len(parent.Block.Transactions()) > 0 {
+			return nil, usage, errFHSReplayMissingData
+		}
+		if parent.StateDB != nil {
+			if err := parent.StateDB.Error(); err != nil {
+				return nil, usage, fmt.Errorf("%w: parent state: %w", errFHSReplayIO, err)
+			}
+		}
+	}
+	if parent == nil || parent.StateDB == nil {
+		if _, err := s.bc.StateAt(anchor.parentRoot); err != nil {
+			return nil, usage, fmt.Errorf("%w: parent root: %w", errFHSReplayIO, err)
+		}
+	}
+	if err := s.fhsReplayKeyAvailable(ref.KeyHash); err != nil {
+		return nil, usage, err
+	}
+	if _, err := s.verifyFHSQCCryptographic(qc); err != nil {
+		return nil, usage, fmt.Errorf("%w: QC: %w", errFHSReplayInvalid, err)
+	}
+	block, err := validateFHSProposalCommitmentsForConfig(s.chainConfig, ref, body.EncodedBlock, body.Extra, body.ParentQC)
+	if err != nil {
+		return nil, usage, fmt.Errorf("%w: commitments: %w", errFHSReplayInvalid, err)
+	}
+	usage.BodyBytes = uint64(len(body.EncodedBlock))
+	if err := ctx.Err(); err != nil {
+		return nil, usage, err
+	}
+	if err := s.validateFHSReplayAnchor(anchor); err != nil {
+		return nil, usage, err
+	}
+	if parent != nil && parent.StateDB != nil {
+		usage.ParentStateCopies = 1
+	}
+	verified, err := s.txService.verifyHistoricalCertifiedProposalWithParent(ref, block, body.Extra, parent)
+	if cancelled := ctx.Err(); cancelled != nil {
+		return nil, usage, cancelled
+	}
+	if err != nil {
+		var infrastructure *core.EVMExecutionInfrastructureError
+		if errors.As(err, &infrastructure) {
+			return nil, usage, fmt.Errorf("%w: %w", errFHSReplayIO, err)
+		}
+		return nil, usage, fmt.Errorf("%w: %w", errFHSReplayExecution, err)
+	}
+	if block.BlockType() == types.Key_Block {
+		keyblock := types.DecodeToKeyBlock(block.KeyInfo())
+		if keyblock == nil || block.NumberU64() == 0 || s.keyService == nil {
+			return nil, usage, errFHSReplayInvalid
+		}
+		if err := s.keyService.verifyCertifiedFHSKeyBlock(ref, keyblock, types.DecodeToCandidate(body.Extra)); err != nil {
+			return nil, usage, fmt.Errorf("%w: key block: %w", errFHSReplayInvalid, err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, usage, err
+	}
+	if err := s.validateFHSReplayAnchor(anchor); err != nil {
+		return nil, usage, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, usage, err
+	}
+	anchor.parentHash, anchor.parentRoot, anchor.parentNumber = ref.BlockHash, ref.StateRoot, ref.Number
+	anchor.parentQCID, anchor.parentProposalID, anchor.parentView = id, ref.ProposalID(), ref.ViewNumber
+	anchor.completed++
+	usage.Blocks = 1
+	return verified, usage, nil
+}
 
 // SelectedFHSProposalParent is a view's quorum-selected execution parent.
 // HighestCertified remains the maximum observation advertised in NewView.
@@ -86,7 +407,7 @@ func (s *Service) publishFHSExecutionParent(parent *fhsCertifiedProposal, canoni
 		if cursor.ref.ParentHash == canonical.Hash() {
 			break
 		}
-		if fhsCertifiedParent(s.fhsCertifiedByID, cursor) == nil || len(blocks) > fhsMaxCertifiedChainDepth {
+		if fhsCertifiedParent(s.fhsCertifiedByID, cursor) == nil || len(blocks) >= fhsMaxCertifiedChainRecords {
 			s.muProposalBody.RUnlock()
 			return fmt.Errorf("selected FHS execution chain is incomplete")
 		}
@@ -266,7 +587,7 @@ func (s *Service) reconcileFHSCertifiedFrontierLocked(canonical *types.Block) er
 		}
 		cursor := record
 		anchored := false
-		for depth := 0; depth <= fhsMaxCertifiedChainDepth; depth++ {
+		for depth := 0; depth < fhsMaxCertifiedChainRecords; depth++ {
 			if cursor.ref.ParentHash == canonical.Hash() {
 				anchored = cursor.ref.Number == canonical.NumberU64()+1
 				break

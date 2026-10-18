@@ -35,11 +35,13 @@ import (
 	"github.com/cypherium/cypher/core/state"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
+	"github.com/cypherium/cypher/crypto/bls"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/log"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
 	"github.com/cypherium/cypher/reconfig/hotstuff"
+	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/trie"
 )
 
@@ -457,6 +459,19 @@ func (txS *txService) buildProposalNewBlock(blockType uint8) (*txProposalCandida
 			work.header.Time,
 		)
 	}
+	maxLeaderBytes := 0
+	if committee := bftview.LoadMember(generation.keyNumber, generation.keyHash, true); committee != nil {
+		for _, member := range committee.List {
+			if member != nil && len(member.Address) > maxLeaderBytes {
+				maxLeaderBytes = len(member.Address)
+			}
+		}
+	}
+	work.bodySize, err = newProposalBodySize(work.header, txS.config, admissionSelections, maxLeaderBytes)
+	if err != nil {
+		return nil, fmt.Errorf("initialize proposal byte accounting: %w", err)
+	}
+	work.size = common.StorageSize(work.bodySize.encodedSize(false))
 	transactions := types.NewTransactionsByPriceAndNonce(txS.config, work.header.Number, filteredAddrTxes)
 
 	var (
@@ -531,9 +546,12 @@ func (txS *txService) buildProposalNewBlock(blockType uint8) (*txProposalCandida
 			// The FHS direct-child proof is attached only when this proposal is
 			// finalized. Reserve its maximum encoded size now so a locally valid
 			// proposal cannot become an over-8MiB canonical block later.
-			maxProposalSize := txS.config.EffectiveMaxBlockBytes() - uint64(params.FairHotstuffFinalityProofReserveBytes)
-			if uint64(len(encodedBlock)) > maxProposalSize {
-				return nil, fmt.Errorf("Osaka tx block proposal too large after finality-proof reserve: bytes=%d limit=%d", len(encodedBlock), maxProposalSize)
+			finalizedSize, err := proposalFinalizedSize(block.Header(), encodedBlock, txS.config, maxLeaderBytes)
+			if err != nil {
+				return nil, err
+			}
+			if finalizedSize > txS.config.EffectiveMaxBlockBytes() {
+				return nil, fmt.Errorf("Osaka tx block proposal too large after finality-proof reserve: bytes=%d finalizedBytes=%d limit=%d", len(encodedBlock), finalizedSize, txS.config.EffectiveMaxBlockBytes())
 			}
 		}
 		if limit := proposalByteLimit(txS.config, blockType); limit > 0 && uint64(len(encodedBlock)) > limit {
@@ -825,7 +843,17 @@ func (txS *txService) decideVerifiedProposalWithProof(ref *types.HotstuffProposa
 		return nil
 	}
 	if txS.config != nil && txS.config.FairHotstuff {
-		block.SetFHSSignature(sig, mask, viewID, leaderID, viewNumber, ref.ExtraHash, ref.ParentQCID)
+		if len(sig) == 0 {
+			return fmt.Errorf("cannot canonicalize an empty Fair HotStuff target signature")
+		}
+		var signature bls.Sign
+		if err := signature.Deserialize(sig); err != nil {
+			return fmt.Errorf("canonicalize Fair HotStuff target signature: %w", err)
+		}
+		// Verification accepts a signature with trailing bytes. Store only its
+		// canonical encoding so target-QC metadata stays within the header
+		// envelope reserved during selection. Semantic QC identity excludes Sign.
+		block.SetFHSSignature(signature.Serialize(), mask, viewID, leaderID, viewNumber, ref.ExtraHash, ref.ParentQCID)
 	} else {
 		block.SetSignature(sig, mask, viewID, leaderID, viewNumber)
 	}
@@ -1078,6 +1106,8 @@ func limitFHSAdmissionBatchPrefixes(addrTxes AddressTxes, maxBatches int, admiss
 		address  common.Address
 		txs      types.Transactions
 		batchIDs []common.Hash
+		frontier int
+		end      int
 	}
 	addresses := make([]common.Address, 0, len(addrTxes))
 	for address := range addrTxes {
@@ -1087,6 +1117,7 @@ func limitFHSAdmissionBatchPrefixes(addrTxes AddressTxes, maxBatches int, admiss
 		return bytes.Compare(addresses[i][:], addresses[j][:]) < 0
 	})
 	senders := make([]admittedSender, 0, len(addresses))
+	batchIDsSeen := make(map[common.Hash]struct{})
 	for _, address := range addresses {
 		txs := addrTxes[address]
 		batchIDs := make([]common.Hash, 0, len(txs))
@@ -1096,61 +1127,136 @@ func limitFHSAdmissionBatchPrefixes(addrTxes AddressTxes, maxBatches int, admiss
 				break
 			}
 			batchIDs = append(batchIDs, batchID)
+			// Once the bound is exceeded, further distinct IDs cannot enable
+			// the fast path. Keep this set bounded even for a large backlog.
+			if len(batchIDsSeen) <= maxBatches {
+				batchIDsSeen[batchID] = struct{}{}
+			}
 		}
 		if len(batchIDs) > 0 {
 			senders = append(senders, admittedSender{address: address, txs: txs[:len(batchIDs)], batchIDs: batchIDs})
 		}
 	}
-	selectedBatches := make(map[common.Hash]struct{}, maxBatches)
-	scores := make(map[common.Hash]int, len(senders))
-	for len(selectedBatches) < maxBatches {
-		clear(scores)
+	// When every admitted certificate fits, greedy selection eventually
+	// unlocks every valid prefix. Skip the repeated scoring scans entirely.
+	if len(batchIDsSeen) <= maxBatches {
 		for _, sender := range senders {
-			frontier := 0
-			for frontier < len(sender.batchIDs) {
-				if _, selected := selectedBatches[sender.batchIDs[frontier]]; !selected {
-					break
-				}
-				frontier++
-			}
-			if frontier == len(sender.batchIDs) {
-				continue
-			}
-			candidate := sender.batchIDs[frontier]
-			unlocked := 0
-			for index := frontier; index < len(sender.batchIDs); index++ {
-				batchID := sender.batchIDs[index]
-				if batchID != candidate {
-					if _, selected := selectedBatches[batchID]; !selected {
-						break
-					}
-				}
-				unlocked++
-			}
-			scores[candidate] += unlocked
+			filtered[sender.address] = sender.txs
 		}
-		var best common.Hash
-		bestScore := 0
-		for batchID, score := range scores {
-			if score > bestScore || (score == bestScore && score > 0 && (best == (common.Hash{}) || bytes.Compare(batchID[:], best[:]) < 0)) {
-				best, bestScore = batchID, score
-			}
-		}
-		if bestScore == 0 {
-			break
-		}
-		selectedBatches[best] = struct{}{}
+		return filtered
 	}
-	for _, sender := range senders {
-		count := 0
-		for count < len(sender.batchIDs) {
-			if _, selected := selectedBatches[sender.batchIDs[count]]; !selected {
+	selectedBatches := make(map[common.Hash]struct{}, maxBatches)
+	type scoredBatch struct {
+		id    common.Hash
+		score int
+	}
+	queue := make([]scoredBatch, 0, len(senders))
+	positions := make(map[common.Hash]int, len(senders))
+	higherScore := func(left, right scoredBatch) bool {
+		return left.score > right.score || left.score == right.score && bytes.Compare(left.id[:], right.id[:]) < 0
+	}
+	// Unselected scores only grow. An indexed heap therefore needs an upward
+	// fix for each score increment and a downward fix after removing a winner.
+	increaseScore := func(id common.Hash, delta int) {
+		position, exists := positions[id]
+		if !exists {
+			position = len(queue)
+			queue = append(queue, scoredBatch{id: id})
+			positions[id] = position
+		}
+		queue[position].score += delta
+		for position > 0 {
+			parent := (position - 1) / 2
+			if !higherScore(queue[position], queue[parent]) {
 				break
 			}
-			count++
+			queue[position], queue[parent] = queue[parent], queue[position]
+			positions[queue[position].id], positions[queue[parent].id] = position, parent
+			position = parent
 		}
-		if count > 0 {
-			filtered[sender.address] = sender.txs[:count]
+	}
+	// A sender watches its first unselected ID and its first blocker beyond
+	// the candidate's unlockable interval. Selecting either consumes one watch;
+	// the other remains valid, and only the next blocker needs a new watch.
+	// Two linked-list nodes per sender let us reuse each consumed watch without
+	// allocating a new bucket slice for every certificate in a long prefix.
+	waiting := make(map[common.Hash]int, 2*len(senders))
+	nextWatch := make([]int, 2*len(senders))
+	registerWatch := func(id common.Hash, watchIndex int) {
+		nextWatch[watchIndex] = waiting[id]
+		waiting[id] = watchIndex + 1 // Zero is the end-of-list sentinel.
+	}
+	advanceSender := func(index, freeWatch int) {
+		sender := &senders[index]
+		oldEnd := sender.end
+		candidate := sender.batchIDs[sender.frontier]
+		for sender.end < len(sender.batchIDs) {
+			id := sender.batchIDs[sender.end]
+			if id != candidate {
+				if _, selected := selectedBatches[id]; !selected {
+					break
+				}
+			}
+			sender.end++
+		}
+		// When the old candidate wins, frontier becomes oldEnd, making this
+		// delta the new candidate's whole contribution. Otherwise it is growth.
+		increaseScore(candidate, sender.end-oldEnd)
+		if sender.end < len(sender.batchIDs) {
+			blocker := sender.batchIDs[sender.end]
+			registerWatch(blocker, freeWatch)
+		}
+	}
+	for index := range senders {
+		candidate := senders[index].batchIDs[0]
+		registerWatch(candidate, 2*index)
+		advanceSender(index, 2*index+1)
+	}
+	for len(selectedBatches) < maxBatches && len(queue) > 0 {
+		best := queue[0].id
+		delete(positions, best)
+		last := len(queue) - 1
+		queue[0] = queue[last]
+		queue = queue[:last]
+		if len(queue) > 0 {
+			positions[queue[0].id] = 0
+			for position := 0; ; {
+				child := 2*position + 1
+				if child >= len(queue) {
+					break
+				}
+				if child+1 < len(queue) && higherScore(queue[child+1], queue[child]) {
+					child++
+				}
+				if !higherScore(queue[child], queue[position]) {
+					break
+				}
+				queue[position], queue[child] = queue[child], queue[position]
+				positions[queue[position].id], positions[queue[child].id] = position, child
+				position = child
+			}
+		}
+		selectedBatches[best] = struct{}{}
+		for watch := waiting[best]; watch != 0; {
+			watchIndex := watch - 1
+			watch = nextWatch[watchIndex] // Save before reusing the consumed node.
+			index := watchIndex / 2
+			sender := &senders[index]
+			if sender.batchIDs[sender.frontier] == best {
+				sender.frontier = sender.end
+			}
+			if sender.frontier < len(sender.batchIDs) {
+				advanceSender(index, watchIndex)
+			}
+		}
+		delete(waiting, best)
+	}
+	// Each end advances monotonically, including across repeated IDs. There
+	// are at most two live watches per sender and at most one terminal refresh
+	// per sender, so selection costs O(n log(s+1)) for n items and s senders.
+	for _, sender := range senders {
+		if sender.frontier > 0 {
+			filtered[sender.address] = sender.txs[:sender.frontier]
 		}
 	}
 	return filtered
@@ -1237,6 +1343,38 @@ func nextProposalTimestamp(config *params.ChainConfig, parentTime uint64, now ti
 	return timestamp, nil
 }
 
+// nextProposalTime keeps EVM timestamps in Unix seconds while the opted-in FHS
+// profile orders proposals by an independently committed quarter-second slot.
+func nextProposalTime(config *params.ChainConfig, parent *types.Header, now time.Time) (uint64, []byte, error) {
+	if parent == nil {
+		return 0, nil, fmt.Errorf("cannot create proposal without parent header")
+	}
+	if config == nil || !config.FairHotstuffSlotEnabled() {
+		timestamp, err := nextProposalTimestamp(config, parent.Time, now)
+		return timestamp, nil, err
+	}
+	parentSlot, err := parent.FHSSlot()
+	if err != nil {
+		return 0, nil, fmt.Errorf("invalid proposal parent FHS slot: %w", err)
+	}
+	if parentSlot == math.MaxUint64 {
+		return 0, nil, fmt.Errorf("cannot create proposal after maximum FHS slot")
+	}
+	slot, err := colossusX.FHSBlockSlotAtTime(now)
+	if err != nil {
+		return 0, nil, fmt.Errorf("proposal wall-clock slot is not ready: %w", err)
+	}
+	if slot <= parentSlot {
+		slot = parentSlot + 1
+	}
+	header := new(types.Header)
+	header.SetFHSSlot(slot)
+	if err := colossusX.VerifyFHSHeaderTime(config, header, now); err != nil {
+		return 0, nil, fmt.Errorf("proposal slot %d is not ready: %w", slot, err)
+	}
+	return header.Time, header.Extra, nil
+}
+
 // Assumes mu is held.
 func (txS *txService) createWork(blockType uint8) (*work, error) {
 	parent := txS.bc.CurrentBlock()
@@ -1256,7 +1394,7 @@ func (txS *txService) createWork(blockType uint8) (*work, error) {
 	}
 	parentNumber := parent.Number()
 
-	tstamp, err := nextProposalTimestamp(txS.config, parent.Time(), time.Now())
+	tstamp, extra, err := nextProposalTime(txS.config, parent.Header0(), time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -1270,6 +1408,7 @@ func (txS *txService) createWork(blockType uint8) (*work, error) {
 		GasUsed:    0,
 		Coinbase:   bftview.GetServerCoinBase(),
 		Time:       tstamp,
+		Extra:      extra,
 		BlockType:  blockType,
 	}
 	if txS.config != nil && txS.config.IsLondon(header.Number) {
@@ -1388,11 +1527,17 @@ func pendingClassesForBlockType(blockType uint8) []core.TxResourceClass {
 		}
 	}
 
+	// Signed gas and calldata bounds can move native and ERC20 transactions
+	// into the slow lane without changing their resource class. The lane
+	// predicate owns eligibility; retain every class in the slow query.
 	return []core.TxResourceClass{
 		core.TxClassDex,
 		core.TxClassDeploy,
 		core.TxClassHeavy,
 		core.TxClassData,
+		core.TxClassNative,
+		core.TxClassERC20,
+		core.TxClassSmallCall,
 	}
 }
 
@@ -1795,6 +1940,7 @@ type work struct {
 	gasTarget      uint64
 	resourceBudget *txResourceBudget
 	fhsWorkMeter   *core.FHSBlockWorkMeter
+	bodySize       *proposalBodySize
 	blockType      uint8
 	size           common.StorageSize
 }
@@ -1814,87 +1960,380 @@ func (env *work) nextFHSWorkMeter(index int, tx *types.Transaction) (*core.FHSBl
 	return &next, nil
 }
 
-const (
-	osakaBlockSizeBuffer = common.StorageSize(1_000_000)
-	// A full 512-transaction admission certificate plus aligned references and
-	// deterministic rewards amortizes to less than 300 encoded bytes per tx,
-	// even with full-width boundary and fee fields. Keep additional headroom
-	// while allowing 16,384 signed native transfers beside the separate 1 MiB
-	// block/finality-proof reserve.
-	osakaPerTxBodySizeBuffer = common.StorageSize(320)
-)
-
-func proposalTransactionBodyWeight(tx *types.Transaction) uint64 {
-	if tx == nil {
-		return 0
-	}
-	weight := uint64(tx.Size())
-	if sidecar := tx.BlobSidecar(); sidecar != nil {
-		// Account for the independent body field without allocating an RLP copy
-		// during selection. Fixed/list prefixes are covered conservatively here;
-		// the final canonical encoding remains the authoritative exact check.
-		const blobSidecarRLPAllowance = uint64(256)
-		if weight > ^uint64(0)-blobSidecarRLPAllowance {
-			return ^uint64(0)
-		}
-		weight += blobSidecarRLPAllowance
-		for _, blob := range sidecar.Blobs {
-			if uint64(len(blob)) > ^uint64(0)-weight {
-				return ^uint64(0)
-			}
-			weight += uint64(len(blob))
-		}
-		fixedBytes := uint64(len(sidecar.Commitments)+len(sidecar.Proofs)) * 48
-		if fixedBytes > ^uint64(0)-weight {
-			return ^uint64(0)
-		}
-		weight += fixedBytes
-	}
-	return weight
+// proposalBodySize tracks canonical RLP payload lengths. Only gas used and
+// rewards depend on execution: selection bounds them by declared gas, then
+// successful execution installs their actual sizes. No accumulated body is
+// re-encoded while selecting transactions.
+type proposalBodySize struct {
+	headerPayload, finalizedHeaderPayload uint64
+	gasUsed, blobGasUsed                  uint64
+	txBytes, blobBytes                    uint64
+	batchBytes, refBytes, rewardBytes     uint64
+	baseFee                               *big.Int
+	admissions                            map[common.Hash]core.CommonRPCAdmissionResult
+	batchPositions                        map[common.Hash]int
+	batchSizes                            []uint64
+	batchTree, batchRefs                  []uint64
+	batchCount                            uint64
+	txCount                               uint64
+	workMeter                             *core.FHSBlockWorkMeter
+	workLimits                            params.FHSBlockWorkLimits
 }
 
-func (env *work) txFitsBlockSizeAt(current common.StorageSize, tx *types.Transaction) bool {
-	if env == nil || tx == nil || env.config == nil || env.header == nil || env.header.Number == nil {
+type proposalSizeAddition struct {
+	next     proposalBodySize
+	position int
+	newBatch bool
+}
+
+type proposalSizeWriter uint64
+
+func (count *proposalSizeWriter) Write(data []byte) (int, error) {
+	*count += proposalSizeWriter(len(data))
+	return len(data), nil
+}
+
+func proposalRLPSize(value interface{}) (uint64, error) {
+	var count proposalSizeWriter
+	err := rlp.Encode(&count, value)
+	return uint64(count), err
+}
+
+func proposalUintSize(value uint64) uint64 {
+	if value < 128 {
+		return 1
+	}
+	bytes := uint64(0)
+	for value != 0 {
+		bytes++
+		value >>= 8
+	}
+	return bytes + 1
+}
+
+func proposalStringSize(length uint64) uint64 {
+	// All callers with length == 1 either encode a known byte >= 128 or
+	// handle the single-byte special case separately.
+	return rlp.ListSize(length)
+}
+
+func proposalByteStringSize(data []byte) uint64 {
+	if len(data) == 1 && data[0] < 128 {
+		return 1
+	}
+	return proposalStringSize(uint64(len(data)))
+}
+
+func proposalSizeSum(values ...uint64) uint64 {
+	var total uint64
+	for _, value := range values {
+		if value > math.MaxUint64-total {
+			return math.MaxUint64
+		}
+		total += value
+	}
+	return total
+}
+
+func proposalListSize(payload uint64) uint64 {
+	if payload > math.MaxUint64-9 {
+		return math.MaxUint64
+	}
+	return rlp.ListSize(payload)
+}
+
+func newProposalBodySize(header *types.Header, config *params.ChainConfig, admissions map[common.Hash]core.CommonRPCAdmissionResult, maxLeaderBytes int) (*proposalBodySize, error) {
+	encoded, err := rlp.EncodeToBytes(header)
+	if err != nil {
+		return nil, err
+	}
+	payload, _, err := rlp.SplitList(encoded)
+	if err != nil {
+		return nil, err
+	}
+	size := &proposalBodySize{
+		headerPayload: uint64(len(payload)) - proposalUintSize(header.GasUsed) - proposalUintSize(header.BlobGasUsed),
+		gasUsed:       header.GasUsed, blobGasUsed: header.BlobGasUsed, baseFee: header.BaseFee,
+		admissions: admissions, batchPositions: make(map[common.Hash]int),
+	}
+	size.finalizedHeaderPayload = size.headerPayload
+	if config != nil && config.FairHotstuff {
+		size.workLimits = params.FairHotstuffWorkLimitsForConfig(config)
+		size.workMeter = core.NewFHSBlockWorkMeterForConfig(config)
+		if isEVMOnlyProposalMode(config) {
+			size.workLimits = params.FairHotstuffEVMWorkLimitsForConfig(config)
+			size.workMeter = core.NewFHSEVMBlockWorkMeterForConfig(config)
+		}
+		for _, member := range config.GenCommittee {
+			if len(member.Address) > maxLeaderBytes {
+				maxLeaderBytes = len(member.Address)
+			}
+		}
+		if len(header.SignInfo.LeaderID) > maxLeaderBytes {
+			maxLeaderBytes = len(header.SignInfo.LeaderID)
+		}
+		oldSignSize, err := proposalRLPSize(header.SignInfo)
+		if err != nil {
+			return nil, err
+		}
+		// This build uses 32-byte BLS signatures. 96 bytes also bounds the
+		// larger BLS12-381 representation; masks are bounded by committee size.
+		// Hash fields retain their fixed encoding when filled at certification.
+		signPayload := proposalSizeSum(proposalStringSize(96), proposalStringSize((params.MaxFairHotstuffCommitteeSize+7)/8),
+			33, proposalStringSize(uint64(maxLeaderBytes)), proposalUintSize(math.MaxUint64), 33, 33,
+			proposalStringSize(uint64(types.MaxFHSFinalityProofSize)))
+		size.finalizedHeaderPayload = proposalSizeSum(size.headerPayload-oldSignSize, proposalListSize(signPayload))
+	}
+	unique := make(map[common.Hash]*types.CommonTxAdmissionBatch)
+	for _, selection := range admissions {
+		if selection.Batch == nil {
+			return nil, errors.New("missing proposal admission batch")
+		}
+		unique[selection.Batch.AdmissionID] = selection.Batch
+	}
+	ids := make([]common.Hash, 0, len(unique))
+	for id := range unique {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return bytes.Compare(ids[i][:], ids[j][:]) < 0 })
+	size.batchSizes = make([]uint64, len(ids))
+	size.batchRefs = make([]uint64, len(ids))
+	size.batchTree = make([]uint64, len(ids)+1)
+	for index, id := range ids {
+		size.batchPositions[id] = index
+		size.batchSizes[index], err = proposalRLPSize(unique[id])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return size, nil
+}
+
+func (size *proposalBodySize) copy() *proposalBodySize {
+	if size == nil {
+		return nil
+	}
+	clone := *size
+	clone.batchTree = append([]uint64(nil), size.batchTree...)
+	clone.batchRefs = append([]uint64(nil), size.batchRefs...)
+	if size.workMeter != nil {
+		meter := *size.workMeter
+		clone.workMeter = &meter
+	}
+	return &clone
+}
+
+// batchRank counts selected certificates before one immutable sorted position.
+func (size *proposalBodySize) batchRank(position int) uint64 {
+	var rank uint64
+	for index := position; index > 0; index -= index & -index {
+		rank += size.batchTree[index]
+	}
+	return rank
+}
+
+// batchAtRank finds a selected certificate without rescanning earlier refs.
+func (size *proposalBodySize) batchAtRank(rank uint64) int {
+	index, step := 0, 1
+	for step < len(size.batchTree) {
+		step <<= 1
+	}
+	for ; step > 0; step >>= 1 {
+		next := index + step
+		if next < len(size.batchTree) && size.batchTree[next] <= rank {
+			index = next
+			rank -= size.batchTree[next]
+		}
+	}
+	return index
+}
+
+func proposalTransactionWeights(tx *types.Transaction) (uint64, uint64) {
+	if tx == nil {
+		return 0, 0
+	}
+	weight := uint64(tx.Size())
+	if weight == 0 {
+		return math.MaxUint64, 0
+	}
+	if tx.Type() != types.LegacyTxType {
+		weight = proposalStringSize(weight)
+	}
+	var sidecarBytes uint64
+	if sidecar := tx.BlobSidecar(); sidecar != nil {
+		var blobs uint64
+		for _, blob := range sidecar.Blobs {
+			blobs = proposalSizeSum(blobs, proposalByteStringSize(blob))
+		}
+		sidecarBytes = proposalListSize(proposalSizeSum(proposalUintSize(uint64(sidecar.Version)), proposalListSize(blobs),
+			proposalListSize(uint64(len(sidecar.Commitments))*49), proposalListSize(uint64(len(sidecar.Proofs))*49)))
+	}
+	return weight, sidecarBytes
+}
+
+func proposalTransactionBodyWeight(tx *types.Transaction) uint64 {
+	transaction, sidecar := proposalTransactionWeights(tx)
+	return proposalSizeSum(transaction, sidecar)
+}
+
+func (size *proposalBodySize) nextTransaction(tx *types.Transaction, gasUsed uint64) (proposalSizeAddition, bool) {
+	addition := proposalSizeAddition{next: *size, position: -1}
+	if tx == nil || gasUsed > math.MaxUint64-size.gasUsed || tx.BlobGas() > math.MaxUint64-size.blobGasUsed {
+		return addition, false
+	}
+	next := &addition.next
+	if size.workMeter != nil {
+		meter := *size.workMeter
+		next.workMeter = &meter
+		if err := meter.AddTransaction(int(size.txCount), tx); err != nil {
+			return addition, false
+		}
+	}
+	next.txCount++
+	txBytes, blobBytes := proposalTransactionWeights(tx)
+	next.txBytes = proposalSizeSum(next.txBytes, txBytes)
+	next.blobBytes = proposalSizeSum(next.blobBytes, blobBytes)
+	next.gasUsed = proposalSizeSum(next.gasUsed, gasUsed)
+	next.blobGasUsed = proposalSizeSum(next.blobGasUsed, tx.BlobGas())
+	if size.admissions != nil {
+		selection, ok := size.admissions[tx.Hash()]
+		if !ok || selection.Batch == nil {
+			return addition, false
+		}
+		position, ok := size.batchPositions[selection.Batch.AdmissionID]
+		if !ok {
+			return addition, false
+		}
+		addition.position = position
+		rank := size.batchRank(position)
+		addition.newBatch = size.batchRefs[position] == 0
+		if addition.newBatch {
+			if next.workMeter != nil {
+				if err := next.workMeter.AddAdmissionBatch(int(size.batchCount), selection.Batch); err != nil {
+					return addition, false
+				}
+			}
+			next.batchBytes = proposalSizeSum(next.batchBytes, size.batchSizes[position])
+			next.batchCount++
+			// Inserting a lower AdmissionID only changes existing ref widths at
+			// these uint32 RLP boundaries. Each lookup is O(log batch count).
+			for _, boundary := range []uint64{127, 255, 65535, 16777215} {
+				if rank <= boundary && size.batchCount > boundary {
+					next.refBytes = proposalSizeSum(next.refBytes, size.batchRefs[size.batchAtRank(boundary)])
+				}
+			}
+		}
+		next.refBytes = proposalSizeSum(next.refBytes, proposalListSize(proposalUintSize(rank)+proposalUintSize(uint64(selection.Item))))
+		actualFee := new(big.Int).Mul(new(big.Int).SetUint64(gasUsed), txEffectiveGasPrice(tx, size.baseFee))
+		reward := new(big.Int).Div(new(big.Int).Set(actualFee), big.NewInt(5))
+		burn := new(big.Int).Sub(actualFee, reward)
+		commonReward := &types.CommonTxReward{
+			Version: selection.Batch.Version, TxHash: tx.Hash(), Approver: selection.Batch.Miner,
+			RewardRecipient: selection.Batch.RewardRecipient, ApproverReward: reward, Burn: burn,
+		}
+		if next.workMeter != nil {
+			// The trial meter includes both execution and sidecars. The work
+			// installed on env remains transaction-only until final validation.
+			if err := next.workMeter.AddReward(int(size.txCount), commonReward); err != nil {
+				return addition, false
+			}
+			if next.txCount > size.workLimits.CommonTxAdmissionRefs || proposalSizeSum(proposalListSize(next.batchBytes), proposalListSize(next.refBytes)) > size.workLimits.CommonTxAdmissionPayloadBytes {
+				return addition, false
+			}
+		}
+		encodedReward, err := proposalRLPSize(commonReward)
+		if err != nil {
+			return addition, false
+		}
+		next.rewardBytes = proposalSizeSum(next.rewardBytes, encodedReward)
+	}
+	return addition, next.encodedSize(false) != math.MaxUint64
+}
+
+func (size *proposalBodySize) install(addition proposalSizeAddition) {
+	*size = addition.next
+	if addition.position >= 0 {
+		if addition.newBatch {
+			for index := addition.position + 1; index < len(size.batchTree); index += index & -index {
+				size.batchTree[index]++
+			}
+		}
+		size.batchRefs[addition.position]++
+	}
+}
+
+func (size *proposalBodySize) encodedSize(finalized bool) uint64 {
+	headerPayload := size.headerPayload
+	if finalized {
+		headerPayload = size.finalizedHeaderPayload
+	}
+	header := proposalListSize(proposalSizeSum(headerPayload, proposalUintSize(size.gasUsed), proposalUintSize(size.blobGasUsed)))
+	return proposalListSize(proposalSizeSum(header, proposalListSize(size.txBytes), proposalListSize(size.blobBytes),
+		1, proposalListSize(size.batchBytes), proposalListSize(size.refBytes), proposalListSize(size.rewardBytes)))
+}
+
+func proposalFinalizedSize(header *types.Header, encoded []byte, config *params.ChainConfig, maxLeaderBytes int) (uint64, error) {
+	size, err := newProposalBodySize(header, config, nil, maxLeaderBytes)
+	if err != nil {
+		return 0, err
+	}
+	payload, _, err := rlp.SplitList(encoded)
+	if err != nil {
+		return 0, err
+	}
+	headerBytes := proposalListSize(size.headerPayload + proposalUintSize(header.GasUsed) + proposalUintSize(header.BlobGasUsed))
+	finalizedHeaderBytes := proposalListSize(size.finalizedHeaderPayload + proposalUintSize(header.GasUsed) + proposalUintSize(header.BlobGasUsed))
+	return proposalListSize(uint64(len(payload)) - headerBytes + finalizedHeaderBytes), nil
+}
+
+func (env *work) proposalSizeFits(size *proposalBodySize) bool {
+	if env == nil || env.config == nil || env.header == nil || env.header.Number == nil {
 		return true
 	}
-	maxBlockBytes := proposalByteLimit(env.config, env.blockType)
-	reservedBytes := uint64(0)
+	limit := proposalByteLimit(env.config, env.blockType)
+	finalized := false
 	if env.config.IsOsaka(env.header.Number, env.header.Time) {
-		maxBlockBytes = env.config.EffectiveMaxBlockBytes()
-		reservedBytes = uint64(osakaBlockSizeBuffer)
+		if maxBlockBytes := env.config.EffectiveMaxBlockBytes(); limit == 0 || maxBlockBytes < limit {
+			limit = maxBlockBytes
+		}
+		finalized = env.config.FairHotstuff
 	}
-	if maxBlockBytes <= reservedBytes {
-		return false
+	return limit == 0 || size.encodedSize(finalized) <= limit
+}
+
+func (env *work) ensureProposalBodySize() error {
+	if env.bodySize == nil {
+		var err error
+		env.bodySize, err = newProposalBodySize(env.header, env.config, nil, 0)
+		return err
 	}
-	weight := proposalTransactionBodyWeight(tx)
-	buffer := uint64(osakaPerTxBodySizeBuffer)
-	currentBytes := uint64(current)
-	if weight > ^uint64(0)-buffer || currentBytes > ^uint64(0)-weight-buffer {
-		return false
-	}
-	return currentBytes+weight+buffer < maxBlockBytes-reservedBytes
+	return nil
 }
 
 func (env *work) txFitsBlockSize(tx *types.Transaction) bool {
-	if env == nil {
+	if env == nil || tx == nil {
 		return true
 	}
-	return env.txFitsBlockSizeAt(env.size, tx)
+	if err := env.ensureProposalBodySize(); err != nil {
+		return false
+	}
+	addition, ok := env.bodySize.nextTransaction(tx, tx.Gas())
+	return ok && env.proposalSizeFits(&addition.next)
 }
 
 type evmProposalSelection struct {
 	transactions types.Transactions
 	failed       types.Transactions
 	size         common.StorageSize
+	bodySize     *proposalBodySize
 	blobGasUsed  uint64
 	workMeter    *core.FHSBlockWorkMeter
 	budget       *txResourceBudget
 }
 
-// A proposal attempt may execute the full candidate batch once, retry once
-// after removing an invalid leading sender, and (only if needed) execute the
-// canonically valid prefix of that retry. This keeps hostile moving-parent or
-// runtime-limit failures at O(n) with a small fixed multiplier.
+// Proposal execution uses at most one full MVCC pass, one filtering pass,
+// and one final shared validation of the selected body. Each pass visits every
+// candidate at most a fixed number of times, regardless of rejected senders.
 const evmProposalMaxExecutionAttempts = 3
 
 // selectEVMProposalTransactions builds an execution batch without mutating the
@@ -1907,7 +2346,10 @@ func (env *work) selectEVMProposalTransactions(txes *types.TransactionsByPriceAn
 	if env == nil || txes == nil || env.publicState == nil || env.header == nil {
 		return evmProposalSelection{}
 	}
-	selection := evmProposalSelection{size: env.size, blobGasUsed: env.header.BlobGasUsed, budget: env.resourceBudget.copy()}
+	if err := env.ensureProposalBodySize(); err != nil {
+		return evmProposalSelection{}
+	}
+	selection := evmProposalSelection{size: env.size, bodySize: env.bodySize.copy(), blobGasUsed: env.header.BlobGasUsed, budget: env.resourceBudget.copy()}
 	if env.fhsWorkMeter != nil {
 		meter := *env.fhsWorkMeter
 		selection.workMeter = &meter
@@ -1927,10 +2369,6 @@ func (env *work) selectEVMProposalTransactions(txes *types.TransactionsByPriceAn
 		tx := cursor.Peek()
 		if tx == nil {
 			break
-		}
-		if !env.txFitsBlockSizeAt(selection.size, tx) {
-			cursor.Pop()
-			continue
 		}
 		if tx.BlobGas() != 0 {
 			probeHeader := types.CopyHeader(env.header)
@@ -1961,6 +2399,11 @@ func (env *work) selectEVMProposalTransactions(txes *types.TransactionsByPriceAn
 			}
 			candidateMeter = &next
 		}
+		addition, sizeOK := selection.bodySize.nextTransaction(tx, tx.Gas())
+		if !sizeOK || !env.proposalSizeFits(&addition.next) {
+			cursor.Pop()
+			continue
+		}
 		resourceClass := core.ClassifyTxResource(tx)
 		if selection.budget != nil && !selection.budget.CanInclude(resourceClass, tx.Gas()) {
 			cursor.Pop()
@@ -1980,7 +2423,8 @@ func (env *work) selectEVMProposalTransactions(txes *types.TransactionsByPriceAn
 		}
 
 		selection.transactions = append(selection.transactions, tx)
-		selection.size += common.StorageSize(proposalTransactionBodyWeight(tx)) + osakaPerTxBodySizeBuffer
+		selection.bodySize.install(addition)
+		selection.size = common.StorageSize(selection.bodySize.encodedSize(false))
 		selection.blobGasUsed += tx.BlobGas()
 		reservedGas += tx.Gas()
 		selection.workMeter = candidateMeter
@@ -2005,7 +2449,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		baseState := env.publicState.Copy()
 		baseGasUsed := env.header.GasUsed
 		baseBlobGasUsed := env.header.BlobGasUsed
-		baseSize := env.size
+		baseBodySize := env.bodySize.copy()
 		baseBudget := env.resourceBudget.copy()
 		var baseWorkMeter *core.FHSBlockWorkMeter
 		if env.fhsWorkMeter != nil {
@@ -2013,68 +2457,41 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 			baseWorkMeter = &meter
 		}
 		candidates := append(types.Transactions(nil), selection.transactions...)
-		var (
-			receipts types.Receipts
-			logs     []*types.Log
-			usedGas  uint64
-			attempts int
-		)
-		for len(candidates) > 0 {
-			// Every retry starts from the identical parent-derived state. A
-			// failed speculative pass may already have merged a valid prefix.
-			env.publicState = baseState.Copy()
-			env.header.GasUsed = baseGasUsed
-			env.header.BlobGasUsed = baseBlobGasUsed
-			attempts++
-			var err error
-			receipts, logs, usedGas, err = core.ExecuteEVMProposalTransactions(env.config, bc, env.header, candidates, env.publicState, vm.Config{})
-			if err == nil {
-				break
-			}
+		// The fast path uses the validator's optimistic executor unchanged.
+		receipts, logs, usedGas, err := core.ExecuteEVMProposalTransactions(env.config, bc, env.header, candidates, env.publicState, vm.Config{})
+		if err != nil {
 			var txErr *core.EVMTransactionExecutionError
 			if !errors.As(err, &txErr) || txErr.TransactionIndex < 0 || txErr.TransactionIndex >= len(candidates) {
 				return nil, nil, nil, selection.failed, fmt.Errorf("execute standard EVM proposal: %w", err)
 			}
-			failedIndex := txErr.TransactionIndex
-			failedTx := candidates[failedIndex]
-			failedSender, senderErr := proposalTransactionSender(env.config, env.header.Number, failedTx)
-			if senderErr != nil {
-				return nil, nil, nil, selection.failed, fmt.Errorf("recover failed standard EVM proposal sender: %w", senderErr)
+			// A bounded filtering pass preserves the independent suffix even
+			// after multiple leading failures, without repeatedly replaying the
+			// accepted prefix. Its isolated branches publish only metered results.
+			env.publicState = baseState.Copy()
+			var rejected []*core.EVMTransactionExecutionError
+			candidates, rejected, err = core.FilterEVMProposalTransactions(env.config, bc, env.header, candidates, env.publicState, vm.Config{})
+			if err != nil {
+				return nil, nil, nil, selection.failed, fmt.Errorf("filter standard EVM proposal: %w", err)
 			}
-			action := classifyCommitTxError(txErr.Err)
-			if action == failedTxDropAndShift || action == failedTxDropAndPop {
-				selection.failed = append(selection.failed, failedTx)
-			}
-
-			var next types.Transactions
-			if attempts == 1 && failedIndex == 0 {
-				// A bad top-priced sender must not suppress all independent work.
-				// Remove that sender's nonce suffix and permit one full retry.
-				next = make(types.Transactions, 0, len(candidates)-1)
-				for index, tx := range candidates {
-					if index == failedIndex {
-						continue
-					}
-					sender, err := proposalTransactionSender(env.config, env.header.Number, tx)
-					if err != nil {
-						return nil, nil, nil, selection.failed, fmt.Errorf("recover standard EVM retry sender at transaction %d: %w", index, err)
-					}
-					if sender != failedSender {
-						next = append(next, tx)
-					}
+			for _, rejection := range rejected {
+				tx := selection.transactions[rejection.TransactionIndex]
+				// Runtime and output limits can depend on parent state or the
+				// remaining block budget; preserve the pool's existing policy
+				// for deleting only unconditional transaction failures.
+				action := classifyCommitTxError(rejection.Err)
+				if action == failedTxDropAndShift || action == failedTxDropAndPop {
+					selection.failed = append(selection.failed, tx)
 				}
-			} else {
-				// The prefix before a non-leading failure has already passed
-				// canonical execution and every runtime/output meter. Re-execute
-				// only that prefix; scanning the suffix again would permit an
-				// O(k*n) proposer DoS from k hostile independent senders.
-				next = append(types.Transactions(nil), candidates[:failedIndex]...)
+				logFailedTxAction(tx, rejection.Err, action)
 			}
-			log.Warn("Omitting failed EVM proposal candidate and rebuilding canonical MVCC schedule",
-				"hash", failedTx.Hash(), "index", failedIndex, "remaining", len(next), "attempt", attempts, "err", txErr.Err)
-			candidates = next
-			if len(candidates) > 0 && attempts >= evmProposalMaxExecutionAttempts {
-				return nil, nil, nil, selection.failed, fmt.Errorf("standard EVM proposal exceeded %d bounded execution attempts: %w", evmProposalMaxExecutionAttempts, err)
+			// Selection can change block metadata, including BlobGasUsed. The
+			// exact final body must pass the shared executor from the parent.
+			env.publicState = baseState.Copy()
+			if len(candidates) > 0 {
+				receipts, logs, usedGas, err = core.ExecuteEVMProposalTransactions(env.config, bc, env.header, candidates, env.publicState, vm.Config{})
+				if err != nil {
+					return nil, nil, nil, selection.failed, fmt.Errorf("validate filtered standard EVM proposal: %w", err)
+				}
 			}
 		}
 		if len(candidates) == 0 {
@@ -2089,7 +2506,7 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 		// executor; no serial path can bypass them.
 		env.header.GasUsed = usedGas
 		env.header.BlobGasUsed = baseBlobGasUsed
-		env.size = baseSize
+		env.bodySize = baseBodySize
 		env.resourceBudget = baseBudget
 		env.fhsWorkMeter = baseWorkMeter
 		for index, tx := range candidates {
@@ -2098,7 +2515,12 @@ func (env *work) commitTransactions(txes *types.TransactionsByPriceAndNonce, bc 
 				return nil, nil, nil, selection.failed, fmt.Errorf("rebuild standard EVM proposal work meter at transaction %d: %w", index, err)
 			}
 			env.fhsWorkMeter = candidateMeter
-			env.size += common.StorageSize(proposalTransactionBodyWeight(tx)) + osakaPerTxBodySizeBuffer
+			addition, ok := env.bodySize.nextTransaction(tx, receipts[index].GasUsed)
+			if !ok {
+				return nil, nil, nil, selection.failed, fmt.Errorf("rebuild standard EVM proposal byte accounting at transaction %d", index)
+			}
+			env.bodySize.install(addition)
+			env.size = common.StorageSize(env.bodySize.encodedSize(false))
 			env.header.BlobGasUsed += tx.BlobGas()
 			if env.resourceBudget != nil {
 				env.resourceBudget.Record(core.ClassifyTxResource(tx), receipts[index].GasUsed)
@@ -2129,11 +2551,6 @@ func (env *work) commitTransactionsSerial(txes *types.TransactionsByPriceAndNonc
 		if tx == nil {
 			break
 		}
-		if !env.txFitsBlockSize(tx) {
-			log.Debug("Skipping tx above Osaka block size budget", "hash", tx.Hash(), "size", tx.Size(), "selectedSize", env.size, "blockType", env.blockType)
-			txes.Pop()
-			continue
-		}
 		if !canIncludeBlobGas(env.config, env.header, tx) {
 			// Keep the transaction in the pool for a later block, but remove this
 			// account head from the local proposal view so the current proposal
@@ -2161,6 +2578,11 @@ func (env *work) commitTransactionsSerial(txes *types.TransactionsByPriceAndNonc
 			}
 			logFailedTxAction(tx, workErr, action)
 			applyFailedTxAction(txes, &failedTxes, tx, action)
+			continue
+		}
+		if !env.txFitsBlockSize(tx) {
+			log.Debug("Skipping tx above proposal byte budget", "hash", tx.Hash(), "size", tx.Size(), "selectedSize", env.size, "blockType", env.blockType)
+			txes.Pop()
 			continue
 		}
 		resourceClass := core.ClassifyTxResource(tx)
@@ -2197,9 +2619,12 @@ func (env *work) commitTransactionsSerial(txes *types.TransactionsByPriceAndNonc
 				env.fhsWorkMeter = candidateWorkMeter
 			}
 			committedTxes = append(committedTxes, tx)
-			// Reserve conservative room for the per-transaction CommonTxAdmission
-			// and CommonTxReward RLP objects attached after execution.
-			env.size += common.StorageSize(proposalTransactionBodyWeight(tx)) + osakaPerTxBodySizeBuffer
+			addition, ok := env.bodySize.nextTransaction(tx, publicReceipt.GasUsed)
+			if !ok {
+				return nil, nil, nil, failedTxes, fmt.Errorf("install serial proposal byte accounting at transaction %d", txCount-1)
+			}
+			env.bodySize.install(addition)
+			env.size = common.StorageSize(env.bodySize.encodedSize(false))
 			env.header.BlobGasUsed += tx.BlobGas()
 			if env.resourceBudget != nil {
 				env.resourceBudget.Record(resourceClass, publicReceipt.GasUsed)
@@ -2799,14 +3224,7 @@ func (s *Service) ApplyFHSProposalBuild(result *hotstuff.FHSProposalBuildResult)
 		}
 		cleanupReserved = false
 	}
-	now := time.Now()
-	s.muProposalCadence.Lock()
-	if output.blockType == types.SlowTx_Block {
-		s.lastSlowBlockTime = now
-	} else if output.blockType == types.FastTx_Block {
-		s.lastFastBlockTime = now
-	}
-	s.muProposalCadence.Unlock()
+	s.recordTxProposalPublication(output.blockType, time.Now())
 	output.publicationLocksHeld = true
 	currentViewLockTransferred = true
 	buildLockTransferred = true
@@ -2945,14 +3363,7 @@ func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string
 		log.Warn("prepare txblock hotstuff proposal", "error", err)
 		return err, nil, nil, nil
 	}
-	now := time.Now()
-	s.muProposalCadence.Lock()
-	if candidate.blockType == types.SlowTx_Block {
-		s.lastSlowBlockTime = now
-	} else if candidate.blockType == types.FastTx_Block {
-		s.lastFastBlockTime = now
-	}
-	s.muProposalCadence.Unlock()
+	s.recordTxProposalPublication(candidate.blockType, time.Now())
 	s.clearProposalNoWork()
 	proposeOK = true
 	return nil, nil, proposalRef, nil

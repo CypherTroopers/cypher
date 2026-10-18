@@ -137,6 +137,42 @@ func SolanaScaleEVMParallelConfig() *NativeParallelConfig {
 	}
 }
 
+// FHS250msResearchEVMParallelConfig returns finite EVM block limits for an
+// explicitly configured 250ms Fair HotStuff research genesis. It does not alter
+// any default or enable the slot clock. The caller must set FairHotstuff,
+// FairHotstuffSlotMillis=250 and FixedCommittee, supply a valid chain ID, seed,
+// committee and genesis-active EVM forks, and check the complete ChainConfig
+// with CheckConfigForkOrder, including its blob schedule. The genesis gas limit
+// remains a separate bound; MaxComputePerBlock does not increase that header.
+//
+// At four slots per second, 125,000 transactions per block is arithmetic for a
+// 500,000 TPS target. The count ceiling also permits two fast blocks of 175,000
+// transactions and two slow blocks of 75,000, subject to every other resource
+// bound. These are experiment ceilings without a throughput, latency or RSS
+// guarantee. Per-transaction, critical-path and dependency-depth limits and the
+// 2 GiB execution lease remain unchanged. A proposal selects one lane and stops
+// before an opposite-lane nonce prerequisite.
+func FHS250msResearchEVMParallelConfig() *NativeParallelConfig {
+	return &NativeParallelConfig{
+		RequireNativeTransactions:    false,
+		MaxTransactionsPerBlock:      175_000,
+		MaxBlockBytes:                160 * 1024 * 1024,
+		MaxTransactionBytes:          1024 * 1024,
+		MaxAccessesPerTransaction:    1024,
+		MaxAccessesPerBlock:          5 * 1024 * 1024,
+		MaxComputePerTransaction:     1 << 32,
+		MaxComputePerBlock:           1 << 44,
+		MaxCriticalPathCompute:       1 << 28,
+		MaxDependencyDepth:           (1 << 28) / TxGas,
+		MaxMemoryBytesPerTransaction: 64 * 1024 * 1024,
+		MaxLogBytesPerTransaction:    256 * 1024,
+		MaxLogBytesPerBlock:          160 * 1024 * 1024,
+		MaxReceiptBytesPerBlock:      192 * 1024 * 1024,
+		MaxOutputBytesPerTransaction: 1024 * 1024,
+		ReplayWindowBlocks:           512,
+	}
+}
+
 // SolanaScaleNativeParallelConfig retains the internal Go API name used by the
 // dormant parallel executor. It returns the same EVM-only public profile.
 func SolanaScaleNativeParallelConfig() *NativeParallelConfig {

@@ -39,24 +39,25 @@
     "fixedCommittee": true,
     "fixedLeader": false,
     "fairHotstuff": true,
+    "fairHotstuffSlotMillis": 250,
     "rnettransport": "quic",
     "rnetfallbacktransport": "none",
     "fairHotstuffSeed": "0xacb7b49e23815caf94dc47bcf81dab93cc986cf9ab04e243efcbc204c6a2a627",
 
     "evmParallel": {
-      "maxTransactionsPerBlock": 1048576,
-      "maxBlockBytes": 268435456,
+      "maxTransactionsPerBlock": 175000,
+      "maxBlockBytes": 167772160,
       "maxTransactionBytes": 1048576,
       "maxAccessesPerTransaction": 1024,
-      "maxAccessesPerBlock": 2097152,
+      "maxAccessesPerBlock": 5242880,
       "maxComputePerTransaction": 4294967296,
       "maxComputePerBlock": 17592186044416,
       "maxCriticalPathCompute": 268435456,
       "maxDependencyDepth": 12782,
       "maxMemoryBytesPerTransaction": 67108864,
       "maxLogBytesPerTransaction": 262144,
-      "maxLogBytesPerBlock": 67108864,
-      "maxReceiptBytesPerBlock": 234881024,
+      "maxLogBytesPerBlock": 167772160,
+      "maxReceiptBytesPerBlock": 201326592,
       "maxOutputBytesPerTransaction": 1048576,
       "replayWindowBlocks": 512
     },
@@ -171,9 +172,11 @@
 
   "nonce": "0x0",
 
-  "mixHash": "0xe4626eb7946b1d869ffd3fcd3136652fcae7ea1f912f8b7101a2e98a266050df",
+  "mixHash": "0x127e2e49e5b03b0f370d7963f826ef88bb36ced657515dcdbb1df33c811fc6b4",
 
   "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+
+  "extraData": "0x4648530100000001aabd30c0",
 
   "timestamp": "0x6AAF4C30"
 }

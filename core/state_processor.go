@@ -657,6 +657,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			return nil, nil, 0, err
 		}
 	} else {
+		limiter, memoryLease := acquireEVMSerialMemoryLease(p.config, header, txs)
+		defer limiter.release(memoryLease)
 		for i := 0; i < len(txs); {
 			jobs := p.collectParallelNativeJobs(txs, i, block, statedb, gp, cfg, rules)
 			if len(jobs) >= 2 {

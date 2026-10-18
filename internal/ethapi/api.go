@@ -1559,6 +1559,9 @@ func RPCMarshalHeader(head *types.Header) map[string]interface{} {
 	result["excessBlobGas"] = hexutil.Uint64(head.ExcessBlobGas)
 	result["parentBeaconBlockRoot"] = head.ParentBeaconRoot
 	result["requestsHash"] = head.RequestsHash
+	result["keyInfo"] = hexutil.Bytes(head.KeyInfo)
+	result["commonTxAdmissionRoot"] = head.CommonTxAdmissionRoot
+	result["commonTxRewardRoot"] = head.CommonTxRewardRoot
 	return result
 }
 

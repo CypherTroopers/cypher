@@ -1,3 +1,2 @@
-*.sh text eol=lf
-*.ref text eol=lf
-Makefile text eol=lf
+browser-llm-lab/.runtime/releases/capacity-v1/baseline/native-before.diff.gz filter=lfs diff=lfs merge=lfs -text
+browser-llm-lab/.runtime/releases/consolidation-20261003/native-diff.txt.gz filter=lfs diff=lfs merge=lfs -text

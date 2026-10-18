@@ -46,13 +46,17 @@ binary自体は従来どおり既定OFF。直接起動は`--browser.public-relay
 
 同梱の最小mesh専用config:
 
+The source configuration below pins the distributed 250ms research genesis for
+fresh initialization. Historical measurements retain their earlier network hash;
+this source update does not deploy a gateway or migrate an existing datadir.
+
 ```json
 {
   "enabled": true,
   "socketPath": "auto",
   "network": {
     "chainId": 10101919,
-    "genesisHash": "0x001c8239f25a697933e2a54511a576205fb21cbb80dc974adb29894dc80250ad"
+    "genesisHash": "0xbef1d519ceeba0d303fe63d13bb5fb70cda8947f9ee5c60436135cdb77e4db52"
   },
   "sourceId": "common-mine",
   "mesh": {

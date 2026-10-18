@@ -317,6 +317,7 @@ type chainConfigJSON struct {
 	FixedLeader            bool                  `json:"fixedLeader,omitempty"`
 	FairHotstuff           bool                  `json:"fairHotstuff,omitempty"`
 	FairHotstuffSeed       common.Hash           `json:"fairHotstuffSeed,omitempty"`
+	FairHotstuffSlotMillis uint64                `json:"fairHotstuffSlotMillis,omitempty"`
 	NativeParallel         *NativeParallelConfig `json:"nativeParallel,omitempty"`
 	EnabledTPS             bool                  `json:"enabledTPS,omitempty"`
 }
@@ -399,6 +400,7 @@ func (c *ChainConfig) UnmarshalJSON(input []byte) error {
 	c.FixedLeader = dec.FixedLeader
 	c.FairHotstuff = dec.FairHotstuff
 	c.FairHotstuffSeed = dec.FairHotstuffSeed
+	c.FairHotstuffSlotMillis = dec.FairHotstuffSlotMillis
 	c.NativeParallel = dec.NativeParallel
 	c.EnabledTPS = dec.EnabledTPS
 	c.SetModernForkConfig(&ModernForkConfig{
@@ -490,6 +492,7 @@ func chainConfigJSONFromConfig(c *ChainConfig) chainConfigJSON {
 		FixedLeader:            c.FixedLeader,
 		FairHotstuff:           c.FairHotstuff,
 		FairHotstuffSeed:       c.FairHotstuffSeed,
+		FairHotstuffSlotMillis: c.FairHotstuffSlotMillis,
 		NativeParallel:         c.NativeParallel,
 		EnabledTPS:             c.EnabledTPS,
 	}

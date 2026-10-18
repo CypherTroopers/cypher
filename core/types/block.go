@@ -140,7 +140,7 @@ type Header struct {
 
 	BlockType uint8       `json:"blockType"      gencodec:"required"`
 	KeyHash   common.Hash `json:"keyHash"       gencodec:"required"`
-	KeyInfo   []byte      `json:"keyInfo"       gencodec:"required"`
+	KeyInfo   []byte      `json:"keyInfo,omitempty"`
 	SignInfo  SignInfo
 }
 
@@ -152,10 +152,45 @@ type headerMarshaling struct {
 	GasUsed       hexutil.Uint64
 	Time          hexutil.Uint64
 	Extra         hexutil.Bytes
+	KeyInfo       hexutil.Bytes
 	BaseFee       *hexutil.Big
 	BlobGasUsed   hexutil.Uint64
 	ExcessBlobGas hexutil.Uint64
 	Hash          common.Hash `json:"hash"` // adds call to Hash() in MarshalJSON
+}
+
+const (
+	fhsSlotExtraPrefix = "FHS\x01"
+	fhsSlotExtraSize   = len(fhsSlotExtraPrefix) + 8
+)
+
+// FHSSlot decodes the canonical Unix 250 ms slot reserved in Extra by the
+// opt-in Fair HotStuff slot profile. Time always retains Unix seconds.
+func (h *Header) FHSSlot() (uint64, error) {
+	if h == nil {
+		return 0, fmt.Errorf("missing Fair HotStuff slot header")
+	}
+	if len(h.Extra) != fhsSlotExtraSize {
+		return 0, fmt.Errorf("invalid Fair HotStuff slot extra length: have %d want %d", len(h.Extra), fhsSlotExtraSize)
+	}
+	if string(h.Extra[:len(fhsSlotExtraPrefix)]) != fhsSlotExtraPrefix {
+		return 0, fmt.Errorf("invalid Fair HotStuff slot extra prefix")
+	}
+	slot := binary.BigEndian.Uint64(h.Extra[len(fhsSlotExtraPrefix):])
+	if slot/params.FairHotstuffSlotsPerSecond != h.Time {
+		return 0, fmt.Errorf("Fair HotStuff slot timestamp mismatch: slot %d timestamp %d", slot, h.Time)
+	}
+	return slot, nil
+}
+
+// SetFHSSlot replaces Extra with the canonical slot envelope and sets Time to
+// its Unix seconds. Callers use it only for the opt-in Fair HotStuff profile.
+func (h *Header) SetFHSSlot(slot uint64) {
+	extra := make([]byte, fhsSlotExtraSize)
+	copy(extra, fhsSlotExtraPrefix)
+	binary.BigEndian.PutUint64(extra[len(fhsSlotExtraPrefix):], slot)
+	h.Time = slot / params.FairHotstuffSlotsPerSecond
+	h.Extra = extra
 }
 
 type SignInfo struct {

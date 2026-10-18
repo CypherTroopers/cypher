@@ -3,6 +3,7 @@ package ethapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -23,12 +24,14 @@ import (
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
 	"github.com/cypherium/cypher/crypto"
+	"github.com/cypherium/cypher/crypto/bls"
 	kzg "github.com/cypherium/cypher/crypto/kzg4844"
 	"github.com/cypherium/cypher/eth/downloader"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/event"
 	"github.com/cypherium/cypher/params"
 	"github.com/cypherium/cypher/reconfig/bftview"
+	"github.com/cypherium/cypher/reconfig/hotstuff"
 	"github.com/cypherium/cypher/rlp"
 	"github.com/cypherium/cypher/rpc"
 )
@@ -266,6 +269,127 @@ func TestRPCMarshalHeaderModernFields(t *testing.T) {
 		if got := fields[name]; got != want {
 			t.Fatalf("%s = %#v, want %#v", name, got, want)
 		}
+	}
+}
+
+func TestRPCMarshalHeaderFHSSlotReconstructsHash(t *testing.T) {
+	var previousHash common.Hash
+	for offset := uint64(0); offset < 4; offset++ {
+		header := &types.Header{
+			ParentHash:            common.HexToHash("0x11"),
+			UncleHash:             types.EmptyUncleHash,
+			Coinbase:              common.HexToAddress("0x12"),
+			Root:                  common.HexToHash("0x13"),
+			TxHash:                types.EmptyRootHash,
+			ReceiptHash:           types.EmptyRootHash,
+			Number:                big.NewInt(7),
+			Difficulty:            big.NewInt(1),
+			GasLimit:              30_000_000,
+			GasUsed:               21_000,
+			BaseFee:               big.NewInt(params.FixedBaseFeePerGas),
+			WithdrawalsHash:       types.EmptyWithdrawalsHash,
+			BlobGasUsed:           2,
+			ExcessBlobGas:         3,
+			ParentBeaconRoot:      common.HexToHash("0x14"),
+			RequestsHash:          types.EmptyRequestsHash,
+			CommonTxAdmissionRoot: common.HexToHash("0x15"),
+			CommonTxRewardRoot:    common.HexToHash("0x16"),
+			BlockType:             types.Key_Block,
+			KeyHash:               common.HexToHash("0x17"),
+			KeyInfo:               []byte{0xf8, 0x01, 0x02},
+		}
+		header.SetFHSSlot(1_700_000_000*4 + offset)
+		for _, fields := range []interface{}{RPCMarshalHeader(header), header} {
+			encoded, err := json.Marshal(fields)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded types.Header
+			if err := json.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			if decoded.Time != 1_700_000_000 || decoded.Hash() != header.Hash() {
+				t.Fatalf("slot %d RPC header changed timestamp/hash: time %d hash %s want %s", offset, decoded.Time, decoded.Hash(), header.Hash())
+			}
+			originalRLP, err := rlp.EncodeToBytes(header)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decodedRLP, err := rlp.EncodeToBytes(&decoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(originalRLP, decodedRLP) {
+				t.Fatalf("slot %d RPC header changed unsigned RLP", offset)
+			}
+		}
+		if offset != 0 && header.Hash() == previousHash {
+			t.Fatalf("same-second slots %d and %d have the same hash", offset-1, offset)
+		}
+		previousHash = header.Hash()
+	}
+}
+
+func TestRPCMarshalHeaderFHSSlotPreservesCertifiedProposal(t *testing.T) {
+	const chainID, view = uint64(10101919), uint64(8)
+	viewID, leader := common.HexToHash("0x08"), "slot-leader"
+	header := &types.Header{
+		Number: big.NewInt(1), Difficulty: big.NewInt(1), BaseFee: big.NewInt(params.FixedBaseFeePerGas),
+		TxHash: types.EmptyRootHash, ReceiptHash: types.EmptyRootHash, UncleHash: types.EmptyUncleHash,
+		CommonTxAdmissionRoot: common.HexToHash("0x01"), CommonTxRewardRoot: common.HexToHash("0x02"),
+	}
+	header.SetFHSSlot(1_700_000_000*4 + 1)
+	block := types.NewBlockWithHeader(header)
+	ref, err := types.NewHotstuffProposalRef(chainID, view, viewID, leader, block, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := make([]bls.SecretKey, 4)
+	public := make([]*bls.PublicKey, len(keys))
+	var signature *bls.Sign
+	for index := range keys {
+		keys[index].SetByCSPRNG()
+		public[index] = keys[index].GetPublicKey()
+		if index < 3 {
+			vote, err := hotstuff.SignFHSSignatureWithContext(&keys[index], public[index], ref.EncodeToBytes(), chainID, hotstuff.MsgVotePrepare, viewID, leader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if signature == nil {
+				signature = vote
+			} else {
+				signature.Add(vote)
+			}
+		}
+	}
+	mask := []byte{0x07}
+	block.SetFHSSignature(signature.Serialize(), mask, viewID, leader, view, ref.ExtraHash, ref.ParentQCID)
+	encoded, err := json.Marshal(RPCMarshalHeader(block.Header()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded types.Header
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	reconstructed := types.NewBlockWithHeader(&decoded)
+	restoredRef, err := types.NewHotstuffProposalRef(chainID, view, viewID, leader, reconstructed, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(block.CopyOrg().EncodeToBytes(), reconstructed.EncodeToBytes()) || !bytes.Equal(ref.EncodeToBytes(), restoredRef.EncodeToBytes()) {
+		t.Fatal("RPC reconstruction changed unsigned certified proposal bytes")
+	}
+	if !hotstuff.VerifyFHSSignatureWithContext(signature.Serialize(), mask, restoredRef.EncodeToBytes(), public, 3, chainID, hotstuff.MsgVotePrepare, viewID, leader) {
+		t.Fatal("RPC reconstruction invalidated the original BLS certificate")
+	}
+	decoded.SetFHSSlot(1_700_000_000*4 + 2)
+	tamperedRef, err := types.NewHotstuffProposalRef(chainID, view, viewID, leader, types.NewBlockWithHeader(&decoded), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hotstuff.VerifyFHSSignatureWithContext(signature.Serialize(), mask, tamperedRef.EncodeToBytes(), public, 3, chainID, hotstuff.MsgVotePrepare, viewID, leader) {
+		t.Fatal("same-second slot mutation retained the original BLS certificate")
 	}
 }
 

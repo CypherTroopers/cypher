@@ -829,6 +829,8 @@ func (pool *TxPool) pendingCandidateKeysLocked(lane TxLane, classes []TxResource
 	return keys
 }
 
+// appendRotatedCandidatesLocked limits additions for this key. The caller owns
+// the aggregate candidate limit across keys and passes only its remaining budget.
 func (pool *TxPool) appendRotatedCandidatesLocked(
 	key txReadyKey,
 	limit int,
@@ -860,9 +862,6 @@ func (pool *TxPool) appendRotatedCandidatesLocked(
 	scanned := 0
 
 	for scanned < len(addrs) {
-		if limit > 0 && len(candidates) >= limit {
-			break
-		}
 		if limit > 0 && pickedForKey >= limit {
 			break
 		}
@@ -920,7 +919,11 @@ func (pool *TxPool) pendingCandidateAddrsLocked(lane TxLane, classes []TxResourc
 		if limit > 0 && len(candidates) >= limit {
 			return candidates
 		}
-		candidates = pool.appendRotatedCandidatesLocked(key, perKeyLimit, seen, candidates)
+		keyLimit := perKeyLimit
+		if limit > 0 && keyLimit > limit-len(candidates) {
+			keyLimit = limit - len(candidates)
+		}
+		candidates = pool.appendRotatedCandidatesLocked(key, keyLimit, seen, candidates)
 	}
 
 	// Second pass: if some classes had fewer accounts, fill the remaining budget
@@ -1007,12 +1010,14 @@ func (pool *TxPool) PendingByLaneAndClassesLimited(lane TxLane, maxTx int, perAc
 			if ClassifyTxLane(tx) != lane {
 				break
 			}
+			// Omitting a sender's nonce also excludes every later nonce from
+			// this snapshot, even if its class or gas would otherwise fit.
 			if useClassFilter && !allowed[ClassifyTxResource(tx)] {
-				continue
+				break
 			}
 			if gasTarget > 0 {
 				if tx.Gas() > remainingGas {
-					continue
+					break
 				}
 				remainingGas -= tx.Gas()
 			}
@@ -1409,6 +1414,7 @@ func (pool *TxPool) add(tx *types.Transaction, local bool, blobProofVerified boo
 		if old != nil {
 			pool.all.Remove(old.Hash())
 			pool.RemoveBlobSidecar(old.Hash())
+			delete(pool.seen, old.Hash())
 			pool.priced.Removed(1)
 			pendingReplaceMeter.Mark(1)
 		}
@@ -1449,6 +1455,7 @@ func (pool *TxPool) enqueueTx(hash common.Hash, tx *types.Transaction, local boo
 	if old != nil {
 		pool.all.Remove(old.Hash())
 		pool.RemoveBlobSidecar(old.Hash())
+		delete(pool.seen, old.Hash())
 		pool.priced.Removed(1)
 		queuedReplaceMeter.Mark(1)
 	} else {
@@ -1481,6 +1488,7 @@ func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.T
 	if !inserted {
 		pool.all.Remove(hash)
 		pool.RemoveBlobSidecar(hash)
+		delete(pool.seen, hash)
 		pool.priced.Removed(1)
 		pendingDiscardMeter.Mark(1)
 		return false
@@ -1488,6 +1496,7 @@ func (pool *TxPool) promoteTx(addr common.Address, hash common.Hash, tx *types.T
 	if old != nil {
 		pool.all.Remove(old.Hash())
 		pool.RemoveBlobSidecar(old.Hash())
+		delete(pool.seen, old.Hash())
 		pool.priced.Removed(1)
 		pendingReplaceMeter.Mark(1)
 	} else {
@@ -2387,6 +2396,7 @@ func (pool *TxPool) truncatePending() {
 						hash := tx.Hash()
 						pool.all.Remove(hash)
 						pool.RemoveBlobSidecar(hash)
+						delete(pool.seen, hash)
 						pool.pendingNonces.setIfLower(offenders[i], tx.Nonce())
 						log.Trace("Removed fairness-exceeding pending transaction", "hash", hash)
 					}
@@ -2409,6 +2419,7 @@ func (pool *TxPool) truncatePending() {
 					hash := tx.Hash()
 					pool.all.Remove(hash)
 					pool.RemoveBlobSidecar(hash)
+					delete(pool.seen, hash)
 					pool.pendingNonces.setIfLower(addr, tx.Nonce())
 					log.Trace("Removed fairness-exceeding pending transaction", "hash", hash)
 				}
@@ -2469,6 +2480,7 @@ func (pool *TxPool) demoteUnexecutables() {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
 			pool.RemoveBlobSidecar(hash)
+			delete(pool.seen, hash)
 			log.Trace("Removed old pending transaction", "hash", hash)
 		}
 		drops, invalids := list.Filter(pool.currentState.GetBalance(addr), pool.currentMaxGas)
@@ -2477,6 +2489,7 @@ func (pool *TxPool) demoteUnexecutables() {
 			log.Trace("Removed unpayable pending transaction", "hash", hash)
 			pool.all.Remove(hash)
 			pool.RemoveBlobSidecar(hash)
+			delete(pool.seen, hash)
 		}
 		pendingNofundsMeter.Mark(int64(len(drops)))
 		for _, tx := range invalids {

@@ -107,6 +107,7 @@ func newSyncModeTestManager(t *testing.T, fairHotstuff bool, mode downloader.Syn
 	}
 	if !fairHotstuff {
 		genesis.Config.FairHotstuff = false
+		genesis.Config.FairHotstuffSlotMillis = 0
 		genesis.Config.NativeParallel = nil
 	}
 	db := rawdb.NewMemoryDatabase()

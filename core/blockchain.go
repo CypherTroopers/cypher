@@ -19,7 +19,10 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -29,6 +32,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/mclock"
@@ -39,6 +43,7 @@ import (
 	"github.com/cypherium/cypher/core/state/snapshot"
 	"github.com/cypherium/cypher/core/types"
 	"github.com/cypherium/cypher/core/vm"
+	"github.com/cypherium/cypher/crypto"
 	"github.com/cypherium/cypher/crypto/kzg4844"
 	"github.com/cypherium/cypher/ethdb"
 	"github.com/cypherium/cypher/event"
@@ -96,9 +101,18 @@ var (
 )
 
 const (
-	bodyCacheLimit      = 128
-	blockCacheLimit     = 128
-	receiptsCacheLimit  = 32
+	bodyCacheLimit = 128
+	// bodyRLPCacheMemory bounds retained encoded backing arrays. The entry
+	// limit separately bounds cache metadata; active callers can retain bytes
+	// after eviction and are outside this optional cache's ownership.
+	bodyRLPCacheMemory = 64 * 1024 * 1024
+	blockCacheLimit    = 128
+	receiptsCacheLimit = 32
+	// receiptsCacheMemory bounds accounted decoded objects and their backing
+	// arrays. Entry metadata is separately bounded by receiptsCacheLimit;
+	// allocator overhead, active readers and temporary database reads are not
+	// part of this optional cache's ownership budget.
+	receiptsCacheMemory = 64 * 1024 * 1024
 	txLookupCacheLimit  = 1024
 	maxFutureBlocks     = 128
 	maxTimeFutureBlocks = 30
@@ -199,7 +213,14 @@ type BlockChain struct {
 	scope         event.SubscriptionScope
 	genesisBlock  *types.Block
 
-	chainmu sync.RWMutex // blockchain insertion lock
+	// READY publication and its acknowledgment share this mutex. The latch
+	// conservatively hides any older descriptor after an uncertain failed write
+	// until another full job succeeds or a fresh process reopens the database.
+	fhsCheckpointPublicationMu sync.Mutex
+	fhsCheckpointUncertain     bool
+	fhsCheckpointAcknowledged  []byte       // last acknowledged READY; retained across an uncertain replacement
+	fhsCheckpointActive        int32        // explicit checkpoint only; no automatic eviction
+	chainmu                    sync.RWMutex // blockchain insertion lock
 
 	currentBlock     atomic.Value // Current head of the block chain
 	currentFastBlock atomic.Value // Current head of the fast-sync chain (may be above the block chain!)
@@ -211,6 +232,21 @@ type BlockChain struct {
 	blockCache    *lru.Cache     // Cache for the most recent entire blocks
 	txLookupCache *lru.Cache     // Cache for the most recent transaction lookup data.
 	futureBlocks  *lru.Cache     // future blocks are blocks added for later processing
+
+	// Admission and purge share one lock so backing-byte accounting and the
+	// LRU change atomically. The immutable byte limit is independent of block
+	// validity; a valid larger body is served directly from durable storage.
+	bodyRLPCacheMu         sync.Mutex
+	bodyRLPCacheBytes      uint64
+	bodyRLPCacheLimit      uint64
+	bodyRLPCacheGeneration uint64
+
+	// All receipt admission, eviction and purge accounting shares this lock.
+	// The byte limit is immutable and has no role in receipt/block validity.
+	receiptsCacheMu         sync.Mutex
+	receiptsCacheBytes      uint64
+	receiptsCacheLimit      uint64
+	receiptsCacheGeneration uint64
 
 	quit          chan struct{}  // blockchain quit channel
 	wg            sync.WaitGroup // chain processing wait group for shutting down
@@ -343,7 +379,9 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, chainConfig *par
 		shouldPreserve:       shouldPreserve,
 		bodyCache:            bodyCache,
 		bodyRLPCache:         bodyRLPCache,
+		bodyRLPCacheLimit:    bodyRLPCacheMemory,
 		receiptsCache:        receiptsCache,
+		receiptsCacheLimit:   receiptsCacheMemory,
 		blockCache:           blockCache,
 		txLookupCache:        txLookupCache,
 		futureBlocks:         futureBlocks,
@@ -665,8 +703,8 @@ func (bc *BlockChain) SetHead(head uint64) error {
 	}
 	// Clear out any stale content from the caches
 	bc.bodyCache.Purge()
-	bc.bodyRLPCache.Purge()
-	bc.receiptsCache.Purge()
+	bc.purgeBodyRLPCache()
+	bc.purgeReceiptsCache()
 	bc.blockCache.Purge()
 	bc.txLookupCache.Purge()
 	bc.futureBlocks.Purge()
@@ -971,12 +1009,17 @@ func (bc *BlockChain) GetBody(hash common.Hash) *types.Body {
 }
 
 // GetBodyRLP retrieves a block body in RLP encoding from the database by hash,
-// caching it if found.
+// caching it when its backing array fits the retained-byte budget. Returned
+// bytes are read-only and can outlive their cache entry.
 func (bc *BlockChain) GetBodyRLP(hash common.Hash) rlp.RawValue {
 	// Short circuit if the body's already in the cache, retrieve otherwise
+	bc.bodyRLPCacheMu.Lock()
 	if cached, ok := bc.bodyRLPCache.Get(hash); ok {
+		bc.bodyRLPCacheMu.Unlock()
 		return cached.(rlp.RawValue)
 	}
+	generation := bc.bodyRLPCacheGeneration
+	bc.bodyRLPCacheMu.Unlock()
 	number := bc.hc.GetBlockNumber(hash)
 	if number == nil {
 		return nil
@@ -985,9 +1028,44 @@ func (bc *BlockChain) GetBodyRLP(hash common.Hash) rlp.RawValue {
 	if len(body) == 0 {
 		return nil
 	}
-	// Cache the found body for next time and return
+	bc.bodyRLPCacheMu.Lock()
+	defer bc.bodyRLPCacheMu.Unlock()
+	// A rewind may have purged the cache while the database read was in
+	// flight. Return the bytes to that caller without repopulating the cache.
+	if generation != bc.bodyRLPCacheGeneration {
+		return body
+	}
+	// Concurrent misses for one hash retain only one backing array. Both
+	// callers can still use their own database result without another copy.
+	if _, exists := bc.bodyRLPCache.Get(hash); exists {
+		return body
+	}
+	// The database owns the durable bytes and returns an independent array.
+	// Account capacity, including spare backing bytes, rather than payload
+	// length. Oversized bodies remain readable without displacing hot entries.
+	weight := uint64(cap(body))
+	if weight > bc.bodyRLPCacheLimit {
+		return body
+	}
+	for bc.bodyRLPCacheBytes > bc.bodyRLPCacheLimit-weight || bc.bodyRLPCache.Len() >= bodyCacheLimit {
+		_, oldest, ok := bc.bodyRLPCache.RemoveOldest()
+		if !ok {
+			bc.bodyRLPCacheBytes = 0
+			break
+		}
+		bc.bodyRLPCacheBytes -= uint64(cap(oldest.(rlp.RawValue)))
+	}
 	bc.bodyRLPCache.Add(hash, body)
+	bc.bodyRLPCacheBytes += weight
 	return body
+}
+
+func (bc *BlockChain) purgeBodyRLPCache() {
+	bc.bodyRLPCacheMu.Lock()
+	defer bc.bodyRLPCacheMu.Unlock()
+	bc.bodyRLPCache.Purge()
+	bc.bodyRLPCacheBytes = 0
+	bc.bodyRLPCacheGeneration++
 }
 
 // HasBlock checks if a block is fully present in the database or not.
@@ -1062,11 +1140,76 @@ func (bc *BlockChain) GetBlockByNumber(number uint64) *types.Block {
 	return bc.GetBlock(hash, number)
 }
 
-// GetReceiptsByHash retrieves the receipts for all transactions in a given block.
-func (bc *BlockChain) GetReceiptsByHash(hash common.Hash) types.Receipts {
-	if receipts, ok := bc.receiptsCache.Get(hash); ok {
-		return receipts.(types.Receipts)
+// receiptCacheEntry captures the admission weight so eviction never rescans a
+// batch or depends on a caller's lifetime. Cached receipt/log data is read-only.
+type receiptCacheEntry struct {
+	receipts types.Receipts
+	weight   uint64
+}
+
+// receiptCacheWeight accounts decoded object sizes and backing capacities,
+// including spare bytes and derived block-number words. It does not encode or
+// copy the receipts. Shared objects may be conservatively counted more than
+// once; Go allocation-class padding and process RSS are outside this account.
+// Inputs come from rawdb.ReadReceipts, whose fresh slices have no hidden
+// nonnil elements beyond their length, and remain read-only after admission.
+func receiptCacheWeight(receipts types.Receipts, limit uint64) (uint64, bool) {
+	var weight uint64
+	add := func(count, size uint64) bool {
+		// Division before multiplication both checks the budget and avoids
+		// overflow. weight stays <= limit after every successful charge.
+		if size != 0 && count > (limit-weight)/size {
+			return false
+		}
+		weight += count * size
+		return true
 	}
+	// The entry contains the outer slice header exactly once.
+	if !add(1, uint64(unsafe.Sizeof(receiptCacheEntry{}))) ||
+		!add(uint64(cap(receipts)), uint64(unsafe.Sizeof((*types.Receipt)(nil)))) {
+		return 0, false
+	}
+	for _, receipt := range receipts {
+		if receipt == nil {
+			continue
+		}
+		if !add(1, uint64(unsafe.Sizeof(types.Receipt{}))) ||
+			!add(uint64(cap(receipt.PostState)), 1) ||
+			!add(uint64(cap(receipt.Logs)), uint64(unsafe.Sizeof((*types.Log)(nil)))) {
+			return 0, false
+		}
+		if receipt.BlockNumber != nil {
+			if !add(1, uint64(unsafe.Sizeof(big.Int{}))) ||
+				!add(uint64(cap(receipt.BlockNumber.Bits())), uint64(unsafe.Sizeof(big.Word(0)))) {
+				return 0, false
+			}
+		}
+		for _, log := range receipt.Logs {
+			if log == nil {
+				continue
+			}
+			if !add(1, uint64(unsafe.Sizeof(types.Log{}))) ||
+				!add(uint64(cap(log.Topics)), common.HashLength) ||
+				!add(uint64(cap(log.Data)), 1) {
+				return 0, false
+			}
+		}
+	}
+	return weight, true
+}
+
+// GetReceiptsByHash retrieves the receipts for all transactions in a given
+// block. Returned receipts and their logs are read-only and can outlive their
+// cache entry. Batches exceeding the local cache budget remain readable from
+// durable storage without evicting useful smaller batches.
+func (bc *BlockChain) GetReceiptsByHash(hash common.Hash) types.Receipts {
+	bc.receiptsCacheMu.Lock()
+	if receipts, ok := bc.receiptsCache.Get(hash); ok {
+		bc.receiptsCacheMu.Unlock()
+		return receipts.(receiptCacheEntry).receipts
+	}
+	generation := bc.receiptsCacheGeneration
+	bc.receiptsCacheMu.Unlock()
 	number := rawdb.ReadHeaderNumber(bc.db, hash)
 	if number == nil {
 		return nil
@@ -1075,8 +1218,39 @@ func (bc *BlockChain) GetReceiptsByHash(hash common.Hash) types.Receipts {
 	if receipts == nil {
 		return nil
 	}
-	bc.receiptsCache.Add(hash, receipts)
+	weight, fits := receiptCacheWeight(receipts, bc.receiptsCacheLimit)
+	if !fits {
+		return receipts
+	}
+	bc.receiptsCacheMu.Lock()
+	defer bc.receiptsCacheMu.Unlock()
+	// A rewind may have purged while the durable read was in flight. The
+	// caller can finish its read without repopulating the post-purge cache.
+	if generation != bc.receiptsCacheGeneration {
+		return receipts
+	}
+	if _, exists := bc.receiptsCache.Get(hash); exists {
+		return receipts
+	}
+	for bc.receiptsCacheBytes > bc.receiptsCacheLimit-weight || bc.receiptsCache.Len() >= receiptsCacheLimit {
+		_, oldest, ok := bc.receiptsCache.RemoveOldest()
+		if !ok {
+			bc.receiptsCacheBytes = 0
+			break
+		}
+		bc.receiptsCacheBytes -= oldest.(receiptCacheEntry).weight
+	}
+	bc.receiptsCache.Add(hash, receiptCacheEntry{receipts: receipts, weight: weight})
+	bc.receiptsCacheBytes += weight
 	return receipts
+}
+
+func (bc *BlockChain) purgeReceiptsCache() {
+	bc.receiptsCacheMu.Lock()
+	defer bc.receiptsCacheMu.Unlock()
+	bc.receiptsCache.Purge()
+	bc.receiptsCacheBytes = 0
+	bc.receiptsCacheGeneration++
 }
 
 // GetBlocksFromHash returns the block corresponding to hash and up to n-1 ancestors.
@@ -1321,8 +1495,8 @@ func (bc *BlockChain) truncateAncient(head uint64) error {
 
 	// Clear out any stale content from the caches
 	bc.bodyCache.Purge()
-	bc.bodyRLPCache.Purge()
-	bc.receiptsCache.Purge()
+	bc.purgeBodyRLPCache()
+	bc.purgeReceiptsCache()
 	bc.blockCache.Purge()
 	bc.txLookupCache.Purge()
 	bc.futureBlocks.Purge()
@@ -1819,10 +1993,14 @@ func (bc *BlockChain) ValidateBlockForHotstuff(proposalID common.Hash, viewNumbe
 
 type hotstuffHeaderReader struct {
 	consensus.ChainHeaderReader
-	parent *types.Header
+	parent      *types.Header
+	excludeHash common.Hash // require full verification even for a persisted header
 }
 
 func (r *hotstuffHeaderReader) GetHeader(hash common.Hash, number uint64) *types.Header {
+	if r.excludeHash != (common.Hash{}) && hash == r.excludeHash {
+		return nil
+	}
 	if r != nil && r.parent != nil && r.parent.Number != nil && r.parent.Number.Uint64() == number && r.parent.Hash() == hash {
 		return types.CopyHeader(r.parent)
 	}
@@ -3361,6 +3539,11 @@ func (bc *BlockChain) insertFHSFinalizedChain(chain types.Blocks, verifySeals bo
 			return start, fmt.Errorf("same-hash Fair HotStuff canonical block has different unsigned contents at %d", chain[start].NumberU64())
 		}
 		if canonical.NumberU64() > 0 {
+			if bc.chainConfig.FairHotstuffSlotEnabled() {
+				if err := bc.engine.VerifyHeader(bc, canonical.Header(), false); err != nil {
+					return start, fmt.Errorf("invalid canonical Fair HotStuff slot header at %d: %w", canonical.NumberU64(), err)
+				}
+			}
 			_, _, err := proofs.ReconstructFHSQC(canonical)
 			if err != nil {
 				return start, fmt.Errorf("invalid canonical Fair HotStuff QC at %d: %w", canonical.NumberU64(), err)
@@ -3387,6 +3570,11 @@ func (bc *BlockChain) insertFHSFinalizedChain(chain types.Blocks, verifySeals bo
 
 	var pending *VerifiedProposal
 	if pending := bc.fhsSyncPending; pending != nil {
+		if bc.chainConfig.FairHotstuffSlotEnabled() {
+			if err := bc.engine.VerifyHeader(bc, pending.Block.Header(), false); err != nil {
+				return start, fmt.Errorf("invalid pending Fair HotStuff slot header: %w", err)
+			}
+		}
 		_, _, err := proofs.ReconstructFHSQC(pending.Block)
 		if err != nil {
 			return start, fmt.Errorf("invalid pending Fair HotStuff QC: %w", err)
@@ -4091,4 +4279,1054 @@ func (bc *BlockChain) SubscribeBlockProcessingEvent(ch chan<- bool) event.Subscr
 }
 func (bc *BlockChain) GetKeyChainReader() types.KeyChainReader {
 	return bc.keyBlockChain
+}
+
+// FHSCheckpointAnchor identifies a completed canonical execution-state checkpoint.
+type FHSCheckpointAnchor struct {
+	Number                                        uint64
+	BlockHash, StateRoot, GenesisHash, ConfigHash common.Hash
+}
+type FHSCheckpointLimits struct {
+	MaxNodes, MaxBytes uint64
+	// Non-genesis jobs explicitly bound the selected transaction prefix and its
+	// embedded key history, including both genesis blocks.
+	MaxHistoryBlocks, MaxKeyBlocks uint64
+}
+type FHSCheckpointProgress struct {
+	Anchor       FHSCheckpointAnchor
+	Nodes, Bytes uint64
+	Ready        bool
+}
+
+var (
+	ErrFHSCheckpointUnsupported = errors.New("checkpoint requires a canonical Fair HotStuff head and a shared key database")
+	ErrFHSCheckpointStale       = errors.New("checkpoint canonical identity or descriptor changed")
+	ErrFHSCheckpointLimit       = errors.New("checkpoint resource limit exceeded")
+)
+
+type fhsCheckpointItem struct {
+	hash        common.Hash
+	raw         []byte
+	role, depth uint8
+}
+type fhsCheckpointDescriptor struct {
+	Version       uint64
+	Anchor        FHSCheckpointAnchor
+	MetadataHash  common.Hash
+	MetadataBytes uint64
+}
+
+type fhsCheckpointDescriptorV2 struct {
+	Version       uint64
+	Anchor        FHSCheckpointAnchor
+	MetadataHash  common.Hash
+	MetadataBytes uint64
+	Limits        FHSCheckpointLimits
+}
+
+// FHSCheckpoint retains only a bounded cursor, not an extra dirty-trie GC pin.
+// Missing source content fails closed. Disk pruning is currently absent; a READY
+// descriptor is a logical disk pin, not a lease understood by future pruning.
+type FHSCheckpoint struct {
+	mu         sync.Mutex
+	bc         *BlockChain
+	progress   FHSCheckpointProgress
+	limits     FHSCheckpointLimits
+	descriptor fhsCheckpointDescriptor
+	metadata   []rawdb.FHSCheckpointRecord
+	pending    []fhsCheckpointItem
+	err        error
+	closed     bool
+	history    *fhsCheckpointHistory
+	verifying  bool
+}
+
+func fhsCheckpointCanonical(db ethdb.KeyValueReader, hash common.Hash) error {
+	// The fixed canonical lookup adds one 32-byte read to each Step's budget.
+	records, err := rawdb.ReadFHSCheckpointCanonical(db)
+	if err != nil {
+		return err
+	}
+	if records != hash {
+		return ErrFHSCheckpointStale
+	}
+	return nil
+}
+
+type fhsCheckpointHistoryPhase uint8
+
+const (
+	fhsCheckpointKeyGenesis fhsCheckpointHistoryPhase = iota
+	fhsCheckpointKeyConfig
+	fhsCheckpointTransactions
+	fhsCheckpointHeads
+	fhsCheckpointDone
+	fhsCheckpointGenesis
+)
+
+// A history cursor retains one fixed metadata group, one parent and one key epoch.
+// Each explicit job scans the selected prefix; it is never installed on import.
+type fhsCheckpointHistory struct {
+	bc, validation   *BlockChain
+	anchor           FHSCheckpointAnchor
+	limits           FHSCheckpointLimits
+	phase            fhsCheckpointHistoryPhase
+	keys             [][]byte
+	records          []rawdb.FHSCheckpointRecord
+	number, keyCount uint64
+	hash             common.Hash
+	previous         *types.Block
+	latest           *types.KeyBlock
+	signing          common.Hash
+	td               *big.Int
+	digest           common.Hash
+	metadataBytes    uint64
+	readOnly         bool
+}
+
+func newFHSCheckpointHistory(bc *BlockChain, anchor FHSCheckpointAnchor, limits FHSCheckpointLimits) (*fhsCheckpointHistory, error) {
+	if limits.MaxHistoryBlocks == 0 || limits.MaxKeyBlocks == 0 || anchor.Number >= limits.MaxHistoryBlocks ||
+		bc.chainConfig == nil || !bc.chainConfig.FixedCommittee || bc.keyBlockChain == nil || bc.keyBlockChain.genesisBlock == nil || bc.keyBlockChain.db != bc.db || bc.engine == nil {
+		return nil, ErrFHSCheckpointUnsupported
+	}
+	commitment, err := params.FairHotstuffGenesisCommitment(bc.chainConfig)
+	if err != nil || commitment != bc.genesisBlock.Header().MixDigest {
+		return nil, ErrFHSCheckpointStale
+	}
+	blocks, _ := lru.New(1)
+	headers, _ := lru.New(1)
+	numbers, _ := lru.New(1)
+	kbc := &KeyBlockChain{db: bc.db, blockCache: blocks, genesisBlock: bc.keyBlockChain.genesisBlock,
+		khc: &KeyHeaderChain{chainDb: bc.db, headerCache: headers, numberCache: numbers}}
+	validation := &BlockChain{db: bc.db, chainConfig: bc.chainConfig, genesisBlock: bc.genesisBlock, keyBlockChain: kbc, engine: bc.engine}
+	validation.validator = NewBlockValidator(bc.chainConfig, validation, bc.engine)
+	return &fhsCheckpointHistory{bc: bc, validation: validation, anchor: anchor, limits: limits, previous: bc.genesisBlock, td: bc.genesisBlock.Difficulty(), phase: fhsCheckpointGenesis}, nil
+}
+
+func (h *fhsCheckpointHistory) nextKey() ([]byte, uint64, error) {
+	if len(h.keys) != 0 {
+		return h.keys[0], 0, nil
+	}
+	var readBytes uint64
+	switch h.phase {
+	case fhsCheckpointKeyGenesis:
+		h.hash = h.bc.keyBlockChain.genesisBlock.Hash()
+		h.keys = rawdb.FHSCheckpointKeyKeys(0, h.hash)
+	case fhsCheckpointKeyConfig:
+		h.keys = [][]byte{rawdb.FHSCheckpointConfigKey(h.latest.Hash())}
+	case fhsCheckpointTransactions:
+		if h.number == h.anchor.Number {
+			h.phase = fhsCheckpointHeads
+			return h.nextKey()
+		}
+		h.number++
+		var err error
+		h.hash, err = rawdb.ReadFHSCheckpointCanonicalAt(h.bc.db, h.number)
+		if err != nil {
+			return nil, 32, err
+		}
+		readBytes = 32
+		h.keys = rawdb.FHSCheckpointBlockKeys(h.number, h.hash)
+	case fhsCheckpointHeads:
+		if h.readOnly {
+			h.phase = fhsCheckpointDone
+			return nil, 0, nil
+		}
+		h.keys = rawdb.FHSCheckpointHeadKeys()
+	case fhsCheckpointDone:
+		return nil, 0, nil
+	case fhsCheckpointGenesis:
+		h.keys = append(rawdb.FHSCheckpointBlockKeys(0, h.anchor.GenesisHash), rawdb.FHSCheckpointConfigKey(h.anchor.GenesisHash))
+	}
+	return h.keys[0], readBytes, nil
+}
+
+func fhsCheckpointDigest(previous common.Hash, record rawdb.FHSCheckpointRecord, header bool) (common.Hash, error) {
+	if header {
+		var value types.Header
+		if err := rlp.DecodeBytes(record.Value, &value); err != nil {
+			return common.Hash{}, err
+		}
+		value.SetSignInfoNull() // an independently valid recertification preserves identity
+		var err error
+		record.Value, err = rlp.EncodeToBytes(&value)
+		if err != nil {
+			return common.Hash{}, err
+		}
+	}
+	encoded, err := rlp.EncodeToBytes(record)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return crypto.Keccak256Hash(previous[:], encoded), nil
+}
+
+func (h *fhsCheckpointHistory) accept(record rawdb.FHSCheckpointRecord) error {
+	if len(h.keys) == 0 || !bytes.Equal(record.Key, h.keys[0]) {
+		return ErrFHSCheckpointStale
+	}
+	index := len(h.records)
+	if h.phase != fhsCheckpointHeads {
+		var err error
+		h.digest, err = fhsCheckpointDigest(h.digest, record, (h.phase == fhsCheckpointTransactions || h.phase == fhsCheckpointGenesis) && index == 2)
+		if err != nil {
+			return err
+		}
+		h.metadataBytes += uint64(len(record.Key) + len(record.Value))
+	}
+	h.records = append(h.records, record)
+	h.keys = h.keys[1:]
+	if len(h.keys) != 0 {
+		return nil
+	}
+	records := h.records
+	h.records = nil
+	switch h.phase {
+	case fhsCheckpointGenesis:
+		var config params.ChainConfig
+		if err := json.Unmarshal(records[6].Value, &config); err != nil {
+			return err
+		}
+		commitment, err := params.FairHotstuffGenesisCommitment(&config)
+		header, encodeErr := rlp.EncodeToBytes(h.bc.genesisBlock.Header())
+		body, bodyErr := rlp.EncodeToBytes(h.bc.genesisBlock.Body())
+		if err != nil || encodeErr != nil || bodyErr != nil || commitment != h.bc.genesisBlock.Header().MixDigest ||
+			crypto.Keccak256Hash(records[6].Value) != h.anchor.ConfigHash || !bytes.Equal(records[0].Value, h.anchor.GenesisHash[:]) ||
+			!bytes.Equal(records[1].Value, make([]byte, 8)) || !bytes.Equal(header, records[2].Value) || !bytes.Equal(body, records[3].Value) {
+			return ErrFHSCheckpointStale
+		}
+		td, _ := rlp.EncodeToBytes(h.bc.genesisBlock.Difficulty())
+		receipts, _ := rlp.EncodeToBytes(types.Receipts(nil))
+		if !bytes.Equal(td, records[4].Value) || !bytes.Equal(receipts, records[5].Value) {
+			return ErrFHSCheckpointStale
+		}
+		h.phase = fhsCheckpointKeyGenesis
+	case fhsCheckpointKeyGenesis:
+		var header types.KeyBlockHeader
+		var body types.KeyBlockBody
+		if err := rlp.DecodeBytes(records[2].Value, &header); err != nil {
+			return err
+		}
+		if err := rlp.DecodeBytes(records[3].Value, &body); err != nil {
+			return err
+		}
+		if header.Number == nil || !header.Number.IsUint64() || header.Difficulty == nil || header.Difficulty.Sign() < 0 ||
+			header.Hash() != h.hash || !bytes.Equal(records[0].Value, h.hash[:]) || len(records[1].Value) != 8 || binary.BigEndian.Uint64(records[1].Value) != header.Number.Uint64() {
+			return ErrFHSCheckpointStale
+		}
+		key := types.NewKeyBlockWithHeader(&header).WithBody(body.InPubKey, body.InAddress, body.OutPubKey, body.OutAddress, body.LeaderPubKey, body.LeaderAddress)
+		var committee bftview.Committee
+		if err := rlp.DecodeBytes(records[5].Value, &committee); err != nil {
+			return err
+		}
+		for _, node := range committee.List {
+			if node == nil {
+				return ErrFHSCheckpointStale
+			}
+		}
+		if committee.RlpHash() != key.CommitteeHash() || len(committee.List) < 2 {
+			return ErrFHSCheckpointStale
+		}
+		var td big.Int
+		if err := rlp.DecodeBytes(records[4].Value, &td); err != nil {
+			return err
+		}
+		if td.Cmp(key.Difficulty()) != 0 {
+			return ErrFHSCheckpointStale
+		}
+		if key.NumberU64() != 0 || key.Hash() != h.bc.keyBlockChain.genesisBlock.Hash() {
+			return ErrFHSCheckpointStale
+		}
+		h.phase = fhsCheckpointKeyConfig
+		h.keyCount++
+		if h.keyCount > h.limits.MaxKeyBlocks {
+			return ErrFHSCheckpointLimit
+		}
+		h.latest = key
+		kbc := h.validation.keyBlockChain
+		kbc.blockCache.Add(key.Hash(), key)
+		kbc.khc.headerCache.Add(key.Hash(), key.Header())
+		kbc.khc.numberCache.Add(key.Hash(), key.NumberU64())
+		kbc.currentBlock.Store(key)
+	case fhsCheckpointKeyConfig:
+		var config params.ChainConfig
+		if err := json.Unmarshal(records[0].Value, &config); err != nil {
+			return err
+		}
+		commitment, err := params.FairHotstuffGenesisCommitment(&config)
+		if err != nil || commitment != h.bc.genesisBlock.Header().MixDigest {
+			return ErrFHSCheckpointStale
+		}
+		if len(config.GenCommittee) < 2 {
+			return ErrFHSCheckpointStale
+		}
+		expected := (&GenesisKey{Config: &config}).ToBlock()
+		nodes := make([]*common.Cnode, len(config.GenCommittee))
+		for index, node := range config.GenCommittee {
+			if index < 0 || index >= len(nodes) {
+				return ErrFHSCheckpointStale
+			}
+			copy := node
+			nodes[index] = &copy
+		}
+		for _, node := range nodes {
+			if node == nil {
+				return ErrFHSCheckpointStale
+			}
+		}
+		body, err := rlp.EncodeToBytes(expected.Body())
+		if err != nil {
+			return err
+		}
+		actual, err := rlp.EncodeToBytes(h.latest.Body())
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(body, actual) || (&bftview.Committee{List: nodes}).RlpHash() != h.latest.CommitteeHash() {
+			return ErrFHSCheckpointStale
+		}
+		h.signing = h.latest.Hash()
+		h.phase = fhsCheckpointTransactions
+	case fhsCheckpointTransactions:
+		var header types.Header
+		var body types.Body
+		if err := rlp.DecodeBytes(records[2].Value, &header); err != nil {
+			return err
+		}
+		if header.Number == nil || !header.Number.IsUint64() || header.Number.Uint64() != h.number || header.Hash() != h.hash ||
+			!bytes.Equal(records[0].Value, h.hash[:]) || len(records[1].Value) != 8 || binary.BigEndian.Uint64(records[1].Value) != h.number {
+			return ErrFHSCheckpointStale
+		}
+		if err := rlp.DecodeBytes(records[3].Value, &body); err != nil {
+			return err
+		}
+		block := types.NewBlockWithHeader(&header).WithBody(body.Transactions, body.Uncles)
+		block.AttachCommonTxData(body.CommonTxAdmissionBatches, body.CommonTxAdmissionRefs, body.CommonTxRewards)
+		storedBody, err := rlp.EncodeToBytes(block.Body())
+		if err != nil || !bytes.Equal(storedBody, records[3].Value) {
+			return ErrFHSCheckpointStale
+		}
+		var td big.Int
+		if err := rlp.DecodeBytes(records[4].Value, &td); err != nil {
+			return err
+		}
+		if header.Difficulty == nil || new(big.Int).Add(h.td, header.Difficulty).Cmp(&td) != 0 {
+			return ErrFHSCheckpointStale
+		}
+		h.td = &td
+		var stored []*types.ReceiptForStorage
+		if err := rlp.DecodeBytes(records[5].Value, &stored); err != nil {
+			return err
+		}
+		receipts := make(types.Receipts, len(stored))
+		for i, receipt := range stored {
+			if receipt == nil {
+				return ErrFHSCheckpointStale
+			}
+			receipts[i] = (*types.Receipt)(receipt)
+		}
+		if len(receipts) != len(block.Transactions()) || types.DeriveSha(receipts, new(trie.Trie)) != header.ReceiptHash {
+			return ErrFHSCheckpointStale
+		}
+		if len(receipts) > 0 && receipts[len(receipts)-1].CumulativeGasUsed != header.GasUsed {
+			return ErrFHSCheckpointStale
+		}
+		if block.BlockType() == types.Key_Block {
+			return ErrFHSCheckpointUnsupported
+		} else if err := h.validateBlock(block); err != nil {
+			return err
+		}
+	case fhsCheckpointHeads:
+		for i, record := range records {
+			want := h.anchor.BlockHash
+			if i >= 3 {
+				want = h.latest.Hash()
+			}
+			if !bytes.Equal(record.Value, want[:]) {
+				return ErrFHSCheckpointStale
+			}
+		}
+		h.phase = fhsCheckpointDone
+	}
+	return nil
+}
+
+func (h *fhsCheckpointHistory) validateBlock(block *types.Block) error {
+	if block.ParentHash() != h.previous.Hash() || block.NumberU64() != h.previous.NumberU64()+1 {
+		return ErrFHSCheckpointStale
+	}
+	if err := block.SanityCheck(); err != nil {
+		return err
+	}
+	reader := &hotstuffHeaderReader{ChainHeaderReader: h.bc, parent: h.previous.Header(), excludeHash: block.Hash()}
+	if err := h.bc.engine.VerifyHeader(reader, block.Header(), false); err != nil {
+		return err
+	}
+	validator := h.validation.validator.(*BlockValidator)
+	if err := validator.ValidateBodyForHotstuffSync(block, true); err != nil {
+		return err
+	}
+	if err := validateFHSPrevRandao(h.bc.chainConfig, block, h.validation.keyBlockChain); err != nil {
+		return err
+	}
+	if block.KeyHash() != h.latest.Hash() {
+		return ErrFHSCheckpointUnsupported
+	}
+	if err := h.validation.validateFHSKeyActivationWithProof(block, h.signing, h.latest); err != nil {
+		return err
+	}
+	proof, present, err := DecodeFHSCommitProof(block)
+	if err != nil {
+		return err
+	}
+	if !present {
+		return ErrFHSCommitProofRequired
+	}
+	if err := h.validation.VerifyFHSCommitProof(block, proof); err != nil {
+		return err
+	}
+	if block.NumberU64() == h.anchor.Number && (block.Hash() != h.anchor.BlockHash || block.Root() != h.anchor.StateRoot) {
+		return ErrFHSCheckpointStale
+	}
+	h.signing, h.previous = block.KeyHash(), block
+	return nil
+}
+
+// BeginFHSCheckpoint opts into a checkpoint without vote or import hooks.
+// Limits bound accepted valid-record work, not whole-Get allocation/physical RSS.
+// Non-genesis jobs require FixedCommittee, the genesis key epoch, a quiescent
+// canonical full head and a shared key DB. Key transitions are unsupported.
+// Step walks its complete state closure and transaction/key prefix explicitly;
+// these scans are never automatic per-block work. No trie GC lease is changed.
+func (bc *BlockChain) BeginFHSCheckpoint(ctx context.Context, hash common.Hash, limits FHSCheckpointLimits) (*FHSCheckpoint, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if limits.MaxNodes == 0 || limits.MaxBytes == 0 {
+		return nil, ErrFHSCheckpointLimit
+	}
+	if !atomic.CompareAndSwapInt32(&bc.fhsCheckpointActive, 0, 1) {
+		return nil, errors.New("checkpoint already active")
+	}
+	ok := false
+	defer func() {
+		if !ok {
+			atomic.StoreInt32(&bc.fhsCheckpointActive, 0)
+		}
+	}()
+	bc.chainmu.RLock()
+	genesis := bc.genesisBlock
+	bc.chainmu.RUnlock()
+	if genesis == nil {
+		return nil, ErrFHSCheckpointUnsupported
+	}
+	if err := fhsCheckpointCanonical(bc.db, genesis.Hash()); err != nil {
+		return nil, err
+	}
+	records, err := rawdb.FHSCheckpointGenesisRecords(bc.db, genesis.Hash(), limits.MaxBytes)
+	if err != nil {
+		return nil, err
+	}
+	var config params.ChainConfig
+	if err := json.Unmarshal(records[len(records)-1].Value, &config); err != nil {
+		return nil, err
+	}
+	commitment, err := params.FairHotstuffGenesisCommitment(&config)
+	if err != nil || !config.FairHotstuff || commitment != genesis.Header().MixDigest {
+		return nil, ErrFHSCheckpointStale
+	}
+	expectedHeader, err := rlp.EncodeToBytes(genesis.Header())
+	if err != nil {
+		return nil, err
+	}
+	expectedBody, err := rlp.EncodeToBytes(genesis.Body())
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(records[2].Value, expectedHeader) || !bytes.Equal(records[3].Value, expectedBody) {
+		return nil, ErrFHSCheckpointStale
+	}
+	expectedTD, err := rlp.EncodeToBytes(genesis.Difficulty())
+	if err != nil {
+		return nil, err
+	}
+	expectedReceipts, err := rlp.EncodeToBytes(types.Receipts(nil))
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(records[1].Value, make([]byte, 8)) || !bytes.Equal(records[4].Value, expectedTD) || !bytes.Equal(records[5].Value, expectedReceipts) {
+		return nil, ErrFHSCheckpointStale
+	}
+	anchor := FHSCheckpointAnchor{BlockHash: hash, GenesisHash: genesis.Hash(), StateRoot: genesis.Root(), ConfigHash: crypto.Keccak256Hash(records[len(records)-1].Value)}
+	var history *fhsCheckpointHistory
+	var targetBytes uint64
+	if hash != genesis.Hash() {
+		if bc.keyBlockChain == nil {
+			return nil, ErrFHSCheckpointUnsupported
+		}
+		bc.keyBlockChain.chainmu.RLock()
+		keyHead, _ := bc.keyBlockChain.currentBlock.Load().(*types.KeyBlock)
+		bc.keyBlockChain.chainmu.RUnlock()
+		if keyHead == nil || keyHead.NumberU64() != 0 {
+			return nil, ErrFHSCheckpointUnsupported
+		}
+		number, err := rawdb.ReadFHSCheckpointNumber(bc.db, hash)
+		if err != nil {
+			return nil, err
+		}
+		if number == 0 || limits.MaxHistoryBlocks == 0 || number >= limits.MaxHistoryBlocks || limits.MaxKeyBlocks == 0 {
+			return nil, ErrFHSCheckpointLimit
+		}
+		bc.chainmu.RLock()
+		head, _ := bc.currentBlock.Load().(*types.Block)
+		bc.chainmu.RUnlock()
+		if head == nil || head.Hash() != hash || head.NumberU64() != number {
+			return nil, ErrFHSCheckpointUnsupported
+		}
+		value, err := bc.db.Get(rawdb.FHSCheckpointBlockKeys(number, hash)[2])
+		if err != nil {
+			return nil, err
+		}
+		targetBytes = uint64(len(value)) + 8 + 32
+		if targetBytes > limits.MaxBytes {
+			return nil, ErrFHSCheckpointLimit
+		}
+		var header types.Header
+		if err := rlp.DecodeBytes(value, &header); err != nil {
+			return nil, err
+		}
+		if header.Number == nil || !header.Number.IsUint64() || header.Number.Uint64() != number || header.Hash() != hash {
+			return nil, ErrFHSCheckpointStale
+		}
+		anchor.Number, anchor.StateRoot = number, header.Root
+		history, err = newFHSCheckpointHistory(bc, anchor, limits)
+		if err != nil {
+			return nil, err
+		}
+	}
+	encoded, err := rlp.EncodeToBytes(records)
+	if err != nil {
+		return nil, err
+	}
+	var metadataBytes uint64
+	for _, record := range records {
+		metadataBytes += uint64(len(record.Key) + len(record.Value))
+	}
+	setupBytes := metadataBytes + 32 + targetBytes + uint64(len(encoded)+len(expectedHeader)+len(expectedBody)+len(expectedTD)+len(expectedReceipts))
+	if setupBytes > limits.MaxBytes || limits.MaxNodes < uint64(len(records)) {
+		return nil, ErrFHSCheckpointLimit
+	}
+	cp := &FHSCheckpoint{bc: bc, limits: limits, progress: FHSCheckpointProgress{Anchor: anchor, Bytes: setupBytes, Nodes: uint64(len(records))}, metadata: records,
+		descriptor: fhsCheckpointDescriptor{1, anchor, crypto.Keccak256Hash(encoded), metadataBytes}, history: history}
+	if history != nil {
+		cp.metadata = nil
+		cp.descriptor.Version = 2
+	}
+	if anchor.StateRoot != types.EmptyRootHash {
+		cp.pending = []fhsCheckpointItem{{hash: anchor.StateRoot}}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	ok = true
+	return cp, nil
+}
+
+// Step synchronously acknowledges one bounded record. READY is always a separate
+// nonempty synchronous batch after all closure and metadata batches succeeded.
+// Get/WriteSync cannot be interrupted in flight; ctx is checked around them.
+// A backend may apply READY then return an error. The process-local publication
+// latch rejects that uncertain marker until a full successful retry or reopening.
+func (cp *FHSCheckpoint) Step(ctx context.Context, maxNodes, maxBytes uint64) (FHSCheckpointProgress, error) {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	fail := func(err error) (FHSCheckpointProgress, error) { cp.err = err; return cp.progress, err }
+	if cp.closed {
+		return cp.progress, errors.New("checkpoint closed")
+	}
+	if cp.err != nil || cp.progress.Ready {
+		return cp.progress, cp.err
+	}
+	if err := ctx.Err(); err != nil {
+		return fail(err)
+	}
+	if maxNodes == 0 || maxBytes == 0 {
+		return fail(ErrFHSCheckpointLimit)
+	}
+	if maxBytes < 32 || cp.progress.Bytes > cp.limits.MaxBytes || cp.limits.MaxBytes-cp.progress.Bytes < 32 {
+		return fail(ErrFHSCheckpointLimit)
+	}
+	// Match the getter's publicationMu -> chainmu lock order. Holding this
+	// through WriteSync prevents readers observing KV visibility before fsync ack.
+	readyWrite := len(cp.pending) == 0 && len(cp.metadata) == 0 && (cp.history == nil || (cp.verifying && cp.history.phase == fhsCheckpointDone))
+	if readyWrite {
+		cp.bc.fhsCheckpointPublicationMu.Lock()
+		defer cp.bc.fhsCheckpointPublicationMu.Unlock()
+	}
+	// Metadata and READY writes serialize with ResetWithGenesisBlock. Only
+	// these small bounded records hold chainmu over synchronous I/O; state-node
+	// traversal and its writes run outside chainmu. Fsync latency is unbounded.
+	metadataWrite := len(cp.pending) == 0
+	cp.bc.chainmu.RLock()
+	if metadataWrite {
+		defer cp.bc.chainmu.RUnlock()
+	}
+	canonicalErr := fhsCheckpointCanonical(cp.bc.db, cp.progress.Anchor.GenesisHash)
+	checkBytes := uint64(32)
+	if cp.history != nil && canonicalErr == nil {
+		if maxBytes < 64 || cp.limits.MaxBytes-cp.progress.Bytes < 64 {
+			canonicalErr = ErrFHSCheckpointLimit
+		} else {
+			var hash common.Hash
+			hash, canonicalErr = rawdb.ReadFHSCheckpointCanonicalAt(cp.bc.db, cp.progress.Anchor.Number)
+			head, _ := cp.bc.currentBlock.Load().(*types.Block)
+			if canonicalErr == nil && (hash != cp.progress.Anchor.BlockHash || head == nil || head.Hash() != hash || head.NumberU64() != cp.progress.Anchor.Number) {
+				canonicalErr = ErrFHSCheckpointStale
+			}
+			checkBytes = 64
+		}
+	}
+	if metadataWrite && cp.history != nil {
+		cp.bc.keyBlockChain.chainmu.RLock()
+		defer cp.bc.keyBlockChain.chainmu.RUnlock()
+	}
+	if !metadataWrite {
+		cp.bc.chainmu.RUnlock()
+	}
+	if canonicalErr != nil {
+		return fail(canonicalErr)
+	}
+	cp.progress.Bytes += checkBytes
+	maxBytes -= checkBytes
+	var record rawdb.FHSCheckpointRecord
+	var item fhsCheckpointItem
+	isNode, ready, isHistory := len(cp.pending) > 0, false, false
+	if isNode {
+		item = cp.pending[len(cp.pending)-1]
+		if item.raw != nil {
+			record.Value = item.raw
+		} else if item.role == 2 {
+			var err error
+			record, err = rawdb.ReadFHSCheckpointCode(cp.bc.db, item.hash)
+			if err != nil {
+				return fail(err)
+			}
+		} else {
+			record.Key = item.hash.Bytes()
+			var err error
+			if cp.bc.stateCache != nil {
+				record.Value, _ = cp.bc.stateCache.TrieDB().CachedNode(item.hash)
+			}
+			if record.Value == nil {
+				record.Value, err = cp.bc.db.Get(record.Key)
+			}
+			if err != nil {
+				return fail(fmt.Errorf("checkpoint node %s: %w", item.hash, err))
+			}
+		}
+	} else if len(cp.metadata) > 0 {
+		record = cp.metadata[0]
+	} else if cp.history != nil && !readyWrite {
+		key, extra, err := cp.history.nextKey()
+		if err != nil {
+			return fail(err)
+		}
+		if extra > maxBytes || extra > cp.limits.MaxBytes-cp.progress.Bytes {
+			return fail(ErrFHSCheckpointLimit)
+		}
+		cp.progress.Bytes += extra
+		maxBytes -= extra
+		if len(key) == 0 {
+			if cp.verifying && cp.history.digest != cp.descriptor.MetadataHash {
+				return fail(ErrFHSCheckpointStale)
+			}
+			return cp.progress, nil
+		}
+		record.Key = key
+		record.Value, err = cp.bc.db.Get(key)
+		if err != nil {
+			return fail(fmt.Errorf("checkpoint metadata %x: %w", key, err))
+		}
+		isHistory = true
+	} else {
+		var data []byte
+		var err error
+		if cp.history == nil {
+			data, err = rlp.EncodeToBytes(cp.descriptor)
+		} else {
+			var headBytes uint64
+			for _, key := range rawdb.FHSCheckpointHeadKeys() {
+				headBytes += uint64(len(key)) + common.HashLength
+			}
+			if maxBytes < headBytes || cp.limits.MaxBytes-cp.progress.Bytes < headBytes {
+				return fail(ErrFHSCheckpointLimit)
+			}
+			if err := cp.validateHeads(); err != nil {
+				return fail(err)
+			}
+			cp.progress.Bytes += headBytes
+			maxBytes -= headBytes
+			data, err = rlp.EncodeToBytes(fhsCheckpointDescriptorV2{2, cp.progress.Anchor, cp.descriptor.MetadataHash, cp.descriptor.MetadataBytes, cp.limits})
+		}
+		if err != nil {
+			return fail(err)
+		}
+		record = rawdb.FHSCheckpointReadyRecord(data)
+		ready = true
+		if len(cp.bc.fhsCheckpointAcknowledged) == 0 && !cp.bc.fhsCheckpointUncertain {
+			reserve := uint64(512 + len(record.Key))
+			if reserve > maxBytes || reserve > cp.limits.MaxBytes-cp.progress.Bytes {
+				return fail(ErrFHSCheckpointLimit)
+			}
+			previous, err := rawdb.ReadFHSCheckpointReady(cp.bc.db)
+			if err != nil {
+				return fail(err)
+			}
+			if len(previous) > 512 {
+				return fail(ErrFHSCheckpointStale)
+			}
+			cp.bc.fhsCheckpointAcknowledged = common.CopyBytes(previous)
+			readBytes := uint64(len(previous) + len(record.Key))
+			cp.progress.Bytes += readBytes
+			maxBytes -= readBytes
+		}
+	}
+	size := uint64(len(record.Key)) + uint64(len(record.Value))
+	// Source reads and writes are both charged. Captured metadata was read in Begin.
+	if (isNode && item.raw == nil) || isHistory {
+		size *= 2
+	}
+	if isHistory && cp.verifying {
+		size /= 2
+	}
+	if len(record.Value) == 0 || size > maxBytes || cp.progress.Nodes >= cp.limits.MaxNodes || size > cp.limits.MaxBytes-cp.progress.Bytes {
+		return fail(ErrFHSCheckpointLimit)
+	}
+	if isNode && item.raw == nil && crypto.Keccak256Hash(record.Value) != item.hash {
+		return fail(errors.New("checkpoint content hash mismatch"))
+	}
+	// Decode only after admission to the byte budget. A valid embedded node is <32
+	// bytes; each parsed node contributes one unit, and branch fanout is at most 16.
+	var children []fhsCheckpointItem
+	if isNode && item.role != 2 {
+		var err error
+		children, err = fhsCheckpointChildren(item, record.Value)
+		if err != nil {
+			return fail(err)
+		}
+		if uint64(len(cp.pending)+len(children)) > cp.limits.MaxNodes {
+			return fail(ErrFHSCheckpointLimit)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return fail(err)
+	}
+	if len(record.Key) > 0 && !(isHistory && cp.verifying) {
+		batch := cp.bc.db.NewBatch()
+		syncBatch, ok := batch.(ethdb.SyncBatch)
+		if !ok {
+			return fail(errors.New("checkpoint database lacks synchronous batches"))
+		}
+		if err := batch.Put(record.Key, record.Value); err != nil {
+			return fail(err)
+		}
+		if ready {
+			cp.bc.fhsCheckpointUncertain = true
+		}
+		if err := syncBatch.WriteSync(); err != nil {
+			return fail(err)
+		}
+		if ready {
+			cp.bc.fhsCheckpointUncertain = false
+			cp.bc.fhsCheckpointAcknowledged = common.CopyBytes(record.Value)
+		}
+	}
+	cp.progress.Nodes++
+	cp.progress.Bytes += size
+	if isNode {
+		cp.pending = append(cp.pending[:len(cp.pending)-1], children...)
+	} else if isHistory {
+		if err := cp.history.accept(record); err != nil {
+			return fail(err)
+		}
+		if cp.history.phase == fhsCheckpointDone {
+			if cp.verifying {
+				if cp.history.digest != cp.descriptor.MetadataHash {
+					return fail(ErrFHSCheckpointStale)
+				}
+			} else {
+				cp.descriptor.MetadataHash, cp.descriptor.MetadataBytes = cp.history.digest, cp.history.metadataBytes
+				history, err := newFHSCheckpointHistory(cp.bc, cp.progress.Anchor, cp.limits)
+				if err != nil {
+					return fail(err)
+				}
+				history.readOnly = true
+				cp.history, cp.verifying = history, true
+			}
+		}
+	} else if !ready {
+		cp.metadata = cp.metadata[1:]
+	}
+	if err := ctx.Err(); err != nil {
+		return fail(err)
+	}
+	cp.progress.Ready = ready
+	return cp.progress, nil
+}
+
+func (cp *FHSCheckpoint) validateHeads() error {
+	if cp.history == nil {
+		return nil
+	}
+	head := cp.bc.keyBlockChain.CurrentBlock()
+	if head == nil || cp.history.latest == nil || head.Hash() != cp.history.latest.Hash() {
+		return ErrFHSCheckpointStale
+	}
+	for i, key := range rawdb.FHSCheckpointHeadKeys() {
+		value, err := cp.bc.db.Get(key)
+		if err != nil {
+			return err
+		}
+		want := cp.progress.Anchor.BlockHash
+		if i >= 3 {
+			want = head.Hash()
+		}
+		if !bytes.Equal(value, want[:]) {
+			return ErrFHSCheckpointStale
+		}
+	}
+	return nil
+}
+
+func fhsCheckpointChildren(item fhsCheckpointItem, blob []byte) ([]fhsCheckpointItem, error) {
+	var fields []rlp.RawValue
+	if err := rlp.DecodeBytes(blob, &fields); err != nil {
+		return nil, err
+	}
+	var result []fhsCheckpointItem
+	child := func(raw []byte, depth uint8) error {
+		kind, value, rest, err := rlp.Split(raw)
+		if err != nil || len(rest) != 0 || depth > 64 {
+			return errors.New("invalid checkpoint trie reference")
+		}
+		next := fhsCheckpointItem{role: item.role, depth: depth}
+		if kind == rlp.List {
+			if len(raw) >= 32 {
+				return errors.New("oversized embedded checkpoint node")
+			}
+			next.raw = common.CopyBytes(raw)
+		} else {
+			if len(value) == 0 {
+				return nil
+			}
+			if len(value) != 32 {
+				return errors.New("invalid checkpoint child hash")
+			}
+			next.hash = common.BytesToHash(value)
+		}
+		result = append(result, next)
+		return nil
+	}
+	leaf := func(raw []byte, depth uint8) error {
+		var value []byte
+		if err := rlp.DecodeBytes(raw, &value); err != nil {
+			return err
+		}
+		if len(value) == 0 {
+			return errors.New("empty checkpoint leaf")
+		}
+		if depth != 64 {
+			return errors.New("invalid checkpoint secure leaf depth")
+		}
+		if item.role == 1 {
+			scalar, rest, err := rlp.SplitString(value)
+			if err != nil || len(rest) != 0 || len(scalar) == 0 || len(scalar) > 32 || scalar[0] == 0 {
+				return errors.New("invalid checkpoint storage scalar")
+			}
+		}
+		if item.role == 0 {
+			var account state.Account
+			if err := rlp.DecodeBytes(value, &account); err != nil {
+				return err
+			}
+			if len(account.CodeHash) != 32 {
+				return errors.New("invalid checkpoint code hash")
+			}
+			if account.Root != types.EmptyRootHash {
+				result = append(result, fhsCheckpointItem{hash: account.Root, role: 1})
+			}
+			code := common.BytesToHash(account.CodeHash)
+			if code != crypto.Keccak256Hash(nil) {
+				result = append(result, fhsCheckpointItem{hash: code, role: 2})
+			}
+		}
+		return nil
+	}
+	switch len(fields) {
+	case 17:
+		if item.depth >= 64 {
+			return nil, errors.New("checkpoint branch exceeds secure key")
+		}
+		for _, raw := range fields[:16] {
+			if err := child(raw, item.depth+1); err != nil {
+				return nil, err
+			}
+		}
+		if len(result) < 2 {
+			return nil, errors.New("checkpoint branch has fewer than two children")
+		}
+		var value []byte
+		if err := rlp.DecodeBytes(fields[16], &value); err != nil || len(value) != 0 {
+			return nil, errors.New("invalid checkpoint branch value")
+		}
+	case 2:
+		var path []byte
+		if err := rlp.DecodeBytes(fields[0], &path); err != nil || len(path) == 0 || path[0]>>4 > 3 {
+			return nil, errors.New("invalid checkpoint compact path")
+		}
+		odd := path[0] >> 4 & 1
+		if odd == 0 && path[0]&15 != 0 {
+			return nil, errors.New("invalid checkpoint compact padding")
+		}
+		depth := int(item.depth) + len(path)*2 - 2 + int(odd)
+		if depth > 64 {
+			return nil, errors.New("checkpoint path exceeds secure key")
+		}
+		if path[0]>>4&2 != 0 {
+			if err := leaf(fields[1], uint8(depth)); err != nil {
+				return nil, err
+			}
+		} else {
+			if depth == int(item.depth) {
+				return nil, errors.New("empty checkpoint extension")
+			}
+			before := len(result)
+			if err := child(fields[1], uint8(depth)); err != nil {
+				return nil, err
+			}
+			if len(result) == before {
+				return nil, errors.New("empty checkpoint extension child")
+			}
+		}
+	default:
+		return nil, errors.New("invalid checkpoint trie node")
+	}
+	return result, nil
+}
+
+// Close drops the job's own cursor only; it performs no recursive trie cleanup.
+func (cp *FHSCheckpoint) Close() {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	if !cp.closed {
+		cp.closed = true
+		cp.pending = nil
+		cp.metadata = nil
+		cp.history = nil
+		atomic.StoreInt32(&cp.bc.fhsCheckpointActive, 0)
+	}
+}
+
+// FHSCheckpointAnchor validates READY against persisted metadata. Version two
+// explicitly rescans the bounded canonical/key prefix and its proofs, including
+// after restart; it does not rescan state. Mutable head markers may advance after
+// acknowledgment, while the completed state closure remains a logical disk pin.
+func (bc *BlockChain) FHSCheckpointAnchor() (FHSCheckpointAnchor, error) {
+	bc.fhsCheckpointPublicationMu.Lock()
+	defer bc.fhsCheckpointPublicationMu.Unlock()
+	if bc.fhsCheckpointUncertain && len(bc.fhsCheckpointAcknowledged) == 0 {
+		return FHSCheckpointAnchor{}, errors.New("checkpoint READY durability is uncertain")
+	}
+	bc.chainmu.RLock()
+	defer bc.chainmu.RUnlock()
+	var data []byte
+	var err error
+	if bc.fhsCheckpointUncertain {
+		data = bc.fhsCheckpointAcknowledged
+	} else {
+		data, err = rawdb.ReadFHSCheckpointReady(bc.db)
+	}
+	if err != nil {
+		return FHSCheckpointAnchor{}, err
+	}
+	var descriptor fhsCheckpointDescriptor
+	if len(data) == 0 || len(data) > 512 {
+		return FHSCheckpointAnchor{}, ErrFHSCheckpointStale
+	}
+	var fields []rlp.RawValue
+	if err := rlp.DecodeBytes(data, &fields); err != nil || len(fields) == 0 {
+		return FHSCheckpointAnchor{}, ErrFHSCheckpointStale
+	}
+	var version uint64
+	if err := rlp.DecodeBytes(fields[0], &version); err != nil {
+		return FHSCheckpointAnchor{}, err
+	}
+	if version == 2 {
+		var descriptor fhsCheckpointDescriptorV2
+		if err := rlp.DecodeBytes(data, &descriptor); err != nil {
+			return FHSCheckpointAnchor{}, err
+		}
+		anchor := descriptor.Anchor
+		if anchor.Number == 0 || anchor.GenesisHash != bc.genesisBlock.Hash() || descriptor.MetadataBytes > descriptor.Limits.MaxBytes {
+			return FHSCheckpointAnchor{}, ErrFHSCheckpointStale
+		}
+		history, err := newFHSCheckpointHistory(bc, anchor, descriptor.Limits)
+		if err != nil {
+			return FHSCheckpointAnchor{}, err
+		}
+		history.readOnly = true
+		var nodes, bytes uint64
+		for {
+			key, extra, err := history.nextKey()
+			if err != nil {
+				return FHSCheckpointAnchor{}, err
+			}
+			if len(key) == 0 {
+				break
+			}
+			value, err := bc.db.Get(key)
+			if err != nil {
+				return FHSCheckpointAnchor{}, err
+			}
+			size := uint64(len(key)) + uint64(len(value)) + extra
+			if len(value) == 0 || nodes >= descriptor.Limits.MaxNodes || bytes > descriptor.Limits.MaxBytes || size > descriptor.Limits.MaxBytes-bytes {
+				return FHSCheckpointAnchor{}, ErrFHSCheckpointLimit
+			}
+			nodes++
+			bytes += size
+			if err := history.accept(rawdb.FHSCheckpointRecord{Key: key, Value: value}); err != nil {
+				return FHSCheckpointAnchor{}, err
+			}
+		}
+		if history.digest != descriptor.MetadataHash {
+			return FHSCheckpointAnchor{}, ErrFHSCheckpointStale
+		}
+		bc.fhsCheckpointAcknowledged = common.CopyBytes(data)
+		return anchor, nil
+	}
+	if err := rlp.DecodeBytes(data, &descriptor); err != nil {
+		return FHSCheckpointAnchor{}, err
+	}
+	anchor := descriptor.Anchor
+	if descriptor.Version != 1 || anchor.Number != 0 || anchor.BlockHash != anchor.GenesisHash {
+		return FHSCheckpointAnchor{}, ErrFHSCheckpointStale
+	}
+	records, err := rawdb.FHSCheckpointGenesisRecords(bc.db, anchor.BlockHash, descriptor.MetadataBytes)
+	if err != nil {
+		return FHSCheckpointAnchor{}, err
+	}
+	encoded, err := rlp.EncodeToBytes(records)
+	if err != nil {
+		return FHSCheckpointAnchor{}, err
+	}
+	var header types.Header
+	if err := rlp.DecodeBytes(records[2].Value, &header); err != nil {
+		return FHSCheckpointAnchor{}, err
+	}
+	if header.Hash() != anchor.BlockHash || header.Root != anchor.StateRoot || crypto.Keccak256Hash(encoded) != descriptor.MetadataHash || crypto.Keccak256Hash(records[len(records)-1].Value) != anchor.ConfigHash {
+		return FHSCheckpointAnchor{}, ErrFHSCheckpointStale
+	}
+	bc.fhsCheckpointAcknowledged = common.CopyBytes(data)
+
+	return anchor, nil
 }
