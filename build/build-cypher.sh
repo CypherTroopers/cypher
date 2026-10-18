@@ -140,6 +140,7 @@ trap cleanup EXIT
 HERUMI_REF_FILE="${REPO_ROOT}/build/herumi-bls.ref"
 [[ -s "${HERUMI_REF_FILE}" ]] || die "Missing Herumi ref file: ${HERUMI_REF_FILE}"
 read -r HERUMI_REF < "${HERUMI_REF_FILE}"
+HERUMI_REF="${HERUMI_REF%$'\r'}"
 [[ "${HERUMI_REF}" =~ ^[0-9a-f]{40}$ ]] || die "Invalid Herumi commit: ${HERUMI_REF}"
 
 # The reviewed fork only adds bounded-read APIs; ordinary LevelDB source files
