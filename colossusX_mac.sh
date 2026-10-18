@@ -3,8 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 cd "$SCRIPT_DIR"
-source "${SCRIPT_DIR}/build/browser-relay.sh"
-configure_browser_relay "$SCRIPT_DIR" "$@"
 
 DATADIR="chaindbname"
 
@@ -99,7 +97,6 @@ echo "==> Bootnode host: ${BOOTNODE_HOST}"
 echo "==> RPC bind: ${RPC_BIND}"
 echo "==> WS bind: ${WS_BIND}"
 
-# Relay and extra arguments apply only to startup, never genesis initialization.
 exec "${CYPHER_BIN}" \
   --verbosity 1 \
   --rnetport 7200 \
@@ -120,5 +117,4 @@ exec "${CYPHER_BIN}" \
   --networkid 10101919 \
   --gcmode archive \
   --bootnodes "${BOOTNODES}" \
-  ${CYPHER_RELAY_ARGS[@]+"${CYPHER_RELAY_ARGS[@]}"} \
   "$@" console
