@@ -99,74 +99,6 @@ if (!(Test-Path -Path $GENESIS_FILE -PathType Leaf)) {
   exit 1
 }
 
-# Relay defaults ON for this Common launcher. Explicit node flags override the
-# environment; keep caller arguments intact and validate before genesis init.
-$RelaySetting = $env:CYPHER_BROWSER_RELAY
-if ([string]::IsNullOrEmpty($RelaySetting)) { $RelaySetting = "1" }
-if ($RelaySetting -cnotin @("0", "1")) {
-  Write-Host "ERROR: CYPHER_BROWSER_RELAY must be 0 or 1"
-  exit 1
-}
-$RelayEnabled = $RelaySetting -ceq "1"
-$RelayConfig = $env:CYPHER_BROWSER_RELAY_CONFIG
-if ([string]::IsNullOrEmpty($RelayConfig)) {
-  $RelayConfig = Join-Path $SCRIPT_DIR "config\browser-relay\common-mine.json"
-}
-$RelayConfigFromCLI = $false
-for ($i = 0; $i -lt $CypherExtraArgs.Count; $i++) {
-  $Argument = $CypherExtraArgs[$i]
-  if ($Argument -ceq "--") { break }
-  if ($Argument -ceq "--browser.public-relay") {
-    $RelayEnabled = $true
-  } elseif ($Argument.StartsWith("--browser.public-relay=", [StringComparison]::Ordinal)) {
-    $Value = $Argument.Substring("--browser.public-relay=".Length)
-    if ($Value -cin @("1", "t", "T", "true", "TRUE", "True")) {
-      $RelayEnabled = $true
-    } elseif ($Value -cin @("0", "f", "F", "false", "FALSE", "False")) {
-      $RelayEnabled = $false
-    } else {
-      Write-Host "ERROR: Invalid --browser.public-relay boolean: $Value"
-      exit 1
-    }
-  } elseif ($Argument -ceq "--browser.public-relay.config") {
-    if ($i + 1 -ge $CypherExtraArgs.Count -or $CypherExtraArgs[$i + 1].StartsWith("--")) {
-      Write-Host "ERROR: --browser.public-relay.config requires an absolute file path"
-      exit 1
-    }
-    $i++
-    $RelayConfig = $CypherExtraArgs[$i]
-    $RelayConfigFromCLI = $true
-  } elseif ($Argument.StartsWith("--browser.public-relay.config=", [StringComparison]::Ordinal)) {
-    $RelayConfig = $Argument.Substring("--browser.public-relay.config=".Length)
-    $RelayConfigFromCLI = $true
-  }
-}
-$CypherRelayArgs = @()
-if ($RelayEnabled) {
-  # A root-relative or drive-relative Windows path is not an absolute CLI path.
-  $AbsoluteConfig = [System.IO.Path]::IsPathRooted($RelayConfig)
-  if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
-    $AbsoluteConfig = $RelayConfig -match '^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+(?:\\|$))'
-  }
-  if ($RelayConfigFromCLI -and !$AbsoluteConfig) {
-    Write-Host "ERROR: --browser.public-relay.config requires an absolute file path"
-    exit 1
-  }
-  if (!(Test-Path -LiteralPath $RelayConfig -PathType Leaf)) {
-    Write-Host "ERROR: Browser relay config not found: $RelayConfig"
-    exit 1
-  }
-  $RelayConfig = (Resolve-Path -LiteralPath $RelayConfig).ProviderPath
-  $CypherRelayArgs = @("--browser.public-relay", "--browser.public-relay.config", $RelayConfig)
-  Write-Host "==> Browser relay: ON ($RelayConfig)"
-} else {
-  if ($RelayConfigFromCLI) {
-    Write-Host "ERROR: --browser.public-relay.config requires --browser.public-relay"
-    exit 1
-  }
-  Write-Host "==> Browser relay: OFF"
-}
-
 if (!(Test-Path -Path $DATADIR -PathType Container)) {
   New-Item -ItemType Directory -Force -Path $DATADIR | Out-Null
 }
@@ -178,6 +110,7 @@ if (!(Test-Path -Path $CHAINDATA_DIR -PathType Container)) {
   & $CYPHER_BIN `
     --datadir "$DATADIR" `
     init "$GENESIS_FILE"
+
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
   }
@@ -224,8 +157,7 @@ Write-Host "==> Bootnode host: $BOOTNODE_HOST"
 Write-Host "==> RPC bind: $RPC_BIND"
 Write-Host "==> WS bind: $WS_BIND"
 
-# Additional flags apply to the node, not genesis initialization. The config's
-# socketPath:auto is resolved by the native binary to its owner-only named pipe.
+# Additional flags apply to the node, not genesis initialization.
 $CypherNodeArgs = @(
   "--verbosity", "1",
   "--rnetport", "7200",
@@ -246,7 +178,7 @@ $CypherNodeArgs = @(
   "--networkid", "10101919",
   "--gcmode", "archive",
   "--bootnodes", $BOOTNODES
-) + $CypherRelayArgs + $CypherExtraArgs + @("console")
+) + $CypherExtraArgs + @("console")
 
 & $CYPHER_BIN @CypherNodeArgs
 exit $LASTEXITCODE
