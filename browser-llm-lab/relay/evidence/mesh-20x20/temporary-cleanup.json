@@ -1,7 +1,0 @@
-{
-  "removedOwnedStagingDirectories": true,
-  "nativeDataAndKeysRetained": true,
-  "testSecretKeysCreated": false,
-  "rollbackRetained": ".runtime/releases/mesh-20x20-v1/",
-  "evidence": "relay/evidence/mesh-20x20/"
-}
