@@ -428,3 +428,173 @@ func TestFHSStartupRejectsSiblingKeyHistory(t *testing.T) {
 		t.Fatal("startup validation accepted same-height sibling key blocks")
 	}
 }
+
+func TestFHSStartupRestoresMissingCommittee(t *testing.T) {
+	kept := &common.Cnode{Address: "13.140.169.170:7102", CoinBase: "0xaaa", Public: "pub-a"}
+	former := &common.Cnode{Address: "13.140.169.170:7110", CoinBase: "0xbbb", Public: "pub-b"}
+	incoming := &common.Cnode{CoinBase: "0xccc", Public: "pub-c"}
+	third := &common.Cnode{Address: "13.140.169.170:7106", CoinBase: "0xddd", Public: "pub-d"}
+
+	t.Run("unchanged", func(t *testing.T) {
+		parent := &bftview.Committee{List: []*common.Cnode{kept, former}}
+		restored, err := runFHSCommitteeStartup(t, parent, func(genesis *types.KeyBlock) *types.KeyBlock {
+			return types.NewKeyBlock(&types.KeyBlockHeader{
+				ParentHash:    genesis.Hash(),
+				Difficulty:    big.NewInt(1),
+				Number:        big.NewInt(1),
+				Time:          2,
+				BlockType:     types.TimeReconfig,
+				CommitteeHash: parent.RlpHash(),
+			}).WithBody("", "", "", "", kept.Public, kept.CoinBase)
+		})
+		if err != nil {
+			t.Fatalf("startup rejected a derivable committee: %v", err)
+		}
+		if restored == nil || restored.RlpHash() != parent.RlpHash() {
+			t.Fatalf("restored committee hash mismatch: %#v", restored)
+		}
+		if restored.List[1].Address != former.Address {
+			t.Fatalf("restored address = %q, want %q", restored.List[1].Address, former.Address)
+		}
+	})
+
+	t.Run("in-place", func(t *testing.T) {
+		parent := &bftview.Committee{List: []*common.Cnode{kept, former}}
+		want := &bftview.Committee{List: []*common.Cnode{kept, incoming}}
+		restored, err := runFHSCommitteeStartup(t, parent, func(genesis *types.KeyBlock) *types.KeyBlock {
+			return types.NewKeyBlock(&types.KeyBlockHeader{
+				ParentHash:    genesis.Hash(),
+				Difficulty:    big.NewInt(1),
+				Number:        big.NewInt(1),
+				Time:          2,
+				BlockType:     types.PowReconfig,
+				CommitteeHash: want.RlpHash(),
+			}).WithBody(incoming.Public, incoming.CoinBase, former.Public, former.Address, kept.Public, kept.CoinBase)
+		})
+		if err != nil {
+			t.Fatalf("startup rejected an in-place committee: %v", err)
+		}
+		if restored == nil || len(restored.List) != 2 || restored.List[0].Public != kept.Public || restored.List[1].Public != incoming.Public {
+			t.Fatalf("restored in-place committee = %#v", restored)
+		}
+		if restored.List[0].Address != kept.Address {
+			t.Fatalf("kept member address = %q, want %q", restored.List[0].Address, kept.Address)
+		}
+		if restored.RlpHash() != want.RlpHash() {
+			t.Fatalf("restored hash = %s, want %s", restored.RlpHash(), want.RlpHash())
+		}
+	})
+
+	t.Run("legacy", func(t *testing.T) {
+		parent := &bftview.Committee{List: []*common.Cnode{kept, former, third}}
+		legacy := parent.Copy()
+		legacy.Add(nil, 1, "")
+		restored, err := runFHSCommitteeStartup(t, parent, func(genesis *types.KeyBlock) *types.KeyBlock {
+			return types.NewKeyBlock(&types.KeyBlockHeader{
+				ParentHash:    genesis.Hash(),
+				Difficulty:    big.NewInt(1),
+				Number:        big.NewInt(1),
+				Time:          2,
+				BlockType:     types.TimeReconfig,
+				CommitteeHash: legacy.RlpHash(),
+			}).WithBody("", "", "", "", former.Public, former.CoinBase)
+		})
+		if err != nil {
+			t.Fatalf("startup rejected a legacy committee: %v", err)
+		}
+		if restored == nil || restored.RlpHash() != legacy.RlpHash() {
+			t.Fatalf("restored legacy hash mismatch: %#v", restored)
+		}
+		if restored.List[0].Public != former.Public {
+			t.Fatalf("legacy leader = %s, want %s", restored.List[0].Public, former.Public)
+		}
+	})
+
+	t.Run("rejected", func(t *testing.T) {
+		parent := &bftview.Committee{List: []*common.Cnode{kept, former}}
+		restored, err := runFHSCommitteeStartup(t, parent, func(genesis *types.KeyBlock) *types.KeyBlock {
+			return types.NewKeyBlock(&types.KeyBlockHeader{
+				ParentHash:    genesis.Hash(),
+				Difficulty:    big.NewInt(1),
+				Number:        big.NewInt(1),
+				Time:          2,
+				BlockType:     types.TimeReconfig,
+				CommitteeHash: common.HexToHash("0x11"),
+			})
+		})
+		if err == nil {
+			t.Fatal("startup accepted a committee that cannot be derived")
+		}
+		if restored != nil {
+			t.Fatalf("rejected startup stored a committee: %#v", restored)
+		}
+	})
+}
+
+func runFHSCommitteeStartup(t *testing.T, parent *bftview.Committee, childFrom func(genesis *types.KeyBlock) *types.KeyBlock) (*bftview.Committee, error) {
+	t.Helper()
+	db := rawdb.NewMemoryDatabase()
+	t.Cleanup(func() { db.Close() })
+	bftview.SetCommitteeConfig(db, nil, nil)
+	t.Cleanup(func() { bftview.SetCommitteeConfig(nil, nil, nil) })
+
+	keyGenesis := types.NewKeyBlock(&types.KeyBlockHeader{
+		Difficulty: big.NewInt(1),
+		Number:     big.NewInt(0),
+		Time:       1,
+	})
+	keyGenesis.SetCommitteeHash(parent.RlpHash())
+	keyChild := childFrom(keyGenesis)
+	rawdb.WriteKeyBlock(db, keyGenesis)
+	rawdb.WriteKeyBlock(db, keyChild)
+	rawdb.WriteKeyBlockHash(db, keyGenesis.Hash(), 0)
+	rawdb.WriteKeyBlockHash(db, keyChild.Hash(), 1)
+	rawdb.WriteHeadKeyBlockHash(db, keyChild.Hash())
+	if !bftview.WriteCommittee(0, keyGenesis.Hash(), parent) {
+		t.Fatal("failed to store genesis committee")
+	}
+
+	keyBlockCache, _ := lru.New(blockCacheLimit)
+	headerCache, _ := lru.New(headerCacheLimit)
+	numberCache, _ := lru.New(headerCacheLimit)
+	kbc := &KeyBlockChain{
+		db:           db,
+		genesisBlock: keyGenesis,
+		blockCache:   keyBlockCache,
+		khc: &KeyHeaderChain{
+			chainDb:     db,
+			headerCache: headerCache,
+			numberCache: numberCache,
+		},
+	}
+	kbc.currentBlock.Store(keyChild)
+
+	txGenesis := types.NewBlockWithHeader(&types.Header{
+		Difficulty: big.NewInt(1),
+		Number:     big.NewInt(0),
+		BlockType:  types.FastTx_Block,
+	})
+	txChild := types.NewBlockWithHeader(&types.Header{
+		ParentHash: txGenesis.Hash(),
+		Difficulty: big.NewInt(1),
+		Number:     big.NewInt(1),
+		BlockType:  types.Key_Block,
+		KeyHash:    keyGenesis.Hash(),
+	})
+	txChild.SetKeyblock(keyChild)
+	for _, block := range []*types.Block{txGenesis, txChild} {
+		rawdb.WriteBlock(db, block)
+		rawdb.WriteCanonicalHash(db, block.Hash(), block.NumberU64())
+	}
+	txBlockCache, _ := lru.New(blockCacheLimit)
+	bc := &BlockChain{
+		chainConfig:   &params.ChainConfig{FairHotstuff: true},
+		db:            db,
+		blockCache:    txBlockCache,
+		keyBlockChain: kbc,
+		genesisBlock:  txGenesis,
+	}
+	bc.currentBlock.Store(txChild)
+	err := bc.validateFHSCanonicalKeyHistory()
+	return bftview.ReadCommittee(keyChild.NumberU64(), keyChild.Hash()), err
+}

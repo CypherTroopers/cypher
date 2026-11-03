@@ -77,6 +77,10 @@ func (keyS *keyService) fixedModeEnabled() bool {
 	return keyS.config != nil && (keyS.config.FixedLeader || keyS.config.FixedCommittee)
 }
 
+func (keyS *keyService) permissionlessEnabled() bool {
+	return keyS.config != nil && keyS.config.FairHotstuff && !keyS.fixedModeEnabled()
+}
+
 func (keyS *keyService) fixedLeaderModeEnabled() bool {
 	return keyS.config != nil && keyS.config.FixedLeader && !keyS.config.FairHotstuff
 }
@@ -284,6 +288,51 @@ func (keyS *keyService) verifyCertifiedFHSKeyBlock(ref *types.HotstuffProposalRe
 	if keyblock.InAddress() == "" || keyblock.InPubKey() == "" || keyblock.LeaderAddress() == "" || !keyblock.TypeCheck(parent.T_Number()) {
 		return fmt.Errorf("invalid certified FHS key carrier membership")
 	}
+	if keyblock.PermissionlessSeat() {
+		if keyS.fixedModeEnabled() {
+			return fmt.Errorf("permissionless key block rejected in fixed mode")
+		}
+		if keyblock.HasNewNode() {
+			if candidate == nil || candidate.KeyCandidate == nil || keyS.engine == nil {
+				return fmt.Errorf("certified permissionless key block requires its PoW candidate")
+			}
+			candidate = types.DecodeToCandidate(candidate.EncodeToBytes())
+			if candidate == nil || candidate.KeyCandidate == nil {
+				return fmt.Errorf("invalid certified permissionless candidate encoding")
+			}
+			candidate.KeyCandidate.BlockType = keyblock.BlockType()
+			if keyblock.Header().HashWithCandi() != candidate.KeyCandidate.HashWithCandi() {
+				return fmt.Errorf("certified permissionless candidate commitment mismatch")
+			}
+			if keyblock.InPubKey() != candidate.PubKey || keyblock.InAddress() != candidate.Coinbase {
+				return fmt.Errorf("certified permissionless incoming candidate mismatch")
+			}
+			if err := keyS.engine.VerifyCandidate(keyS.kbc, candidate); err != nil {
+				return err
+			}
+			// A certified key block is self-contained. Local epoch timeouts may
+			// still hold views that arrived after this proposal was built or that
+			// survived a restart past KeyBlockDone; they must not reject replay.
+			if _, err := decodeTimeoutProofs(keyblock.FaultProofBytes()); err != nil {
+				return err
+			}
+			next, _, err := checkPermissionlessKeyblock(keyS.config, committee, parent, keyblock, candidate, ref.ViewNumber)
+			if err != nil {
+				return err
+			}
+			if !next.StoreWithoutCallback(keyblock) {
+				return fmt.Errorf("cannot store certified permissionless committee")
+			}
+			return nil
+		}
+		if len(keyblock.FaultProofBytes()) != 0 || keyblock.CommitteeHash() != committee.RlpHash() {
+			return fmt.Errorf("certified permissionless time reconfig changed the committee")
+		}
+		if !committee.Copy().StoreWithoutCallback(keyblock) {
+			return fmt.Errorf("cannot store certified permissionless committee")
+		}
+		return nil
+	}
 	keyType := keyblock.BlockType()
 	powChange := keyType == types.PowReconfig || keyType == types.PacePowReconfig
 	if powChange && keyS.fixedModeEnabled() {
@@ -411,6 +460,17 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 	if keyblock.InAddress() == "" || keyblock.InPubKey() == "" || keyblock.LeaderPubKey() == "" || keyblock.LeaderAddress() == "" {
 		return fmt.Errorf("verifyKeyBlock,in or leader public key is empty")
 	}
+	if keyblock.PermissionlessSeat() {
+		view := keyS.s.GetCurrentView()
+		proposalView := uint64(0)
+		if view != nil {
+			if view.ViewNumber == ^uint64(0) {
+				return fmt.Errorf("permissionless proposal view overflow")
+			}
+			proposalView = view.ViewNumber + 1
+		}
+		return keyS.verifyPermissionlessKeyBlock(keyblock, bestCandi, proposalView)
+	}
 
 	if !keyblock.TypeCheck(kbc.CurrentBlock().T_Number()) {
 		return fmt.Errorf("verifyKeyBlock, check failed, current keynumber:%d,keyblock T_Number:%d", kbc.CurrentBlockN(), keyblock.T_Number())
@@ -535,6 +595,9 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 		ParentHash: curKHash,
 		Difficulty: curKeyBlock.Difficulty(),
 		Time:       keyBlockProposalTimestamp(curKeyBlock.Time(), uint64(time.Now().Unix()), fixedCadence),
+	}
+	if keyS.permissionlessEnabled() {
+		return keyS.buildPermissionlessKeyBlock(mb, leaderIndex, txParentNumber, header)
 	}
 
 	var outerPublic, outerCoinBase string
@@ -842,8 +905,10 @@ func (s *Service) GetExtra() []byte {
 // keyProposalPlan derives proposal eligibility from the canonical key-block interval.
 // Fixed mode deliberately ignores NoDone: it is local recovery state and may be
 // reset by an otherwise valid TC/QC transition while the key-block slot is due.
-func keyProposalPlan(fixedMode bool, leaderIndex uint, noDone, intervalElapsed bool) (attempt, isDone bool) {
-	if fixedMode {
+func keyProposalPlan(fixedMode, permissionless bool, leaderIndex uint, noDone, intervalElapsed bool) (attempt, isDone bool) {
+	if fixedMode || permissionless {
+		// Permissionless Fair HotStuff elects the leader from the whole
+		// committee, including index 0. The key-block interval is the only gate.
 		return intervalElapsed, true
 	}
 	return leaderIndex > 0 && intervalElapsed, !noDone
@@ -1145,23 +1210,132 @@ func (s *Service) keyblockLivenessLoop() {
 	}
 }
 
-// Save committee by keyblock
+// committeeBlockChain is the key-chain lookup used while restoring addresses.
+type committeeBlockChain interface {
+	GetBlockByHash(hash common.Hash) *types.KeyBlock
+}
+
+// Save committee by keyblock. Prefer an address-complete record so peer
+// authentication works after restart. If some addresses are still unknown,
+// still persist the hash-correct committee so startup validation can boot.
 func (s *Service) saveCommittee(curKeyBlock *types.KeyBlock) {
-	mb := bftview.LoadMember(curKeyBlock.NumberU64(), curKeyBlock.Hash(), false)
-	if mb != nil {
+	if curKeyBlock == nil {
 		return
 	}
-
+	s.repairCommitteeAddresses(curKeyBlock)
+	if bftview.LoadMember(curKeyBlock.NumberU64(), curKeyBlock.Hash(), false) != nil {
+		return
+	}
+	localPublic := bftview.GetServerInfo(bftview.PublicKey)
+	localAddress := ""
+	if s.netService != nil {
+		localAddress = s.netService.serverAddress
+	}
 	var newNode *common.Cnode
-	if curKeyBlock.BlockType() == types.PowReconfig || curKeyBlock.BlockType() == types.PacePowReconfig {
-		newNode = &common.Cnode{
-			CoinBase: curKeyBlock.InAddress(),
-			Public:   curKeyBlock.InPubKey(),
+	if curKeyBlock.HasNewNode() {
+		newNode = &common.Cnode{CoinBase: curKeyBlock.InAddress(), Public: curKeyBlock.InPubKey()}
+		if s.kbc != nil {
+			parent := s.kbc.GetBlockByHash(curKeyBlock.ParentHash())
+			newNode.Address = committeeMemberAddress(s.kbc, parent, newNode.Public, localPublic, localAddress)
 		}
 	}
-
-	mb, _ = bftview.GetCommittee(newNode, curKeyBlock, false)
+	mb, _ := bftview.GetCommittee(newNode, curKeyBlock, false)
+	if mb == nil {
+		return
+	}
 	mb.StoreWithoutCallback(curKeyBlock)
+}
+
+// repairCommitteeAddresses fills member addresses from this node's own
+// endpoint or from an ancestor committee. The committee commitment covers
+// coinbase and public key only, so restoring an address does not change it.
+func (s *Service) repairCommitteeAddresses(head *types.KeyBlock) {
+	if s == nil || s.kbc == nil || head == nil {
+		return
+	}
+	localAddress := ""
+	if s.netService != nil {
+		localAddress = s.netService.serverAddress
+	}
+	repairStoredCommitteeAddresses(s.kbc, head, bftview.GetServerInfo(bftview.PublicKey), localAddress)
+}
+
+func repairStoredCommitteeAddresses(chain committeeBlockChain, head *types.KeyBlock, localPublic, localAddress string) {
+	if chain == nil || head == nil {
+		return
+	}
+	var missing []*types.KeyBlock
+	for block := head; block != nil && block.NumberU64() > 0; {
+		if bftview.LoadMember(block.NumberU64(), block.Hash(), true) != nil {
+			break
+		}
+		missing = append(missing, block)
+		parent := chain.GetBlockByHash(block.ParentHash())
+		if parent == nil || parent.Hash() == block.Hash() {
+			break
+		}
+		block = parent
+	}
+	for i := len(missing) - 1; i >= 0; i-- {
+		block := missing[i]
+		parent := chain.GetBlockByHash(block.ParentHash())
+		if parent == nil || bftview.LoadMember(parent.NumberU64(), parent.Hash(), true) == nil {
+			log.Warn("committee address repair stopped", "number", block.NumberU64(), "reason", "parent committee has no addresses")
+			return
+		}
+		var newNode *common.Cnode
+		if block.HasNewNode() {
+			newNode = &common.Cnode{CoinBase: block.InAddress(), Public: block.InPubKey()}
+			newNode.Address = committeeMemberAddress(chain, parent, newNode.Public, localPublic, localAddress)
+		}
+		mb, _ := bftview.GetCommittee(newNode, block, true)
+		if mb == nil {
+			log.Warn("committee address repair stopped", "number", block.NumberU64(), "reason", "committee cannot be derived")
+			return
+		}
+		for _, member := range mb.List {
+			if member == nil || member.Address != "" {
+				continue
+			}
+			member.Address = committeeMemberAddress(chain, parent, member.Public, localPublic, localAddress)
+		}
+		if !mb.HasIP() || mb.RlpHash() != block.CommitteeHash() {
+			log.Warn("committee address repair stopped", "number", block.NumberU64(), "reason", "restored committee is incomplete", "hasAddress", mb.HasIP(), "have", mb.RlpHash(), "want", block.CommitteeHash())
+			return
+		}
+		if !mb.StoreWithoutCallback(block) {
+			log.Warn("committee address repair stopped", "number", block.NumberU64(), "reason", "committee store failed")
+			return
+		}
+		log.Info("repaired committee addresses", "number", block.NumberU64())
+	}
+}
+
+func committeeMemberAddress(chain committeeBlockChain, parent *types.KeyBlock, publicKey, localPublic, localAddress string) string {
+	if publicKey == "" {
+		return ""
+	}
+	if publicKey == localPublic && localAddress != "" {
+		return localAddress
+	}
+	seen := make(map[common.Hash]struct{})
+	for block := parent; block != nil; {
+		hash := block.Hash()
+		if _, ok := seen[hash]; ok {
+			return ""
+		}
+		seen[hash] = struct{}{}
+		if mb := bftview.LoadMember(block.NumberU64(), hash, false); mb != nil {
+			if node, _ := mb.Get(publicKey, bftview.PublicKey); node != nil && node.Address != "" {
+				return node.Address
+			}
+		}
+		if block.NumberU64() == 0 || block.ParentHash() == (common.Hash{}) {
+			return ""
+		}
+		block = chain.GetBlockByHash(block.ParentHash())
+	}
+	return ""
 }
 
 // Update committee by keyblock

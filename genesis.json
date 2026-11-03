@@ -36,7 +36,7 @@
 
     "colossusX": {},
 
-    "fixedCommittee": true,
+    "fixedCommittee": false,
     "fixedLeader": false,
     "fairHotstuff": true,
     "fairHotstuffSlotMillis": 250,
@@ -172,7 +172,7 @@
 
   "nonce": "0x0",
 
-  "mixHash": "0x127e2e49e5b03b0f370d7963f826ef88bb36ced657515dcdbb1df33c811fc6b4",
+  "mixHash": "0x42588b1de0fe807544ab1bcecc9268c999fca1dc13724183e7ebbec6fd855bcb",
 
   "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
 

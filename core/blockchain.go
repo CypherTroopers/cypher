@@ -2703,9 +2703,10 @@ func (bc *BlockChain) fhsCanonicalKeyTransition(block *types.Block) (*types.KeyB
 }
 
 // deriveFHSCanonicalKeyHistory validates the canonical transaction ancestry and
-// returns the exact embedded key-block sequence without modifying the database.
-// The transaction chain is the recovery authority because each KeyInfo payload
-// is covered by the transaction block hash and its Fair HotStuff QC.
+// returns the exact embedded key-block sequence. The transaction chain is the
+// recovery authority because each KeyInfo payload is covered by the transaction
+// block hash and its Fair HotStuff QC. A committee record is written only when
+// it is missing or mismatched and the parent committee reproduces CommitteeHash.
 func (bc *BlockChain) deriveFHSCanonicalKeyHistory(head *types.Block) ([]*types.KeyBlock, error) {
 	if bc.chainConfig == nil || !bc.chainConfig.FairHotstuff {
 		return nil, nil
@@ -2728,6 +2729,7 @@ func (bc *BlockChain) deriveFHSCanonicalKeyHistory(head *types.Block) ([]*types.
 	if genesisCommittee == nil || genesisCommittee.RlpHash() != expected.CommitteeHash() {
 		return nil, fmt.Errorf("Fair HotStuff genesis key block %d/%s has no valid durable committee", expected.NumberU64(), expected.Hash())
 	}
+	parentCommittee := genesisCommittee
 	history := []*types.KeyBlock{expected}
 	previous := bc.genesisBlock
 	for number := uint64(1); number <= head.NumberU64(); number++ {
@@ -2765,11 +2767,18 @@ func (bc *BlockChain) deriveFHSCanonicalKeyHistory(head *types.Block) ([]*types.
 		}
 		committee := bftview.ReadCommittee(keyBlock.NumberU64(), keyBlock.Hash())
 		if committee == nil || committee.RlpHash() != keyBlock.CommitteeHash() {
-			return nil, fmt.Errorf("Fair HotStuff canonical key block %d/%s has no valid committed committee",
-				keyBlock.NumberU64(), keyBlock.Hash())
+			// keyblockchain is still nil here, so this cannot call GetCommittee.
+			committee = bftview.DeriveCommittedCommittee(parentCommittee, keyBlock)
+			if committee == nil || committee.RlpHash() != keyBlock.CommitteeHash() ||
+				!bftview.WriteCommittee(keyBlock.NumberU64(), keyBlock.Hash(), committee) {
+				return nil, fmt.Errorf("Fair HotStuff canonical key block %d/%s has no valid committed committee",
+					keyBlock.NumberU64(), keyBlock.Hash())
+			}
+			log.Info("Restored Fair HotStuff committed committee", "number", keyBlock.NumberU64(), "hash", keyBlock.Hash())
 		}
 		history = append(history, keyBlock)
 		expected = keyBlock
+		parentCommittee = committee
 	}
 	return history, nil
 }

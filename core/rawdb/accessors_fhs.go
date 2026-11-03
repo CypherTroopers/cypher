@@ -11,6 +11,8 @@ import (
 
 var fhsSafetyStateKey = []byte("cypher-fhs-safety")
 
+var fhsEpochTimeoutKey = []byte("cypher-fhs-epoch-timeouts")
+
 var (
 	fhsProposalPrefix    = []byte("cypher-fhs-proposal/")
 	fhsBodyPrefix        = []byte("cypher-fhs-body/")
@@ -37,6 +39,23 @@ func ReadFHSSafetyState(db ethdb.KeyValueReader) ([]byte, error) {
 
 func WriteFHSSafetyState(db ethdb.KeyValueWriter, data []byte) error {
 	return db.Put(fhsSafetyStateKey, common.CopyBytes(data))
+}
+
+func ReadFHSEpochTimeouts(db ethdb.KeyValueReader) ([]byte, error) {
+	has, err := db.Has(fhsEpochTimeoutKey)
+	if err != nil || !has {
+		return nil, err
+	}
+	data, err := db.Get(fhsEpochTimeoutKey)
+	return common.CopyBytes(data), err
+}
+
+func WriteFHSEpochTimeouts(db ethdb.KeyValueWriter, data []byte) error {
+	return db.Put(fhsEpochTimeoutKey, common.CopyBytes(data))
+}
+
+func DeleteFHSEpochTimeouts(db ethdb.KeyValueWriter) error {
+	return db.Delete(fhsEpochTimeoutKey)
 }
 
 func ReadFHSProposal(db ethdb.KeyValueReader, proposalID common.Hash) ([]byte, error) {

@@ -201,6 +201,31 @@ func (backend *ReconfigBackend) ServiceIsRunning() bool {
 	return backend.service.isRunning()
 }
 
+// LocalRole reports this node's consensus role. Fair HotStuff uses the
+// elected proposal leader. Seat 0 is only the leader when that election
+// selects it.
+func (backend *ReconfigBackend) LocalRole() string {
+	index := bftview.IamMember()
+	if index < 0 {
+		return "I'm common node."
+	}
+	if backend == nil || backend.service == nil {
+		return "I'm committee member."
+	}
+	if backend.service.fairHotstuffEnabled() {
+		route, err := backend.service.CurrentFHSRoute()
+		if err == nil && route != nil && uint(index) == route.LeaderIndex {
+			return "I'm leader."
+		}
+		return "I'm committee member."
+	}
+	view := backend.service.GetCurrentView()
+	if view != nil && uint(index) == view.LeaderIndex {
+		return "I'm leader."
+	}
+	return "I'm committee member."
+}
+
 func (backend *ReconfigBackend) Exceptions(blockNumber int64) []string {
 	return backend.service.Exceptions(blockNumber)
 }

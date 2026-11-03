@@ -3043,7 +3043,7 @@ func (s *Service) stageFHSProposalBuild(job *proposalBuildJob) (*proposalBuildOu
 	if curKeyblock := s.kbc.CurrentBlock(); curKeyblock != nil {
 		keyBlockIntervalElapsed = time.Since(time.Unix(int64(curKeyblock.Time()), 0)) >= params.KeyBlockMinInterval
 	}
-	keyProposalAttempt, keyProposalIsDone := keyProposalPlan(fixedMode, leaderIndex, noDone, keyBlockIntervalElapsed)
+	keyProposalAttempt, keyProposalIsDone := keyProposalPlan(fixedMode, s.keyService.permissionlessEnabled(), leaderIndex, noDone, keyBlockIntervalElapsed)
 	if keyProposalAttempt && s.hasUncommittedFHSKeyBlock() {
 		keyProposalAttempt = false
 	}
@@ -3308,7 +3308,7 @@ func (s *Service) Propose(viewNumber uint64, viewID common.Hash, leaderID string
 		}
 	}
 
-	keyProposalAttempt, keyProposalIsDone := keyProposalPlan(fixedMode, leaderIndex, noDone, keyBlockIntervalElapsed)
+	keyProposalAttempt, keyProposalIsDone := keyProposalPlan(fixedMode, s.keyService.permissionlessEnabled(), leaderIndex, noDone, keyBlockIntervalElapsed)
 
 	if keyProposalAttempt {
 		txParentNumber := s.bc.CurrentBlockN()

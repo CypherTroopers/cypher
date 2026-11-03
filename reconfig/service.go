@@ -104,6 +104,10 @@ type Service struct {
 	fhsParentSelected bool
 	fhsStore          *fhsSafetyStore
 	fhsContentWriter  *fhsContentWriter
+	muEpochTimeout    sync.Mutex
+	epochTimeoutKey   common.Hash
+	epochTimeouts     map[uint64]*hotstuff.TimeoutCertificate
+	epochTimeoutReady bool
 	// These QC broadcast markers are deliberately memory-only. The active
 	// marker brackets every physical send. The completed marker suppresses only
 	// a matching durable-outbox replay for a short period after that send. A
@@ -523,6 +527,7 @@ func (s *Service) procBlockDone(block *types.Block) {
 		log.Info("@KeyBlockDone", "number", keyblock.NumberU64(), "T_number", keyblock.T_Number())
 		s.updateCommittee(keyblock)
 		s.saveCommittee(keyblock)
+		s.resetEpochTimeouts()
 		if s.fairHotstuffEnabled() {
 			nextCommittee := bftview.LoadMember(keyblock.NumberU64(), keyblock.Hash(), true)
 			if nextCommittee == nil || nextCommittee.RlpHash() != keyblock.CommitteeHash() {
@@ -571,6 +576,7 @@ func (s *Service) procBlockDone(block *types.Block) {
 				s.pacetMakerTimer.stop()
 				return
 			}
+			s.applyPermissionlessMembership(nextCommittee)
 		} else {
 			s.updateCurrentView(block, keyblock, true)
 		}
@@ -658,10 +664,17 @@ func (s *Service) start(config *common.NodeConfig) error {
 		if config.Coinbase != "" {
 			bftview.SetServerCoinBase(common.HexToAddress(config.Coinbase))
 		}
+		// A reseated node can hold a committee whose new member has no address.
+		// Restore addresses before the membership check, or peer authentication
+		// rejects the otherwise valid committee and mining cannot start.
+		if s.kbc != nil {
+			s.repairCommitteeAddresses(s.kbc.CurrentBlock())
+		}
 		if bftview.IamMember() >= 0 {
 			s.updateCommittee(nil)
 		}
 		s.updateCurrentView(nil, nil, false)
+		s.discardClosedEpochTimeouts()
 		if err := s.loadFHSWAL(); err != nil {
 			return fmt.Errorf("restore Fair HotStuff safety state: %w", err)
 		}

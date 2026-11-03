@@ -106,6 +106,11 @@ type KeyBlock struct {
 	// inter-peer block relay.
 	ReceivedAt   time.Time
 	ReceivedFrom interface{}
+
+	// permissionlessSeat selects in-place seat replacement. Legacy key blocks
+	// leave it false and keep the historical committee shuffle.
+	permissionlessSeat bool
+	faultProofs        [][]byte
 }
 
 type KeyBlocks []*KeyBlock
@@ -118,6 +123,17 @@ type extKeyblock struct {
 	InAddress     string `json:"inAddress"            gencodec:"required"`
 	OutPubKey     string `json:"outPubKey"              gencodec:"required"`
 	OutAddress    string `json:"outAddress"            gencodec:"required"`
+}
+
+type extKeyblockWithProofs struct {
+	Header        *KeyBlockHeader
+	LeaderPubKey  string
+	LeaderAddress string
+	InPubKey      string
+	InAddress     string
+	OutPubKey     string
+	OutAddress    string
+	FaultProofs   [][]byte
 }
 
 // NewBlock creates a new block. The input data is copied,
@@ -155,22 +171,56 @@ func CopyKeyBlockHeader(h *KeyBlockHeader) *KeyBlockHeader {
 
 // DecodeRLP decodes the Cypherium
 func (b *KeyBlock) DecodeRLP(s *rlp.Stream) error {
-	var eb extKeyblock
-	_, size, _ := s.Kind()
-	if err := s.Decode(&eb); err != nil {
+	raw, err := s.Raw()
+	if err != nil {
 		return err
 	}
-
+	var extended extKeyblockWithProofs
+	if err := rlp.DecodeBytes(raw, &extended); err == nil {
+		b.header = extended.Header
+		b.leaderPubKey, b.leaderAddress = extended.LeaderPubKey, extended.LeaderAddress
+		b.inPubKey, b.inAddress = extended.InPubKey, extended.InAddress
+		b.outPubKey, b.outAddress = extended.OutPubKey, extended.OutAddress
+		b.permissionlessSeat = true
+		if extended.FaultProofs == nil {
+			b.faultProofs = [][]byte{}
+		} else {
+			b.faultProofs = extended.FaultProofs
+		}
+		b.size.Store(common.StorageSize(len(raw)))
+		return nil
+	}
+	var eb extKeyblock
+	if err := rlp.DecodeBytes(raw, &eb); err != nil {
+		return err
+	}
 	b.header = eb.Header
 	b.leaderPubKey, b.leaderAddress = eb.LeaderPubKey, eb.LeaderAddress
 	b.inPubKey, b.inAddress, b.outPubKey, b.outAddress = eb.InPubKey, eb.InAddress, eb.OutPubKey, eb.OutAddress
-	b.size.Store(common.StorageSize(rlp.ListSize(size)))
+	b.permissionlessSeat = false
+	b.faultProofs = nil
+	b.size.Store(common.StorageSize(len(raw)))
 	return nil
 }
 
 // EncodeRLP serializes b into the Cypherium RLP block format.
 func (b *KeyBlock) EncodeRLP(w io.Writer) error {
-	//if b.IsForkVer2()
+	if b.permissionlessSeat {
+		proofs := b.faultProofs
+		if proofs == nil {
+			proofs = [][]byte{}
+		}
+		return rlp.Encode(w, extKeyblockWithProofs{
+			Header:        b.header,
+			InPubKey:      b.inPubKey,
+			InAddress:     b.inAddress,
+			OutPubKey:     b.outPubKey,
+			OutAddress:    b.outAddress,
+			LeaderPubKey:  b.leaderPubKey,
+			LeaderAddress: b.leaderAddress,
+			FaultProofs:   proofs,
+		})
+	}
 	return rlp.Encode(w, extKeyblock{
 		Header:        b.header,
 		InPubKey:      b.inPubKey,
@@ -255,6 +305,33 @@ func (b *KeyBlock) OutAddress(flag int) string {
 func (b *KeyBlock) HasNewNode() bool {
 	return b.header.BlockType == PowReconfig || b.header.BlockType == PacePowReconfig
 }
+
+// PermissionlessSeat reports that this key block replaces one committee seat
+// in place. FaultProofBytes are encoded timeout certificates, ordered by view.
+func (b *KeyBlock) PermissionlessSeat() bool { return b != nil && b.permissionlessSeat }
+
+func (b *KeyBlock) FaultProofBytes() [][]byte {
+	if b == nil || b.faultProofs == nil {
+		return nil
+	}
+	out := make([][]byte, len(b.faultProofs))
+	for i, proof := range b.faultProofs {
+		out[i] = append([]byte(nil), proof...)
+	}
+	return out
+}
+
+func (b *KeyBlock) SetPermissionlessFaults(proofs [][]byte) {
+	b.permissionlessSeat = true
+	if proofs == nil {
+		b.faultProofs = [][]byte{}
+		return
+	}
+	b.faultProofs = make([][]byte, len(proofs))
+	for i, proof := range proofs {
+		b.faultProofs[i] = append([]byte(nil), proof...)
+	}
+}
 func (b *KeyBlock) TypeCheck(last_T_Number uint64) bool {
 	// Legacy tx-count based keyblock type checks were removed.
 	// KeyBlock cadence is controlled by time-based fixed-mode triggers.
@@ -297,6 +374,8 @@ func (b *KeyBlock) WithBody(inPubKey string, inAddress string, outPubKey string,
 	block.inAddress = inAddress
 	block.outPubKey = outPubKey
 	block.outAddress = outAddress
+	block.permissionlessSeat = b.permissionlessSeat
+	block.faultProofs = b.FaultProofBytes()
 	return block
 }
 
@@ -310,6 +389,8 @@ func (b *KeyBlock) CopyMe() *KeyBlock {
 	block.inAddress = b.inAddress
 	block.outPubKey = b.outPubKey
 	block.outAddress = b.outAddress
+	block.permissionlessSeat = b.permissionlessSeat
+	block.faultProofs = b.FaultProofBytes()
 	return block
 }
 

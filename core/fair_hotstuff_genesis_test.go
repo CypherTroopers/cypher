@@ -262,8 +262,8 @@ func TestDistributedFairHotstuffGenesisActivation(t *testing.T) {
 	if err := config.IsValid(); err != nil {
 		t.Fatalf("distributed genesis transaction/code limits: %v", err)
 	}
-	if !config.FairHotstuffSlotEnabled() || !config.FixedCommittee {
-		t.Fatalf("distributed genesis must enable the fixed-committee 250ms clock: slotMillis=%d, fixedCommittee=%t", config.FairHotstuffSlotMillis, config.FixedCommittee)
+	if !config.FairHotstuffSlotEnabled() || config.FixedCommittee || config.FixedLeader {
+		t.Fatalf("distributed genesis must enable the 250ms clock without a fixed committee: slotMillis=%d, fixedCommittee=%t, fixedLeader=%t", config.FairHotstuffSlotMillis, config.FixedCommittee, config.FixedLeader)
 	}
 	profile := params.FHS250msResearchEVMParallelConfig()
 	if config.NativeParallel == nil || *config.NativeParallel != *profile {

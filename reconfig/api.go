@@ -33,15 +33,13 @@ func NewPublicReconfigAPI(reconfig *ReconfigBackend) *PublicReconfigAPI {
 }
 
 func (s *PublicReconfigAPI) Role() string {
-	i := bftview.IamMember()
-	if i < 0 {
-		return "I'm common node."
+	if s == nil || s.reconfig == nil {
+		if bftview.IamMember() < 0 {
+			return "I'm common node."
+		}
+		return "I'm committee member."
 	}
-	_, leaderIndex, ok := s.currentLeader()
-	if ok && uint(i) == leaderIndex {
-		return "I'm leader."
-	}
-	return "I'm committee member."
+	return s.reconfig.LocalRole()
 }
 
 func (s *PublicReconfigAPI) Leader() *common.Cnode {

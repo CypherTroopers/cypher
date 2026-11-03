@@ -66,3 +66,63 @@ func TestReadBlockRejectsCorruptCommonTransactionBody(t *testing.T) {
 		t.Fatalf("body with mismatched sidecar roots was accepted as %s", restored.Hash())
 	}
 }
+
+func TestKeyBlockRoundTripsPermissionlessProofs(t *testing.T) {
+	db := NewMemoryDatabase()
+	proof := [][]byte{[]byte("timeout-view-115")}
+	key := types.NewKeyBlock(&types.KeyBlockHeader{
+		Number:     big.NewInt(17),
+		ParentHash: common.HexToHash("0x10"),
+		Difficulty: big.NewInt(1),
+		Time:       100,
+		BlockType:  types.PowReconfig,
+		T_Number:   53,
+	}).WithBody("in-pub", "in-addr", "out-pub", "out-addr", "leader-pub", "leader-addr")
+	key.SetPermissionlessFaults(proof)
+	WriteKeyBlock(db, key)
+
+	restored := ReadKeyBlock(db, key.Hash(), key.NumberU64())
+	if restored == nil || !restored.PermissionlessSeat() {
+		t.Fatalf("permissionless key block lost its seat flag: %#v", restored)
+	}
+	got := restored.FaultProofBytes()
+	if len(got) != 1 || string(got[0]) != string(proof[0]) {
+		t.Fatalf("permissionless proofs = %#v, want %#v", got, proof)
+	}
+}
+
+func TestKeyBlockLegacyBodyRestoredFromCarrierKeyInfo(t *testing.T) {
+	db := NewMemoryDatabase()
+	proof := [][]byte{[]byte("timeout-view-115")}
+	key := types.NewKeyBlock(&types.KeyBlockHeader{
+		Number:     big.NewInt(17),
+		ParentHash: common.HexToHash("0x10"),
+		Difficulty: big.NewInt(1),
+		Time:       100,
+		BlockType:  types.PowReconfig,
+		T_Number:   53,
+	}).WithBody("in-pub", "in-addr", "out-pub", "out-addr", "leader-pub", "leader-addr")
+	key.SetPermissionlessFaults(proof)
+
+	// Simulate the pre-fix body format that dropped the permissionless payload.
+	WriteKeyHeader(db, key.Header())
+	WriteKeyBody(db, key.Hash(), key.NumberU64(), key.Body())
+
+	carrier := types.NewBlockWithHeader(&types.Header{
+		Number:    big.NewInt(int64(key.T_Number() + 1)),
+		BlockType: types.Key_Block,
+		KeyHash:   key.ParentHash(),
+	})
+	carrier.SetKeyblock(key)
+	WriteBlock(db, carrier)
+	WriteCanonicalHash(db, carrier.Hash(), carrier.NumberU64())
+
+	restored := ReadKeyBlock(db, key.Hash(), key.NumberU64())
+	if restored == nil || !restored.PermissionlessSeat() {
+		t.Fatalf("legacy body was not restored from carrier KeyInfo: %#v", restored)
+	}
+	got := restored.FaultProofBytes()
+	if len(got) != 1 || string(got[0]) != string(proof[0]) {
+		t.Fatalf("restored proofs = %#v, want %#v", got, proof)
+	}
+}

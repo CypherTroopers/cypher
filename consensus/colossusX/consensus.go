@@ -663,8 +663,8 @@ func ApplyFixedModeKeyblockPowReward(bc types.ChainReader, state vm.StateDB, hea
 	state.AddBalance(common.HexToAddress(submitter), new(big.Int).Set(CommonNodePowReward))
 }
 
-// ApplyKeyblockPowRewardByKeyInfo credits CommonNodePowReward to keyblock outAddress
-// at keyblock generation/finalization time.
+// ApplyKeyblockPowRewardByKeyInfo credits CommonNodePowReward to the accepted
+// candidate at keyblock generation/finalization time.
 func ApplyKeyblockPowRewardByKeyInfo(state vm.StateDB, keyInfo []byte) {
 	if state == nil || len(keyInfo) == 0 {
 		return
@@ -673,12 +673,25 @@ func ApplyKeyblockPowRewardByKeyInfo(state vm.StateDB, keyInfo []byte) {
 	ApplyKeyblockPowReward(state, keyblock)
 }
 
-// ApplyKeyblockPowReward credits CommonNodePowReward to keyblock outAddress.
+// powRewardRecipient is the coinbase of the accepted common-node candidate.
+// Seat replacement stores that candidate in In and the evicted member in Out.
+// Fixed mode keeps the committee and stores the candidate in Out.
+func powRewardRecipient(keyblock *types.KeyBlock) string {
+	if keyblock == nil {
+		return ""
+	}
+	if keyblock.HasNewNode() {
+		return strings.TrimPrefix(keyblock.InAddress(), "*")
+	}
+	return strings.TrimPrefix(keyblock.OutAddress(0), "*")
+}
+
+// ApplyKeyblockPowReward credits CommonNodePowReward to the accepted candidate.
 func ApplyKeyblockPowReward(state vm.StateDB, keyblock *types.KeyBlock) {
 	if state == nil || keyblock == nil {
 		return
 	}
-	submitter := strings.TrimPrefix(keyblock.OutAddress(0), "*")
+	submitter := powRewardRecipient(keyblock)
 	if submitter == "" {
 		return
 	}

@@ -135,6 +135,7 @@ func newPaceMakerTimer(config *params.ChainConfig, s serviceI, backend *Reconfig
 		service:       s,
 		txPool:        backend.TxPool(),
 		candidatepool: backend.CandidatePool(),
+		kbc:           backend.KeyBlockChain(),
 		startTime:     maxPaceMakerTime,
 		lastKeyTime:   time.Now(),
 		beStop:        true,
@@ -241,11 +242,43 @@ func (t *paceMakerTimer) loopTimer() {
 			t.setNextLeader()
 			t.service.ResetLeaderAckTime()
 		} else if diff > paceMakerTimeoutForConfig(t.config) && bftview.IamMember() >= 0 { //timeout
+			// An empty Fair HotStuff chain has nothing to propose until the key
+			// interval. The progress deadline is sized for a full evmParallel
+			// block, so it elapses first and its reset pushes the key block out
+			// to a second deadline. Keep waiting while the leader is still the
+			// live one selected above; AckTimeout still rotates a silent leader.
+			if t.deferIdleKeyPace(now) {
+				continue
+			}
 			log.Warn("paceMakerTimer Viewchange PaceMakerTimeout Event is coming", "retryNumber", retryNumber)
 			t.setNextLeader()
 			t.retryNumber++
 		}
 	}
+}
+
+// deferIdleKeyPace reports whether this idle chain should keep the current
+// leader until the key-block minimum. Pending transactions remain subject to
+// the progress deadline.
+func (t *paceMakerTimer) deferIdleKeyPace(now time.Time) bool {
+	pending := 0
+	if t.txPool != nil {
+		pending, _ = t.txPool.Stats()
+	}
+	var keyTime uint64
+	if t.kbc != nil {
+		if key := t.kbc.CurrentBlock(); key != nil {
+			keyTime = key.Time()
+		}
+	}
+	return deferFairHotstuffIdleKeyPace(t.config, pending, keyTime, now)
+}
+
+func deferFairHotstuffIdleKeyPace(config *params.ChainConfig, pendingTxs int, keyTime uint64, now time.Time) bool {
+	if config == nil || !config.FairHotstuff || pendingTxs > 0 || keyTime == 0 {
+		return false
+	}
+	return now.Sub(time.Unix(int64(keyTime), 0)) < params.KeyBlockMinInterval
 }
 
 func (t *paceMakerTimer) triggerTryPropose() {

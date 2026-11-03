@@ -54,7 +54,7 @@ func TestKeyProposalPlanFixedModeIsIntervalDerived(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			attempt, isDone := keyProposalPlan(true, tt.leaderIndex, tt.noDone, tt.intervalElapsed)
+			attempt, isDone := keyProposalPlan(true, false, tt.leaderIndex, tt.noDone, tt.intervalElapsed)
 			if attempt != tt.wantAttempt {
 				t.Fatalf("attempt = %t, want %t", attempt, tt.wantAttempt)
 			}
@@ -102,7 +102,7 @@ func TestKeyProposalPlanNonFixedPreservesLegacySelection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			attempt, isDone := keyProposalPlan(false, tt.leaderIndex, tt.noDone, tt.intervalElapsed)
+			attempt, isDone := keyProposalPlan(false, false, tt.leaderIndex, tt.noDone, tt.intervalElapsed)
 			if attempt != tt.wantAttempt {
 				t.Fatalf("attempt = %t, want %t", attempt, tt.wantAttempt)
 			}

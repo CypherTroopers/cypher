@@ -145,6 +145,7 @@ func (s *Service) AcceptFHSTimeoutCertificate(tc *hotstuff.TimeoutCertificate) e
 		s.waittingView.KeyNumber = s.currentView.KeyNumber
 	}
 	s.muCurrentView.Unlock()
+	s.recordEpochTimeout(tc)
 	return nil
 }
 

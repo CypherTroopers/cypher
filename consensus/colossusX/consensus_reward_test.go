@@ -176,6 +176,30 @@ func TestKeyBlockPowRewardIsRetained(t *testing.T) {
 	}
 }
 
+func TestSeatReplacementPowRewardPaysIncomingCandidate(t *testing.T) {
+	incoming := common.HexToAddress("0x93b190f416d4f71c1ac3769c2de00a861fe68641")
+	evicted := common.HexToAddress("0x9c01a453daf5c36951301ea26c1605ce7489b186")
+	want := new(big.Int).Mul(big.NewInt(100_000), big.NewInt(params.Ether))
+	for _, blockType := range []uint8{types.PowReconfig, types.PacePowReconfig} {
+		keyblock := types.NewKeyBlock(&types.KeyBlockHeader{
+			Number:     big.NewInt(2),
+			Difficulty: big.NewInt(131072),
+			BlockType:  blockType,
+		}).WithBody("incoming-public", incoming.Hex(), "evicted-public", evicted.Hex(), "leader-public", evicted.Hex())
+		statedb, err := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ApplyKeyblockPowReward(statedb, keyblock)
+		if got := statedb.GetBalance(incoming); got.Cmp(want) != 0 {
+			t.Fatalf("block type %d incoming reward = %v, want %v", blockType, got, want)
+		}
+		if got := statedb.GetBalance(evicted); got.Sign() != 0 {
+			t.Fatalf("block type %d evicted member received %v", blockType, got)
+		}
+	}
+}
+
 func TestCandidatePoWRewardRecipientSurvivesExistingEncodings(t *testing.T) {
 	engine := NewTester()
 	engine.SetThreads(1)

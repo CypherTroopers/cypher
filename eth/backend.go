@@ -770,10 +770,17 @@ func (s *Ethereum) startTxQUICReceiver() error {
 		return fmt.Errorf("resolve verified TxQUIC identity: %w", err)
 	}
 	route, err := s.reconfig.CurrentFHSRoute()
-	if err != nil {
-		return fmt.Errorf("resolve current TxQUIC committee: %w", err)
-	}
-	if route == nil {
+	if err != nil || route == nil {
+		// PoW only needs the validator receiver while this identity holds a
+		// committee seat. A common miner keeps producing candidates when the
+		// local committee record has no addresses and the route cannot be read.
+		if bftview.IamMember() < 0 {
+			log.Info("common miner continues without a TxQUIC receiver", "err", err)
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("resolve current TxQUIC committee: %w", err)
+		}
 		return fmt.Errorf("current TxQUIC committee is unavailable")
 	}
 	for _, member := range route.Committee {

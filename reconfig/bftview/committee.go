@@ -20,6 +20,7 @@ package bftview
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -459,6 +460,25 @@ func (committee *Committee) Add(r *common.Cnode, leaderIndex int, outAddress str
 	return nil
 }
 
+// Replace swaps one seat in place. Other indexes stay put so signer masks for
+// this committee remain aligned with the same members.
+func (committee *Committee) Replace(index int, node *common.Cnode) (*common.Cnode, error) {
+	if committee == nil || node == nil || node.Public == "" {
+		return nil, fmt.Errorf("invalid committee replacement")
+	}
+	if index < 0 || index >= len(committee.List) || committee.List[index] == nil {
+		return nil, fmt.Errorf("committee replacement index %d is outside the committee", index)
+	}
+	for _, member := range committee.List {
+		if member != nil && member.Public == node.Public {
+			return nil, fmt.Errorf("replacement public key is already on the committee")
+		}
+	}
+	evicted := committee.List[index]
+	committee.List[index] = node
+	return evicted, nil
+}
+
 func committeeOutMatches(node *common.Cnode, outAddress string) bool {
 	if node == nil || outAddress == "" {
 		return false
@@ -586,6 +606,16 @@ func GetCommittee(newNode *common.Cnode, keyblock *types.KeyBlock, needIp bool) 
 		log.Error("GetCommittee", "can't found the leader publickey", keyblock.LeaderPubKey())
 		return nil, nil
 	}
+	// The key body stored in the database does not carry the permissionless
+	// flag, so a block read back after restart looks like a legacy shuffle.
+	// Accept the in-place committee whenever it reproduces the block commitment.
+	if inPlace, replaced, ok := inPlaceCommittee(parentMb, newNode, keyblock); ok &&
+		(keyblock.PermissionlessSeat() || inPlace.RlpHash() == keyblock.CommitteeHash()) {
+		return inPlace, replaced
+	}
+	if keyblock.PermissionlessSeat() {
+		return nil, nil
+	}
 	if keyblock.HasNewNode() {
 		if newNode == nil {
 			log.Error("GetCommittee", "PowReconfig or PacePowReconfig should have new node", "")
@@ -598,6 +628,75 @@ func GetCommittee(newNode *common.Cnode, keyblock *types.KeyBlock, needIp bool) 
 		outer = mb.Add(nil, int(index), keyblock.OutAddress(1))
 	}
 	return mb, outer
+}
+
+// inPlaceCommittee replaces one seat without moving the others. ok is false
+// when the key block does not name the leader or the outgoing member.
+func inPlaceCommittee(parent *Committee, newNode *common.Cnode, keyblock *types.KeyBlock) (*Committee, *common.Cnode, bool) {
+	if parent == nil || keyblock == nil {
+		return nil, nil, false
+	}
+	if _, index := parent.Get(keyblock.LeaderPubKey(), PublicKey); index < 0 {
+		return nil, nil, false
+	}
+	next := parent.Copy()
+	if !keyblock.HasNewNode() {
+		return next, nil, true
+	}
+	if newNode == nil || newNode.Public == "" {
+		log.Error("GetCommittee", "permissionless reconfig should have new node", "")
+		return nil, nil, false
+	}
+	outIndex := -1
+	for i, member := range next.List {
+		if member != nil && member.Public == keyblock.OutPubKey() {
+			outIndex = i
+			break
+		}
+	}
+	if outIndex < 0 {
+		log.Error("GetCommittee", "permissionless outgoing member missing", keyblock.OutPubKey())
+		return nil, nil, false
+	}
+	replaced, err := next.Replace(outIndex, newNode)
+	if err != nil {
+		log.Error("GetCommittee", "permissionless replace", err)
+		return nil, nil, false
+	}
+	return next, replaced, true
+}
+
+// DeriveCommittedCommittee rebuilds the committee committed by keyblock from
+// its parent. A result is returned only when that committee's hash matches the
+// key block. Member addresses are copied from the parent, so a newly seated
+// member can still have an empty address.
+func DeriveCommittedCommittee(parent *Committee, keyblock *types.KeyBlock) *Committee {
+	if parent == nil || keyblock == nil || len(parent.List) == 0 {
+		return nil
+	}
+	if !keyblock.HasNewNode() && parent.RlpHash() == keyblock.CommitteeHash() {
+		return parent.Copy()
+	}
+	var newNode *common.Cnode
+	if keyblock.HasNewNode() {
+		newNode = &common.Cnode{CoinBase: keyblock.InAddress(), Public: keyblock.InPubKey()}
+	}
+	if inPlace, _, ok := inPlaceCommittee(parent, newNode, keyblock); ok && inPlace.RlpHash() == keyblock.CommitteeHash() {
+		return inPlace
+	}
+	if keyblock.PermissionlessSeat() {
+		return nil
+	}
+	_, index := parent.Get(keyblock.LeaderPubKey(), PublicKey)
+	if index < 0 {
+		return nil
+	}
+	legacy := parent.Copy()
+	legacy.Add(newNode, index, keyblock.OutAddress(1))
+	if legacy.RlpHash() == keyblock.CommitteeHash() {
+		return legacy
+	}
+	return nil
 }
 
 func GetNodeID(addr string, pub string) string {

@@ -45,6 +45,18 @@ import (
 	"golang.org/x/crypto/ed25519"
 )
 
+// nodeRole uses the elected proposal leader. Committee seat 0 is not the
+// leader unless the current view selected that seat.
+func nodeRole(e *Ethereum) string {
+	if e != nil && e.reconfig != nil {
+		return e.reconfig.LocalRole()
+	}
+	if bftview.IamMember() < 0 {
+		return "I'm common node."
+	}
+	return "I'm committee member."
+}
+
 // PublicEthereumAPI provides an API to access Ethereum full node-related
 // information.
 type PublicEthereumAPI struct {
@@ -361,19 +373,7 @@ func (api *PublicEthereumAPI) GetTransactionReceipt(ctx context.Context, hash co
 }
 
 func (api *PublicEthereumAPI) Status() string {
-	var s string
-	i := bftview.IamMember()
-
-	if i >= 0 {
-		if i == 0 {
-			s = "I'm leader."
-		} else {
-			s = "I'm committee member."
-		}
-	} else {
-		s += "I'm common node."
-
-	}
+	s := nodeRole(api.e)
 	if api.e.IsMining() {
 		s += "is Running."
 	} else {
@@ -552,17 +552,7 @@ func (api *PrivateMinerAPI) Stop() error {
 }
 
 func (api *PrivateMinerAPI) Status() string {
-	var s string
-	i := bftview.IamMember()
-	if i >= 0 {
-		if i == 0 {
-			s = "I'm leader."
-		} else {
-			s = "I'm committee member."
-		}
-	} else {
-		s += "I'm common node."
-	}
+	s := nodeRole(api.e)
 	running := api.e.IsMining() || api.e.ServiceIsRunning()
 	if running {
 		s += "is Running."

@@ -825,26 +825,62 @@ func HasKeyBlockBody(db ethdb.Reader, hash common.Hash, number uint64) bool {
 	return true
 }
 
-// WriteBlock serializes a block into the database, header and body separately.
+// WriteKeyBlock serializes a key block into the database. The body key stores the
+// exact consensus RLP (EncodeToBytes), including the permissionless seat flag and
+// timeout proofs. Older databases may still have a legacy six-field KeyBlockBody.
 func WriteKeyBlock(db ethdb.KeyValueWriter, block *types.KeyBlock) {
-	WriteKeyBody(db, block.Hash(), block.NumberU64(), block.Body())
 	WriteKeyHeader(db, block.Header())
+	WriteKeyBodyRLP(db, block.Hash(), block.NumberU64(), block.EncodeToBytes())
 }
 
-// ReadKeyBlock retrieves an entire key block corresponding to the hash, assembling it
-// back from the stored header and body. If either the header or body could not
-// be retrieved nil is returned.
+// ReadKeyBlock retrieves an entire key block corresponding to the hash. Newer
+// bodies decode as the full key-block RLP. Legacy bodies are reassembled from the
+// header and, when present, restored from the QC-covered KeyInfo on the carrier
+// transaction block so permissionless proofs survive restart.
 func ReadKeyBlock(db ethdb.Reader, hash common.Hash, number uint64) *types.KeyBlock {
 	header := ReadKeyHeader(db, hash, number)
 	if header == nil {
 		return nil
 	}
-	body := ReadKeyBody(db, hash, number)
-	if body == nil {
+	data := ReadKeyBodyRLP(db, hash, number)
+	if len(data) == 0 {
 		return nil
 	}
-	b := types.NewKeyBlockWithHeader(header).WithBody(body.InPubKey, body.InAddress, body.OutPubKey, body.OutAddress, body.LeaderPubKey, body.LeaderAddress).CopyMe()
-	return b
+	if block := types.DecodeToKeyBlock(data); block != nil && block.Hash() == hash && block.NumberU64() == number {
+		return block
+	}
+	body := new(types.KeyBlockBody)
+	if err := rlp.Decode(bytes.NewReader(data), body); err != nil {
+		log.Error("Invalid key block body RLP", "hash", hash, "err", err)
+		return nil
+	}
+	block := types.NewKeyBlockWithHeader(header).WithBody(body.InPubKey, body.InAddress, body.OutPubKey, body.OutAddress, body.LeaderPubKey, body.LeaderAddress).CopyMe()
+	if restored := readKeyBlockFromCarrier(db, block); restored != nil {
+		return restored
+	}
+	return block
+}
+
+// readKeyBlockFromCarrier recovers permissionless metadata that legacy key bodies
+// dropped. The carrier transaction embeds the same KeyInfo the committee certified.
+func readKeyBlockFromCarrier(db ethdb.Reader, block *types.KeyBlock) *types.KeyBlock {
+	if block == nil {
+		return nil
+	}
+	carrierNumber := block.T_Number() + 1
+	carrierHash := ReadCanonicalHash(db, carrierNumber)
+	if carrierHash == (common.Hash{}) {
+		return nil
+	}
+	carrier := ReadBlock(db, carrierHash, carrierNumber)
+	if carrier == nil || carrier.BlockType() != types.Key_Block {
+		return nil
+	}
+	full := types.DecodeToKeyBlock(carrier.KeyInfo())
+	if full == nil || full.Hash() != block.Hash() || full.NumberU64() != block.NumberU64() {
+		return nil
+	}
+	return full
 }
 
 // DeleteKeyBlock removes all key block data associated with a hash.

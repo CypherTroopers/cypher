@@ -37,8 +37,8 @@ func TestCypheriumCustomGenesisConfigPinsUpgradeSurface(t *testing.T) {
 	if genesis.Config.ChainID == nil || genesis.Config.ChainID.Sign() == 0 {
 		t.Fatal("genesis.json must keep a non-zero chainId")
 	}
-	if !genesis.Config.FixedCommittee {
-		t.Fatal("fixedCommittee must remain enabled for this test genesis")
+	if genesis.Config.FixedCommittee {
+		t.Fatal("fixedCommittee must be disabled so PoW can replace committee seats")
 	}
 	if genesis.Config.FixedLeader {
 		t.Fatal("fixedLeader must remain disabled for Fair HotStuff genesis")
