@@ -345,8 +345,14 @@ func (cp *CandidatePool) loop() {
 }
 
 func (cp *CandidatePool) add(candidate *types.Candidate, local bool, isPlaintext bool) error {
+	var publish *types.Candidate
 	cp.mu.Lock()
-	defer cp.mu.Unlock()
+	defer func() {
+		cp.mu.Unlock()
+		if publish != nil {
+			go cp.feed.Send(publish)
+		}
+	}()
 	keyBlock := cp.backend.KeyBlockChain().CurrentBlock()
 	if candidate.KeyCandidate.T_Number < keyBlock.T_Number() || candidate.KeyCandidate.Number.Uint64() <= keyBlock.NumberU64() {
 		log.Error("CandidatePool.add is too low", "number", candidate.KeyCandidate.Number, "t_number", candidate.KeyCandidate.T_Number)
@@ -364,6 +370,12 @@ func (cp *CandidatePool) add(candidate *types.Candidate, local bool, isPlaintext
 			"pubkey", candidate.PubKey,
 			"hash", candidate.Hash(),
 		)
+		// A verified candidate has to be visible to the next key proposal.
+		// The port echo only proves the advertised address answers; on a shared
+		// external IP that echo never returns and the proof stayed in temp.
+		if !cp.candidates.Add(candidate) {
+			publish = candidate
+		}
 		cp.CheckMinerPort(net.JoinHostPort(net.IP(candidate.IP).String(), strconv.Itoa(candidate.Port)), cp.backend.BlockChain().CurrentBlockN(), cp.backend.KeyBlockChain().CurrentBlockN())
 	}
 	return nil
@@ -398,8 +410,8 @@ func (cp *CandidatePool) Content() []*types.Candidate {
 }
 
 // Revision returns an O(1) generation for the proposal-visible candidate set.
-// Temporary candidates do not affect proposal construction and therefore do
-// not advance it until they are acknowledged into the active set.
+// Verified candidates enter that set immediately. The port echo is not a
+// consensus gate.
 func (cp *CandidatePool) Revision() uint64 {
 	if cp == nil || cp.candidates == nil {
 		return 0
