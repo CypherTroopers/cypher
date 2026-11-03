@@ -63,7 +63,7 @@ The DAG is a massive pseudorandom dataset derived from the blockchain state. In 
 | Cell size | 256 bytes | Aligned to GPU cache lines; 4 × 64B sectors |
 | Nominal total cells | 134,217,728 | 32 GiB ÷ 256 B before prime-cell rounding |
 | Epoch length | 52,560 key blocks | ~1 year at the 10-minute key-block cadence |
-| Growth rate | 8 GiB / epoch | Annual growth at the fixed key-block cadence |
+| Growth rate | 10% per epoch | 10% annual growth at the fixed key-block cadence |
 | Seed derivation | SHA3-256(epoch_number ‖ genesis_hash) | Deterministic, chain-anchored |
 
 ## ⚙ Generation Algorithm
@@ -326,17 +326,18 @@ Every 52,560 key blocks (~1 year at the 10-minute key-block cadence), the DAG se
 ### Growth Schedule
 
 ```text
-nominal_dag_size(epoch) = 32 GiB + (epoch × 8 GiB)
+nominal_dag_size(0) = 32 GiB
+nominal_dag_size(epoch) = floor(nominal_dag_size(epoch-1) × 11 / 10)
 
 // Epoch 0:   32 GiB
-// Epoch 1:   40 GiB   (~1 year)
-// Epoch 2:   48 GiB   (~2 years)
-// Epoch 5:   72 GiB   (~5 years)
+// Epoch 1:   35.2 GiB    (~1 year)
+// Epoch 2:   38.72 GiB   (~2 years)
+// Epoch 5:   ~51.54 GiB  (~5 years)
 ```
 
-The implementation rounds each nominal size down until the number of 256-byte cells is prime, so the actual size and per-epoch increase differ from the nominal values by a few KiB.
+The implementation takes the highest prime 256-byte cell count strictly below each nominal size, so the actual size differs from the nominal value by a few KiB.
 
-Governance lever: The growth rate (8 GiB/epoch) is a consensus parameter. It can be adjusted via hard fork if hardware capacities plateau.
+Governance lever: The growth rate (10% per epoch, about one year) is a consensus parameter. It can be adjusted via hard fork if hardware capacities plateau.
 
 ## ⚡ Transition Protocol
 
@@ -463,7 +464,7 @@ Algorithm v3 introduces a matrix-oriented round function and an append-only scra
 
 - **Append-only resident scratchpad**
   - Base size: 32 GiB.
-  - Growth: 8 GiB / epoch.
+  - Growth: 10% per epoch (~1 year).
   - Growth activates at each 52,560-key-block epoch boundary; prime-cell rounding can shift the actual increment by a few KiB.
   - New tiles are derived from cycle seed + prior committed prefix root, producing an append-only DAG image.
   - Merkle sidecar/proofs (`MerkleSidecar`) provide verifiable membership for mining and audit cells.
@@ -482,7 +483,7 @@ This model keeps the workload bandwidth-bound while adding structured compute pr
 | DAG reads per nonce | R | 64 |
 | Audit cells per solution | K | 16 |
 | Epoch length | E | 52,560 key blocks |
-| DAG growth per epoch | ΔD | 8 GiB |
+| DAG growth per epoch | ΔD | ×11/10 (10% of the previous nominal size) |
 | Merkle tree hash | — | Blake3 |
 | Mixing hash | — | SHA3-512 |
 | Final hash | — | Blake3 |

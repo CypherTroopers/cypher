@@ -14,15 +14,25 @@ import (
 )
 
 func TestDatasetGrowthSchedule(t *testing.T) {
-	const (
-		wantEpochLength       = uint64(52_560)
-		wantDatasetGrowthSize = uint64(8 << 30)
-	)
+	const wantEpochLength = uint64(52_560)
 	if epochLength != wantEpochLength {
 		t.Fatalf("epoch length = %d key blocks, want %d", epochLength, wantEpochLength)
 	}
-	if datasetGrowthBytes != wantDatasetGrowthSize {
-		t.Fatalf("dataset growth = %d bytes, want %d", datasetGrowthBytes, wantDatasetGrowthSize)
+	if datasetGrowthNum != 11 || datasetGrowthDen != 10 {
+		t.Fatalf("dataset annual growth = %d/%d, want 11/10", datasetGrowthNum, datasetGrowthDen)
+	}
+
+	prev := nominalDatasetBytes(0)
+	if prev != datasetInitBytes {
+		t.Fatalf("genesis nominal dataset = %d bytes, want %d", prev, uint64(datasetInitBytes))
+	}
+	for epoch := 1; epoch <= 5; epoch++ {
+		got := nominalDatasetBytes(epoch)
+		want := prev * uint64(datasetGrowthNum) / uint64(datasetGrowthDen)
+		if got != want {
+			t.Fatalf("nominal dataset epoch %d = %d bytes, want %d", epoch, got, want)
+		}
+		prev = got
 	}
 
 	tests := []struct {
@@ -31,9 +41,9 @@ func TestDatasetGrowthSchedule(t *testing.T) {
 	}{
 		{block: 0, want: 34_359_728_384},
 		{block: 52_559, want: 34_359_728_384},
-		{block: 52_560, want: 42_949_659_392},
-		{block: 105_119, want: 42_949_659_392},
-		{block: 105_120, want: 51_539_598_592},
+		{block: 52_560, want: 37_795_709_696},
+		{block: 105_119, want: 37_795_709_696},
+		{block: 105_120, want: 41_575_282_432},
 	}
 	for _, test := range tests {
 		if got := datasetSize(test.block); got != test.want {
