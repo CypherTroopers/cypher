@@ -22,19 +22,22 @@ import (
 )
 
 const (
-	datasetInitBytes   = 32 << 30 // Bytes in dataset at genesis
-	datasetGrowthBytes = 8 << 30  // Dataset growth per epoch
-	cacheInitBytes     = 512 << 20
-	cacheGrowthBytes   = 8 << 20 // Cache growth per epoch
-	epochLength        = 52_560  // Key blocks per epoch (~1 year at 10-minute cadence)
-	mixBytes           = 256     // Width of a DAG cell
-	hashBytes          = 64      // Hash length in bytes
-	hashWords          = 16      // Number of 32 bit ints in a hash
-	datasetParents     = 256     // Number of parents of each dataset element
-	cacheRounds        = 3       // Number of rounds in cache production
-	loopAccesses       = 128     // Number of accesses in colossusX loop
-	auditCellCount     = 16      // Number of sampled cells committed into the per-hash Merkle root
-	mixWordCount       = mixBytes / 4
+	datasetInitBytes = 32 << 30 // Bytes in dataset at genesis
+	// datasetGrowthNum/datasetGrowthDen is applied once per epoch. epochLength is
+	// ~1 year at a 10-minute key-block cadence, so 11/10 is 10% annual growth.
+	datasetGrowthNum = 11
+	datasetGrowthDen = 10
+	cacheInitBytes   = 512 << 20
+	cacheGrowthBytes = 8 << 20 // Cache growth per epoch
+	epochLength      = 52_560  // Key blocks per epoch (~1 year at 10-minute cadence)
+	mixBytes         = 256     // Width of a DAG cell
+	hashBytes        = 64      // Hash length in bytes
+	hashWords        = 16      // Number of 32 bit ints in a hash
+	datasetParents   = 256     // Number of parents of each dataset element
+	cacheRounds      = 3       // Number of rounds in cache production
+	loopAccesses     = 128     // Number of accesses in colossusX loop
+	auditCellCount   = 16      // Number of sampled cells committed into the per-hash Merkle root
+	mixWordCount     = mixBytes / 4
 )
 
 // cacheSize returns the size of the colossusX verification cache that belongs to a certain
@@ -65,15 +68,39 @@ func datasetSize(block uint64) uint64 {
 	return calcDatasetSize(epoch)
 }
 
-// calcDatasetSize calculates the dataset size for epoch. The dataset size grows linearly,
-// however, we always take the highest prime below the linearly growing threshold in order
-// to reduce the risk of accidental regularities leading to cyclic behavior.
-func calcDatasetSize(epoch int) uint64 {
-	size := datasetInitBytes + datasetGrowthBytes*uint64(epoch) - mixBytes
-	for !new(big.Int).SetUint64(size / mixBytes).ProbablyPrime(1) { // Always accurate for n < 2^64
-		size -= 2 * mixBytes
+// nominalDatasetBytes is the dataset size before prime-cell rounding.
+// Epoch 0 is datasetInitBytes. Each later epoch is the previous nominal size
+// times 11/10, truncated to a byte, which is 10% annual growth.
+func nominalDatasetBytes(epoch int) uint64 {
+	size := new(big.Int).SetUint64(datasetInitBytes)
+	num := big.NewInt(datasetGrowthNum)
+	den := big.NewInt(datasetGrowthDen)
+	for i := 0; i < epoch; i++ {
+		size.Mul(size, num)
+		size.Quo(size, den)
 	}
-	return size
+	if !size.IsUint64() {
+		panic("colossusX dataset size exceeds uint64")
+	}
+	return size.Uint64()
+}
+
+// calcDatasetSize calculates the dataset size for epoch. The nominal size grows
+// by 10% per epoch (~1 year). The returned size is the highest prime cell count
+// strictly below that nominal size, in bytes, to reduce the risk of accidental
+// regularities leading to cyclic behavior.
+func calcDatasetSize(epoch int) uint64 {
+	cells := nominalDatasetBytes(epoch) / mixBytes
+	// Start one cell below the nominal count, then step by two from an odd
+	// candidate. Even cell counts greater than 2 are not prime.
+	cells--
+	if cells%2 == 0 {
+		cells--
+	}
+	for !new(big.Int).SetUint64(cells).ProbablyPrime(1) { // Always accurate for n < 2^64
+		cells -= 2
+	}
+	return cells * mixBytes
 }
 
 // hasher is a repetitive hasher allowing the same hash data structures to be
