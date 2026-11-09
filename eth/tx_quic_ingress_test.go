@@ -1858,7 +1858,7 @@ func TestTxQUICPreQuorumCancelDrainsLaunchedEndpoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	started := make(chan struct{}, txQUICReceiptQuorum(committeeSize))
+	started := make(chan struct{}, committeeSize)
 	var exited atomic.Int32
 	forward := func(ctx context.Context, _ string, _ []byte) (*txQUICAckReceipt, error) {
 		started <- struct{}{}
@@ -1877,11 +1877,11 @@ func TestTxQUICPreQuorumCancelDrainsLaunchedEndpoints(t *testing.T) {
 		receipts, err := q.forwardFHSQuorumPayloadWith(attemptCtx, payload, forward)
 		resultCh <- cancelResult{receipts: receipts, err: err}
 	}()
-	for startedCount := 0; startedCount < txQUICReceiptQuorum(committeeSize); startedCount++ {
+	for startedCount := 0; startedCount < committeeSize; startedCount++ {
 		select {
 		case <-started:
 		case <-time.After(time.Second):
-			t.Fatal("pre-quorum endpoint did not launch")
+			t.Fatal("committee endpoint did not launch")
 		}
 	}
 	canceledAt := time.Now()
@@ -1902,8 +1902,8 @@ func TestTxQUICPreQuorumCancelDrainsLaunchedEndpoints(t *testing.T) {
 	if elapsed := time.Since(canceledAt); elapsed < 20*time.Millisecond {
 		t.Fatalf("pre-quorum cancel returned before delayed endpoint completion: %v", elapsed)
 	}
-	if got := exited.Load(); got != int32(txQUICReceiptQuorum(committeeSize)) {
-		t.Fatalf("drained endpoint goroutines = %d, want %d", got, txQUICReceiptQuorum(committeeSize))
+	if got := exited.Load(); got != int32(committeeSize) {
+		t.Fatalf("drained endpoint goroutines = %d, want %d", got, committeeSize)
 	}
 }
 
@@ -2164,28 +2164,25 @@ func TestTxQUICBackgroundHandoffQueueSaturationKeepsCancelWithCaller(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("saturation test did not launch the hedged endpoint")
 	}
-	releasedAt := time.Now()
 	close(releaseQuorum)
-	select {
-	case result := <-resultCh:
-		t.Fatalf("saturated handoff returned before canceled endpoint drain: receipts %d err %v", result.receipts, result.err)
-	case <-time.After(15 * time.Millisecond):
-	}
 	select {
 	case result := <-resultCh:
 		if result.err != nil || result.receipts != txQUICReceiptQuorum(committeeSize) {
 			t.Fatalf("saturated handoff result = receipts %d err %v", result.receipts, result.err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("saturated handoff did not finish after endpoint drain")
+		t.Fatal("saturated handoff waited for the remaining committee member")
 	}
 	select {
 	case <-tailDone:
-	default:
-		t.Fatal("saturated handoff returned before its endpoint goroutine exited")
+		t.Fatal("quorum completion canceled the remaining committee send")
+	case <-time.After(25 * time.Millisecond):
 	}
-	if elapsed := time.Since(releasedAt); elapsed < 20*time.Millisecond {
-		t.Fatalf("saturated handoff returned before delayed endpoint completion: %v", elapsed)
+	q.cancel()
+	select {
+	case <-tailDone:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not finish the detached committee send")
 	}
 }
 

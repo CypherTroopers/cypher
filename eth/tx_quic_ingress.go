@@ -3066,9 +3066,10 @@ func rotateTxQUICCommitteeTail(endpoints []string, cursor uint64) []string {
 }
 
 // forwardFHSQuorumPayload gathers item-wise durable receipts from distinct
-// committee consensus identities. It starts only a quorum-sized window and opens a
-// replacement request when an endpoint fails or returns an unresolved item,
-// avoiding unconditional whole-committee fanout.
+// committee consensus identities. Every current committee member is contacted
+// at once so the next leader already holds the transaction body. The caller
+// still returns at a 2f+1 receipt quorum and does not wait for a member that
+// never answers. In-flight sends keep running after that return.
 func (q *TxQUICIngress) forwardFHSQuorumPayload(ctx context.Context, payload []byte) (int, error) {
 	var persist func(common.Hash, txOutboxPlacementState, txQUICAck) error
 	if q != nil && q.outbox != nil {
@@ -3196,11 +3197,9 @@ func (q *TxQUICIngress) forwardFHSQuorumPayloadWithPersistence(ctx context.Conte
 			results <- txQUICForwardResult{endpoint: endpoint, receipt: receipt, err: forwardErr}
 		}()
 	}
-	initial := quorum
-	if initial > len(endpoints) {
-		initial = len(endpoints)
-	}
-	for launched < initial {
+	// The whole committee is the availability set for a hash-only proposal.
+	// Quorum still decides when this attempt returns; it does not decide who is contacted.
+	for launched < len(endpoints) {
 		launch(endpoints[launched])
 	}
 	hedgeTimer := time.NewTimer(time.Hour)
@@ -3290,12 +3289,14 @@ func (q *TxQUICIngress) forwardFHSQuorumPayloadWithPersistence(ctx context.Conte
 				if inFlight > 0 || len(remaining) > 0 {
 					// Detach the already-durable committee placement from the outbox
 					// attempt before it returns and cancels its deadline context.
+					// A full accelerator must not cancel members that were already
+					// contacted; the next leader may be one of those in-flight sends.
 					detachAttemptCancellation()
 					job := txQUICBackgroundForward{
 						payload: payload, endpoints: remaining, results: results,
 						pending: inFlight, cancel: cancelPlacement,
 					}
-					if q.enqueueBackgroundForward(job) {
+					if q.enqueueBackgroundForward(job) || q.retainBackgroundForward(job) {
 						placementHandedOff = true
 					} else {
 						cancelPlacement()
@@ -3356,6 +3357,28 @@ func (q *TxQUICIngress) startBackgroundForwardWorkers() {
 	// Keep worker registration inside the critical section so Add can never
 	// race a zero-counter Wait during a concurrent lifecycle shutdown.
 	q.backgroundForwardMu.Unlock()
+}
+
+// retainBackgroundForward owns job when the accelerator queue cannot accept it.
+// The in-flight committee sends keep running instead of being canceled.
+func (q *TxQUICIngress) retainBackgroundForward(job txQUICBackgroundForward) bool {
+	if q == nil || len(job.payload) == 0 || job.pending < 0 ||
+		(job.pending == 0 && len(job.endpoints) == 0) || (job.pending > 0 && job.results == nil) {
+		return false
+	}
+	job.payload = append([]byte(nil), job.payload...)
+	job.endpoints = append([]string(nil), job.endpoints...)
+	q.backgroundForwardMu.Lock()
+	defer q.backgroundForwardMu.Unlock()
+	if !q.backgroundForwardAccepting || q.ctx == nil || q.ctx.Err() != nil {
+		return false
+	}
+	q.wg.Add(1)
+	go func() {
+		defer q.wg.Done()
+		q.completeBackgroundForward(job, q.dispatchReceipt)
+	}()
+	return true
 }
 
 // enqueueBackgroundForward transfers ownership of job.cancel on success. A
