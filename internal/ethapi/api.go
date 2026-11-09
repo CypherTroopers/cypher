@@ -2041,6 +2041,8 @@ type PublicTransactionPoolAPI struct {
 	singleRawTxPendingCount    int
 	singleRawTxPendingBytes    int
 	singleRawTxWorkerRunning   bool
+	singleRawTxQuietDeadline   time.Time
+	singleRawTxWake            chan struct{}
 	singleRawTxCoalesceDelay   time.Duration
 	singleRawTxQueueCountLimit int
 	singleRawTxQueueBytesLimit int
@@ -2065,6 +2067,7 @@ func NewPublicTransactionPoolAPI(b Backend, nonceLock *AddrLocker) *PublicTransa
 		b:                          b,
 		am:                         b.AccountManager(),
 		nonceLock:                  nonceLock,
+		singleRawTxWake:            make(chan struct{}, 1),
 		singleRawTxCoalesceDelay:   singleRawTxDefaultCoalesceDelay,
 		singleRawTxQueueCountLimit: singleRawTxDefaultQueueCountLimit,
 		singleRawTxQueueBytesLimit: singleRawTxDefaultQueueBytesLimit,
@@ -2804,10 +2807,13 @@ const (
 	// leaving one full wave queued behind the active workers.
 	rawTxIngressOutstandingWaves = 2
 
-	// Parallel eth_sendRawTransaction calls share this short collection window.
-	// Pending work includes both queued and currently submitted transactions so
-	// a slow backend cannot turn the coalescer into unbounded memory storage.
-	singleRawTxDefaultCoalesceDelay   = 2 * time.Millisecond
+	// eth_sendRawTransaction returns after local acceptance. This quiet window
+	// then collects same-sender nonce prefixes, and unrelated transactions,
+	// into one admission certificate before the committee fanout. A full
+	// certificate flushes without waiting for the window. Pending work includes
+	// both queued and currently submitted transactions so a slow backend cannot
+	// turn the coalescer into unbounded memory storage.
+	singleRawTxDefaultCoalesceDelay   = 20 * time.Millisecond
 	singleRawTxDefaultQueueCountLimit = MaxRawTxRequestCount
 	// The node-global queue is independent from one public request and can absorb
 	// a five-second million-transfer burst without relaxing the 60 MiB request
@@ -2842,6 +2848,7 @@ func (s *PublicTransactionPoolAPI) Stop() {
 	s.rawTxStopOnce.Do(func() {
 		s.singleRawTxMu.Lock()
 		s.rawTxAccepting = false
+		s.wakeSingleRawTxCoalescerLocked()
 		s.singleRawTxMu.Unlock()
 
 		// Producers and accepted single calls keep this counter positive while
@@ -2883,6 +2890,8 @@ type rawTxPreparationStats struct {
 type singleRawTxRequest struct {
 	encoded   hexutil.Bytes
 	routeHint types.TxRouteHint
+	tx        *types.Transaction
+	sender    common.Address
 	response  chan singleRawTxResponse
 }
 
@@ -3533,49 +3542,6 @@ func (s *PublicTransactionPoolAPI) prepareRawTxIngressJob(encoded []hexutil.Byte
 	return prepared, stats, nil
 }
 
-func (s *PublicTransactionPoolAPI) prepareSingleRawTxIngressJobs(batch []*singleRawTxRequest, current *types.Block) (jobs []*rawTxIngressJob, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			jobs = nil
-			err = fmt.Errorf("prepare raw transaction coalescer wave: %v", recovered)
-		}
-	}()
-	encoded := make([]hexutil.Bytes, len(batch))
-	routeHints := make([]types.TxRouteHint, len(batch))
-	for index, request := range batch {
-		encoded[index] = request.encoded
-		routeHints[index] = request.routeHint
-	}
-	started := time.Now()
-	prepared, stats := s.prepareRawTransactions(encoded, routeHints, current)
-	log.Debug("Prepared raw transaction coalescer wave", "requested", len(encoded), "bytes", stats.totalBytes,
-		"decode", stats.decode, "prepare", stats.prepare, "senderRecovery", stats.senderRecovery, "total", time.Since(started))
-	partitions := s.partitionPreparedRawTransactions(encoded, prepared)
-	jobs = make([]*rawTxIngressJob, 0, len(partitions))
-	for _, partition := range partitions {
-		job := &rawTxIngressJob{
-			encoded:  make([]hexutil.Bytes, len(partition)),
-			prepared: make([]rawTxPreparedTransaction, len(partition)),
-			single:   make([]*singleRawTxRequest, len(partition)),
-			current:  current,
-			ctx:      context.Background(),
-		}
-		for position, index := range partition {
-			job.encoded[position] = encoded[index]
-			job.prepared[position] = prepared[index]
-			job.single[position] = batch[index]
-			job.pendingBytes += len(encoded[index])
-		}
-		job.pendingCount = len(partition)
-		job.senders = rawTxPreparedSenders(job.prepared)
-		// Each single request acquired one lifecycle unit at admission. The
-		// backend job releases those units only after all responses are delivered.
-		job.lifecycleUnits = len(partition)
-		jobs = append(jobs, job)
-	}
-	return jobs, nil
-}
-
 func (s *PublicTransactionPoolAPI) submitRawTransactionBatch(ctx context.Context, encoded []hexutil.Bytes) ([]rawTxSubmissionResult, error) {
 	if err := s.beginRawTxIngressProducer(); err != nil {
 		return nil, err
@@ -3751,115 +3717,331 @@ func (s *PublicTransactionPoolAPI) submitRawTransactionBatch(ctx context.Context
 	return results, nil
 }
 
-func (s *PublicTransactionPoolAPI) enqueueSingleRawTransaction(encodedTx hexutil.Bytes, routeHint types.TxRouteHint) (<-chan singleRawTxResponse, error) {
-	if len(encodedTx) > MaxRawTxBatchBytes {
-		return nil, fmt.Errorf("raw transaction bytes %d exceed per-transaction limit %d", len(encodedTx), MaxRawTxBatchBytes)
+func (s *PublicTransactionPoolAPI) rawTransactionSigner(tx *types.Transaction, current *types.Block) types.Signer {
+	switch rawTransactionSignerClass(s.b.ChainConfig(), tx.V()) {
+	case 1:
+		return types.NewEIP155Signer(s.b.ChainConfig().ChainID)
+	default:
+		return types.MakeSigner(s.b.ChainConfig(), current.Number())
 	}
+}
 
+func (s *PublicTransactionPoolAPI) wakeSingleRawTxCoalescerLocked() {
+	if s.singleRawTxWake == nil {
+		return
+	}
+	select {
+	case s.singleRawTxWake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *PublicTransactionPoolAPI) enqueuePreparedSingleRawTransaction(encodedTx hexutil.Bytes, tx *types.Transaction, sender common.Address) error {
 	s.singleRawTxMu.Lock()
 	if !s.rawTxAccepting {
 		s.singleRawTxMu.Unlock()
-		return nil, errRawTxIngressStopped
+		return errRawTxIngressStopped
 	}
 	if err := s.rawTxIngressCapacityErrorLocked(1, len(encodedTx)); err != nil {
 		s.singleRawTxMu.Unlock()
-		return nil, err
+		return err
 	}
 	// The RPC decoder owns encodedTx only for the lifetime of this call. Keep an
-	// independent copy because cancellation stops waiting, not node-side work.
-	request := &singleRawTxRequest{routeHint: routeHint, response: make(chan singleRawTxResponse, 1)}
+	// independent copy because the coalescer submits it after the RPC returns.
+	request := &singleRawTxRequest{
+		routeHint: tx.RouteHint(),
+		tx:        tx,
+		sender:    sender,
+		response:  make(chan singleRawTxResponse, 1),
+	}
 	request.encoded = append(hexutil.Bytes(nil), encodedTx...)
 	s.singleRawTxQueue = append(s.singleRawTxQueue, request)
 	s.singleRawTxPendingCount++
 	s.singleRawTxPendingBytes += len(request.encoded)
+	if s.singleRawTxCoalesceDelay > 0 {
+		s.singleRawTxQuietDeadline = time.Now().Add(s.singleRawTxCoalesceDelay)
+	} else {
+		s.singleRawTxQuietDeadline = time.Time{}
+	}
 	s.rawTxLifecycleWG.Add(1)
 	startWorker := !s.singleRawTxWorkerRunning
 	if startWorker {
 		s.singleRawTxWorkerRunning = true
 		s.rawTxWorkerWG.Add(1)
 	}
+	s.wakeSingleRawTxCoalescerLocked()
 	s.singleRawTxMu.Unlock()
 
 	if startWorker {
 		go s.runSingleRawTxCoalescer()
 	}
-	return request.response, nil
+	return nil
 }
 
-func (s *PublicTransactionPoolAPI) takeSingleRawTxBatch() []*singleRawTxRequest {
-	s.singleRawTxMu.Lock()
-	defer s.singleRawTxMu.Unlock()
+// packSingleRawTxAdmissionBatches groups accepted single transactions into
+// admission certificates of at most MaxRawTxBatchCount. A sender's contiguous
+// nonce prefix stays inside one certificate until that cap splits it. A sender
+// that already has an in-flight job keeps its own certificate so an unrelated
+// account is not blocked behind that job.
+func packSingleRawTxAdmissionBatches(requests []*singleRawTxRequest, activeSenders map[common.Address]uint32) [][]*singleRawTxRequest {
+	type positionedRequest struct {
+		request *singleRawTxRequest
+		index   int
+	}
+	type admissionChunk struct {
+		first   int
+		sender  common.Address
+		blocked bool
+		reqs    []*singleRawTxRequest
+	}
+	bySender := make(map[common.Address][]positionedRequest)
+	senderOrder := make([]common.Address, 0)
+	for index, request := range requests {
+		if request == nil || request.tx == nil {
+			continue
+		}
+		if _, exists := bySender[request.sender]; !exists {
+			senderOrder = append(senderOrder, request.sender)
+		}
+		bySender[request.sender] = append(bySender[request.sender], positionedRequest{request: request, index: index})
+	}
+	chunks := make([]admissionChunk, 0)
+	for _, sender := range senderOrder {
+		items := bySender[sender]
+		sort.SliceStable(items, func(left, right int) bool {
+			return items[left].request.tx.Nonce() < items[right].request.tx.Nonce()
+		})
+		run := make([]*singleRawTxRequest, 0, len(items))
+		first := 0
+		flushRun := func() {
+			if len(run) == 0 {
+				return
+			}
+			for start := 0; start < len(run); start += MaxRawTxBatchCount {
+				end := start + MaxRawTxBatchCount
+				if end > len(run) {
+					end = len(run)
+				}
+				chunkFirst := first
+				if start > 0 {
+					chunkFirst = first + start
+				}
+				chunks = append(chunks, admissionChunk{
+					first:   chunkFirst,
+					sender:  sender,
+					blocked: activeSenders[sender] > 0,
+					reqs:    append([]*singleRawTxRequest(nil), run[start:end]...),
+				})
+			}
+			run = run[:0]
+		}
+		for _, item := range items {
+			if len(run) == 0 {
+				run = append(run, item.request)
+				first = item.index
+				continue
+			}
+			previous := run[len(run)-1]
+			if previous.tx.Nonce() != ^uint64(0) && item.request.tx.Nonce() == previous.tx.Nonce()+1 {
+				run = append(run, item.request)
+				continue
+			}
+			flushRun()
+			run = append(run, item.request)
+			first = item.index
+		}
+		flushRun()
+	}
+	sort.SliceStable(chunks, func(left, right int) bool {
+		return chunks[left].first < chunks[right].first
+	})
+	certs := make([][]*singleRawTxRequest, 0, len(chunks))
+	var current []*singleRawTxRequest
+	currentBlocked := false
+	flushCurrent := func() {
+		if len(current) == 0 {
+			return
+		}
+		certs = append(certs, current)
+		current = nil
+		currentBlocked = false
+	}
+	for _, chunk := range chunks {
+		if len(current) == 0 {
+			current = append([]*singleRawTxRequest(nil), chunk.reqs...)
+			currentBlocked = chunk.blocked
+			continue
+		}
+		if chunk.blocked || currentBlocked || len(current)+len(chunk.reqs) > MaxRawTxBatchCount {
+			flushCurrent()
+			current = append([]*singleRawTxRequest(nil), chunk.reqs...)
+			currentBlocked = chunk.blocked
+			continue
+		}
+		current = append(current, chunk.reqs...)
+	}
+	flushCurrent()
+	return certs
+}
 
-	if len(s.singleRawTxQueue) == 0 {
-		s.singleRawTxWorkerRunning = false
+func (s *PublicTransactionPoolAPI) detachCoalescedSingleRawTxBatchLocked(includePartial bool) [][]*singleRawTxRequest {
+	certs := packSingleRawTxAdmissionBatches(s.singleRawTxQueue, s.rawTxActiveSenders)
+	if len(certs) == 0 {
 		return nil
 	}
-	waveCount := s.rawTxBackendWorkers * MaxRawTxBatchCount
-	waveBytes := s.rawTxBackendWorkers * MaxRawTxBatchBytes
-	end, batchBytes := 0, 0
-	for end < len(s.singleRawTxQueue) && end < waveCount {
-		nextBytes := len(s.singleRawTxQueue[end].encoded)
-		if end > 0 && nextBytes > waveBytes-batchBytes {
+	total := 0
+	for _, request := range s.singleRawTxQueue {
+		if request != nil && request.tx != nil {
+			total++
+		}
+	}
+	chosen := make([][]*singleRawTxRequest, 0, len(certs))
+	kept := 0
+	for _, cert := range certs {
+		restAfter := total - kept - len(cert)
+		take := includePartial || len(cert) == MaxRawTxBatchCount || restAfter >= MaxRawTxBatchCount || kept == 0
+		if !take {
 			break
 		}
-		batchBytes += nextBytes
-		end++
+		chosen = append(chosen, cert)
+		kept += len(cert)
+		if !includePartial && len(cert) < MaxRawTxBatchCount && restAfter < MaxRawTxBatchCount {
+			break
+		}
 	}
-	batch := append([]*singleRawTxRequest(nil), s.singleRawTxQueue[:end]...)
-	for index := 0; index < end; index++ {
+	if len(chosen) == 0 {
+		return nil
+	}
+	selected := make(map[*singleRawTxRequest]struct{}, kept)
+	for _, cert := range chosen {
+		for _, request := range cert {
+			selected[request] = struct{}{}
+		}
+	}
+	retained := make([]*singleRawTxRequest, 0, len(s.singleRawTxQueue)-kept)
+	for _, request := range s.singleRawTxQueue {
+		if _, ok := selected[request]; ok {
+			continue
+		}
+		retained = append(retained, request)
+	}
+	for index := len(retained); index < len(s.singleRawTxQueue); index++ {
 		s.singleRawTxQueue[index] = nil
 	}
-	if end == len(s.singleRawTxQueue) {
+	if len(retained) == 0 {
 		s.singleRawTxQueue = nil
 	} else {
-		s.singleRawTxQueue = s.singleRawTxQueue[end:]
+		s.singleRawTxQueue = retained
 	}
-	return batch
+	return chosen
+}
+
+func (s *PublicTransactionPoolAPI) dispatchCoalescedSingleRawTransactions(certs [][]*singleRawTxRequest) {
+	flat := make([]*singleRawTxRequest, 0)
+	for _, cert := range certs {
+		flat = append(flat, cert...)
+	}
+	if len(flat) == 0 {
+		return
+	}
+	fail := func(err error) {
+		batchBytes := 0
+		for _, request := range flat {
+			batchBytes += len(request.encoded)
+		}
+		s.releaseRawTxIngressCapacity(len(flat), batchBytes)
+		deliverSingleRawTxResponses(flat, nil, err)
+		s.rawTxLifecycleWG.Add(-len(flat))
+	}
+	current := s.b.CurrentBlock()
+	if current == nil {
+		fail(fmt.Errorf("current block is unavailable"))
+		return
+	}
+	jobs := make([]*rawTxIngressJob, 0, len(certs))
+	for _, cert := range certs {
+		if len(cert) == 0 {
+			continue
+		}
+		job := &rawTxIngressJob{
+			encoded:        make([]hexutil.Bytes, len(cert)),
+			prepared:       make([]rawTxPreparedTransaction, len(cert)),
+			single:         cert,
+			current:        current,
+			ctx:            context.Background(),
+			pendingCount:   len(cert),
+			lifecycleUnits: len(cert),
+		}
+		for index, request := range cert {
+			job.encoded[index] = request.encoded
+			job.prepared[index] = rawTxPreparedTransaction{tx: request.tx, sender: request.sender, decoded: true}
+			job.pendingBytes += len(request.encoded)
+		}
+		job.senders = rawTxPreparedSenders(job.prepared)
+		jobs = append(jobs, job)
+	}
+	if len(jobs) == 0 {
+		fail(errors.New("raw transaction coalescer produced no backend jobs"))
+		return
+	}
+	s.enqueueReservedRawTxIngressJobs(jobs)
 }
 
 func (s *PublicTransactionPoolAPI) runSingleRawTxCoalescer() {
 	defer s.rawTxWorkerWG.Done()
-	if delay := s.singleRawTxCoalesceDelay; delay > 0 {
-		timer := time.NewTimer(delay)
+	timer := time.NewTimer(time.Hour)
+	if !timer.Stop() {
 		<-timer.C
 	}
-	for {
-		batch := s.takeSingleRawTxBatch()
-		if len(batch) == 0 {
+	armed := false
+	stopTimer := func() {
+		if !armed {
 			return
 		}
-		// RPC cancellation only abandons the response wait. Once admitted to this
-		// bounded scheduler, durable pool/outbox submission belongs to the node.
-		current := s.b.CurrentBlock()
-		if current == nil {
-			err := fmt.Errorf("current block is unavailable")
-			batchBytes := 0
-			for _, request := range batch {
-				batchBytes += len(request.encoded)
+		if !timer.Stop() {
+			select {
+			case <-timer.C:
+			default:
 			}
-			s.releaseRawTxIngressCapacity(len(batch), batchBytes)
-			deliverSingleRawTxResponses(batch, nil, err)
-			s.rawTxLifecycleWG.Add(-len(batch))
+		}
+		armed = false
+	}
+	defer stopTimer()
+
+	for {
+		s.singleRawTxMu.Lock()
+		queued := len(s.singleRawTxQueue)
+		accepting := s.rawTxAccepting
+		if queued == 0 {
+			s.singleRawTxWorkerRunning = false
+			s.singleRawTxMu.Unlock()
+			return
+		}
+		now := time.Now()
+		quiet := !now.Before(s.singleRawTxQuietDeadline)
+		full := queued >= MaxRawTxBatchCount
+		if quiet || full || !accepting {
+			certs := s.detachCoalescedSingleRawTxBatchLocked(quiet || !accepting)
+			s.singleRawTxMu.Unlock()
+			stopTimer()
+			if len(certs) == 0 {
+				continue
+			}
+			s.dispatchCoalescedSingleRawTransactions(certs)
 			continue
 		}
-		jobs, err := s.prepareSingleRawTxIngressJobs(batch, current)
-		if err != nil || len(jobs) == 0 {
-			if err == nil {
-				err = errors.New("raw transaction coalescer produced no backend jobs")
-			}
-			batchBytes := 0
-			for _, request := range batch {
-				batchBytes += len(request.encoded)
-			}
-			s.releaseRawTxIngressCapacity(len(batch), batchBytes)
-			deliverSingleRawTxResponses(batch, nil, err)
-			s.rawTxLifecycleWG.Add(-len(batch))
-			continue
+		wait := s.singleRawTxQuietDeadline.Sub(now)
+		s.singleRawTxMu.Unlock()
+		if !armed {
+			timer.Reset(wait)
+			armed = true
 		}
-		// Jobs retain direct request/result alignment and release their reserved
-		// count and bytes independently. The collector immediately proceeds to the
-		// next wave instead of waiting for this wave's backend completions.
-		s.enqueueReservedRawTxIngressJobs(jobs)
+		select {
+		case <-s.singleRawTxWake:
+			stopTimer()
+		case <-timer.C:
+			armed = false
+		}
 	}
 }
 
@@ -3884,41 +4066,47 @@ func (s *PublicTransactionPoolAPI) SendRawTransactions(ctx context.Context, enco
 	return results, nil
 }
 
-// SendRawTransaction will add the signed transaction to the transaction pool.
-// The sender is responsible for signing the transaction and using the correct nonce.
+// SendRawTransaction accepts one signed transaction. Local decode and queue
+// admission return the transaction hash before committee delivery so a client
+// can submit the next nonce into the same admission certificate.
 func (s *PublicTransactionPoolAPI) SendRawTransaction(ctx context.Context, encodedTx hexutil.Bytes) (common.Hash, error) {
 	return s.sendRawTransactionWithRoute(ctx, encodedTx, types.TxRouteFast)
 }
 
 func (s *PublicTransactionPoolAPI) sendRawTransactionWithRoute(ctx context.Context, encodedTx hexutil.Bytes, routeHint types.TxRouteHint) (common.Hash, error) {
-	// A request cancelled before admission has not crossed the node-side work
-	// boundary. Reject it without consuming coalescer capacity or creating
-	// admission/outbox state. Cancellation after enqueue remains intentionally
-	// detached so accepted durable work is never abandoned with the client.
+	// A request cancelled before queue admission has not crossed the node-side
+	// work boundary. Reject it without consuming coalescer capacity. Once
+	// queued, the hash is returned and cancellation cannot abandon the batch.
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
 			return common.Hash{}, err
 		}
 	}
-	responseCh, err := s.enqueueSingleRawTransaction(encodedTx, routeHint)
+	if len(encodedTx) > MaxRawTxBatchBytes {
+		return common.Hash{}, fmt.Errorf("raw transaction bytes %d exceed per-transaction limit %d", len(encodedTx), MaxRawTxBatchBytes)
+	}
+	current := s.b.CurrentBlock()
+	if current == nil {
+		return common.Hash{}, fmt.Errorf("current block is unavailable")
+	}
+	tx, err := decodeRawTransaction(encodedTx, routeHint)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	if err := validateRawTransactionSignatureSize(tx, s.b.ChainConfig()); err != nil {
+		return common.Hash{}, err
 	}
-	select {
-	case response := <-responseCh:
-		if response.err != nil {
-			return common.Hash{}, response.err
-		}
-		if response.result.err != nil {
-			return common.Hash{}, response.result.err
-		}
-		return response.result.hash, nil
-	case <-ctx.Done():
-		return common.Hash{}, ctx.Err()
+	if err := checkTxFeeWithBlob(tx.GasFeeCap(), tx.Gas(), tx.BlobGasFeeCap(), tx.BlobGas(), s.b.RPCTxFeeCap()); err != nil {
+		return common.Hash{}, err
 	}
+	sender, err := types.Sender(s.rawTransactionSigner(tx, current), tx)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if err := s.enqueuePreparedSingleRawTransaction(encodedTx, tx, sender); err != nil {
+		return common.Hash{}, err
+	}
+	return tx.Hash(), nil
 }
 
 func (s *PublicTransactionPoolAPI) SendRawTransactionWithOpts(ctx context.Context, encodedTx hexutil.Bytes, opts SendTxOpts) (common.Hash, error) {

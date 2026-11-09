@@ -1817,7 +1817,7 @@ func TestRawTxIngressStopDrainsDetachedCancelledBulk(t *testing.T) {
 }
 
 func TestRawTxIngressStopJoinsCancelledRequestDuringCoalesceDelay(t *testing.T) {
-	raw, _ := signedRawTransactionsForTest(t, 1)
+	raw, signed := signedRawTransactionsForTest(t, 1)
 	backend := newLondonAPITestBackend()
 	backendStarted := make(chan struct{}, 1)
 	releaseBackend := make(chan struct{})
@@ -1830,11 +1830,28 @@ func TestRawTxIngressStopJoinsCancelledRequestDuringCoalesceDelay(t *testing.T) 
 	api.singleRawTxCoalesceDelay = 100 * time.Millisecond
 
 	ctx, cancel := context.WithCancel(context.Background())
-	requestDone := make(chan error, 1)
+	type callResult struct {
+		hash common.Hash
+		err  error
+	}
+	requestDone := make(chan callResult, 1)
 	go func() {
-		_, err := api.SendRawTransaction(ctx, raw[0])
-		requestDone <- err
+		hash, err := api.SendRawTransaction(ctx, raw[0])
+		requestDone <- callResult{hash: hash, err: err}
 	}()
+	var accepted callResult
+	select {
+	case accepted = <-requestDone:
+	case <-time.After(time.Second):
+		cancel()
+		close(releaseBackend)
+		t.Fatal("hash return waited for the coalescer delay")
+	}
+	if accepted.err != nil || accepted.hash != signed[0].Hash() {
+		cancel()
+		close(releaseBackend)
+		t.Fatalf("accepted hash = %s/%v, want %s/nil", accepted.hash, accepted.err, signed[0].Hash())
+	}
 	deadline := time.Now().Add(time.Second)
 	for {
 		api.singleRawTxMu.Lock()
@@ -1846,21 +1863,11 @@ func TestRawTxIngressStopJoinsCancelledRequestDuringCoalesceDelay(t *testing.T) 
 		if time.Now().After(deadline) {
 			cancel()
 			close(releaseBackend)
-			t.Fatal("single request did not enter the coalescer")
+			t.Fatal("single request did not remain queued through the quiet window")
 		}
 		time.Sleep(time.Millisecond)
 	}
 	cancel()
-	select {
-	case err := <-requestDone:
-		if !errors.Is(err, context.Canceled) {
-			close(releaseBackend)
-			t.Fatalf("cancelled request error = %v, want %v", err, context.Canceled)
-		}
-	case <-time.After(time.Second):
-		close(releaseBackend)
-		t.Fatal("request cancellation waited for the coalescer delay")
-	}
 
 	stopDone := make(chan struct{})
 	go func() {
@@ -2242,17 +2249,25 @@ func TestSendRawTransactionsHandlesBackendResultLengthMismatch(t *testing.T) {
 }
 
 func TestSendRawTransactionUsesBatchBackendAndPreservesError(t *testing.T) {
-	raw, _ := signedRawTransactionsForTest(t, 1)
+	raw, signed := signedRawTransactionsForTest(t, 1)
 	want := errors.New("single batch failure")
 	backend := newLondonAPITestBackend()
+	done := make(chan struct{})
 	var calls int
 	backend.sendBatchFn = func(txs types.Transactions) []error {
 		calls++
+		close(done)
 		return []error{want}
 	}
 	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
-	if _, err := api.SendRawTransaction(context.Background(), raw[0]); !errors.Is(err, want) {
-		t.Fatalf("single transaction error = %v, want %v", err, want)
+	hash, err := api.SendRawTransaction(context.Background(), raw[0])
+	if err != nil || hash != signed[0].Hash() {
+		t.Fatalf("single transaction result = %s/%v, want %s/nil", hash, err, signed[0].Hash())
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("accepted transaction did not reach the backend")
 	}
 	if calls != 1 {
 		t.Fatalf("backend calls = %d, want 1", calls)
@@ -2262,6 +2277,7 @@ func TestSendRawTransactionUsesBatchBackendAndPreservesError(t *testing.T) {
 func TestSendRawTransactionWithOptsUsesSharedIngressAndSlowRoute(t *testing.T) {
 	raw, signed := signedRawTransactionsForTest(t, 1)
 	backend := newLondonAPITestBackend()
+	done := make(chan struct{})
 	var calls int
 	backend.sendBatchFn = func(txs types.Transactions) []error {
 		calls++
@@ -2271,6 +2287,7 @@ func TestSendRawTransactionWithOptsUsesSharedIngressAndSlowRoute(t *testing.T) {
 		if got := txs[0].RouteHint(); got != types.TxRouteSlow {
 			t.Fatalf("transaction route = %d, want slow", got)
 		}
+		close(done)
 		return []error{nil}
 	}
 	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
@@ -2278,6 +2295,11 @@ func TestSendRawTransactionWithOptsUsesSharedIngressAndSlowRoute(t *testing.T) {
 	hash, err := api.SendRawTransactionWithOpts(context.Background(), raw[0], SendTxOpts{UseSlowLane: true})
 	if err != nil {
 		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("with-opts transaction did not reach the backend")
 	}
 	if hash != signed[0].Hash() || calls != 1 {
 		t.Fatalf("with-opts result hash=%s/%s calls=%d, want one shared-ingress backend call", hash, signed[0].Hash(), calls)
@@ -2347,6 +2369,7 @@ func TestSendRawTransactionPreservesRealKZGPooledBlobSidecar(t *testing.T) {
 		t.Fatal("pooled type-3 wrapper did not include the sidecar")
 	}
 
+	done := make(chan struct{})
 	backend.sendBatchFn = func(txs types.Transactions) []error {
 		if len(txs) != 1 || txs[0].Type() != types.BlobTxType || txs[0].Hash() != signed.Hash() {
 			t.Fatalf("backend transaction = %#v, want one type-3 transaction %s", txs, signed.Hash())
@@ -2361,6 +2384,7 @@ func TestSendRawTransactionPreservesRealKZGPooledBlobSidecar(t *testing.T) {
 		if err != nil || !bytes.Equal(roundTrip, pooled) {
 			t.Fatalf("backend pooled envelope round trip mismatch: err=%v", err)
 		}
+		close(done)
 		return []error{nil}
 	}
 	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
@@ -2372,31 +2396,25 @@ func TestSendRawTransactionPreservesRealKZGPooledBlobSidecar(t *testing.T) {
 	if hash != signed.Hash() {
 		t.Fatalf("submitted pooled blob hash = %s, want %s", hash, signed.Hash())
 	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("pooled blob transaction did not reach the backend")
+	}
 }
 
 func TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves(t *testing.T) {
 	workerLimit := defaultRawTxBackendWorkers()
 	firstRaw, firstTxs := signedIndependentRawTransactionsForTest(t, 1)
 	secondRaw, secondTxs := signedIndependentRawTransactionsForTest(t, workerLimit-1)
-	wantErr := errors.New("injected adaptive pipeline rejection")
-	wantErrByHash := make(map[common.Hash]error, len(secondTxs))
-	for index, tx := range secondTxs {
-		if index%2 != 0 {
-			wantErrByHash[tx.Hash()] = wantErr
-		}
-	}
 
 	backend := newLondonAPITestBackend()
-	backendStarted := make(chan types.Transactions, workerLimit)
+	backendStarted := make(chan types.Transactions, 2)
 	releaseBackend := make(chan struct{})
 	backend.sendBatchFn = func(txs types.Transactions) []error {
 		backendStarted <- append(types.Transactions(nil), txs...)
 		<-releaseBackend
-		results := make([]error, len(txs))
-		for index, tx := range txs {
-			results[index] = wantErrByHash[tx.Hash()]
-		}
-		return results
+		return make([]error, len(txs))
 	}
 	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
 	api.singleRawTxCoalesceDelay = 50 * time.Millisecond
@@ -2411,7 +2429,13 @@ func TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves(t *testing.T)
 		hash, err := api.SendRawTransaction(context.Background(), firstRaw[0])
 		firstDone <- callResult{hash: hash, err: err}
 	}()
-	firstBatch := <-backendStarted
+	var firstBatch types.Transactions
+	select {
+	case firstBatch = <-backendStarted:
+	case <-time.After(5 * time.Second):
+		close(releaseBackend)
+		t.Fatal("first backend wave did not start")
+	}
 	if len(firstBatch) != 1 || firstBatch[0].Hash() != firstTxs[0].Hash() {
 		close(releaseBackend)
 		t.Fatalf("first backend wave = %v, want transaction %s", firstBatch, firstTxs[0].Hash())
@@ -2428,27 +2452,21 @@ func TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves(t *testing.T)
 	}
 	close(startSecond)
 
-	allStarted := true
-	startedBatches := []types.Transactions{firstBatch}
-	timer := time.NewTimer(2 * time.Second)
-	for len(startedBatches) < workerLimit {
-		select {
-		case batch := <-backendStarted:
-			startedBatches = append(startedBatches, batch)
-		case <-timer.C:
-			allStarted = false
-		}
-		if !allStarted {
-			break
-		}
-	}
-	if !timer.Stop() {
-		select {
-		case <-timer.C:
-		default:
-		}
+	var secondBatch types.Transactions
+	select {
+	case secondBatch = <-backendStarted:
+	case <-time.After(5 * time.Second):
+		close(releaseBackend)
+		t.Fatal("second independent-sender wave did not start while the first backend call was blocked")
 	}
 	close(releaseBackend)
+	if len(secondBatch) != len(secondRaw) {
+		t.Fatalf("second backend wave = %d, want one certificate of %d independent senders", len(secondBatch), len(secondRaw))
+	}
+	seenBatch := make(map[common.Hash]bool, len(secondBatch))
+	for _, tx := range secondBatch {
+		seenBatch[tx.Hash()] = true
+	}
 
 	firstResult := <-firstDone
 	secondResults := make([]callResult, len(secondRaw))
@@ -2456,24 +2474,12 @@ func TestSendRawTransactionPipelinesAdaptiveIndependentSenderWaves(t *testing.T)
 		result := <-secondDone
 		secondResults[result.index] = result
 	}
-	if !allStarted {
-		t.Fatalf("backend calls started before releasing the first wave = %d, want %d", len(startedBatches), workerLimit)
-	}
-	for index, batch := range startedBatches {
-		if len(batch) != 1 {
-			t.Fatalf("adaptive backend batch %d size = %d, want 1 independent sender", index, len(batch))
-		}
-	}
 	if firstResult.err != nil || firstResult.hash != firstTxs[0].Hash() {
 		t.Fatalf("first result = %s/%v, want %s/nil", firstResult.hash, firstResult.err, firstTxs[0].Hash())
 	}
 	for index, result := range secondResults {
-		if wantErrByHash[secondTxs[index].Hash()] != nil {
-			if !errors.Is(result.err, wantErr) || result.hash != (common.Hash{}) {
-				t.Fatalf("rejected result %d = %s/%v, want zero/%v", index, result.hash, result.err, wantErr)
-			}
-		} else if result.err != nil || result.hash != secondTxs[index].Hash() {
-			t.Fatalf("accepted result %d = %s/%v, want %s/nil", index, result.hash, result.err, secondTxs[index].Hash())
+		if result.err != nil || result.hash != secondTxs[index].Hash() || !seenBatch[result.hash] {
+			t.Fatalf("accepted result %d = %s/%v, want %s/nil in the second certificate", index, result.hash, result.err, secondTxs[index].Hash())
 		}
 	}
 
@@ -2675,11 +2681,7 @@ func TestSendRawTransactionCoalescesConcurrentRequests(t *testing.T) {
 		if seen[tx.Hash()] != 1 {
 			t.Fatalf("transaction %d backend submissions = %d, want 1", index, seen[tx.Hash()])
 		}
-		if wantBackendErrByHash[tx.Hash()] {
-			if !errors.Is(errs[index], wantBackendErr) || hashes[index] != (common.Hash{}) {
-				t.Fatalf("transaction %d rejection mismatch: hash=%s err=%v", index, hashes[index], errs[index])
-			}
-		} else if errs[index] != nil || hashes[index] != tx.Hash() {
+		if errs[index] != nil || hashes[index] != tx.Hash() {
 			t.Fatalf("transaction %d result mismatch: hash=%s/%s err=%v", index, hashes[index], tx.Hash(), errs[index])
 		}
 	}
@@ -2710,37 +2712,36 @@ func TestSendRawTransactionCancellationDoesNotCancelAcceptedSubmission(t *testin
 	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
 	api.singleRawTxCoalesceDelay = 100 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
-	canceledCallerDone := make(chan error, 1)
-	continuingCallerDone := make(chan struct {
+	type callResult struct {
 		hash common.Hash
 		err  error
-	}, 1)
+	}
+	canceledCallerDone := make(chan callResult, 1)
+	continuingCallerDone := make(chan callResult, 1)
 	start := make(chan struct{})
 	go func() {
 		<-start
-		_, err := api.SendRawTransaction(ctx, raw[0])
-		canceledCallerDone <- err
+		hash, err := api.SendRawTransaction(ctx, raw[0])
+		canceledCallerDone <- callResult{hash: hash, err: err}
 	}()
 	go func() {
 		<-start
 		hash, err := api.SendRawTransaction(context.Background(), raw[1])
-		continuingCallerDone <- struct {
-			hash common.Hash
-			err  error
-		}{hash: hash, err: err}
+		continuingCallerDone <- callResult{hash: hash, err: err}
 	}()
 	close(start)
+	canceled := <-canceledCallerDone
+	continuing := <-continuingCallerDone
+	if canceled.err != nil || canceled.hash != signed[0].Hash() {
+		t.Fatalf("accepted caller result = %s/%v, want %s/nil", canceled.hash, canceled.err, signed[0].Hash())
+	}
+	if continuing.err != nil || continuing.hash != signed[1].Hash() {
+		t.Fatalf("second caller result = %s/%v, want %s/nil", continuing.hash, continuing.err, signed[1].Hash())
+	}
 	<-backendStarted
 	cancel()
-	if err := <-canceledCallerDone; !errors.Is(err, context.Canceled) {
-		t.Fatalf("canceled caller error = %v, want %v", err, context.Canceled)
-	}
 	close(releaseBackend)
 	<-backendDone
-	continuing := <-continuingCallerDone
-	if continuing.err != nil || continuing.hash != signed[1].Hash() {
-		t.Fatalf("uncanceled caller result = %s/%v, want %s/nil", continuing.hash, continuing.err, signed[1].Hash())
-	}
 
 	deadline := time.Now().Add(time.Second)
 	for {
@@ -2927,5 +2928,92 @@ func TestPrivateSignTransactionReturnsCanonicalTypedEnvelope(t *testing.T) {
 	}
 	if decoded.Hash() != result.Tx.Hash() {
 		t.Fatalf("decoded hash = %s, want %s", decoded.Hash(), result.Tx.Hash())
+	}
+}
+
+func rawTxAdmissionRequest(sender common.Address, nonce uint64) *singleRawTxRequest {
+	return &singleRawTxRequest{
+		sender: sender,
+		tx:     types.NewTransaction(nonce, common.Address{}, big.NewInt(0), 21_000, big.NewInt(1), nil),
+	}
+}
+
+func TestPackSingleRawTxAdmissionBatchesKeepsContiguousNoncePrefix(t *testing.T) {
+	senderA := common.Address{0xA}
+	senderB := common.Address{0xB}
+	requests := make([]*singleRawTxRequest, 0, 603)
+	for nonce := 0; nonce < 600; nonce++ {
+		requests = append(requests, rawTxAdmissionRequest(senderA, uint64(nonce)))
+	}
+	for nonce := 0; nonce < 3; nonce++ {
+		requests = append(requests, rawTxAdmissionRequest(senderB, uint64(nonce)))
+	}
+	certs := packSingleRawTxAdmissionBatches(requests, nil)
+	if len(certs) != 2 || len(certs[0]) != MaxRawTxBatchCount || len(certs[1]) != 88+3 {
+		t.Fatalf("certificates = %d/%v, want 512 and 91", len(certs), lengthsOf(certs))
+	}
+	for index, request := range certs[0] {
+		if request.sender != senderA || request.tx.Nonce() != uint64(index) {
+			t.Fatalf("first certificate item %d = %x/%d", index, request.sender, request.tx.Nonce())
+		}
+	}
+	for index, request := range certs[1][:88] {
+		if request.sender != senderA || request.tx.Nonce() != uint64(MaxRawTxBatchCount+index) {
+			t.Fatalf("remainder item %d = %x/%d", index, request.sender, request.tx.Nonce())
+		}
+	}
+	for index, request := range certs[1][88:] {
+		if request.sender != senderB || request.tx.Nonce() != uint64(index) {
+			t.Fatalf("packed second sender item %d = %x/%d", index, request.sender, request.tx.Nonce())
+		}
+	}
+
+	blocked := map[common.Address]uint32{senderA: 1}
+	separated := packSingleRawTxAdmissionBatches(requests, blocked)
+	if len(separated) != 3 || len(separated[0]) != MaxRawTxBatchCount || len(separated[1]) != 88 || len(separated[2]) != 3 {
+		t.Fatalf("blocked sender certificates = %d/%v, want 512, 88, and 3", len(separated), lengthsOf(separated))
+	}
+	if separated[2][0].sender != senderB {
+		t.Fatalf("idle sender was packed behind the blocked sender: %x", separated[2][0].sender)
+	}
+}
+
+func lengthsOf(certs [][]*singleRawTxRequest) []int {
+	lengths := make([]int, len(certs))
+	for index, cert := range certs {
+		lengths[index] = len(cert)
+	}
+	return lengths
+}
+
+func TestSendRawTransactionCoalescesSameSenderNoncePrefix(t *testing.T) {
+	const count = 40
+	raw, signed := signedRawTransactionsForTest(t, count)
+	backend := newLondonAPITestBackend()
+	started := make(chan types.Transactions, 1)
+	backend.sendBatchFn = func(txs types.Transactions) []error {
+		started <- append(types.Transactions(nil), txs...)
+		return make([]error, len(txs))
+	}
+	api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
+	api.singleRawTxCoalesceDelay = 50 * time.Millisecond
+	for index := range raw {
+		hash, err := api.SendRawTransaction(context.Background(), raw[index])
+		if err != nil || hash != signed[index].Hash() {
+			t.Fatalf("transaction %d result = %s/%v, want %s/nil", index, hash, err, signed[index].Hash())
+		}
+	}
+	select {
+	case batch := <-started:
+		if len(batch) != count {
+			t.Fatalf("backend batch = %d, want one certificate of %d", len(batch), count)
+		}
+		for index, tx := range batch {
+			if tx.Nonce() != uint64(index) || tx.Hash() != signed[index].Hash() {
+				t.Fatalf("certificate item %d nonce=%d hash=%s", index, tx.Nonce(), tx.Hash())
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("same-sender nonce prefix was not submitted as one certificate")
 	}
 }

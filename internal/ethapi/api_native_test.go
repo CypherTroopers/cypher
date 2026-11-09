@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cypherium/cypher/common"
 	"github.com/cypherium/cypher/common/hexutil"
@@ -342,10 +343,12 @@ func TestEVMOnlyRawTransactionPreservesStandardEnvelope(t *testing.T) {
 				t.Fatal(err)
 			}
 			var received *types.Transaction
+			done := make(chan struct{})
 			backend.sendBatchFn = func(txs types.Transactions) []error {
 				if len(txs) == 1 {
 					received = txs[0]
 				}
+				close(done)
 				return make([]error, len(txs))
 			}
 			api := NewPublicTransactionPoolAPI(backend, new(AddrLocker))
@@ -353,6 +356,11 @@ func TestEVMOnlyRawTransactionPreservesStandardEnvelope(t *testing.T) {
 			hash, err := api.SendRawTransaction(context.Background(), raw)
 			if err != nil {
 				t.Fatalf("EVM-only standard raw submission failed: %v", err)
+			}
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Fatal("EVM-only standard raw transaction did not reach the backend")
 			}
 			if hash != signed.Hash() || received == nil {
 				t.Fatalf("EVM-only standard raw result: hash=%s received=%v", hash, received)
