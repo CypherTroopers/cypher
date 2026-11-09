@@ -689,7 +689,10 @@ func (keyS *keyService) tryProposalChangeCommittee(leaderIndex uint, isDone bool
 
 	keyblock := types.NewKeyBlock(header)
 	keyblock = keyblock.WithBody(mb.In().Public, mb.In().CoinBase, outerPublic, outerCoinBase, mb.Leader().Public, mb.Leader().CoinBase)
-	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase)
+	if reconfigType == types.PowReconfig || reconfigType == types.PacePowReconfig {
+		keyblock.SetInEndpoint(net.JoinHostPort(net.IP(best.IP).String(), strconv.Itoa(best.Port)))
+	}
+	log.Info("tryProposalChangeCommittee", "committeeHash", header.CommitteeHash, "leader", keyblock.LeaderPubKey(), "outerCoinBase", outerCoinBase, "inEndpoint", keyblock.InEndpoint())
 	if fixedMode {
 		return keyblock, mb, powSubmitter, nil
 	}
@@ -1367,11 +1370,18 @@ func repairStoredCommitteeAddresses(chain committeeBlockChain, head *types.KeyBl
 		var newNode *common.Cnode
 		if block.HasNewNode() {
 			newNode = &common.Cnode{CoinBase: block.InAddress(), Public: block.InPubKey()}
-			newNode.Address = committeeMemberAddress(chain, parent, newNode.Public, localPublic, localAddress)
-			if newNode.Address == "" && certifiedEndpoint != nil {
-				if endpoint, ok := certifiedEndpoint(block); ok {
-					newNode.Address = endpoint
-					log.Info("restored committee member endpoint from certified candidate", "number", block.NumberU64(), "endpoint", endpoint)
+			if endpoint, ok := dialableKeyEndpoint(block.InEndpoint()); ok {
+				newNode.Address = endpoint
+			} else if block.InEndpoint() != "" {
+				log.Warn("committee address repair stopped", "number", block.NumberU64(), "reason", "incoming endpoint is not dialable", "endpoint", block.InEndpoint())
+				return
+			} else {
+				newNode.Address = committeeMemberAddress(chain, parent, newNode.Public, localPublic, localAddress)
+				if newNode.Address == "" && certifiedEndpoint != nil {
+					if endpoint, ok := certifiedEndpoint(block); ok {
+						newNode.Address = endpoint
+						log.Info("restored committee member endpoint from certified candidate", "number", block.NumberU64(), "endpoint", endpoint)
+					}
 				}
 			}
 		}
@@ -1381,7 +1391,20 @@ func repairStoredCommitteeAddresses(chain committeeBlockChain, head *types.KeyBl
 			return
 		}
 		for _, member := range mb.List {
-			if member == nil || member.Address != "" {
+			if member == nil {
+				continue
+			}
+			if block.HasNewNode() && member.Public == block.InPubKey() {
+				if endpoint, ok := dialableKeyEndpoint(block.InEndpoint()); ok {
+					member.Address = endpoint
+					continue
+				}
+				if block.InEndpoint() != "" {
+					log.Warn("committee address repair stopped", "number", block.NumberU64(), "reason", "incoming endpoint is not dialable", "endpoint", block.InEndpoint())
+					return
+				}
+			}
+			if member.Address != "" {
 				continue
 			}
 			member.Address = committeeMemberAddress(chain, parent, member.Public, localPublic, localAddress)
@@ -1402,6 +1425,22 @@ func repairStoredCommitteeAddresses(chain committeeBlockChain, head *types.KeyBl
 		}
 		log.Info("repaired committee addresses", "number", block.NumberU64())
 	}
+}
+
+func dialableKeyEndpoint(endpoint string) (string, bool) {
+	host, port, err := net.SplitHostPort(endpoint)
+	if err != nil || host == "" || port == "" {
+		return "", false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || ip.IsUnspecified() || ip.IsMulticast() {
+		return "", false
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil || number <= 0 || number > 65535 {
+		return "", false
+	}
+	return endpoint, true
 }
 
 func committeeMemberAddress(chain committeeBlockChain, parent *types.KeyBlock, publicKey, localPublic, localAddress string) string {

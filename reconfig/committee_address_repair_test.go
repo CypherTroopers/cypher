@@ -297,6 +297,77 @@ func TestRepairUsesCertifiedCandidateEndpoint(t *testing.T) {
 	}
 }
 
+func TestRepairUsesKeyBlockEndpointInsteadOfAncestor(t *testing.T) {
+	keeper := repairTestNode("13.140.169.170:7102", "0x01", "aa")
+	former := repairTestNode("13.140.169.170:7110", "0x04", "dd")
+	seated := repairTestNode("13.140.169.170:7104", "0x93", "ee")
+	leader := repairTestNode("13.140.169.170:7155", seated.CoinBase, seated.Public)
+	historical := &bftview.Committee{List: []*common.Cnode{keeper, seated}}
+	parentCommittee := &bftview.Committee{List: []*common.Cnode{keeper, former}}
+	childCommittee := &bftview.Committee{List: []*common.Cnode{keeper, &common.Cnode{CoinBase: leader.CoinBase, Public: leader.Public}}}
+
+	chain := &repairTestChain{}
+	genesis := repairTestBlock(nil, 0, types.Initialization, historical, nil, nil, keeper)
+	chain.add(genesis)
+	parent := repairTestBlock(genesis, 1, types.TimeReconfig, parentCommittee, keeper, nil, keeper)
+	chain.add(parent)
+	child := repairTestBlock(parent, 2, types.PowReconfig, childCommittee, leader, former, keeper)
+	child.SetInEndpoint(leader.Address)
+	chain.add(child)
+
+	db := rawdb.NewMemoryDatabase()
+	bftview.SetCommitteeConfig(db, chain, nil)
+	t.Cleanup(func() {
+		bftview.SetServerInfo("", "")
+		bftview.SetCommitteeConfig(nil, nil, nil)
+		db.Close()
+	})
+	if !historical.StoreWithoutCallback(genesis) || !parentCommittee.StoreWithoutCallback(parent) {
+		t.Fatal("store ancestor committees")
+	}
+	bftview.SetServerInfo(keeper.Address, keeper.Public)
+	repairStoredCommitteeAddresses(chain, child, keeper.Public, keeper.Address, func(*types.KeyBlock) (string, bool) {
+		return seated.Address, true
+	})
+	restored := bftview.LoadMember(child.NumberU64(), child.Hash(), true)
+	if restored == nil || restored.RlpHash() != child.CommitteeHash() {
+		t.Fatal("key block endpoint did not restore the committee")
+	}
+	found, _ := restored.Get(leader.Public, bftview.PublicKey)
+	if found == nil || found.Address != leader.Address {
+		t.Fatalf("leader address = %v, want %s", found, leader.Address)
+	}
+}
+
+func TestRepairRejectsUndialableKeyEndpoint(t *testing.T) {
+	keeper := repairTestNode("13.140.169.170:7102", "0x01", "aa")
+	former := repairTestNode("13.140.169.170:7110", "0x04", "dd")
+	incoming := repairTestNode("13.140.169.170:7155", "0x93", "ee")
+	parentCommittee := &bftview.Committee{List: []*common.Cnode{keeper, former}}
+	childCommittee := &bftview.Committee{List: []*common.Cnode{keeper, &common.Cnode{CoinBase: incoming.CoinBase, Public: incoming.Public}}}
+	chain := &repairTestChain{}
+	parent := repairTestBlock(nil, 0, types.Initialization, parentCommittee, nil, nil, keeper)
+	chain.add(parent)
+	child := repairTestBlock(parent, 1, types.PowReconfig, childCommittee, incoming, former, keeper)
+	child.SetInEndpoint("0.0.0.0:7155")
+	chain.add(child)
+	db := rawdb.NewMemoryDatabase()
+	bftview.SetCommitteeConfig(db, chain, nil)
+	t.Cleanup(func() {
+		bftview.SetCommitteeConfig(nil, nil, nil)
+		db.Close()
+	})
+	if !parentCommittee.StoreWithoutCallback(parent) {
+		t.Fatal("store parent")
+	}
+	repairStoredCommitteeAddresses(chain, child, keeper.Public, keeper.Address, func(*types.KeyBlock) (string, bool) {
+		return incoming.Address, true
+	})
+	if got := bftview.LoadMember(child.NumberU64(), child.Hash(), true); got != nil {
+		t.Fatal("undialable endpoint was stored")
+	}
+}
+
 func TestAuthenticatedNewMemberEndpointRejectsUnboundCandidate(t *testing.T) {
 	keeper := repairTestNode("13.140.169.170:7102", "0x01", "aa")
 	external := repairTestNode("13.140.169.170:7155", "0x93", "ee")

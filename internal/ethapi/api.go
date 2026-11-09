@@ -1649,6 +1649,9 @@ func RPCMarshalKeyBlock(b *types.KeyBlock) (map[string]interface{}, error) {
 	fields["outAddress"] = b.OutAddress(0)
 	fields["leaderPubKey"] = b.LeaderPubKey()
 	fields["leaderAddress"] = b.LeaderAddress()
+	if b.InEndpoint() != "" {
+		fields["inEndpoint"] = b.InEndpoint()
+	}
 
 	return fields, nil
 }

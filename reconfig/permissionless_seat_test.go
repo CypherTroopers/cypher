@@ -121,13 +121,19 @@ func TestPermissionlessSeatReplacementRoundTrip(t *testing.T) {
 	}
 	keyblock := types.NewKeyBlock(header).WithBody(candidate.PubKey, candidate.Coinbase, evicted.Public, evicted.CoinBase, leader.Public, leader.CoinBase)
 	keyblock.SetPermissionlessFaults(nil)
+	keyblock.SetInEndpoint(next.List[index].Address)
 	encoded := keyblock.EncodeToBytes()
 	decoded := types.DecodeToKeyBlock(encoded)
-	if decoded == nil || !decoded.PermissionlessSeat() {
-		t.Fatal("permissionless key block did not round-trip")
+	if decoded == nil || !decoded.PermissionlessSeat() || decoded.InEndpoint() != "127.0.0.1:7200" {
+		t.Fatalf("permissionless endpoint round-trip: %+v", decoded)
 	}
 	if _, _, err := checkPermissionlessKeyblock(config, parentCommittee, parent, decoded, candidate, 4); err != nil {
 		t.Fatal(err)
+	}
+	wrong := decoded.CopyMe()
+	wrong.SetInEndpoint("127.0.0.1:1")
+	if _, _, err := checkPermissionlessKeyblock(config, parentCommittee, parent, wrong, candidate, 4); err == nil {
+		t.Fatal("mismatched incoming endpoint was accepted")
 	}
 	if _, err := next.Replace(index, &common.Cnode{Public: candidate.PubKey, CoinBase: candidate.Coinbase}); err == nil {
 		t.Fatal("duplicate public key was accepted")

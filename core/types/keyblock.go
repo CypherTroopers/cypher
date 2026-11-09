@@ -94,6 +94,9 @@ type KeyBlock struct {
 	inAddress     string
 	outPubKey     string
 	outAddress    string
+	// inEndpoint is the incoming member's dial address. It is not part of the
+	// committee hash. Empty means a legacy key block that did not carry one.
+	inEndpoint string
 	// caches
 	hash atomic.Value
 	size atomic.Value
@@ -136,6 +139,33 @@ type extKeyblockWithProofs struct {
 	FaultProofs   [][]byte
 }
 
+// extKeyblockWithEndpoint is the legacy shuffle plus the incoming dial address.
+// The last field is a string, so it cannot decode a permissionless proof list.
+type extKeyblockWithEndpoint struct {
+	Header        *KeyBlockHeader
+	LeaderPubKey  string
+	LeaderAddress string
+	InPubKey      string
+	InAddress     string
+	OutPubKey     string
+	OutAddress    string
+	InEndpoint    string
+}
+
+// extKeyblockWithProofsAndEndpoint appends the incoming dial address after the
+// permissionless timeout proofs. Older proof-only bodies omit this field.
+type extKeyblockWithProofsAndEndpoint struct {
+	Header        *KeyBlockHeader
+	LeaderPubKey  string
+	LeaderAddress string
+	InPubKey      string
+	InAddress     string
+	OutPubKey     string
+	OutAddress    string
+	FaultProofs   [][]byte
+	InEndpoint    string
+}
+
 // NewBlock creates a new block. The input data is copied,
 // changes to header and to the field values will not affect the
 // block.
@@ -175,32 +205,44 @@ func (b *KeyBlock) DecodeRLP(s *rlp.Stream) error {
 	if err != nil {
 		return err
 	}
+	var withProofsAndEndpoint extKeyblockWithProofsAndEndpoint
+	if err := rlp.DecodeBytes(raw, &withProofsAndEndpoint); err == nil {
+		b.assignDecoded(withProofsAndEndpoint.Header, withProofsAndEndpoint.LeaderPubKey, withProofsAndEndpoint.LeaderAddress, withProofsAndEndpoint.InPubKey, withProofsAndEndpoint.InAddress, withProofsAndEndpoint.OutPubKey, withProofsAndEndpoint.OutAddress, withProofsAndEndpoint.InEndpoint, true, withProofsAndEndpoint.FaultProofs, len(raw))
+		return nil
+	}
 	var extended extKeyblockWithProofs
 	if err := rlp.DecodeBytes(raw, &extended); err == nil {
-		b.header = extended.Header
-		b.leaderPubKey, b.leaderAddress = extended.LeaderPubKey, extended.LeaderAddress
-		b.inPubKey, b.inAddress = extended.InPubKey, extended.InAddress
-		b.outPubKey, b.outAddress = extended.OutPubKey, extended.OutAddress
-		b.permissionlessSeat = true
-		if extended.FaultProofs == nil {
-			b.faultProofs = [][]byte{}
-		} else {
-			b.faultProofs = extended.FaultProofs
-		}
-		b.size.Store(common.StorageSize(len(raw)))
+		b.assignDecoded(extended.Header, extended.LeaderPubKey, extended.LeaderAddress, extended.InPubKey, extended.InAddress, extended.OutPubKey, extended.OutAddress, "", true, extended.FaultProofs, len(raw))
+		return nil
+	}
+	var withEndpoint extKeyblockWithEndpoint
+	if err := rlp.DecodeBytes(raw, &withEndpoint); err == nil {
+		b.assignDecoded(withEndpoint.Header, withEndpoint.LeaderPubKey, withEndpoint.LeaderAddress, withEndpoint.InPubKey, withEndpoint.InAddress, withEndpoint.OutPubKey, withEndpoint.OutAddress, withEndpoint.InEndpoint, false, nil, len(raw))
 		return nil
 	}
 	var eb extKeyblock
 	if err := rlp.DecodeBytes(raw, &eb); err != nil {
 		return err
 	}
-	b.header = eb.Header
-	b.leaderPubKey, b.leaderAddress = eb.LeaderPubKey, eb.LeaderAddress
-	b.inPubKey, b.inAddress, b.outPubKey, b.outAddress = eb.InPubKey, eb.InAddress, eb.OutPubKey, eb.OutAddress
-	b.permissionlessSeat = false
-	b.faultProofs = nil
-	b.size.Store(common.StorageSize(len(raw)))
+	b.assignDecoded(eb.Header, eb.LeaderPubKey, eb.LeaderAddress, eb.InPubKey, eb.InAddress, eb.OutPubKey, eb.OutAddress, "", false, nil, len(raw))
 	return nil
+}
+
+func (b *KeyBlock) assignDecoded(header *KeyBlockHeader, leaderPubKey, leaderAddress, inPubKey, inAddress, outPubKey, outAddress, inEndpoint string, permissionless bool, proofs [][]byte, rawSize int) {
+	b.header = header
+	b.leaderPubKey, b.leaderAddress = leaderPubKey, leaderAddress
+	b.inPubKey, b.inAddress = inPubKey, inAddress
+	b.outPubKey, b.outAddress = outPubKey, outAddress
+	b.inEndpoint = inEndpoint
+	b.permissionlessSeat = permissionless
+	if !permissionless {
+		b.faultProofs = nil
+	} else if proofs == nil {
+		b.faultProofs = [][]byte{}
+	} else {
+		b.faultProofs = proofs
+	}
+	b.size.Store(common.StorageSize(rawSize))
 }
 
 // EncodeRLP serializes b into the Cypherium RLP block format.
@@ -209,6 +251,19 @@ func (b *KeyBlock) EncodeRLP(w io.Writer) error {
 		proofs := b.faultProofs
 		if proofs == nil {
 			proofs = [][]byte{}
+		}
+		if b.inEndpoint != "" {
+			return rlp.Encode(w, extKeyblockWithProofsAndEndpoint{
+				Header:        b.header,
+				InPubKey:      b.inPubKey,
+				InAddress:     b.inAddress,
+				OutPubKey:     b.outPubKey,
+				OutAddress:    b.outAddress,
+				LeaderPubKey:  b.leaderPubKey,
+				LeaderAddress: b.leaderAddress,
+				FaultProofs:   proofs,
+				InEndpoint:    b.inEndpoint,
+			})
 		}
 		return rlp.Encode(w, extKeyblockWithProofs{
 			Header:        b.header,
@@ -219,6 +274,18 @@ func (b *KeyBlock) EncodeRLP(w io.Writer) error {
 			LeaderPubKey:  b.leaderPubKey,
 			LeaderAddress: b.leaderAddress,
 			FaultProofs:   proofs,
+		})
+	}
+	if b.inEndpoint != "" {
+		return rlp.Encode(w, extKeyblockWithEndpoint{
+			Header:        b.header,
+			InPubKey:      b.inPubKey,
+			InAddress:     b.inAddress,
+			OutPubKey:     b.outPubKey,
+			OutAddress:    b.outAddress,
+			LeaderPubKey:  b.leaderPubKey,
+			LeaderAddress: b.leaderAddress,
+			InEndpoint:    b.inEndpoint,
 		})
 	}
 	return rlp.Encode(w, extKeyblock{
@@ -290,7 +357,13 @@ func (b *KeyBlock) LeaderPubKey() string  { return b.leaderPubKey }
 func (b *KeyBlock) LeaderAddress() string { return b.leaderAddress }
 func (b *KeyBlock) InPubKey() string      { return b.inPubKey }
 func (b *KeyBlock) InAddress() string     { return b.inAddress }
-func (b *KeyBlock) OutPubKey() string     { return b.outPubKey }
+func (b *KeyBlock) InEndpoint() string    { return b.inEndpoint }
+func (b *KeyBlock) SetInEndpoint(endpoint string) {
+	if b != nil {
+		b.inEndpoint = endpoint
+	}
+}
+func (b *KeyBlock) OutPubKey() string { return b.outPubKey }
 func (b *KeyBlock) OutAddress(flag int) string {
 	if flag == 1 {
 		if b.outAddress == "" {
@@ -374,6 +447,7 @@ func (b *KeyBlock) WithBody(inPubKey string, inAddress string, outPubKey string,
 	block.inAddress = inAddress
 	block.outPubKey = outPubKey
 	block.outAddress = outAddress
+	block.inEndpoint = b.inEndpoint
 	block.permissionlessSeat = b.permissionlessSeat
 	block.faultProofs = b.FaultProofBytes()
 	return block
@@ -389,6 +463,7 @@ func (b *KeyBlock) CopyMe() *KeyBlock {
 	block.inAddress = b.inAddress
 	block.outPubKey = b.outPubKey
 	block.outAddress = b.outAddress
+	block.inEndpoint = b.inEndpoint
 	block.permissionlessSeat = b.permissionlessSeat
 	block.faultProofs = b.FaultProofBytes()
 	return block

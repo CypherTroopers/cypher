@@ -218,6 +218,9 @@ func checkPermissionlessKeyblock(config *params.ChainConfig, parent *bftview.Com
 	if incoming.Public != keyblock.InPubKey() || incoming.CoinBase != keyblock.InAddress() {
 		return nil, nil, fmt.Errorf("permissionless incoming member mismatch")
 	}
+	if endpoint := keyblock.InEndpoint(); endpoint != "" && endpoint != incoming.Address {
+		return nil, nil, fmt.Errorf("permissionless incoming endpoint mismatch")
+	}
 	// The proposal view is still elected from the parent committee. The seat
 	// replacement takes effect for views after this key block.
 	leaderIndex, err := fairHotstuffLeaderIndex(config.FairHotstuffSeed, config.ChainID.Uint64(), proposalView, parentBlock.CommitteeHash(), len(parent.List))
@@ -405,6 +408,9 @@ func (keyS *keyService) buildPermissionlessKeyBlock(parent *bftview.Committee, l
 	header.CommitteeHash = next.RlpHash()
 	keyblock := types.NewKeyBlock(header).WithBody(best.PubKey, best.Coinbase, evicted.Public, evicted.CoinBase, leader.Public, leader.CoinBase)
 	keyblock.SetPermissionlessFaults(raw)
+	if incoming := next.List[indexOfPublic(next, best.PubKey)]; incoming != nil {
+		keyblock.SetInEndpoint(incoming.Address)
+	}
 	return keyblock, next, best, nil
 }
 
