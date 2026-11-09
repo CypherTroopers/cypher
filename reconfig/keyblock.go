@@ -415,11 +415,16 @@ func (keyS *keyService) verifyKeyBlock(keyblock *types.KeyBlock, bestCandi *type
 
 	var newNode *common.Cnode
 	if keyblock.HasNewNode() {
-		newNode = &common.Cnode{
-			Address:  net.JoinHostPort(net.IP(bestCandi.IP).String(), strconv.Itoa(bestCandi.Port)),
-			CoinBase: keyblock.InAddress(),
-			Public:   keyblock.InPubKey(),
+		newNode = &common.Cnode{CoinBase: keyblock.InAddress(), Public: keyblock.InPubKey()}
+		// The proposal extra is not a dial address until its PoW seal binds that IP.
+		if keyS.engine == nil {
+			return fmt.Errorf("keyblock verify failed, candidate verifier is unavailable")
 		}
+		endpoint, err := authenticatedNewMemberEndpoint(keyblock, bestCandi, keyS.engine.VerifyCandidate, keyS.kbc)
+		if err != nil {
+			return fmt.Errorf("keyblock verify failed, new member endpoint: %w", err)
+		}
+		newNode.Address = endpoint
 	}
 
 	if kbc.HasBlock(keyblock.Hash(), keyblock.NumberU64()) { //First come from p2p
@@ -1247,8 +1252,9 @@ func (s *Service) saveCommittee(curKeyBlock *types.KeyBlock) {
 }
 
 // repairCommitteeAddresses fills member addresses from this node's own
-// endpoint or from an ancestor committee. The committee commitment covers
-// coinbase and public key only, so restoring an address does not change it.
+// endpoint, an ancestor committee, or the PoW candidate sealed into this key
+// block. The committee commitment covers coinbase and public key only, so
+// restoring an address does not change it.
 func (s *Service) repairCommitteeAddresses(head *types.KeyBlock) {
 	if s == nil || s.kbc == nil || head == nil {
 		return
@@ -1257,10 +1263,85 @@ func (s *Service) repairCommitteeAddresses(head *types.KeyBlock) {
 	if s.netService != nil {
 		localAddress = s.netService.serverAddress
 	}
-	repairStoredCommitteeAddresses(s.kbc, head, bftview.GetServerInfo(bftview.PublicKey), localAddress)
+	repairStoredCommitteeAddresses(s.kbc, head, bftview.GetServerInfo(bftview.PublicKey), localAddress, s.certifiedNewMemberEndpoint)
 }
 
-func repairStoredCommitteeAddresses(chain committeeBlockChain, head *types.KeyBlock, localPublic, localAddress string) {
+func (s *Service) certifiedNewMemberEndpoint(block *types.KeyBlock) (string, bool) {
+	if s == nil || s.keyService == nil {
+		return "", false
+	}
+	return s.keyService.certifiedNewMemberEndpoint(block)
+}
+
+func (keyS *keyService) certifiedNewMemberEndpoint(block *types.KeyBlock) (string, bool) {
+	if keyS == nil || keyS.engine == nil || block == nil || !block.HasNewNode() {
+		return "", false
+	}
+	verify := keyS.engine.VerifyCandidate
+	if keyS.candidatepool != nil {
+		for _, candidate := range keyS.candidatepool.Content() {
+			endpoint, err := authenticatedNewMemberEndpoint(block, candidate, verify, keyS.kbc)
+			if err == nil {
+				return endpoint, true
+			}
+		}
+	}
+	keyS.muBestCandidate.Lock()
+	best := keyS.bestCandidate
+	keyS.muBestCandidate.Unlock()
+	if endpoint, err := authenticatedNewMemberEndpoint(block, best, verify, keyS.kbc); err == nil {
+		return endpoint, true
+	}
+	return "", false
+}
+
+// authenticatedNewMemberEndpoint returns the dial address carried by candidate
+// only when that candidate is the PoW seal of this key block. HashWithCandi
+// binds the seal header to the canonical key block. VerifyCandidate binds the
+// IP, port, public key, and coinbase to that seal. A candidate that fails
+// either check cannot supply a route.
+func authenticatedNewMemberEndpoint(keyblock *types.KeyBlock, candidate *types.Candidate, verify func(types.KeyChainReader, *types.Candidate) error, chain types.KeyChainReader) (string, error) {
+	if keyblock == nil || !keyblock.HasNewNode() {
+		return "", fmt.Errorf("key block has no new member")
+	}
+	if candidate == nil || candidate.KeyCandidate == nil || candidate.KeyCandidate.Number == nil {
+		return "", fmt.Errorf("candidate is incomplete")
+	}
+	if candidate.PubKey != keyblock.InPubKey() || candidate.Coinbase != keyblock.InAddress() || candidate.KeyCandidate.Number.Uint64() != keyblock.NumberU64() {
+		return "", fmt.Errorf("candidate identity does not match the key block")
+	}
+	checked := types.DecodeToCandidate(candidate.EncodeToBytes())
+	if checked == nil || checked.KeyCandidate == nil {
+		return "", fmt.Errorf("candidate cannot be copied")
+	}
+	checked.KeyCandidate.BlockType = keyblock.BlockType()
+	if keyblock.Header().HashWithCandi() != checked.KeyCandidate.HashWithCandi() {
+		return "", fmt.Errorf("candidate commitment does not match the key block")
+	}
+	if verify == nil {
+		return "", fmt.Errorf("candidate verifier is unavailable")
+	}
+	if err := verify(chain, checked); err != nil {
+		return "", err
+	}
+	return committeeEndpointFromCandidate(checked)
+}
+
+func committeeEndpointFromCandidate(candidate *types.Candidate) (string, error) {
+	if candidate == nil {
+		return "", fmt.Errorf("candidate is incomplete")
+	}
+	ip := net.IP(candidate.IP)
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+	if ip == nil || ip.IsUnspecified() || ip.IsMulticast() || candidate.Port <= 0 || candidate.Port > 65535 {
+		return "", fmt.Errorf("candidate endpoint is not dialable")
+	}
+	return net.JoinHostPort(ip.String(), strconv.Itoa(candidate.Port)), nil
+}
+
+func repairStoredCommitteeAddresses(chain committeeBlockChain, head *types.KeyBlock, localPublic, localAddress string, certifiedEndpoint func(*types.KeyBlock) (string, bool)) {
 	if chain == nil || head == nil {
 		return
 	}
@@ -1287,6 +1368,12 @@ func repairStoredCommitteeAddresses(chain committeeBlockChain, head *types.KeyBl
 		if block.HasNewNode() {
 			newNode = &common.Cnode{CoinBase: block.InAddress(), Public: block.InPubKey()}
 			newNode.Address = committeeMemberAddress(chain, parent, newNode.Public, localPublic, localAddress)
+			if newNode.Address == "" && certifiedEndpoint != nil {
+				if endpoint, ok := certifiedEndpoint(block); ok {
+					newNode.Address = endpoint
+					log.Info("restored committee member endpoint from certified candidate", "number", block.NumberU64(), "endpoint", endpoint)
+				}
+			}
 		}
 		mb, _ := bftview.GetCommittee(newNode, block, true)
 		if mb == nil {
@@ -1298,6 +1385,12 @@ func repairStoredCommitteeAddresses(chain committeeBlockChain, head *types.KeyBl
 				continue
 			}
 			member.Address = committeeMemberAddress(chain, parent, member.Public, localPublic, localAddress)
+			if member.Address == "" && block.HasNewNode() && member.Public == block.InPubKey() && certifiedEndpoint != nil {
+				if endpoint, ok := certifiedEndpoint(block); ok {
+					member.Address = endpoint
+					log.Info("restored committee member endpoint from certified candidate", "number", block.NumberU64(), "endpoint", endpoint)
+				}
+			}
 		}
 		if !mb.HasIP() || mb.RlpHash() != block.CommitteeHash() {
 			log.Warn("committee address repair stopped", "number", block.NumberU64(), "reason", "restored committee is incomplete", "hasAddress", mb.HasIP(), "have", mb.RlpHash(), "want", block.CommitteeHash())

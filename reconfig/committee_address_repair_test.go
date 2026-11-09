@@ -1,7 +1,10 @@
 package reconfig
 
 import (
+	"fmt"
 	"math/big"
+	"net"
+	"strings"
 	"testing"
 
 	"github.com/cypherium/cypher/common"
@@ -136,7 +139,7 @@ func TestRepairRestoresReseatedMemberAddress(t *testing.T) {
 	// The production caller passes the live key chain. The helper is used
 	// directly here because Service.kbc is the concrete chain type.
 	bftview.SetServerInfo(live.Address, live.Public)
-	repairStoredCommitteeAddresses(chain, carried, bftview.GetServerInfo(bftview.PublicKey), service.netService.serverAddress)
+	repairStoredCommitteeAddresses(chain, carried, bftview.GetServerInfo(bftview.PublicKey), service.netService.serverAddress, nil)
 
 	restored := bftview.LoadMember(carried.NumberU64(), carried.Hash(), true)
 	if restored == nil || !restored.HasIP() {
@@ -196,7 +199,7 @@ func TestRepairRestoresCommitteeReadFromDatabase(t *testing.T) {
 		t.Fatal("store committees without the reseated address")
 	}
 	bftview.SetServerInfo(live.Address, live.Public)
-	repairStoredCommitteeAddresses(chain, carried, live.Public, live.Address)
+	repairStoredCommitteeAddresses(chain, carried, live.Public, live.Address, nil)
 
 	restored := bftview.LoadMember(carried.NumberU64(), carried.Hash(), true)
 	if restored == nil || !restored.HasIP() || restored.RlpHash() != carried.CommitteeHash() {
@@ -235,7 +238,7 @@ func TestRepairRecoversAddressFromAncestorCommittee(t *testing.T) {
 		t.Fatal("store committees")
 	}
 	bftview.SetServerInfo(keeper.Address, keeper.Public)
-	repairStoredCommitteeAddresses(chain, reseated, keeper.Public, keeper.Address)
+	repairStoredCommitteeAddresses(chain, reseated, keeper.Public, keeper.Address, nil)
 
 	restored := bftview.LoadMember(reseated.NumberU64(), reseated.Hash(), true)
 	if restored == nil {
@@ -244,5 +247,97 @@ func TestRepairRecoversAddressFromAncestorCommittee(t *testing.T) {
 	found, _ := restored.Get(former.Public, bftview.PublicKey)
 	if found == nil || found.Address != former.Address {
 		t.Fatalf("restored address %v, want %s", found, former.Address)
+	}
+}
+
+func TestRepairUsesCertifiedCandidateEndpoint(t *testing.T) {
+	keeper := repairTestNode("13.140.169.170:7102", "0x01", "aa")
+	former := repairTestNode("13.140.169.170:7110", "0x04", "dd")
+	external := repairTestNode("13.140.169.170:7155", "0x93", "ee")
+	parentCommittee := &bftview.Committee{List: []*common.Cnode{keeper, former}}
+	childCommittee := &bftview.Committee{List: []*common.Cnode{keeper, &common.Cnode{CoinBase: external.CoinBase, Public: external.Public}}}
+
+	chain := &repairTestChain{}
+	genesis := repairTestBlock(nil, 0, types.Initialization, parentCommittee, nil, nil, keeper)
+	chain.add(genesis)
+	child := repairTestBlock(genesis, 1, types.PowReconfig, childCommittee, external, former, keeper)
+	chain.add(child)
+
+	db := rawdb.NewMemoryDatabase()
+	bftview.SetCommitteeConfig(db, chain, nil)
+	t.Cleanup(func() {
+		bftview.SetServerInfo("", "")
+		bftview.SetCommitteeConfig(nil, nil, nil)
+		db.Close()
+	})
+	if !parentCommittee.StoreWithoutCallback(genesis) {
+		t.Fatal("store parent committee")
+	}
+	bftview.SetServerInfo(keeper.Address, keeper.Public)
+	repairStoredCommitteeAddresses(chain, child, keeper.Public, keeper.Address, func(block *types.KeyBlock) (string, bool) {
+		return "", false
+	})
+	if got := bftview.LoadMember(child.NumberU64(), child.Hash(), true); got != nil {
+		t.Fatal("unverified candidate endpoint became dialable")
+	}
+
+	repairStoredCommitteeAddresses(chain, child, keeper.Public, keeper.Address, func(block *types.KeyBlock) (string, bool) {
+		if block.Hash() != child.Hash() || block.InPubKey() != external.Public {
+			return "192.0.2.1:1", true
+		}
+		return external.Address, true
+	})
+	restored := bftview.LoadMember(child.NumberU64(), child.Hash(), true)
+	if restored == nil || restored.RlpHash() != child.CommitteeHash() {
+		t.Fatal("certified endpoint did not restore the committee")
+	}
+	found, _ := restored.Get(external.Public, bftview.PublicKey)
+	if found == nil || found.Address != external.Address {
+		t.Fatalf("new member address = %v, want %s", found, external.Address)
+	}
+}
+
+func TestAuthenticatedNewMemberEndpointRejectsUnboundCandidate(t *testing.T) {
+	keeper := repairTestNode("13.140.169.170:7102", "0x01", "aa")
+	external := repairTestNode("13.140.169.170:7155", "0x93", "ee")
+	committee := &bftview.Committee{List: []*common.Cnode{keeper, external}}
+	block := repairTestBlock(nil, 7, types.PowReconfig, committee, external, keeper, keeper)
+	candidate := &types.Candidate{
+		KeyCandidate: block.Header(),
+		IP:           net.ParseIP(external.Address[:strings.LastIndex(external.Address, ":")]).To4(),
+		Port:         7155,
+		PubKey:       external.Public,
+		Coinbase:     external.CoinBase,
+	}
+	verified := 0
+	verify := func(types.KeyChainReader, *types.Candidate) error {
+		verified++
+		return nil
+	}
+	endpoint, err := authenticatedNewMemberEndpoint(block, candidate, verify, nil)
+	if err != nil || endpoint != external.Address {
+		t.Fatalf("bound candidate endpoint = %s, %v", endpoint, err)
+	}
+	if verified != 1 {
+		t.Fatalf("verifier calls = %d", verified)
+	}
+
+	swapped := *candidate
+	swapped.IP = net.ParseIP("192.0.2.8").To4()
+	swapped.Port = 9
+	if _, err := authenticatedNewMemberEndpoint(block, &swapped, func(types.KeyChainReader, *types.Candidate) error {
+		return fmt.Errorf("seal does not bind this endpoint")
+	}, nil); err == nil {
+		t.Fatal("rejected seal supplied an endpoint")
+	}
+	other := *candidate
+	other.PubKey = "ff"
+	if _, err := authenticatedNewMemberEndpoint(block, &other, verify, nil); err == nil {
+		t.Fatal("different public key supplied an endpoint")
+	}
+	unspecified := *candidate
+	unspecified.IP = net.IPv4zero.To4()
+	if _, err := authenticatedNewMemberEndpoint(block, &unspecified, verify, nil); err == nil {
+		t.Fatal("unspecified address supplied an endpoint")
 	}
 }
