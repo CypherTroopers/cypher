@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - 'FHS-D'
+      - 'permissionless'
     paths-ignore:
       - 'build/bin/cypher'
       - 'build/bin/cypher-linux-*'
@@ -145,7 +146,7 @@ jobs:
     name: Commit binaries
     if: >-
       github.ref_type == 'branch' &&
-      github.ref_name == 'FHS-D'
+      (github.ref_name == 'FHS-D' || github.ref_name == 'permissionless')
     needs: build-native
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -170,6 +171,6 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ github.sha }}
-          TARGET_BRANCH: FHS-D
+          TARGET_BRANCH: ${{ github.ref_name }}
           GO_VERSION: ${{ env.GO_VERSION }}
         run: ./build/publish-binaries.sh
